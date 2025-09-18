@@ -1,6 +1,6 @@
 services:
   wiki:
-    image: m4tsuri/pubwiki:v1.1
+    image: m4tsuri/pubwiki:v1.2
     restart: always
     environment: 
       WIKI_SITE_NAME: ${WIKI_SITE_NAME}

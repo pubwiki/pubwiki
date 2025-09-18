@@ -1,4 +1,4 @@
-FROM mediawiki:1.44-fpm
+FROM mediawiki:1.44
 
 RUN apt update
 RUN apt install -y wget vim mariadb-client-compat
