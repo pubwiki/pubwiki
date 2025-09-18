@@ -173,24 +173,4 @@ require_once "$IP/extensions/Wikibase/repo/ExampleSettings.php";
 wfLoadExtension( 'WikibaseClient', "$IP/extensions/Wikibase/extension-client.json" );
 require_once "$IP/extensions/Wikibase/client/ExampleSettings.php";
 
-wfLoadExtension( 'Babel' );
-
-wfLoadExtension( 'cldr' );
-
-$wgCCTrailerFilter = true;
-$wgCCUserFilter = false;
-$wgDefaultUserOptions['usenewrc'] = 1;
-
-wfLoadExtension( 'Translate' );
-$wgGroupPermissions['user']['translate'] = true;
-$wgGroupPermissions['user']['translate-messagereview'] = true;
-$wgGroupPermissions['user']['translate-groupreview'] = true;
-$wgGroupPermissions['user']['translate-import'] = true;
-$wgGroupPermissions['sysop']['pagetranslation'] = true;
-$wgGroupPermissions['sysop']['translate-manage'] = true;
-$wgTranslateDocumentationLanguageCode = 'qqq';
-$wgExtraLanguageNames['qqq'] = 'Message documentation'; # No linguistic content. Used for documenting messages
-
-wfLoadExtension( 'UniversalLanguageSelector' );
-
 $wgShowExceptionDetails = true;

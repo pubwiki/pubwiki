@@ -7,6 +7,7 @@ services:
       MYSQL_ROOT_PASSWORD: ${WIKI_DB_ROOT_PASSWORD}
       MYSQL_ADMIN_USER: ${WIKI_DB_ADMIN_USER}
       MYSQL_ADMIN_PASSWORD: ${WIKI_DB_ADMIN_PASSWORD}
+      SHARED_DB_NAME: ${WIKI_DB_SHARED_DB}
       TZ: ${WIKI_TZ}
     restart: always
     networks:

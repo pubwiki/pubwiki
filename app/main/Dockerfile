@@ -18,13 +18,6 @@ RUN cd /tmp && \
     wget https://extdist.wmflabs.org/dist/extensions/Wikibase-REL1_44-3e264d4.tar.gz && \
     tar -xzf Wikibase-REL1_44-3e264d4.tar.gz -C /var/www/html/extensions
 
-# Install Language Extension Bundle
-# The bundle is downloaded from https://translatewiki.net/mleb/MediaWikiLanguageExtensionBundle-2025.07.tar.bz2
-# Direct download can lead to 403, so we pre downloaded it
-COPY assets/MediaWikiLanguageExtensionBundle-2025.07.tar.bz2 /tmp/MediaWikiLanguageExtensionBundle-2025.07.tar.bz2
-RUN cd /tmp && \
-    tar -xvjf MediaWikiLanguageExtensionBundle-2025.07.tar.bz2 -C /var/www/html
-
 COPY assets/LocalSettings.php /var/www/html/LocalSettings.php
 RUN chmod 644 LocalSettings.php && chown www-data:www-data LocalSettings.php
 
