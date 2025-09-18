@@ -37,7 +37,8 @@ volumes:
 
 networks:
   proxy:
-    #extenal: true
+    name: proxy
+    extenal: true
   wikinet:
     name: wikinet
     external: true
