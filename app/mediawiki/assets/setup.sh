@@ -1,0 +1,11 @@
+#!/bin/sh
+
+mysql -u ${WIKI_DB_ADMIN_USER} -p${WIKI_DB_ADMIN_PASSWORD} -h ${MEDIAWIKI_DB_HOST} <<EOF
+CREATE DATABASE IF NOT EXISTS ${MEDIAWIKI_DB_NAME};
+CREATE USER IF NOT EXISTS '${MEDIAWIKI_DB_USER}'@'%' IDENTIFIED BY '${MEDIAWIKI_DB_PASSWORD}';
+GRANT ALL PRIVILEGES ON ${MEDIAWIKI_DB_NAME}.* TO '${MEDIAWIKI_DB_USER}'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+EOF
+
+php /var/www/html/maintenance/installPreConfigured.php
+php /var/www/html/maintenance/createAndPromote.php ${WIKI_ADMIN_USER} ${WIKI_ADMIN_PASSWORD} --sysop --bureaucrat --force

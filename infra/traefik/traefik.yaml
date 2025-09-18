@@ -1,0 +1,48 @@
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+api:
+  dashboard: true
+  debug: false
+
+accessLog: {}
+
+log:
+  level: INFO
+
+entryPoints:
+  web:
+    address: :80
+
+  websecure:
+    address: :443
+
+serversTransport:
+  insecureSkipVerify: true
+
+http:
+  middlewares:
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+certificatesResolvers:
+  cloudflare:
+    acme:
+      email: me@m4tsuri.com
+      storage: /acme.json
+      caServer: https://acme-v02.api.letsencrypt.org/directory
+      dnsChallenge:
+        provider: cloudflare
+        delayBeforeCheck: 2
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: proxy
+  file:
+    directory: /etc/traefik
+    watch: true

@@ -1,0 +1,21 @@
+services:
+  nginx:
+    image: nginx:alpine
+    depends_on: [php]
+    volumes:
+      - ./nginx/wiki.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./wikis:/srv/wikis:rw   # 一次挂载大目录
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.wiki.rule=HostRegexp(`^.+\.pub\.wiki$`)
+      - traefik.http.routers.wiki.entrypoints=websecure
+      - traefik.http.routers.wiki.tls.certresolver=leresolver
+      - traefik.http.routers.wiki.tls.domains[0].main=*.pub.wiki
+      - traefik.http.services.wiki.loadbalancer.server.port=80
+  
+  php:
+    image: mediawiki:1.44-fpm
+    volumes:
+      - ./wikis:/srv/wikis:rw
+      - ./php-fpm/www.conf:/usr/local/etc/php-fpm.d/www.conf:ro
+      - ./php-conf/opcache.ini:/usr/local/etc/php/conf.d/opcache.ini:ro

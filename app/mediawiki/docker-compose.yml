@@ -1,0 +1,48 @@
+services:
+  wiki:
+    image: m4tsuri/pubwiki:v1.0
+    restart: always
+    environment: 
+      WIKI_SITE_NAME: ${WIKI_SITE_NAME}
+      WIKI_META_NAMESPACE: ${WIKI_META_NAMESPACE}
+      WIKI_HOST_URL: ${WIKI_HOST_URL}
+      WIKI_LANG: ${WIKI_LANG}
+      TZ: ${WIKI_TZ}
+      WIKI_ADMIN_USER: 
+      WIKI_ADMIN_PASSWORD: 
+      WIKI_DB_ROOT_PASSWORD: ${WIKI_DB_ROOT_PASSWORD}
+      WIKI_DB_ADMIN_PASSWORD: ${WIKI_DB_ADMIN_PASSWORD}
+      WIKI_DB_ADMIN_USER: ${WIKI_DB_ADMIN_USER}
+      MEDIAWIKI_DB_HOST: wiki-db
+      MEDIAWIKI_DB_USER: ${WIKI_DB_USER}
+      MEDIAWIKI_DB_PASSWORD: ${WIKI_DB_PASS}
+      MEDIAWIKI_DB_NAME: ${WIKI_SLUG}
+    ports:
+      - ${WIKI_HOST_PORT}:80
+    volumes:
+      - wiki-images:/var/www/html/images
+    post_start:
+      - command: /var/www/html/setup_db.sh
+        user: www-data
+      - command: php maintenance/installPreConfigured.php
+        user: www-data
+    networks: 
+      - wikinet
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.wiki_${WIKI_SLUG}.rule=Host(`${WIKI_SLUG}.${ROOT_HOST}`)"
+      - "traefik.http.routers.wiki_${WIKI_SLUG}.entrypoints=websecure"
+      - "traefik.http.services.wiki_${WIKI_SLUG}.loadbalancer.server.port=80"
+      - "traefik.http.routers.wiki_${WIKI_SLUG}.service=wiki_${WIKI_SLUG}"
+      - "traefik.http.routers.wiki_${WIKI_SLUG}.tls.certresolver=leresolver"
+
+volumes:
+  wiki-images:
+
+networks:
+  wikinet:
+    name: wikinet
+    external: true
+  proxy:
+    name: proxy
+    extenal: true

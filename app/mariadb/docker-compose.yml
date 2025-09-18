@@ -1,0 +1,20 @@
+services:
+  wiki-db:
+    image: pubwikidb:v1.0
+    volumes:
+      - wiki-db-data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${WIKI_DB_ROOT_PASSWORD}
+      MYSQL_ADMIN_USER: ${WIKI_DB_ADMIN_USER}
+      MYSQL_ADMIN_PASSWORD: ${WIKI_DB_ADMIN_PASSWORD}
+      TZ: ${WIKI_TZ}
+    restart: always
+    networks:
+      - wikinet
+
+volumes:
+  wiki-db-data:
+
+networks:
+  wikinet:
+    name: wikinet
