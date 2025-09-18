@@ -56,10 +56,10 @@ $wgEmailAuthentication = true;
 
 ## Database settings
 $wgDBtype = "mysql";
-$wgDBserver = getenv("MEDIAWIKI_DB_HOST");
-$wgDBname = getenv("MEDIAWIKI_DB_NAME");
-$wgDBuser = getenv("MEDIAWIKI_DB_USER");
-$wgDBpassword = getenv("MEDIAWIKI_DB_PASSWORD");
+$wgDBserver = getenv("WIKI_DB_HOST");
+$wgDBname = getenv("WIKI_DB_NAME");
+$wgDBuser = getenv("WIKI_DB_USER");
+$wgDBpassword = getenv("WIKI_DB_PASSWORD");
 
 # MySQL specific settings
 $wgDBprefix = "";
