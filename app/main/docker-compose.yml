@@ -21,9 +21,9 @@ services:
     post_start:
       - command: /var/www/html/setup.sh
         user: www-data
-    networks: 
-      - wikinet
+    networks:
       - proxy
+      - wikinet
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.wiki.rule=Host(`${WIKI_HOST_URL}`)"
@@ -37,8 +37,8 @@ volumes:
 
 networks:
   proxy:
-    name: proxy
-    extenal: true
+    name: proxy 
+    external: true
   wikinet:
     name: wikinet
     external: true
