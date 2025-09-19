@@ -29,7 +29,7 @@ $wgMetaNamespace = getenv('WIKI_META_NAMESPACE');
 $wgScriptPath = "";
 
 ## The protocol and server name to use in fully-qualified URLs
-$wgServer = getenv('WIKI_HOST_URL');
+$wgServer = 'https://' . getenv('WIKI_HOST');
 
 ## The URL path to static resources (images, scripts, etc.)
 $wgResourceBasePath = $wgScriptPath;
@@ -53,6 +53,17 @@ $wgEnotifUserTalk = false; # UPO
 $wgEnotifWatchlist = false; # UPO
 $wgEmailAuthentication = true;
 
+$wgAllowHTMLEmail = true;
+$wgSMTP = [
+    'host'      => getenv('WIKI_SMTP_HOST'), // could also be an IP address. Where the SMTP server is located. If using SSL or TLS, add the prefix "ssl://" or "tls://".
+    'IDHost'    => getenv('WIKI_HOST'),      // Generally this will be the domain name of your website (aka mywiki.org)
+    'localhost' => getenv('WIKI_HOST'),      // Same as IDHost above; required by some mail servers
+    'port'      => getenv('WIKI_SMTP_PORT'),                // Port to use when connecting to the SMTP server
+    'auth'      => true,               // Should we use SMTP authentication (true or false)
+    'username'  => getenv('WIKI_SMTP_USER'),     // Username to use for SMTP authentication (if being used)
+    'password'  => getenv('WIKI_SMTP_PASSWORD')       // Password to use for SMTP authentication (if being used)
+];
+$wgCookieDomain = '.' . getenv('WIKI_HOST');
 
 ## Database settings
 $wgDBtype = "mysql";
@@ -157,13 +168,13 @@ wfLoadExtension( 'PortableInfobox' );
 wfLoadExtension( 'OAuth' );
 $wgMWOAuthCentralWiki = false;
 # TODO: check if this is suitable
-$wgGroupPermissions["autoconfirm"]["mwoauthproposeconsumer"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthupdateownconsumer"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthmanageconsumer"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthsuppress"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthviewprivate"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthviewsuppressed"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthmanagemygrants"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthproposeconsumer"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthupdateownconsumer"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthmanageconsumer"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthsuppress"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthviewprivate"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthviewsuppressed"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthmanagemygrants"] = true;
 
 # Load Wikibase Repository
 wfLoadExtension( 'WikibaseRepository', "$IP/extensions/Wikibase/extension-repo.json" );
