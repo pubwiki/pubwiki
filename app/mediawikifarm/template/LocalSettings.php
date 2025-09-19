@@ -64,6 +64,7 @@ $wgDBuser = $wikiIni["WIKI_DB_USER"];
 $wgDBpassword = $wikiIni["WIKI_DB_PASSWORD"];
 
 $wgSharedDB = $wikiIni["WIKI_SHARED_DB_NAME"];
+$wgCookieDomain = '.' . $wikiIni["WIKI_ROOT_HOST"];
 
 # MySQL specific settings
 $wgDBprefix = "";
