@@ -161,13 +161,13 @@ wfLoadExtension( 'PortableInfobox' );
 wfLoadExtension( 'OAuth' );
 $wgMWOAuthCentralWiki = false;
 # TODO: check if this is suitable
-$wgGroupPermissions["autoconfirmed"]["mwoauthproposeconsumer"] = true;
-$wgGroupPermissions["autoconfirmed"]["mwoauthupdateownconsumer"] = true;
-$wgGroupPermissions["autoconfirmed"]["mwoauthmanageconsumer"] = true;
-$wgGroupPermissions["autoconfirmed"]["mwoauthsuppress"] = true;
-$wgGroupPermissions["autoconfirmed"]["mwoauthviewprivate"] = true;
-$wgGroupPermissions["autoconfirmed"]["mwoauthviewsuppressed"] = true;
-$wgGroupPermissions["autoconfirmed"]["mwoauthmanagemygrants"] = true;
+$wgGroupPermissions["oauth"]["mwoauthproposeconsumer"] = true;
+$wgGroupPermissions["oauth"]["mwoauthupdateownconsumer"] = true;
+$wgGroupPermissions["oauth"]["mwoauthmanageconsumer"] = true;
+$wgGroupPermissions["oauth"]["mwoauthsuppress"] = true;
+$wgGroupPermissions["oauth"]["mwoauthviewprivate"] = true;
+$wgGroupPermissions["oauth"]["mwoauthviewsuppressed"] = true;
+$wgGroupPermissions["oauth"]["mwoauthmanagemygrants"] = true;
 $wgOAuth2PrivateKey = "/oauth/oauth.key";
 $wgOAuth2PublicKey = "/oauth/oauth.cert";
 
