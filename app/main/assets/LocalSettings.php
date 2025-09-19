@@ -63,6 +63,7 @@ $wgSMTP = [
     'username'  => getenv('WIKI_SMTP_USER'),     // Username to use for SMTP authentication (if being used)
     'password'  => getenv('WIKI_SMTP_PASSWORD')       // Password to use for SMTP authentication (if being used)
 ];
+$wgPasswordSender = getenv("WIKI_SMTP_PASSWORD_SENDER");
 $wgCookieDomain = '.' . getenv('WIKI_HOST');
 
 ## Database settings

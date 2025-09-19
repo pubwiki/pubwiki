@@ -1,6 +1,6 @@
 services:
   wiki:
-    image: m4tsuri/pubwiki:v1.3
+    image: m4tsuri/pubwiki:v1.4
     restart: always
     environment: 
       WIKI_SITE_NAME: ${WIKI_SITE_NAME}
@@ -20,6 +20,7 @@ services:
       WIKI_SMTP_HOST: ${WIKI_SMTP_HOST}
       WIKI_SMTP_PORT: ${WIKI_SMTP_PORT}
       WIKI_SMTP_USER: ${WIKI_SMTP_USER}
+      WIKI_SMTP_PASSWORD_SENDER: ${WIKI_SMTP_PASSWORD_SENDER}
     volumes:
       - wiki-images:/var/www/html/images
     post_start:
