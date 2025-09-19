@@ -167,7 +167,7 @@ wfLoadExtension( 'PortableInfobox' );
 
 # configure OAuth
 wfLoadExtension( 'OAuth' );
-$wgMWOAuthCentralWiki = false;
+$wgMWOAuthCentralWiki = WikiMap::getCurrentWikiId();
 # TODO: check if this is suitable
 $wgGroupPermissions["autoconfirmed"]["mwoauthproposeconsumer"] = true;
 $wgGroupPermissions["autoconfirmed"]["mwoauthupdateownconsumer"] = true;
@@ -176,6 +176,8 @@ $wgGroupPermissions["autoconfirmed"]["mwoauthsuppress"] = true;
 $wgGroupPermissions["autoconfirmed"]["mwoauthviewprivate"] = true;
 $wgGroupPermissions["autoconfirmed"]["mwoauthviewsuppressed"] = true;
 $wgGroupPermissions["autoconfirmed"]["mwoauthmanagemygrants"] = true;
+$wgOAuth2PrivateKey = "/oauth/oauth.key";
+$wgOAuth2PublicKey = "/oauth/oauth.cert";
 
 # Load Wikibase Repository
 wfLoadExtension( 'WikibaseRepository', "$IP/extensions/Wikibase/extension-repo.json" );

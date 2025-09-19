@@ -73,6 +73,15 @@ GRANT SELECT, UPDATE ON ${WIKI_SHARED_DB_NAME}.user_properties TO '${MEDIAWIKI_D
 FLUSH PRIVILEGES;
 ```
 
+生成OAuth Token
+
+```sh
+mkdir /oauth && cd /oauth
+openssl genrsa -out oauth.key 2048
+openssl rsa -in oautn.key -pubout -out oauth.cert
+chown -R www-data:www-data .
+```
+
 初始化站点并创建管理员账号
 
 ```sh

@@ -161,13 +161,15 @@ wfLoadExtension( 'PortableInfobox' );
 wfLoadExtension( 'OAuth' );
 $wgMWOAuthCentralWiki = false;
 # TODO: check if this is suitable
-$wgGroupPermissions["autoconfirm"]["mwoauthproposeconsumer"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthupdateownconsumer"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthmanageconsumer"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthsuppress"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthviewprivate"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthviewsuppressed"] = true;
-$wgGroupPermissions["autoconfirm"]["mwoauthmanagemygrants"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthproposeconsumer"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthupdateownconsumer"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthmanageconsumer"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthsuppress"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthviewprivate"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthviewsuppressed"] = true;
+$wgGroupPermissions["autoconfirmed"]["mwoauthmanagemygrants"] = true;
+$wgOAuth2PrivateKey = "/oauth/oauth.key";
+$wgOAuth2PublicKey = "/oauth/oauth.cert";
 
 # Load Wikibase Repository
 wfLoadExtension( 'WikibaseRepository', "$IP/extensions/Wikibase/extension-repo.json" );
