@@ -20,7 +20,7 @@ services:
   
   php:
     image: mediawiki:1.44-fpm
-    name: mediawikifarm
+    container_name: mediawikifarm
     volumes:
       - ${HOST_WIKIS_DIR}/sites:/srv/wikis:rw
       - ${HOST_WIKIS_DIR}/oauth:/oauth:ro

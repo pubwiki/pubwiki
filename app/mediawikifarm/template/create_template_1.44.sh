@@ -6,10 +6,15 @@ if [ ! -d /template ];then
     exit 127;
 fi
 
-wget -O /tmp/mediawiki-1.44.0.tar.gz https://releases.wikimedia.org/mediawiki/1.44/mediawiki-1.44.0.tar.gz
-tar -xzf /tmp/mediawiki-1.44.0.tar.gz -C /template
+if [ ! -d /oauth ];then
+    echo "Please mount host dir to /oauth first";
+    exit 127;
+fi
 
-IP=/template/mediawiki-1.44.0
+wget -O /tmp/mediawiki-1.44.0.tar.gz https://releases.wikimedia.org/mediawiki/1.44/mediawiki-1.44.0.tar.gz
+tar -xzf /tmp/mediawiki-1.44.0.tar.gz -C /template --strip-components=1
+
+IP=/template
 
 cd $IP
 curl https://github.com/wikimedia/mediawiki/commit/54d2416f.patch | git apply
@@ -34,5 +39,9 @@ cp /LocalSettings.php .
 chmod 644 LocalSettings.php
 cp /pubwiki.ini .
 chmod 644 pubwiki.ini
+
+cd /oauth
+openssl genrsa -out oauth.key 2048
+openssl rsa -in oauth.key -pubout -out oauth.cert
 
 echo "Creation of template has finished"
