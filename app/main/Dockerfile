@@ -23,3 +23,5 @@ RUN chmod 644 LocalSettings.php && chown www-data:www-data LocalSettings.php
 
 COPY assets/setup.sh /var/www/html/setup.sh
 RUN chown www-data:www-data /var/www/html/setup.sh && chmod +x /var/www/html/setup.sh
+
+RUN mkdir /oauth && chown www-data:www-data /oauth

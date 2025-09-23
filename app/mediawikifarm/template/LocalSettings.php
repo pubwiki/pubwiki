@@ -59,11 +59,12 @@ $wgEmailAuthentication = true;
 ## Database settings
 $wgDBtype = "mysql";
 $wgDBserver = $wikiIni["WIKI_DB_HOST"];
-$wgDBname = $wikiIni["WIKI_DB_NAME"];
-$wgDBuser = $wikiIni["WIKI_DB_USER"];
+$wgDBname = $wikiIni["WIKI_SLUG"];
+$wgDBuser = $wikiIni["WIKI_SLUG"];
 $wgDBpassword = $wikiIni["WIKI_DB_PASSWORD"];
 
 $wgSharedDB = $wikiIni["WIKI_SHARED_DB_NAME"];
+$wgCookieDomain = '.' . $wikiIni["WIKI_ROOT_HOST"];
 
 # MySQL specific settings
 $wgDBprefix = "";
@@ -168,8 +169,8 @@ $wgGroupPermissions["oauth"]["mwoauthsuppress"] = true;
 $wgGroupPermissions["oauth"]["mwoauthviewprivate"] = true;
 $wgGroupPermissions["oauth"]["mwoauthviewsuppressed"] = true;
 $wgGroupPermissions["oauth"]["mwoauthmanagemygrants"] = true;
-$wgOAuth2PrivateKey = "/oauth/oauth.key";
-$wgOAuth2PublicKey = "/oauth/oauth.cert";
+$wgOAuth2PrivateKey = "/oauth/" . $wikiIni["WIKI_SLUG"] . "/oauth.key";
+$wgOAuth2PublicKey = "/oauth/" . $wikiIni["WIKI_SLUG"] . "/oauth.cert";
 
 # Load Wikibase Repository
 wfLoadExtension( 'WikibaseRepository', "$IP/extensions/Wikibase/extension-repo.json" );
@@ -199,4 +200,34 @@ $wgExtraLanguageNames['qqq'] = 'Message documentation'; # No linguistic content.
 
 wfLoadExtension( 'UniversalLanguageSelector' );
 
+wfLoadExtension( 'Elastica' );
+wfLoadExtension( 'CirrusSearch' );
+$wgCirrusSearchServers = [[
+  'host'      => $wikiIni["OPENSEARCH_ENDPOINT"], // 你的域名（不带 https://）
+  'port'      => 443,
+  'transport' => 'Https',
+  'username'  => $wikiIni["OPENSEARCH_USER"],              // 你在 Dashboards 里创建的用户
+  'password'  => $wikiIni["OPENSEARCH_PASSWORD"]
+]];
+
+$wgCirrusSearchIndexBaseName = $wikiIni["WIKI_DB_NAME"];
+$wgSearchType = 'CirrusSearch';
+
+$redisPassword = $wikiIni["REDIS_PASSWORD"];
+$wgJobTypeConf['default'] = [
+  'class' => 'JobQueueRedis',
+  'order' => 'fifo',
+  'redisServer' => $wikiIni["REDIS_SERVER"],
+  'checkDelay' => true,
+  'redisConfig' => [
+    'password' => $redisPassword,
+  ],
+];
+
+$wgGitInfoCacheDirectory = "$IP/cache/gitinfo";
 $wgShowExceptionDetails = true;
+
+if ($wikiIni["WIKI_BOOTSTRAPING"]) {
+  $wgSharedTables = [];
+  $wgDisableSearchUpdate = true;
+}

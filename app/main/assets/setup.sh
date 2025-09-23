@@ -10,7 +10,7 @@ EOF
 
 echo "MySQL DB setup finished";
 
-mkdir /oauth && cd /oauth
+cd /oauth
 openssl genrsa -out oauth.key 2048
 openssl rsa -in oauth.key -pubout -out oauth.cert
 chown -R www-data:www-data .

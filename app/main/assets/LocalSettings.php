@@ -188,3 +188,5 @@ wfLoadExtension( 'WikibaseClient', "$IP/extensions/Wikibase/extension-client.jso
 require_once "$IP/extensions/Wikibase/client/ExampleSettings.php";
 
 $wgShowExceptionDetails = true;
+
+wfLoadExtension( 'WikiFarm' );
