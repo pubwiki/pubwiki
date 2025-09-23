@@ -6,7 +6,7 @@ api:
   dashboard: true
   debug: false
 
-accessLog: {}
+# accessLog: {}
 
 log:
   level: INFO
