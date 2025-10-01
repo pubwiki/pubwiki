@@ -1,0 +1,26 @@
+{
+    "allow": {
+        "*": [
+            "createaccount",
+            "edit"
+        ],
+        "oauth": [
+            "mwoauthproposeconsumer",
+            "mwoauthupdateownconsumer",
+            "mwoauthmanageconsumer",
+            "mwoauthsuppress",
+            "mwoauthviewprivate",
+            "mwoauthviewsuppressed",
+            "mwoauthmanagemygrants"
+        ],
+        "translator": [
+            "translate",
+            "translate-messagereview",
+            "translate-groupreview",
+            "translate-import",
+            "pagetranslation",
+            "translate-manage"
+        ]
+    },
+    "deny": {}
+}

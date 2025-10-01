@@ -1,0 +1,33 @@
+{
+    "DomainName": "pubwiki",
+    "EngineVersion": "OpenSearch_1.3",
+    "ClusterConfig": {
+        "InstanceType": "t3.medium.search",
+        "InstanceCount": 1,
+            "DedicatedMasterEnabled": false,
+            "ZoneAwarenessEnabled": false,
+            "WarmEnabled": false
+        },
+    "EBSOptions": {
+        "EBSEnabled": true,
+        "VolumeType": "gp2",
+        "VolumeSize": 10
+    },
+    "EncryptionAtRestOptions": {
+        "Enabled": true
+    },
+    "NodeToNodeEncryptionOptions": {
+        "Enabled": true
+    },
+    "DomainEndpointOptions": {
+        "EnforceHTTPS": true
+    },
+    "AdvancedSecurityOptions": {
+        "Enabled": true,
+        "InternalUserDatabaseEnabled": true,
+        "MasterUserOptions": {
+            "MasterUserName": "pubwiki",
+            "MasterUserPassword": "really-secure-password"
+        }
+    }
+}

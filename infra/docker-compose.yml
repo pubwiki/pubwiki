@@ -34,13 +34,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     labels:
-      # Frontend
       - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`portainer.${ROOT_HOST}`)"
-      - "traefik.http.routers.frontend.entrypoints=websecure"
-      - "traefik.http.services.frontend.loadbalancer.server.port=9000"
-      - "traefik.http.routers.frontend.service=frontend"
-      - "traefik.http.routers.frontend.tls.certresolver=cloudflare"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.${WIKI_HOST}`)"
+      - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+      - "traefik.http.routers.portainer.service=portainer"
+      - "traefik.http.routers.portainer.tls.certresolver=cloudflare"
 
 networks:
   proxy:

@@ -18,7 +18,8 @@ if ( !defined( 'MEDIAWIKI' ) ) {
 ## Uncomment this to disable output compression
 # $wgDisableOutputCompression = true;
 
-$wikiIni = parse_ini_file("pubwiki.ini");
+$wikiSlug = parse_ini_file("slug.ini")["WIKI_SLUG"];
+$wikiIni = parse_ini_file('/config/' . $wikiSlug . "/pubwiki.ini");
 
 $wgSitename = $wikiIni['WIKI_SITE_NAME'];
 $wgMetaNamespace = $wikiIni['WIKI_META_NAMESPACE'];
@@ -29,6 +30,8 @@ $wgMetaNamespace = $wikiIni['WIKI_META_NAMESPACE'];
 ## (like /w/index.php/Page_title to /wiki/Page_title) please see:
 ## https://www.mediawiki.org/wiki/Manual:Short_URL
 $wgScriptPath = "";
+$wgArticlePath = "/wiki/$1";
+$wgUsePathInfo = true;
 
 ## The protocol and server name to use in fully-qualified URLs
 $wgServer = $wikiIni['WIKI_HOST_URL'];
@@ -59,12 +62,12 @@ $wgEmailAuthentication = true;
 ## Database settings
 $wgDBtype = "mysql";
 $wgDBserver = $wikiIni["WIKI_DB_HOST"];
-$wgDBname = $wikiIni["WIKI_SLUG"];
-$wgDBuser = $wikiIni["WIKI_SLUG"];
+$wgDBname = $wikiSlug;
+$wgDBuser = $wikiSlug;
 $wgDBpassword = $wikiIni["WIKI_DB_PASSWORD"];
 
 $wgSharedDB = $wikiIni["WIKI_SHARED_DB_NAME"];
-$wgCookieDomain = '.' . $wikiIni["WIKI_ROOT_HOST"];
+$wgCookieDomain = '.' . $wikiIni["WIKI_HOST"];
 
 # MySQL specific settings
 $wgDBprefix = "";
@@ -126,13 +129,12 @@ $wgRightsIcon = "$wgResourceBasePath/resources/assets/licenses/cc-by-sa.png";
 # Path to the GNU diff3 utility. Used for conflict resolution.
 $wgDiff3 = "/usr/bin/diff3";
 
-# The following permissions were set based on your choice in the installer
-$wgGroupPermissions["*"]["createaccount"] = true;
-$wgGroupPermissions["*"]["edit"] = true;
-
 ## Default skin: you can change the default skin. Use the internal symbolic
 ## names, e.g. 'vector' or 'monobook':
-$wgDefaultSkin = "minerva";
+$wgDefaultSkin = 'vector-2022';
+
+wfLoadExtension( 'MobileFrontend' );
+$wgDefaultMobileSkin = 'minerva';
 
 # Enabled skins.
 # The following skins were automatically enabled:
@@ -161,16 +163,8 @@ wfLoadExtension( 'PortableInfobox' );
 # configure OAuth
 wfLoadExtension( 'OAuth' );
 $wgMWOAuthCentralWiki = false;
-# TODO: check if this is suitable
-$wgGroupPermissions["oauth"]["mwoauthproposeconsumer"] = true;
-$wgGroupPermissions["oauth"]["mwoauthupdateownconsumer"] = true;
-$wgGroupPermissions["oauth"]["mwoauthmanageconsumer"] = true;
-$wgGroupPermissions["oauth"]["mwoauthsuppress"] = true;
-$wgGroupPermissions["oauth"]["mwoauthviewprivate"] = true;
-$wgGroupPermissions["oauth"]["mwoauthviewsuppressed"] = true;
-$wgGroupPermissions["oauth"]["mwoauthmanagemygrants"] = true;
-$wgOAuth2PrivateKey = "/oauth/" . $wikiIni["WIKI_SLUG"] . "/oauth.key";
-$wgOAuth2PublicKey = "/oauth/" . $wikiIni["WIKI_SLUG"] . "/oauth.cert";
+$wgOAuth2PrivateKey = "/oauth/" . $wikiSlug . "/oauth.key";
+$wgOAuth2PublicKey = "/oauth/" . $wikiSlug . "/oauth.cert";
 
 # Load Wikibase Repository
 wfLoadExtension( 'WikibaseRepository', "$IP/extensions/Wikibase/extension-repo.json" );
@@ -189,12 +183,6 @@ $wgCCUserFilter = false;
 $wgDefaultUserOptions['usenewrc'] = 1;
 
 wfLoadExtension( 'Translate' );
-$wgGroupPermissions['user']['translate'] = true;
-$wgGroupPermissions['user']['translate-messagereview'] = true;
-$wgGroupPermissions['user']['translate-groupreview'] = true;
-$wgGroupPermissions['user']['translate-import'] = true;
-$wgGroupPermissions['sysop']['pagetranslation'] = true;
-$wgGroupPermissions['sysop']['translate-manage'] = true;
 $wgTranslateDocumentationLanguageCode = 'qqq';
 $wgExtraLanguageNames['qqq'] = 'Message documentation'; # No linguistic content. Used for documenting messages
 
@@ -210,10 +198,15 @@ $wgCirrusSearchServers = [[
   'password'  => $wikiIni["OPENSEARCH_PASSWORD"]
 ]];
 
-$wgCirrusSearchIndexBaseName = $wikiIni["WIKI_DB_NAME"];
+$wgCirrusSearchIndexBaseName = $wikiSlug;
 $wgSearchType = 'CirrusSearch';
 
 $redisPassword = $wikiIni["REDIS_PASSWORD"];
+$wgObjectCaches['redis'] = [
+    'class'             => 'RedisBagOStuff',
+    'servers'           => [ $wikiIni["REDIS_SERVER"] ],
+    'password'          => $redisPassword,
+];
 $wgJobTypeConf['default'] = [
   'class' => 'JobQueueRedis',
   'order' => 'fifo',
@@ -222,12 +215,49 @@ $wgJobTypeConf['default'] = [
   'redisConfig' => [
     'password' => $redisPassword,
   ],
+  'daemonized'     => true
 ];
 
+wfLoadExtension( 'CSS' );
+$wgCSSPath = false;
+
+wfLoadExtension( 'Analytics' );
+
+wfLoadExtension( 'VisualEditor' );
+// Optional: Set VisualEditor as the default editor for logged-out users
+// otherwise they will have to switch to VE
+$wgDefaultUserOptions['visualeditor-editor'] = "visualeditor";
+// Optional: Don't allow users to disable it
+$wgHiddenPrefs[] = 'visualeditor-enable';
+// Optional: Enable VisualEditor's experimental code features
+$wgDefaultUserOptions['visualeditor-enable-experimental'] = 1;
+// Activate ONLY the 2017 wikitext editor by default
+$wgDefaultUserOptions['visualeditor-autodisable'] = false;
+$wgDefaultUserOptions['visualeditor-newwikitext'] = 1;
+
+wfLoadExtension( 'AWS' );
+$wgAWSRegion = $wikiIni["WIKI_AWS_REGION"];
+$wgAWSBucketName = $wikiIni["WIKI_SHARED_DB_NAME"];
+$wgAWSBucketTopSubdirectory = "/$wgDBname";
+
+wfLoadExtension( 'SemanticMediaWiki' );
+enableSemantics( $wikiSlug . $wikiIni["WIKI_HOST"] );
+$smwgConfigFileDir = "/config/" . $wikiSlug;
+
+wfLoadExtension( 'ApprovedRevs' );
+
+require_once "/config/" . $wikiSlug . "/permissions.php";
+
 $wgGitInfoCacheDirectory = "$IP/cache/gitinfo";
-$wgShowExceptionDetails = true;
 
 if ($wikiIni["WIKI_BOOTSTRAPING"]) {
   $wgSharedTables = [];
   $wgDisableSearchUpdate = true;
+}
+
+if ($wikiIni["WIKI_DEBUGGING"]) {
+  $wgShowExceptionDetails = true;
+  $wgDebugLogFile = "/tmp/debug-{$wgDBname}.log";
+  $wgDebugLogGroups['rdbms'] = "/tmp/rdbms-{$wgDBname}.log";
+  $wgDebugLogGroups['silenced-error'] = "/tmp/silenced-{$wgDBname}.log";
 }
