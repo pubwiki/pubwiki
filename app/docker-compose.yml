@@ -54,17 +54,20 @@ services:
       WIKI_DB_HOST: ${WIKI_DB_HOST}
       WIKI_SHARED_DB_NAME: ${MAINWIKI_DB_NAME}
       OPENSEARCH_USER: ${OPENSEARCH_USER}
+      OPENSEARCH_PORT: ${OPENSEARCH_PORT}
+      OPENSEARCH_TRANSPORT: ${OPENSEARCH_TRANSPORT}
       OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
       OPENSEARCH_ENDPOINT: ${OPENSEARCH_ENDPOINT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_SERVER: redis
       RUST_LOG: debug
       RUST_BACKTRACE: 1
+      WIKI_AWS_REGION: ${WIKI_AWS_REGION}
     networks:
       - wikinet
       - proxy
     volumes:
-      - wikifarm-wikis:/srv/wikis
+      - wikifarm-wikis:/srv/wikis:rw
       - wikifarm-oauth:/oauth
       - wikifarm-config:/config
       - ${HOST_TEMPLATE_DIR}:/template:ro
@@ -103,6 +106,8 @@ services:
       WIKI_SMTP_PORT: ${WIKI_SMTP_PORT}
       WIKI_SMTP_USER: ${WIKI_SMTP_USER}
       WIKI_SMTP_PASSWORD_SENDER: ${WIKI_SMTP_PASSWORD_SENDER}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_SERVER: redis
     volumes:
       - wiki-images:/var/www/html/images
       - ${WIKIFARM_EXTENSION_DIR}:/var/www/html/extensions/WikiFarm

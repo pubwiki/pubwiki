@@ -22,5 +22,9 @@
             "translate-manage"
         ]
     },
-    "deny": {}
+    "deny": {
+        "*": [
+            "editmyprivateinfo"
+        ]
+    }
 }

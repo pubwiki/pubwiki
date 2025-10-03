@@ -4,10 +4,10 @@
     "ClusterConfig": {
         "InstanceType": "t3.medium.search",
         "InstanceCount": 1,
-            "DedicatedMasterEnabled": false,
-            "ZoneAwarenessEnabled": false,
-            "WarmEnabled": false
-        },
+        "DedicatedMasterEnabled": false,
+        "ZoneAwarenessEnabled": false,
+        "WarmEnabled": false
+    },
     "EBSOptions": {
         "EBSEnabled": true,
         "VolumeType": "gp2",

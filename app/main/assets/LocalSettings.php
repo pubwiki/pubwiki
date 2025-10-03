@@ -139,7 +139,10 @@ $wgGroupPermissions["*"]["edit"] = true;
 
 ## Default skin: you can change the default skin. Use the internal symbolic
 ## names, e.g. 'vector' or 'monobook':
-$wgDefaultSkin = "minerva";
+$wgDefaultSkin = 'vector-2022';
+
+wfLoadExtension( 'MobileFrontend' );
+$wgDefaultMobileSkin = 'minerva';
 
 # Enabled skins.
 # The following skins were automatically enabled:
@@ -157,7 +160,7 @@ wfLoadExtension( 'CategoryTree' );
 
 # Built-in extension
 wfLoadExtension( 'Scribunto' ); 
-$wgScribuntoDefaultEngine = 'luastandalone';
+$wgScribuntoDefaultEngine = 'luasandbox';
 
 # Built-in extension
 wfLoadExtension( 'TemplateStyles' );
@@ -186,6 +189,55 @@ require_once "$IP/extensions/Wikibase/repo/ExampleSettings.php";
 # Load Wikibase Client
 wfLoadExtension( 'WikibaseClient', "$IP/extensions/Wikibase/extension-client.json" );
 require_once "$IP/extensions/Wikibase/client/ExampleSettings.php";
+
+wfLoadExtension( 'Babel' );
+
+wfLoadExtension( 'cldr' );
+
+$wgCCTrailerFilter = true;
+$wgCCUserFilter = false;
+$wgDefaultUserOptions['usenewrc'] = 1;
+
+wfLoadExtension( 'Translate' );
+$wgTranslateDocumentationLanguageCode = 'qqq';
+$wgExtraLanguageNames['qqq'] = 'Message documentation'; # No linguistic content. Used for documenting messages
+
+wfLoadExtension( 'UniversalLanguageSelector' );
+
+$redisPassword = getenv("REDIS_PASSWORD");
+$wgObjectCaches['redis'] = [
+    'class'             => 'RedisBagOStuff',
+    'servers'           => [ getenv("REDIS_SERVER") ],
+    'password'          => $redisPassword,
+];
+$wgJobTypeConf['default'] = [
+  'class' => 'JobQueueRedis',
+  'order' => 'fifo',
+  'redisServer' => getenv("REDIS_SERVER"),
+  'checkDelay' => true,
+  'redisConfig' => [
+    'password' => $redisPassword,
+  ],
+  'daemonized'     => true
+];
+
+
+wfLoadExtension( 'CSS' );
+$wgCSSPath = false;
+
+wfLoadExtension( 'Analytics' );
+
+wfLoadExtension( 'VisualEditor' );
+// Optional: Set VisualEditor as the default editor for logged-out users
+// otherwise they will have to switch to VE
+$wgDefaultUserOptions['visualeditor-editor'] = "visualeditor";
+// Optional: Don't allow users to disable it
+$wgHiddenPrefs[] = 'visualeditor-enable';
+// Optional: Enable VisualEditor's experimental code features
+$wgDefaultUserOptions['visualeditor-enable-experimental'] = 1;
+// Activate ONLY the 2017 wikitext editor by default
+$wgDefaultUserOptions['visualeditor-autodisable'] = false;
+$wgDefaultUserOptions['visualeditor-newwikitext'] = 1;
 
 $wgShowExceptionDetails = true;
 

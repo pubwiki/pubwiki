@@ -19,9 +19,9 @@ mv /extensions/* .
 
 cd $IP
 cp /LocalSettings.php .
-cp /permission.json .
+cp /permissions.json .
 cp /composer.local.json .
-composer update --no-dev --ignore-platform-req=ext-calendar --ignore-platform-req=ext-intl
+composer update --no-dev
 
 chmod 644 LocalSettings.php
 

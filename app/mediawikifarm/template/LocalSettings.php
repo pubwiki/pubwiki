@@ -107,7 +107,7 @@ $wgLocaltimezone = "UTC";
 ## Set $wgCacheDirectory to a writable directory on the web server
 ## to make your wiki go slightly faster. The directory should not
 ## be publicly accessible from the web.
-#$wgCacheDirectory = "$IP/cache";
+$wgCacheDirectory = "/tmp/mediawiki/$wikiSlug";
 
 $wgSecretKey = "d6a2ef0fb399f7b0fab6b257e849b3f8dffeeab8d05ef87d72e2f280ad10d886";
 
@@ -152,7 +152,7 @@ wfLoadExtension( 'CategoryTree' );
 
 # Built-in extension
 wfLoadExtension( 'Scribunto' ); 
-$wgScribuntoDefaultEngine = 'luastandalone';
+$wgScribuntoDefaultEngine = 'luasandbox';
 
 # Built-in extension
 wfLoadExtension( 'TemplateStyles' );
@@ -192,8 +192,8 @@ wfLoadExtension( 'Elastica' );
 wfLoadExtension( 'CirrusSearch' );
 $wgCirrusSearchServers = [[
   'host'      => $wikiIni["OPENSEARCH_ENDPOINT"], // 你的域名（不带 https://）
-  'port'      => 443,
-  'transport' => 'Https',
+  'port'      => $wikiIni["OPENSEARCH_PORT"],
+  'transport' => $wikiIni["OPENSEARCH_TRANSPORT"],
   'username'  => $wikiIni["OPENSEARCH_USER"],              // 你在 Dashboards 里创建的用户
   'password'  => $wikiIni["OPENSEARCH_PASSWORD"]
 ]];
@@ -255,9 +255,10 @@ if ($wikiIni["WIKI_BOOTSTRAPING"]) {
   $wgDisableSearchUpdate = true;
 }
 
+$wgDebugLogGroups['exception'] = "/tmp/exception-{$wgDBname}.log";
+
 if ($wikiIni["WIKI_DEBUGGING"]) {
   $wgShowExceptionDetails = true;
   $wgDebugLogFile = "/tmp/debug-{$wgDBname}.log";
-  $wgDebugLogGroups['rdbms'] = "/tmp/rdbms-{$wgDBname}.log";
   $wgDebugLogGroups['silenced-error'] = "/tmp/silenced-{$wgDBname}.log";
 }

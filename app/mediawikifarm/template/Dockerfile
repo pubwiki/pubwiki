@@ -1,6 +1,14 @@
-FROM composer:latest
+FROM mediawiki:1.44-fpm
 
-RUN apk add --no-cache git wget tar curl openssl
+RUN apt-get update \
+    && apt-get install -y git wget tar curl openssl zip
+
+WORKDIR /tmp
+RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
+    && php -r "if (hash_file('sha384', 'composer-setup.php') === 'ed0feb545ba87161262f2d45a633e34f591ebb3381f2e0063c345ebea4d228dd0043083717770234ec00c5a9f9593792') { echo 'Installer verified'.PHP_EOL; } else { echo 'Installer corrupt'.PHP_EOL; unlink('composer-setup.php'); exit(1); }" \
+    && php composer-setup.php \
+    && php -r "unlink('composer-setup.php');" \
+    && mv composer.phar /usr/local/bin/composer
 
 WORKDIR /extensions
 RUN git clone https://github.com/Universal-Omega/PortableInfobox.git --depth=1 && \
