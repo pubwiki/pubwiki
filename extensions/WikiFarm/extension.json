@@ -1,0 +1,120 @@
+{
+  "name": "WikiFarm",
+  "author": [
+    "YourName"
+  ],
+  "version": "0.1.0",
+  "url": "https://example.org",
+  "descriptionmsg": "wikifarm-desc",
+  "manifest_version": 2,
+  "requires": {
+    "MediaWiki": ">= 1.44.0"
+  },
+  "type": "specialpage",
+  "license-name": "MIT",
+  "AutoloadNamespaces": {
+    "MediaWiki\\Extension\\WikiFarm\\": "includes/"
+  },
+  "MessagesDirs": {
+    "WikiFarm": [
+      "i18n"
+    ]
+  },
+  "SpecialPages": {
+    "WikiFarm": "MediaWiki\\Extension\\WikiFarm\\SpecialWikiFarm"
+  },
+  "Hooks": {
+    "LoadExtensionSchemaUpdates": "MediaWiki\\Extension\\WikiFarm\\Hooks::onLoadExtensionSchemaUpdates"
+  },
+  "ResourceFileModulePaths": {
+    "localBasePath": "resources",
+    "remoteExtPath": "WikiFarm/resources"
+  },
+  "ResourceModules": {
+    "ext.wikifarm.ui": {
+      "packageFiles": [
+        "ext.wikifarm/src/main.js",
+        "ext.wikifarm/src/App.vue"
+      ],
+      "styles": [
+        "ext.wikifarm/ui.less"
+      ],
+      "class": "MediaWiki\\ResourceLoader\\CodexModule",
+      "codexComponents": [
+        "CdxField",
+        "CdxTextInput",
+        "CdxSelect",
+        "CdxButton",
+        "CdxMessage",
+        "CdxProgressBar"
+      ],
+      "messages": [
+        "wikifarm-desc",
+        "wikifarm",
+        "wikifarm-title",
+        "wikifarm-login-title",
+        "wikifarm-featured-title",
+        "wikifarm-mywikis-title",
+        "wikifarm-create-title",
+        "wikifarm-create-name",
+        "wikifarm-create-slug",
+        "wikifarm-create-language",
+        "wikifarm-create-template",
+        "wikifarm-create-visibility",
+        "wikifarm-visibility-public",
+        "wikifarm-visibility-private",
+        "wikifarm-visibility-unlisted",
+        "wikifarm-create-submit",
+        "wikifarm-sse-connecting",
+        "wikifarm-sse-completed",
+        "wikifarm-sse-failed",
+        "wikifarm-loading",
+        "wikifarm-featured-empty",
+        "wikifarm-mywikis-empty",
+        "wikifarm-create-error",
+        "wikifarm-invalid-slug",
+        "wikifarm-slug-help",
+        "wikifarm-error-field",
+        "wikifarm-login-link",
+        "wikifarm-login-username",
+        "wikifarm-login-password",
+        "wikifarm-login-remember",
+        "wikifarm-login-submit",
+        "wikifarm-login-failed",
+        "wikifarm-create-progress",
+        "wikifarm-load-failed",
+        "wikifarm-public-title",
+        "wikifarm-public-empty",
+        "wikifarm-slug-checking",
+        "wikifarm-slug-exists",
+        "wikifarm-slug-available"
+      ],
+      "dependencies": [
+        "vue",
+        "mediawiki.api",
+        "mediawiki.util",
+        "mediawiki.user"
+      ]
+    }
+  },
+  "RestRoutes": [
+    {
+      "path": "/wikifarm/v1/auth/check",
+      "method": "GET",
+      "class": "MediaWiki\\Extension\\WikiFarm\\Rest\\AuthCheckHandler"
+    }
+  ],
+  "Rights": [
+    "create-wiki",
+    "manage-wiki-perms"
+  ],
+  "GroupPermissions": {
+    "user": {
+      "create-wiki": true
+    },
+    "sysop": {
+      "manage-wiki-perms": true
+    }
+  },
+  "config": {}
+}

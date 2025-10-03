@@ -1,0 +1,332 @@
+openapi: 3.0.3
+info:
+  title: WikiFarm Service API
+  version: 0.1.0
+  description: API for creating and listing wikis with SSE-based task progress.
+servers:
+  - url: /provisioner/v1
+  - url: /manage/v1
+paths:
+  /wikis:
+    post:
+      summary: Create a new wiki (async)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWikiRequest'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task_id:
+                    type: string
+        '400': { description: Bad Request }
+        '409': { description: Conflict }
+        '500': { description: Internal Server Error }
+  /wikis/public:
+    get:
+      summary: List public wikis (visibility=public, status=ready)
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wikis:
+                    type: array
+                    items: { $ref: '#/components/schemas/Wiki' }
+                  next_offset:
+                    type: integer
+        '500': { description: Internal Server Error }
+  /wikis/slug/{slug}/exists:
+    get:
+      summary: Check if a slug already exists
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{3,120}$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  slug: { type: string }
+                  exists: { type: boolean }
+        '400': { description: Invalid slug }
+        '500': { description: Internal Server Error }
+    get:
+      summary: List featured wikis
+      parameters:
+        - in: query
+          name: featured
+          schema: { type: integer, enum: [0,1], default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wikis:
+                    type: array
+                    items: { $ref: '#/components/schemas/Wiki' }
+                  next_offset:
+                    type: integer
+        '500': { description: Internal Server Error }
+  /users/{user_id}/wikis:
+    get:
+      summary: List wikis created by a user
+      parameters:
+        - in: path
+          name: user_id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  wikis:
+                    type: array
+                    items: { $ref: '#/components/schemas/Wiki' }
+        '500': { description: Internal Server Error }
+  /tasks/{task_id}/events:
+    get:
+      summary: Server-Sent Events stream for task progress
+      parameters:
+        - in: path
+          name: task_id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: text/event-stream with progress/status events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE stream, events named `progress` or `status`.
+                  Each event's data is a JSON object of `TaskEvent`.
+              examples:
+                progress:
+                  summary: Progress event
+                  value: |-
+                    event: progress
+                    data: {"type":"progress","status":"running","progress":60,"message":"install site","phase":"docker_install"}
+                status:
+                  summary: Final status event
+                  value: |-
+                    event: status
+                    data: {"type":"status","status":"succeeded","wiki_id":123}
+        '404': { description: Task not found }
+        '500': { description: Internal Server Error }
+components:
+  schemas:
+    TaskEvent:
+      oneOf:
+        - $ref: '#/components/schemas/TaskProgress'
+        - $ref: '#/components/schemas/TaskStatus'
+    TaskStatusEnum:
+      type: string
+      enum: [queued, running, succeeded, failed]
+    TaskPhaseEnum:
+      type: string
+      enum: [dir_copy, render_ini, db_provision, oauth, docker_install, docker_index_cfg, flip_bootstrap, index]
+    TaskProgress:
+      type: object
+      properties:
+        type: { type: string, enum: [progress] }
+        status: { $ref: '#/components/schemas/TaskStatusEnum' }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        message: { type: string }
+        phase: { $ref: '#/components/schemas/TaskPhaseEnum' }
+      required: [type, status, progress]
+    TaskStatus:
+      type: object
+      properties:
+        type: { type: string, enum: [status] }
+        status: { $ref: '#/components/schemas/TaskStatusEnum' }
+        wiki_id: { type: integer }
+        message: { type: string }
+      required: [type, status]
+    CreateWikiRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 190 }
+        slug: { type: string, pattern: '^[a-z0-9-]{3,120}$' }
+        language: { type: string, minLength: 2, maxLength: 32 }
+        template: { type: string }
+        visibility:
+          type: string
+          enum: [public, private, unlisted]
+          default: public
+        owner:
+          type: object
+          required: [id, username]
+          properties:
+            id: { type: integer }
+            username: { type: string }
+    Wiki:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        domain: { type: string, nullable: true }
+        path: { type: string, nullable: true }
+        language: { type: string }
+        owner_user_id: { type: integer }
+        owner_username: { type: string }
+        visibility: { type: string, enum: [public, private, unlisted] }
+        status: { type: string, enum: [pending, ready, failed, deleting] }
+        is_featured: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    PermissionsBody:
+      type: object
+      description: Group permission specification (allow overrides default, deny explicitly blocks).
+      properties:
+        allow:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        deny:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+      required: [allow]
+    SyncResult:
+      type: object
+      properties:
+        created:
+          type: array
+          items: { type: string }
+        skipped:
+          type: array
+          items: { type: string }
+        missing:
+          type: array
+          items: { type: string }
+    BasicMessage:
+      type: object
+      properties:
+        msg: { type: string }
+
+paths:
+  /manage/v1/wikis/{slug}/permissions:
+    get:
+      summary: Get wiki group permissions (allow & deny)
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{3,120}$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PermissionsBody' }
+        '404': { description: Wiki not found }
+        '500': { description: Internal Server Error }
+    post:
+      summary: Replace all wiki group permissions (owner only)
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{3,120}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PermissionsBody' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BasicMessage' }
+        '400': { description: Validation error }
+        '403': { description: Not owner }
+        '404': { description: Wiki not found }
+        '500': { description: Internal Server Error }
+  /manage/v1/wikis/{slug}/extensions/sync:
+    post:
+      summary: Symlink selected extensions from template into the wiki instance (idempotent)
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{3,120}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { type: string }
+      responses:
+        '200':
+          description: Result of sync operation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncResult' }
+        '400': { description: Invalid slug }
+        '500': { description: Internal Server Error }
+  /manage/v1/wikis/{slug}/skins/sync:
+    post:
+      summary: Symlink selected skins from template into the wiki instance (idempotent)
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{3,120}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { type: string }
+      responses:
+        '200':
+          description: Result of sync operation
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncResult' }
+        '400': { description: Invalid slug }
+        '500': { description: Internal Server Error }

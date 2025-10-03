@@ -1,93 +1,89 @@
-## 部署流程
+# Portal Monorepo
 
-文件结构如下：
+- extension/: MediaWiki extension (UI + REST proxy + schema)
+- service/: Rust microservice (API + tasks + SSE)
 
-```
-- $WORKDIR
-  - app
-    - mariadb
-    - mediawikifarm
-  - infra
-    - .env
-```
+## Provisioning Roadmap (Wiki Creation)
 
-### 创建服务
+This documents the end-to-end flow for creating a child wiki in the farm. The microservice performs these steps asynchronously and reports progress via SSE.
 
-```sh
-cd $WORKDIR/infra
-sudo docker compose --env-file .env up -d
-```
+### Required environment
 
-服务创建成功后前往`portainer.pub.wiki`，分别使用`app/mariadb/docker-compose.yml`以及`app/mediawikifarm/docker-compose.yml`创建数据库服务以及wikifarm服务。
+- WIKIFARM_DIR: base directory where per-wiki directories live
+- WIKIFARM_OAUTH_DIR: base directory for OAuth2 keypairs per wiki
+- WIKIFARM_TEMPLATE: path to template directory to clone when creating a wiki
+- WIKIFARM_INSTANCE: identifier of the wikifarm container instance
+- PORTAINER_ENDPOINT: Portainer API endpoint used to exec into the instance
+- WIKI_DB_ADMIN_USER / WIKI_DB_ADMIN_PASSWORD: DB admin to create db/user/grants
+- Also used in ini rendering:
+  - WIKI_ROOT_HOST
+  - WIKI_DB_HOST, WIKI_DB_NAME, WIKI_DB_USER, WIKI_DB_PASSWORD, WIKI_SHARED_DB_NAME
+  - OPENSEARCH_USER, OPENSEARCH_PASSWORD, OPENSEARCH_ENDPOINT
+  - REDIS_PASSWORD, REDIS_SERVER (also used by this microservice)
 
-## 新wiki创建流程
+### Phases (with rollback hints)
 
-文件结构如下：
+1) Directory CoW copy
+- Copy WIKIFARM_TEMPLATE -> WIKIFARM_DIR/<slug>
+- Prefer reflink (cp --reflink=auto -a), fallback to rsync/cp -a
+- Rollback: delete created directory if later steps fail
 
-```
-- $WORKDIR (app/mediawikifarm)
-  - template
-    - mediawiki-1.44.0 (部署模板)
-  - wikis
-    - wiki1 (wiki1.pub.wiki)
-    - wiki2 (wiki2.pub.wiki)
-    - ...
-```
+2) Render pubwiki.ini
+- Compute values:
+  - WIKI_SITE_NAME = name
+  - WIKI_ROOT_HOST from env
+  - WIKI_HOST_URL = slug + "." + WIKI_ROOT_HOST
+  - WIKI_META_NAMESPACE = name with spaces replaced by underscores
+  - DB/Shared DB/OpenSearch/Redis values from env
+  - WIKI_LANG = language
+  - WIKI_BOOTSTRAPING = true (initial)
+- Rollback: delete file or the directory
 
-假设将要创建的wiki名为$WIKINAME
+3) Database provision (admin)
+- SQL (idempotent): CREATE DATABASE, CREATE USER, GRANT, FLUSH PRIVILEGES
+- Grants include read/write to the wiki db and selected tables in shared db
+- Rollback best-effort: revoke, drop user, possibly drop db if created in this run
 
-### 构建Mediawiki部署模板
+4) OAuth keypair
+- Generate oauth.key (private) and oauth.cert (public) in WIKIFARM_OAUTH_DIR/<slug>/
+- Use pure Rust (rcgen + pem) to generate key/cert; avoid shelling out
+- Rollback: delete generated files/dir
 
-```sh
-cd $WORKDIR/template
-sudo docker run --rm -v .:/template m4tsuri/pubwiki-template:v1.2
-cp -r $WORKDIR/template/mediawiki-1.44.0 $WORKDIR/wikis/$WIKINAME
-```
+5) Initialize in container (Docker)
+- Exec inside WIKIFARM_INSTANCE:
+  - php maintenance/run installPreConfigured
+  - php extensions/CirrusSearch/maintenance/UpdateSearchIndexConfig.php
+- Prefer talking to local Docker daemon over Unix socket (e.g., with bollard)
+- Rollback: none (scripts should be idempotent)
 
-### 初始化wiki
+6) Flip bootstrap off
+- Set WIKI_BOOTSTRAPING=false in pubwiki.ini
+- Rollback: set true on failure in later steps
 
-编辑`$WORKDIR/wikis/$WIKINAME/pubwiki.ini`，其中包含下面内容
+7) Initial indexing
+- Exec in container:
+  - php extensions/CirrusSearch/maintenance/ForceSearchIndex.php --skipLinks --indexOnSkip
+  - php extensions/CirrusSearch/maintenance/ForceSearchIndex.php --skipParse
 
-```
-WIKI_SITE_NAME = <wiki站名称>
-WIKI_HOST_URL = <wiki地址>
-WIKI_META_NAMESPACE = <元命名空间>
+### Events and task status
+- progress: { status: "running", progress: <int>, message, phase }
+- status: { status: "succeeded"|"failed", wiki_id?, message? }
+- Updates also persisted into wikifarm_tasks
 
-WIKI_DB_HOST = <wiki数据库地址>
-WIKI_DB_NAME = <wiki数据库名称（非共享）>
-WIKI_DB_USER = <wiki数据库用户（非共享）>
-WIKI_DB_PASSWORD = <wiki数据库密码>
-WIKI_SHARED_DB_NAME = <共享数据库名称> 
+### Modules (service/src/provision)
+- orchestrator.rs: run phases, publish events, persist task status, orchestrate rollback
+- fs.rs: CoW copy, mkdir, chmod
+- ini.rs: read/write INI (template -> filled pubwiki.ini)
+- db.rs: admin SQL, idempotent ops, rollback helpers
+- oauth.rs: keypair creation (rcgen)
+- docker.rs: exec commands in container (bollard)
+- env.rs: typed env gathering/validation
 
-WIKI_LANG = <wiki语言>
-```
+### Safety & recovery notes
+- Prefer idempotent operations per phase; keep a rollback ledger per task
+- Publish errors immediately with actionable messages
+- Add metrics (durations, success/failure counters) later
 
-创建新的数据库和数据库用户：
+---
 
-```sql
-CREATE DATABASE IF NOT EXISTS ${WIKI_DB_NAME};
-CREATE USER IF NOT EXISTS '${WIKI_DB_USER}'@'%' IDENTIFIED BY '${WIKI_DB_PASSWORD}';
-GRANT ALL PRIVILEGES ON ${WIKI_DB_NAME}.* TO '${WIKI_DB_USER}'@'%';
-GRANT SELECT, UPDATE, INSERT ON ${WIKI_SHARED_DB_NAME}.user TO '${WIKI_DB_USER}'@'%';
-GRANT SELECT, UPDATE, INSERT ON ${WIKI_SHARED_DB_NAME}.user_properties TO '${WIKI_DB_USER}'@'%';
-GRANT SELECT, UPDATE, INSERT ON ${WIKI_SHARED_DB_NAME}.actor TO '${WIKI_DB_USER}'@'%';
-FLUSH PRIVILEGES;
-```
-
-注意，如果我们允许匿名用户编辑，那么我们还需要为这些表添加insert权限
-
-生成OAuth Token
-
-```sh
-mkdir /oauth && cd /oauth
-openssl genrsa -out oauth.key 2048
-openssl rsa -in oautn.key -pubout -out oauth.cert
-chown -R www-data:www-data .
-```
-
-初始化站点并创建管理员账号
-
-```sh
-php /var/www/html/maintenance/installPreConfigured.php
-php /var/www/html/maintenance/createAndPromote.php ${WIKI_ADMIN_USER} ${WIKI_ADMIN_PASSWORD} --sysop --bureaucrat --force
-```
+For extension UI details and DB schema, see extension/README.md and extension/sql/tables.sql.

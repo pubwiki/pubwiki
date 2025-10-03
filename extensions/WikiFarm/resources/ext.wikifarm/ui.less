@@ -1,0 +1,166 @@
+/* Hide the default page title on Special:WikiFarm */
+.mw-special-WikiFarm #firstHeading {
+    display: none;
+}
+
+/* Basic responsive layout: desktop split left/right, mobile stacked */
+
+#wikifarm-app {
+    .wf-container {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+        /* Make auth pane a bit smaller than content */
+        gap: 24px;
+    }
+
+    .wf-pane {
+        background: #fff;
+    }
+
+    .wf-box {
+        padding: 16px;
+        /* Remove box border styling for cleaner look */
+        border: 0;
+        border-radius: 0;
+    }
+
+    .wf-section {
+        margin-bottom: 16px;
+    }
+
+    .wf-checkbox {
+        margin-top: 2px;
+        margin-bottom: 2px;
+    }
+
+    .wf-list {
+        margin: 8px 0 0;
+        padding-left: 16px;
+    }
+
+    .wf-actions {
+        margin-top: 4px;
+        margin-bottom: 12px;
+    }
+
+    .wf-progress {
+        margin-top: 8px;
+    }
+
+    /* Terminal state styling for progress (creation) */
+    .wf-progress-succeeded {
+        .cdx-progress-bar__bar {
+            background-color: #14866d; /* WMF green tone */
+        }
+        .wf-progress-msg { color: #14866d; }
+    }
+    .wf-progress-failed {
+        .cdx-progress-bar__bar {
+            background-color: #d73333; /* red for failure */
+            animation: none; /* ensure no ongoing animation if Codex adds one */
+            width: 100% !important; /* force full bar coverage even if value < 100 */
+        }
+        .wf-progress-msg { color: #d73333; }
+    }
+
+    .wf-progress-msg {
+        margin-top: 4px;
+        color: #54595d;
+    }
+
+    /* Inline slug input: [ input ].pub.wiki */
+    .wf-slug-inline {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        font-family: monospace;
+    }
+
+    .wf-slug-suffix {
+        color: #202122;
+        margin-left: 4px;
+    }
+
+    .wf-slug-suffix {
+        color: #202122;
+        margin-left: 4px;
+        white-space: nowrap;
+    }
+
+    .wf-slug-inline .cdx-text-input {
+        min-width: 180px;
+        flex: 1 1 auto;
+        width: auto;
+    }
+
+    .wf-slug-inline .cdx-text-input .cdx-text-input__input {
+        width: 100%;
+    }
+
+    @media (max-width: 768px) {
+        .wf-container {
+            grid-template-columns: 1fr;
+        }
+
+        .wf-pane.wf-auth {
+            border-right: 0;
+            padding-right: 0;
+            margin-right: 0;
+        }
+
+        .wf-pane.wf-auth .wf-actions .cdx-button {
+            width: 100%;
+            min-width: 0;
+        }
+    }
+
+    /* Add vertical divider between auth and content on larger screens */
+    .wf-pane.wf-auth {
+        border-right: 1px solid #eaecf0;
+        padding-right: 24px;
+        margin-right: 4px;
+    }
+
+    /* Emphasize the auth pane visuals */
+    .wf-pane.wf-auth .wf-box {
+        padding: 24px;
+        margin-top: -8px;
+    }
+
+    .wf-pane.wf-auth h2 {
+        font-size: 1.5rem;
+        margin: 4px 0 8px;
+    }
+
+    .wf-pane.wf-auth .cdx-field {
+        margin-bottom: 0px;
+    }
+
+    .wf-pane.wf-auth .wf-actions {
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .wf-pane.wf-auth .wf-actions .cdx-button {
+        font-size: 1.05rem;
+        padding: 6px 18px;
+        /* flatter */
+        width: 33%;
+        /* about one-third of the login box width */
+        min-width: 0px;
+        /* ensure presence on wide screens */
+    }
+
+    .wf-pane.wf-auth .cdx-text-input input,
+    .wf-pane.wf-auth .cdx-text-input input[type="password"],
+    .wf-pane.wf-auth .cdx-text-input__input {
+        min-height: 40px;
+        font-size: 1rem;
+    }
+
+    /* Optional utility: hide a main heading if present */
+    .wf-hide-title {
+        display: none;
+    }
+}
