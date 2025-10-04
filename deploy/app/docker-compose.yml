@@ -110,7 +110,7 @@ services:
       REDIS_SERVER: redis
     volumes:
       - wiki-images:/var/www/html/images
-      - ${WIKIFARM_EXTENSION_DIR}:/var/www/html/extensions/WikiFarm
+      - ../../extensions/WikiFarm:/var/www/html/extensions/WikiFarm
     networks:
       - proxy
       - wikinet
