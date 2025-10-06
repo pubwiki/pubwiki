@@ -111,6 +111,11 @@ pub async fn health() -> &'static str {
 
 use crate::auth::AuthContext;
 
+const BLACKLIST: &[&str] = &[
+    "portainer",
+    "main"
+];
+
 async fn create_wiki(
     State(state): State<AppState>,
     auth: AuthContext,
@@ -125,6 +130,7 @@ async fn create_wiki(
         .fetch_optional(&state.db)
         .await?
         .is_some()
+        || BLACKLIST.contains(&body.slug.as_str())
     {
         info!(slug=%body.slug, "create_wiki slug already exists");
         return Err(ApiError::new(StatusCode::CONFLICT, "conflict", "slug exists"));
@@ -452,6 +458,7 @@ async fn check_slug(State(state): State<AppState>, Path(slug): Path<String>) -> 
         .fetch_optional(&state.db)
         .await?
         .is_some()
+        || BLACKLIST.contains(&slug.as_str())
     {
         
         Ok((StatusCode::OK, Json(json!({"slug": slug, "exists": true}))).into_response())
