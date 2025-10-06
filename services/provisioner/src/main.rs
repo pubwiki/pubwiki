@@ -177,6 +177,9 @@ async fn do_job(state: &AppState, job: &JobPayload, channel: &str) -> Result<u64
         Err(e) => {
             warn!(task_id=%job.task_id, error=%e, "orchestrator run failed; invoking rollback");
             // rollback based on context
+            if let Ok(_) = std::env::var("DISABLE_ROLLBACK") {
+                return Err(format!("provision error: {e}"))
+            }
             provision::orchestrator::rollback(&mut ctx).await;
             debug!(task_id=%job.task_id, slug=%job.slug, "rollback complete");
             Err(format!("provision error: {e}"))

@@ -43,7 +43,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
 
   provisioner:
-    image: m4tsuri/pubwiki-provisioner:v1.7
+    image: m4tsuri/pubwiki-provisioner:v1.7.1
     depends_on: [mediawikifarm]
     container_name: wikifarm-provisioner
     environment:
@@ -63,6 +63,7 @@ services:
       RUST_LOG: info
       RUST_BACKTRACE: 1
       WIKI_AWS_REGION: ${WIKI_AWS_REGION}
+      DISABLE_ROLLBACK: true
     networks:
       - wikinet
       - proxy

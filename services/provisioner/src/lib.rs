@@ -113,7 +113,8 @@ use crate::auth::AuthContext;
 
 const BLACKLIST: &[&str] = &[
     "portainer",
-    "main"
+    "main",
+    "pubwiki"
 ];
 
 async fn create_wiki(
