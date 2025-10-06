@@ -12,4 +12,3 @@ RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
 RUN curl -L https://github.com/php/pie/releases/download/1.2.1/pie.phar -o /usr/local/bin/pie
 RUN chmod +x /usr/local/bin/pie
 RUN pie install phpredis/phpredis
-RUN pecl install luasandbox

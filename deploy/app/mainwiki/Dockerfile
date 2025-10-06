@@ -39,12 +39,10 @@ RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/MobileFrontend
     composer install --no-dev
 
 WORKDIR /var/www/html
-COPY assets/LocalSettings.php /var/www/html/LocalSettings.php
+COPY deploy/app/mainwiki/assets/LocalSettings.php /var/www/html/LocalSettings.php
 RUN chmod 644 LocalSettings.php && chown www-data:www-data LocalSettings.php
 
-COPY assets/setup.sh /var/www/html/setup.sh
+COPY deploy/app/mainwiki/assets/setup.sh /var/www/html/setup.sh
 RUN chown www-data:www-data /var/www/html/setup.sh && chmod +x /var/www/html/setup.sh
-
-RUN pecl install luasandbox
 
 RUN mkdir /oauth && chown www-data:www-data /oauth
