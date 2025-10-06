@@ -55,5 +55,6 @@ COPY deploy/app/mediawikifarm/template/LocalSettings.php /LocalSettings.php
 COPY deploy/app/mediawikifarm/template/composer.local.json /composer.local.json 
 COPY deploy/app/mediawikifarm/template/permissions.json /permissions.json
 
+COPY extensions/WikiManage /extensions/WikiManage
 
 ENTRYPOINT ["/create_template_1.44.sh"]

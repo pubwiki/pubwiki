@@ -75,12 +75,29 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.provisioner.rule=Host(`${WIKI_HOST}`) && (PathPrefix(`/provisioner/`) || PathPrefix(`/manage/`))"
+
+      # Router for creating wiki
+      - "traefik.http.routers.provisioner.rule=Host(`${WIKI_HOST}`) && PathPrefix(`/provisioner/`)"
       - "traefik.http.routers.provisioner.entrypoints=websecure"
       - "traefik.http.services.provisioner.loadbalancer.server.port=8080"
       - "traefik.http.routers.provisioner.service=provisioner"
       - "traefik.http.routers.provisioner.tls.certresolver=cloudflare"
       - "traefik.http.routers.provisioner.middlewares=wikifarm-auth"
+
+      # Router for managing wiki
+      - traefik.http.routers.manager.rule=HostRegexp(`^.+\.$ESCAPED_WIKI_HOST$`) && PathPrefix(`/manage/`)
+      - traefik.http.routers.manager.entrypoints=websecure
+      - traefik.http.services.manager.loadbalancer.server.port=8080
+      - traefik.http.routers.manager.service=manager
+      - traefik.http.routers.manager.tls.certresolver=cloudflare
+      - traefik.http.routers.manager.middlewares=wikimanage-auth
+
+      # -- WikiFarm Auth Middleware
+      - "traefik.http.middlewares.wikimanage-auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.wikimanage-auth.forwardauth.address=http://nginx/rest.php/wikimanage/v1/auth/check"
+      - "traefik.http.middlewares.wikimanage-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right"
+
+      # -- WikiFarm Auth Middleware
       - "traefik.http.middlewares.wikifarm-auth.forwardauth.trustForwardHeader=true"
       - "traefik.http.middlewares.wikifarm-auth.forwardauth.address=http://mainwiki/rest.php/wikifarm/v1/auth/check"
       - "traefik.http.middlewares.wikifarm-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right"

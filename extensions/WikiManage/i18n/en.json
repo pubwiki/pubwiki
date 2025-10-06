@@ -1,0 +1,6 @@
+{
+  "@metadata": {
+    "authors": ["M4tsuri"]
+  },
+  "wikimanage-desc": "Provides management permissions and REST authentication for wiki management endpoints"
+}

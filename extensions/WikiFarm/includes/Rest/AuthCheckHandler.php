@@ -31,17 +31,12 @@ class AuthCheckHandler extends SimpleHandler {
             throw new HttpException( 'Bad Request', 400 );
         }
 
-        // Detect prefix and split domain concerns: provisioning vs management.
-        $path = $fwdUri;
+        // Only handle provisioning endpoints here. Management moved to WikiManage extension.
         $decision = null;
-        if ( preg_match('#^/provisioner/v1(/.*)?$#', $path ) ) {
-            $path = substr( $path, strlen('/provisioner/v1') );
+        if ( preg_match('#^/provisioner/v1(/.*)?$#', $fwdUri ) ) {
+            $path = substr( $fwdUri, strlen('/provisioner/v1') );
             if ( $path === '' ) { $path = '/'; }
-            $decision = $this->checkProvisionAuth( $path, $fwdMethod, $user->getId() );
-        } else if ( !preg_match('#^/manage/v1(/.*)?$#', $fullUri) ) {
-            $path = substr( $fullUri, strlen('/manage/v1') );
-            if ( $path === '' ) { $path = '/'; }
-            $decision = $this->checkManageAuth( $fwdUri, $fwdMethod, $user->getId() );
+            $decision = $this->checkProvisionAuth( $path, $fwdMethod, (int)$user->getId() );
         }
 
         if ( !$decision ) {
@@ -95,24 +90,5 @@ class AuthCheckHandler extends SimpleHandler {
         return [ $needLogin, $neededRight ];
     }
 
-    /**
-     * Check manage-related API paths under /manage/v1.
-     * We expect full forwarded URI here.
-     */
-    private function checkManageAuth( string $fullUri, string $method, int $currentUserId ) {
-        $needLogin = true; // all manage endpoints require login
-        $neededRight = 'manage-wiki-perms';
-        // Current endpoints:
-        // GET /wikis/{slug}/permissions -> view
-        // POST /wikis/{slug}/permissions -> update
-        if ( $method === 'GET' && preg_match('#^/wikis/[a-z0-9\-]{1,120}/permissions$#', $path) ) {
-            // viewing could be allowed for create-wiki as fallback if manage right absent
-            // Keep required manage-wiki-perms for now
-        } elseif ( $method === 'POST' && preg_match('#^/wikis/[a-z0-9\-]{1,120}/permissions$#', $path) ) {
-            // update requires manage right
-        } else {
-            return null;
-        }
-        return [ $needLogin, $neededRight ];
-    }
+    // Management auth moved to WikiManage extension.
 }

@@ -105,15 +105,11 @@
     }
   ],
   "Rights": [
-    "create-wiki",
-    "manage-wiki-perms"
+    "create-wiki"
   ],
   "GroupPermissions": {
     "user": {
       "create-wiki": true
-    },
-    "sysop": {
-      "manage-wiki-perms": true
     }
   },
   "config": {}

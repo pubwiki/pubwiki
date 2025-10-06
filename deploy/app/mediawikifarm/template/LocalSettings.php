@@ -246,6 +246,8 @@ $smwgConfigFileDir = "/config/" . $wikiSlug;
 
 wfLoadExtension( 'ApprovedRevs' );
 
+wfLoadExtension( 'WikiManage' );
+
 require_once "/config/" . $wikiSlug . "/permissions.php";
 
 $wgGitInfoCacheDirectory = "$IP/cache/gitinfo";
