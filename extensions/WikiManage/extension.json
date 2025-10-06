@@ -1,0 +1,35 @@
+{
+  "name": "WikiManage",
+  "author": ["M4tsuri"],
+  "version": "0.1.0",
+  "url": "https://github.com/pubwiki/pubwiki",
+  "description": "Management endpoints and permissions for Wiki farm.",
+  "manifest_version": 2,
+  "requires": {
+    "MediaWiki": ">= 1.44.0"
+  },
+  "type": "other",
+  "license-name": "MIT",
+  "AutoloadNamespaces": {
+    "MediaWiki\\Extension\\WikiManage\\": "includes/"
+  },
+  "MessagesDirs": {
+    "WikiManage": ["i18n"]
+  },
+  "RestRoutes": [
+    {
+      "path": "/wikimanage/v1/auth/check",
+      "method": "GET",
+      "class": "MediaWiki\\Extension\\WikiManage\\Rest\\ManageAuthHandler"
+    }
+  ],
+  "Rights": [
+    "manage-wiki-perms"
+  ],
+  "GroupPermissions": {
+    "sysop": {
+      "manage-wiki-perms": true
+    }
+  },
+  "config": {}
+}

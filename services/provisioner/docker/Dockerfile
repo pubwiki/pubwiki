@@ -2,15 +2,15 @@
 FROM rust:bullseye AS build
 WORKDIR /build
 # Cache deps
-COPY docker/Cargo.workspace.toml Cargo.toml
+COPY services/provisioner/docker/Cargo.workspace.toml Cargo.toml
 
 # Pre-build deps (create minimal workspace to cache dependencies)
 RUN mkdir -p service/src && echo 'fn main() {}' > service/src/main.rs
-COPY Cargo.toml service/Cargo.toml
+COPY services/provisioner/Cargo.toml service/Cargo.toml
 RUN cargo build --release -p wikifarm-service
 
 # Real source
-COPY src service/src
+COPY services/provisioner/src service/src
 RUN cargo build --release -p wikifarm-service
 
 FROM debian:stable-slim AS runtime

@@ -48,11 +48,12 @@ RUN wget https://meocap-client-files.oss-cn-beijing.aliyuncs.com/MediaWikiLangua
 
 RUN rm -rf /tmp/downloads
 
-COPY create_template_1.44.sh /create_template_1.44.sh
+COPY deploy/app/mediawikifarm/template/create_template_1.44.sh /create_template_1.44.sh
 RUN chmod +x /create_template_1.44.sh
 
-COPY LocalSettings.php /LocalSettings.php
-COPY composer.local.json /composer.local.json 
-COPY permissions.json /permissions.json
+COPY deploy/app/mediawikifarm/template/LocalSettings.php /LocalSettings.php
+COPY deploy/app/mediawikifarm/template/composer.local.json /composer.local.json 
+COPY deploy/app/mediawikifarm/template/permissions.json /permissions.json
+
 
 ENTRYPOINT ["/create_template_1.44.sh"]
