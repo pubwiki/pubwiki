@@ -60,7 +60,7 @@ services:
       OPENSEARCH_ENDPOINT: ${OPENSEARCH_ENDPOINT}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_SERVER: redis
-      RUST_LOG: debug
+      RUST_LOG: info
       RUST_BACKTRACE: 1
       WIKI_AWS_REGION: ${WIKI_AWS_REGION}
     networks:
@@ -103,7 +103,7 @@ services:
       - "traefik.http.middlewares.wikifarm-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right"
 
   mainwiki:
-    image: m4tsuri/pubwiki:v1.7
+    image: m4tsuri/pubwiki:v1.7.1
     restart: unless-stopped
     environment: 
       WIKI_SITE_NAME: Pub Wiki
@@ -125,6 +125,11 @@ services:
       WIKI_SMTP_PASSWORD_SENDER: ${WIKI_SMTP_PASSWORD_SENDER}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_SERVER: redis
+      OPENSEARCH_USER: ${OPENSEARCH_USER}
+      OPENSEARCH_PORT: ${OPENSEARCH_PORT}
+      OPENSEARCH_TRANSPORT: ${OPENSEARCH_TRANSPORT}
+      OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
+      OPENSEARCH_ENDPOINT: ${OPENSEARCH_ENDPOINT}
     volumes:
       - wiki-images:/var/www/html/images
       - ../../extensions/WikiFarm:/var/www/html/extensions/WikiFarm

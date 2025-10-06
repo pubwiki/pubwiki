@@ -16,5 +16,8 @@ openssl rsa -in oauth.key -pubout -out oauth.cert
 chown -R www-data:www-data .
 
 cd /var/www/html
-php maintenance/installPreConfigured.php
-php maintenance/createAndPromote.php ${WIKI_ADMIN_USER} ${WIKI_ADMIN_PASSWORD} --sysop --bureaucrat --force
+php maintenance/run installPreConfigured.php
+php maintenance/run createAndPromote.php ${WIKI_ADMIN_USER} ${WIKI_ADMIN_PASSWORD} --sysop --bureaucrat --force
+php maintenance/run ./extensions/CirrusSearch/maintenance/UpdateSearchIndexConfig.php
+php maintenance/run ./extensions/CirrusSearch/maintenance/ForceSearchIndex.php --skipLinks --indexOnSkip
+php maintenance/run ./extensions/CirrusSearch/maintenance/ForceSearchIndex.php --skipParse

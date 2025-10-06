@@ -204,6 +204,19 @@ $wgExtraLanguageNames['qqq'] = 'Message documentation'; # No linguistic content.
 
 wfLoadExtension( 'UniversalLanguageSelector' );
 
+wfLoadExtension( 'Elastica' );
+wfLoadExtension( 'CirrusSearch' );
+$wgCirrusSearchServers = [[
+  'host'      => getenv("OPENSEARCH_ENDPOINT"), // 你的域名（不带 https://）
+  'port'      => getenv("OPENSEARCH_PORT"),
+  'transport' => getenv("OPENSEARCH_TRANSPORT"),
+  'username'  => getenv("OPENSEARCH_USER"),              // 你在 Dashboards 里创建的用户
+  'password'  => getenv("OPENSEARCH_PASSWORD")
+]];
+
+$wgCirrusSearchIndexBaseName = "pubwiki";
+$wgSearchType = 'CirrusSearch';
+
 $redisPassword = getenv("REDIS_PASSWORD");
 $wgObjectCaches['redis'] = [
     'class'             => 'RedisBagOStuff',

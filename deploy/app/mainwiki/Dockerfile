@@ -1,7 +1,7 @@
 FROM mediawiki:1.44
 
 RUN apt update
-RUN apt install -y wget vim mariadb-client-compat
+RUN apt install -y wget vim mariadb-client-compat zip
 
 WORKDIR /tmp
 RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
@@ -36,6 +36,12 @@ RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/CSS && \
     composer install --no-dev
 RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/MobileFrontend && \
     cd MobileFrontend && git checkout REL1_44 && \
+    composer install --no-dev
+RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/Elastica && \
+    cd Elastica && git checkout REL1_44 && \
+    composer install --no-dev
+RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/CirrusSearch && \
+    cd CirrusSearch && git checkout REL1_44 && \
     composer install --no-dev
 
 WORKDIR /var/www/html
