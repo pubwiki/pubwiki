@@ -43,7 +43,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
 
   provisioner:
-    image: m4tsuri/pubwiki-provisioner:v1.7.1
+    image: m4tsuri/pubwiki-provisioner:v1.7.2
     depends_on: [mediawikifarm]
     container_name: wikifarm-provisioner
     environment:

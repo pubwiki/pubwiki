@@ -50,29 +50,33 @@ pub fn render_pubwiki_ini(
     let mut ini = Ini::new();
     {
         let mut sec = ini.with_general_section();
-        sec.set("WIKI_SITE_NAME", cfg.name);
-        sec.set("WIKI_HOST_URL", &host_url);
-        sec.set("WIKI_HOST", cfg.wiki_host);
-        sec.set("WIKI_META_NAMESPACE", &site_ns);
-        sec.set("WIKI_DB_HOST", cfg.db_host);
-        sec.set("WIKI_DB_NAME", cfg.db_name);
-        sec.set("WIKI_DB_USER", cfg.db_user);
-        sec.set("WIKI_DB_PASSWORD", cfg.db_password);
-        sec.set("WIKI_SHARED_DB_NAME", cfg.shared_db_name);
-        sec.set("WIKI_LANG", cfg.language);
-        sec.set("WIKI_AWS_REGION", cfg.wiki_aws_region);
-        sec.set("OPENSEARCH_USER", cfg.opensearch_user);
-        sec.set("OPENSEARCH_PORT", cfg.opensearch_port);
-        sec.set("OPENSEARCH_TRANSPORT", cfg.opensearch_transport);
-        sec.set("OPENSEARCH_PASSWORD", cfg.opensearch_password);
-        sec.set("OPENSEARCH_ENDPOINT", cfg.opensearch_endpoint);
-        sec.set("REDIS_PASSWORD", cfg.redis_password);
-        sec.set("REDIS_SERVER", cfg.redis_server);
-        sec.set(
+        let mut set = |k, v| {
+            sec.set(k, format!("\"{v}\""));
+        };
+
+        set("WIKI_SITE_NAME", cfg.name);
+        set("WIKI_HOST_URL", &host_url);
+        set("WIKI_HOST", cfg.wiki_host);
+        set("WIKI_META_NAMESPACE", &site_ns);
+        set("WIKI_DB_HOST", cfg.db_host);
+        set("WIKI_DB_NAME", cfg.db_name);
+        set("WIKI_DB_USER", cfg.db_user);
+        set("WIKI_DB_PASSWORD", cfg.db_password);
+        set("WIKI_SHARED_DB_NAME", cfg.shared_db_name);
+        set("WIKI_LANG", cfg.language);
+        set("WIKI_AWS_REGION", cfg.wiki_aws_region);
+        set("OPENSEARCH_USER", cfg.opensearch_user);
+        set("OPENSEARCH_PORT", cfg.opensearch_port);
+        set("OPENSEARCH_TRANSPORT", cfg.opensearch_transport);
+        set("OPENSEARCH_PASSWORD", cfg.opensearch_password);
+        set("OPENSEARCH_ENDPOINT", cfg.opensearch_endpoint);
+        set("REDIS_PASSWORD", cfg.redis_password);
+        set("REDIS_SERVER", cfg.redis_server);
+        set(
             "WIKI_BOOTSTRAPING",
             if bootstrapping { "true" } else { "false" },
         );
-        sec.set("WIKI_DEBUGGING", "true");
+        set("WIKI_DEBUGGING", "true");
     }
 
     ini.write_to_file(path)
