@@ -316,6 +316,7 @@ pub async fn run<'a>(ctx: &mut ProvisionContext<'a>) -> anyhow::Result<u64> {
     sqlx::query(&grant_sql)
         .bind(ctx.owner_user_id)
         .bind(ctx.owner_user_id)
+        .bind(ctx.owner_user_id)
         .execute(ctx.db)
         .await?;
     info!(slug=%ctx.slug, user_id=%ctx.owner_user_id, "granted creator bureaucrat+sysop groups");
