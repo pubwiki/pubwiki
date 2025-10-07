@@ -112,7 +112,7 @@ pub async fn run<'a>(ctx: &mut ProvisionContext<'a>) -> anyhow::Result<u64> {
         wiki_aws_region: &ctx.env.wiki_aws_region,
     };
     debug!(slug=%ctx.slug, config_dir=%ctx.env.wikifarm_config_dir, "render ini start");
-    ini::render_pubwiki_ini(&ctx.env.wikifarm_config_dir, &cfg, true)?;
+    ini::render_pubwiki_ini(&ctx.env.wikifarm_config_dir, &cfg, true).await?;
     ini::write_slug_marker(ctx.target_dir, ctx.slug)?;
     debug!(slug=%ctx.slug, "ini + slug marker written");
     ctx.steps.push(Step::IniWritten);
@@ -242,7 +242,7 @@ pub async fn run<'a>(ctx: &mut ProvisionContext<'a>) -> anyhow::Result<u64> {
     )
     .await?;
     debug!(slug=%ctx.slug, "flip bootstrap off");
-    ini::set_bootstrapping(&ctx.env.wikifarm_config_dir, ctx.slug, false)?;
+    ini::render_pubwiki_ini(&ctx.env.wikifarm_config_dir, &cfg, false).await?;
     ctx.steps.push(Step::BootstrapFlipped);
 
     // 8) Initial indexing
@@ -329,13 +329,6 @@ pub async fn rollback<'a>(ctx: &mut ProvisionContext<'a>) {
     warn!(slug=%ctx.slug, steps=?ctx.steps, "rollback start");
     while let Some(step) = ctx.steps.pop() {
         match step {
-            Step::RebuildSMWData | Step::Indexed2 | Step::Indexed1 | Step::DockerIndexCfg | Step::DockerInstalled => {
-                // no-op
-            }
-            Step::BootstrapFlipped => {
-                debug!(slug=%ctx.slug, "rollback: restore bootstrap flag on");
-                let _ = ini::set_bootstrapping(&ctx.env.wikifarm_config_dir, ctx.slug, true);
-            }
             Step::OauthKeys => {
                 debug!(slug=%ctx.slug, "rollback: remove oauth keys dir");
                 let _ = oauth::remove_keys_dir(ctx.oauth_dir);
@@ -369,7 +362,8 @@ pub async fn rollback<'a>(ctx: &mut ProvisionContext<'a>) {
                     .execute(ctx.db)
                     .await
                     .ok();
-            }
+            },
+            _ => {}
         }
     }
     warn!(slug=%ctx.slug, "rollback complete");
