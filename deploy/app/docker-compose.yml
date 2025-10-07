@@ -91,7 +91,9 @@ services:
       - traefik.http.services.manager.loadbalancer.server.port=8080
       - traefik.http.routers.manager.service=manager
       - traefik.http.routers.manager.tls.certresolver=cloudflare
+      - traefik.http.routers.manager.tls.domains[0].main=*.${WIKI_HOST}
       - traefik.http.routers.manager.middlewares=wikimanage-auth
+      - traefik.http.routers.manager.priority=1
 
       # -- WikiFarm Auth Middleware
       - "traefik.http.middlewares.wikimanage-auth.forwardauth.trustForwardHeader=true"

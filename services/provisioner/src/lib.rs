@@ -114,8 +114,22 @@ use crate::auth::AuthContext;
 const BLACKLIST: &[&str] = &[
     "portainer",
     "main",
-    "pubwiki"
+    "pubwiki",
+    "mcp",
+    "chat"
 ];
+
+#[cfg(test)]
+mod test {
+    use crate::BLACKLIST;
+
+    #[test]
+    fn test_blacklist() {
+        assert!(BLACKLIST.contains(&"portainer"));
+        assert!(BLACKLIST.contains(&&"mcpss"[..3]));
+        assert!(!BLACKLIST.contains(&"portaner"));
+    }
+}
 
 async fn create_wiki(
     State(state): State<AppState>,
