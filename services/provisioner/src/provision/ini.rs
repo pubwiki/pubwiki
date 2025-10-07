@@ -10,6 +10,7 @@ pub enum IniError {
     Ini(String),
 }
 
+#[derive(Default)]
 pub struct WikiIniConfig<'a> {
     pub name: &'a str,
     pub slug: &'a str,
@@ -110,4 +111,16 @@ pub fn write_slug_marker(target_dir: &str, slug: &str) -> Result<(), IniError> {
     let path: PathBuf = Path::new(target_dir).join("slug.ini");
     fs::write(path, format!("WIKI_SLUG={slug}\n"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::provision::ini::{WikiIniConfig, render_pubwiki_ini};
+
+    #[test]
+    fn test_ini() {
+        let mut cfg = WikiIniConfig::default();
+        cfg.db_password = &"su&#@!";
+        render_pubwiki_ini("/home/m4tsuri/Downloads/test", &cfg, true).unwrap();
+    }
 }
