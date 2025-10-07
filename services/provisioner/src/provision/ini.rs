@@ -51,8 +51,14 @@ pub async fn render_pubwiki_ini<'a>(
     let mut file = File::create(path).await?;
 
     let mut content = String::new();
-    let mut set = |k, v| {
-        writeln!(content, "{k}=\"{v}\"").unwrap();
+    let mut set = |k, v: &str| {
+        if v.chars().all(char::is_alphanumeric) {
+            // add quotes to values that contains non-alphanumeric char
+            // see notes in https://www.php.net/manual/en/function.parse-ini-file.php
+            writeln!(content, "{k}={v}").unwrap();
+        } else {
+            writeln!(content, "{k}=\"{v}\"").unwrap();
+        }
     };
 
     set("WIKI_SITE_NAME", cfg.name);
