@@ -83,7 +83,7 @@ pub async fn render_pubwiki_ini<'a>(
         "WIKI_BOOTSTRAPING",
         if bootstrapping { "true" } else { "false" },
     );
-    set("WIKI_DEBUGGING", "true");
+    set("WIKI_DEBUGGING", "false");
     file.write_all(content.as_bytes()).await?;
     Ok(())
 }
