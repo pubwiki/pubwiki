@@ -1,3 +1,6 @@
 {
-    "rust-analyzer.linkedProjects": ["services/provisioner/Cargo.toml"]
+    "rust-analyzer.linkedProjects": [
+        "services/provisioner/Cargo.toml",
+        "services/runjobs/Cargo.toml",
+    ]
 }

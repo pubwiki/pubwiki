@@ -22,6 +22,9 @@ services:
   mediawikifarm:
     image: m4tsuri/pubwikifarm:v1.0
     container_name: mediawikifarm
+    environment:
+      DATABASE_URL: "mysql://$WIKI_DB_ADMIN_USER:$WIKI_DB_ADMIN_PASSWORD@${WIKI_DB_HOST}/$MAINWIKI_DB_NAME"
+      RUST_LOG: info
     volumes:
       - wikifarm-wikis:/srv/wikis:rw
       - wikifarm-oauth:/oauth:ro
@@ -30,6 +33,7 @@ services:
       - ${HOST_TEMPLATE_DIR}:/template:ro
       - ${HOST_CONFIG_DIR}/php-fpm/www.conf:/usr/local/etc/php-fpm.d/www.conf:ro
       - ${HOST_CONFIG_DIR}/php-conf/wiki.ini:/usr/local/etc/php/conf.d/wiki.ini:ro
+    command: ["/entrypoint.sh"]
     networks:
       - wikinet
       - farm
