@@ -5,13 +5,11 @@ use redis::{AsyncCommands, Client as RedisClient};
 use serde::{Deserialize, Serialize};
 use sqlx::mysql::MySqlPoolOptions;
 use tracing::{debug, error, info, warn};
-mod provision;
 
 use wikifarm_service::env::WikifarmEnv;
-// Use the library for router, app state, and event types
-pub use wikifarm_service::events; // re-export so crate::events works in provision modules
+
 use wikifarm_service::events::{Event as TaskEvent, Status};
-use wikifarm_service::{AppState, build_router};
+pub use wikifarm_service::*;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct Owner {
@@ -42,11 +40,7 @@ async fn main() -> anyhow::Result<()> {
     let redis = RedisClient::open(redis_url).expect("invalid REDIS_URL");
 
     let env = WikifarmEnv::gather()?;
-    let state = AppState {
-        db,
-        redis,
-        env
-    };
+    let state = AppState { db, redis, env };
     let worker_state = state.clone();
 
     let app = build_router(state);
@@ -95,7 +89,7 @@ async fn worker_process(state: &AppState, conn: &mut MultiplexedConnection) -> a
         .query_async(conn)
         .await
     else {
-        return Ok(())
+        return Ok(());
     };
 
     let job = serde_json::from_str::<JobPayload>(&job)?;
@@ -155,8 +149,7 @@ async fn do_job(state: &AppState, job: &JobPayload, channel: &str) -> Result<u64
         name: &job.name,
         slug: &job.slug,
         language: &job.language,
-        visibility: job.visibility.as_deref()
-            .unwrap_or("public"),
+        visibility: job.visibility.as_deref().unwrap_or("public"),
         owner_user_id: job.owner.id,
         owner_username: &job.owner.username,
         db: &state.db,
@@ -178,7 +171,7 @@ async fn do_job(state: &AppState, job: &JobPayload, channel: &str) -> Result<u64
             warn!(task_id=%job.task_id, error=%e, "orchestrator run failed; invoking rollback");
             // rollback based on context
             if let Ok(_) = std::env::var("DISABLE_ROLLBACK") {
-                return Err(format!("provision error: {e}"))
+                return Err(format!("provision error: {e}"));
             }
             provision::orchestrator::rollback(&mut ctx).await;
             debug!(task_id=%job.task_id, slug=%job.slug, "rollback complete");

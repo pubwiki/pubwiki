@@ -1,8 +1,8 @@
 use std::fmt;
 
 use axum::Json;
-use axum::response::IntoResponse;
 use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use tracing::error;
 
 #[derive(Debug)]
@@ -18,9 +18,7 @@ impl fmt::Display for ApiError {
     }
 }
 
-impl std::error::Error for ApiError {
-    
-}
+impl std::error::Error for ApiError {}
 
 impl ApiError {
     pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
@@ -35,10 +33,10 @@ impl ApiError {
 impl From<sqlx::Error> for ApiError {
     fn from(value: sqlx::Error) -> Self {
         error!(error = %value, "db error");
-        Self { 
-            status: StatusCode::INTERNAL_SERVER_ERROR, 
-            code: "db_error", 
-            message: value.to_string() 
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "db_error",
+            message: value.to_string(),
         }
     }
 }
@@ -46,10 +44,10 @@ impl From<sqlx::Error> for ApiError {
 impl From<redis::RedisError> for ApiError {
     fn from(value: redis::RedisError) -> Self {
         error!(error = %value, "redis error");
-        Self { 
-            status: StatusCode::INTERNAL_SERVER_ERROR, 
-            code: "redis_error", 
-            message: value.to_string() 
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "redis_error",
+            message: value.to_string(),
         }
     }
 }
@@ -58,9 +56,9 @@ impl From<std::io::Error> for ApiError {
     fn from(value: std::io::Error) -> Self {
         error!(error = %value, "fs error");
         Self {
-            status: StatusCode::INTERNAL_SERVER_ERROR, 
-            code: "fs_error", 
-            message: value.to_string() 
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            code: "fs_error",
+            message: value.to_string(),
         }
     }
 }

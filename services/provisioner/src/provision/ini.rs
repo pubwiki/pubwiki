@@ -1,8 +1,8 @@
-use tokio::fs::File;
 use std::fmt::Write;
-use tokio::io::AsyncWriteExt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
 #[derive(thiserror::Error, Debug)]
 pub enum IniError {
@@ -113,7 +113,11 @@ mod test {
     async fn test_ini() {
         let mut cfg = WikiIniConfig::default();
         cfg.db_password = &"su&#@!";
-        render_pubwiki_ini("/home/m4tsuri/Downloads/test", &cfg, true).await.unwrap();
-        render_pubwiki_ini("/home/m4tsuri/Downloads/test", &cfg, false).await.unwrap();
+        render_pubwiki_ini("/home/m4tsuri/Downloads/test", &cfg, true)
+            .await
+            .unwrap();
+        render_pubwiki_ini("/home/m4tsuri/Downloads/test", &cfg, false)
+            .await
+            .unwrap();
     }
 }

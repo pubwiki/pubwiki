@@ -1,4 +1,7 @@
-use axum::{extract::FromRequestParts, http::{request::Parts, StatusCode}};
+use axum::{
+    extract::FromRequestParts,
+    http::{StatusCode, request::Parts},
+};
 use serde::Serialize;
 use tracing::warn;
 

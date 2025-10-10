@@ -1,6 +1,10 @@
 use super::{db, docker, fs, ini, oauth};
-use wikifarm_service::{env::WikifarmEnv, manage::{PermissionsBody, set_wiki_permissions}, validate::{self, validate}};
 use crate::events::{Event, Phase, Status};
+use crate::{
+    env::WikifarmEnv,
+    manage::{PermissionsBody, set_wiki_permissions},
+    validate::{self, validate},
+};
 use redis::AsyncCommands;
 use sqlx::{MySql, Pool};
 use tracing::{debug, info, warn};
@@ -19,7 +23,7 @@ pub enum Step {
     BootstrapFlipped,
     Indexed1,
     Indexed2,
-    RebuildSMWData
+    RebuildSMWData,
 }
 
 // Context is constructed by the caller (worker) and passed by &mut
@@ -160,7 +164,7 @@ pub async fn run<'a>(ctx: &mut ProvisionContext<'a>) -> anyhow::Result<u64> {
     // Supported formats:
     // 1) New: {"allow": {"group":["perm"]}, "deny": {"group":["perm"]}}
     // 2) Legacy: {"group":["perm"]}  (treated as allow only)
-        // Record wiki row
+    // Record wiki row
     debug!(slug=%ctx.slug, "insert wiki row");
     let res = sqlx::query("INSERT INTO wikifarm_wikis (name, slug, domain, path, language, owner_user_id, owner_username, visibility, status, is_featured)
                            VALUES (?, ?, NULL, NULL, ?, ?, ?, ?, 'ready', 0)")
@@ -356,14 +360,14 @@ pub async fn rollback<'a>(ctx: &mut ProvisionContext<'a>) {
                 {
                     warn!(slug=%ctx.slug, wiki_id, error=%e, "rollback: delete wiki row failed");
                 }
-            },
+            }
             Step::WritePermissions(wiki_id) => {
                 sqlx::query("DELETE FROM wikifarm_wiki_group_permissions WHERE wiki_id=?")
                     .bind(wiki_id)
                     .execute(ctx.db)
                     .await
                     .ok();
-            },
+            }
             _ => {}
         }
     }

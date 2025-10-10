@@ -6,7 +6,7 @@ use redis::Client as RedisClient;
 use serde_json::json as j;
 use sqlx::{MySql, Pool, mysql::MySqlPoolOptions};
 use tower::ServiceExt;
-use wikifarm_service::{AppState, build_router, env::WikifarmEnv, health};
+use wikifarm_service::{AppState, build_router, env::WikifarmEnv, provision::health};
 
 async fn try_build_state_from_env() -> Option<AppState> {
     if std::env::var("RUN_API_TESTS").ok().as_deref() != Some("1") {
@@ -21,7 +21,11 @@ async fn try_build_state_from_env() -> Option<AppState> {
         .await
         .ok()?;
     let redis = RedisClient::open(redis_url).ok()?;
-    Some(AppState { db, redis, env: WikifarmEnv::gather().unwrap() })
+    Some(AppState {
+        db,
+        redis,
+        env: WikifarmEnv::gather().unwrap(),
+    })
 }
 
 #[tokio::test]

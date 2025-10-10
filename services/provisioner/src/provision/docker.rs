@@ -72,8 +72,8 @@ pub async fn exec_in_container(
 
     // Inspect to get exit code
     let inspected = docker.inspect_exec(&exec.id).await?;
-    if let Some(code) = inspected.exit_code 
-        && code != 0 
+    if let Some(code) = inspected.exit_code
+        && code != 0
     {
         let stdout = String::from_utf8_lossy(&stdout_buf).to_string();
         let stderr = String::from_utf8_lossy(&stderr_buf).to_string();

@@ -15,7 +15,7 @@ pub async fn symlink_template(template: &str, dest: &str) -> Result<(), FsError>
     let dest_path = Path::new(dest);
 
     if let Err(e) = fs::create_dir(dest_path).await
-        && e.kind() != std::io::ErrorKind::AlreadyExists 
+        && e.kind() != std::io::ErrorKind::AlreadyExists
     {
         return Err(FsError::Io(e));
     }
@@ -23,7 +23,7 @@ pub async fn symlink_template(template: &str, dest: &str) -> Result<(), FsError>
     // Pre-create special dirs where we shallow-link their contents
     for special in ["extensions", "skins"] {
         let special_dest = dest_path.join(special);
-        if let Err(e) = fs::create_dir(&special_dest).await 
+        if let Err(e) = fs::create_dir(&special_dest).await
             && e.kind() != std::io::ErrorKind::AlreadyExists
         {
             return Err(FsError::Io(e));
@@ -66,8 +66,8 @@ async fn symlink_path(src: &Path, dest: &Path) -> Result<(), FsError> {
     compile_error!("symlink_path is only intended for unix platforms in this project");
 
     if let Some(parent) = dest.parent()
-        && let Err(e) = fs::create_dir_all(parent).await 
-        && e.kind() != std::io::ErrorKind::AlreadyExists 
+        && let Err(e) = fs::create_dir_all(parent).await
+        && e.kind() != std::io::ErrorKind::AlreadyExists
     {
         return Err(FsError::Io(e));
     }
