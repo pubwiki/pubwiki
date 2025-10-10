@@ -60,14 +60,6 @@ class ManageAuthHandler extends SimpleHandler {
     private function checkManageAuth( string $fullUri, string $method, int $currentUserId ) {
         $needLogin = true; // all manage endpoints require login
         $neededRight = 'manage-wiki-perms';
-        $path = $fullUri; // may refine if base prefix changes later
-        if ( $method === 'GET' && preg_match('#^/manage/v1/wikis/[a-z0-9\-]{1,120}/permissions$#', $path) ) {
-            // view permissions still requires manage right for now
-        } elseif ( $method === 'POST' && preg_match('#^/manage/v1/wikis/[a-z0-9\-]{1,120}/permissions$#', $path) ) {
-            // update requires manage right
-        } else {
-            return null;
-        }
         return [ $needLogin, $neededRight ];
     }
 }
