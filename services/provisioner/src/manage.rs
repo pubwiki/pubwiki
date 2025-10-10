@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, State, Multipart},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -260,4 +260,59 @@ pub async fn sync_skins(
     }
 
     safe_sync_subdirs(&state, &slug, items, "skins").await
+}
+
+// Upload favicon and save as /srv/wikis/<slug>/w/favicon.ico
+pub async fn set_favicon(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    auth: AuthContext,
+    mut multipart: Multipart,
+) -> Result<Response, ApiError> {
+    // Only owner can set favicon
+    let (_, owner_id) = wiki_info(&slug, &state.db)
+        .await?
+        .ok_or(ApiError::new(StatusCode::NOT_FOUND, "not_found", "wiki is not found"))?;
+    if auth.user_id != owner_id {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "not_owner", "not owner"));
+    }
+
+    validate(&slug, &validate::WIKI_SLUG)?;
+
+    // Parse first file part
+    let mut file_bytes: Option<Vec<u8>> = None;
+    while let Some(field) = multipart.next_field().await.map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, "multipart", e.to_string()))? {
+        if field.file_name().is_some() {
+            // Limit size to 2MB to avoid abuse
+            let data = field
+                .bytes()
+                .await
+                .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, "upload_read", e.to_string()))?;
+            if data.len() > 2 * 1024 * 1024 {
+                return Err(ApiError::new(StatusCode::BAD_REQUEST, "file_too_large", "max 2MB"));
+            }
+            file_bytes = Some(data.to_vec());
+            break;
+        }
+    }
+
+    let bytes = file_bytes.ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "no_file", "no file uploaded"))?;
+
+    // Basic content sniff: ICO or PNG/JPEG acceptable; but we always store as favicon.ico (browsers accept png named .ico too)
+    let is_png = bytes.starts_with(&[0x89, b'P', b'N', b'G']);
+    let is_ico = bytes.get(0..4) == Some(&[0x00, 0x00, 0x01, 0x00]);
+    let is_jpg = bytes.get(0..3) == Some(&[0xFF, 0xD8, 0xFF]);
+    if !(is_png || is_ico || is_jpg) {
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "invalid_type", "expect PNG/ICO/JPEG"));
+    }
+
+    // Compute path: <wikifarm_dir>/<slug>/w/favicon.ico
+    let wiki_root = format!("{}/{}", state.env.wikifarm_dir, slug);
+    let path = format!("{}/favicon.ico", wiki_root);
+    tokio::fs::create_dir(&wiki_root).await?;
+    tokio::fs::write(&path, &bytes).await
+        .with_context(|| format!("write favicon: {}", path))
+        .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "write_fs", e.to_string()))?;
+
+    Ok((StatusCode::OK, Json(json!({"msg":"ok"}))).into_response())
 }

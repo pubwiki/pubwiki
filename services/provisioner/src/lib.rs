@@ -101,6 +101,10 @@ pub fn build_router(state: AppState) -> Router {
             "/manage/v1/wikis/{slug}/skins/sync",
             post(manage::sync_skins),
         )
+        .route(
+            "/manage/v1/wikis/{slug}/favicon",
+            post(manage::set_favicon),
+        )
         .with_state(state)
         .layer(trace_layer)
 }

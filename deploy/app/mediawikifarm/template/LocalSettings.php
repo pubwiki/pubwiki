@@ -19,7 +19,8 @@ if ( !defined( 'MEDIAWIKI' ) ) {
 # $wgDisableOutputCompression = true;
 
 $wikiSlug = parse_ini_file("slug.ini")["WIKI_SLUG"];
-$wikiIni = parse_ini_file('/config/' . $wikiSlug . "/pubwiki.ini");
+$wikiConfigDir = '/config/' . $wikiSlug . '/';
+$wikiIni = parse_ini_file($wikiConfigDir . "pubwiki.ini");
 
 $wgSitename = $wikiIni['WIKI_SITE_NAME'];
 $wgMetaNamespace = $wikiIni['WIKI_META_NAMESPACE'];
@@ -239,6 +240,13 @@ wfLoadExtension( 'AWS' );
 $wgAWSRegion = $wikiIni["WIKI_AWS_REGION"];
 $wgAWSBucketName = $wikiIni["WIKI_SHARED_DB_NAME"];
 $wgAWSBucketTopSubdirectory = "/$wgDBname";
+$wgLogos = [
+	'1x' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Logo_1x.png",    // relative path to file in document root
+	'1.5x' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Logo_1-5x.png",  // full URL to elsewhere
+	'2x' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Logo_2x.png",    // relative paths always start with a slash
+	//  'svg' => "",       // svg key has been deprecated
+	'icon' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Icon.png",  // 50×50 SVG or 100×100 PNG (limited support)
+];
 
 wfLoadExtension( 'SemanticMediaWiki' );
 enableSemantics( $wikiSlug . $wikiIni["WIKI_HOST"] );
@@ -258,7 +266,7 @@ if ($wikiIni["WIKI_BOOTSTRAPING"]) {
 }
 
 $wgDebugLogGroups['exception'] = "/tmp/exception-{$wgDBname}.log";
-
+$wgDeprecationReleaseLimit = '1.x';
 if ($wikiIni["WIKI_DEBUGGING"]) {
   $wgShowExceptionDetails = true;
   $wgDebugLogFile = "/tmp/debug-{$wgDBname}.log";
