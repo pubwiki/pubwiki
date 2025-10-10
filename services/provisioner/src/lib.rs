@@ -141,7 +141,6 @@ async fn create_wiki(
     Json(body): Json<CreateWikiReq>,
 ) -> Result<Response, ApiError> {
     info!(slug=%body.slug, name=%body.name, "create_wiki request received");
-    validate(&body.name, &validate::WIKI_NAME)?;
     validate(&body.slug, &validate::WIKI_SLUG)?;
 
     if sqlx::query_scalar::<_, i64>("SELECT 1 FROM wikifarm_wikis WHERE slug = ? LIMIT 1")
