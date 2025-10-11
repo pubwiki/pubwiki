@@ -40,13 +40,6 @@ $wgServer = $wikiIni['WIKI_HOST_URL'];
 ## The URL path to static resources (images, scripts, etc.)
 $wgResourceBasePath = $wgScriptPath;
 
-## The URL paths to the logo.  Make sure you change this from the default,
-## or else you'll overwrite your logo when you upgrade!
-$wgLogos = [
-        '1x' => "$wgResourceBasePath/resources/assets/change-your-logo.svg",
-        'icon' => "$wgResourceBasePath/resources/assets/change-your-logo.svg",
-];
-
 ## UPO means: this is also a user preference option
 
 $wgEnableEmail = true;
@@ -79,7 +72,12 @@ $wgDBTableOptions = "ENGINE=InnoDB, DEFAULT CHARSET=binary";
 
 # Shared database table
 # This has no effect unless $wgSharedDB is also set.
-$wgSharedTables[] = "actor";
+$wgSharedTables = [
+  'actor',
+	'user',
+	'user_properties',
+	'user_autocreate_serial',
+];
 
 ## Shared memory settings
 $wgMainCacheType = CACHE_ACCEL;
@@ -241,11 +239,11 @@ $wgAWSRegion = $wikiIni["WIKI_AWS_REGION"];
 $wgAWSBucketName = $wikiIni["WIKI_SHARED_DB_NAME"];
 $wgAWSBucketTopSubdirectory = "/$wgDBname";
 $wgLogos = [
-	'1x' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Logo_1x.png",    // relative path to file in document root
-	'1.5x' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Logo_1-5x.png",  // full URL to elsewhere
-	'2x' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Logo_2x.png",    // relative paths always start with a slash
+	'1x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_1x.png",    // relative path to file in document root
+	'1.5x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_1-5x.png",  // full URL to elsewhere
+	'2x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_2x.png",    // relative paths always start with a slash
 	//  'svg' => "",       // svg key has been deprecated
-	'icon' => "https://$wgDBname.s3.amazonaws.com/$wikiSlug/Icon.png",  // 50×50 SVG or 100×100 PNG (limited support)
+	'icon' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Icon.png",  // 50×50 SVG or 100×100 PNG (limited support)
 ];
 
 wfLoadExtension( 'SemanticMediaWiki' );
@@ -253,6 +251,8 @@ enableSemantics( $wikiSlug . $wikiIni["WIKI_HOST"] );
 $smwgConfigFileDir = "/config/" . $wikiSlug;
 
 wfLoadExtension( 'ApprovedRevs' );
+
+wfLoadExtension( 'ParserFunctions' );
 
 wfLoadExtension( 'WikiManage' );
 
