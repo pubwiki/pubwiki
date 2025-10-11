@@ -1,0 +1,14 @@
+{
+  // Deno config for smoketests
+  "tasks": {
+    "check_visibility": "deno run -A src/check_visibility.ts",
+    "auth_and_whoami": "deno run -A src/set_visibility.ts",
+    "check_visibility_login": "deno run -A src/check_visibility_login.ts",
+    "get_rights": "deno run -A src/get_rights.ts"
+  },
+  "compilerOptions": {
+    "strict": true,
+    // Provide Deno runtime types to the TypeScript checker
+    "lib": ["deno.ns", "esnext", "dom"]
+  }
+}
