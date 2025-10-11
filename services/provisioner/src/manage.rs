@@ -1,7 +1,7 @@
 use axum::{
     Json,
     extract::{FromRequestParts, Multipart, State},
-    http::{StatusCode, request::Parts},
+    http::{StatusCode, request::Parts, HeaderMap, HeaderValue},
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
@@ -285,6 +285,127 @@ pub async fn sync_skins(
     }
 
     safe_sync_subdirs(&state, &slug, items, "skins").await
+}
+
+#[derive(Deserialize, Debug)]
+pub struct VisibilityBody {
+    pub visibility: String,
+}
+
+// Set wiki visibility: { "visibility": "public" | "unlisted" | "private" }
+pub async fn set_visibility(
+    State(state): State<AppState>,
+    Slug(slug): Slug,
+    auth: AuthContext,
+    Json(body): Json<VisibilityBody>,
+) -> Result<Response, ApiError> {
+    // Check wiki exists and ownership
+    let (wiki_id, owner_id) = wiki_info(&slug, &state.db)
+        .await?
+        .ok_or(ApiError::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            "wiki is not found",
+        ))?;
+
+    if auth.user_id != owner_id {
+        return Err(ApiError::new(
+            StatusCode::FORBIDDEN,
+            "not_owner",
+            "not owner",
+        ));
+    }
+
+    // Normalize and validate visibility
+    let vis = body.visibility.trim().to_lowercase();
+    let allowed = ["public", "unlisted", "private"];
+    if !allowed.contains(&vis.as_str()) {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_param",
+            "visibility must be one of: public, unlisted, private",
+        ));
+    }
+
+    sqlx::query("UPDATE wikifarm_wikis SET visibility=? WHERE id=?")
+        .bind(&vis)
+        .bind(wiki_id)
+        .execute(&state.db)
+        .await?;
+
+    Ok((StatusCode::OK, Json(json!({"msg": "ok", "visibility": vis}))).into_response())
+}
+
+// ForwardAuth hook: check wiki visibility and decide pass/block
+// 200 for public/unlisted; 403 for private; 404 if wiki not found or not ready
+pub async fn visibility_check(
+    State(state): State<AppState>,
+    auth: AuthContext,
+    Slug(slug): Slug,
+) -> Result<Response, ApiError> {
+    let row = sqlx::query("SELECT visibility, status FROM wikifarm_wikis WHERE slug=? LIMIT 1")
+        .bind(&slug)
+        .fetch_optional(&state.db)
+        .await?;
+
+    if row.is_none() {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "not_found", "wiki is not found"));
+    }
+    let row = row.unwrap();
+    let visibility: String = row.get::<String, _>("visibility");
+    let status: String = row.get::<String, _>("status");
+    if status != "ready" {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "not_ready", "wiki not ready"));
+    }
+
+    // Fetch user groups from the sub-wiki database, if logged in (uid > 0)
+    let mut groups: Vec<String> = Vec::new();
+    if auth.user_id > 0 {
+        // slug is validated; safe to inline as schema identifier with backticks
+        let query = format!(
+            "SELECT ug_group FROM `{}`.user_groups WHERE ug_user=?",
+            slug
+        );
+        let rows = sqlx::query(&query)
+            .bind(auth.user_id)
+            .fetch_all(&state.db)
+            .await?;
+        groups = rows
+            .into_iter()
+            .map(|row| {
+                let bytes: Vec<u8> = row.get("ug_group");
+                String::from_utf8_lossy(&bytes).into_owned()
+            })
+            .collect();
+        groups.sort();
+        groups.dedup();
+    }
+
+    let mut headers = HeaderMap::new();
+    if !groups.is_empty() {
+        if let Ok(val) = HeaderValue::from_str(&groups.join(",")) {
+            headers.insert("X-Auth-User-Groups", val);
+        }
+    }
+
+    match visibility.as_str() {
+        "public" => {
+            headers.insert("X-Wiki-Visibility", HeaderValue::from_static("public"));
+            Ok((StatusCode::OK, headers).into_response())
+        }
+        "unlisted" => {
+            headers.insert("X-Wiki-Visibility", HeaderValue::from_static("unlisted"));
+            headers.insert("X-Robots-Tag", HeaderValue::from_static("noindex"));
+            Ok((StatusCode::OK, headers).into_response())
+        }
+        "private" => {
+            if groups.iter().any(|g| g == "sysop") {
+                return Ok((StatusCode::OK, headers).into_response());
+            }
+            Err(ApiError::new(StatusCode::FORBIDDEN, "private", "private wiki"))
+        }
+        _ => Err(ApiError::new(StatusCode::FORBIDDEN, "unknown_visibility", visibility)),
+    }
 }
 
 // Upload favicon and save as /srv/wikis/<slug>/w/favicon.ico

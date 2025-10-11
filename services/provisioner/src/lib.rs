@@ -77,7 +77,9 @@ pub fn build_router(state: AppState) -> Router {
             post(manage::sync_extensions),
         )
         .route("/manage/v1/wikis/skins/sync", post(manage::sync_skins))
+        .route("/manage/v1/wikis/visibility", post(manage::set_visibility))
         .route("/manage/v1/wikis/favicon", post(manage::set_favicon))
+        .route("/manage/v1/visibility/check", get(manage::visibility_check))
         .with_state(state)
         .layer(trace_layer)
 }

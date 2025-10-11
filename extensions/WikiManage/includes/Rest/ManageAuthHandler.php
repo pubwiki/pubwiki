@@ -4,6 +4,7 @@ namespace MediaWiki\Extension\WikiManage\Rest;
 use MediaWiki\Rest\SimpleHandler;
 use MediaWiki\Rest\HttpException;
 use GuzzleHttp\Psr7\Utils;
+use MediaWiki\MediaWikiServices;
 
 /**
  * Auth endpoint for management operations previously in WikiFarm.
@@ -24,14 +25,22 @@ class ManageAuthHandler extends SimpleHandler {
                 $fwdUri = substr( $fwdUri, 0, $qPos );
             }
         }
-        wfDebugLog('wikimanage', "auth request $fwdMethod $fwdUri");
 
         if ( !$fwdUri ) {
             throw new HttpException( 'Bad Request', 400 );
         }
 
+        $resp = $this->getResponseFactory()->create();
+        $resp->setStatus( 200 );
+        $resp->setHeader( 'Content-Type', 'application/json' );
+        $resp->setHeader( 'X-Auth-User', $user->getName() );
+        $resp->setHeader( 'X-Auth-User-Id', (string)$user->getId() );
+        
+        $resp->setBody( Utils::streamFor( json_encode( [ 'ok' => true ] ) ) );
+
         if ( !preg_match('#^/manage/v1(/.*)?$#', $fwdUri ) ) {
-            throw new HttpException( 'Not Found', 404 );
+            // allow non-manage requests
+            return $resp;
         }
 
         $decision = $this->checkManageAuth( $fwdUri, $fwdMethod, (int)$user->getId() );
@@ -47,13 +56,7 @@ class ManageAuthHandler extends SimpleHandler {
             throw new HttpException( 'Forbidden', 403 );
         }
 
-        $resp = $this->getResponseFactory()->create();
-        $resp->setStatus( 200 );
-        $resp->setHeader( 'Content-Type', 'application/json' );
-        $resp->setHeader( 'X-Auth-User', $user->getName() );
-        $resp->setHeader( 'X-Auth-User-Id', (string)$user->getId() );
         if ( $neededRight ) { $resp->setHeader( 'X-Auth-Granted-Right', $neededRight ); }
-        $resp->setBody( Utils::streamFor( json_encode( [ 'ok' => true ] ) ) );
         return $resp;
     }
 

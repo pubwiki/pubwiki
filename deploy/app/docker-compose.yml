@@ -14,13 +14,24 @@ services:
       - traefik.http.routers.wikifarm.tls.certresolver=cloudflare
       - traefik.http.routers.wikifarm.tls.domains[0].main=*.${WIKI_HOST}
       - traefik.http.services.wikifarm.loadbalancer.server.port=80
+      - traefik.http.routers.wikifarm.middlewares=chained-auth
       - traefik.http.routers.wikifarm.priority=1
+
+      - "traefik.http.middlewares.chained-auth.chain.middlewares=wikifarm-auth1,wikifarm-auth2"
+      
+      - "traefik.http.middlewares.wikifarm-auth1.forwardauth.trustForwardHeader=false"
+      - "traefik.http.middlewares.wikifarm-auth1.forwardauth.address=http://nginx/rest.php/wikimanage/v1/auth/check"
+      - "traefik.http.middlewares.wikifarm-auth1.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right,X-Auth-User-Groups"
+
+      - "traefik.http.middlewares.wikifarm-auth2.forwardauth.trustForwardHeader=false"
+      - "traefik.http.middlewares.wikifarm-auth2.forwardauth.address=http://provisioner:8080/manage/v1/visibility/check"
+
     networks:
       - proxy
       - farm
   
   mediawikifarm:
-    image: m4tsuri/pubwikifarm:v1.0
+    image: m4tsuri/pubwikifarm:v1.1
     container_name: mediawikifarm
     environment:
       DATABASE_URL: "mysql://$WIKI_DB_ADMIN_USER:$WIKI_DB_ADMIN_PASSWORD@${WIKI_DB_HOST}/$MAINWIKI_DB_NAME"
@@ -87,7 +98,7 @@ services:
       - "traefik.http.services.provisioner.loadbalancer.server.port=8080"
       - "traefik.http.routers.provisioner.service=provisioner"
       - "traefik.http.routers.provisioner.tls.certresolver=cloudflare"
-      - "traefik.http.routers.provisioner.middlewares=wikifarm-auth"
+      - "traefik.http.routers.provisioner.middlewares=provisioner-auth"
 
       # Router for managing wiki
       - traefik.http.routers.manager.rule=HostRegexp(`^.+\.$ESCAPED_WIKI_HOST$`) && PathPrefix(`/manage/`)
@@ -97,17 +108,16 @@ services:
       - traefik.http.routers.manager.tls.certresolver=cloudflare
       - traefik.http.routers.manager.tls.domains[0].main=*.${WIKI_HOST}
       - traefik.http.routers.manager.middlewares=wikimanage-auth
-      - traefik.http.routers.manager.priority=1
 
-      # -- WikiFarm Auth Middleware
+      # -- WikiManage Auth Middleware that requires auth user with specific group in sub wiki 
       - "traefik.http.middlewares.wikimanage-auth.forwardauth.trustForwardHeader=true"
       - "traefik.http.middlewares.wikimanage-auth.forwardauth.address=http://nginx/rest.php/wikimanage/v1/auth/check"
-      - "traefik.http.middlewares.wikimanage-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right"
+      - "traefik.http.middlewares.wikimanage-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right,X-Auth-User-Groups"
 
       # -- WikiFarm Auth Middleware
-      - "traefik.http.middlewares.wikifarm-auth.forwardauth.trustForwardHeader=true"
-      - "traefik.http.middlewares.wikifarm-auth.forwardauth.address=http://mainwiki/rest.php/wikifarm/v1/auth/check"
-      - "traefik.http.middlewares.wikifarm-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right"
+      - "traefik.http.middlewares.provisioner-auth.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.provisioner-auth.forwardauth.address=http://mainwiki/rest.php/wikifarm/v1/auth/check"
+      - "traefik.http.middlewares.provisioner-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right"
 
   mainwiki:
     image: m4tsuri/pubwiki:v1.7.1
@@ -145,11 +155,11 @@ services:
       - wikinet
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.wiki.rule=Host(`${WIKI_HOST}`)"
-      - "traefik.http.routers.wiki.entrypoints=websecure"
-      - "traefik.http.services.wiki.loadbalancer.server.port=80"
-      - "traefik.http.routers.wiki.service=wiki"
-      - "traefik.http.routers.wiki.tls.certresolver=cloudflare"
+      - "traefik.http.routers.mainwiki.rule=Host(`${WIKI_HOST}`)"
+      - "traefik.http.routers.mainwiki.entrypoints=websecure"
+      - "traefik.http.services.mainwiki.loadbalancer.server.port=80"
+      - "traefik.http.routers.mainwiki.service=mainwiki"
+      - "traefik.http.routers.mainwiki.tls.certresolver=cloudflare"
 
 
 networks:
