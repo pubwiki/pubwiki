@@ -1,5 +1,8 @@
-use std::fs;
+use std::fs::{self, Permissions};
 use std::path::Path;
+use std::os::unix::fs::PermissionsExt;
+
+use rcgen::PKCS_RSA_SHA256;
 // rcgen provides simple self-signed certificate generation
 
 #[derive(thiserror::Error, Debug)]
@@ -12,16 +15,21 @@ pub enum OauthError {
 
 pub fn generate_keypair(dir: &str) -> Result<(), OauthError> {
     std::fs::create_dir_all(dir)?;
-    std::os::unix::fs::chown(dir, Some(33), Some(33))?;
 
     // For OAuth token signing, a self-signed certificate with default algorithm is sufficient.
-    let cert = rcgen::generate_simple_self_signed(vec![])?;
+    let cert = rcgen::KeyPair::generate_for(&PKCS_RSA_SHA256)?;
 
-    let key_pem = cert.signing_key.serialize_pem();
-    let cert_pem = cert.cert.pem();
+    let key_pem = cert.serialize_pem();
+    let cert_pem = cert.public_key_pem();
 
-    fs::write(Path::new(dir).join("oauth.key"), &key_pem)?;
-    fs::write(Path::new(dir).join("oauth.cert"), &cert_pem)?;
+    let key_path = Path::new(dir).join("oauth.key");
+    let cert_path = Path::new(dir).join("oauth.cert");
+    fs::write(&key_path, &key_pem)?;
+    fs::write(&cert_path, &cert_pem)?;
+
+    std::os::unix::fs::chown(&key_path, Some(33), Some(33))?;
+    std::os::unix::fs::chown(&cert_path, Some(33), Some(33))?;
+    fs::set_permissions(key_path, Permissions::from_mode(0o600))?;
     Ok(())
 }
 
