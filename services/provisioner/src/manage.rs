@@ -473,11 +473,11 @@ pub async fn set_favicon(
     // Compute path: <wikifarm_dir>/<slug>/w/favicon.ico
     let wiki_root = format!("{}/{}", state.env.wikifarm_dir, slug);
     let path = format!("{}/favicon.ico", wiki_root);
-    tokio::fs::create_dir(&wiki_root).await?;
     tokio::fs::write(&path, &bytes)
         .await
         .with_context(|| format!("write favicon: {}", path))
         .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "write_fs", e.to_string()))?;
+    std::os::unix::fs::chown(path, Some(33), Some(33))?;
 
     Ok((StatusCode::OK, Json(json!({"msg":"ok"}))).into_response())
 }

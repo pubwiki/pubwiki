@@ -4,7 +4,8 @@
     "check_visibility": "deno run -A src/check_visibility.ts",
     "auth_and_whoami": "deno run -A src/set_visibility.ts",
     "check_visibility_login": "deno run -A src/check_visibility_login.ts",
-    "get_rights": "deno run -A src/get_rights.ts"
+    "get_rights": "deno run -A src/get_rights.ts",
+    "set_favicon": "deno run -A src/set_favicon.ts"
   },
   "compilerOptions": {
     "strict": true,
