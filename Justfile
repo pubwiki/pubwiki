@@ -31,6 +31,15 @@ dev-reload:
     docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   up -d
     docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   up -d
 
+dev-restart:
+    docker compose --env-file deploy/.dev.env -f deploy/infra/docker-compose.yml stop
+    docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   stop
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   stop
+
+    docker compose --env-file deploy/.dev.env -f deploy/infra/docker-compose.yml up -d
+    docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   up -d
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   up -d
+
 fresh-dev:
     docker compose --env-file deploy/.dev.env -f deploy/infra/docker-compose.yml stop
     docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   stop
@@ -48,4 +57,6 @@ fresh-dev:
 dev-template tag:
     sudo rm -rf /tmp/wikis/template/*
     docker run --rm -e https_proxy=$HTTP_PROXY -v /tmp/wikis/template:/template m4tsuri/pubwiki-template:{{tag}}
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   stop
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   up -d
     
