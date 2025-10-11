@@ -18,3 +18,34 @@ mariadb tag:
 provisioner tag:
     docker build --build-arg https_proxy=$HTTP_PROXY --build-arg http_proxy=$HTTP_PROXY -t m4tsuri/pubwiki-provisioner:{{tag}} -f services/provisioner/docker/Dockerfile .
 
+dev-init:
+    docker compose --env-file deploy/.dev.env -f deploy/infra/docker-compose.yml up -d
+    docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   up -d
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   up -d
+
+    - awslocal opensearch create-domain --cli-input-json file://./deploy/dev/opensearch_domain.json --no-cli-pager
+    docker exec app-mainwiki-1 /var/www/html/setup.sh
+
+dev-reload:
+    docker compose --env-file deploy/.dev.env -f deploy/infra/docker-compose.yml up -d
+    docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   up -d
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   up -d
+
+fresh-dev:
+    docker compose --env-file deploy/.dev.env -f deploy/infra/docker-compose.yml stop
+    docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   stop
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   stop
+
+    docker compose --env-file deploy/.dev.env -f deploy/infra/docker-compose.yml rm
+    docker compose --env-file deploy/.dev.env -f deploy/dev/docker-compose.yml   rm
+    docker compose --env-file deploy/.dev.env -f deploy/app/docker-compose.yml   rm
+
+    docker volume rm app_wikifarm-config
+    docker volume rm app_wikifarm-oauth
+    docker volume rm app_wikifarm-wikis
+    docker volume rm dev_wiki-db-data
+
+dev-template tag:
+    sudo rm -rf /tmp/wikis/template/*
+    docker run --rm -e https_proxy=$HTTP_PROXY -v /tmp/wikis/template:/template m4tsuri/pubwiki-template:{{tag}}
+    
