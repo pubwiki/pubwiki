@@ -161,7 +161,7 @@ wfLoadExtension( 'PortableInfobox' );
 
 # configure OAuth
 wfLoadExtension( 'OAuth' );
-$wgMWOAuthCentralWiki = false;
+$wgMWOAuthCentralWiki = $wgSharedDB;
 $wgOAuth2PrivateKey = "/oauth/" . $wikiSlug . "/oauth.key";
 $wgOAuth2PublicKey = "/oauth/" . $wikiSlug . "/oauth.cert";
 

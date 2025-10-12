@@ -170,7 +170,7 @@ wfLoadExtension( 'PortableInfobox' );
 
 # configure OAuth
 wfLoadExtension( 'OAuth' );
-$wgMWOAuthCentralWiki = false;
+$wgMWOAuthCentralWiki = $wgDBname;
 # TODO: check if this is suitable
 $wgGroupPermissions["oauth"]["mwoauthproposeconsumer"] = true;
 $wgGroupPermissions["oauth"]["mwoauthupdateownconsumer"] = true;

@@ -111,6 +111,34 @@ pub async fn provision_db(
     .concat();
     conn.execute(grant_actor_tbl.as_str()).await?;
 
+    let grant_oauth_registered_tbl = [
+        "GRANT SELECT ON `",
+        shared_db_name,
+        "`.`oauth_registered_consumer` TO '",
+        wiki_db_user,
+        "'@'%'",
+    ]
+    .concat();
+    conn.execute(grant_oauth_registered_tbl.as_str()).await?;
+    let grant_accepted_consumer_tbl = [
+        "GRANT SELECT ON `",
+        shared_db_name,
+        "`.`oauth_accepted_consumer` TO '",
+        wiki_db_user,
+        "'@'%'",
+    ]
+    .concat();
+    conn.execute(grant_accepted_consumer_tbl.as_str()).await?;
+    let grant_access_tokens_tbl = [
+        "GRANT SELECT ON `",
+        shared_db_name,
+        "`.`oauth2_access_tokens` TO '",
+        wiki_db_user,
+        "'@'%'",
+    ]
+    .concat();
+    conn.execute(grant_access_tokens_tbl.as_str()).await?;
+
     // 5) FLUSH PRIVILEGES
     conn.execute("FLUSH PRIVILEGES").await?;
     Ok(())
