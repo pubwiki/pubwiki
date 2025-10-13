@@ -6,13 +6,10 @@ if [ ! -d /template ];then
     exit 127;
 fi
 
-wget -O /tmp/mediawiki-1.44.0.tar.gz https://releases.wikimedia.org/mediawiki/1.44/mediawiki-1.44.0.tar.gz
-tar -xzf /tmp/mediawiki-1.44.0.tar.gz -C /template --strip-components=1
+wget -O /tmp/mediawiki-1.44.2.tar.gz https://releases.wikimedia.org/mediawiki/1.44/mediawiki-1.44.2.tar.gz
+tar -xzf /tmp/mediawiki-1.44.2.tar.gz -C /template --strip-components=1
 
 IP=/template
-
-cd $IP
-curl https://github.com/wikimedia/mediawiki/commit/54d2416f.patch | git apply
 
 cd $IP/extensions
 mv /extensions/* .

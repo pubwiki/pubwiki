@@ -12,8 +12,6 @@ RUN php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');" \
 
 WORKDIR /var/www/html
 
-# Patch mediawiki for a bug
-RUN curl https://github.com/wikimedia/mediawiki/commit/54d2416f.patch | git apply
 RUN wget https://meocap-client-files.oss-cn-beijing.aliyuncs.com/MediaWikiLanguageExtensionBundle-2025.07.tar.bz2 \
     && tar -xvjf MediaWikiLanguageExtensionBundle-2025.07.tar.bz2 --strip-components=1 -C ./extensions \
     && rm MediaWikiLanguageExtensionBundle-2025.07.tar.bz2
