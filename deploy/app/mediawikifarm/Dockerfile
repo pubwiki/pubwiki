@@ -32,4 +32,6 @@ COPY --from=build /build/target/release/runjobs /usr/local/bin/runjobs
 COPY deploy/app/mediawikifarm/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+RUN mkdir -p /cache/mediawiki && chown www-data:www-data /cache/mediawiki
+
 CMD [ "/entrypoint.sh" ]
