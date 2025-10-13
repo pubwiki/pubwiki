@@ -121,7 +121,6 @@ async fn run_for_wiki(env: &EnvCfg, slug: &str) -> anyhow::Result<()> {
     cmd2.arg(run.as_os_str())
         .arg("runJobs")
         .arg("--maxtime=3600")
-        .arg("--wait")
         .arg("--maxjobs=20")
         .current_dir(&mw_dir)
         .stdout(Stdio::inherit())
