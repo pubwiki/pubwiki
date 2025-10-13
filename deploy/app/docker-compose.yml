@@ -78,7 +78,7 @@ services:
       RUST_LOG: info
       RUST_BACKTRACE: 1
       WIKI_AWS_REGION: ${WIKI_AWS_REGION}
-      DISABLE_ROLLBACK: true
+      # DISABLE_ROLLBACK: true
     networks:
       - wikinet
       - proxy
