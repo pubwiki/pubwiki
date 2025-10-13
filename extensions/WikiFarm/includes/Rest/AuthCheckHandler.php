@@ -76,6 +76,9 @@ class AuthCheckHandler extends SimpleHandler {
             $needLogin = true; // require login to probe slugs
         } elseif ( $method === 'GET' && $path === '/wikis' ) {
             // legacy list; allow public
+        } elseif ( $method === 'DELETE' && preg_match('#^/wikis/[a-z0-9\-]{1,120}$#', $path) ) {
+            // delete wiki -> require login; service will verify owner
+            $needLogin = true;
         } elseif ( $method === 'GET' && preg_match('#^/users/(\d+)/wikis$#', $path, $m) ) {
             $needLogin = true;
             $uid = (int)$m[1];

@@ -22,6 +22,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info, warn};
+use sqlx::Row;
 
 use super::validate::validate;
 use super::{
@@ -29,6 +30,7 @@ use super::{
     error::ApiError,
     events::{Event as TaskEvent, Status},
 };
+use crate::auth::AuthContext;
 
 #[derive(Debug, Serialize)]
 struct CreateAccepted {
@@ -412,4 +414,57 @@ pub async fn check_slug(
     } else {
         Ok((StatusCode::OK, Json(json!({"slug": slug, "exists": false}))).into_response())
     }
+}
+
+/// Delete a wiki by slug (idempotent).
+/// Only the owner can delete. If already absent, returns OK.
+pub async fn delete_wiki(
+    State(state): State<AppState>,
+    auth: AuthContext,
+    Path(slug): Path<String>,
+) -> Result<Response, ApiError> {
+    validate(&slug, &crate::validate::WIKI_SLUG)?;
+
+    // Lookup wiki
+    let row = sqlx::query("SELECT id, owner_user_id FROM wikifarm_wikis WHERE slug=? LIMIT 1")
+        .bind(&slug)
+        .fetch_optional(&state.db)
+        .await?;
+
+    if row.is_none() {
+        // Idempotent OK when nothing to delete
+        return Ok((StatusCode::OK, Json(json!({"msg":"ok"}))).into_response());
+    }
+
+    let row = row.unwrap();
+    let wiki_id: u64 = row.get::<u64, _>("id");
+    let owner_id: u64 = row.get::<u64, _>("owner_user_id");
+
+    if auth.user_id == 0 {
+        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized", "login required"));
+    }
+    if auth.user_id != owner_id {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "not_owner", "not owner"));
+    }
+
+    // Best-effort removal of external resources
+    let target_dir = format!("{}/{}", state.env.wikifarm_dir, slug);
+    let oauth_dir = format!("{}/{}", state.env.wikifarm_oauth_dir, slug);
+
+    let _ = crate::provision::oauth::remove_keys_dir(&oauth_dir);
+    let _ = crate::provision::ini::remove_ini_dir(&state.env.wikifarm_config_dir, &slug);
+    let _ = crate::provision::fs::remove_dir_all_if_exists(&target_dir);
+    let _ = crate::provision::db::deprovision_db(&state.db, &slug, &slug).await;
+
+    // Remove DB rows (ignore errors to keep idempotency)
+    let _ = sqlx::query("DELETE FROM wikifarm_wiki_group_permissions WHERE wiki_id=?")
+        .bind(wiki_id)
+        .execute(&state.db)
+        .await;
+    let _ = sqlx::query("DELETE FROM wikifarm_wikis WHERE id=?")
+        .bind(wiki_id)
+        .execute(&state.db)
+        .await;
+
+    Ok((StatusCode::OK, Json(json!({"msg":"ok"}))).into_response())
 }

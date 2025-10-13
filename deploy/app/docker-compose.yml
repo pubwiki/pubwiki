@@ -31,7 +31,7 @@ services:
       - farm
   
   mediawikifarm:
-    image: m4tsuri/pubwikifarm:v1.3
+    image: m4tsuri/pubwikifarm:v1.4
     container_name: mediawikifarm
     environment:
       DATABASE_URL: "mysql://$WIKI_DB_ADMIN_USER:$WIKI_DB_ADMIN_PASSWORD@${WIKI_DB_HOST}/$MAINWIKI_DB_NAME"
@@ -58,7 +58,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
 
   provisioner:
-    image: m4tsuri/pubwiki-provisioner:v1.8
+    image: m4tsuri/pubwiki-provisioner:v1.8.1
     depends_on: [mediawikifarm]
     container_name: wikifarm-provisioner
     environment:

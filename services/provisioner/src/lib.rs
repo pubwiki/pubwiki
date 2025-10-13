@@ -8,7 +8,7 @@ pub mod validate;
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{get, post, delete},
 };
 use redis::Client as RedisClient;
 use sqlx::{MySql, Pool};
@@ -49,6 +49,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/provisioner/v1/wikis",
             post(provision::create_wiki).get(provision::list_featured),
+        )
+        .route(
+            "/provisioner/v1/wikis/{slug}",
+            delete(provision::delete_wiki),
         )
         .route(
             "/provisioner/v1/wikis/public",

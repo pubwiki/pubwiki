@@ -5,7 +5,9 @@
     "auth_and_whoami": "deno run -A src/set_visibility.ts",
     "check_visibility_login": "deno run -A src/check_visibility_login.ts",
     "get_rights": "deno run -A src/get_rights.ts",
-    "set_favicon": "deno run -A src/set_favicon.ts"
+    "set_favicon": "deno run -A src/set_favicon.ts",
+    "create_wiki": "deno run -A src/create_wiki.ts",
+    "delete_wiki": "deno run -A src/delete_wiki.ts"
   },
   "compilerOptions": {
     "strict": true,

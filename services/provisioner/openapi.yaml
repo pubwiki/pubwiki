@@ -29,6 +29,26 @@ paths:
         '400': { description: Bad Request }
         '409': { description: Conflict }
         '500': { description: Internal Server Error }
+  /wikis/{slug}:
+    delete:
+      summary: Delete a wiki by slug (idempotent)
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{3,120}$' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  msg: { type: string }
+        '401': { description: Unauthorized }
+        '403': { description: Not owner }
+        '500': { description: Internal Server Error }
   /wikis/public:
     get:
       summary: List public wikis (visibility=public, status=ready)
