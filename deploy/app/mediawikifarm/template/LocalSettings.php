@@ -258,6 +258,9 @@ wfLoadExtension( 'WikiManage' );
 
 require_once "/config/" . $wikiSlug . "/permissions.php";
 
+$wgNamespacesWithSubpages[NS_MAIN] = true;
+$wgNamespacesWithSubpages[NS_TEMPLATE] = true;
+
 $wgGitInfoCacheDirectory = "$IP/cache/gitinfo";
 
 if ($wikiIni["WIKI_BOOTSTRAPING"]) {
