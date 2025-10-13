@@ -106,7 +106,7 @@ $wgLocaltimezone = "UTC";
 ## Set $wgCacheDirectory to a writable directory on the web server
 ## to make your wiki go slightly faster. The directory should not
 ## be publicly accessible from the web.
-$wgCacheDirectory = "/cache/mediawiki/$wikiSlug";
+$wgCacheDirectory = "/tmp/mediawiki/$wikiSlug";
 
 $wgSecretKey = "d6a2ef0fb399f7b0fab6b257e849b3f8dffeeab8d05ef87d72e2f280ad10d886";
 
