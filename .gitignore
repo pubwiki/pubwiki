@@ -1,3 +1,4 @@
 .env
 .env*
 /**/target
+smoketest/src/config.ts
