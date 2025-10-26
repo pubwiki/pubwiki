@@ -1,0 +1,30 @@
+{
+  "name": "EventRecorder",
+  "version": "0.1.0",
+  "author": ["PubWiki"],
+  "url": "https://github.com/pubwiki/pubwiki",
+  "description": "Emit EventBus messages when Semantic MediaWiki properties change.",
+  "license-name": "MIT",
+  "type": "other",
+  "manifest_version": 2,
+  "requires": {
+    "MediaWiki": ">= 1.39.0"
+  },
+  "AutoloadNamespaces": {
+    "MediaWiki\\Extension\\EventRecorder\\": "includes/"
+  },
+  "HookHandlers": {
+    "smw": {
+      "class":  "MediaWiki\\Extension\\EventRecorder\\EventRecorderHooks"
+    }
+  },
+  "Hooks": {
+    "SetupAfterCache": "smw"
+  },
+  "config": {
+    "EventRecorderEventService": { "value": "eventrecorder" },
+    "EventRecorderStream": { "value": "mediawiki.smw.property_change" },
+    "EventRecorderTopic": { "value": "mediawiki.smw.property_change" },
+    "EventRecorderSchema": { "value": "/mediawiki/smw/property-change/1" }
+  }
+}
