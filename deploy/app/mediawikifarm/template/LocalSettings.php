@@ -239,22 +239,39 @@ $wgAWSRegion = $wikiIni["WIKI_AWS_REGION"];
 $wgAWSBucketName = $wikiIni["WIKI_SHARED_DB_NAME"];
 $wgAWSBucketTopSubdirectory = "/$wgDBname";
 $wgLogos = [
-	'1x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_1x.png",    // relative path to file in document root
-	'1.5x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_1-5x.png",  // full URL to elsewhere
-	'2x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_2x.png",    // relative paths always start with a slash
-	//  'svg' => "",       // svg key has been deprecated
-	'icon' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Icon.png",  // 50×50 SVG or 100×100 PNG (limited support)
+  '1x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_1x.png",    // relative path to file in document root
+  '1.5x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_1-5x.png",  // full URL to elsewhere
+  '2x' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Logo_2x.png",    // relative paths always start with a slash
+  //  'svg' => "",       // svg key has been deprecated
+  'icon' => "https://$wgSharedDB.s3.amazonaws.com/$wgDBname/Icon.png",  // 50×50 SVG or 100×100 PNG (limited support)
 ];
 
 wfLoadExtension( 'SemanticMediaWiki' );
-enableSemantics( $wikiSlug . $wikiIni["WIKI_HOST"] );
+enableSemantics( $wikiSlug . '.' . $wikiIni["WIKI_HOST"] );
 $smwgConfigFileDir = "/config/" . $wikiSlug;
+wfLoadExtension( 'SemanticScribunto' );
 
 wfLoadExtension( 'ApprovedRevs' );
 
 wfLoadExtension( 'ParserFunctions' );
+wfLoadExtension( 'SyntaxHighlight_GeSHi' );
+
+$wgScribuntoUseGeSHi = true;
+wfLoadExtension( 'WikiEditor' );
+wfLoadExtension( 'CodeEditor' );
+$wgDefaultUserOptions['usebetatoolbar'] = 1;
+$wgScribuntoUseCodeEditor = true;
+
+# wfLoadExtension( 'EventBus' );
+# $wgEventServices = [
+#     'eventrecorder'  => ['url' => 'http://172.17.0.1:8080/v1/events', 'timeout' => 10],
+# ];
 
 wfLoadExtension( 'WikiManage' );
+
+wfLoadExtension( 'PageForms' );
+wfLoadExtension( "PageSchemas" );
+$wgGroupPermissions['user']['generatepages'] = true;
 
 require_once "/config/" . $wikiSlug . "/permissions.php";
 

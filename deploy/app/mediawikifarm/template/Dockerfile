@@ -41,6 +41,15 @@ RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/MobileFrontend
 RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/ApprovedRevs.git && \
     cd ApprovedRevs && git checkout REL1_44 && \
     composer install --no-dev
+RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/EventBus && \
+    cd EventBus && git checkout REL1_44 && \
+    composer install --no-dev
+RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/PageForms && \
+    cd PageForms && git checkout REL1_44 && \
+    composer install --no-dev
+RUN git clone https://gerrit.wikimedia.org/r/mediawiki/extensions/PageSchemas && \
+    cd PageSchemas && git checkout REL1_44 && \
+    composer install --no-dev
 
 WORKDIR /tmp/downloads
 RUN wget https://meocap-client-files.oss-cn-beijing.aliyuncs.com/MediaWikiLanguageExtensionBundle-2025.07.tar.bz2 && \
