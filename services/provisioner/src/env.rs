@@ -3,7 +3,6 @@ use std::env;
 #[derive(Clone, Debug)]
 pub struct WikifarmEnv {
     pub wikifarm_dir: String,
-    pub wikifarm_oauth_dir: String,
     pub wikifarm_template: String,
     pub wikifarm_config_dir: String,
     pub wikifarm_instance: String,
@@ -26,7 +25,6 @@ impl WikifarmEnv {
         let opt = |k: &str, d: &str| env::var(k).unwrap_or_else(|_| d.to_string());
         Ok(Self {
             wikifarm_dir: opt("WIKIFARM_DIR", "/srv/wikis"),
-            wikifarm_oauth_dir: opt("WIKIFARM_OAUTH_DIR", "/oauth"),
             wikifarm_template: opt("WIKIFARM_TEMPLATE", "/template"),
             wikifarm_config_dir: opt("WIKIFARM_CONFIG_DIR", "/config"),
             wikifarm_instance: req("WIKIFARM_INSTANCE")?,

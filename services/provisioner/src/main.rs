@@ -156,7 +156,6 @@ async fn do_job(state: &AppState, job: &JobPayload, channel: &str) -> Result<u64
         redis: &state.redis,
         channel,
         target_dir: &format!("{}/{}", state.env.wikifarm_dir, job.slug),
-        oauth_dir: &format!("{}/{}", state.env.wikifarm_oauth_dir, job.slug),
         db_name: &job.slug,
         db_user: &job.slug,
         db_password: &db_password,
@@ -170,7 +169,7 @@ async fn do_job(state: &AppState, job: &JobPayload, channel: &str) -> Result<u64
         Err(e) => {
             warn!(task_id=%job.task_id, error=%e, "orchestrator run failed; invoking rollback");
             // rollback based on context
-            if let Ok(_) = std::env::var("DISABLE_ROLLBACK") {
+            if std::env::var("DISABLE_ROLLBACK").is_ok() {
                 return Err(format!("provision error: {e}"));
             }
             provision::orchestrator::rollback(&mut ctx).await;

@@ -363,8 +363,7 @@ pub async fn visibility_check(
     if auth.user_id > 0 {
         // slug is validated; safe to inline as schema identifier with backticks
         let query = format!(
-            "SELECT ug_group FROM `{}`.user_groups WHERE ug_user=?",
-            slug
+            "SELECT ug_group FROM `{slug}`.user_groups WHERE ug_user=?",
         );
         let rows = sqlx::query(&query)
             .bind(auth.user_id)
@@ -382,10 +381,10 @@ pub async fn visibility_check(
     }
 
     let mut headers = HeaderMap::new();
-    if !groups.is_empty() {
-        if let Ok(val) = HeaderValue::from_str(&groups.join(",")) {
-            headers.insert("X-Auth-User-Groups", val);
-        }
+    if !groups.is_empty()
+        && let Ok(val) = HeaderValue::from_str(&groups.join(",")) 
+    {
+        headers.insert("X-Auth-User-Groups", val);
     }
 
     match visibility.as_str() {
@@ -472,10 +471,10 @@ pub async fn set_favicon(
 
     // Compute path: <wikifarm_dir>/<slug>/w/favicon.ico
     let wiki_root = format!("{}/{}", state.env.wikifarm_dir, slug);
-    let path = format!("{}/favicon.ico", wiki_root);
+    let path = format!("{wiki_root}/favicon.ico");
     tokio::fs::write(&path, &bytes)
         .await
-        .with_context(|| format!("write favicon: {}", path))
+        .with_context(|| format!("write favicon: {path}"))
         .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "write_fs", e.to_string()))?;
     std::os::unix::fs::chown(path, Some(33), Some(33))?;
 
@@ -511,10 +510,10 @@ impl FromRequestParts<AppState> for Slug {
         if let Some((first, _)) = host.split_once(',') {
             host = first.trim().to_string();
         }
-        if let Some((h, port)) = host.rsplit_once(':') {
-            if port.chars().all(|c| c.is_ascii_digit()) {
-                host = h.to_string();
-            }
+        if let Some((h, port)) = host.rsplit_once(':') 
+            && port.chars().all(|c| c.is_ascii_digit())
+        {
+            host = h.to_string();
         }
 
         let suffix = std::env::var("WIKI_HOST").unwrap_or_default();
@@ -550,7 +549,7 @@ impl FromRequestParts<AppState> for Slug {
         let slug = rest
             .split('.')
             .filter(|s| !s.is_empty())
-            .last()
+            .next_back()
             .ok_or_else(|| {
                 ApiError::new(
                     StatusCode::BAD_REQUEST,

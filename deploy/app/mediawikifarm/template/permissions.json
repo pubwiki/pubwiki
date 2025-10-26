@@ -2,16 +2,16 @@
     "allow": {
         "*": [
             "createaccount",
-            "edit"
-        ],
-        "oauth": [
+            "edit",
             "mwoauthproposeconsumer",
             "mwoauthupdateownconsumer",
+            "mwoauthmanagemygrants"
+        ],
+        "oauth": [
             "mwoauthmanageconsumer",
             "mwoauthsuppress",
             "mwoauthviewprivate",
-            "mwoauthviewsuppressed",
-            "mwoauthmanagemygrants"
+            "mwoauthviewsuppressed"
         ],
         "translator": [
             "translate",

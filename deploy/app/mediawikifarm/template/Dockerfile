@@ -65,5 +65,7 @@ COPY deploy/app/mediawikifarm/template/composer.local.json /composer.local.json
 COPY deploy/app/mediawikifarm/template/permissions.json /permissions.json
 
 COPY extensions/WikiManage /extensions/WikiManage
+COPY extensions/EventRecorder /extensions/EventRecorder
+COPY extensions/OAuthCentralIDCompact /extensions/OAuthCentralIDCompact
 
 ENTRYPOINT ["/create_template_1.44.sh"]

@@ -15,7 +15,6 @@ pub enum Phase {
     DirCopy,
     RenderIni,
     DbProvision,
-    Oauth,
     DockerInstall,
     DockerIndexCfg,
     FlipBootstrap,

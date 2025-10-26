@@ -38,7 +38,7 @@ services:
       RUST_LOG: info
     volumes:
       - wikifarm-wikis:/srv/wikis:rw
-      - wikifarm-oauth:/oauth:ro
+      - wiki-oauth:/oauth:ro
       - wikifarm-config:/config:rw
       - wikifarm-aws:/var/www/.aws
       - ${HOST_TEMPLATE_DIR}:/template:ro
@@ -58,7 +58,7 @@ services:
       - REDIS_PASSWORD=${REDIS_PASSWORD}
 
   provisioner:
-    image: m4tsuri/pubwiki-provisioner:v1.8.1
+    image: m4tsuri/pubwiki-provisioner:v1.9
     depends_on: [mediawikifarm]
     container_name: wikifarm-provisioner
     environment:
@@ -84,7 +84,7 @@ services:
       - proxy
     volumes:
       - wikifarm-wikis:/srv/wikis:rw
-      - wikifarm-oauth:/oauth
+      - wiki-oauth:/oauth
       - wikifarm-config:/config
       - ${HOST_TEMPLATE_DIR}:/template:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -120,7 +120,7 @@ services:
       - "traefik.http.middlewares.provisioner-auth.forwardauth.authResponseHeaders=X-Auth-User,X-Auth-User-Id,X-Auth-Granted-Right"
 
   mainwiki:
-    image: m4tsuri/pubwiki:v1.8
+    image: m4tsuri/pubwiki:v1.9
     restart: unless-stopped
     environment: 
       WIKI_SITE_NAME: Pub Wiki
@@ -148,8 +148,10 @@ services:
       OPENSEARCH_PASSWORD: ${OPENSEARCH_PASSWORD}
       OPENSEARCH_ENDPOINT: ${OPENSEARCH_ENDPOINT}
     volumes:
+      - wiki-oauth:/oauth
       - wiki-images:/var/www/html/images
       - ../../extensions/WikiFarm:/var/www/html/extensions/WikiFarm
+      - ../../extensions/OAuthCentralIDCompact:/var/www/html/extensions/OAuthCentralIDCompact
     networks:
       - proxy
       - wikinet
@@ -171,7 +173,7 @@ networks:
   farm:
 
 volumes:
-  wikifarm-oauth:
+  wiki-oauth:
   wikifarm-wikis:
   wikifarm-config:
   wikifarm-aws:

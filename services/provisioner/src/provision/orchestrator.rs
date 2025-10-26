@@ -1,4 +1,4 @@
-use super::{db, docker, fs, ini, oauth};
+use super::{db, docker, fs, ini};
 use crate::events::{Event, Phase, Status};
 use crate::{
     env::WikifarmEnv,
@@ -15,7 +15,6 @@ pub enum Step {
     FsDir,
     IniWritten,
     DbProvisioned,
-    OauthKeys,
     InsertWikiRecord(u64),
     WritePermissions(u64),
     DockerInstalled,
@@ -40,7 +39,6 @@ pub struct ProvisionContext<'a> {
     pub redis: &'a redis::Client,
     pub channel: &'a str,
     pub target_dir: &'a str,
-    pub oauth_dir: &'a str,
     pub db_name: &'a str,
     pub db_user: &'a str,
     pub db_password: &'a str,
@@ -143,22 +141,6 @@ pub async fn run<'a>(ctx: &mut ProvisionContext<'a>) -> anyhow::Result<u64> {
     .await?;
     ctx.steps.push(Step::DbProvisioned);
     debug!(slug=%ctx.slug, "db provision done");
-
-    // 4) OAuth keys
-    publish_event(
-        &mut rconn,
-        ctx.channel,
-        &Event::Progress {
-            status: Status::Running,
-            message: Some("oauth keys".into()),
-            phase: Some(Phase::Oauth),
-        },
-    )
-    .await?;
-    debug!(slug=%ctx.slug, oauth_dir=%ctx.oauth_dir, "oauth keypair gen start");
-    oauth::generate_keypair(ctx.oauth_dir)?;
-    ctx.steps.push(Step::OauthKeys);
-    debug!(slug=%ctx.slug, "oauth keypair gen done");
 
     // 5) apply default group permissions via template/permissions.json
     // Supported formats:
@@ -334,10 +316,6 @@ pub async fn rollback<'a>(ctx: &mut ProvisionContext<'a>) {
     warn!(slug=%ctx.slug, steps=?ctx.steps, "rollback start");
     while let Some(step) = ctx.steps.pop() {
         match step {
-            Step::OauthKeys => {
-                debug!(slug=%ctx.slug, "rollback: remove oauth keys dir");
-                let _ = oauth::remove_keys_dir(ctx.oauth_dir);
-            }
             Step::DbProvisioned => {
                 debug!(slug=%ctx.slug, "rollback: deprovision db");
                 let _ = db::deprovision_db(ctx.db, ctx.db_name, ctx.db_user).await;

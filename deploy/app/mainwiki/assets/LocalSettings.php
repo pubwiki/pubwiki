@@ -169,6 +169,7 @@ wfLoadExtension( 'TemplateStyles' );
 wfLoadExtension( 'PortableInfobox' );
 
 # configure OAuth
+wfLoadExtension( 'OAuthCentralIDCompact' );
 wfLoadExtension( 'OAuth' );
 $wgMWOAuthCentralWiki = $wgDBname;
 # TODO: check if this is suitable
@@ -181,6 +182,7 @@ $wgGroupPermissions["oauth"]["mwoauthviewsuppressed"] = true;
 $wgGroupPermissions["oauth"]["mwoauthmanagemygrants"] = true;
 $wgOAuth2PrivateKey = "/oauth/oauth.key";
 $wgOAuth2PublicKey = "/oauth/oauth.cert";
+$wgMWOAuthSharedUserSource = "oauthcentralidcompact";
 
 # Load Wikibase Repository
 wfLoadExtension( 'WikibaseRepository', "$IP/extensions/Wikibase/extension-repo.json" );

@@ -11,7 +11,7 @@
     "EBSOptions": {
         "EBSEnabled": true,
         "VolumeType": "gp2",
-        "VolumeSize": 10
+        "VolumeSize": 20
     },
     "EncryptionAtRestOptions": {
         "Enabled": true

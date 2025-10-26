@@ -1,0 +1,26 @@
+{
+    "name": "OAuthCentralIDCompact",
+    "author": ["Your Name"],
+    "url": "https://yourdomain.example.com/",
+    "description": "Patches CentralIdLookup recursion issues when OAuth and shared user IDs are enabled.",
+    "type": "other",
+    "requires": {
+        "MediaWiki": ">= 1.35.0"
+    },
+    "AutoloadClasses": {
+        "OAuthCentralIDCompactProvider": "includes/OAuthCentralIDCompactProvider.php",
+        "PublicAudience": "includes/PublicAudience.php",
+        "NullRequest": "includes/NullRequest.php"
+    },
+    "CentralIdLookupProviders": {
+        "oauthcentralidcompact": {
+            "class": "OAuthCentralIDCompactProvider",
+            "services": [
+                "MainConfig",
+                "DBLoadBalancerFactory",
+                "HideUserUtils"
+            ]
+        }
+    },
+    "manifest_version": 2
+}

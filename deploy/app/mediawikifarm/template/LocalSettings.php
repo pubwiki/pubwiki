@@ -74,9 +74,9 @@ $wgDBTableOptions = "ENGINE=InnoDB, DEFAULT CHARSET=binary";
 # This has no effect unless $wgSharedDB is also set.
 $wgSharedTables = [
   'actor',
-	'user',
-	'user_properties',
-	'user_autocreate_serial',
+  'user',
+  'user_properties',
+  'user_autocreate_serial',
 ];
 
 ## Shared memory settings
@@ -160,10 +160,12 @@ wfLoadExtension( 'TemplateStyles' );
 wfLoadExtension( 'PortableInfobox' );
 
 # configure OAuth
+wfLoadExtension( 'OAuthCentralIDCompact' );
 wfLoadExtension( 'OAuth' );
 $wgMWOAuthCentralWiki = $wgSharedDB;
-$wgOAuth2PrivateKey = "/oauth/" . $wikiSlug . "/oauth.key";
-$wgOAuth2PublicKey = "/oauth/" . $wikiSlug . "/oauth.cert";
+$wgOAuth2PrivateKey = "/oauth/oauth.key";
+$wgOAuth2PublicKey = "/oauth/oauth.cert";
+$wgMWOAuthSharedUserSource = "oauthcentralidcompact";
 
 # Load Wikibase Repository
 wfLoadExtension( 'WikibaseRepository', "$IP/extensions/Wikibase/extension-repo.json" );

@@ -2,7 +2,6 @@ pub mod db;
 pub mod docker;
 pub mod fs;
 pub mod ini;
-pub mod oauth;
 pub mod orchestrator;
 
 use std::time::Duration;
@@ -449,9 +448,7 @@ pub async fn delete_wiki(
 
     // Best-effort removal of external resources
     let target_dir = format!("{}/{}", state.env.wikifarm_dir, slug);
-    let oauth_dir = format!("{}/{}", state.env.wikifarm_oauth_dir, slug);
 
-    let _ = crate::provision::oauth::remove_keys_dir(&oauth_dir);
     let _ = crate::provision::ini::remove_ini_dir(&state.env.wikifarm_config_dir, &slug);
     let _ = crate::provision::fs::remove_dir_all_if_exists(&target_dir);
     let _ = crate::provision::db::deprovision_db(&state.db, &slug, &slug).await;
