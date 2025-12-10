@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+:root {
+	--color-bg-primary: #ffffff;
+	--color-bg-secondary: #f6f8fa; /* GitHub-like light gray */
+	--color-border: #d0d7de;
+	--color-text-primary: #24292f;
+	--color-text-secondary: #57606a;
+	--color-accent: #0969da; /* GitHub blue */
+	--color-accent-hover: #0a53be;
+}
+
+body {
+	background-color: var(--color-bg-secondary);
+	color: var(--color-text-primary);
+}
