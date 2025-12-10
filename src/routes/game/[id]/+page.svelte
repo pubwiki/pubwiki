@@ -1,9 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
+	import ArtifactListItem from '$lib/components/ArtifactListItem.svelte';
+	import LineageGraph from '$lib/components/LineageGraph.svelte';
 
 	let { data } = $props<{ data: PageData }>();
-	let { artifact, remixes, forks } = $derived(data);
+	let { artifact, remixes, forks, dependencies } = $derived(data);
 
 	let activeTab = $state('Overview');
 	const tabs = ['Overview', 'Lineage', 'Discussion', 'Source Code'];
@@ -12,7 +15,7 @@
 <div class="min-h-screen bg-[#f6f8fa] pb-12 font-sans">
 	<!-- Top Header / Breadcrumbs -->
 	<div class="bg-[#f6f8fa] border-b border-gray-200 py-4">
-		<div class="mx-auto max-w-[1200px] px-4 flex items-center justify-between">
+		<div class="mx-auto max-w-[1400px] px-6 flex items-center justify-between">
 			<div class="flex items-center gap-2 text-sm text-gray-600">
 				<span class="hover:underline cursor-pointer">{artifact.owner_name}</span>
 				<span>/</span>
@@ -50,12 +53,15 @@
 		</div>
 	</div>
 
-	<div class="mx-auto max-w-[1200px] px-4 py-6">
+	<div class="mx-auto max-w-[1400px] px-6 py-6">
 		
-		<!-- Top Section: Steam-like Layout -->
-		<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-			<!-- Left: Preview (2 cols wide) -->
-			<div class="lg:col-span-2">
+		<!-- Main Layout: 2 Columns (Left: Content, Right: Sidebar) -->
+		<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+			
+			<!-- LEFT COLUMN: Preview & Tabs (2/3 width) -->
+			<div class="lg:col-span-2 space-y-6">
+				
+				<!-- Preview Area -->
 				<div class="bg-black rounded-lg overflow-hidden shadow-sm border border-gray-200 aspect-video relative group">
 					<img src={artifact.coverImage} alt={artifact.title} class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition duration-500" />
 					<!-- Play Icon Overlay (Optional) -->
@@ -65,71 +71,9 @@
 						</div>
 					</div>
 				</div>
-			</div>
 
-			<!-- Right: Info Card (1 col wide) -->
-			<div class="lg:col-span-1 flex flex-col gap-4">
-				<!-- Title & Meta -->
-				<div>
-					<h1 class="text-3xl font-bold text-gray-900 leading-tight">{artifact.title}</h1>
-					<div class="flex items-center gap-2 mt-2 text-sm text-gray-500">
-						<img class="w-5 h-5 rounded-full" src="https://ui-avatars.com/api/?name={artifact.owner_name}&background=random" alt={artifact.owner_name} />
-						<span>{artifact.owner_name}</span>
-						<span>•</span>
-						<span>{artifact.created_at.toLocaleDateString()}</span>
-					</div>
-				</div>
-
-				<!-- Description -->
-				<div class="bg-white p-4 rounded-md border border-gray-200 shadow-sm">
-					<p class="text-sm text-gray-700 line-clamp-4 leading-relaxed">{artifact.description}</p>
-				</div>
-
-				<!-- Tags -->
-				<div class="flex flex-wrap gap-2">
-					{#each artifact.tags as tag}
-						<span class="bg-[#ddf4ff] text-[#0969da] text-xs px-2 py-1 rounded-full font-medium hover:bg-[#b6e3ff] cursor-pointer transition">
-							{tag}
-						</span>
-					{/each}
-				</div>
-
-				<!-- Stats Grid -->
-				<div class="grid grid-cols-2 gap-2 text-sm bg-gray-50 p-3 rounded border border-gray-200">
-					<div class="flex items-center gap-2 text-gray-600">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-						<span>{artifact.stats.views.toLocaleString()} views</span>
-					</div>
-					<div class="flex items-center gap-2 text-gray-600">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-						<span>{artifact.stats.runs.toLocaleString()} runs</span>
-					</div>
-				</div>
-
-				<!-- BIG ACTION BUTTON -->
-				<div class="mt-auto pt-4">
-					{#if artifact.type === 'GAME'}
-						<button class="w-full bg-[#2da44e] hover:bg-[#2c974b] text-white py-4 rounded-md font-bold text-xl shadow-md transition flex items-center justify-center gap-2 transform hover:scale-[1.02]">
-							<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-							PLAY NOW
-						</button>
-					{:else}
-						<button class="w-full bg-[#0969da] hover:bg-[#0a53be] text-white py-4 rounded-md font-bold text-xl shadow-md transition flex items-center justify-center gap-2 transform hover:scale-[1.02]">
-							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-							RUN GENERATOR
-						</button>
-					{/if}
-				</div>
-			</div>
-		</div>
-
-		<!-- Main Content Grid -->
-		<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-			
-			<!-- Left Column: Tabs & Content -->
-			<div class="lg:col-span-2">
-				<!-- Tabs -->
-				<div class="border-b border-gray-200 mb-4">
+				<!-- Tabs Navigation -->
+				<div class="border-b border-gray-200">
 					<nav class="-mb-px flex space-x-8" aria-label="Tabs">
 						{#each tabs as tab}
 							<button
@@ -146,26 +90,10 @@
 				</div>
 
 				<!-- Tab Content -->
-				<div class="bg-white rounded-md border border-gray-200 p-6 min-h-[300px]">
+				<div class="bg-white rounded-md border border-gray-200 p-6 min-h-[400px]">
 					{#if activeTab === 'Overview'}
 						<div class="prose max-w-none">
-							<h3 class="text-lg font-bold mb-2">About this Artifact</h3>
 							<p class="text-gray-600 mb-6">{artifact.description}</p>
-							
-							<div class="bg-gray-50 p-4 rounded-md border border-gray-200 mb-6">
-								<h3 class="font-bold text-sm text-gray-700 mb-2">Technical Details</h3>
-								<div class="grid grid-cols-2 gap-4 text-sm">
-									<div>
-										<span class="text-gray-500">Version:</span>
-										<span class="font-mono text-gray-800 ml-1">{artifact.version_tag}</span>
-										<span class="text-gray-400 text-xs ml-1">({artifact.version_hash.substring(0, 7)})</span>
-									</div>
-									<div>
-										<span class="text-gray-500">License:</span>
-										<span class="text-gray-800 ml-1">MIT</span>
-									</div>
-								</div>
-							</div>
 
 							{#if artifact.type === 'RECIPE'}
 								<h3 class="text-lg font-bold mb-2">Inputs</h3>
@@ -183,11 +111,9 @@
 							{/if}
 						</div>
 					{:else if activeTab === 'Lineage'}
-						<div class="flex flex-col items-center justify-center h-64 text-gray-500">
-							<svg class="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
-							<p>Lineage Graph Visualization Placeholder</p>
-							<p class="text-xs mt-2">Shows parent recipes and derived artifacts.</p>
-						</div>
+						{#if browser}
+							<LineageGraph {artifact} {dependencies} />
+						{/if}
 					{:else if activeTab === 'Source Code'}
 						<div>
 							<div class="flex items-center justify-between mb-4">
@@ -231,82 +157,108 @@
 						</div>
 					{/if}
 				</div>
-
-				<!-- Remixes / History Section (Only for Recipes) -->
-				{#if artifact.type === 'RECIPE' && remixes.length > 0}
-					<div class="mt-8">
-						<h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-							Generation History (Remixes)
-							<span class="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full">{remixes.length}</span>
-						</h2>
-						
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-							{#each remixes as remix}
-								<a href="/game/{remix.id}" class="block bg-white border border-gray-200 rounded-lg hover:border-blue-400 transition shadow-sm hover:shadow-md overflow-hidden">
-									<div class="flex h-24">
-										<div class="w-24 h-24 flex-shrink-0">
-											<img src={remix.coverImage} alt={remix.title} class="w-full h-full object-cover" />
-										</div>
-										<div class="p-3 flex flex-col justify-between flex-1">
-											<div>
-												<h3 class="font-bold text-sm text-[#0969da] line-clamp-1">{remix.title}</h3>
-												<p class="text-xs text-gray-500">by {remix.owner_name}</p>
-											</div>
-											<div class="flex items-center justify-between text-xs text-gray-400">
-												<span>{remix.created_at.toLocaleDateString()}</span>
-												<div class="flex items-center gap-2">
-													<span class="flex items-center gap-0.5"><svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg> {remix.stats.stars}</span>
-												</div>
-											</div>
-										</div>
-									</div>
-								</a>
-							{/each}
-						</div>
-					</div>
-				{/if}
-
-				<!-- Forks Section -->
-				{#if forks && forks.length > 0}
-					<div class="mt-8">
-						<h2 class="text-xl font-bold mb-4 flex items-center gap-2">
-							Forks
-							<span class="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full">{forks.length}</span>
-						</h2>
-						
-						<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-							{#each forks as fork}
-								<a href="/game/{fork.id}" class="block bg-white border border-gray-200 rounded-lg hover:border-blue-400 transition shadow-sm hover:shadow-md overflow-hidden">
-									<div class="p-4">
-										<div class="flex items-center gap-2 mb-2">
-											<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-											<h3 class="font-bold text-sm text-[#0969da] line-clamp-1">{fork.title}</h3>
-										</div>
-										<p class="text-xs text-gray-500 mb-2 line-clamp-2">{fork.description}</p>
-										<div class="flex items-center justify-between text-xs text-gray-400">
-											<span>by {fork.owner_name}</span>
-											<span>{fork.created_at.toLocaleDateString()}</span>
-										</div>
-									</div>
-								</a>
-							{/each}
-						</div>
-					</div>
-				{/if}
 			</div>
 
-			<!-- Right Column: Sidebar (Optional / Empty for now as requested to remove sections) -->
-			<div class="space-y-6">
-				<!-- We removed Languages and Contributors as requested. -->
-				<!-- We can put "More from this user" or "Related Artifacts" here later. -->
-				<!-- For now, let's leave it empty or put a placeholder to maintain the grid structure if needed, 
-					 but since the top section is already split, maybe we don't need this column to be populated heavily.
-					 Actually, let's put a "Related" placeholder just so it doesn't look too empty. -->
+			<!-- RIGHT COLUMN: Sidebar (1/3 width) -->
+			<div class="lg:col-span-1 space-y-8">
 				
-				<div class="bg-white rounded-md border border-gray-200 p-4">
-					<h3 class="font-bold text-gray-900 mb-3">Related Artifacts</h3>
-					<p class="text-sm text-gray-500">No related artifacts found.</p>
+				<!-- 1. BIG ACTION BUTTON (Moved to Top) -->
+				<div>
+					{#if artifact.type === 'GAME'}
+						<button class="w-full bg-[#2da44e] hover:bg-[#2c974b] text-white py-4 rounded-md font-bold text-xl shadow-md transition flex items-center justify-center gap-2 transform hover:scale-[1.02]">
+							<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+							PLAY NOW
+						</button>
+					{:else}
+						<button class="w-full bg-[#0969da] hover:bg-[#0a53be] text-white py-4 rounded-md font-bold text-xl shadow-md transition flex items-center justify-center gap-2 transform hover:scale-[1.02]">
+							<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+							RUN GENERATOR
+						</button>
+					{/if}
 				</div>
+
+				<!-- 2. Project Info Card -->
+				<div class="bg-white p-5 rounded-md border border-gray-200 shadow-sm">
+					<h1 class="text-2xl font-bold text-gray-900 leading-tight mb-3">{artifact.title}</h1>
+					
+					<div class="flex items-center gap-2 mb-4 text-sm text-gray-500">
+						<img class="w-6 h-6 rounded-full" src="https://ui-avatars.com/api/?name={artifact.owner_name}&background=random" alt={artifact.owner_name} />
+						<span class="font-medium text-gray-700">{artifact.owner_name}</span>
+						<span>•</span>
+						<span>{artifact.created_at.toLocaleDateString()}</span>
+					</div>
+
+					<p class="text-sm text-gray-700 mb-4 leading-relaxed">{artifact.description}</p>
+
+					<div class="flex flex-wrap gap-2 mb-4">
+						{#each artifact.tags as tag}
+							<span class="bg-[#ddf4ff] text-[#0969da] text-xs px-2 py-1 rounded-full font-medium hover:bg-[#b6e3ff] cursor-pointer transition">
+								{tag}
+							</span>
+						{/each}
+					</div>
+
+					<div class="mb-4 text-xs text-gray-500 flex items-center gap-1">
+						<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+						<span>License: {artifact.license}</span>
+					</div>
+
+					<div class="grid grid-cols-2 gap-2 text-sm bg-gray-50 p-3 rounded border border-gray-200">
+						<div class="flex items-center gap-2 text-gray-600">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+							<span>{artifact.stats.views.toLocaleString()} views</span>
+						</div>
+						<div class="flex items-center gap-2 text-gray-600">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+							<span>{artifact.stats.runs.toLocaleString()} runs</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- 3. Dependencies -->
+				{#if dependencies && dependencies.length > 0}
+					<div>
+						<h3 class="font-bold text-gray-900 mb-3 flex items-center gap-2">
+							Dependencies
+						</h3>
+						<div class="space-y-3">
+							{#each dependencies as item}
+								<ArtifactListItem artifact={item} />
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- 4. Remixes (Moved from main content) -->
+				{#if artifact.type === 'RECIPE' && remixes.length > 0}
+					<div>
+						<h3 class="font-bold text-gray-900 mb-3 flex items-center gap-2">
+							Remixes
+							<span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{remixes.length}</span>
+						</h3>
+						<div class="space-y-3">
+							{#each remixes as remix}
+								<ArtifactListItem artifact={remix} />
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				<!-- 5. Forks (Moved from main content) -->
+				{#if forks && forks.length > 0}
+					<div>
+						<h3 class="font-bold text-gray-900 mb-3 flex items-center gap-2">
+							Forks
+							<span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{forks.length}</span>
+						</h3>
+						<div class="space-y-3">
+							{#each forks as fork}
+								<ArtifactListItem artifact={fork} />
+							{/each}
+						</div>
+					</div>
+				{/if}
+
 			</div>
 		</div>
 	</div>

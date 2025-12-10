@@ -33,6 +33,7 @@ export interface Artifact {
 	tags: string[];
 	coverImage: string;
 	files?: ArtifactFile[];
+	license: string;
 
 	created_at: Date;
 	updated_at: Date;

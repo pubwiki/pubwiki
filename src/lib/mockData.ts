@@ -17,14 +17,17 @@ export const mockArtifacts: Artifact[] = [
 			forks: 340,
 			runs: 5600
 		},
-		lineage: {},
+		lineage: {
+			parent_recipe_ids: ['6', '7']
+		},
 		tags: ['Cyberpunk', 'Generator', 'City', 'Sci-Fi'],
-		coverImage: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&h=400&fit=crop',
+		coverImage: 'https://placehold.co/800x400/222/fff?text=Cyberpunk+City',
 		files: [
 			{ id: 'f1', artifact_id: '1', path: 'src/main.lua', content: 'print("Hello City")', language: 'lua', size: 1024 },
 			{ id: 'f2', artifact_id: '1', path: 'config/world.xml', content: '<world></world>', language: 'xml', size: 2048 },
 			{ id: 'f3', artifact_id: '1', path: 'README.md', content: '# Cyberpunk City', language: 'markdown', size: 512 }
 		],
+		license: 'CC BY-NC-SA 4.0',
 		created_at: new Date('2025-12-01'),
 		updated_at: new Date('2025-12-08')
 	},
@@ -45,7 +48,7 @@ export const mockArtifacts: Artifact[] = [
 			runs: 0
 		},
 		lineage: {
-			parent_recipe_ids: ['1'],
+			parent_recipe_ids: ['1', '8', '9'],
 			input_params: {
 				theme: 'Neon Tokyo',
 				density: 'High',
@@ -53,7 +56,8 @@ export const mockArtifacts: Artifact[] = [
 			}
 		},
 		tags: ['Cyberpunk', 'RPG', 'Open World'],
-		coverImage: 'https://images.unsplash.com/photo-1572435026915-0f447188e121?w=800&h=400&fit=crop',
+		coverImage: 'https://placehold.co/800x400/1a237e/fff?text=Neon+Tokyo',
+		license: 'CC BY-NC-SA 4.0',
 		created_at: new Date('2025-12-09'),
 		updated_at: new Date('2025-12-09')
 	},
@@ -82,7 +86,8 @@ export const mockArtifacts: Artifact[] = [
 			}
 		},
 		tags: ['Cyberpunk', 'Dark', 'Survival'],
-		coverImage: 'https://images.unsplash.com/photo-1605806616949-1e87b487bc2a?w=800&h=400&fit=crop',
+		coverImage: 'https://placehold.co/800x400/3e2723/fff?text=Slum+District',
+		license: 'CC BY-NC-SA 4.0',
 		created_at: new Date('2025-12-10'),
 		updated_at: new Date('2025-12-10')
 	},
@@ -106,7 +111,8 @@ export const mockArtifacts: Artifact[] = [
 			parent_artifact_id: '1'
 		},
 		tags: ['Cyberpunk', 'Mobile', 'Optimization'],
-		coverImage: 'https://images.unsplash.com/photo-1515630278258-407f66498911?w=800&h=400&fit=crop',
+		coverImage: 'https://placehold.co/800x400/006064/fff?text=Optimized+City',
+		license: 'CC BY-NC-SA 4.0',
 		created_at: new Date('2025-12-11'),
 		updated_at: new Date('2025-12-11')
 	},
@@ -128,9 +134,104 @@ export const mockArtifacts: Artifact[] = [
 		},
 		lineage: {},
 		tags: ['Steampunk', 'Generator', 'City', 'Fantasy'],
-		coverImage: 'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=800&h=400&fit=crop',
+		coverImage: 'https://placehold.co/800x400/5d4037/fff?text=Steampunk+City',
+		license: 'CC BY-NC-SA 4.0',
 		created_at: new Date('2025-11-15'),
 		updated_at: new Date('2025-11-20')
+	},
+	{
+		id: '6',
+		owner_id: 'user_f',
+		owner_name: 'User_F',
+		title: 'Neon Assets Pack',
+		description: 'A collection of neon signs and building textures.',
+		type: 'ASSET_PACK',
+		visibility: 'PUBLIC',
+		version_hash: 'u1v2w3x4',
+		version_tag: 'v1.0',
+		stats: {
+			views: 2000,
+			stars: 300,
+			forks: 10,
+			runs: 0
+		},
+		lineage: {},
+		tags: ['Neon', 'Assets', 'Textures'],
+		coverImage: 'https://placehold.co/800x400/ff00ff/fff?text=Neon+Assets',
+		license: 'CC BY 4.0',
+		created_at: new Date('2025-11-01'),
+		updated_at: new Date('2025-11-01')
+	},
+	{
+		id: '7',
+		owner_id: 'user_g',
+		owner_name: 'User_G',
+		title: 'Core Ruleset',
+		description: 'The fundamental rules for the game world simulation.',
+		type: 'RECIPE',
+		visibility: 'PUBLIC',
+		version_hash: 'y5z6a7b8',
+		version_tag: 'v2.0',
+		stats: {
+			views: 8000,
+			stars: 1500,
+			forks: 50,
+			runs: 10000
+		},
+		lineage: {},
+		tags: ['Rules', 'Core', 'Simulation'],
+		coverImage: 'https://placehold.co/800x400/424242/fff?text=Core+Rules',
+		license: 'MIT',
+		created_at: new Date('2025-10-01'),
+		updated_at: new Date('2025-10-15')
+	},
+	{
+		id: '8',
+		owner_id: 'user_h',
+		owner_name: 'User_H',
+		title: 'Japanese Localization Pack',
+		description: 'Translations and cultural assets for Japanese settings.',
+		type: 'ASSET_PACK',
+		visibility: 'PUBLIC',
+		version_hash: 'c9d0e1f2',
+		version_tag: 'v1.1',
+		stats: {
+			views: 1500,
+			stars: 200,
+			forks: 5,
+			runs: 0
+		},
+		lineage: {},
+		tags: ['Localization', 'Japan', 'Language'],
+		coverImage: 'https://placehold.co/800x400/b71c1c/fff?text=JP+Pack',
+		license: 'CC BY 4.0',
+		created_at: new Date('2025-11-25'),
+		updated_at: new Date('2025-11-25')
+	},
+	{
+		id: '9',
+		owner_id: 'user_i',
+		owner_name: 'User_I',
+		title: 'Cyberpunk Character Models',
+		description: '3D models for cyberpunk citizens and enemies.',
+		type: 'ASSET_PACK',
+		visibility: 'PUBLIC',
+		version_hash: 'g3h4i5j6',
+		version_tag: 'v1.0',
+		stats: {
+			views: 4000,
+			stars: 600,
+			forks: 20,
+			runs: 0
+		},
+		lineage: {
+			parent_recipe_ids: ['6'] // Depends on Neon Assets Pack for textures
+		},
+		tags: ['Models', 'Characters', '3D'],
+		coverImage: 'https://placehold.co/800x400/00acc1/fff?text=Cyber+Chars',
+		license: 'CC BY-NC 4.0',
+		created_at: new Date('2025-11-10'),
+		updated_at: new Date('2025-11-10')
 	}
 ];
 
@@ -146,11 +247,32 @@ export const getArtifactsByForkId = (artifactId: string): Artifact[] => {
 	return mockArtifacts.filter(a => a.lineage.parent_artifact_id === artifactId);
 };
 
-export const getRelatedArtifacts = (artifact: Artifact): Artifact[] => {
-	// Simple mock logic: find artifacts with overlapping tags, excluding self
-	return mockArtifacts.filter(a => 
-		a.id !== artifact.id && 
-		a.tags.some(tag => artifact.tags.includes(tag))
-	).slice(0, 3);
+export const getDependencies = (artifact: Artifact): Artifact[] => {
+	const dependencies: Artifact[] = [];
+	const visited = new Set<string>();
+
+	const collect = (id: string) => {
+		if (visited.has(id)) return;
+		visited.add(id);
+
+		const art = getArtifactById(id);
+		if (art) {
+			if (art.id !== artifact.id) {
+				dependencies.push(art);
+			}
+			
+			art.lineage.parent_recipe_ids?.forEach(collect);
+			if (art.lineage.parent_artifact_id) {
+				collect(art.lineage.parent_artifact_id);
+			}
+		}
+	};
+
+	artifact.lineage.parent_recipe_ids?.forEach(collect);
+	if (artifact.lineage.parent_artifact_id) {
+		collect(artifact.lineage.parent_artifact_id);
+	}
+
+	return dependencies;
 };
 

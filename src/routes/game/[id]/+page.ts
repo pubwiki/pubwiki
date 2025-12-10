@@ -1,6 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
-import { getArtifactById, getArtifactsByRecipeId, getArtifactsByForkId, getRelatedArtifacts } from '$lib/mockData';
+import { getArtifactById, getArtifactsByRecipeId, getArtifactsByForkId, getDependencies } from '$lib/mockData';
 
 export const load: PageLoad = ({ params }) => {
 	const artifact = getArtifactById(params.id);
@@ -15,13 +15,13 @@ export const load: PageLoad = ({ params }) => {
 	// Load forks
 	const forks = getArtifactsByForkId(artifact.id);
 
-	// Load related artifacts
-	const related = getRelatedArtifacts(artifact);
+	// Load dependencies
+	const dependencies = getDependencies(artifact);
 
 	return {
 		artifact,
 		remixes,
 		forks,
-		related
+		dependencies
 	};
 };
