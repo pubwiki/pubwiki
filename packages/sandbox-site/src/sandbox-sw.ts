@@ -1,0 +1,603 @@
+/**
+ * Sandbox Service Worker (Refactored for Nested Iframe Architecture)
+ *
+ * Manages VFS connections for bootstrap clients and their nested user iframes.
+ * 
+ * Architecture:
+ * - Each bootstrap client has its own VFS RPC session
+ * - Each bootstrap can have multiple user iframe clients (one-to-many relationship)
+ * - User iframes share their parent bootstrap's VFS session
+ * - When user iframe navigates, a new client ID is added (old one not removed)
+ * 
+ * State Persistence:
+ * - Uses IndexedDB to persist client mappings across SW wake/sleep cycles
+ * - VFS RPC stubs are not persisted (will be null after wake)
+ * - Automatically requests new VFS port when needed
+ * 
+ * Client Management:
+ * - bootstrapClients: Map<bootstrapId, BootstrapClient>
+ * - userIframeToBootstrap: Map<userIframeId, bootstrapId>
+ */
+
+/// <reference lib="webworker" />
+
+declare const self: ServiceWorkerGlobalScope
+
+import { newMessagePortRpcSession, RpcStub, type IVfsService } from '@pubwiki/sandbox-service'
+
+// ========== Types ==========
+
+interface BootstrapClient {
+  id: string
+  vfsRpcStub: RpcStub<IVfsService> | null
+}
+
+interface PersistedState {
+  bootstrapClientIds: string[]
+  userIframeToBootstrap: Record<string, string>
+}
+
+// ========== Client Management ==========
+
+/** Bootstrap clients indexed by client ID */
+const bootstrapClients = new Map<string, BootstrapClient>()
+
+/** User iframe to bootstrap mapping */
+const userIframeToBootstrap = new Map<string, string>()
+
+/** Pending bootstrap requests - promises waiting for bootstrap registration */
+const pendingBootstrapRequests = new Map<string, {
+  promise: Promise<void>
+  resolve: () => void
+  reject: (error: Error) => void
+  timeoutId: ReturnType<typeof setTimeout>
+}>()
+
+/** Flag to track if we just woke up and need to restore state */
+let needsStateRestoration = true
+
+// ========== IndexedDB Persistence ==========
+
+const DB_NAME = 'sandbox-sw-state'
+const DB_VERSION = 1
+const STORE_NAME = 'state'
+const STATE_KEY = 'client-mappings'
+
+/**
+ * Open IndexedDB connection
+ */
+async function openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+    
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME)
+      }
+    }
+  })
+}
+
+/**
+ * Save state to IndexedDB
+ */
+async function saveState(): Promise<void> {
+  try {
+    const db = await openDB()
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    const store = tx.objectStore(STORE_NAME)
+    
+    const state: PersistedState = {
+      bootstrapClientIds: Array.from(bootstrapClients.keys()),
+      userIframeToBootstrap: Object.fromEntries(userIframeToBootstrap)
+    }
+    
+    store.put(state, STATE_KEY)
+    
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    
+    db.close()
+    console.log('[SandboxSW] State saved to IndexedDB')
+  } catch (error) {
+    console.error('[SandboxSW] Failed to save state:', error)
+  }
+}
+
+/**
+ * Load state from IndexedDB
+ */
+async function loadState(): Promise<PersistedState | null> {
+  try {
+    const db = await openDB()
+    const tx = db.transaction(STORE_NAME, 'readonly')
+    const store = tx.objectStore(STORE_NAME)
+    
+    const state = await new Promise<PersistedState | null>((resolve, reject) => {
+      const request = store.get(STATE_KEY)
+      request.onsuccess = () => resolve(request.result || null)
+      request.onerror = () => reject(request.error)
+    })
+    
+    db.close()
+    return state
+  } catch (error) {
+    console.error('[SandboxSW] Failed to load state:', error)
+    return null
+  }
+}
+
+/**
+ * Restore state from IndexedDB after wake up
+ */
+async function restoreStateIfNeeded(): Promise<void> {
+  if (!needsStateRestoration) return
+  
+  console.log('[SandboxSW] Restoring state from IndexedDB...')
+  
+  const state = await loadState()
+  if (!state) {
+    console.log('[SandboxSW] No saved state found')
+    needsStateRestoration = false
+    return
+  }
+  
+  // Restore bootstrap clients (without VFS stubs)
+  for (const bootstrapId of state.bootstrapClientIds) {
+    bootstrapClients.set(bootstrapId, {
+      id: bootstrapId,
+      vfsRpcStub: null // Will be restored on-demand
+    })
+  }
+  
+  // Restore user iframe mappings
+  for (const [userIframeId, bootstrapId] of Object.entries(state.userIframeToBootstrap)) {
+    userIframeToBootstrap.set(userIframeId, bootstrapId)
+  }
+  
+  console.log('[SandboxSW] State restored:', state)
+  
+  needsStateRestoration = false
+}
+
+/**
+ * Ensure VFS stub is available for a bootstrap client
+ * Requests new port if stub is null (after wake from sleep)
+ */
+async function ensureVfsStub(bootstrapId: string): Promise<RpcStub<IVfsService> | null> {
+  const bootstrap = bootstrapClients.get(bootstrapId)
+  if (!bootstrap) {
+    return null
+  }
+  
+  // If stub exists, return it
+  if (bootstrap.vfsRpcStub) {
+    return bootstrap.vfsRpcStub
+  }
+  
+  // Stub is null, need to request new port
+  console.log('[SandboxSW] VFS stub is null, requesting new port for:', bootstrapId)
+  
+  try {
+    await requestBootstrapClient(bootstrapId)
+    return bootstrap.vfsRpcStub
+  } catch (error) {
+    console.error('[SandboxSW] Failed to restore VFS stub:', error)
+    return null
+  }
+}
+
+// ========== Helper Functions ==========
+
+/**
+ * Request VFS port from bootstrap client
+ * Returns a promise that resolves when bootstrap is registered
+ */
+async function requestBootstrapClient(bootstrapId: string): Promise<void> {
+  // Check if already registered with valid stub
+  const existing = bootstrapClients.get(bootstrapId)
+  if (existing?.vfsRpcStub) {
+    return
+  }
+  
+  // Check if request is already pending
+  const pendingRequest = pendingBootstrapRequests.get(bootstrapId)
+  if (pendingRequest) {
+    return pendingRequest.promise
+  }
+  
+  console.log('[SandboxSW] Requesting VFS port from bootstrap:', bootstrapId)
+  
+  // Create a promise for this request
+  let resolve: () => void
+  let reject: (error: Error) => void
+  
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  
+  // Set up timeout
+  const timeoutId = setTimeout(() => {
+    pendingBootstrapRequests.delete(bootstrapId)
+    reject(new Error(`Timeout waiting for bootstrap: ${bootstrapId}`))
+  }, 5000)
+  
+  // Store promise and callbacks for SETUP_VFS_RPC_PORT handler to call
+  pendingBootstrapRequests.set(bootstrapId, { 
+    promise, 
+    resolve: resolve!, 
+    reject: reject!, 
+    timeoutId 
+  })
+  
+  // Get the bootstrap client and send request
+  try {
+    const client = await self.clients.get(bootstrapId)
+    if (!client) {
+      pendingBootstrapRequests.delete(bootstrapId)
+      clearTimeout(timeoutId)
+      throw new Error(`Bootstrap client not found: ${bootstrapId}`)
+    }
+    
+    // Send REQUEST_VFS_PORT message to bootstrap
+    client.postMessage({ type: 'REQUEST_VFS_PORT' })
+  } catch (error) {
+    pendingBootstrapRequests.delete(bootstrapId)
+    clearTimeout(timeoutId)
+    throw error
+  }
+  
+  return promise
+}
+
+// ========== Service Worker Lifecycle ==========
+
+self.addEventListener('install', (event) => {
+  console.log('[SandboxSW] Installing...')
+  event.waitUntil(self.skipWaiting())
+})
+
+self.addEventListener('activate', (event) => {
+  console.log('[SandboxSW] Activating...')
+  event.waitUntil(self.clients.claim())
+})
+
+// ========== Message Handling ==========
+
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  const { type } = event.data
+  const source = event.source as Client
+  
+  if (type === 'SETUP_VFS_RPC_PORT') {
+    // Bootstrap client registers its VFS port
+    const bootstrapId = source?.id
+    
+    if (!bootstrapId) {
+      console.error('[SandboxSW] SETUP_VFS_RPC_PORT: no client ID')
+      return
+    }
+    
+    if (!event.ports || event.ports.length === 0) {
+      console.error('[SandboxSW] SETUP_VFS_RPC_PORT: no port provided')
+      return
+    }
+    
+    const vfsPort = event.ports[0]
+    // Create RPC stub (client side - empty object as second param)
+    const vfsStub = newMessagePortRpcSession<IVfsService>(vfsPort, {})
+    
+    // Update or create bootstrap client
+    const existing = bootstrapClients.get(bootstrapId)
+    if (existing) {
+      existing.vfsRpcStub = vfsStub
+    } else {
+      bootstrapClients.set(bootstrapId, {
+        id: bootstrapId,
+        vfsRpcStub: vfsStub
+      })
+    }
+    
+    console.log('[SandboxSW] Bootstrap client VFS port registered:', bootstrapId)
+    
+    // Persist state
+    saveState()
+    
+    // Resolve any pending requests waiting for this bootstrap
+    const pendingRequest = pendingBootstrapRequests.get(bootstrapId)
+    if (pendingRequest) {
+      clearTimeout(pendingRequest.timeoutId)
+      pendingRequest.resolve()
+      pendingBootstrapRequests.delete(bootstrapId)
+      console.log('[SandboxSW] Resolved pending request for bootstrap:', bootstrapId)
+    }
+    
+    return
+  }
+  
+  if (type === 'REGISTER_USER_IFRAME') {
+    // User iframe registers itself, linking to its parent bootstrap
+    const userIframeId = source?.id
+    const bootstrapId = event.data.bootstrapClientId
+    
+    if (!userIframeId) {
+      console.error('[SandboxSW] REGISTER_USER_IFRAME: no client ID')
+      return
+    }
+    
+    if (!bootstrapId) {
+      console.error('[SandboxSW] REGISTER_USER_IFRAME: no bootstrap ID provided')
+      return
+    }
+    
+    // Handle async registration
+    event.waitUntil(
+      (async () => {
+        // Restore state if needed (after wake)
+        await restoreStateIfNeeded()
+        
+        // Check if bootstrap exists (may be restored from DB)
+        let bootstrap = bootstrapClients.get(bootstrapId)
+        
+        // If bootstrap doesn't exist, request it
+        if (!bootstrap) {
+          console.log('[SandboxSW] Bootstrap not found, requesting VFS port...')
+          try {
+            await requestBootstrapClient(bootstrapId)
+            bootstrap = bootstrapClients.get(bootstrapId)
+          } catch (error) {
+            console.error('[SandboxSW] Failed to get bootstrap client:', error)
+            return
+          }
+        }
+        
+        if (!bootstrap) {
+          console.error('[SandboxSW] REGISTER_USER_IFRAME: bootstrap still not found after request:', bootstrapId)
+          return
+        }
+        
+        // Add user iframe to bootstrap mapping (one-to-many)
+        userIframeToBootstrap.set(userIframeId, bootstrapId)
+        
+        console.log('[SandboxSW] User iframe registered:', userIframeId, '-> bootstrap:', bootstrapId)
+        
+        // Persist state
+        await saveState()
+        
+        // Notify bootstrap that registration is complete
+        const bootstrapClient = await self.clients.get(bootstrapId)
+        if (bootstrapClient) {
+          bootstrapClient.postMessage({
+            type: 'USER_IFRAME_REGISTERED',
+            userIframeId: userIframeId
+          })
+          console.log('[SandboxSW] Notified bootstrap of registration completion')
+        }
+      })()
+    )
+    
+    return
+  }
+  
+  if (type === 'CLIENT_DISCONNECTED') {
+    // Clean up client
+    const clientId = event.data.clientId
+    
+    if (!clientId) {
+      console.error('[SandboxSW] CLIENT_DISCONNECTED: no client ID')
+      return
+    }
+    
+    event.waitUntil(
+      (async () => {
+        cleanupClient(clientId)
+        await saveState()
+      })()
+    )
+    return
+  }
+  
+  if (type === 'GET_CLIENT_ID') {
+    // Bootstrap requests its own client ID
+    const clientId = source?.id
+    
+    if (clientId && source) {
+      source.postMessage({
+        type: 'CLIENT_ID_RESPONSE',
+        clientId: clientId
+      })
+      console.log('[SandboxSW] Sent client ID to bootstrap:', clientId)
+    }
+    return
+  }
+  
+  if (type === 'SKIP_WAITING') {
+    self.skipWaiting()
+    return
+  }
+  
+  if (type === 'PING') {
+    const clientId = source?.id
+    const hasSession = clientId ? (
+      bootstrapClients.has(clientId) || userIframeToBootstrap.has(clientId)
+    ) : false
+    
+    source?.postMessage({ type: 'PONG', ready: hasSession })
+    return
+  }
+})
+
+/**
+ * Clean up a client (bootstrap or user iframe)
+ */
+function cleanupClient(clientId: string): void {
+  // If it's a bootstrap, clean up everything
+  if (bootstrapClients.has(clientId)) {
+    const bootstrap = bootstrapClients.get(clientId)!
+    
+    // Clean up all associated user iframes
+    for (const [userIframeId, bootstrapId] of userIframeToBootstrap.entries()) {
+      if (bootstrapId === clientId) {
+        userIframeToBootstrap.delete(userIframeId)
+      }
+    }
+    
+    // Remove bootstrap
+    bootstrapClients.delete(clientId)
+    
+    console.log('[SandboxSW] Bootstrap client disconnected:', clientId)
+    return
+  }
+  
+  // If it's a user iframe, only remove from mapping
+  if (userIframeToBootstrap.has(clientId)) {
+    userIframeToBootstrap.delete(clientId)
+    console.log('[SandboxSW] User iframe disconnected:', clientId)
+    return
+  }
+}
+
+// ========== Fetch Handling ==========
+
+self.addEventListener('fetch', (event: FetchEvent) => {
+  const url = new URL(event.request.url)
+  
+  // Only intercept same-origin requests
+  if (url.origin !== self.location.origin) {
+    return
+  }
+  
+  const clientId = event.clientId
+  if (!clientId) {
+    console.log('[SandboxSW] Passthrough: no client ID')
+    return
+  }
+  
+  // Skip Service Worker itself and bootstrap scripts
+  if (
+    url.pathname === '/sandbox-sw.js' ||
+    url.pathname === '/src/sandbox-bootstrap.ts' ||
+    url.pathname === '/src/sandbox-types.ts' ||
+    url.pathname === '/src/rpc-client.ts' ||
+    url.pathname.startsWith('/__')
+  ) {
+    console.log('[SandboxSW] Passthrough internal:', url.pathname)
+    return
+  }
+
+  // Handle file requests with state restoration
+  event.respondWith(handleFetchRequest(event))
+})
+
+async function handleFetchRequest(event: FetchEvent) {
+  const url = new URL(event.request.url)
+  const clientId = event.clientId
+
+  // Restore state if needed
+  await restoreStateIfNeeded()
+
+  // Handle navigation - update client ID mapping
+  if (event.request.mode === 'navigate' && event.resultingClientId && event.resultingClientId !== clientId) {
+    const newClientId = event.resultingClientId
+    console.log('[SandboxSW] Navigation detected, old client:', clientId, 'new client:', newClientId)
+
+    // If old client is a user iframe, add new client to same bootstrap (don't delete old)
+    if (userIframeToBootstrap.has(clientId)) {
+      const bootstrapId = userIframeToBootstrap.get(clientId)!
+
+      // Add new mapping (keep old one)
+      userIframeToBootstrap.set(newClientId, bootstrapId)
+
+      console.log('[SandboxSW] Added new user iframe mapping:', newClientId, '-> bootstrap:', bootstrapId)
+
+      // Persist state (async, don't block navigation)
+      saveState()
+    }
+  }
+  
+  // 1. Check if it's a bootstrap client
+  if (bootstrapClients.has(clientId)) {
+    const vfsStub = await ensureVfsStub(clientId)
+    if (vfsStub) {
+      return handleFileRequest(vfsStub, url.pathname)
+    }
+  }
+  
+  // 2. Check if it's a user iframe client
+  if (userIframeToBootstrap.has(clientId)) {
+    const bootstrapId = userIframeToBootstrap.get(clientId)!
+    const vfsStub = await ensureVfsStub(bootstrapId)
+    
+    if (vfsStub) {
+      return handleFileRequest(vfsStub, url.pathname)
+    }
+  }
+  
+  // 3. Unknown client
+  console.warn('[SandboxSW] Unknown client:', clientId, 'for:', url.pathname)
+  return new Response('Service Worker not ready', { status: 503 })
+}
+
+
+/**
+ * Handle file request by reading from VFS
+ */
+async function handleFileRequest(vfsStub: RpcStub<IVfsService>, pathname: string): Promise<Response> {
+  console.log('[SandboxSW] File request:', pathname)
+  
+  try {
+    // Check if file exists
+    const existsResult = await vfsStub.fileExists(pathname)
+    if (!existsResult.exists) {
+      // Try index.html for directory requests
+      if (!pathname.includes('.') || existsResult.isDirectory) {
+        const indexPath = pathname.endsWith('/')
+          ? `${pathname}index.html`
+          : `${pathname}/index.html`
+        const indexExistsResult = await vfsStub.fileExists(indexPath)
+        if (indexExistsResult.exists) {
+          return await readAndRespond(vfsStub, indexPath)
+        }
+      }
+      return new Response('Not Found', { status: 404 })
+    }
+    
+    // If it's a directory, try index.html
+    if (existsResult.isDirectory) {
+      const indexPath = pathname.endsWith('/')
+        ? `${pathname}index.html`
+        : `${pathname}/index.html`
+      return await readAndRespond(vfsStub, indexPath)
+    }
+    
+    return await readAndRespond(vfsStub, pathname)
+  } catch (error) {
+    console.error('[SandboxSW] VFS error:', error)
+    throw error
+  }
+}
+
+/**
+ * Read file from VFS and create Response
+ */
+async function readAndRespond(vfsStub: RpcStub<IVfsService>, pathname: string): Promise<Response> {
+  const fileInfo = await vfsStub.readFile(pathname)
+  const mimeType = fileInfo.mimeType
+  
+  // FileContent can be string or Uint8Array - Response accepts both
+  return new Response(fileInfo.content as BodyInit, {
+    status: 200,
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Length': fileInfo.size.toString()
+    }
+  })
+}
+
+export {}

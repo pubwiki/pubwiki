@@ -1,0 +1,62 @@
+{
+  "name": "@pubwiki/bundler",
+  "version": "1.0.0",
+  "description": "Frontend bundler library using esbuild-wasm with Virtual File System support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./worker": {
+      "types": "./dist/worker/index.d.ts",
+      "import": "./dist/worker/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.browser.config.ts",
+    "prepublishOnly": "pnpm run build",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "bundler",
+    "esbuild",
+    "typescript",
+    "jsx",
+    "tsx",
+    "vfs",
+    "virtual-file-system",
+    "web-worker"
+  ],
+  "author": "PubWiki",
+  "license": "MIT",
+  "dependencies": {
+    "@pubwiki/vfs": "workspace:*",
+    "comlink": "^4.4.1",
+    "esbuild-wasm": "^0.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@vitest/browser": "^4.0.15",
+    "@vitest/browser-playwright": "^4.0.15",
+    "@vitest/web-worker": "^4.0.15",
+    "playwright": "^1.57.0",
+    "typescript": "^5.9.3",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0",
+    "vitest": "^4.0.15"
+  }
+}

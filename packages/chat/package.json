@@ -1,0 +1,61 @@
+{
+  "name": "@pubwiki/chat",
+  "version": "0.1.0",
+  "description": "Core chat library with function calling, streaming, and message history support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./stores": {
+      "types": "./dist/stores/index.d.ts",
+      "import": "./dist/stores/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build"
+  },
+  "dependencies": {
+    "@pubwiki/vfs": "workspace:*",
+    "openai": "^6.9.1",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15",
+    "dotenv": "^16.4.5"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "keywords": [
+    "chat",
+    "llm",
+    "openai",
+    "function-calling",
+    "streaming"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pubwiki/pubchat.git",
+    "directory": "packages/chat"
+  }
+}

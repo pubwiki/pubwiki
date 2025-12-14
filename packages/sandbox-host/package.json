@@ -1,0 +1,62 @@
+{
+  "name": "@pubwiki/sandbox-host",
+  "version": "1.0.0",
+  "description": "Host-side sandbox communication layer for @pubwiki ecosystem",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "pnpm run build",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run --config vitest.browser.config.ts"
+  },
+  "keywords": [
+    "sandbox",
+    "rpc",
+    "iframe",
+    "capnweb",
+    "vfs",
+    "hmr"
+  ],
+  "author": "PubWiki",
+  "license": "MIT",
+  "dependencies": {
+    "@pubwiki/bundler": "workspace:*",
+    "@pubwiki/sandbox-service": "workspace:*",
+    "@pubwiki/vfs": "workspace:*",
+    "capnweb": "^0.2.0"
+  },
+  "peerDependencies": {
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@vitest/browser": "^4.0.15",
+    "@vitest/browser-playwright": "^4.0.15",
+    "@vitest/web-worker": "^4.0.15",
+    "playwright": "^1.57.0",
+    "typescript": "^5.9.3",
+    "vite-plugin-top-level-await": "^1.6.0",
+    "vite-plugin-wasm": "^3.5.0",
+    "vitest": "^4.0.15",
+    "zod": "^4.0.0"
+  }
+}

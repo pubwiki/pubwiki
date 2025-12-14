@@ -36,7 +36,7 @@
 
 			<!-- User Actions -->
 			<div class="flex items-center gap-3 text-sm text-[#24292f]">
-				<button class="bg-[#2da44e] hover:bg-[#2c974b] px-3 py-1 rounded text-xs font-bold text-white border border-transparent">
+				<button class="bg-[#000000] hover:bg-[#2c974b] px-3 py-1 rounded text-xs font-bold text-white border border-transparent">
 					LAUNCH APP
 				</button>
 				<a href="/login" class="hover:text-[#0969da]">login</a>

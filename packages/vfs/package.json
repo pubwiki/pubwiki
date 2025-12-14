@@ -1,0 +1,45 @@
+{
+  "name": "@pubwiki/vfs",
+  "version": "1.0.0",
+  "description": "Virtual File System library with optional version control support",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "vfs",
+    "virtual-file-system",
+    "file-system",
+    "git"
+  ],
+  "author": "PubWiki",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "isomorphic-git": "^1.29.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  },
+  "peerDependencies": {},
+  "dependencies": {}
+}

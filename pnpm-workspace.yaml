@@ -1,2 +1,13 @@
 onlyBuiltDependencies:
   - esbuild
+
+packages:
+  - "packages/vfs"
+  - "packages/bundler"
+  - "packages/chat"
+  - "packages/svelte-chat"
+  - "packages/svelte-chat/example"
+  - "packages/sandbox-host"
+  - "packages/sandbox-site"
+  - "packages/sandbox-llm-client"
+  - "packages/sandbox-service"

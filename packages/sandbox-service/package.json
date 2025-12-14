@@ -1,0 +1,47 @@
+{
+  "name": "@pubwiki/sandbox-service",
+  "version": "1.0.0",
+  "description": "RPC interface definitions for sandbox-main site communication using capnweb",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./interfaces": {
+      "types": "./dist/interfaces/index.d.ts",
+      "import": "./dist/interfaces/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "capnweb": "^0.2.0",
+    "@pubwiki/sandbox-llm-client": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "sandbox",
+    "rpc",
+    "capnweb",
+    "vfs",
+    "bundler"
+  ],
+  "license": "MIT"
+}

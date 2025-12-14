@@ -1,0 +1,4 @@
+# Cloudflare Pages redirects
+# Redirect root to __sandbox.html (the sandbox bootstrap page)
+/ /__sandbox.html 200
+/index.html /__sandbox.html 200
