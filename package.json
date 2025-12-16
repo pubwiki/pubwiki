@@ -43,6 +43,7 @@
 		"vitest-browser-svelte": "^2.0.1"
 	},
 	"dependencies": {
+		"@pubwiki/api": "file:../pubwiki-backend/packages/api",
 		"@xyflow/svelte": "^1.5.0"
 	}
 }

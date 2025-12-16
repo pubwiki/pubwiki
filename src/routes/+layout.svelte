@@ -1,8 +1,19 @@
 <script lang="ts">
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import { createAuth } from '$lib/stores/auth.svelte';
+	import { createArtifactStore } from '$lib/stores/artifacts.svelte';
+	import { goto } from '$app/navigation';
 
 	let { children } = $props();
+
+	const auth = createAuth();
+	const artifactStore = createArtifactStore();
+
+	function handleLogout() {
+		auth.logout();
+		goto('/');
+	}
 </script>
 
 <svelte:head>
@@ -39,9 +50,21 @@
 				<button class="bg-[#000000] hover:bg-[#2c974b] px-3 py-1 rounded text-xs font-bold text-white border border-transparent">
 					LAUNCH APP
 				</button>
-				<a href="/login" class="hover:text-[#0969da]">login</a>
-				<span>|</span>
-				<a href="/register" class="hover:text-[#0969da]">register</a>
+				{#if auth.isAuthenticated}
+					<a href="/settings/profile" class="flex items-center gap-2 hover:text-[#0969da] transition">
+						<img 
+							src={auth.currentUser?.avatarUrl || `https://ui-avatars.com/api/?name=${auth.currentUser?.username}&background=random`}
+							alt={auth.currentUser?.username}
+							class="w-6 h-6 rounded-full"
+						/>
+						<span class="font-medium">{auth.currentUser?.displayName || auth.currentUser?.username}</span>
+					</a>
+					<button onclick={handleLogout} class="hover:text-[#0969da]">logout</button>
+				{:else}
+					<a href="/login" class="hover:text-[#0969da]">login</a>
+					<span>|</span>
+					<a href="/register" class="hover:text-[#0969da]">register</a>
+				{/if}
 			</div>
 		</div>
 	</header>
@@ -57,7 +80,7 @@
 			<div class="grid grid-cols-1 md:grid-cols-4 gap-8">
 				<div class="col-span-2">
 					<h3 class="text-gray-900 font-bold mb-4 text-lg">AI Game Hub</h3>
-					<p class="mb-4 text-xs">© 2025 AI Game Hub Corporation. All rights reserved. All trademarks are property of their respective owners in the US and other countries.</p>
+					<p class="mb-4 text-xs">© 2025 PubWiki. All rights reserved. All trademarks are property of their respective owners in the US and other countries.</p>
 				</div>
 				<div>
 					<h3 class="text-gray-900 font-bold mb-2">Resources</h3>
