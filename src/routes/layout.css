@@ -1,6 +1,9 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 
+/* Use class-based dark mode instead of media-query based */
+@variant dark (&:where(.dark, .dark *));
+
 :root {
 	--color-bg-primary: #ffffff;
 	--color-bg-secondary: #f6f8fa; /* GitHub-like light gray */

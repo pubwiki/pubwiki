@@ -11,6 +11,12 @@ importers:
       '@pubwiki/api':
         specifier: file:../pubwiki-backend/packages/api
         version: file:../pubwiki-backend/packages/api
+      '@pubwiki/chat':
+        specifier: workspace:*
+        version: link:packages/chat
+      '@pubwiki/svelte-chat':
+        specifier: workspace:*
+        version: link:packages/svelte-chat
       '@xyflow/svelte':
         specifier: ^1.5.0
         version: 1.5.0(svelte@5.45.8)

@@ -5,8 +5,13 @@ import { sveltekit } from '@sveltejs/kit/vite';
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
+	server: {
+		fs: {
+			allow: ['packages']
+		}
+	},
 	ssr: {
-		noExternal: ['@xyflow/svelte']
+		noExternal: ['@xyflow/svelte', '@pubwiki/chat', '@pubwiki/svelte-chat']
 	},
 	test: {
 		expect: { requireAssertions: true },
