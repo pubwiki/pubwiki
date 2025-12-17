@@ -3,22 +3,22 @@
   "version": "0.1.0",
   "description": "Svelte 5 chat UI components built on @pubwiki/chat core library",
   "type": "module",
-  "svelte": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "svelte": "./src/lib/index.ts",
+  "types": "./src/lib/index.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "svelte": "./dist/index.js",
-      "import": "./dist/index.js"
+      "types": "./src/lib/index.ts",
+      "svelte": "./src/lib/index.ts",
+      "import": "./src/lib/index.ts"
     },
     "./stores": {
-      "types": "./dist/stores/index.d.ts",
-      "import": "./dist/stores/index.js"
+      "types": "./src/lib/stores/index.ts",
+      "import": "./src/lib/stores/index.ts"
     },
     "./blocks": {
-      "types": "./dist/blocks/index.d.ts",
-      "svelte": "./dist/blocks/index.js",
-      "import": "./dist/blocks/index.js"
+      "types": "./src/lib/blocks/index.ts",
+      "svelte": "./src/lib/blocks/index.ts",
+      "import": "./src/lib/blocks/index.ts"
     }
   },
   "files": [

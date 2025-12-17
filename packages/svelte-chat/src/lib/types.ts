@@ -6,6 +6,17 @@
 
 import type { MessageBlock as CoreMessageBlock, MessageBlockType as CoreMessageBlockType } from '@pubwiki/chat'
 
+// ===== Preprocess Types =====
+
+/** Preprocess function parameters */
+export interface PreprocessParams {
+  content: string
+  historyId?: string
+}
+
+/** Preprocess function type */
+export type PreprocessFn = (params: PreprocessParams) => Promise<PreprocessParams> | PreprocessParams
+
 // ===== Extended Block Types for UI =====
 
 /**

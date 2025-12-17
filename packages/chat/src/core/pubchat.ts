@@ -8,7 +8,7 @@
  * - Branch and backtrack support
  */
 
-import { ChatStreamPipeline, StreamEvent as PipelineStreamEvent, CompletionSummary } from './pipeline'
+import { ChatStreamPipeline, type CompletionSummary } from './pipeline'
 import { messagesToChatMessages, createUserMessage, createSystemMessage, createAssistantMessage } from './converter'
 import { ToolRegistry } from '../llm/tools'
 import type { ChatProvider, ChatResult, ToolRegistrationParams } from './chat-provider'

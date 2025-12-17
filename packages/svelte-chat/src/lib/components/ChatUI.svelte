@@ -8,7 +8,7 @@
 -->
 <script lang="ts" module>
   import type { PubChat, MessageNode } from '@pubwiki/chat'
-  import type { UIMessageBlock } from '../types'
+  import type { UIMessageBlock, PreprocessParams, PreprocessFn } from '../types'
   import type { ActiveChatStore, ChatInputStore, MessagesStore, DisplayMessage } from '../stores'
 
   /** Chat context type */
@@ -44,6 +44,8 @@
     showAvatars?: boolean
     /** Show message actions */
     showActions?: boolean
+    /** Preprocess function to transform chat params before sending */
+    preprocess?: PreprocessFn
     /** Custom message copy handler */
     onCopy?: (content: string) => void
     /** Called when a message is sent */
@@ -64,6 +66,7 @@
     showAttachments = false,
     showAvatars = true,
     showActions = true,
+    preprocess,
     onCopy,
     onMessageSent,
     onResponseReceived,
@@ -125,8 +128,16 @@
       // Clear input
       inputStore.reset()
 
+      // Prepare chat params
+      let chatParams: PreprocessParams = { content, historyId }
+      
+      // Apply preprocess if provided
+      if (preprocess) {
+        chatParams = await preprocess(chatParams)
+      }
+
       // Stream response
-      for await (const event of pubchat.streamChat(content, historyId)) {
+      for await (const event of pubchat.streamChat(chatParams.content, chatParams.historyId)) {
         if (event.type === 'token') {
           if (!activeChatStore.firstTokenReceived) {
             activeChatStore.markFirstTokenReceived()
@@ -292,8 +303,8 @@
       selectedFiles={inputStore.selectedFiles}
       onSend={handleSend}
       onAbort={handleAbort}
-      onImageRemove={(url) => inputStore.removeImage(url)}
-      onFileRemove={(id) => inputStore.removeFile(id)}
+      onImageRemove={(url: string) => inputStore.removeImage(url)}
+      onFileRemove={(id: string) => inputStore.removeFile(id)}
     />
   {/if}
 

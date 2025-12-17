@@ -64,6 +64,8 @@ export {
   type UIMessageBlockType,
   type UIMessageBlock,
   type RenderGroup,
+  type PreprocessParams,
+  type PreprocessFn,
   groupBlocksForRender,
   createImageBlock,
   blocksToContent,

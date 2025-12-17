@@ -46,6 +46,8 @@
 		"@pubwiki/api": "file:../pubwiki-backend/packages/api",
 		"@pubwiki/chat": "workspace:*",
 		"@pubwiki/svelte-chat": "workspace:*",
-		"@xyflow/svelte": "^1.5.0"
+		"@types/dagre": "^0.7.53",
+		"@xyflow/svelte": "^1.5.0",
+		"dagre": "^0.8.5"
 	}
 }
