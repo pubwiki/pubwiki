@@ -135,6 +135,7 @@
 		width: 100%;
 		min-height: 8rem;
 		max-height: 12rem;
+		overflow: hidden;
 	}
 
 	/* Shared text styling for perfect alignment */
@@ -143,10 +144,7 @@
 		position: absolute;
 		top: 0;
 		left: 0;
-		right: 0;
 		bottom: 0;
-		width: 100%;
-		height: 100%;
 		margin: 0;
 		padding: 0.75rem;
 		border: none;
@@ -158,12 +156,15 @@
 		word-wrap: break-word;
 		word-break: break-all;
 		box-sizing: border-box;
-		overflow-y: auto;
 		overflow-x: hidden;
+		overflow-y: auto;
 		text-align: left;
 	}
 
 	.backdrop {
+		/* Extend beyond container to hide scrollbar */
+		right: -20px;
+		padding-right: calc(0.75rem + 20px);
 		color: #374151;
 		pointer-events: none;
 		z-index: 1;
@@ -171,6 +172,7 @@
 	}
 
 	.input {
+		right: 0;
 		color: transparent;
 		caret-color: #3b82f6;
 		background: transparent;
@@ -178,15 +180,6 @@
 		resize: none;
 		z-index: 2;
 		-webkit-text-fill-color: transparent;
-	}
-
-	/* Hide backdrop scrollbar but keep scrollable */
-	.backdrop::-webkit-scrollbar {
-		display: none;
-	}
-	.backdrop {
-		-ms-overflow-style: none;
-		scrollbar-width: none;
 	}
 
 	.input::placeholder {
