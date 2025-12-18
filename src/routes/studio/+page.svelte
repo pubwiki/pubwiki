@@ -572,7 +572,7 @@
 	// Node Management
 	// ============================================================================
 	
-	async function addNode() {
+	async function addPromptNode() {
 		const newPromptData = await createPromptNodeData('');
 		const newNode: Node<StudioNodeData> = {
 			id: newPromptData.id,
@@ -584,6 +584,22 @@
 		};
 		nodes = [...nodes, newNode];
 		applyLayout();
+		closeContextMenu();
+	}
+
+	async function addInputNode() {
+		const newInputData = await createInputNodeData('', [], []);
+		const newNode: Node<StudioNodeData> = {
+			id: newInputData.id,
+			type: 'input',
+			data: newInputData,
+			position: { x: 0, y: 0 },
+			sourcePosition: Position.Right,
+			targetPosition: Position.Left,
+		};
+		nodes = [...nodes, newNode];
+		applyLayout();
+		closeContextMenu();
 	}
 
 	function deleteNodes(nodeIds: string[]) {
@@ -840,23 +856,30 @@
 	// Context Menu
 	// ============================================================================
 	
-	let contextMenu = $state<{ x: number; y: number; nodeId: string | null } | null>(null);
+	let contextMenu = $state<{ x: number; y: number; nodeId: string | null; isPaneMenu: boolean } | null>(null);
+	let addNodeSubmenuOpen = $state(false);
 
 	function handleNodeContextMenu(event: MouseEvent, nodeId: string) {
 		event.preventDefault();
 		event.stopPropagation();
-		contextMenu = { x: event.clientX, y: event.clientY, nodeId };
+		contextMenu = { x: event.clientX, y: event.clientY, nodeId, isPaneMenu: false };
+		addNodeSubmenuOpen = false;
 	}
 
 	function handlePaneContextMenu(event: MouseEvent) {
 		event.preventDefault();
-		if (selectedNodes.length > 0) {
-			contextMenu = { x: event.clientX, y: event.clientY, nodeId: null };
-		}
+		contextMenu = { x: event.clientX, y: event.clientY, nodeId: null, isPaneMenu: true };
+		addNodeSubmenuOpen = false;
 	}
 
 	function closeContextMenu() {
 		contextMenu = null;
+		addNodeSubmenuOpen = false;
+	}
+
+	function handleAutoLayout() {
+		applyLayout();
+		closeContextMenu();
 	}
 
 	function handleDeleteFromContextMenu() {
@@ -888,7 +911,7 @@
 			selectionOnDrag
 			deleteKey="Delete"
 			selectionMode={SelectionMode.Partial}
-			panOnDrag={[1, 2]}
+			panOnDrag={[1]}
 			multiSelectionKey="Shift"
 			onselectionchange={(e) => selectedNodes = e.nodes}
 			onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
@@ -908,37 +931,79 @@
 				style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
 				onclick={(e) => e.stopPropagation()}
 			>
-				<button
-					class="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 rounded-md flex items-center gap-2"
-					onclick={handleDeleteFromContextMenu}
-				>
-					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-					</svg>
-					{#if contextMenu.nodeId}
-						Delete Node
-					{:else}
-						Delete {selectedNodes.length} Node{selectedNodes.length > 1 ? 's' : ''}
-					{/if}
-				</button>
+				{#if contextMenu.isPaneMenu}
+					<!-- Pane Context Menu -->
+					<div class="relative">
+						<button
+							class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center justify-between gap-2"
+							onmouseenter={() => addNodeSubmenuOpen = true}
+						>
+							<span class="flex items-center gap-2">
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+								</svg>
+								Add Node
+							</span>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+							</svg>
+						</button>
+						
+						{#if addNodeSubmenuOpen}
+							<div 
+								class="absolute left-full top-0 ml-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1 min-w-36"
+								onmouseleave={() => addNodeSubmenuOpen = false}
+							>
+								<button
+									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+									onclick={addPromptNode}
+								>
+									<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+									</svg>
+									Prompt Node
+								</button>
+								<button
+									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+									onclick={addInputNode}
+								>
+									<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+									</svg>
+									Input Node
+								</button>
+							</div>
+						{/if}
+					</div>
+					
+					<button
+						class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+						onclick={handleAutoLayout}
+						onmouseenter={() => addNodeSubmenuOpen = false}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+						</svg>
+						Auto Layout
+					</button>
+				{:else}
+					<!-- Node Context Menu -->
+					<button
+						class="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 rounded-md flex items-center gap-2"
+						onclick={handleDeleteFromContextMenu}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+						</svg>
+						{#if contextMenu.nodeId}
+							Delete Node
+						{:else}
+							Delete {selectedNodes.length} Node{selectedNodes.length > 1 ? 's' : ''}
+						{/if}
+					</button>
+				{/if}
 			</div>
 		{/if}
-		
-		<!-- Toolbar -->
-		<div class="absolute top-4 left-4 z-10 bg-white p-2 rounded shadow flex gap-2">
-			<button 
-				class="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700 transition text-sm font-medium"
-				onclick={addNode}
-			>
-				Add Node
-			</button>
-			<button 
-				class="bg-gray-600 text-white px-4 py-2 rounded shadow hover:bg-gray-700 transition text-sm font-medium"
-				onclick={applyLayout}
-			>
-				Auto Layout
-			</button>
-		</div>
 	</div>
 
 	<!-- Floating Chat -->
