@@ -2,30 +2,76 @@
 	import { SvelteFlow, Background, Controls, useSvelteFlow, type Node, type Edge, Position, SelectionMode } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import dagre from 'dagre';
+	import { untrack } from 'svelte';
 	import GraphNode from './GraphNode.svelte';
 	import FlowController from './FlowController.svelte';
+	import { 
+		type StudioNodeData, 
+		type NodeRef,
+		type GeneratedNodeData,
+		snapshotStore,
+		createPromptNodeData, 
+		createInputNodeData,
+		createGeneratedNodeData,
+		generateCommitHash,
+		createSnapshot,
+		restoreSnapshot,
+		syncNode
+	} from './types';
+	import {
+		prepareForGeneration,
+		rebuildHistoricalTree,
+		styleEdgesForVersions,
+		type HistoricalTreeResult
+	} from './version-control';
+	import { resolvePromptContentFromRefs, resolvePromptContent, getHashtagConnections } from './hashtag-utils';
+	import { setStudioContext, type StudioContext, type PreviewState } from './studio-context';
 	
 	import { ChatUI, type PreprocessParams, type DisplayMessage } from '@pubwiki/svelte-chat';
 	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
 
-	// Initialize Chat
-	// Note: In a real app, you might want to persist this or load config from somewhere
+	// ============================================================================
+	// Chat Configuration
+	// ============================================================================
+	
 	const pubchat = new PubChat({
 		llm: {
-            // FIXME: only for test, do not bring to production
-			apiKey: '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', // Placeholder - user will likely need to configure this
+			// FIXME: only for test, do not bring to production
+			apiKey: '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',
 			model: 'google/gemini-2.5-flash',
-            baseUrl: 'https://openrouter.ai/api/v1'
+			baseUrl: 'https://openrouter.ai/api/v1'
 		},
 		messageStore: new MemoryMessageStore(),
 	});
 
+	// ============================================================================
+	// Node Types
+	// ============================================================================
+	
 	const nodeTypes = {
 		prompt: GraphNode,
-		input: GraphNode
+		input: GraphNode,
+		generated: GraphNode
 	};
 
-	// Textarea registry for external focus control
+	// ============================================================================
+	// Flow State
+	// ============================================================================
+	
+	let nodes = $state.raw<Node<StudioNodeData>[]>([]);
+	let edges = $state.raw<Edge[]>([]);
+	let editingNodeId = $state<string | null>(null);
+	let selectedNodes = $state<Node<StudioNodeData>[]>([]);
+	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
+	let initialized = $state(false);
+	
+	// Historical tree state for preview mode
+	let historicalTree = $state<HistoricalTreeResult | null>(null);
+
+	// ============================================================================
+	// Textarea Registry (for external focus control from badges)
+	// ============================================================================
+	
 	const textareaRegistry = new Map<string, HTMLTextAreaElement>();
 	
 	function registerTextarea(id: string, el: HTMLTextAreaElement) {
@@ -43,60 +89,400 @@
 		}
 	}
 
-	// Shared callbacks for node editing state - declared before nodes initialization
-	function onEditStart(id: string) {
-		editingNodeId = id;
-		nodes = nodes.map(n => ({
-			...n,
-			data: {
-				...n.data,
-				isEditing: n.id === id
-			}
-		}));
-	}
-	
-	function onEditEnd(id: string) {
-		if (editingNodeId === id) {
-			editingNodeId = null;
-			nodes = nodes.map(n => ({
-				...n,
-				data: {
-					...n.data,
-					isEditing: false
+	// ============================================================================
+	// Node Operations (defined before context)
+	// ============================================================================
+
+	function onRestore(id: string, snapshotRef: NodeRef) {
+		nodes = nodes.map(n => {
+			if (n.id === id) {
+				const restoredData = restoreSnapshot(n.data, snapshotRef);
+				if (restoredData) {
+					return { ...n, data: restoredData };
 				}
-			}));
-		}
+			}
+			return n;
+		});
 	}
 
-	// Flow State - use $state.raw for xyflow compatibility
-	let nodes = $state.raw<Node[]>([
-		{
-			id: '1',
-			type: 'prompt',
-			data: { type: 'PROMPT', content: '', onEditStart, onEditEnd, registerTextarea, unregisterTextarea },
+	// ============================================================================
+	// Studio Context (Dependency Injection)
+	// ============================================================================
+	
+	const studioContext: StudioContext = {
+		get nodes() { return nodes; },
+		get edges() { return edges; },
+		get editingNodeId() { return editingNodeId; },
+		
+		setNodes: (newNodes) => { nodes = newNodes; },
+		updateNode: (id, updater) => {
+			nodes = nodes.map(n => 
+				n.id === id ? { ...n, data: updater(n.data) } : n
+			);
+		},
+		setEdges: (newEdges) => { edges = newEdges; },
+		setEditingNodeId: (id) => { 
+			editingNodeId = id;
+			// Update isEditing state on nodes
+			nodes = nodes.map(n => ({
+				...n,
+				data: { ...n.data, isEditing: n.id === id }
+			}));
+		},
+		
+		registerTextarea,
+		unregisterTextarea,
+		
+		onGenerate,
+		onRegenerate,
+		onRestore,
+		saveVersionBeforeEdit: async (nodeId) => {
+			const node = nodes.find(n => n.id === nodeId);
+			if (node) {
+				const synced = await syncNode(node, edges);
+				if (synced !== node.data) {
+					nodes = nodes.map(n => n.id === nodeId ? { ...n, data: synced } : n);
+				}
+			}
+		},
+		
+		getPreviewState: (nodeId) => {
+			if (!historicalTree) return null;
+			
+			const override = historicalTree.nodeOverrides.get(nodeId);
+			if (override) {
+				// Node has historical changes
+				return {
+					content: override.content as string,
+					commit: override.commit,
+					incomingEdges: historicalTree.historicalEdges
+						.filter(e => e.target === nodeId)
+						.map(e => ({
+							source: e.source,
+							sourceHandle: e.sourceHandle,
+							targetHandle: e.targetHandle
+						}))
+				};
+			}
+			
+			// Check if node is used but not changed
+			if (historicalTree.usedNodeIds.has(nodeId)) {
+				return {
+					isUsed: true
+				};
+			}
+			
+			return null;
+		},
+	};
+	
+	setStudioContext(studioContext);
+
+	// ============================================================================
+	// Generation (from Input Node)
+	// ============================================================================
+	
+	async function onGenerate(inputNodeId: string) {
+		const inputNode = nodes.find(n => n.id === inputNodeId);
+		if (!inputNode || inputNode.data.type !== 'INPUT' || !inputNode.data.content) return;
+
+		// Prepare for generation - creates snapshots, gets refs, and resolves hashtags
+		const prepared = await prepareForGeneration(nodes, edges, inputNodeId);
+		nodes = prepared.nodes;
+
+		// Create streaming generated node with indirect refs
+		const newGeneratedData = await createGeneratedNodeData(
+			'',
+			prepared.inputRef,
+			prepared.promptRefs,
+			prepared.indirectPromptRefs,
+			prepared.parentRefs
+		);
+		
+		const generatedNode: Node<StudioNodeData> = {
+			id: newGeneratedData.id,
+			type: 'generated',
+			data: { 
+				...newGeneratedData,
+				isStreaming: true,
+			},
 			position: { x: 0, y: 0 },
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
-		},
-	]);
-	
-	let edges = $state.raw<Edge[]>([]);
-	let editingNodeId = $state<string | null>(null);
-	let selectedNodes = $state<Node[]>([]);
-	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
+		};
 
-	// Dagre layout configuration
+		// Create edge from input to generated
+		const newEdge: Edge = {
+			id: `e-${inputNodeId}-${newGeneratedData.id}`,
+			source: inputNodeId,
+			target: newGeneratedData.id,
+		};
+
+		// Add and layout
+		const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+			[...nodes, generatedNode],
+			[...edges, newEdge]
+		);
+		nodes = layoutedNodes;
+		edges = layoutedEdges;
+
+		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
+
+		// Stream generation using resolved system prompt (with hashtags substituted)
+		await streamGeneration(
+			newGeneratedData.id,
+			inputNode.data.content,
+			prepared.resolvedSystemPrompt
+		);
+	}
+
+	async function streamGeneration(nodeId: string, userContent: string, systemPrompt: string) {
+		try {
+			let historyId: string | undefined;
+			if (systemPrompt) {
+				const systemMessage = createSystemMessage(systemPrompt, null);
+				const historyIds = await pubchat.addConversation([systemMessage]);
+				historyId = historyIds[historyIds.length - 1];
+			}
+
+			let accumulatedContent = '';
+			for await (const event of pubchat.streamChat(userContent, historyId)) {
+				if (event.type === 'token') {
+					accumulatedContent += event.token;
+					nodes = nodes.map(n => 
+						n.id === nodeId 
+							? { ...n, data: { ...n.data, content: accumulatedContent } }
+							: n
+					);
+				} else if (event.type === 'done') {
+					const finalCommit = await generateCommitHash(accumulatedContent);
+					nodes = nodes.map(n => 
+						n.id === nodeId 
+							? { ...n, data: { ...n.data, content: accumulatedContent, commit: finalCommit, isStreaming: false } }
+							: n
+					);
+				} else if (event.type === 'error') {
+					console.error('Generation error:', event.error);
+					nodes = nodes.map(n => 
+						n.id === nodeId ? { ...n, data: { ...n.data, isStreaming: false } } : n
+					);
+				}
+			}
+		} catch (error) {
+			console.error('Generation failed:', error);
+			nodes = nodes.map(n => 
+				n.id === nodeId ? { ...n, data: { ...n.data, isStreaming: false } } : n
+			);
+		}
+	}
+
+	// ============================================================================
+	// Regeneration (from Generated Node)
+	// ============================================================================
+
+	/**
+	 * Regenerate content using the historical snapshots stored in the generated node.
+	 * This uses the original inputRef, promptRefs, and indirectPromptRefs to 
+	 * reconstruct the exact context that was used for the original generation,
+	 * including hashtag-substituted content.
+	 */
+	async function onRegenerate(generatedNodeId: string) {
+		const generatedNode = nodes.find(n => n.id === generatedNodeId);
+		if (!generatedNode || generatedNode.data.type !== 'GENERATED') return;
+
+		const genData = generatedNode.data as GeneratedNodeData;
+
+		// Get the historical input content
+		const inputNode = nodes.find(n => n.id === genData.inputRef.id);
+		let inputContent: string;
+		
+		// If the input ref points to an old version, get it from snapshotStore
+		if (inputNode && inputNode.data.commit === genData.inputRef.commit) {
+			// Current version matches the ref - use current content
+			inputContent = inputNode.data.content as string;
+		} else {
+			// Different version - get from snapshot store
+			const snapshot = snapshotStore.get<string>(genData.inputRef.id, genData.inputRef.commit);
+			if (!snapshot) {
+				console.error('Cannot find historical input snapshot');
+				return;
+			}
+			inputContent = snapshot.content;
+		}
+
+		// Combine all refs for content resolution
+		const allRefs = [
+			...genData.promptRefs, 
+			...(genData.indirectPromptRefs || [])
+		];
+
+		// Resolve each direct prompt ref with hashtag substitution
+		const resolvedPrompts: string[] = [];
+		for (const promptRef of genData.promptRefs) {
+			const resolved = resolvePromptContentFromRefs(
+				promptRef.id,
+				promptRef.commit,
+				nodes,
+				edges,
+				allRefs,
+				new Set()
+			);
+			resolvedPrompts.push(resolved);
+		}
+
+		const systemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
+
+		// Set streaming state
+		nodes = nodes.map(n => 
+			n.id === generatedNodeId 
+				? { ...n, data: { ...n.data, isStreaming: true, content: '' } }
+				: n
+		);
+
+		// Stream regeneration
+		await streamGeneration(generatedNodeId, inputContent, systemPrompt);
+	}
+
+	// ============================================================================
+	// Version Preview Effects
+	// ============================================================================
+	
+	// Track phantom node IDs so we can remove them when preview ends
+	let phantomNodeIds = $state<Set<string>>(new Set());
+	
+	// Track hidden edges (edges connected to historical nodes that are temporarily removed)
+	let hiddenEdges = $state<Edge[]>([]);
+	
+	// When a generated node is selected, rebuild historical tree for referenced nodes
+	$effect(() => {
+		const selected = selectedNodes;
+		
+		if (selected.length !== 1 || selected[0].data.type !== 'GENERATED') {
+			// Clear historical tree and remove phantom nodes when not viewing a single generated node
+			untrack(() => {
+				if (historicalTree !== null) {
+					console.log('[cleanup] restoring hiddenEdges:', hiddenEdges.length);
+					// Remove phantom nodes
+					if (phantomNodeIds.size > 0) {
+						nodes = nodes.filter(n => !phantomNodeIds.has(n.id));
+					}
+					// Remove any edges connected to phantom nodes or historical edges
+					// and restore hidden edges
+					const restoredEdges = [
+						...edges.filter(e => 
+							!phantomNodeIds.has(e.source) && 
+							!phantomNodeIds.has(e.target) &&
+							!e.id.startsWith('historical-')
+						),
+						...hiddenEdges
+					];
+					console.log('[cleanup] edges before:', edges.length, 'after:', restoredEdges.length);
+					edges = restoredEdges;
+					phantomNodeIds = new Set();
+					hiddenEdges = [];
+					historicalTree = null;
+				}
+			});
+			return;
+		}
+
+		untrack(() => {
+			// First, restore any previously hidden edges before processing new selection
+			let currentEdges = edges;
+			if (hiddenEdges.length > 0) {
+				// Remove old phantom nodes if any
+				if (phantomNodeIds.size > 0) {
+					nodes = nodes.filter(n => !phantomNodeIds.has(n.id));
+				}
+				// Restore hidden edges and remove old historical edges
+				currentEdges = [
+					...edges.filter(e => 
+						!phantomNodeIds.has(e.source) && 
+						!phantomNodeIds.has(e.target) &&
+						!e.id.startsWith('historical-')
+					),
+					...hiddenEdges
+				];
+				phantomNodeIds = new Set();
+				hiddenEdges = [];
+			}
+			
+			const tree = rebuildHistoricalTree(selected[0], nodes, currentEdges);
+			historicalTree = tree;
+			
+			const selectedGenNodeId = selected[0].id;
+			
+			// Get IDs of nodes that are truly historical (have overrides, not just used)
+			const historicalNodeIds = new Set(tree.nodeOverrides.keys());
+			
+			// Get all node IDs that are part of the tree (used + historical + phantom + generated)
+			const treeNodeIds = new Set([
+				selectedGenNodeId,
+				...tree.usedNodeIds,
+				...historicalNodeIds,
+				...tree.phantomNodes.map(n => n.id)
+			]);
+			
+			// Hide edges connected to historical nodes, EXCEPT edges that are part of the tree
+			// (i.e., edges where BOTH source and target are in the tree)
+			const edgesToHide = currentEdges.filter(e => 
+				(historicalNodeIds.has(e.source) || historicalNodeIds.has(e.target)) &&
+				!(treeNodeIds.has(e.source) && treeNodeIds.has(e.target))
+			);
+			hiddenEdges = edgesToHide;
+			
+			// Remove hidden edges from current edges
+			const hiddenEdgeIds = new Set(edgesToHide.map(e => e.id));
+			let newEdges = currentEdges.filter(e => !hiddenEdgeIds.has(e.id));
+			
+			// Add phantom nodes to the graph
+			if (tree.phantomNodes.length > 0) {
+				// Mark phantom nodes with special flag for styling
+				const phantomsWithFlag = tree.phantomNodes.map(n => ({
+					...n,
+					data: { ...n.data, isPhantom: true }
+				}));
+				nodes = [...nodes, ...phantomsWithFlag];
+				phantomNodeIds = new Set(tree.phantomNodes.map(n => n.id));
+			}
+			
+			// Add all historical edges (styled differently)
+			if (tree.historicalEdges.length > 0) {
+				const styledHistoricalEdges = tree.historicalEdges.map(e => ({
+					...e,
+					style: 'stroke: #f59e0b; stroke-dasharray: 5 5;',
+					animated: false
+				}));
+				newEdges = [...newEdges, ...styledHistoricalEdges];
+			}
+			
+			edges = newEdges;
+		});
+	});
+
+	// Style edges for old version references
+	$effect(() => {
+		const hasGeneratedNodes = nodes.some(n => n.data.type === 'GENERATED');
+		if (!hasGeneratedNodes) return;
+
+		const { edges: styledEdges, changed } = styleEdgesForVersions(edges, nodes);
+		if (changed) {
+			edges = styledEdges;
+		}
+	});
+
+	// ============================================================================
+	// Layout
+	// ============================================================================
+	
 	const NODE_WIDTH = 320;
 	const NODE_HEIGHT = 180;
 
-	/**
-	 * Apply dagre layout to nodes and edges
-	 */
-	function getLayoutedElements(
-		layoutNodes: Node[],
+	function getLayoutedElements<T extends Node>(
+		layoutNodes: T[],
 		layoutEdges: Edge[],
 		direction: 'TB' | 'LR' = 'LR'
-	): { nodes: Node[]; edges: Edge[] } {
+	): { nodes: T[]; edges: Edge[] } {
 		const dagreGraph = new dagre.graphlib.Graph();
 		dagreGraph.setDefaultEdgeLabel(() => ({}));
 
@@ -119,7 +505,7 @@
 
 		dagre.layout(dagreGraph);
 
-		const newNodes = layoutNodes.map((node) => {
+		const newNodes = layoutNodes.map((node): T => {
 			const nodeWithPosition = dagreGraph.node(node.id);
 			return {
 				...node,
@@ -135,110 +521,108 @@
 		return { nodes: newNodes, edges: layoutEdges };
 	}
 
-	/**
-	 * Apply layout and update state
-	 */
 	function applyLayout() {
 		const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges);
 		nodes = layoutedNodes;
 		edges = layoutedEdges;
-		
-		// Fit view after layout
-		setTimeout(() => {
-			flowApi?.fitView({ padding: 0.2, duration: 300 });
-		}, 50);
+		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 	}
 
-	function addNode() {
-		const newNode: Node = {
-			id: crypto.randomUUID(),
+	// ============================================================================
+	// Node Management
+	// ============================================================================
+	
+	async function addNode() {
+		const newPromptData = await createPromptNodeData('');
+		const newNode: Node<StudioNodeData> = {
+			id: newPromptData.id,
 			type: 'prompt',
-			data: { type: 'PROMPT', content: '', onEditStart, onEditEnd, registerTextarea, unregisterTextarea },
-			position: { x: 0, y: 0 }, // Will be set by layout
+			data: newPromptData,
+			position: { x: 0, y: 0 },
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
 		};
 		nodes = [...nodes, newNode];
-		
-		// Apply layout after adding node
 		applyLayout();
 	}
 
-	function handleBadgeClick(node: Node) {
-		// Center the view on the node first
-		if (flowApi) {
-			flowApi.fitView({ nodes: [{ id: node.id }], duration: 400, padding: 0.2 });
-		}
-		// Focus the textarea after a short delay to allow view animation
-		setTimeout(() => {
-			focusNode(node.id);
-		}, 100);
+	function deleteNodes(nodeIds: string[]) {
+		nodes = nodes.filter(n => !nodeIds.includes(n.id));
+		edges = edges.filter(e => !nodeIds.includes(e.source) && !nodeIds.includes(e.target));
+		selectedNodes = selectedNodes.filter(n => !nodeIds.includes(n.id));
+		closeContextMenu();
 	}
 
-	// Current historyId for conversation continuity
-	let currentHistoryId = $state<string | undefined>(undefined);
+	// ============================================================================
+	// Initialization
+	// ============================================================================
 	
-	// Store the last user message content and selected prompt IDs for onResponseReceived
+	$effect(() => {
+		if (!initialized) {
+			initialized = true;
+			(async () => {
+				const initialPromptData = await createPromptNodeData('');
+				nodes = [{
+					id: initialPromptData.id,
+					type: 'prompt',
+					data: initialPromptData,
+					position: { x: 0, y: 0 },
+					sourcePosition: Position.Right,
+					targetPosition: Position.Left,
+				}];
+			})();
+		}
+	});
+
+	// ============================================================================
+	// Chat Integration
+	// ============================================================================
+	
+	let currentHistoryId = $state<string | undefined>(undefined);
 	let lastUserMessageContent = $state<string>('');
 	let lastSelectedPromptIds = $state<string[]>([]);
 
-	/**
-	 * Preprocess function for chat
-	 * Creates a new conversation with selected prompts as system message prefix
-	 */
 	async function preprocessChat(params: PreprocessParams): Promise<PreprocessParams> {
-		// Get selected node IDs
 		const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
-		
-		// Get CURRENT content from nodes array (not from selectedNodes which may be stale)
 		const selectedPromptNodes = nodes
 			.filter(n => selectedNodeIds.has(n.id) && n.type === 'prompt' && n.data.content);
 		
-		const selectedPrompts = selectedPromptNodes.map(n => n.data.content as string);
-		
-		// Store for onResponseReceived
 		lastUserMessageContent = params.content;
 		lastSelectedPromptIds = selectedPromptNodes.map(n => n.id);
 
-		// If no prompts selected, return original params
-		if (selectedPrompts.length === 0) {
+		if (selectedPromptNodes.length === 0) {
 			return params;
 		}
 
-		// Combine prompts into system message
-		const systemPrompt = selectedPrompts.join('\n\n---\n\n');
+		// Resolve each prompt with hashtag substitution
+		const resolvedPrompts: string[] = [];
+		for (const promptNode of selectedPromptNodes) {
+			const resolved = resolvePromptContent(
+				promptNode.id,
+				nodes,
+				edges,
+				new Set(),
+				[]
+			);
+			resolvedPrompts.push(resolved.content);
+		}
 		
-		// Create system message
+		const systemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
 		const systemMessage = createSystemMessage(systemPrompt, null);
 		
-		// Delete old conversation if exists
 		if (params.historyId) {
 			try {
 				await pubchat.deleteConversation(params.historyId, true);
-			} catch (e) {
-				// Ignore if conversation doesn't exist
-			}
+			} catch (e) { /* ignore */ }
 		}
 		
-		// Add system message to create new conversation
 		const historyIds = await pubchat.addConversation([systemMessage]);
-		const newHistoryId = historyIds[historyIds.length - 1];
+		currentHistoryId = historyIds[historyIds.length - 1];
 		
-		// Update current history ID
-		currentHistoryId = newHistoryId;
-		
-		return {
-			content: params.content,
-			historyId: newHistoryId
-		};
+		return { content: params.content, historyId: currentHistoryId };
 	}
 
-	/**
-	 * Called when assistant response is received
-	 * Creates input node and prompt node, then connects them
-	 */
-	function onResponseReceived(message: DisplayMessage) {
-		// Extract text content from the response
+	async function onResponseReceived(message: DisplayMessage) {
 		const responseContent = message.blocks
 			.filter(b => b.type === 'text' || b.type === 'markdown')
 			.map(b => b.content)
@@ -246,147 +630,189 @@
 
 		if (!responseContent) return;
 
-		// Create input node (user message)
-		const inputNodeId = crypto.randomUUID();
-		const inputNode: Node = {
-			id: inputNodeId,
-			type: 'input',
-			data: { 
-				type: 'INPUT',
-				content: lastUserMessageContent,
-				sourcePromptIds: [...lastSelectedPromptIds]
-			},
-			position: { x: 0, y: 0 }, // Will be set by layout
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
+		// Collect all involved nodes (direct + indirect via hashtags)
+		const collectAllInvolvedNodes = (nodeIds: string[], visited: Set<string> = new Set()): string[] => {
+			const result: string[] = [];
+			for (const nodeId of nodeIds) {
+				if (visited.has(nodeId)) continue;
+				visited.add(nodeId);
+				result.push(nodeId);
+				
+				const node = nodes.find(n => n.id === nodeId);
+				if (node && node.data.type === 'PROMPT') {
+					const hashtagConnections = getHashtagConnections(nodeId, edges);
+					const connectedIds = Array.from(hashtagConnections.values());
+					result.push(...collectAllInvolvedNodes(connectedIds, visited));
+				}
+			}
+			return result;
 		};
 
-		// Create prompt node (assistant response)
-		const promptNodeId = crypto.randomUUID();
-		const promptNode: Node = {
-			id: promptNodeId,
-			type: 'prompt',
-			data: { 
-				type: 'PROMPT', 
-				content: responseContent, 
-				onEditStart, 
-				onEditEnd, 
-				registerTextarea, 
-				unregisterTextarea 
-			},
-			position: { x: 0, y: 0 }, // Will be set by layout
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
+		const allInvolvedPromptIds = collectAllInvolvedNodes(lastSelectedPromptIds);
 
-		// Create edges from selected prompts to input node
-		const newEdges: Edge[] = lastSelectedPromptIds.map(sourceId => ({
-			id: `e-${sourceId}-${inputNodeId}`,
-			source: sourceId,
-			target: inputNodeId,
+		// Create snapshots for all involved prompt nodes
+		let updatedNodes = await Promise.all(nodes.map(async n => {
+			if (allInvolvedPromptIds.includes(n.id) && n.data.type === 'PROMPT') {
+				const currentCommit = await generateCommitHash(n.data.content);
+				if (n.data.commit !== currentCommit) {
+					const snapshotted = await createSnapshot(n.data, n.data.content);
+					return { ...n, data: snapshotted };
+				}
+			}
+			return n;
+		}));
+		nodes = updatedNodes;
+
+		// Get direct prompt refs
+		const freshPromptNodes = nodes.filter(n => 
+			lastSelectedPromptIds.includes(n.id) && n.data.type === 'PROMPT'
+		);
+		const promptRefs: NodeRef[] = freshPromptNodes.map(n => ({ 
+			id: n.id, 
+			commit: n.data.commit 
 		}));
 
-		// Create edge from input node to prompt node
-		newEdges.push({
-			id: `e-${inputNodeId}-${promptNodeId}`,
-			source: inputNodeId,
-			target: promptNodeId,
+		// Collect indirect refs via hashtag resolution
+		const allPromptRefs: NodeRef[] = [];
+		for (const promptNode of freshPromptNodes) {
+			const resolved = resolvePromptContent(
+				promptNode.id, 
+				nodes, 
+				edges, 
+				new Set(), 
+				[]
+			);
+			allPromptRefs.push(...resolved.allPromptRefs);
+		}
+		
+		// Separate indirect refs
+		const directPromptIdSet = new Set(promptRefs.map(r => r.id));
+		const indirectPromptRefs = allPromptRefs.filter(
+			ref => !directPromptIdSet.has(ref.id)
+		);
+		
+		// Deduplicate indirect refs
+		const seenIndirect = new Set<string>();
+		const uniqueIndirectRefs = indirectPromptRefs.filter(ref => {
+			const key = `${ref.id}:${ref.commit}`;
+			if (seenIndirect.has(key)) return false;
+			seenIndirect.add(key);
+			return true;
 		});
 
-		// Update state with new nodes and edges
-		const allNodes = [...nodes, inputNode, promptNode];
-		const allEdges = [...edges, ...newEdges];
+		// Create input node
+		const inputNodeData = await createInputNodeData(
+			lastUserMessageContent,
+			[...lastSelectedPromptIds],
+			promptRefs
+		);
+		const inputRef: NodeRef = { id: inputNodeData.id, commit: inputNodeData.commit };
 		
-		// Apply layout
-		const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(allNodes, allEdges);
+		const inputNode: Node<StudioNodeData> = {
+			id: inputNodeData.id,
+			type: 'input',
+			data: inputNodeData,
+			position: { x: 0, y: 0 },
+			sourcePosition: Position.Right,
+			targetPosition: Position.Left,
+		};
+
+		// Create generated node with indirect refs
+		const generatedNodeData = await createGeneratedNodeData(
+			responseContent,
+			inputRef,
+			promptRefs,
+			uniqueIndirectRefs,
+			[inputRef, ...promptRefs]
+		);
+		const generatedNode: Node<StudioNodeData> = {
+			id: generatedNodeData.id,
+			type: 'generated',
+			data: generatedNodeData,
+			position: { x: 0, y: 0 },
+			sourcePosition: Position.Right,
+			targetPosition: Position.Left,
+		};
+
+		// Create edges
+		const newEdges: Edge[] = [
+			...lastSelectedPromptIds.map(sourceId => ({
+				id: `e-${sourceId}-${inputNodeData.id}`,
+				source: sourceId,
+				target: inputNodeData.id,
+			})),
+			{
+				id: `e-${inputNodeData.id}-${generatedNodeData.id}`,
+				source: inputNodeData.id,
+				target: generatedNodeData.id,
+			}
+		];
+
+		// Layout and update
+		const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
+			[...nodes, inputNode, generatedNode],
+			[...edges, ...newEdges]
+		);
 		nodes = layoutedNodes;
 		edges = layoutedEdges;
 
-		// Fit view after layout
-		setTimeout(() => {
-			flowApi?.fitView({ padding: 0.2, duration: 300 });
-		}, 50);
+		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 
-		// Clear stored values
 		lastUserMessageContent = '';
 		lastSelectedPromptIds = [];
 	}
 
-	// Context menu state
+	// ============================================================================
+	// Context Menu
+	// ============================================================================
+	
 	let contextMenu = $state<{ x: number; y: number; nodeId: string | null } | null>(null);
 
-	/**
-	 * Handle right-click on node
-	 */
 	function handleNodeContextMenu(event: MouseEvent, nodeId: string) {
 		event.preventDefault();
 		event.stopPropagation();
 		contextMenu = { x: event.clientX, y: event.clientY, nodeId };
 	}
 
-	/**
-	 * Handle right-click on canvas (pane)
-	 */
 	function handlePaneContextMenu(event: MouseEvent) {
 		event.preventDefault();
-		// If right-clicked on empty canvas, check if there are selected nodes
 		if (selectedNodes.length > 0) {
 			contextMenu = { x: event.clientX, y: event.clientY, nodeId: null };
 		}
 	}
 
-	/**
-	 * Close context menu
-	 */
 	function closeContextMenu() {
 		contextMenu = null;
 	}
 
-	/**
-	 * Delete node(s) and their connected edges
-	 */
-	function deleteNodes(nodeIds: string[]) {
-		// Remove nodes
-		nodes = nodes.filter(n => !nodeIds.includes(n.id));
-		// Remove edges connected to deleted nodes
-		edges = edges.filter(e => !nodeIds.includes(e.source) && !nodeIds.includes(e.target));
-		// Clear selection
-		selectedNodes = selectedNodes.filter(n => !nodeIds.includes(n.id));
-		closeContextMenu();
-	}
-
-	/**
-	 * Handle delete action from context menu
-	 */
 	function handleDeleteFromContextMenu() {
 		if (contextMenu?.nodeId) {
-			// Delete specific node that was right-clicked
 			deleteNodes([contextMenu.nodeId]);
 		} else if (selectedNodes.length > 0) {
-			// Delete all selected nodes
 			deleteNodes(selectedNodes.map(n => n.id));
 		}
 	}
 
-	// Close context menu when clicking elsewhere
-	function handleWindowClick() {
-		if (contextMenu) {
-			closeContextMenu();
+	function handleBadgeClick(node: Node) {
+		if (flowApi) {
+			flowApi.fitView({ nodes: [{ id: node.id }], duration: 400, padding: 0.2 });
 		}
+		setTimeout(() => focusNode(node.id), 100);
 	}
 </script>
 
-<svelte:window onclick={handleWindowClick} />
+<svelte:window onclick={() => contextMenu && closeContextMenu()} />
 
 <div class="h-screen w-full relative flex">
 	<!-- Flow Editor -->
 	<div class="flex-1 h-full relative">
 		<SvelteFlow 
 			bind:nodes 
-			bind:edges 
+			bind:edges
 			{nodeTypes} 
 			fitView
 			selectionOnDrag
+			deleteKey="Delete"
 			selectionMode={SelectionMode.Partial}
 			panOnDrag={[1, 2]}
 			multiSelectionKey="Shift"
@@ -476,4 +902,3 @@
 		display: none;
 	}
 </style>
-
