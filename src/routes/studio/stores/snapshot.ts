@@ -2,8 +2,22 @@
  * Snapshot Store
  * 
  * Global store for node snapshots with version control support.
- * Designed for future persistence integration.
+ * Now backed by Dexie/IndexedDB for persistence with in-memory cache.
  */
+
+import {
+  db,
+  addSnapshot as dbAddSnapshot,
+  getSnapshot as dbGetSnapshot,
+  getSnapshotsByNodeId as dbGetSnapshotsByNodeId,
+  hasSnapshot as dbHasSnapshot,
+  removeSnapshot as dbRemoveSnapshot,
+  removeSnapshotsByNodeId as dbRemoveSnapshotsByNodeId,
+  clearSnapshots as dbClearSnapshots,
+  getAllSnapshots as dbGetAllSnapshots,
+  importSnapshots as dbImportSnapshots,
+  type StoredSnapshot
+} from './db'
 
 // ============================================================================
 // Types
@@ -59,36 +73,85 @@ export interface NodeSnapshot<T = unknown> {
 }
 
 // ============================================================================
-// Snapshot Store Class
+// Snapshot Store Class (with Dexie persistence)
 // ============================================================================
 
 /**
- * Global store for node snapshots
+ * Global store for node snapshots with Dexie persistence.
+ * Uses in-memory cache for fast synchronous access, with async persistence.
  * Key: `${nodeId}:${commit}` for fast lookup
  */
 class SnapshotStore {
-  private snapshots = new Map<string, NodeSnapshot>()
+  private cache = new Map<string, NodeSnapshot>()
+  private initialized = false
+  private initPromise: Promise<void> | null = null
 
   private makeKey(nodeId: string, commit: string): string {
     return `${nodeId}:${commit}`
   }
 
-  /** Add a snapshot to the store */
+  /**
+   * Initialize the store by loading all snapshots from IndexedDB.
+   * Called automatically on first access, but can be called explicitly.
+   */
+  async init(): Promise<void> {
+    if (this.initialized) return
+    if (this.initPromise) return this.initPromise
+
+    this.initPromise = (async () => {
+      try {
+        const snapshots = await dbGetAllSnapshots()
+        for (const snapshot of snapshots) {
+          const key = this.makeKey(snapshot.nodeId, snapshot.commit)
+          this.cache.set(key, snapshot as NodeSnapshot)
+        }
+        this.initialized = true
+      } catch (err) {
+        console.error('[SnapshotStore] Failed to load from IndexedDB:', err)
+        // Still mark as initialized to allow operation with empty cache
+        this.initialized = true
+      }
+    })()
+
+    return this.initPromise
+  }
+
+  /** Add a snapshot to the store (sync cache + async persist) */
   add<T>(snapshot: NodeSnapshot<T>): void {
     const key = this.makeKey(snapshot.nodeId, snapshot.commit)
-    this.snapshots.set(key, snapshot as NodeSnapshot)
+    this.cache.set(key, snapshot as NodeSnapshot)
+    
+    // Async persist to IndexedDB (fire and forget with error logging)
+    dbAddSnapshot(snapshot as StoredSnapshot).catch(err => {
+      console.error('[SnapshotStore] Failed to persist snapshot:', err)
+    })
   }
 
-  /** Get a snapshot by node ID and commit */
+  /** Get a snapshot by node ID and commit (sync from cache) */
   get<T>(nodeId: string, commit: string): NodeSnapshot<T> | undefined {
     const key = this.makeKey(nodeId, commit)
-    return this.snapshots.get(key) as NodeSnapshot<T> | undefined
+    return this.cache.get(key) as NodeSnapshot<T> | undefined
   }
 
-  /** Get all snapshots for a node, sorted by timestamp */
+  /** Get a snapshot by node ID and commit (async from DB if not in cache) */
+  async getAsync<T>(nodeId: string, commit: string): Promise<NodeSnapshot<T> | undefined> {
+    const cached = this.get<T>(nodeId, commit)
+    if (cached) return cached
+
+    const stored = await dbGetSnapshot(nodeId, commit)
+    if (stored) {
+      // Update cache
+      const key = this.makeKey(nodeId, commit)
+      this.cache.set(key, stored as NodeSnapshot)
+      return stored as NodeSnapshot<T>
+    }
+    return undefined
+  }
+
+  /** Get all snapshots for a node, sorted by timestamp (sync from cache) */
   getByNodeId<T>(nodeId: string): NodeSnapshot<T>[] {
     const results: NodeSnapshot<T>[] = []
-    for (const [key, snapshot] of this.snapshots) {
+    for (const [key, snapshot] of this.cache) {
       if (key.startsWith(`${nodeId}:`)) {
         results.push(snapshot as NodeSnapshot<T>)
       }
@@ -96,46 +159,87 @@ class SnapshotStore {
     return results.sort((a, b) => a.timestamp - b.timestamp)
   }
 
-  /** Check if a snapshot exists */
+  /** Get all snapshots for a node (async from DB) */
+  async getByNodeIdAsync<T>(nodeId: string): Promise<NodeSnapshot<T>[]> {
+    const stored = await dbGetSnapshotsByNodeId(nodeId)
+    // Update cache
+    for (const snapshot of stored) {
+      const key = this.makeKey(snapshot.nodeId, snapshot.commit)
+      this.cache.set(key, snapshot as NodeSnapshot)
+    }
+    return stored as NodeSnapshot<T>[]
+  }
+
+  /** Check if a snapshot exists (sync from cache) */
   has(nodeId: string, commit: string): boolean {
-    return this.snapshots.has(this.makeKey(nodeId, commit))
+    return this.cache.has(this.makeKey(nodeId, commit))
   }
 
-  /** Remove a snapshot */
+  /** Check if a snapshot exists (async from DB) */
+  async hasAsync(nodeId: string, commit: string): Promise<boolean> {
+    if (this.has(nodeId, commit)) return true
+    return dbHasSnapshot(nodeId, commit)
+  }
+
+  /** Remove a snapshot (sync cache + async persist) */
   remove(nodeId: string, commit: string): boolean {
-    return this.snapshots.delete(this.makeKey(nodeId, commit))
+    const key = this.makeKey(nodeId, commit)
+    const existed = this.cache.delete(key)
+    
+    // Async persist to IndexedDB
+    dbRemoveSnapshot(nodeId, commit).catch(err => {
+      console.error('[SnapshotStore] Failed to remove snapshot:', err)
+    })
+    
+    return existed
   }
 
-  /** Remove all snapshots for a node */
+  /** Remove all snapshots for a node (sync cache + async persist) */
   removeByNodeId(nodeId: string): void {
-    for (const key of this.snapshots.keys()) {
+    for (const key of this.cache.keys()) {
       if (key.startsWith(`${nodeId}:`)) {
-        this.snapshots.delete(key)
+        this.cache.delete(key)
       }
     }
+    
+    // Async persist to IndexedDB
+    dbRemoveSnapshotsByNodeId(nodeId).catch(err => {
+      console.error('[SnapshotStore] Failed to remove snapshots by nodeId:', err)
+    })
   }
 
-  /** Clear all snapshots */
+  /** Clear all snapshots (sync cache + async persist) */
   clear(): void {
-    this.snapshots.clear()
+    this.cache.clear()
+    
+    // Async persist to IndexedDB
+    dbClearSnapshots().catch(err => {
+      console.error('[SnapshotStore] Failed to clear snapshots:', err)
+    })
   }
 
-  /** Get total snapshot count */
+  /** Get total snapshot count (from cache) */
   get size(): number {
-    return this.snapshots.size
+    return this.cache.size
   }
 
   /** Export all snapshots for persistence */
   export(): NodeSnapshot[] {
-    return Array.from(this.snapshots.values())
+    return Array.from(this.cache.values())
   }
 
-  /** Import snapshots from persistence */
+  /** Import snapshots from external source (replaces all) */
   import(snapshots: NodeSnapshot[]): void {
-    this.clear()
+    this.cache.clear()
     for (const snapshot of snapshots) {
-      this.add(snapshot)
+      const key = this.makeKey(snapshot.nodeId, snapshot.commit)
+      this.cache.set(key, snapshot)
     }
+    
+    // Async persist to IndexedDB
+    dbImportSnapshots(snapshots as StoredSnapshot[]).catch(err => {
+      console.error('[SnapshotStore] Failed to import snapshots:', err)
+    })
   }
 }
 
@@ -143,7 +247,7 @@ class SnapshotStore {
 // Singleton Instance
 // ============================================================================
 
-/** Global snapshot store instance */
+/** Global snapshot store instance (with Dexie persistence) */
 export const snapshotStore = new SnapshotStore()
 
 // ============================================================================
@@ -162,4 +266,12 @@ export async function generateCommitHash(content: unknown): Promise<string> {
   const hashArray = Array.from(new Uint8Array(hashBuffer))
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
   return hashHex.slice(0, 16)
+}
+
+/**
+ * Initialize the snapshot store by loading from IndexedDB.
+ * Should be called at app startup for optimal performance.
+ */
+export async function initSnapshotStore(): Promise<void> {
+  return snapshotStore.init()
 }

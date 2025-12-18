@@ -48,4 +48,34 @@ export {
 
 // Context
 export type { StudioContext, PreviewState } from './stores/context';
+
+// Persistence (Dexie/IndexedDB)
+export { initSnapshotStore } from './stores/snapshot';
+export {
+  db,
+  saveGraph,
+  loadGraph,
+  saveNodes,
+  getNodes,
+  saveEdges,
+  getEdges,
+  ensureDefaultProject,
+  liveNodes,
+  liveEdges,
+  liveSnapshots,
+  liveProjects,
+  type StoredSnapshot,
+  type StoredNode,
+  type StoredEdge,
+  type StoredProject
+} from './stores/db';
+export {
+  useLiveQuery,
+  useObservable,
+  usePersistedState,
+  useGraphState,
+  type LiveQueryResult,
+  type PersistedStateResult,
+  type GraphStateResult
+} from './stores/live-query.svelte';
 export { setStudioContext, getStudioContext } from './stores/context';

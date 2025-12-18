@@ -25,6 +25,8 @@
 	} from './utils/version';
 	import { resolvePromptContentFromRefs, resolvePromptContent, getHashtagConnections } from './utils/hashtag';
 	import { setStudioContext, type StudioContext, type PreviewState } from './stores/context';
+	import { initSnapshotStore } from './stores/snapshot';
+	import { loadGraph, saveGraph, ensureDefaultProject } from './stores/db';
 	
 	import { ChatUI, type PreprocessParams, type DisplayMessage } from '@pubwiki/svelte-chat';
 	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
@@ -63,9 +65,48 @@
 	let selectedNodes = $state<Node<StudioNodeData>[]>([]);
 	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
 	let initialized = $state(false);
+	let loaded = $state(false);
+	let saving = $state(false);
 	
 	// Historical tree state for preview mode
 	let historicalTree = $state<HistoricalTreeResult | null>(null);
+	
+	// Auto-save debounce timer
+	let saveTimer: ReturnType<typeof setTimeout> | null = null;
+	const SAVE_DEBOUNCE_MS = 500;
+	
+	// Schedule a debounced save to IndexedDB
+	function scheduleSave() {
+		if (!loaded) return;
+		
+		if (saveTimer) {
+			clearTimeout(saveTimer);
+		}
+		
+		saveTimer = setTimeout(async () => {
+			saving = true;
+			try {
+				await saveGraph(
+					untrack(() => nodes),
+					untrack(() => edges),
+					'default'
+				);
+			} catch (err) {
+				console.error('[Studio] Failed to save graph:', err);
+			} finally {
+				saving = false;
+			}
+		}, SAVE_DEBOUNCE_MS);
+	}
+	
+	// Watch for changes and auto-save
+	$effect(() => {
+		// Access nodes and edges to track them
+		nodes;
+		edges;
+		// Schedule save on any change
+		untrack(() => scheduleSave());
+	});
 
 	// ============================================================================
 	// Textarea Registry (for external focus control from badges)
@@ -553,22 +594,59 @@
 	}
 
 	// ============================================================================
-	// Initialization
+	// Initialization (Load from IndexedDB)
 	// ============================================================================
 	
 	$effect(() => {
 		if (!initialized) {
 			initialized = true;
 			(async () => {
-				const initialPromptData = await createPromptNodeData('');
-				nodes = [{
-					id: initialPromptData.id,
-					type: 'prompt',
-					data: initialPromptData,
-					position: { x: 0, y: 0 },
-					sourcePosition: Position.Right,
-					targetPosition: Position.Left,
-				}];
+				try {
+					// Initialize snapshot store (loads from IndexedDB)
+					await initSnapshotStore();
+					
+					// Ensure default project exists
+					await ensureDefaultProject();
+					
+					// Load graph from IndexedDB
+					const savedGraph = await loadGraph<StudioNodeData>('default');
+					
+					if (savedGraph.nodes.length > 0) {
+						// Restore saved graph
+						nodes = savedGraph.nodes.map(n => ({
+							...n,
+							sourcePosition: Position.Right,
+							targetPosition: Position.Left,
+						}));
+						edges = savedGraph.edges;
+					} else {
+						// Create initial empty prompt node
+						const initialPromptData = await createPromptNodeData('');
+						nodes = [{
+							id: initialPromptData.id,
+							type: 'prompt',
+							data: initialPromptData,
+							position: { x: 0, y: 0 },
+							sourcePosition: Position.Right,
+							targetPosition: Position.Left,
+						}];
+					}
+					
+					loaded = true;
+				} catch (err) {
+					console.error('[Studio] Failed to load from IndexedDB:', err);
+					// Fallback: create initial node
+					const initialPromptData = await createPromptNodeData('');
+					nodes = [{
+						id: initialPromptData.id,
+						type: 'prompt',
+						data: initialPromptData,
+						position: { x: 0, y: 0 },
+						sourcePosition: Position.Right,
+						targetPosition: Position.Left,
+					}];
+					loaded = true;
+				}
 			})();
 		}
 	});

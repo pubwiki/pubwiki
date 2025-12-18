@@ -26,6 +26,9 @@ importers:
       dagre:
         specifier: ^0.8.5
         version: 0.8.5
+      dexie:
+        specifier: ^4.2.1
+        version: 4.2.1
       marked:
         specifier: ^17.0.1
         version: 17.0.1
@@ -1572,6 +1575,9 @@ packages:
 
   devalue@5.6.0:
     resolution: {integrity: sha512-BaD1s81TFFqbD6Uknni42TrolvEWA1Ih5L+OiHWmi4OYMJVwAYPGtha61I9KxTf52OvVHozHyjPu8zljqdF3uA==}
+
+  dexie@4.2.1:
+    resolution: {integrity: sha512-Ckej0NS6jxQ4Po3OrSQBFddayRhTCic2DoCAG5zacOfOVB9P2Q5Xc5uL/nVa7ZVs+HdMnvUPzLFCB/JwpB6Csg==}
 
   diff3@0.0.3:
     resolution: {integrity: sha512-iSq8ngPOt0K53A6eVr4d5Kn6GNrM2nQZtC740pzIriHtn4pOQ2lyzEXQMBeVcWERN0ye7fhBsk9PbLLQOnUx/g==}
@@ -3672,6 +3678,8 @@ snapshots:
   detect-libc@2.1.2: {}
 
   devalue@5.6.0: {}
+
+  dexie@4.2.1: {}
 
   diff3@0.0.3: {}
 
