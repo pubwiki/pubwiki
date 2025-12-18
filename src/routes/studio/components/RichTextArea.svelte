@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { REFTAG_PATTERN } from "../utils/reftag";
 	/**
 	 * RichTextArea - Textarea with syntax highlighting using backdrop overlay
 	 * 
@@ -7,8 +8,6 @@
 	 * - <div> backdrop behind showing highlighted text
 	 * - Both share identical styling for perfect alignment
 	 */
-
-	const HASHTAG_REGEX = /#[a-zA-Z_][a-zA-Z0-9_]*/g;
 
 	interface Props {
 		value: string;
@@ -40,16 +39,16 @@
 		let result = '';
 		let lastIndex = 0;
 		
-		HASHTAG_REGEX.lastIndex = 0;
+		REFTAG_PATTERN.lastIndex = 0;
 		
 		let match: RegExpExecArray | null;
-		while ((match = HASHTAG_REGEX.exec(text)) !== null) {
-			// Add text before hashtag (escape HTML)
+		while ((match = REFTAG_PATTERN.exec(text)) !== null) {
+			// Add text before reftag (escape HTML)
 			if (match.index > lastIndex) {
 				result += escapeHtml(text.slice(lastIndex, match.index));
 			}
-			// Add highlighted hashtag
-			result += `<span class="hashtag-highlight">${escapeHtml(match[0])}</span>`;
+			// Add highlighted reftag
+			result += `<span class="reftag-highlight">${escapeHtml(match[0])}</span>`;
 			lastIndex = match.index + match[0].length;
 		}
 		
@@ -190,8 +189,8 @@
 		cursor: default;
 	}
 
-	/* Hashtag highlight style - inline with no extra spacing */
-	.backdrop :global(.hashtag-highlight) {
+	/* reftag highlight style - inline with no extra spacing */
+	.backdrop :global(.reftag-highlight) {
 		background-color: #e5e7eb;
 		border-radius: 0.25rem;
 		padding: 0.1em 0;

@@ -3,7 +3,7 @@
 	import type { StudioNodeData, BaseNodeData, NodeRef, SnapshotEdge } from '../utils/types';
 	import { hasVersionHistory, getVersionCount } from '../utils/types';
 	import { getStudioContext } from '../stores/context';
-	import { getUniqueHashtagNames, getHashtagConnectionsFromSnapshotEdges } from '../utils/hashtag';
+	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges, REFTAG_HANDLE_PREFIX } from '../utils/reftag';
 	import VersionGallery from './VersionGallery.svelte';
 	import RichTextArea from './RichTextArea.svelte';
 	import { marked } from 'marked';
@@ -28,29 +28,29 @@
 	const displayContent = $derived(previewState?.content ?? data.content);
 	const displayCommit = $derived(previewState?.commit ?? data.commit);
 	
-	// Hashtag slots for PROMPT nodes - use displayContent for preview mode
-	const hashtagNames = $derived(
-		data.type === 'PROMPT' ? getUniqueHashtagNames(displayContent) : []
+	// reftag slots for PROMPT nodes - use displayContent for preview mode
+	const refTagNames = $derived(
+		data.type === 'PROMPT' ? getUniqueRefTagNames(displayContent) : []
 	);
 
 	$effect(() => {
-		// Trigger update when hashtags change so handles are registered
-		hashtagNames;
+		// Trigger update when reftags change so handles are registered
+		refTagNames;
 		updateNodeInternals(id);
 	});
 
-	// Get hashtag connections - use historical edges in preview mode
+	// Get reftag connections - use historical edges in preview mode
 	const currentEdges = useEdges()
-	const hashtagConnections = $derived.by(() => {
+	const refTagConnections = $derived.by(() => {
 		if (data.type !== 'PROMPT') return new Map<string, string>();
 		
 		// In preview mode, use historical incoming edges if available
 		if (isPreviewing && previewState?.incomingEdges) {
-			return getHashtagConnectionsFromSnapshotEdges(previewState.incomingEdges);
+			return getRefTagConnectionsFromSnapshotEdges(previewState.incomingEdges);
 		}
 		
 		// Otherwise use current edges
-		return getHashtagConnectionsFromSnapshotEdges(
+		return getRefTagConnectionsFromSnapshotEdges(
 			currentEdges.current
 				.filter(e => e.target === id)
 				.map(e => ({
@@ -355,12 +355,12 @@
 	{/if}
 	<Handle type="source" position={Position.Right} {isConnectable} class="w-3! h-3! {handleBgClass} border-2! border-white!" />
 	
-	<!-- Hashtag Sidebar (for PROMPT nodes with hashtags) - Behind the main node -->
-	{#if data.type === 'PROMPT' && hashtagNames.length > 0}
+	<!-- reftag Sidebar (for PROMPT nodes with reftags) - Behind the main node -->
+	{#if data.type === 'PROMPT' && refTagNames.length > 0}
 		<div class="absolute right-[calc(100%-16px)] top-1/2 -translate-y-1/2 min-h-full flex items-stretch z-[-1]">
 			<div class="bg-gray-50 border border-gray-200 rounded-lg flex flex-col justify-center py-2 pl-0 pr-5 gap-2 min-w-8">
-				{#each hashtagNames as hashtagName, i (hashtagName)}
-					{@const isConnected = hashtagConnections.has(hashtagName)}
+				{#each refTagNames as refTagName, i (refTagName)}
+					{@const isConnected = refTagConnections.has(refTagName)}
 					{@const tagBg = isConnected ? 'bg-blue-50' : 'bg-white'}
 					{@const tagBorder = isConnected ? 'border-blue-300' : 'border-gray-300'}
 					{@const tagText = isConnected ? 'text-blue-600' : 'text-gray-600'}
@@ -375,7 +375,7 @@
                                 <Handle 
                                     type="target" 
                                     position={Position.Left} 
-                                    id="hashtag-{hashtagName}"
+                                    id="{REFTAG_HANDLE_PREFIX}{refTagName}"
                                     isConnectable={!isConnected} 
                                     class="w-1.5! h-1.5! {handleColor}! border-none! min-w-0! min-h-0! z-30"
                                     style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); left: auto;"
@@ -385,7 +385,7 @@
 
 						<!-- Right Body (Inside Sidebar) -->
 						<div class="{tagBg} border {tagBorder} border-l-0 rounded-r px-1.5 h-5 flex items-center text-[10px] font-medium {tagText} whitespace-nowrap z-10 relative -ml-px">
-							#{hashtagName}
+							{refTagName}
 						</div>
 					</div>
 				{/each}
@@ -430,8 +430,8 @@
 		outline: none !important;
 	}
 	
-	/* Hashtag highlight style */
-	:global(.hashtag-highlight) {
+	/* reftag highlight style */
+	:global(.reftag-highlight) {
 		background-color: #e5e7eb;
 		border-radius: 0.25rem;
 		padding: 0.125rem 0.25rem;

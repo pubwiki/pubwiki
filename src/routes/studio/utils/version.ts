@@ -19,8 +19,8 @@ import {
 } from './types';
 import { 
   resolvePromptContent, 
-  getHashtagConnections 
-} from './hashtag';
+  getRefTagConnections 
+} from './reftag';
 
 // ============================================================================
 // Types
@@ -59,11 +59,11 @@ export interface PrepareGenerationResult {
   inputRef: NodeRef;
   /** References to the direct prompt node versions being used */
   promptRefs: NodeRef[];
-  /** References to indirect prompt nodes (resolved via hashtags) */
+  /** References to indirect prompt nodes (resolved via reftags) */
   indirectPromptRefs: NodeRef[];
   /** All parent refs for the generated node (input + direct prompts) */
   parentRefs: NodeRef[];
-  /** Fully resolved system prompt content (with hashtags substituted) */
+  /** Fully resolved system prompt content (with reftags substituted) */
   resolvedSystemPrompt: string;
 }
 
@@ -78,7 +78,7 @@ export interface PrepareGenerationResult {
  * Key insight: We capture refs AFTER ensuring node commits match current content.
  * This way, the ref always points to the exact content being used.
  * 
- * Also resolves hashtag references to build the full system prompt and collect
+ * Also resolves reftag references to build the full system prompt and collect
  * indirect prompt refs for version tracking.
  */
 export async function prepareForGeneration(
@@ -100,7 +100,7 @@ export async function prepareForGeneration(
     n => parentPromptIds.includes(n.id) && n.data.type === 'PROMPT'
   );
 
-  // Collect all node IDs that might be involved (direct + indirect via hashtags)
+  // Collect all node IDs that might be involved (direct + indirect via reftags)
   const collectAllInvolvedNodes = (nodeIds: string[], visited: Set<string> = new Set()): string[] => {
     const result: string[] = [];
     for (const nodeId of nodeIds) {
@@ -108,11 +108,11 @@ export async function prepareForGeneration(
       visited.add(nodeId);
       result.push(nodeId);
       
-      // Get hashtag connections for this node
+      // Get reftag connections for this node
       const node = nodes.find(n => n.id === nodeId);
       if (node && node.data.type === 'PROMPT') {
-        const hashtagConnections = getHashtagConnections(nodeId, edges);
-        const connectedIds = Array.from(hashtagConnections.values());
+        const refTagConnections = getRefTagConnections(nodeId, edges);
+        const connectedIds = Array.from(refTagConnections.values());
         result.push(...collectAllInvolvedNodes(connectedIds, visited));
       }
     }
@@ -155,7 +155,7 @@ export async function prepareForGeneration(
   
   const parentRefs: NodeRef[] = [inputRef, ...promptRefs];
 
-  // Step 3: Resolve hashtags and collect indirect refs
+  // Step 3: Resolve reftags and collect indirect refs
   const allPromptRefs: NodeRef[] = [];
   const resolvedPrompts: string[] = [];
   

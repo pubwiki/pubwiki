@@ -23,7 +23,7 @@
 		styleEdgesForVersions,
 		type HistoricalTreeResult
 	} from './utils/version';
-	import { resolvePromptContentFromRefs, resolvePromptContent, getHashtagConnections } from './utils/hashtag';
+	import { resolvePromptContentFromRefs, resolvePromptContent, getRefTagConnections } from './utils/reftag';
 	import { setStudioContext, type StudioContext, type PreviewState } from './stores/context';
 	import { initSnapshotStore } from './stores/snapshot';
 	import { loadGraph, saveGraph, ensureDefaultProject } from './stores/db';
@@ -226,7 +226,7 @@
 		const inputNode = nodes.find(n => n.id === inputNodeId);
 		if (!inputNode || inputNode.data.type !== 'INPUT' || !inputNode.data.content) return;
 
-		// Prepare for generation - creates snapshots, gets refs, and resolves hashtags
+		// Prepare for generation - creates snapshots, gets refs, and resolves reftags
 		const prepared = await prepareForGeneration(nodes, edges, inputNodeId);
 		nodes = prepared.nodes;
 
@@ -268,7 +268,7 @@
 
 		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 
-		// Stream generation using resolved system prompt (with hashtags substituted)
+		// Stream generation using resolved system prompt (with reftags substituted)
 		await streamGeneration(
 			newGeneratedData.id,
 			inputNode.data.content,
@@ -324,7 +324,7 @@
 	 * Regenerate content using the historical snapshots stored in the generated node.
 	 * This uses the original inputRef, promptRefs, and indirectPromptRefs to 
 	 * reconstruct the exact context that was used for the original generation,
-	 * including hashtag-substituted content.
+	 * including reftag-substituted content.
 	 */
 	async function onRegenerate(generatedNodeId: string) {
 		const generatedNode = nodes.find(n => n.id === generatedNodeId);
@@ -356,7 +356,7 @@
 			...(genData.indirectPromptRefs || [])
 		];
 
-		// Resolve each direct prompt ref with hashtag substitution
+		// Resolve each direct prompt ref with reftag substitution
 		const resolvedPrompts: string[] = [];
 		for (const promptRef of genData.promptRefs) {
 			const resolved = resolvePromptContentFromRefs(
@@ -687,7 +687,7 @@
 			return params;
 		}
 
-		// Resolve each prompt with hashtag substitution
+		// Resolve each prompt with reftag substitution
 		const resolvedPrompts: string[] = [];
 		for (const promptNode of selectedPromptNodes) {
 			const resolved = resolvePromptContent(
@@ -723,7 +723,7 @@
 
 		if (!responseContent) return;
 
-		// Collect all involved nodes (direct + indirect via hashtags)
+		// Collect all involved nodes (direct + indirect via reftags)
 		const collectAllInvolvedNodes = (nodeIds: string[], visited: Set<string> = new Set()): string[] => {
 			const result: string[] = [];
 			for (const nodeId of nodeIds) {
@@ -733,8 +733,8 @@
 				
 				const node = nodes.find(n => n.id === nodeId);
 				if (node && node.data.type === 'PROMPT') {
-					const hashtagConnections = getHashtagConnections(nodeId, edges);
-					const connectedIds = Array.from(hashtagConnections.values());
+					const refTagConnections = getRefTagConnections(nodeId, edges);
+					const connectedIds = Array.from(refTagConnections.values());
 					result.push(...collectAllInvolvedNodes(connectedIds, visited));
 				}
 			}
@@ -762,7 +762,7 @@
 			commit: n.data.commit 
 		}));
 
-		// Collect indirect refs via hashtag resolution
+		// Collect indirect refs via reftag resolution
 		const allPromptRefs: NodeRef[] = [];
 		for (const promptNode of freshPromptNodes) {
 			const resolved = resolvePromptContent(

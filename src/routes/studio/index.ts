@@ -28,15 +28,15 @@ export {
   snapshotStore
 } from './utils/types';
 
-// Hashtag utilities
+// RefTag utilities
 export {
-  parseHashtags,
-  getUniqueHashtagNames,
+  parseRefTags,
+  getUniqueRefTagNames,
   resolvePromptContent,
   resolvePromptContentFromRefs,
-  getHashtagConnections,
-  getHashtagConnectionsFromSnapshotEdges
-} from './utils/hashtag';
+  getRefTagConnections,
+  getRefTagConnectionsFromSnapshotEdges
+} from './utils/reftag';
 
 // Version control
 export type { HistoricalTreeResult } from './utils/version';

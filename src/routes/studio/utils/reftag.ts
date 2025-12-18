@@ -1,8 +1,8 @@
 /**
- * Hashtag Utilities
+ * reftag Utilities
  * 
- * Provides utilities for parsing and resolving hashtag references in prompt content.
- * Hashtags follow the format #name and create named input slots for prompt composition.
+ * Provides utilities for parsing and resolving reftag references in prompt content.
+ * reftags follow the format #name and create named input slots for prompt composition.
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
@@ -14,10 +14,10 @@ import { snapshotStore } from './types';
 // ============================================================================
 
 /**
- * Represents a parsed hashtag in content
+ * Represents a parsed reftag in content
  */
-export interface ParsedHashtag {
-  /** The hashtag name (without #) */
+export interface ParsedRefTag {
+  /** The reftag name (without #) */
   name: string;
   /** Start position in the content */
   start: number;
@@ -26,98 +26,99 @@ export interface ParsedHashtag {
 }
 
 /**
- * Represents a hashtag slot (connection point)
+ * Represents a reftag slot (connection point)
  */
-export interface HashtagSlot {
-  /** The hashtag name */
+export interface RefTagSlot {
+  /** The reftag name */
   name: string;
   /** ID of the connected node (if any) */
   connectedNodeId: string | null;
 }
 
 /**
- * Result of resolving prompt content with hashtag substitutions
+ * Result of resolving prompt content with reftag substitutions
  */
 export interface ResolvedPrompt {
-  /** The fully resolved content with hashtags replaced */
+  /** The fully resolved content with reftags replaced */
   content: string;
-  /** All prompt refs used (including indirect ones from nested hashtags) */
+  /** All prompt refs used (including indirect ones from nested reftags) */
   allPromptRefs: NodeRef[];
 }
 
 // ============================================================================
-// Hashtag Parsing
+// reftag Parsing
 // ============================================================================
 
 /**
- * Regex pattern for hashtags: # followed by word characters (letters, digits, underscore)
+ * Regex pattern for reftags: # followed by word characters (letters, digits, underscore)
  */
-const HASHTAG_PATTERN = /#([a-zA-Z_][a-zA-Z0-9_]*)/g;
+export const REFTAG_PATTERN = /@([a-zA-Z_][a-zA-Z0-9_]*)/g;
+export const REFTAG_HANDLE_PREFIX = "reftag-"
 
 /**
- * Parse hashtags from content string
+ * Parse reftags from content string
  */
-export function parseHashtags(content: string): ParsedHashtag[] {
-  const hashtags: ParsedHashtag[] = [];
+export function parseRefTags(content: string): ParsedRefTag[] {
+  const reftags: ParsedRefTag[] = [];
   let match: RegExpExecArray | null;
   
   // Reset regex lastIndex
-  HASHTAG_PATTERN.lastIndex = 0;
+  REFTAG_PATTERN.lastIndex = 0;
   
-  while ((match = HASHTAG_PATTERN.exec(content)) !== null) {
-    hashtags.push({
+  while ((match = REFTAG_PATTERN.exec(content)) !== null) {
+    reftags.push({
       name: match[1],
       start: match.index,
       end: match.index + match[0].length
     });
   }
   
-  return hashtags;
+  return reftags;
 }
 
 /**
- * Get unique hashtag names from content
+ * Get unique reftag names from content
  */
-export function getUniqueHashtagNames(content: string): string[] {
-  const hashtags = parseHashtags(content);
-  const uniqueNames = new Set(hashtags.map(h => h.name));
+export function getUniqueRefTagNames(content: string): string[] {
+  const reftags = parseRefTags(content);
+  const uniqueNames = new Set(reftags.map(h => h.name));
   return Array.from(uniqueNames);
 }
 
 // ============================================================================
-// Hashtag Edge Utilities
+// reftag Edge Utilities
 // ============================================================================
 
 /**
- * Check if an edge is a hashtag edge by checking its targetHandle
+ * Check if an edge is a reftag edge by checking its targetHandle
  */
-export function isHashtagEdge(edge: Edge): boolean {
-  return typeof edge.targetHandle === 'string' && edge.targetHandle.startsWith('hashtag-');
+export function isRefTagEdge(edge: Edge): boolean {
+  return typeof edge.targetHandle === 'string' && edge.targetHandle.startsWith(REFTAG_HANDLE_PREFIX);
 }
 
 /**
- * Extract hashtag name from edge's targetHandle
+ * Extract reftag name from edge's targetHandle
  */
-export function getHashtagNameFromEdge(edge: Edge): string | null {
-  if (!isHashtagEdge(edge)) return null;
-  return edge.targetHandle!.slice('hashtag-'.length);
+export function getRefTagNameFromEdge(edge: Edge): string | null {
+  if (!isRefTagEdge(edge)) return null;
+  return edge.targetHandle!.slice(REFTAG_HANDLE_PREFIX.length);
 }
 
 /**
- * Get hashtag connections for a node
- * Returns a map of hashtag name -> connected source node ID
+ * Get reftag connections for a node
+ * Returns a map of reftag name -> connected source node ID
  */
-export function getHashtagConnections(
+export function getRefTagConnections(
   nodeId: string,
   edges: Edge[]
 ): Map<string, string> {
   const connections = new Map<string, string>();
   
   for (const edge of edges) {
-    if (edge.target === nodeId && isHashtagEdge(edge)) {
-      const hashtagName = getHashtagNameFromEdge(edge);
-      if (hashtagName) {
-        connections.set(hashtagName, edge.source);
+    if (edge.target === nodeId && isRefTagEdge(edge)) {
+      const refTagName = getRefTagNameFromEdge(edge);
+      if (refTagName) {
+        connections.set(refTagName, edge.source);
       }
     }
   }
@@ -126,18 +127,18 @@ export function getHashtagConnections(
 }
 
 /**
- * Get hashtag connections from snapshot edges (used for historical preview)
- * Returns a map of hashtag name -> connected source node ID
+ * Get reftag connections from snapshot edges (used for historical preview)
+ * Returns a map of reftag name -> connected source node ID
  */
-export function getHashtagConnectionsFromSnapshotEdges(
+export function getRefTagConnectionsFromSnapshotEdges(
   edges: SnapshotEdge[]
 ): Map<string, string> {
   const connections = new Map<string, string>();
   
   for (const edge of edges) {
-    if (typeof edge.targetHandle === 'string' && edge.targetHandle.startsWith('hashtag-')) {
-      const hashtagName = edge.targetHandle.slice('hashtag-'.length);
-      connections.set(hashtagName, edge.source);
+    if (typeof edge.targetHandle === 'string' && edge.targetHandle.startsWith(REFTAG_HANDLE_PREFIX)) {
+      const refTagName = edge.targetHandle.slice(REFTAG_HANDLE_PREFIX.length);
+      connections.set(refTagName, edge.source);
     }
   }
   
@@ -145,16 +146,16 @@ export function getHashtagConnectionsFromSnapshotEdges(
 }
 
 /**
- * Get hashtag slots for a prompt node
+ * Get reftag slots for a prompt node
  */
-export function getHashtagSlots(
+export function getRefTagSlots(
   nodeData: PromptNodeData,
   edges: Edge[]
-): HashtagSlot[] {
-  const hashtagNames = getUniqueHashtagNames(nodeData.content);
-  const connections = getHashtagConnections(nodeData.id, edges);
+): RefTagSlot[] {
+  const refTagNames = getUniqueRefTagNames(nodeData.content);
+  const connections = getRefTagConnections(nodeData.id, edges);
   
-  return hashtagNames.map(name => ({
+  return refTagNames.map(name => ({
     name,
     connectedNodeId: connections.get(name) ?? null
   }));
@@ -165,8 +166,8 @@ export function getHashtagSlots(
 // ============================================================================
 
 /**
- * Resolve prompt content by substituting hashtags with connected prompt content.
- * Recursively resolves nested hashtags.
+ * Resolve prompt content by substituting reftags with connected prompt content.
+ * Recursively resolves nested reftags.
  * 
  * @param nodeId - The prompt node ID to resolve
  * @param nodes - All nodes in the graph
@@ -198,30 +199,30 @@ export function resolvePromptContent(
   // Add this node's ref
   promptRefs.push({ id: nodeId, commit: promptData.commit });
   
-  // Get hashtag connections
-  const connections = getHashtagConnections(nodeId, edges);
+  // Get reftag connections
+  const connections = getRefTagConnections(nodeId, edges);
   
   // No connections - return content as-is
   if (connections.size === 0) {
     return { content, allPromptRefs: promptRefs };
   }
   
-  // Parse hashtags and replace from end to start to preserve positions
-  const hashtags = parseHashtags(content);
+  // Parse reftags and replace from end to start to preserve positions
+  const reftags = parseRefTags(content);
   
   // Sort by position descending (replace from end first)
-  hashtags.sort((a, b) => b.start - a.start);
+  reftags.sort((a, b) => b.start - a.start);
   
-  for (const hashtag of hashtags) {
-    const connectedNodeId = connections.get(hashtag.name);
+  for (const reftag of reftags) {
+    const connectedNodeId = connections.get(reftag.name);
     
     if (connectedNodeId) {
       // Recursively resolve the connected prompt
       const resolved = resolvePromptContent(connectedNodeId, nodes, edges, visited, promptRefs);
-      // Replace the hashtag with resolved content
-      content = content.slice(0, hashtag.start) + resolved.content + content.slice(hashtag.end);
+      // Replace the reftag with resolved content
+      content = content.slice(0, reftag.start) + resolved.content + content.slice(reftag.end);
     }
-    // If not connected, leave the hashtag as-is
+    // If not connected, leave the reftag as-is
   }
   
   return { content, allPromptRefs: promptRefs };
@@ -260,19 +261,19 @@ export function resolvePromptContentFromRefs(
     content = snapshot.content;
   }
   
-  // Get hashtag connections (using current edges since we don't store edge history)
-  const connections = getHashtagConnections(nodeId, edges);
+  // Get reftag connections (using current edges since we don't store edge history)
+  const connections = getRefTagConnections(nodeId, edges);
   
   if (connections.size === 0) {
     return content;
   }
   
-  // Parse and replace hashtags
-  const hashtags = parseHashtags(content);
-  hashtags.sort((a, b) => b.start - a.start);
+  // Parse and replace reftags
+  const reftags = parseRefTags(content);
+  reftags.sort((a, b) => b.start - a.start);
   
-  for (const hashtag of hashtags) {
-    const connectedNodeId = connections.get(hashtag.name);
+  for (const reftag of reftags) {
+    const connectedNodeId = connections.get(reftag.name);
     
     if (connectedNodeId) {
       // Find the ref for this connected node
@@ -286,7 +287,7 @@ export function resolvePromptContentFromRefs(
           allRefs,
           visited
         );
-        content = content.slice(0, hashtag.start) + resolvedContent + content.slice(hashtag.end);
+        content = content.slice(0, reftag.start) + resolvedContent + content.slice(reftag.end);
       }
     }
   }

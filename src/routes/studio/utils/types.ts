@@ -75,7 +75,7 @@ export interface GeneratedNodeData extends BaseNodeData<string> {
   inputRef: NodeRef
   /** References to the direct prompt nodes used in generation */
   promptRefs: NodeRef[]
-  /** References to indirect prompts (resolved via hashtags) */
+  /** References to indirect prompts (resolved via reftags) */
   indirectPromptRefs: NodeRef[]
   /** Whether content is being streamed into this node */
   isStreaming?: boolean
