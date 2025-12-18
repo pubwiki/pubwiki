@@ -71,6 +71,9 @@
 	// Historical tree state for preview mode
 	let historicalTree = $state<HistoricalTreeResult | null>(null);
 	
+	// Chat panel collapse state
+	let chatCollapsed = $state(false);
+	
 	// Auto-save debounce timer
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
 	const SAVE_DEBOUNCE_MS = 500;
@@ -1007,31 +1010,49 @@
 	</div>
 
 	<!-- Floating Chat -->
-	<div class="w-96 h-full border-l border-gray-200 bg-white flex flex-col shadow-xl z-20">
-		<div class="p-3 border-b border-gray-200 font-bold bg-gray-50 flex justify-between items-center">
-			<span>Assistant</span>
-		</div>
+	<div class="h-full flex flex-col z-20 transition-all duration-300 {chatCollapsed ? 'w-0' : 'w-96'} relative">
+		<!-- Collapse/Expand toggle button -->
+		<button
+			class="absolute -left-8 top-1/2 -translate-y-1/2 w-8 h-16 bg-white border border-gray-200 border-r-0 rounded-l-lg shadow-md flex items-center justify-center hover:bg-gray-50 transition-colors z-30"
+			onclick={() => chatCollapsed = !chatCollapsed}
+			title={chatCollapsed ? 'Show chat' : 'Hide chat'}
+		>
+			<svg 
+				class="w-4 h-4 text-gray-500 transition-transform duration-300 {chatCollapsed ? 'rotate-180' : ''}" 
+				fill="none" 
+				stroke="currentColor" 
+				viewBox="0 0 24 24"
+			>
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+			</svg>
+		</button>
 		
-		<!-- Selected Nodes Badges -->
-		{#if selectedNodes.length > 0}
-			<div class="px-4 py-2 bg-white border-b border-gray-100 flex flex-wrap gap-2 min-h-12 items-center">
-				{#each selectedNodes as node (node.id)}
-					<button 
-						class="px-2 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-1
-						{editingNodeId === node.id 
-							? 'bg-blue-100 text-blue-700 border-blue-200 ring-1 ring-blue-300' 
-							: 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}"
-						onclick={() => handleBadgeClick(node)}
-					>
-						<div class="w-1.5 h-1.5 rounded-full {editingNodeId === node.id ? 'bg-green-400' : 'bg-gray-400'}"></div>
-						{node.data.type || 'NODE'}
-					</button>
-				{/each}
+		<div class="h-full border-l border-gray-200 bg-white flex flex-col shadow-xl overflow-hidden {chatCollapsed ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300">
+			<div class="p-3 border-b border-gray-200 font-bold bg-gray-50 flex justify-between items-center">
+				<span>Assistant</span>
 			</div>
-		{/if}
+			
+			<!-- Selected Nodes Badges -->
+			{#if selectedNodes.length > 0}
+				<div class="px-4 py-2 bg-white border-b border-gray-100 flex flex-wrap gap-2 min-h-12 items-center">
+					{#each selectedNodes as node (node.id)}
+						<button 
+							class="px-2 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-1
+							{editingNodeId === node.id 
+								? 'bg-blue-100 text-blue-700 border-blue-200 ring-1 ring-blue-300' 
+								: 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}"
+							onclick={() => handleBadgeClick(node)}
+						>
+							<div class="w-1.5 h-1.5 rounded-full {editingNodeId === node.id ? 'bg-green-400' : 'bg-gray-400'}"></div>
+							{node.data.type || 'NODE'}
+						</button>
+					{/each}
+				</div>
+			{/if}
 
-		<div class="flex-1 overflow-hidden relative">
-			<ChatUI {pubchat} preprocess={preprocessChat} bind:historyId={currentHistoryId} {onResponseReceived} />
+			<div class="flex-1 overflow-hidden relative">
+				<ChatUI {pubchat} preprocess={preprocessChat} bind:historyId={currentHistoryId} {onResponseReceived} />
+			</div>
 		</div>
 	</div>
 </div>
