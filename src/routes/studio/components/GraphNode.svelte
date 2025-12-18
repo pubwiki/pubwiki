@@ -323,20 +323,20 @@
 			{:else if data.type === 'GENERATED'}
 				{#if isStreaming}
 					<div 
-						class="nodrag nowheel w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto bg-yellow-50/50"
+						class="nodrag nowheel generated-content w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto bg-yellow-50/50"
 						onwheel={handleWheel}
 					>
-						<div class="prose prose-sm max-w-none">
+						<div class="prose prose-sm max-w-none text-left select-text">
 							{@html marked.parse(displayContent || '')}
 						</div>
 						<span class="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-0.5"></span>
 					</div>
 				{:else}
 					<div 
-						class="nodrag nowheel w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto bg-green-50/30"
+						class="nodrag nowheel generated-content w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto bg-green-50/30"
 						onwheel={handleWheel}
 					>
-						<div class="prose prose-sm max-w-none text-left">
+						<div class="prose prose-sm max-w-none text-left select-text">
 							{@html marked.parse(displayContent || '')}
 						</div>
 					</div>
@@ -436,5 +436,20 @@
 		border-radius: 0.25rem;
 		padding: 0.125rem 0.25rem;
 		margin: -0.125rem 0;
+	}
+	
+	/* Generated content - enable text selection and wrap code blocks */
+	.generated-content {
+		user-select: text;
+		-webkit-user-select: text;
+		cursor: text;
+	}
+	
+	.generated-content :global(pre),
+	.generated-content :global(code) {
+		white-space: pre-wrap;
+		word-wrap: break-word;
+		word-break: break-all;
+		overflow-wrap: break-word;
 	}
 </style>
