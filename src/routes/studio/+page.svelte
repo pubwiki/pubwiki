@@ -3,8 +3,8 @@
 	import '@xyflow/svelte/dist/style.css';
 	import dagre from 'dagre';
 	import { untrack } from 'svelte';
-	import GraphNode from './GraphNode.svelte';
-	import FlowController from './FlowController.svelte';
+	import GraphNode from './components/GraphNode.svelte';
+	import FlowController from './components/FlowController.svelte';
 	import { 
 		type StudioNodeData, 
 		type NodeRef,
@@ -14,18 +14,17 @@
 		createInputNodeData,
 		createGeneratedNodeData,
 		generateCommitHash,
-		createSnapshot,
 		restoreSnapshot,
 		syncNode
-	} from './types';
+	} from './utils/types';
 	import {
 		prepareForGeneration,
 		rebuildHistoricalTree,
 		styleEdgesForVersions,
 		type HistoricalTreeResult
-	} from './version-control';
-	import { resolvePromptContentFromRefs, resolvePromptContent, getHashtagConnections } from './hashtag-utils';
-	import { setStudioContext, type StudioContext, type PreviewState } from './studio-context';
+	} from './utils/version';
+	import { resolvePromptContentFromRefs, resolvePromptContent, getHashtagConnections } from './utils/hashtag';
+	import { setStudioContext, type StudioContext, type PreviewState } from './stores/context';
 	
 	import { ChatUI, type PreprocessParams, type DisplayMessage } from '@pubwiki/svelte-chat';
 	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
@@ -650,14 +649,11 @@
 
 		const allInvolvedPromptIds = collectAllInvolvedNodes(lastSelectedPromptIds);
 
-		// Create snapshots for all involved prompt nodes
+		// Sync all involved prompt nodes (saves snapshots if content changed)
 		let updatedNodes = await Promise.all(nodes.map(async n => {
 			if (allInvolvedPromptIds.includes(n.id) && n.data.type === 'PROMPT') {
-				const currentCommit = await generateCommitHash(n.data.content);
-				if (n.data.commit !== currentCommit) {
-					const snapshotted = await createSnapshot(n.data, n.data.content);
-					return { ...n, data: snapshotted };
-				}
+				const synced = await syncNode(n, edges);
+				return { ...n, data: synced };
 			}
 			return n;
 		}));

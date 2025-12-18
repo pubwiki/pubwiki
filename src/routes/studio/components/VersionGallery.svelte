@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { NodeRef, NodeSnapshot } from './snapshot-store';
-	import { snapshotStore } from './snapshot-store';
+	import type { NodeRef, NodeSnapshot } from '../stores/snapshot';
+	import { snapshotStore } from '../stores/snapshot';
 
 	interface Props {
 		/** Current node ID */

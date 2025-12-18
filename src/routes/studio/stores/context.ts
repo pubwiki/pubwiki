@@ -8,7 +8,7 @@
 
 import { getContext, setContext } from 'svelte';
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData, NodeRef, SnapshotEdge } from './types';
+import type { StudioNodeData, NodeRef, SnapshotEdge } from '../utils/types';
 
 // ============================================================================
 // Context Types

@@ -12,7 +12,7 @@ import {
   type SnapshotPosition,
   snapshotStore, 
   generateCommitHash,
-} from './snapshot-store'
+} from '../stores/snapshot'
 import type { Edge, Node } from '@xyflow/svelte'
 
 // Re-export snapshot store types and utilities
@@ -247,48 +247,6 @@ function saveCurrentVersion<T extends BaseNodeData<C>, C>(
       position
     }
     snapshotStore.add(snapshot)
-  }
-}
-
-/**
- * Create a snapshot of node data and return updated data with new commit.
- * The old version is stored in the global snapshotStore.
- * Only creates snapshot if content hash has changed. * 
- * @deprecated Use syncNodeCommit instead for better version tracking
- */
-export async function createSnapshot<T extends BaseNodeData<C>, C>(
-  nodeData: T,
-  newContent: C
-): Promise<T> {
-  const newCommit = await generateCommitHash(newContent)
-  
-  // If content didn't change, return as-is
-  if (newCommit === nodeData.commit) {
-    return nodeData
-  }
-  
-  // Store current version as snapshot (before the change)
-  // NOTE: This only works correctly if nodeData.content is the OLD content
-  const snapshot: NodeSnapshot<C> = {
-    nodeId: nodeData.id,
-    commit: nodeData.commit,
-    content: nodeData.content as C,
-    timestamp: Date.now()
-  }
-  snapshotStore.add(snapshot)
-  
-  // Create new ref to the snapshot
-  const snapshotRef: NodeRef = {
-    id: nodeData.id,
-    commit: nodeData.commit
-  }
-  
-  // Return updated node data
-  return {
-    ...nodeData,
-    content: newContent,
-    commit: newCommit,
-    snapshotRefs: [...nodeData.snapshotRefs, snapshotRef]
   }
 }
 

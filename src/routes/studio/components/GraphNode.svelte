@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { Handle, Position, useSvelteFlow, type NodeProps, type Node, useUpdateNodeInternals, useEdges } from '@xyflow/svelte';
-	import type { StudioNodeData, BaseNodeData, NodeRef, SnapshotEdge } from './types';
-	import { hasVersionHistory, getVersionCount } from './types';
-	import { getStudioContext } from './studio-context';
-	import { getUniqueHashtagNames, getHashtagConnectionsFromSnapshotEdges } from './hashtag-utils';
+	import type { StudioNodeData, BaseNodeData, NodeRef, SnapshotEdge } from '../utils/types';
+	import { hasVersionHistory, getVersionCount } from '../utils/types';
+	import { getStudioContext } from '../stores/context';
+	import { getUniqueHashtagNames, getHashtagConnectionsFromSnapshotEdges } from '../utils/hashtag';
 	import VersionGallery from './VersionGallery.svelte';
 	import RichTextArea from './RichTextArea.svelte';
 	import { marked } from 'marked';

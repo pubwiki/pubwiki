@@ -20,7 +20,7 @@ import {
 import { 
   resolvePromptContent, 
   getHashtagConnections 
-} from './hashtag-utils';
+} from './hashtag';
 
 // ============================================================================
 // Types
