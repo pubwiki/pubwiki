@@ -145,6 +145,36 @@ export class StudioDatabase extends Dexie {
 export const db = new StudioDatabase();
 
 // ============================================================================
+// Current Project (localStorage)
+// ============================================================================
+
+const CURRENT_PROJECT_KEY = 'studio_current_project';
+
+/**
+ * Get the current project ID from localStorage
+ */
+export function getCurrentProject(): string | null {
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(CURRENT_PROJECT_KEY);
+}
+
+/**
+ * Set the current project ID in localStorage
+ */
+export function setCurrentProject(projectId: string): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(CURRENT_PROJECT_KEY, projectId);
+}
+
+/**
+ * Clear the current project from localStorage
+ */
+export function clearCurrentProject(): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem(CURRENT_PROJECT_KEY);
+}
+
+// ============================================================================
 // Snapshot Operations
 // ============================================================================
 

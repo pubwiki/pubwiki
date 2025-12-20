@@ -30,7 +30,7 @@
 	import { publishArtifact, type PublishMetadata } from '../utils/publish';
 	import { setStudioContext, type StudioContext, type PreviewState } from '../stores/context';
 	import { initSnapshotStore } from '../stores/snapshot';
-	import { loadGraph, saveGraph, saveProject, getProject, ensureProject, deleteProject, remapNodeIds } from '../stores/db';
+	import { loadGraph, saveGraph, saveProject, getProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
 	import { useAuth } from '$lib/stores/auth.svelte';
 	
 	import { ChatUI, type PreprocessParams, type DisplayMessage } from '@pubwiki/svelte-chat';
@@ -657,6 +657,9 @@
 					const project = await ensureProject(currentProjectId);
 					isDraft = project.isDraft;
 					
+					// Set this project as the current project
+					setCurrentProject(currentProjectId);
+					
 					// Load graph from IndexedDB
 					const savedGraph = await loadGraph<StudioNodeData>(currentProjectId);
 					
@@ -977,6 +980,9 @@
 				
 				// Update local state
 				isDraft = false;
+				
+				// Set the new project as current project
+				setCurrentProject(newProjectId);
 				
 				// Navigate to the new project URL (artifact ID based)
 				goto(`/studio/${newProjectId}`);
