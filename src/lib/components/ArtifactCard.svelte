@@ -29,7 +29,7 @@
 	let padding = $derived(size === 'sm' ? 'p-2' : '');
 </script>
 
-<a href="/game/{artifact?.id}" class="flex {gap} group {padding}">
+<a href="/artifact/{artifact?.id}" class="flex {gap} group {padding}">
 	<div class="{imgSize} rounded overflow-hidden shrink-0 border border-gray-200">
 		<img 
 			src={artifact?.thumbnailUrl || `https://placehold.co/${imgPlaceholder}/222/fff?text=?`} 

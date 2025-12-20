@@ -3,8 +3,11 @@
 	import '@xyflow/svelte/dist/style.css';
 	import dagre from 'dagre';
 	import { untrack } from 'svelte';
-	import GraphNode from './components/GraphNode.svelte';
-	import FlowController from './components/FlowController.svelte';
+	import type { PageData } from './$types';
+	import { goto } from '$app/navigation';
+	import GraphNode from '../components/GraphNode.svelte';
+	import FlowController from '../components/FlowController.svelte';
+	import PublishModal from '../components/PublishModal.svelte';
 	import { 
 		type StudioNodeData, 
 		type NodeRef,
@@ -16,17 +19,19 @@
 		generateCommitHash,
 		restoreSnapshot,
 		syncNode
-	} from './utils/types';
+	} from '../utils/types';
 	import {
 		prepareForGeneration,
 		rebuildHistoricalTree,
 		styleEdgesForVersions,
 		type HistoricalTreeResult
-	} from './utils/version';
-	import { resolvePromptContentFromRefs, resolvePromptContent, getRefTagConnections } from './utils/reftag';
-	import { setStudioContext, type StudioContext, type PreviewState } from './stores/context';
-	import { initSnapshotStore } from './stores/snapshot';
-	import { loadGraph, saveGraph, ensureDefaultProject } from './stores/db';
+	} from '../utils/version';
+	import { resolvePromptContentFromRefs, resolvePromptContent, getRefTagConnections } from '../utils/reftag';
+	import { publishArtifact, type PublishMetadata } from '../utils/publish';
+	import { setStudioContext, type StudioContext, type PreviewState } from '../stores/context';
+	import { initSnapshotStore } from '../stores/snapshot';
+	import { loadGraph, saveGraph, saveProject, getProject, ensureProject, deleteProject, remapNodeIds } from '../stores/db';
+	import { useAuth } from '$lib/stores/auth.svelte';
 	
 	import { ChatUI, type PreprocessParams, type DisplayMessage } from '@pubwiki/svelte-chat';
 	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
@@ -56,17 +61,39 @@
 	};
 
 	// ============================================================================
+	// Auth
+	// ============================================================================
+
+	const auth = useAuth();
+
+	// ============================================================================
+	// Page Data (project ID from URL)
+	// ============================================================================
+
+	let { data }: { data: PageData } = $props();
+
+	// ============================================================================
 	// Flow State
 	// ============================================================================
 	
 	let nodes = $state.raw<Node<StudioNodeData>[]>([]);
 	let edges = $state.raw<Edge[]>([]);
 	let editingNodeId = $state<string | null>(null);
+	let editingNameNodeId = $state<string | null>(null);
 	let selectedNodes = $state<Node<StudioNodeData>[]>([]);
 	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
 	let initialized = $state(false);
 	let loaded = $state(false);
 	let saving = $state(false);
+	
+	// Publish modal state
+	let showPublishModal = $state(false);
+	
+	// Whether this project is a draft (not yet published)
+	let isDraft = $state(true);
+	
+	// Current project ID (from URL params)
+	let currentProjectId = $derived(data.projectId);
 	
 	// Historical tree state for preview mode
 	let historicalTree = $state<HistoricalTreeResult | null>(null);
@@ -156,6 +183,7 @@
 		get nodes() { return nodes; },
 		get edges() { return edges; },
 		get editingNodeId() { return editingNodeId; },
+		get editingNameNodeId() { return editingNameNodeId; },
 		
 		setNodes: (newNodes) => { nodes = newNodes; },
 		updateNode: (id, updater) => {
@@ -172,6 +200,7 @@
 				data: { ...n.data, isEditing: n.id === id }
 			}));
 		},
+		setEditingNameNodeId: (id) => { editingNameNodeId = id; },
 		
 		registerTextarea,
 		unregisterTextarea,
@@ -624,11 +653,12 @@
 					// Initialize snapshot store (loads from IndexedDB)
 					await initSnapshotStore();
 					
-					// Ensure default project exists
-					await ensureDefaultProject();
+					// Ensure project exists and get its metadata
+					const project = await ensureProject(currentProjectId);
+					isDraft = project.isDraft;
 					
 					// Load graph from IndexedDB
-					const savedGraph = await loadGraph<StudioNodeData>('default');
+					const savedGraph = await loadGraph<StudioNodeData>(currentProjectId);
 					
 					if (savedGraph.nodes.length > 0) {
 						// Restore saved graph
@@ -899,6 +929,60 @@
 		}
 		setTimeout(() => focusNode(node.id), 100);
 	}
+
+	function handlePublishClick() {
+		showPublishModal = true;
+	}
+
+	async function handlePublish(
+		metadata: PublishMetadata,
+		nodesToPublish: Node<StudioNodeData>[],
+		edgesToPublish: Edge[]
+	) {
+		const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, auth.token.value);
+		
+		if (!result.success) {
+			throw new Error(result.error || 'Failed to publish');
+		}
+		
+		showPublishModal = false;
+		
+		// If we have nodeIdMapping, update local state with new IDs
+		if (result.nodeIdMapping && Object.keys(result.nodeIdMapping).length > 0) {
+			// Remap all nodes and edges with new server-assigned IDs
+			const remapped = remapNodeIds(nodes, edges, result.nodeIdMapping);
+			nodes = remapped.nodes;
+			edges = remapped.edges;
+			
+			// Use artifactId directly as project ID
+			if (result.artifactId) {
+				const newProjectId = result.artifactId;
+				const oldProjectId = currentProjectId;
+				
+				// Save the remapped graph to the new project (with artifact ID, isDraft = false)
+				await saveProject({
+					id: newProjectId,
+					name: metadata.name,
+					artifactId: result.artifactId,
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					isDraft: false
+				});
+				await saveGraph(nodes, edges, newProjectId);
+				
+				// Delete the old temporary project if it's different from the new one
+				if (oldProjectId !== newProjectId) {
+					await deleteProject(oldProjectId);
+				}
+				
+				// Update local state
+				isDraft = false;
+				
+				// Navigate to the new project URL (artifact ID based)
+				goto(`/studio/${newProjectId}`);
+			}
+		}
+	}
 </script>
 
 <svelte:window onclick={() => contextMenu && closeContextMenu()} />
@@ -924,6 +1008,32 @@
 			<Background />
 			<Controls />
 		</SvelteFlow>
+		
+		<!-- Publish / Go to Artifact Button (Top Right) -->
+		{#if !isDraft}
+			<a
+				href="/artifact/{currentProjectId}"
+				class="absolute top-4 right-4 z-10 px-3 py-2 bg-[#0969da] text-white border border-[#0969da] rounded-lg shadow-sm hover:bg-[#0860ca] transition-colors flex items-center gap-2 text-sm font-medium no-underline"
+				title="View published artifact"
+			>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+				</svg>
+				Go to Artifact
+			</a>
+		{:else}
+			<button
+				class="absolute top-4 right-4 z-10 px-3 py-2 bg-[#2da44e] text-white border border-[#2c974b] rounded-lg shadow-sm hover:bg-[#2c974b] transition-colors flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+				onclick={handlePublishClick}
+				disabled={!auth.isAuthenticated}
+				title={auth.isAuthenticated ? "Publish artifact to PubWiki" : "Login required to publish"}
+			>
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+				</svg>
+				Publish
+			</button>
+		{/if}
 		
 		<!-- Context Menu -->
 		{#if contextMenu}
@@ -991,6 +1101,22 @@
 					</button>
 				{:else}
 					<!-- Node Context Menu -->
+					{#if contextMenu.nodeId}
+						<button
+							class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+							onclick={() => {
+								if (contextMenu?.nodeId) {
+									editingNameNodeId = contextMenu.nodeId;
+								}
+								closeContextMenu();
+							}}
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+							</svg>
+							Edit Name
+						</button>
+					{/if}
 					<button
 						class="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 rounded-md flex items-center gap-2"
 						onclick={handleDeleteFromContextMenu}
@@ -1056,6 +1182,16 @@
 		</div>
 	</div>
 </div>
+
+<!-- Publish Modal -->
+{#if showPublishModal}
+	<PublishModal
+		{nodes}
+		{edges}
+		onClose={() => showPublishModal = false}
+		onPublish={handlePublish}
+	/>
+{/if}
 
 <style>
 	:global(.svelte-flow__selection-wrapper) {

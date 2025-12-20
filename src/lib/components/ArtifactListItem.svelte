@@ -4,7 +4,7 @@
 	let { artifact } = $props<{ artifact: ArtifactListItem }>();
 </script>
 
-<a href="/game/{artifact.id}" class="flex gap-3 group">
+<a href="/artifact/{artifact.id}" class="flex gap-3 group">
 	<div class="w-16 h-16 rounded overflow-hidden shrink-0 border border-gray-200">
 		<img 
 			src={artifact.thumbnailUrl || 'https://placehold.co/64x64/222/fff?text=?'} 

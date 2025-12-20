@@ -29,6 +29,8 @@ export { type NodeRef, type NodeSnapshot, type SnapshotEdge, snapshotStore, gene
 export interface BaseNodeData<T = unknown> {
   /** Unique node identifier */
   id: string
+  /** User-defined node name */
+  name: string
   /** Current commit hash (content hash) */
   commit: string
   /** References to historical snapshots (stored in global snapshotStore) */
@@ -37,6 +39,8 @@ export interface BaseNodeData<T = unknown> {
   parents: NodeRef[]
   /** Node content */
   content: T
+  /** Whether this node references external artifact (not included in export) */
+  external?: boolean
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }
@@ -96,12 +100,14 @@ export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData
 export async function createInputNodeData(
   content: string,
   sourcePromptIds: string[],
-  parents: NodeRef[] = []
+  parents: NodeRef[] = [],
+  name: string = ''
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash(content)
   return {
     id,
+    name,
     type: 'INPUT',
     commit,
     snapshotRefs: [],
@@ -116,12 +122,14 @@ export async function createInputNodeData(
  */
 export async function createPromptNodeData(
   content: string = '',
-  parents: NodeRef[] = []
+  parents: NodeRef[] = [],
+  name: string = ''
 ): Promise<PromptNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash(content)
   return {
     id,
+    name,
     type: 'PROMPT',
     commit,
     snapshotRefs: [],
@@ -139,12 +147,14 @@ export async function createGeneratedNodeData(
   inputRef: NodeRef,
   promptRefs: NodeRef[],
   indirectPromptRefs: NodeRef[] = [],
-  parents: NodeRef[] = []
+  parents: NodeRef[] = [],
+  name: string = ''
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash(content)
   return {
     id,
+    name,
     type: 'GENERATED',
     commit,
     snapshotRefs: [],
@@ -241,6 +251,7 @@ function saveCurrentVersion<T extends BaseNodeData<C>, C>(
     const snapshot: NodeSnapshot<C> = {
       nodeId: nodeData.id,
       commit: nodeData.commit,
+      name: nodeData.name,
       content: nodeData.content as C,
       timestamp: Date.now(),
       incomingEdges,
@@ -266,6 +277,7 @@ export function restoreSnapshot<T extends BaseNodeData<C>, C>(
   const currentSnapshot: NodeSnapshot<C> = {
     nodeId: nodeData.id,
     commit: nodeData.commit,
+    name: nodeData.name,
     content: nodeData.content as C,
     timestamp: Date.now()
   }

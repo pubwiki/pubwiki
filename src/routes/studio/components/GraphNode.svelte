@@ -17,6 +17,20 @@
 	let textareaRef: HTMLTextAreaElement | null = $state(null);
 	let showVersionGallery = $state(false);
 	
+	// Name editing state - derived from context
+	const isEditingName = $derived(ctx.editingNameNodeId === id);
+	let editingNameValue = $state('');
+	let nameInputRef: HTMLInputElement | null = $state(null);
+	
+	// Watch for editingNameNodeId changes to initialize editing
+	$effect(() => {
+		if (ctx.editingNameNodeId === id) {
+			editingNameValue = data.name || '';
+			// Focus input after it renders
+			setTimeout(() => nameInputRef?.focus(), 0);
+		}
+	});
+	
 	// Version control state
 	const versionCount = $derived(getVersionCount(data as BaseNodeData));
 	const hasHistory = $derived(hasVersionHistory(data as BaseNodeData));
@@ -145,6 +159,29 @@
 		ctx.onRestore(id, snapshotRef);
 	}
 	
+	// Name editing functions
+	function handleNameInputKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			saveNameEdit();
+		} else if (e.key === 'Escape') {
+			cancelNameEdit();
+		}
+	}
+	
+	function saveNameEdit() {
+		ctx.updateNode(id, (nodeData) => ({
+			...nodeData,
+			name: editingNameValue.trim()
+		}));
+		ctx.setEditingNameNodeId(null);
+	}
+	
+	function cancelNameEdit() {
+		ctx.setEditingNameNodeId(null);
+		editingNameValue = '';
+	}
+	
 	// Auto-resize textarea
 	function autoResize() {
 		if (textareaRef) {
@@ -228,44 +265,67 @@
 		
 		<!-- Header -->
 		<div class="{headerBgClass} px-3 py-2 border-b border-gray-200 flex items-center gap-2 transition-colors duration-300">
-			{#if isInput}
-				<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-				</svg>
-			{:else if isGenerated}
-				<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-				</svg>
-				{#if isStreaming}
-					<div class="w-2 h-2 rounded-full bg-yellow-300 animate-pulse"></div>
-				{/if}
-			{:else}
-				<div class="w-2 h-2 rounded-full {isEditing ? 'bg-green-300 shadow-[0_0_8px_rgba(134,239,172,0.8)]' : 'bg-gray-50'} transition-colors duration-300"></div>
-			{/if}
-			<span class="text-xs font-bold text-gray-100 uppercase tracking-wider">{data.type || 'NODE'}</span>
-			
-			<!-- Historical version indicator -->
-			{#if isPreviewing}
-				<span
-					class="px-1.5 py-0.5 text-xs bg-white/30 rounded text-white/90 flex items-center gap-1"
-					title="Viewing historical version"
-				>
-					<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+			<!-- Left: Type icon and label -->
+			<div class="flex items-center gap-2 shrink-0">
+				{#if isInput}
+					<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
 					</svg>
-					v{previewVersionNumber ?? '?'}
-				</span>
-			{:else if hasHistory}
-				<button
-					class="nodrag px-1.5 py-0.5 text-xs bg-white/20 hover:bg-white/30 rounded text-white/90 transition-colors cursor-pointer"
-					onclick={handleVersionClick}
-					title="View version history"
-				>
-					v{versionCount}
-				</button>
-			{/if}
+				{:else if isGenerated}
+					<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+					</svg>
+					{#if isStreaming}
+						<div class="w-2 h-2 rounded-full bg-yellow-300 animate-pulse"></div>
+					{/if}
+				{:else}
+					<div class="w-2 h-2 rounded-full {isEditing ? 'bg-green-300 shadow-[0_0_8px_rgba(134,239,172,0.8)]' : 'bg-gray-50'} transition-colors duration-300"></div>
+				{/if}
+				<span class="text-xs font-bold text-gray-100 uppercase tracking-wider">{data.type || 'NODE'}</span>
+				
+				<!-- Historical version indicator -->
+				{#if isPreviewing}
+					<span
+						class="px-1.5 py-0.5 text-xs bg-white/30 rounded text-white/90 flex items-center gap-1"
+						title="Viewing historical version"
+					>
+						<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+						v{previewVersionNumber ?? '?'}
+					</span>
+				{:else if hasHistory}
+					<button
+						class="nodrag px-1.5 py-0.5 text-xs bg-white/20 hover:bg-white/30 rounded text-white/90 transition-colors cursor-pointer"
+						onclick={handleVersionClick}
+						title="View version history"
+					>
+						v{versionCount}
+					</button>
+				{/if}
+			</div>
 			
-			<div class="ml-auto flex items-center gap-2">
+			<!-- Center: Node Name -->
+			<div class="flex-1 min-w-0 flex justify-center">
+				{#if isEditingName}
+					<input
+						bind:this={nameInputRef}
+						type="text"
+						class="nodrag w-full max-w-32 px-1.5 py-0.5 text-xs bg-white/90 text-gray-800 rounded border-none outline-none text-center"
+						placeholder="Node name"
+						bind:value={editingNameValue}
+						onkeydown={handleNameInputKeydown}
+						onblur={saveNameEdit}
+					/>
+				{:else if data.name}
+					<span class="text-xs text-white/90 truncate max-w-32" title={data.name}>
+						{data.name}
+					</span>
+				{/if}
+			</div>
+			
+			<!-- Right: Action buttons -->
+			<div class="flex items-center gap-2 shrink-0">
 				{#if isInput && !isPreviewing}
 					{#if sourcePromptIds.length > 0}
 						<span class="text-xs text-purple-200">{sourcePromptIds.length} prompt{sourcePromptIds.length > 1 ? 's' : ''}</span>

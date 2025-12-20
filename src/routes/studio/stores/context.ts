@@ -36,12 +36,14 @@ export interface StudioContext {
   readonly nodes: Node<StudioNodeData>[];
   readonly edges: Edge[];
   readonly editingNodeId: string | null;
+  readonly editingNameNodeId: string | null;
   
   // State mutations
   setNodes: (nodes: Node<StudioNodeData>[]) => void;
   updateNode: (id: string, updater: (data: StudioNodeData) => StudioNodeData) => void;
   setEdges: (edges: Edge[]) => void;
   setEditingNodeId: (id: string | null) => void;
+  setEditingNameNodeId: (id: string | null) => void;
   
   // Textarea registry for focus control
   registerTextarea: (id: string, el: HTMLTextAreaElement) => void;

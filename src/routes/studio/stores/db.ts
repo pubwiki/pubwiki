@@ -100,6 +100,12 @@ export interface StoredProject {
   createdAt: number;
   /** Last modified timestamp */
   updatedAt: number;
+  /** Associated artifact ID (if published) */
+  artifactId?: string;
+  /** User ID of the artifact owner */
+  userId?: string;
+  /** Whether this is a draft (not yet published) */
+  isDraft: boolean;
 }
 
 // ============================================================================
@@ -375,17 +381,19 @@ export async function deleteProject(projectId: string): Promise<void> {
   });
 }
 
+
 /**
- * Ensure default project exists
+ * Ensure a project exists by ID (creates if not exists)
  */
-export async function ensureDefaultProject(): Promise<StoredProject> {
-  let project = await getProject(DEFAULT_PROJECT_ID);
+export async function ensureProject(projectId: string): Promise<StoredProject> {
+  let project = await getProject(projectId);
   if (!project) {
     project = {
-      id: DEFAULT_PROJECT_ID,
-      name: 'Default Project',
+      id: projectId,
+      name: `Project ${projectId.substring(0, 8)}`,
       createdAt: Date.now(),
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      isDraft: true
     };
     await saveProject(project);
   }
@@ -395,6 +403,81 @@ export async function ensureDefaultProject(): Promise<StoredProject> {
 // ============================================================================
 // Bulk Operations
 // ============================================================================
+
+/**
+ * Remap node IDs based on server-provided mapping
+ * Updates both node.id and node.data.id for non-external nodes
+ * Also updates edge source/target references and internal node refs
+ */
+export function remapNodeIds<T extends NodeData>(
+  nodes: Node<T>[],
+  edges: Edge[],
+  nodeIdMapping: Record<string, string>
+): { nodes: Node<T>[]; edges: Edge[] } {
+  // Helper to remap a NodeRef
+  const remapRef = (ref: { id: string; commit: string }) => ({
+    ...ref,
+    id: nodeIdMapping[ref.id] ?? ref.id
+  });
+  
+  // Helper to remap an array of NodeRefs
+  const remapRefs = (refs?: Array<{ id: string; commit: string }>) => 
+    refs?.map(remapRef) ?? [];
+
+  // Create updated nodes
+  const updatedNodes = nodes.map(node => {
+    const oldId = node.id;
+    const newId = nodeIdMapping[oldId];
+    const data = node.data as Record<string, unknown>;
+    
+    // Build the updated data object
+    const updatedData = {
+      ...data,
+      snapshotRefs: remapRefs(data.snapshotRefs as Array<{ id: string; commit: string }> | undefined),
+      parents: remapRefs(data.parents as Array<{ id: string; commit: string }> | undefined),
+      // For GENERATED nodes
+      inputRef: data.inputRef ? remapRef(data.inputRef as { id: string; commit: string }) : undefined,
+      promptRefs: remapRefs(data.promptRefs as Array<{ id: string; commit: string }> | undefined),
+      indirectPromptRefs: remapRefs(data.indirectPromptRefs as Array<{ id: string; commit: string }> | undefined),
+      // For INPUT nodes
+      sourcePromptIds: (data.sourcePromptIds as string[] | undefined)?.map(id => nodeIdMapping[id] ?? id)
+    };
+    
+    if (!newId) {
+      // No mapping (external node or not in mapping), keep node.id as is
+      // But still update internal refs that might point to remapped nodes
+      return {
+        ...node,
+        data: updatedData as unknown as T
+      };
+    }
+    
+    // Update both node.id and node.data.id
+    return {
+      ...node,
+      id: newId,
+      data: {
+        ...updatedData,
+        id: newId
+      } as unknown as T
+    };
+  });
+  
+  // Create updated edges
+  const updatedEdges = edges.map(edge => {
+    const newSource = nodeIdMapping[edge.source] ?? edge.source;
+    const newTarget = nodeIdMapping[edge.target] ?? edge.target;
+    
+    return {
+      ...edge,
+      id: `e-${newSource}-${newTarget}`, // Regenerate edge ID
+      source: newSource,
+      target: newTarget
+    };
+  });
+  
+  return { nodes: updatedNodes, edges: updatedEdges };
+}
 
 /**
  * Save entire graph state (nodes + edges) atomically

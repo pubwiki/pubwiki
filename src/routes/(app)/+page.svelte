@@ -81,7 +81,7 @@
 	{:else}
 		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 			{#each filteredGames as game}
-				<a href="/game/{game.id}" class="group block bg-white border border-gray-200 rounded-lg transition-all duration-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5">
+				<a href="/artifact/{game.id}" class="group block bg-white border border-gray-200 rounded-lg transition-all duration-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5">
 					<div class="flex h-full">
 						<!-- Image -->
 						<div class="w-1/3 min-w-[120px] relative overflow-hidden rounded-l-lg">

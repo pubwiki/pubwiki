@@ -289,6 +289,7 @@ export function rebuildHistoricalTree(
       
       const phantomData: StudioNodeData = {
         id: ref.id,
+        name: snapshot.name,
         type: nodeType,
         content: snapshot.content,
         commit: snapshot.commit,

@@ -59,7 +59,6 @@ export {
   getNodes,
   saveEdges,
   getEdges,
-  ensureDefaultProject,
   liveNodes,
   liveEdges,
   liveSnapshots,
@@ -73,7 +72,6 @@ export {
   useLiveQuery,
   useObservable,
   usePersistedState,
-  useGraphState,
   type LiveQueryResult,
   type PersistedStateResult,
   type GraphStateResult

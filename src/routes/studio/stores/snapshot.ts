@@ -62,6 +62,8 @@ export interface NodeSnapshot<T = unknown> {
   nodeId: string
   /** Commit hash (content hash) */
   commit: string
+  /** Node name at time of snapshot */
+  name: string
   /** Snapshot content */
   content: T
   /** Timestamp when snapshot was created */
