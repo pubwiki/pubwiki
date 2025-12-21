@@ -3,9 +3,11 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { useArtifactStore, type ArtifactDetails } from '$lib/stores/artifacts.svelte';
-	import type { ArtifactListItem, ArtifactLineageItem } from '$lib/types';
 	import ArtifactCard from '$lib/components/ArtifactCard.svelte';
 	import LineageGraph from '$lib/components/LineageGraph.svelte';
+	import NodeCard from '$lib/components/NodeCard.svelte';
+	import { getCurrentProject, setCurrentProject } from '../../../studio/stores/db';
+	import { importArtifactToNewProject, addArtifactToProject } from '../../../studio/utils/import';
 
 	let { data } = $props<{ data: PageData }>();
 	
@@ -14,6 +16,47 @@
 	let details = $state<ArtifactDetails | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	
+	// Check if there's a current project in studio
+	let currentProject = $state<string | null>(null);
+	
+	$effect(() => {
+		if (browser) {
+			currentProject = getCurrentProject();
+		}
+	});
+
+	/**
+	 * Create a new studio project and import the artifact
+	 */
+	async function handleUseArtifact() {
+		if (!details?.graph) return;
+		
+		const newProjectId = await importArtifactToNewProject(
+			details.graph,
+			artifact!.id,
+			artifactStore
+		);
+		
+		setCurrentProject(newProjectId);
+		goto(`/studio/${newProjectId}`);
+	}
+
+	/**
+	 * Add artifact nodes to the current studio project
+	 */
+	async function handleAddToProject() {
+		if (!details?.graph || !currentProject) return;
+		
+		await addArtifactToProject(
+			details.graph,
+			artifact!.id,
+			currentProject,
+			artifactStore
+		);
+		
+		goto(`/studio/${currentProject}`);
+	}
 
 	// Fetch artifact details when component mounts or id changes
 	$effect(() => {
@@ -152,7 +195,7 @@
 									{@html homepage}
 								</div>
 							{:else}
-							<div class="prose max-w-none">
+								<div class="prose max-w-none">
 									<p class="text-gray-600">{artifact.description || 'No description provided.'}</p>
 								</div>
 							{/if}
