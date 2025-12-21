@@ -35,26 +35,16 @@
 	});
 
 	let artifact = $derived(details?.artifact);
-	let files = $derived(details?.files ?? []);
+	let homepage = $derived(details?.homepage);
+	let nodes = $derived(details?.graph?.nodes ?? []);
 	let parents = $derived(details?.parents ?? []);
 	let children = $derived(details?.children ?? []);
 
 	let activeTab = $state('Overview');
-	const tabs = ['Overview', 'Lineage', 'Discussion', 'Source Code'];
+	const tabs = ['Overview', 'Nodes', 'Lineage', 'Discussion'];
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString();
-	}
-
-	function formatBytes(bytes: number | null | undefined): string {
-		if (!bytes) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB'];
-		let i = 0;
-		while (bytes >= 1024 && i < units.length - 1) {
-			bytes /= 1024;
-			i++;
-		}
-		return `${bytes.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 	}
 </script>
 
@@ -157,22 +147,32 @@
 					<!-- Tab Content -->
 					<div class="bg-white rounded-md border border-gray-200 p-6 min-h-[400px]">
 						{#if activeTab === 'Overview'}
+							{#if homepage}
+								<div class="prose max-w-none artifact-homepage">
+									{@html homepage}
+								</div>
+							{:else}
 							<div class="prose max-w-none">
-								<p class="text-gray-600 mb-6">{artifact.description || 'No description provided.'}</p>
-
-								{#if artifact.type === 'RECIPE'}
-									<h3 class="text-lg font-bold mb-2">Inputs</h3>
-									<ul class="list-disc pl-5 mb-4 text-gray-700">
-										<li><strong>Theme</strong> (String): The visual style of the city.</li>
-										<li><strong>Density</strong> (String): Low, Medium, or High.</li>
-										<li><strong>Wealth</strong> (String): Low, Medium, or High.</li>
-									</ul>
-
-									<h3 class="text-lg font-bold mb-2">Outputs</h3>
-									<ul class="list-disc pl-5 text-gray-700">
-										<li><strong>WorldConfig</strong> (XML): ECS entity definitions.</li>
-										<li><strong>MapData</strong> (Lua): Procedural generation logic.</li>
-									</ul>
+									<p class="text-gray-600">{artifact.description || 'No description provided.'}</p>
+								</div>
+							{/if}
+						{:else if activeTab === 'Nodes'}
+							<div>
+								<div class="flex items-center justify-between mb-4">
+									<h3 class="font-bold text-gray-700">Nodes</h3>
+									<span class="text-xs text-gray-500">{nodes.length} nodes</span>
+								</div>
+								
+								{#if nodes.length > 0}
+									<div class="flex flex-col gap-4">
+										{#each nodes as node}
+											<NodeCard {node} artifactId={artifact.id} />
+										{/each}
+									</div>
+								{:else}
+									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
+										No nodes available.
+									</div>
 								{/if}
 							</div>
 						{:else if activeTab === 'Lineage'}
@@ -183,43 +183,6 @@
 									No lineage information available.
 								</div>
 							{/if}
-						{:else if activeTab === 'Source Code'}
-							<div>
-								<div class="flex items-center justify-between mb-4">
-									<h3 class="font-bold text-gray-700">Files</h3>
-									<span class="text-xs text-gray-500">{files.length} files</span>
-								</div>
-								
-								{#if files.length > 0}
-									<div class="border border-gray-200 rounded-md overflow-hidden">
-										<table class="min-w-full divide-y divide-gray-200">
-											<thead class="bg-gray-50">
-												<tr>
-													<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-													<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
-													<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-												</tr>
-											</thead>
-											<tbody class="bg-white divide-y divide-gray-200">
-												{#each files as file}
-													<tr class="hover:bg-gray-50 cursor-pointer">
-														<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-[#0969da] flex items-center gap-2">
-															<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-															{file.filepath}
-														</td>
-														<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatBytes(file.sizeBytes)}</td>
-														<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{file.mimeType || 'unknown'}</td>
-													</tr>
-												{/each}
-											</tbody>
-										</table>
-									</div>
-								{:else}
-									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
-										No source files available.
-									</div>
-								{/if}
-							</div>
 						{:else}
 							<div class="text-center py-12 text-gray-500">
 								No discussions yet.
@@ -229,24 +192,9 @@
 				</div>
 
 				<!-- RIGHT COLUMN: Sidebar (1/3 width) -->
-				<div class="lg:col-span-1 space-y-8">
+				<div class="lg:col-span-1 space-y-6">
 					
-					<!-- 1. BIG ACTION BUTTON (Moved to Top) -->
-					<div>
-						{#if artifact.type === 'GAME'}
-							<button class="w-full bg-[#2da44e] hover:bg-[#2c974b] text-white py-4 rounded-md font-bold text-xl shadow-md transition flex items-center justify-center gap-2 transform hover:scale-[1.02]">
-								<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-								PLAY NOW
-							</button>
-						{:else}
-							<button class="w-full bg-[#0969da] hover:bg-[#0a53be] text-white py-4 rounded-md font-bold text-xl shadow-md transition flex items-center justify-center gap-2 transform hover:scale-[1.02]">
-								<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-								RUN GENERATOR
-							</button>
-						{/if}
-					</div>
-
-					<!-- 2. Project Info Card -->
+					<!-- 1. Project Info Card -->
 					<div class="bg-white p-5 rounded-md border border-gray-200 shadow-sm">
 						<h1 class="text-2xl font-bold text-gray-900 leading-tight mb-3">{artifact.name}</h1>
 						
@@ -288,6 +236,37 @@
 								<span>{(artifact.stats?.downloadCount ?? 0).toLocaleString()} downloads</span>
 							</div>
 						</div>
+					</div>
+
+					<!-- 2. Action Buttons -->
+					<div class="space-y-2">
+						{#if !currentProject}
+							<!-- No current project: show single "Use Artifact" button -->
+							<button 
+								onclick={handleUseArtifact}
+								class="w-full bg-[#0969da] hover:bg-[#0a53be] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+								Use Artifact
+							</button>
+						{:else}
+							<!-- Has current project: show "Add to Project" as primary, "Use Artifact" as secondary -->
+							<button 
+								onclick={handleAddToProject}
+								class="w-full bg-[#2da44e] hover:bg-[#2c974b] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+								Add to Current Project
+							</button>
+							
+							<button 
+								onclick={handleUseArtifact}
+								class="w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
+							>
+								<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+								Use in New Project
+							</button>
+						{/if}
 					</div>
 
 					<!-- 3. Parents (Dependencies) -->
