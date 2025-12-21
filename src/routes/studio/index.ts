@@ -11,6 +11,7 @@ export type {
   PromptNodeData,
   InputNodeData,
   GeneratedNodeData,
+  VFSNodeData,
   NodeRef,
   NodeSnapshot,
   SnapshotEdge
@@ -20,6 +21,7 @@ export {
   createPromptNodeData,
   createInputNodeData,
   createGeneratedNodeData,
+  createVFSNodeData,
   restoreSnapshot,
   syncNode,
   hasVersionHistory,
@@ -77,3 +79,11 @@ export {
   type GraphStateResult
 } from './stores/live-query.svelte';
 export { setStudioContext, getStudioContext } from './stores/context';
+
+// Import utilities
+export type { ContentFetcher } from './utils/import';
+export {
+  convertArtifactToStudioGraph,
+  importArtifactToNewProject,
+  addArtifactToProject
+} from './utils/import';

@@ -448,6 +448,13 @@ export class PubChat implements ChatProvider {
    * This also registers VFS tools if tool calling is enabled
    */
   setVFS(vfs: Vfs): void {
+    // Clear old VFS tools first to avoid duplicates
+    if (this.vfsProvider !== undefined) {
+      for (const toolName of PubChat.VFS_TOOL_NAMES) {
+        this.toolRegistry.unregister(toolName)
+      }
+    }
+    
     this.vfsProvider = vfs
     
     // Register VFS tools if tool calling is enabled
@@ -461,6 +468,30 @@ export class PubChat implements ChatProvider {
    */
   hasVFS(): boolean {
     return this.vfsProvider !== undefined
+  }
+  
+  /**
+   * VFS tool names that are registered when setVFS is called
+   */
+  private static readonly VFS_TOOL_NAMES = [
+    'read_file',
+    'write_file', 
+    'delete_file',
+    'list_dir',
+    'mkdir',
+    'file_exists'
+  ] as const
+  
+  /**
+   * Clear the VFS instance and unregister VFS tools
+   */
+  clearVFS(): void {
+    this.vfsProvider = undefined
+    
+    // Unregister VFS tools
+    for (const toolName of PubChat.VFS_TOOL_NAMES) {
+      this.toolRegistry.unregister(toolName)
+    }
   }
   
   /**

@@ -86,9 +86,27 @@ export interface GeneratedNodeData extends BaseNodeData<string> {
 }
 
 /**
+ * VFS node data - represents a virtual file system
+ * Content is an empty string (actual file content is stored in VFS, versioned by git)
+ */
+export interface VFSNodeData extends BaseNodeData<string> {
+  type: 'VFS'
+  /** Project ID for VFS isolation */
+  projectId: string
+  /** UI State: Expanded folder paths (persisted) */
+  expandedFolders?: string[]
+  /** UI State: Currently selected file path (persisted) */
+  selectedFilePath?: string
+  /** UI State: Whether expanded view is open (persisted) */
+  isExpandedViewOpen?: boolean
+  /** Index signature for xyflow compatibility */
+  [key: string]: unknown
+}
+
+/**
  * Union type for all node data types
  */
-export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData
+export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData
 
 // ============================================================================
 // Utility Functions
@@ -164,6 +182,32 @@ export async function createGeneratedNodeData(
     promptRefs,
     indirectPromptRefs,
     isStreaming: false
+  }
+}
+
+/**
+ * Create a new VFS node data object
+ */
+export async function createVFSNodeData(
+  projectId: string,
+  name: string = 'Files'
+): Promise<VFSNodeData> {
+  const id = crypto.randomUUID()
+  // VFS nodes don't have traditional content - use empty string for commit hash
+  // The actual file content is stored in VFS and versioned by git
+  const commit = await generateCommitHash('')
+  return {
+    id,
+    name,
+    type: 'VFS',
+    commit,
+    snapshotRefs: [],
+    parents: [],
+    content: '',
+    projectId,
+    expandedFolders: [],
+    selectedFilePath: undefined,
+    isExpandedViewOpen: false
   }
 }
 

@@ -154,6 +154,11 @@ export interface ChatProvider {
   setVFS(vfs: Vfs): void
   
   /**
+   * Clear the VFS instance and unregister VFS tools
+   */
+  clearVFS(): void
+  
+  /**
    * Check if VFS is available
    * 
    * @returns true if VFS provider is configured

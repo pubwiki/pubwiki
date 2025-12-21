@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
-	import GraphNode from '../components/GraphNode.svelte';
+	import { GraphNode, VFSNode } from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
 	import PublishModal from '../components/PublishModal.svelte';
 	import { 
@@ -16,6 +16,7 @@
 		createPromptNodeData, 
 		createInputNodeData,
 		createGeneratedNodeData,
+		createVFSNodeData,
 		generateCommitHash,
 		restoreSnapshot,
 		syncNode
@@ -31,10 +32,12 @@
 	import { setStudioContext, type StudioContext, type PreviewState } from '../stores/context';
 	import { initSnapshotStore } from '../stores/snapshot';
 	import { loadGraph, saveGraph, saveProject, getProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
+	import { getNodeVfs } from '../stores/vfs';
 	import { useAuth } from '$lib/stores/auth.svelte';
 	
 	import { ChatUI, type PreprocessParams, type DisplayMessage } from '@pubwiki/svelte-chat';
 	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
+	import type { VFSNodeData } from '../utils/types';
 
 	// ============================================================================
 	// Chat Configuration
@@ -48,6 +51,10 @@
 			baseUrl: 'https://openrouter.ai/api/v1'
 		},
 		messageStore: new MemoryMessageStore(),
+		toolCalling: {
+			enabled: true,
+			maxIterations: 10
+		}
 	});
 
 	// ============================================================================
@@ -57,7 +64,8 @@
 	const nodeTypes = {
 		prompt: GraphNode,
 		input: GraphNode,
-		generated: GraphNode
+		generated: GraphNode,
+		vfs: VFSNode
 	};
 
 	// ============================================================================
@@ -119,7 +127,7 @@
 				await saveGraph(
 					untrack(() => nodes),
 					untrack(() => edges),
-					'default'
+					currentProjectId
 				);
 			} catch (err) {
 				console.error('[Studio] Failed to save graph:', err);
@@ -254,9 +262,35 @@
 	// Generation (from Input Node)
 	// ============================================================================
 	
+	/**
+	 * Find VFS node connected to a node via incoming edges
+	 */
+	function findConnectedVfsNode(nodeId: string): Node<VFSNodeData> | null {
+		// Find edges where this node is the target
+		const incomingEdges = edges.filter(e => e.target === nodeId);
+		
+		for (const edge of incomingEdges) {
+			const sourceNode = nodes.find(n => n.id === edge.source);
+			if (sourceNode && sourceNode.data.type === 'VFS') {
+				return sourceNode as Node<VFSNodeData>;
+			}
+		}
+		return null;
+	}
+	
 	async function onGenerate(inputNodeId: string) {
 		const inputNode = nodes.find(n => n.id === inputNodeId);
 		if (!inputNode || inputNode.data.type !== 'INPUT' || !inputNode.data.content) return;
+
+		// Check if there's a VFS node connected to this input node
+		const vfsNode = findConnectedVfsNode(inputNodeId);
+		
+		// If VFS node exists, set up VFS for the generation
+		if (vfsNode) {
+			const vfsData = vfsNode.data as VFSNodeData;
+			const vfs = await getNodeVfs(vfsData.projectId, vfsNode.id);
+			pubchat.setVFS(vfs);
+		}
 
 		// Prepare for generation - creates snapshots, gets refs, and resolves reftags
 		const prepared = await prepareForGeneration(nodes, edges, inputNodeId);
@@ -300,12 +334,19 @@
 
 		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 
-		// Stream generation using resolved system prompt (with reftags substituted)
-		await streamGeneration(
-			newGeneratedData.id,
-			inputNode.data.content,
-			prepared.resolvedSystemPrompt
-		);
+		try {
+			// Stream generation using resolved system prompt (with reftags substituted)
+			await streamGeneration(
+				newGeneratedData.id,
+				inputNode.data.content,
+				prepared.resolvedSystemPrompt
+			);
+		} finally {
+			// Clear VFS after generation completes (success or error)
+			if (vfsNode) {
+				pubchat.clearVFS();
+			}
+		}
 	}
 
 	async function streamGeneration(nodeId: string, userContent: string, systemPrompt: string) {
@@ -322,29 +363,29 @@
 				if (event.type === 'token') {
 					accumulatedContent += event.token;
 					nodes = nodes.map(n => 
-						n.id === nodeId 
+						n.id === nodeId && n.data.type !== 'VFS'
 							? { ...n, data: { ...n.data, content: accumulatedContent } }
 							: n
-					);
+					) as typeof nodes;
 				} else if (event.type === 'done') {
 					const finalCommit = await generateCommitHash(accumulatedContent);
 					nodes = nodes.map(n => 
-						n.id === nodeId 
+						n.id === nodeId && n.data.type !== 'VFS'
 							? { ...n, data: { ...n.data, content: accumulatedContent, commit: finalCommit, isStreaming: false } }
 							: n
-					);
+					) as typeof nodes;
 				} else if (event.type === 'error') {
 					console.error('Generation error:', event.error);
 					nodes = nodes.map(n => 
-						n.id === nodeId ? { ...n, data: { ...n.data, isStreaming: false } } : n
-					);
+						n.id === nodeId && n.data.type !== 'VFS' ? { ...n, data: { ...n.data, isStreaming: false } } : n
+					) as typeof nodes;
 				}
 			}
 		} catch (error) {
 			console.error('Generation failed:', error);
 			nodes = nodes.map(n => 
-				n.id === nodeId ? { ...n, data: { ...n.data, isStreaming: false } } : n
-			);
+				n.id === nodeId && n.data.type !== 'VFS' ? { ...n, data: { ...n.data, isStreaming: false } } : n
+			) as typeof nodes;
 		}
 	}
 
@@ -406,10 +447,10 @@
 
 		// Set streaming state
 		nodes = nodes.map(n => 
-			n.id === generatedNodeId 
+			n.id === generatedNodeId && n.data.type !== 'VFS'
 				? { ...n, data: { ...n.data, isStreaming: true, content: '' } }
 				: n
-		);
+		) as typeof nodes;
 
 		// Stream regeneration
 		await streamGeneration(generatedNodeId, inputContent, systemPrompt);
@@ -625,6 +666,21 @@
 			id: newInputData.id,
 			type: 'input',
 			data: newInputData,
+			position: { x: 0, y: 0 },
+			sourcePosition: Position.Right,
+			targetPosition: Position.Left,
+		};
+		nodes = [...nodes, newNode];
+		applyLayout();
+		closeContextMenu();
+	}
+
+	async function addVFSNode() {
+		const newVFSData = await createVFSNodeData(currentProjectId, 'Files');
+		const newNode: Node<StudioNodeData> = {
+			id: newVFSData.id,
+			type: 'vfs',
+			data: newVFSData,
 			position: { x: 0, y: 0 },
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
@@ -1019,6 +1075,8 @@
 		{#if !isDraft}
 			<a
 				href="/artifact/{currentProjectId}"
+				target="_blank"
+				rel="noopener noreferrer"
 				class="absolute top-4 right-4 z-10 px-3 py-2 bg-[#0969da] text-white border border-[#0969da] rounded-lg shadow-sm hover:bg-[#0860ca] transition-colors flex items-center gap-2 text-sm font-medium no-underline"
 				title="View published artifact"
 			>
@@ -1090,6 +1148,15 @@
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
 									</svg>
 									Input Node
+								</button>
+								<button
+									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+									onclick={addVFSNode}
+								>
+									<svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+									</svg>
+									VFS Node
 								</button>
 							</div>
 						{/if}

@@ -117,6 +117,16 @@ export class ToolRegistry {
   }
 
   /**
+   * Unregister a tool
+   */
+  unregister(name: string): boolean {
+    const existed = this.handlers.has(name)
+    this.handlers.delete(name)
+    this.definitions.delete(name)
+    return existed
+  }
+
+  /**
    * Get all tool names
    */
   getToolNames(): string[] {
