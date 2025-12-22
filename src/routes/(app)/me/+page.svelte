@@ -4,8 +4,7 @@
 	import { browser } from '$app/environment';
 	import { createApiClient } from '@pubwiki/api/client';
 	import type { ArtifactListItem, UserProjectListItem, Pagination } from '@pubwiki/api';
-
-	const API_BASE_URL = 'http://localhost:8787/api';
+	import { API_BASE_URL } from '$lib/config';
 
 	const auth = useAuth();
 

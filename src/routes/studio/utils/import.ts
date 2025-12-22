@@ -10,8 +10,7 @@ import type { StudioNodeData, VFSNodeData } from './types';
 import { generateCommitHash } from './types';
 import { getNodeVfs } from '../stores/vfs';
 import { ensureProject, saveGraph, loadGraph } from '../stores/db';
-
-const API_BASE_URL = 'http://localhost:8787/api';
+import { API_BASE_URL } from '$lib/config';
 
 // ============================================================================
 // Types

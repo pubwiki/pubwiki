@@ -7,9 +7,9 @@ import type {
 	ArtifactEdge,
 	NodeFileInfo
 } from '@pubwiki/api';
+import { API_BASE_URL } from '$lib/config';
 
 const ARTIFACTS_KEY = Symbol('artifacts');
-const API_BASE_URL = 'http://localhost:8787/api';
 
 export interface ArtifactNodeDetail {
 	id: string;

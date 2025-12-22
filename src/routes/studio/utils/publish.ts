@@ -7,8 +7,7 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData } from './types';
 import type { ArtifactType, VisibilityType } from '$lib/types';
-
-const API_BASE_URL = 'http://localhost:8787/api';
+import { API_BASE_URL } from '$lib/config';
 
 /**
  * Metadata for publishing an artifact

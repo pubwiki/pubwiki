@@ -1,9 +1,9 @@
 import { setContext, getContext } from 'svelte';
 import { createApiClient } from '@pubwiki/api/client';
 import type { ProjectListItem, Pagination } from '@pubwiki/api';
+import { API_BASE_URL } from '$lib/config';
 
 const PROJECTS_KEY = Symbol('projects');
-const API_BASE_URL = 'http://localhost:8787/api';
 
 export class ProjectStore {
 	projects = $state<ProjectListItem[]>([]);

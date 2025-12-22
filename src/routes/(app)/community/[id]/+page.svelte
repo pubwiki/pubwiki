@@ -4,10 +4,10 @@
 	import type { ProjectDetail, ProjectArtifact, ProjectRole } from '@pubwiki/api';
 	import { ItemTree, buildTree, type TreeNode } from '$lib/components/ItemTree';
 	import { goto } from '$app/navigation';
+	import { API_BASE_URL } from '$lib/config';
 
 	let { data } = $props<{ data: PageData }>();
 
-	const API_BASE_URL = 'http://localhost:8787/api';
 	const client = createApiClient(API_BASE_URL);
 
 	let project = $state<ProjectDetail | null>(null);

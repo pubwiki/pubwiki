@@ -2,9 +2,9 @@ import { setContext, getContext } from 'svelte';
 import persist from '$lib/persist.svelte';
 import { createApiClient } from '@pubwiki/api/client';
 import type { PublicUser, UpdateProfileRequest } from '@pubwiki/api';
+import { API_BASE_URL } from '$lib/config';
 
 const AUTH_KEY = Symbol('auth');
-const API_BASE_URL = 'http://localhost:8787/api';
 
 export class AuthStore {
 	token = persist<string | null>('auth_token', null);
