@@ -255,7 +255,7 @@ export function createSandboxConnection(
         stopFileWatching = null
       }
 
-      // Remove message listener
+      // Remove message listeners
       window.removeEventListener('message', handleVfsPortRequest)
 
       // Disconnect RPC hosts

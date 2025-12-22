@@ -3,12 +3,14 @@
 	 * SandboxPreviewView - Floating panel for sandbox preview
 	 * 
 	 * This is the expanded view for sandbox preview, rendered as a portal.
+	 * Supports custom services from connected Loader nodes.
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import type { SandboxConnection, ProjectConfig } from '@pubwiki/sandbox-host';
-	import { createSandboxConnection } from '@pubwiki/sandbox-host';
+	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig } from '@pubwiki/sandbox-host';
+	import { createSandboxConnection, RpcTarget } from '@pubwiki/sandbox-host';
 	import type { VersionedVfs } from '../../stores/vfs';
+	import type { LoaderNodeData } from '../../utils/types';
 
 	// ============================================================================
 	// Props
@@ -20,6 +22,7 @@
 		sandboxOrigin: string;
 		entryFile: string;
 		name: string;
+		loaderNodes?: LoaderNodeData[];
 		onClose: () => void;
 	}
 
@@ -29,6 +32,7 @@
 		sandboxOrigin,
 		entryFile,
 		name,
+		loaderNodes = [],
 		onClose
 	}: Props = $props();
 
@@ -46,6 +50,152 @@
 	// ============================================================================
 
 	const sandboxUrl = $derived(`${sandboxOrigin}/__sandbox.html`);
+
+	// ============================================================================
+	// Mock Service Classes
+	// ============================================================================
+
+	/**
+	 * Echo service for testing
+	 */
+	class EchoService extends RpcTarget {
+		config: Record<string, any>;
+		
+		constructor(config: Record<string, any>) {
+			super();
+			this.config = config;
+		}
+		
+		echo(msg: string): string {
+			return `Echo: ${msg}`;
+		}
+		
+		reverse(msg: string): string {
+			return msg.split('').reverse().join('');
+		}
+	}
+
+	/**
+	 * Counter service for testing stateful services
+	 */
+	class CounterService extends RpcTarget {
+		private count: number;
+		private initial: number;
+		
+		constructor(config: Record<string, any>) {
+			super();
+			this.initial = config.initial ?? 0;
+			this.count = this.initial;
+		}
+		
+		increment(): number {
+			return ++this.count;
+		}
+		
+		decrement(): number {
+			return --this.count;
+		}
+		
+		getCount(): number {
+			return this.count;
+		}
+		
+		reset(): number {
+			this.count = this.initial;
+			return this.count;
+		}
+	}
+
+	/**
+	 * WikiRAG mock service
+	 */
+	class WikiRAGService extends RpcTarget {
+		config: Record<string, any>;
+		
+		constructor(config: Record<string, any>) {
+			super();
+			this.config = config;
+		}
+		
+		async chat(message: string): Promise<string> {
+			return `[WikiRAG Mock] Received: ${message}`;
+		}
+		
+		async search(query: string): Promise<{ title: string; content: string }[]> {
+			return [
+				{ title: 'Mock Result 1', content: `Results for: ${query}` },
+				{ title: 'Mock Result 2', content: 'Sample content' }
+			];
+		}
+	}
+
+	/**
+	 * Generic passthrough service for unknown types
+	 */
+	class GenericService extends RpcTarget {
+		serviceType: string;
+		config: Record<string, any>;
+		
+		constructor(serviceType: string, config: Record<string, any>) {
+			super();
+			this.serviceType = serviceType;
+			this.config = config;
+		}
+		
+		ping(): string {
+			return `pong from ${this.serviceType}`;
+		}
+		
+		getConfig(): Record<string, any> {
+			return this.config;
+		}
+	}
+
+	// ============================================================================
+	// Mock Services
+	// ============================================================================
+
+	/**
+	 * Create mock service implementations based on loader node config
+	 * These are placeholder implementations for development and testing
+	 */
+	function createMockServices(): Map<string, CustomServiceFactory<MainRpcHostConfig>> {
+		const services = new Map<string, CustomServiceFactory<MainRpcHostConfig>>();
+
+		for (const loader of loaderNodes) {
+			const config = parseLoaderConfig(loader.config);
+			
+			switch (loader.serviceType) {
+				case 'echo':
+					services.set('echo', () => new EchoService(config));
+					break;
+				
+				case 'counter':
+					services.set('counter', () => new CounterService(config));
+					break;
+				
+				case 'wikirag':
+					services.set('wikirag', () => new WikiRAGService(config));
+					break;
+				
+				default:
+					services.set(loader.serviceType, () => new GenericService(loader.serviceType, config));
+			}
+		}
+
+		return services;
+	}
+
+	/**
+	 * Safely parse loader config JSON
+	 */
+	function parseLoaderConfig(configJson: string): Record<string, any> {
+		try {
+			return JSON.parse(configJson) || {};
+		} catch {
+			return {};
+		}
+	}
 
 	// ============================================================================
 	// Portal action
@@ -91,6 +241,9 @@
 			isLoading = true;
 			error = null;
 
+			// Collect custom services from connected Loader nodes
+			const customServices = loaderNodes.length > 0 ? createMockServices() : undefined;
+
 			// Create sandbox connection - it will auto-initialize when sandbox sends SANDBOX_READY
 			sandboxConnection = createSandboxConnection({
 				iframe: iframeRef,
@@ -98,7 +251,8 @@
 				projectConfig,
 				targetOrigin: sandboxOrigin,
 				entryFile,
-				vfs
+				vfs,
+				customServices
 			});
 
 			// Wait for sandbox to be ready and initialized

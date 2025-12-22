@@ -122,9 +122,37 @@ export interface SandboxNodeData extends BaseNodeData<string> {
 }
 
 /**
+ * Loader node data - represents a custom service provider
+ * Content is an empty string (service is provided via RPC)
+ */
+export interface LoaderNodeData extends BaseNodeData<string> {
+  type: 'LOADER'
+  /** 
+   * Service type identifier
+   * Each Loader has a specific serviceType, e.g., 'echo', 'wikirag', 'analytics'
+   */
+  serviceType: string
+  /**
+   * Service configuration (JSON string)
+   * Each serviceType has its specific config structure
+   */
+  config: string
+  /**
+   * Whether the service is currently active/ready
+   */
+  isActive: boolean
+  /**
+   * Error state if service initialization failed
+   */
+  error: string | null
+  /** Index signature for xyflow compatibility */
+  [key: string]: unknown
+}
+
+/**
  * Union type for all node data types
  */
-export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData | SandboxNodeData
+export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData | SandboxNodeData | LoaderNodeData
 
 // ============================================================================
 // Utility Functions
@@ -250,6 +278,37 @@ export async function createSandboxNodeData(
     isRunning: false,
     error: null,
     sandboxOrigin
+  }
+}
+
+/**
+ * Available service types for Loader nodes
+ */
+export const LOADER_SERVICE_TYPES = ['echo', 'counter', 'wikirag'] as const
+export type LoaderServiceType = typeof LOADER_SERVICE_TYPES[number]
+
+/**
+ * Create a new Loader node data object
+ */
+export async function createLoaderNodeData(
+  serviceType: LoaderServiceType = 'echo',
+  name: string = 'Service',
+  config: string = '{}'
+): Promise<LoaderNodeData> {
+  const id = crypto.randomUUID()
+  const commit = await generateCommitHash('')
+  return {
+    id,
+    name,
+    type: 'LOADER',
+    commit,
+    snapshotRefs: [],
+    parents: [],
+    content: '',
+    serviceType,
+    config,
+    isActive: false,
+    error: null
   }
 }
 

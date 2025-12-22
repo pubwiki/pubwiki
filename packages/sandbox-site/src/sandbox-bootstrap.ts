@@ -255,6 +255,9 @@ async function loadUserIframe(entryFile: string): Promise<void> {
   })
   
   console.log('[SandboxBootstrap] User iframe content loaded')
+  
+  // Inject sandbox context into user iframe for @pubwiki/sandbox-client
+  injectSandboxContextToUserIframe()
 }
 
 /**
@@ -278,6 +281,31 @@ async function reloadUserIframe(): Promise<void> {
       iframeWindow.location.href = currentUrl.href
     }
   }
+}
+
+/**
+ * Inject sandbox context into user iframe
+ * 
+ * Since user iframe and bootstrap are same-origin, we can directly
+ * inject the RPC stub reference into the user iframe's window object.
+ * This is much simpler than MessagePort transfer.
+ */
+function injectSandboxContextToUserIframe(): void {
+  if (!userIframe?.contentWindow || !mainRpcClient || !sandboxContext) {
+    console.error('[SandboxBootstrap] Cannot inject context: not ready')
+    return
+  }
+  
+  const iframeWindow = userIframe.contentWindow as unknown as Record<string, unknown>
+  
+  // Inject the context directly into user iframe's window
+  iframeWindow.__sandboxContext__ = {
+    rpcStub: mainRpcClient,
+    basePath: sandboxContext.basePath,
+    entryFile: sandboxContext.entryFile
+  }
+  
+  console.log('[SandboxBootstrap] Injected sandbox context into user iframe')
 }
 
 /**
@@ -378,8 +406,13 @@ navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
 window.addEventListener('message', (event: MessageEvent) => {
   const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173'
   
-  // Ignore messages from self or user iframe
-  if (event.origin === window.location.origin) {
+  // Ignore messages from user iframe (no longer needed - context is injected directly)
+  if (userIframe && event.source === userIframe.contentWindow) {
+    return
+  }
+  
+  // Ignore messages from self
+  if (event.origin === window.location.origin && event.source === window) {
     return
   }
   

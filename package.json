@@ -23,7 +23,6 @@
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.1.17",
-		"@types/marked": "^6.0.0",
 		"@types/node": "^22",
 		"@vitest/browser-playwright": "^4.0.10",
 		"eslint": "^9.39.1",
@@ -46,6 +45,7 @@
 	"dependencies": {
 		"@monaco-editor/loader": "^1.7.0",
 		"@pubwiki/api": "file:../pubwiki-backend/packages/api",
+		"@pubwiki/pubwiki-lua": "file:../pubwiki-lua/pubwiki-lua",
 		"@pubwiki/bundler": "workspace:*",
 		"@pubwiki/chat": "workspace:*",
 		"@pubwiki/sandbox-host": "workspace:*",

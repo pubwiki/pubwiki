@@ -1,1 +1,0 @@
-{"version":3,"file":"versioned-vfs-provider.js","sourceRoot":"","sources":["../../src/interfaces/versioned-vfs-provider.ts"],"names":[],"mappings":"AAgHA;;GAEG;AACH,MAAM,UAAU,mBAAmB,CACjC,QAAqB;IAErB,OAAO,CACL,QAAQ,IAAI,QAAQ;QACpB,YAAY,IAAI,QAAQ;QACxB,UAAU,IAAI,QAAQ;QACtB,MAAM,IAAI,QAAQ;QAClB,QAAQ,IAAI,QAAQ,CACrB,CAAA;AACH,CAAC"}

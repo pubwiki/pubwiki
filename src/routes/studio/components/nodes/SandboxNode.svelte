@@ -3,14 +3,15 @@
 	 * SandboxNode - Sandbox preview node for VFS content
 	 * 
 	 * Features:
-	 * - Accepts connection from VFS node
+	 * - Accepts connection from VFS node (vfs-input handle)
+	 * - Accepts connections from Loader nodes (service-input handle)
 	 * - Detects project configuration from tsconfig.json
 	 * - Opens floating preview panel on start
 	 * - Uses BaseNode for consistent styling
 	 */
 	import { Handle, Position, type NodeProps, type Node, useEdges } from '@xyflow/svelte';
 	import { onMount, untrack } from 'svelte';
-	import type { SandboxNodeData, VFSNodeData, StudioNodeData } from '../../utils/types';
+	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData } from '../../utils/types';
 	import { getNodeVfs, type VersionedVfs } from '../../stores/vfs';
 	import { getStudioContext } from '../../stores/context';
 	import BaseNode from './BaseNode.svelte';
@@ -41,10 +42,12 @@
 	// ============================================================================
 
 	/**
-	 * Find the connected VFS node ID by looking at incoming edges
+	 * Find the connected VFS node ID by looking at incoming edges to vfs-input handle
 	 */
 	const connectedVfsNodeId = $derived.by(() => {
-		const incomingEdges = allEdges.current.filter(e => e.target === id);
+		const incomingEdges = allEdges.current.filter(e => 
+			e.target === id && (e.targetHandle === 'vfs-input' || !e.targetHandle)
+		);
 		
 		for (const edge of incomingEdges) {
 			const sourceNode = ctx.nodes.find(n => n.id === edge.source);
@@ -63,6 +66,29 @@
 		const node = ctx.nodes.find(n => n.id === connectedVfsNodeId);
 		return node?.data.type === 'VFS' ? node.data as VFSNodeData : null;
 	});
+
+	/**
+	 * Find connected Loader nodes by looking at incoming edges to service-input handle
+	 */
+	const connectedLoaderNodes = $derived.by(() => {
+		const incomingEdges = allEdges.current.filter(e => 
+			e.target === id && e.targetHandle === 'service-input'
+		);
+		
+		const loaders: LoaderNodeData[] = [];
+		for (const edge of incomingEdges) {
+			const sourceNode = ctx.nodes.find(n => n.id === edge.source);
+			if (sourceNode?.data.type === 'LOADER') {
+				loaders.push(sourceNode.data as LoaderNodeData);
+			}
+		}
+		return loaders;
+	});
+
+	/**
+	 * Count of connected services
+	 */
+	const connectedServiceCount = $derived(connectedLoaderNodes.length);
 
 	// ============================================================================
 	// Lifecycle
@@ -154,7 +180,29 @@
 	headerBgClass="bg-orange-500"
 	handleBgClass="bg-orange-400!"
 	showRightHandle={false}
+	showLeftHandle={false}
 >
+	{#snippet leftHandles()}
+		<!-- VFS Input Handle (top) -->
+		<Handle 
+			type="target" 
+			id="vfs-input"
+			position={Position.Left} 
+			style="top: 30%;"
+			{isConnectable}
+			class="w-3! h-3! bg-indigo-400! border-2! border-white!"
+		/>
+		<!-- Service Input Handle (bottom) -->
+		<Handle 
+			type="target" 
+			id="service-input"
+			position={Position.Left} 
+			style="top: 70%;"
+			{isConnectable}
+			class="w-3! h-3! bg-purple-400! border-2! border-white!"
+		/>
+	{/snippet}
+
 	{#snippet headerIcon()}
 		<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -162,10 +210,20 @@
 	{/snippet}
 
 	{#snippet headerActions()}
+		<!-- Services indicator badge -->
+		{#if connectedServiceCount > 0}
+			<span class="px-1.5 py-0.5 text-xs bg-purple-400/80 rounded text-white flex items-center gap-1" title="Connected services">
+				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+				</svg>
+				{connectedServiceCount}
+			</span>
+		{/if}
 	{/snippet}
 
 	{#snippet children()}
-		<div class="p-3 bg-gray-50">
+		<div class="p-3 bg-gray-50 space-y-3">
+			<!-- Connection Status -->
 			{#if !connectedVfsNodeId}
 				<!-- No VFS Connected -->
 				<div class="flex items-center gap-3 text-gray-400">
@@ -223,6 +281,23 @@
 					</button>
 				</div>
 			{/if}
+
+			<!-- Connected Services List -->
+			{#if connectedLoaderNodes.length > 0}
+				<div class="border-t border-gray-200 pt-2">
+					<p class="text-xs font-medium text-gray-500 mb-1.5">Connected Services</p>
+					<div class="flex flex-wrap gap-1">
+						{#each connectedLoaderNodes as loader}
+							<span class="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full flex items-center gap-1">
+								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+								</svg>
+								{loader.serviceType}
+							</span>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/snippet}
 </BaseNode>
@@ -235,6 +310,7 @@
 		sandboxOrigin={data.sandboxOrigin}
 		entryFile={data.entryFile}
 		name={data.name}
+		loaderNodes={connectedLoaderNodes}
 		onClose={closePreview}
 	/>
 {/if}

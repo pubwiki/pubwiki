@@ -84,6 +84,9 @@ export type {
 // Re-export Vfs class from @pubwiki/vfs
 export { Vfs } from './types'
 
+// Re-export RpcTarget from capnweb for custom service implementations
+export { RpcTarget } from 'capnweb'
+
 // Utility functions
 export {
   getMimeType,

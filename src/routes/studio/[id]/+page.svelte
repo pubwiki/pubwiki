@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
-	import { GraphNode, VFSNode, SandboxNode } from '../components/nodes';
+	import { GraphNode, VFSNode, SandboxNode, LoaderNode } from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
 	import PublishModal from '../components/PublishModal.svelte';
 	import { 
@@ -18,6 +18,7 @@
 		createGeneratedNodeData,
 		createVFSNodeData,
 		createSandboxNodeData,
+		createLoaderNodeData,
 		generateCommitHash,
 		restoreSnapshot,
 		syncNode
@@ -67,7 +68,8 @@
 		input: GraphNode,
 		generated: GraphNode,
 		vfs: VFSNode,
-		sandbox: SandboxNode
+		sandbox: SandboxNode,
+		loader: LoaderNode
 	};
 
 	// ============================================================================
@@ -707,6 +709,21 @@
 		closeContextMenu();
 	}
 
+	async function addLoaderNode() {
+		const newLoaderData = await createLoaderNodeData('echo', 'Service');
+		const newNode: Node<StudioNodeData> = {
+			id: newLoaderData.id,
+			type: 'loader',
+			data: newLoaderData,
+			position: { x: 0, y: 0 },
+			sourcePosition: Position.Right,
+			targetPosition: Position.Left,
+		};
+		nodes = [...nodes, newNode];
+		applyLayout();
+		closeContextMenu();
+	}
+
 	function deleteNodes(nodeIds: string[]) {
 		nodes = nodes.filter(n => !nodeIds.includes(n.id));
 		edges = edges.filter(e => !nodeIds.includes(e.source) && !nodeIds.includes(e.target));
@@ -1183,6 +1200,15 @@
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
 									</svg>
 									Sandbox
+								</button>
+								<button
+									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+									onclick={addLoaderNode}
+								>
+									<svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+									</svg>
+									Loader
 								</button>
 							</div>
 						{/if}

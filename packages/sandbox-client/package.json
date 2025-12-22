@@ -1,0 +1,39 @@
+{
+  "name": "@pubwiki/sandbox-client",
+  "version": "1.0.0",
+  "description": "Client SDK for sandbox applications to access main site services",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@pubwiki/sandbox-service": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "sandbox",
+    "client",
+    "rpc",
+    "pubwiki"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

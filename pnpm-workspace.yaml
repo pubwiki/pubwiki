@@ -12,3 +12,4 @@ packages:
   - "packages/sandbox-site"
   - "packages/sandbox-llm-client"
   - "packages/sandbox-service"
+  - "packages/sandbox-client"
