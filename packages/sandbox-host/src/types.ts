@@ -105,6 +105,8 @@ export interface SandboxConnectionConfig {
   projectConfig: ProjectConfig
   /** Target origin of the sandbox site */
   targetOrigin: string
+  /** Entry file to load (e.g., 'index.html') */
+  entryFile: string
   /** Custom services to register (optional) */
   customServices?: Map<string, CustomServiceFactory<MainRpcHostConfig>>
 }
@@ -120,11 +122,10 @@ export interface SandboxConnection {
   isConnected: boolean
 
   /**
-   * Initialize: build + setup file watching + send RPC ports to sandbox
-   * @param entryFile - Entry file to load
+   * Wait for sandbox to be ready and initialized
    * @returns true if initialization succeeded
    */
-  initialize(entryFile: string): Promise<boolean>
+  waitForReady(): Promise<boolean>
 
   /**
    * Add a custom service dynamically

@@ -9,8 +9,9 @@
  * 3. Direct VFS access without intermediate layer
  */
 
-import { IVfsService, RpcTarget } from '@pubwiki/sandbox-service'
+import { RpcTarget } from '@pubwiki/sandbox-service'
 import type {
+  IVfsService,
   FileInfo,
   FileExistsResult,
   DirectoryEntry,

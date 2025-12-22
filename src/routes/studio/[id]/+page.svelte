@@ -5,7 +5,7 @@
 	import { untrack } from 'svelte';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
-	import { GraphNode, VFSNode } from '../components/nodes';
+	import { GraphNode, VFSNode, SandboxNode } from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
 	import PublishModal from '../components/PublishModal.svelte';
 	import { 
@@ -17,6 +17,7 @@
 		createInputNodeData,
 		createGeneratedNodeData,
 		createVFSNodeData,
+		createSandboxNodeData,
 		generateCommitHash,
 		restoreSnapshot,
 		syncNode
@@ -65,7 +66,8 @@
 		prompt: GraphNode,
 		input: GraphNode,
 		generated: GraphNode,
-		vfs: VFSNode
+		vfs: VFSNode,
+		sandbox: SandboxNode
 	};
 
 	// ============================================================================
@@ -690,6 +692,21 @@
 		closeContextMenu();
 	}
 
+	async function addSandboxNode() {
+		const newSandboxData = await createSandboxNodeData('Preview');
+		const newNode: Node<StudioNodeData> = {
+			id: newSandboxData.id,
+			type: 'sandbox',
+			data: newSandboxData,
+			position: { x: 0, y: 0 },
+			sourcePosition: Position.Right,
+			targetPosition: Position.Left,
+		};
+		nodes = [...nodes, newNode];
+		applyLayout();
+		closeContextMenu();
+	}
+
 	function deleteNodes(nodeIds: string[]) {
 		nodes = nodes.filter(n => !nodeIds.includes(n.id));
 		edges = edges.filter(e => !nodeIds.includes(e.source) && !nodeIds.includes(e.target));
@@ -1138,7 +1155,7 @@
 									<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 									</svg>
-									Prompt Node
+									Prompt
 								</button>
 								<button
 									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
@@ -1147,7 +1164,7 @@
 									<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
 									</svg>
-									Input Node
+									Input
 								</button>
 								<button
 									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
@@ -1156,7 +1173,16 @@
 									<svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
 									</svg>
-									VFS Node
+									VFS
+								</button>
+								<button
+									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+									onclick={addSandboxNode}
+								>
+									<svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+									</svg>
+									Sandbox
 								</button>
 							</div>
 						{/if}

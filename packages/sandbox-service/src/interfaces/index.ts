@@ -9,12 +9,9 @@
 
 export * from './vfs-service'
 export * from './hmr-service'
-export * from './wikirag-service'
 
 import type { IHmrService } from "./hmr-service"
-import type { IWikiRAGService } from './wikirag-service'
 
 export interface SandboxMainService {
     get hmr(): IHmrService
-    get wikirag(): IWikiRAGService
 }

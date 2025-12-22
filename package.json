@@ -46,7 +46,9 @@
 	"dependencies": {
 		"@monaco-editor/loader": "^1.7.0",
 		"@pubwiki/api": "file:../pubwiki-backend/packages/api",
+		"@pubwiki/bundler": "workspace:*",
 		"@pubwiki/chat": "workspace:*",
+		"@pubwiki/sandbox-host": "workspace:*",
 		"@pubwiki/svelte-chat": "workspace:*",
 		"@pubwiki/vfs": "workspace:*",
 		"@types/dagre": "^0.7.53",

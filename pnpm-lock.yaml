@@ -14,9 +14,15 @@ importers:
       '@pubwiki/api':
         specifier: file:../pubwiki-backend/packages/api
         version: file:../pubwiki-backend/packages/api
+      '@pubwiki/bundler':
+        specifier: workspace:*
+        version: link:packages/bundler
       '@pubwiki/chat':
         specifier: workspace:*
         version: link:packages/chat
+      '@pubwiki/sandbox-host':
+        specifier: workspace:*
+        version: link:packages/sandbox-host
       '@pubwiki/svelte-chat':
         specifier: workspace:*
         version: link:packages/svelte-chat
@@ -255,9 +261,6 @@ importers:
 
   packages/sandbox-service:
     dependencies:
-      '@pubwiki/sandbox-llm-client':
-        specifier: workspace:*
-        version: link:../sandbox-llm-client
       capnweb:
         specifier: ^0.2.0
         version: 0.2.0
@@ -268,9 +271,6 @@ importers:
 
   packages/sandbox-site:
     dependencies:
-      '@pubwiki/sandbox-llm-client':
-        specifier: workspace:*
-        version: link:../sandbox-llm-client
       '@pubwiki/sandbox-service':
         specifier: workspace:*
         version: link:../sandbox-service

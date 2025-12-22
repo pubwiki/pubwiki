@@ -27,11 +27,15 @@ export interface PublishMetadata {
 
 /**
  * Node type mapping from Studio to API
+ * SANDBOX nodes are filtered out before publishing, so they don't need mapping
  */
 type ApiNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS';
 
-function mapNodeType(type: StudioNodeData['type']): ApiNodeType {
-	return type; // Currently the types are the same
+function mapNodeType(type: StudioNodeData['type']): ApiNodeType | null {
+	if (type === 'SANDBOX') {
+		return null; // SANDBOX nodes should not be published
+	}
+	return type;
 }
 
 /**
@@ -61,19 +65,29 @@ interface ArtifactDescriptor {
 
 /**
  * Prepare artifact descriptor from nodes and edges
+ * SANDBOX nodes are filtered out as they are runtime-only
  */
 function createDescriptor(
 	nodes: Node<StudioNodeData>[],
 	edges: Edge[]
 ): ArtifactDescriptor {
-	const nodeDescriptors: ArtifactNodeDescriptor[] = nodes.map((node) => ({
+	// Filter out SANDBOX nodes
+	const publishableNodes = nodes.filter(node => node.data.type !== 'SANDBOX');
+	
+	const nodeDescriptors: ArtifactNodeDescriptor[] = publishableNodes.map((node) => ({
 		id: node.data.id,
 		external: node.data.external ?? false,
-		type: mapNodeType(node.data.type),
+		type: mapNodeType(node.data.type)!,
 		name: node.data.name || undefined
 	}));
 
-	const edgeDescriptors: ArtifactEdgeDescriptor[] = edges.map((edge) => ({
+	// Filter out edges connected to SANDBOX nodes
+	const sandboxNodeIds = new Set(nodes.filter(n => n.data.type === 'SANDBOX').map(n => n.id));
+	const publishableEdges = edges.filter(edge => 
+		!sandboxNodeIds.has(edge.source) && !sandboxNodeIds.has(edge.target)
+	);
+
+	const edgeDescriptors: ArtifactEdgeDescriptor[] = publishableEdges.map((edge) => ({
 		source: edge.source,
 		target: edge.target,
 		sourceHandle: edge.sourceHandle,

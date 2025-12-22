@@ -44,6 +44,8 @@ export interface SandboxConnectionConfigExt extends SandboxConnectionConfig {
  * 2. Main RPC channel - for sandbox main page
  * 3. Build project + setup file watching
  *
+ * The connection automatically initializes when the sandbox sends SANDBOX_READY.
+ *
  * @param config - Connection configuration
  * @returns Sandbox connection instance
  */
@@ -55,12 +57,15 @@ export function createSandboxConnection(
     basePath,
     projectConfig,
     targetOrigin,
+    entryFile,
     customServices,
     vfs
   } = config
 
   const id = `sandbox-conn-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
   let connected = false
+  let initPromise: Promise<boolean> | null = null
+  let initResolve: ((value: boolean) => void) | null = null
 
   // RPC hosts
   let vfsRpcHost: VfsRpcHost | null = null
@@ -111,7 +116,87 @@ export function createSandboxConnection(
     }
   }
 
-  console.log(`[SandboxConnection:${id}] Created for basePath: ${basePath}`)
+  /**
+   * Internal initialization - called when sandbox is ready
+   */
+  async function doInitialize(): Promise<boolean> {
+    if (!iframe.contentWindow) {
+      console.error(`[SandboxConnection:${id}] No iframe contentWindow`)
+      return false
+    }
+
+    try {
+      // 1. Create Main RPC channel first to get HMR service
+      const mainConfig: MainRpcHostConfigExt = {
+        basePath,
+        customServices
+      }
+
+      const mainChannel = createMainRpcChannel(mainConfig)
+      mainRpcHost = mainChannel.host
+
+      const hmrService = mainRpcHost.getHmrService?.()
+      if (!hmrService) {
+        throw new Error('[SandboxConnection] Failed to get HMR service')
+      }
+
+      // 2. Create VFS RPC channel with HMR service
+      const vfsConfig: VfsRpcHostConfigExt = {
+        basePath,
+        projectConfig,
+        hmrService,
+        vfs
+      }
+
+      const vfsChannel = createVfsRpcChannel(vfsConfig)
+      vfsRpcHost = vfsChannel.host
+
+      // 3. Send initialization message with both ports
+      iframe.contentWindow.postMessage(
+        {
+          type: 'sandbox-init',
+          basePath,
+          entryFile
+        },
+        targetOrigin,
+        [mainChannel.clientPort, vfsChannel.clientPort]
+      )
+
+      // 4. Start listening for VFS port requests (for SW reconnection)
+      window.addEventListener('message', handleVfsPortRequest)
+
+      connected = true
+      console.log(`[SandboxConnection:${id}] Initialized successfully`)
+
+      return true
+    } catch (error) {
+      console.error(`[SandboxConnection:${id}] Initialization failed:`, error)
+      return false
+    }
+  }
+
+  // Handler for SANDBOX_READY message
+  const handleSandboxReady = async (event: MessageEvent) => {
+    const sandboxOrigin = new URL(targetOrigin).origin
+    if (event.origin !== sandboxOrigin) return
+    if (event.data?.type !== 'SANDBOX_READY') return
+
+    console.log(`[SandboxConnection:${id}] Sandbox ready, initializing...`)
+
+    // Remove listener - only initialize once
+    window.removeEventListener('message', handleSandboxReady)
+
+    const success = await doInitialize()
+    
+    if (initResolve) {
+      initResolve(success)
+    }
+  }
+
+  // Start listening for SANDBOX_READY immediately
+  window.addEventListener('message', handleSandboxReady)
+
+  console.log(`[SandboxConnection:${id}] Created for basePath: ${basePath}, waiting for sandbox ready...`)
 
   return {
     id,
@@ -120,60 +205,18 @@ export function createSandboxConnection(
       return connected
     },
 
-    async initialize(entryFile: string): Promise<boolean> {
-      if (!iframe.contentWindow) {
-        console.error(`[SandboxConnection:${id}] No iframe contentWindow`)
-        return false
+    waitForReady(): Promise<boolean> {
+      if (connected) {
+        return Promise.resolve(true)
       }
-
-      try {
-        // 1. Create Main RPC channel first to get HMR service
-        const mainConfig: MainRpcHostConfigExt = {
-          basePath,
-          customServices
-        }
-
-        const mainChannel = createMainRpcChannel(mainConfig)
-        mainRpcHost = mainChannel.host
-
-        const hmrService = mainRpcHost.getHmrService?.()
-        if (!hmrService) {
-          throw new Error('[SandboxConnection] Failed to get HMR service')
-        }
-
-        // 2. Create VFS RPC channel with HMR service
-        const vfsConfig: VfsRpcHostConfigExt = {
-          basePath,
-          projectConfig,
-          hmrService,
-          vfs
-        }
-
-        const vfsChannel = createVfsRpcChannel(vfsConfig)
-        vfsRpcHost = vfsChannel.host
-
-        // 4. Send initialization message with both ports
-        iframe.contentWindow.postMessage(
-          {
-            type: 'sandbox-init',
-            basePath,
-            entryFile
-          },
-          targetOrigin,
-          [mainChannel.clientPort, vfsChannel.clientPort]
-        )
-
-        // 5. Start listening for VFS port requests (for SW reconnection)
-        window.addEventListener('message', handleVfsPortRequest)
-
-        connected = true
-        console.log(`[SandboxConnection:${id}] Initialized successfully`)
-
-        return true
-      } catch (error) {
-        console.error(`[SandboxConnection:${id}] Initialization failed:`, error)
-        return false
+      
+      if (!initPromise) {
+        initPromise = new Promise<boolean>((resolve) => {
+          initResolve = resolve
+        })
       }
+      
+      return initPromise
     },
 
     reload(): void {
@@ -203,6 +246,9 @@ export function createSandboxConnection(
     },
 
     disconnect(): void {
+      // Remove SANDBOX_READY listener if still attached
+      window.removeEventListener('message', handleSandboxReady)
+
       // Stop file watching
       if (stopFileWatching) {
         stopFileWatching()

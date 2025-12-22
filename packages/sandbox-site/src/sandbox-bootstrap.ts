@@ -12,10 +12,9 @@
 
 console.log('[SandboxBootstrap] Module loaded')
 
-import { IWikiRAGService, SandboxMainService } from '@pubwiki/sandbox-service'
+import { SandboxMainService } from '@pubwiki/sandbox-service'
 import type { SandboxContext } from './sandbox-types'
 import { newMessagePortRpcSession, RpcStub } from 'capnweb'
-import { iframeProvideWikiRag, WikiRAGProvider } from "@pubwiki/sandbox-llm-client"
 
 let sandboxContext: SandboxContext | null = null
 let mainRpcClient: RpcStub<SandboxMainService> | null = null
@@ -228,13 +227,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
     
     // Wait for confirmation
     await registrationPromise
-
-
-    let wikiRagGetter: () => Promise<WikiRAGProvider | null> = async () => {
-      if (!mainRpcClient) return null
-      return await mainRpcClient.wikirag as any
-    }
-    await iframeProvideWikiRag(iframeWindow, wikiRagGetter)
     
     hideLoading()
   }
@@ -384,7 +376,7 @@ navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
  * Listen for messages from parent (main site)
  */
 window.addEventListener('message', (event: MessageEvent) => {
-  const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:4000'
+  const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173'
   
   // Ignore messages from self or user iframe
   if (event.origin === window.location.origin) {

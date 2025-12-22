@@ -4,13 +4,13 @@ import { resolve } from 'path'
 
 export default defineConfig({
   server: {
-    port: 3001,
-    host: 'sandbox.localhost',
+    port: 4001,
+    host: 'localhost',
     cors: true,
     // 禁用 HMR，让开发环境行为与生产环境一致
     hmr: false,
     headers: {
-      'Access-Control-Allow-Origin': 'http://localhost:4000',
+      'Access-Control-Allow-Origin': 'http://localhost:5173',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type'
     }

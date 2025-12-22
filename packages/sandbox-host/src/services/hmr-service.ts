@@ -5,8 +5,8 @@
  * Notifies sandbox to refresh when files change.
  */
 
-import { IHmrService, RpcTarget, type HmrUpdateCallback } from '@pubwiki/sandbox-service'
-import type { HmrUpdate, HmrSubscription, RpcStub } from '@pubwiki/sandbox-service'
+import { RpcTarget } from '@pubwiki/sandbox-service'
+import type { IHmrService, HmrUpdateCallback, HmrUpdate, HmrSubscription, RpcStub } from '@pubwiki/sandbox-service'
 
 /**
  * HMR Service Implementation

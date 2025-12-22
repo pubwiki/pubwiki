@@ -13,6 +13,11 @@ export { default as PromptNode } from './PromptNode.svelte';
 export { default as InputNode } from './InputNode.svelte';
 export { default as GeneratedNode } from './GeneratedNode.svelte';
 export { default as VFSNode } from './VFSNode.svelte';
+export { default as SandboxNode } from './SandboxNode.svelte';
+
+// Expanded views
+export { default as VFSExpandedView } from './VFSExpandedView.svelte';
+export { default as SandboxPreviewView } from './SandboxPreviewView.svelte';
 
 // Re-export types
 export type { BaseNodeProps, NodeHeaderProps } from './types';

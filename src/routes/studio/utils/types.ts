@@ -104,9 +104,27 @@ export interface VFSNodeData extends BaseNodeData<string> {
 }
 
 /**
+ * Sandbox node data - represents a sandbox preview of VFS content
+ * Content is an empty string (preview is rendered in iframe)
+ */
+export interface SandboxNodeData extends BaseNodeData<string> {
+  type: 'SANDBOX'
+  /** Entry file path for the sandbox (e.g., '/app.tsx') */
+  entryFile: string
+  /** Whether the sandbox is currently running */
+  isRunning: boolean
+  /** Current error message (if any) */
+  error: string | null
+  /** Sandbox site URL */
+  sandboxOrigin: string
+  /** Index signature for xyflow compatibility */
+  [key: string]: unknown
+}
+
+/**
  * Union type for all node data types
  */
-export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData
+export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData | SandboxNodeData
 
 // ============================================================================
 // Utility Functions
@@ -208,6 +226,30 @@ export async function createVFSNodeData(
     expandedFolders: [],
     selectedFilePath: undefined,
     isExpandedViewOpen: false
+  }
+}
+
+/**
+ * Create a new Sandbox node data object
+ */
+export async function createSandboxNodeData(
+  name: string = 'Preview',
+  sandboxOrigin: string = 'http://localhost:4001'
+): Promise<SandboxNodeData> {
+  const id = crypto.randomUUID()
+  const commit = await generateCommitHash('')
+  return {
+    id,
+    name,
+    type: 'SANDBOX',
+    commit,
+    snapshotRefs: [],
+    parents: [],
+    content: '',
+    entryFile: 'index.html',
+    isRunning: false,
+    error: null,
+    sandboxOrigin
   }
 }
 

@@ -314,7 +314,8 @@
 	:global(.svelte-flow__node-prompt),
 	:global(.svelte-flow__node-input),
 	:global(.svelte-flow__node-generated),
-	:global(.svelte-flow__node-vfs) {
+	:global(.svelte-flow__node-vfs),
+	:global(.svelte-flow__node-sandbox) {
 		background: transparent !important;
 		border: none !important;
 		padding: 0 !important;
@@ -328,7 +329,8 @@
 	:global(.svelte-flow__node-prompt.selected),
 	:global(.svelte-flow__node-input.selected),
 	:global(.svelte-flow__node-generated.selected),
-	:global(.svelte-flow__node-vfs.selected) {
+	:global(.svelte-flow__node-vfs.selected),
+	:global(.svelte-flow__node-sandbox.selected) {
 		background: transparent !important;
 		border: none !important;
 		box-shadow: none !important;

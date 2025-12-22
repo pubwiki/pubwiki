@@ -54,22 +54,3 @@ export interface ProjectBuildResult {
   /** 所有依赖文件的路径（用于监听） */
   dependencies: string[]
 }
-
-/**
- * Build result from the bundler
- * @deprecated Use FileBuildResult or ProjectBuildResult instead
- */
-export interface BuildResult {
-  success: boolean
-  code?: string
-  css?: string
-  map?: string
-  errors?: BuildError[]
-  warnings?: BuildWarning[]
-  dependencies?: string[]
-  timing?: {
-    total: number
-    resolve?: number
-    transform?: number
-  }
-}
