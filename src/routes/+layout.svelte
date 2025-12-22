@@ -3,11 +3,13 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { createAuth } from '$lib/stores/auth.svelte';
 	import { createArtifactStore } from '$lib/stores/artifacts.svelte';
+	import { createProjectStore } from '$lib/stores/projects.svelte';
 
 	let { children } = $props();
 
 	const auth = createAuth();
 	const artifactStore = createArtifactStore();
+	const projectStore = createProjectStore();
 </script>
 
 <svelte:head>

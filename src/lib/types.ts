@@ -11,7 +11,11 @@ export type {
 	LineageType,
 	VisibilityType,
 	Tag,
-	Pagination
+	Pagination,
+	ProjectListItem,
+	ProjectRole,
+	UserProjectRole,
+	UserProjectListItem
 } from '@pubwiki/api';
 
 // Re-export from artifacts store

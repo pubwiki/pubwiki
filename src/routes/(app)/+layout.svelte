@@ -40,7 +40,7 @@
 					LAUNCH APP
 				</a>
 				{#if auth.isAuthenticated}
-					<a href="/settings/profile" class="flex items-center gap-2 hover:text-[#0969da] transition">
+					<a href="/me" class="flex items-center gap-2 hover:text-[#0969da] transition">
 						<img 
 							src={auth.currentUser?.avatarUrl || `https://ui-avatars.com/api/?name=${auth.currentUser?.username}&background=random`}
 							alt={auth.currentUser?.username}
