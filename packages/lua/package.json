@@ -1,0 +1,56 @@
+{
+  "name": "@pubwiki/lua",
+  "version": "0.2.1",
+  "type": "module",
+  "description": "Browser-friendly Lua runtime wrapper with MediaWiki require support",
+  "main": "./dist/index.js",
+  "repository": {
+    "url": "git+https://github.com/pubwiki/lua.git",
+    "directory": "packages/lua"
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./wasm/*": "./wasm/*"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "wasm",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "test": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:ui": "vitest --ui",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:all": "vitest run && playwright test",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "lua",
+    "wasm",
+    "mediawiki"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@vitest/ui": "^4.0.5",
+    "typescript": "^5.6.3",
+    "vitest": "^4.0.5"
+  },
+  "dependencies": {
+    "@pubwiki/vfs": "workspace:*",
+    "@types/n3": "^1.26.1",
+    "n3": "^1.26.0"
+  }
+}
