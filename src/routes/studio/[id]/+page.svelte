@@ -331,13 +331,11 @@
 			target: newGeneratedData.id,
 		};
 
-		// Add and layout
-		const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-			[...nodes, generatedNode],
-			[...edges, newEdge]
-		);
-		nodes = layoutedNodes;
-		edges = layoutedEdges;
+		// Add nodes and edges, then position the new generated node relative to its source
+		const allNodes = [...nodes, generatedNode];
+		const allEdges = [...edges, newEdge];
+		nodes = positionNewNodesFromSources([newGeneratedData.id], allNodes, allEdges);
+		edges = allEdges;
 
 		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 
@@ -616,9 +614,23 @@
 	// Layout
 	// ============================================================================
 	
-	const NODE_WIDTH = 320;
-	const NODE_HEIGHT = 180;
+	// Default dimensions used when node hasn't been measured yet
+	const DEFAULT_NODE_WIDTH = 320;
+	const DEFAULT_NODE_HEIGHT = 180;
 
+	/**
+	 * Get the actual dimensions of a node, using measured values if available
+	 */
+	function getNodeDimensions(node: Node): { width: number; height: number } {
+		return {
+			width: node.measured?.width ?? node.width ?? DEFAULT_NODE_WIDTH,
+			height: node.measured?.height ?? node.height ?? DEFAULT_NODE_HEIGHT
+		};
+	}
+
+	/**
+	 * Full dagre layout for all nodes. Only use this when explicitly requested by user.
+	 */
 	function getLayoutedElements<T extends Node>(
 		layoutNodes: T[],
 		layoutEdges: Edge[],
@@ -636,8 +648,10 @@
 			marginy: 50
 		});
 
+		// Use real node dimensions
 		layoutNodes.forEach((node) => {
-			dagreGraph.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+			const { width, height } = getNodeDimensions(node);
+			dagreGraph.setNode(node.id, { width, height });
 		});
 
 		layoutEdges.forEach((edge) => {
@@ -648,11 +662,12 @@
 
 		const newNodes = layoutNodes.map((node): T => {
 			const nodeWithPosition = dagreGraph.node(node.id);
+			const { width, height } = getNodeDimensions(node);
 			return {
 				...node,
 				position: {
-					x: nodeWithPosition.x - NODE_WIDTH / 2,
-					y: nodeWithPosition.y - NODE_HEIGHT / 2,
+					x: nodeWithPosition.x - width / 2,
+					y: nodeWithPosition.y - height / 2,
 				},
 				sourcePosition: isHorizontal ? Position.Right : Position.Bottom,
 				targetPosition: isHorizontal ? Position.Left : Position.Top,
@@ -660,6 +675,82 @@
 		});
 
 		return { nodes: newNodes, edges: layoutEdges };
+	}
+
+	/**
+	 * Position new nodes relative to their connected source nodes.
+	 * This is used for generation flow where we add input -> generated nodes.
+	 */
+	function positionNewNodesFromSources(
+		newNodeIds: string[],
+		allNodes: Node<StudioNodeData>[],
+		allEdges: Edge[]
+	): Node<StudioNodeData>[] {
+		const newNodeIdSet = new Set(newNodeIds);
+		const HORIZONTAL_GAP = 100;
+		const VERTICAL_GAP = 30;
+
+		return allNodes.map(node => {
+			if (!newNodeIdSet.has(node.id)) {
+				return node;
+			}
+
+			// Find incoming edges to this new node
+			const incomingEdges = allEdges.filter(e => e.target === node.id);
+			if (incomingEdges.length === 0) {
+				// No sources, position based on viewport or existing nodes
+				const existingNodes = allNodes.filter(n => !newNodeIdSet.has(n.id));
+				if (existingNodes.length > 0) {
+					// Position to the right of rightmost existing node
+					const rightmostNode = existingNodes.reduce((max, n) => {
+						const nodeRight = n.position.x + (n.measured?.width ?? DEFAULT_NODE_WIDTH);
+						const maxRight = max.position.x + (max.measured?.width ?? DEFAULT_NODE_WIDTH);
+						return nodeRight > maxRight ? n : max;
+					});
+					return {
+						...node,
+						position: {
+							x: rightmostNode.position.x + (rightmostNode.measured?.width ?? DEFAULT_NODE_WIDTH) + HORIZONTAL_GAP,
+							y: rightmostNode.position.y
+						}
+					};
+				}
+				return node;
+			}
+
+			// Get source nodes
+			const sourceNodes = incomingEdges
+				.map(e => allNodes.find(n => n.id === e.source))
+				.filter((n): n is Node<StudioNodeData> => n !== undefined);
+
+			if (sourceNodes.length === 0) {
+				return node;
+			}
+
+			// Calculate average Y position of sources and position to their right
+			const avgY = sourceNodes.reduce((sum, n) => sum + n.position.y, 0) / sourceNodes.length;
+			const rightmostSource = sourceNodes.reduce((max, n) => {
+				const nodeRight = n.position.x + (n.measured?.width ?? DEFAULT_NODE_WIDTH);
+				const maxRight = max.position.x + (max.measured?.width ?? DEFAULT_NODE_WIDTH);
+				return nodeRight > maxRight ? n : max;
+			});
+
+			return {
+				...node,
+				position: {
+					x: rightmostSource.position.x + (rightmostSource.measured?.width ?? DEFAULT_NODE_WIDTH) + HORIZONTAL_GAP,
+					y: avgY + (newNodeIds.indexOf(node.id) * VERTICAL_GAP)
+				}
+			};
+		});
+	}
+
+	/**
+	 * Position a single new node using context menu position (converted to flow coordinates).
+	 */
+	function getNewNodePosition(): { x: number; y: number } {
+		// Use context menu position, convert from screen to flow coordinates
+		return flowApi!.screenToFlowPosition({ x: contextMenu!.x, y: contextMenu!.y });
 	}
 
 	function applyLayout() {
@@ -675,76 +766,76 @@
 	
 	async function addPromptNode() {
 		const newPromptData = await createPromptNodeData('');
+		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newPromptData.id,
 			type: 'prompt',
 			data: newPromptData,
-			position: { x: 0, y: 0 },
+			position,
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
 		};
 		nodes = [...nodes, newNode];
-		applyLayout();
 		closeContextMenu();
 	}
 
 	async function addInputNode() {
 		const newInputData = await createInputNodeData('', [], []);
+		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newInputData.id,
 			type: 'input',
 			data: newInputData,
-			position: { x: 0, y: 0 },
+			position,
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
 		};
 		nodes = [...nodes, newNode];
-		applyLayout();
 		closeContextMenu();
 	}
 
 	async function addVFSNode() {
 		const newVFSData = await createVFSNodeData(currentProjectId, 'Files');
+		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newVFSData.id,
 			type: 'vfs',
 			data: newVFSData,
-			position: { x: 0, y: 0 },
+			position,
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
 		};
 		nodes = [...nodes, newNode];
-		applyLayout();
 		closeContextMenu();
 	}
 
 	async function addSandboxNode() {
 		const newSandboxData = await createSandboxNodeData('Preview');
+		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newSandboxData.id,
 			type: 'sandbox',
 			data: newSandboxData,
-			position: { x: 0, y: 0 },
+			position,
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
 		};
 		nodes = [...nodes, newNode];
-		applyLayout();
 		closeContextMenu();
 	}
 
 	async function addLoaderNode() {
 		const newLoaderData = await createLoaderNodeData('echo', 'Service');
+		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newLoaderData.id,
 			type: 'loader',
 			data: newLoaderData,
-			position: { x: 0, y: 0 },
+			position,
 			sourcePosition: Position.Right,
 			targetPosition: Position.Left,
 		};
 		nodes = [...nodes, newNode];
-		applyLayout();
 		closeContextMenu();
 	}
 
@@ -988,13 +1079,11 @@
 			}
 		];
 
-		// Layout and update
-		const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
-			[...nodes, inputNode, generatedNode],
-			[...edges, ...newEdges]
-		);
-		nodes = layoutedNodes;
-		edges = layoutedEdges;
+		// Add nodes and edges, then position new nodes relative to their sources
+		const allNodes = [...nodes, inputNode, generatedNode];
+		const allEdges = [...edges, ...newEdges];
+		nodes = positionNewNodesFromSources([inputNodeData.id, generatedNodeData.id], allNodes, allEdges);
+		edges = allEdges;
 
 		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 
@@ -1121,6 +1210,7 @@
 			panOnDrag={[1]}
 			multiSelectionKey="Shift"
 			{isValidConnection}
+			proOptions={{hideAttribution: true}}
 			onselectionchange={(e) => selectedNodes = e.nodes}
 			onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
 			onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
