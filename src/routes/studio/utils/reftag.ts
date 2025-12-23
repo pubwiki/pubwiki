@@ -2,12 +2,13 @@
  * reftag Utilities
  * 
  * Provides utilities for parsing and resolving reftag references in prompt content.
- * reftags follow the format #name and create named input slots for prompt composition.
+ * reftags follow the format @name and create named input slots for prompt composition.
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, NodeRef, PromptNodeData, SnapshotEdge } from './types';
 import { snapshotStore } from './types';
+import { isRefTagHandle, getRefTagName } from './connection';
 
 // ============================================================================
 // Types
@@ -17,22 +18,12 @@ import { snapshotStore } from './types';
  * Represents a parsed reftag in content
  */
 export interface ParsedRefTag {
-  /** The reftag name (without #) */
+  /** The reftag name (without @) */
   name: string;
   /** Start position in the content */
   start: number;
   /** End position in the content */
   end: number;
-}
-
-/**
- * Represents a reftag slot (connection point)
- */
-export interface RefTagSlot {
-  /** The reftag name */
-  name: string;
-  /** ID of the connected node (if any) */
-  connectedNodeId: string | null;
 }
 
 /**
@@ -50,10 +41,9 @@ export interface ResolvedPrompt {
 // ============================================================================
 
 /**
- * Regex pattern for reftags: # followed by word characters (letters, digits, underscore)
+ * Regex pattern for reftags: @ followed by word characters (letters, digits, underscore)
  */
 export const REFTAG_PATTERN = /@([a-zA-Z_][a-zA-Z0-9_]*)/g;
-export const REFTAG_HANDLE_PREFIX = "reftag-"
 
 /**
  * Parse reftags from content string
@@ -92,16 +82,16 @@ export function getUniqueRefTagNames(content: string): string[] {
 /**
  * Check if an edge is a reftag edge by checking its targetHandle
  */
-export function isRefTagEdge(edge: Edge): boolean {
-  return typeof edge.targetHandle === 'string' && edge.targetHandle.startsWith(REFTAG_HANDLE_PREFIX);
+export function isRefTagEdge(edge: Edge | SnapshotEdge): boolean {
+  return isRefTagHandle(edge.targetHandle);
 }
 
 /**
  * Extract reftag name from edge's targetHandle
  */
-export function getRefTagNameFromEdge(edge: Edge): string | null {
+export function getRefTagNameFromEdge(edge: Edge | SnapshotEdge): string | null {
   if (!isRefTagEdge(edge)) return null;
-  return edge.targetHandle!.slice(REFTAG_HANDLE_PREFIX.length);
+  return getRefTagName(edge.targetHandle!);
 }
 
 /**
@@ -136,29 +126,13 @@ export function getRefTagConnectionsFromSnapshotEdges(
   const connections = new Map<string, string>();
   
   for (const edge of edges) {
-    if (typeof edge.targetHandle === 'string' && edge.targetHandle.startsWith(REFTAG_HANDLE_PREFIX)) {
-      const refTagName = edge.targetHandle.slice(REFTAG_HANDLE_PREFIX.length);
+    if (isRefTagHandle(edge.targetHandle)) {
+      const refTagName = getRefTagName(edge.targetHandle!);
       connections.set(refTagName, edge.source);
     }
   }
   
   return connections;
-}
-
-/**
- * Get reftag slots for a prompt node
- */
-export function getRefTagSlots(
-  nodeData: PromptNodeData,
-  edges: Edge[]
-): RefTagSlot[] {
-  const refTagNames = getUniqueRefTagNames(nodeData.content);
-  const connections = getRefTagConnections(nodeData.id, edges);
-  
-  return refTagNames.map(name => ({
-    name,
-    connectedNodeId: connections.get(name) ?? null
-  }));
 }
 
 // ============================================================================

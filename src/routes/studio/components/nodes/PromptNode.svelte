@@ -11,7 +11,8 @@
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { PromptNodeData, SnapshotEdge } from '../../utils/types';
 	import { getStudioContext } from '../../stores/context';
-	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges, REFTAG_HANDLE_PREFIX } from '../../utils/reftag';
+	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../utils/reftag';
+	import { HandleId, createRefTagHandleId } from '../../utils/connection';
 	import BaseNode from './BaseNode.svelte';
 	import RichTextArea from '../RichTextArea.svelte';
 
@@ -147,7 +148,7 @@
 									<Handle 
 										type="target" 
 										position={Position.Left} 
-										id="{REFTAG_HANDLE_PREFIX}{refTagName}"
+										id={createRefTagHandleId(refTagName)}
 										isConnectable={!isConnected} 
 										class="w-1.5! h-1.5! {handleColor}! border-none! min-w-0! min-h-0! z-30"
 										style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); left: auto;"

@@ -14,6 +14,7 @@
 	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData } from '../../utils/types';
 	import { getNodeVfs, type VersionedVfs } from '../../stores/vfs';
 	import { getStudioContext } from '../../stores/context';
+	import { HandleId } from '../../utils/connection';
 	import BaseNode from './BaseNode.svelte';
 	import SandboxPreviewView from './SandboxPreviewView.svelte';
 	import type { ProjectConfig } from '@pubwiki/sandbox-host';
@@ -46,7 +47,7 @@
 	 */
 	const connectedVfsNodeId = $derived.by(() => {
 		const incomingEdges = allEdges.current.filter(e => 
-			e.target === id && (e.targetHandle === 'vfs-input' || !e.targetHandle)
+			e.target === id && (e.targetHandle === HandleId.VFS_INPUT || !e.targetHandle)
 		);
 		
 		for (const edge of incomingEdges) {
@@ -72,7 +73,7 @@
 	 */
 	const connectedLoaderNodes = $derived.by(() => {
 		const incomingEdges = allEdges.current.filter(e => 
-			e.target === id && e.targetHandle === 'service-input'
+			e.target === id && e.targetHandle === HandleId.SERVICE_INPUT
 		);
 		
 		const loaders: LoaderNodeData[] = [];
@@ -186,7 +187,7 @@
 		<!-- VFS Input Handle (top) -->
 		<Handle 
 			type="target" 
-			id="vfs-input"
+			id={HandleId.VFS_INPUT}
 			position={Position.Left} 
 			style="top: 30%;"
 			{isConnectable}
@@ -195,7 +196,7 @@
 		<!-- Service Input Handle (bottom) -->
 		<Handle 
 			type="target" 
-			id="service-input"
+			id={HandleId.SERVICE_INPUT}
 			position={Position.Left} 
 			style="top: 70%;"
 			{isConnectable}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SvelteFlow, Background, Controls, useSvelteFlow, type Node, type Edge, Position, SelectionMode } from '@xyflow/svelte';
+	import { SvelteFlow, Background, Controls, useSvelteFlow, type Node, type Edge, Position, SelectionMode, type IsValidConnection } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import dagre from 'dagre';
 	import { untrack } from 'svelte';
@@ -30,6 +30,7 @@
 		type HistoricalTreeResult
 	} from '../utils/version';
 	import { resolvePromptContentFromRefs, resolvePromptContent, getRefTagConnections } from '../utils/reftag';
+	import { validateConnection, HandleId } from '../utils/connection';
 	import { publishArtifact, type PublishMetadata } from '../utils/publish';
 	import { setStudioContext, type StudioContext, type PreviewState } from '../stores/context';
 	import { initSnapshotStore } from '../stores/snapshot';
@@ -267,11 +268,13 @@
 	// ============================================================================
 	
 	/**
-	 * Find VFS node connected to a node via incoming edges
+	 * Find VFS node connected to a node via incoming edges to VFS_INPUT handle
 	 */
 	function findConnectedVfsNode(nodeId: string): Node<VFSNodeData> | null {
-		// Find edges where this node is the target
-		const incomingEdges = edges.filter(e => e.target === nodeId);
+		// Find edges where this node is the target and handle is VFS_INPUT
+		const incomingEdges = edges.filter(e => 
+			e.target === nodeId && e.targetHandle === HandleId.VFS_INPUT
+		);
 		
 		for (const edge of incomingEdges) {
 			const sourceNode = nodes.find(n => n.id === edge.source);
@@ -587,6 +590,27 @@
 			edges = styledEdges;
 		}
 	});
+
+	// ============================================================================
+	// Connection Validation
+	// ============================================================================
+
+	/**
+	 * Validate connection using the type system
+	 */
+	const isValidConnection: IsValidConnection = (connection) => {
+		const result = validateConnection(
+			{
+				source: connection.source,
+				target: connection.target,
+				sourceHandle: connection.sourceHandle ?? null,
+				targetHandle: connection.targetHandle ?? null,
+			},
+			(nodeId) => nodes.find(n => n.id === nodeId)?.data.type,
+			edges
+		);
+		return result.valid;
+	};
 
 	// ============================================================================
 	// Layout
@@ -1096,6 +1120,7 @@
 			selectionMode={SelectionMode.Partial}
 			panOnDrag={[1]}
 			multiSelectionKey="Shift"
+			{isValidConnection}
 			onselectionchange={(e) => selectedNodes = e.nodes}
 			onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
 			onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
