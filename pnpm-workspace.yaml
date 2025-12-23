@@ -10,6 +10,5 @@ packages:
   - "packages/svelte-chat/example"
   - "packages/sandbox-host"
   - "packages/sandbox-site"
-  - "packages/sandbox-llm-client"
   - "packages/sandbox-service"
   - "packages/sandbox-client"
