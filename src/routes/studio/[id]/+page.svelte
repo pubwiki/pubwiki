@@ -7,11 +7,12 @@
 	import { goto } from '$app/navigation';
 	import { GraphNode, VFSNode, SandboxNode, LoaderNode } from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
-	import PublishModal from '../components/PublishModal.svelte';
+	import { StudioSidebar } from '../components/sidebar';
 	import { 
 		type StudioNodeData, 
 		type NodeRef,
 		type GeneratedNodeData,
+		type VFSNodeData,
 		snapshotStore,
 		createPromptNodeData, 
 		createInputNodeData,
@@ -29,21 +30,18 @@
 		styleEdgesForVersions,
 		type HistoricalTreeResult
 	} from '../utils/version';
-	import { resolvePromptContentFromRefs, resolvePromptContent, getRefTagConnections } from '../utils/reftag';
+	import { resolvePromptContentFromRefs } from '../utils/reftag';
 	import { validateConnection, HandleId } from '../utils/connection';
 	import { publishArtifact, type PublishMetadata } from '../utils/publish';
-	import { setStudioContext, type StudioContext, type PreviewState } from '../stores/context';
+	import { setStudioContext, type StudioContext } from '../stores/context';
 	import { initSnapshotStore } from '../stores/snapshot';
-	import { loadGraph, saveGraph, saveProject, getProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
+	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
 	import { getNodeVfs } from '../stores/vfs';
 	import { useAuth } from '$lib/stores/auth.svelte';
-	
-	import { ChatUI, type PreprocessParams, type DisplayMessage } from '@pubwiki/svelte-chat';
 	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
-	import type { VFSNodeData } from '../utils/types';
 
 	// ============================================================================
-	// Chat Configuration
+	// LLM Configuration (for internal generation)
 	// ============================================================================
 	
 	const pubchat = new PubChat({
@@ -99,20 +97,17 @@
 	let loaded = $state(false);
 	let saving = $state(false);
 	
-	// Publish modal state
-	let showPublishModal = $state(false);
-	
 	// Whether this project is a draft (not yet published)
 	let isDraft = $state(true);
+	
+	// Project name
+	let projectName = $state('');
 	
 	// Current project ID (from URL params)
 	let currentProjectId = $derived(data.projectId);
 	
 	// Historical tree state for preview mode
 	let historicalTree = $state<HistoricalTreeResult | null>(null);
-	
-	// Chat panel collapse state
-	let chatCollapsed = $state(false);
 	
 	// Auto-save debounce timer
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -861,6 +856,7 @@
 					// Ensure project exists and get its metadata
 					const project = await ensureProject(currentProjectId);
 					isDraft = project.isDraft;
+					projectName = project.name;
 					
 					// Set this project as the current project
 					setCurrentProject(currentProjectId);
@@ -909,189 +905,6 @@
 	});
 
 	// ============================================================================
-	// Chat Integration
-	// ============================================================================
-	
-	let currentHistoryId = $state<string | undefined>(undefined);
-	let lastUserMessageContent = $state<string>('');
-	let lastSelectedPromptIds = $state<string[]>([]);
-
-	async function preprocessChat(params: PreprocessParams): Promise<PreprocessParams> {
-		const selectedNodeIds = new Set(selectedNodes.map(n => n.id));
-		const selectedPromptNodes = nodes
-			.filter(n => selectedNodeIds.has(n.id) && n.type === 'prompt' && n.data.content);
-		
-		lastUserMessageContent = params.content;
-		lastSelectedPromptIds = selectedPromptNodes.map(n => n.id);
-
-		if (selectedPromptNodes.length === 0) {
-			return params;
-		}
-
-		// Resolve each prompt with reftag substitution
-		const resolvedPrompts: string[] = [];
-		for (const promptNode of selectedPromptNodes) {
-			const resolved = resolvePromptContent(
-				promptNode.id,
-				nodes,
-				edges,
-				new Set(),
-				[]
-			);
-			resolvedPrompts.push(resolved.content);
-		}
-		
-		const systemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
-		const systemMessage = createSystemMessage(systemPrompt, null);
-		
-		if (params.historyId) {
-			try {
-				await pubchat.deleteConversation(params.historyId, true);
-			} catch (e) { /* ignore */ }
-		}
-		
-		const historyIds = await pubchat.addConversation([systemMessage]);
-		currentHistoryId = historyIds[historyIds.length - 1];
-		
-		return { content: params.content, historyId: currentHistoryId };
-	}
-
-	async function onResponseReceived(message: DisplayMessage) {
-		const responseContent = message.blocks
-			.filter(b => b.type === 'text' || b.type === 'markdown')
-			.map(b => b.content)
-			.join('');
-
-		if (!responseContent) return;
-
-		// Collect all involved nodes (direct + indirect via reftags)
-		const collectAllInvolvedNodes = (nodeIds: string[], visited: Set<string> = new Set()): string[] => {
-			const result: string[] = [];
-			for (const nodeId of nodeIds) {
-				if (visited.has(nodeId)) continue;
-				visited.add(nodeId);
-				result.push(nodeId);
-				
-				const node = nodes.find(n => n.id === nodeId);
-				if (node && node.data.type === 'PROMPT') {
-					const refTagConnections = getRefTagConnections(nodeId, edges);
-					const connectedIds = Array.from(refTagConnections.values());
-					result.push(...collectAllInvolvedNodes(connectedIds, visited));
-				}
-			}
-			return result;
-		};
-
-		const allInvolvedPromptIds = collectAllInvolvedNodes(lastSelectedPromptIds);
-
-		// Sync all involved prompt nodes (saves snapshots if content changed)
-		let updatedNodes = await Promise.all(nodes.map(async n => {
-			if (allInvolvedPromptIds.includes(n.id) && n.data.type === 'PROMPT') {
-				const synced = await syncNode(n, edges);
-				return { ...n, data: synced };
-			}
-			return n;
-		}));
-		nodes = updatedNodes;
-
-		// Get direct prompt refs
-		const freshPromptNodes = nodes.filter(n => 
-			lastSelectedPromptIds.includes(n.id) && n.data.type === 'PROMPT'
-		);
-		const promptRefs: NodeRef[] = freshPromptNodes.map(n => ({ 
-			id: n.id, 
-			commit: n.data.commit 
-		}));
-
-		// Collect indirect refs via reftag resolution
-		const allPromptRefs: NodeRef[] = [];
-		for (const promptNode of freshPromptNodes) {
-			const resolved = resolvePromptContent(
-				promptNode.id, 
-				nodes, 
-				edges, 
-				new Set(), 
-				[]
-			);
-			allPromptRefs.push(...resolved.allPromptRefs);
-		}
-		
-		// Separate indirect refs
-		const directPromptIdSet = new Set(promptRefs.map(r => r.id));
-		const indirectPromptRefs = allPromptRefs.filter(
-			ref => !directPromptIdSet.has(ref.id)
-		);
-		
-		// Deduplicate indirect refs
-		const seenIndirect = new Set<string>();
-		const uniqueIndirectRefs = indirectPromptRefs.filter(ref => {
-			const key = `${ref.id}:${ref.commit}`;
-			if (seenIndirect.has(key)) return false;
-			seenIndirect.add(key);
-			return true;
-		});
-
-		// Create input node
-		const inputNodeData = await createInputNodeData(
-			lastUserMessageContent,
-			[...lastSelectedPromptIds],
-			promptRefs
-		);
-		const inputRef: NodeRef = { id: inputNodeData.id, commit: inputNodeData.commit };
-		
-		const inputNode: Node<StudioNodeData> = {
-			id: inputNodeData.id,
-			type: 'input',
-			data: inputNodeData,
-			position: { x: 0, y: 0 },
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-
-		// Create generated node with indirect refs
-		const generatedNodeData = await createGeneratedNodeData(
-			responseContent,
-			inputRef,
-			promptRefs,
-			uniqueIndirectRefs,
-			[inputRef, ...promptRefs]
-		);
-		const generatedNode: Node<StudioNodeData> = {
-			id: generatedNodeData.id,
-			type: 'generated',
-			data: generatedNodeData,
-			position: { x: 0, y: 0 },
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-
-		// Create edges
-		const newEdges: Edge[] = [
-			...lastSelectedPromptIds.map(sourceId => ({
-				id: `e-${sourceId}-${inputNodeData.id}`,
-				source: sourceId,
-				target: inputNodeData.id,
-			})),
-			{
-				id: `e-${inputNodeData.id}-${generatedNodeData.id}`,
-				source: inputNodeData.id,
-				target: generatedNodeData.id,
-			}
-		];
-
-		// Add nodes and edges, then position new nodes relative to their sources
-		const allNodes = [...nodes, inputNode, generatedNode];
-		const allEdges = [...edges, ...newEdges];
-		nodes = positionNewNodesFromSources([inputNodeData.id, generatedNodeData.id], allNodes, allEdges);
-		edges = allEdges;
-
-		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
-
-		lastUserMessageContent = '';
-		lastSelectedPromptIds = [];
-	}
-
-	// ============================================================================
 	// Context Menu
 	// ============================================================================
 	
@@ -1129,15 +942,11 @@
 		}
 	}
 
-	function handleBadgeClick(node: Node) {
+	function handleFocusNode(node: Node<StudioNodeData>) {
 		if (flowApi) {
 			flowApi.fitView({ nodes: [{ id: node.id }], duration: 400, padding: 0.2 });
 		}
 		setTimeout(() => focusNode(node.id), 100);
-	}
-
-	function handlePublishClick() {
-		showPublishModal = true;
 	}
 
 	async function handlePublish(
@@ -1150,8 +959,6 @@
 		if (!result.success) {
 			throw new Error(result.error || 'Failed to publish');
 		}
-		
-		showPublishModal = false;
 		
 		// If we have nodeIdMapping, update local state with new IDs
 		if (result.nodeIdMapping && Object.keys(result.nodeIdMapping).length > 0) {
@@ -1183,6 +990,7 @@
 				
 				// Update local state
 				isDraft = false;
+				projectName = metadata.name;
 				
 				// Set the new project as current project
 				setCurrentProject(newProjectId);
@@ -1219,219 +1027,147 @@
 			<Background />
 			<Controls />
 		</SvelteFlow>
-		
-		<!-- Publish / Go to Artifact Button (Top Right) -->
-		{#if !isDraft}
-			<a
-				href="/artifact/{currentProjectId}"
-				target="_blank"
-				rel="noopener noreferrer"
-				class="absolute top-4 right-4 z-10 px-3 py-2 bg-[#0969da] text-white border border-[#0969da] rounded-lg shadow-sm hover:bg-[#0860ca] transition-colors flex items-center gap-2 text-sm font-medium no-underline"
-				title="View published artifact"
-			>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-				</svg>
-				Go to Artifact
-			</a>
-		{:else}
-			<button
-				class="absolute top-4 right-4 z-10 px-3 py-2 bg-[#2da44e] text-white border border-[#2c974b] rounded-lg shadow-sm hover:bg-[#2c974b] transition-colors flex items-center gap-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-				onclick={handlePublishClick}
-				disabled={!auth.isAuthenticated}
-				title={auth.isAuthenticated ? "Publish artifact to PubWiki" : "Login required to publish"}
-			>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-				</svg>
-				Publish
-			</button>
-		{/if}
-		
-		<!-- Context Menu -->
-		{#if contextMenu}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<div 
-				class="fixed bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-50 min-w-40"
-				style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
-				onclick={(e) => e.stopPropagation()}
-			>
-				{#if contextMenu.isPaneMenu}
-					<!-- Pane Context Menu -->
-					<div class="relative">
-						<button
-							class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center justify-between gap-2"
-							onmouseenter={() => addNodeSubmenuOpen = true}
-						>
-							<span class="flex items-center gap-2">
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-								</svg>
-								Add Node
-							</span>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-							</svg>
-						</button>
-						
-						{#if addNodeSubmenuOpen}
-							<div 
-								class="absolute left-full top-0 ml-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1 min-w-36"
-								onmouseleave={() => addNodeSubmenuOpen = false}
-							>
-								<button
-									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-									onclick={addPromptNode}
-								>
-									<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-									</svg>
-									Prompt
-								</button>
-								<button
-									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-									onclick={addInputNode}
-								>
-									<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
-									</svg>
-									Input
-								</button>
-								<button
-									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-									onclick={addVFSNode}
-								>
-									<svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-									</svg>
-									VFS
-								</button>
-								<button
-									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-									onclick={addSandboxNode}
-								>
-									<svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-									</svg>
-									Sandbox
-								</button>
-								<button
-									class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-									onclick={addLoaderNode}
-								>
-									<svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-									</svg>
-									Loader
-								</button>
-							</div>
-						{/if}
-					</div>
-					
-					<button
-						class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-						onclick={handleAutoLayout}
-						onmouseenter={() => addNodeSubmenuOpen = false}
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-						</svg>
-						Auto Layout
-					</button>
-				{:else}
-					<!-- Node Context Menu -->
-					{#if contextMenu.nodeId}
-						<button
-							class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
-							onclick={() => {
-								if (contextMenu?.nodeId) {
-									editingNameNodeId = contextMenu.nodeId;
-								}
-								closeContextMenu();
-							}}
-						>
-							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-							</svg>
-							Edit Name
-						</button>
-					{/if}
-					<button
-						class="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 rounded-md flex items-center gap-2"
-						onclick={handleDeleteFromContextMenu}
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-						</svg>
-						{#if contextMenu.nodeId}
-							Delete Node
-						{:else}
-							Delete {selectedNodes.length} Node{selectedNodes.length > 1 ? 's' : ''}
-						{/if}
-					</button>
-				{/if}
-			</div>
-		{/if}
 	</div>
-
-	<!-- Floating Chat -->
-	<div class="h-full flex flex-col z-20 transition-all duration-300 {chatCollapsed ? 'w-0' : 'w-96'} relative">
-		<!-- Collapse/Expand toggle button -->
-		<button
-			class="absolute -left-8 top-1/2 -translate-y-1/2 w-8 h-16 bg-white border border-gray-200 border-r-0 rounded-l-lg shadow-md flex items-center justify-center hover:bg-gray-50 transition-colors z-30"
-			onclick={() => chatCollapsed = !chatCollapsed}
-			title={chatCollapsed ? 'Show chat' : 'Hide chat'}
-		>
-			<svg 
-				class="w-4 h-4 text-gray-500 transition-transform duration-300 {chatCollapsed ? 'rotate-180' : ''}" 
-				fill="none" 
-				stroke="currentColor" 
-				viewBox="0 0 24 24"
-			>
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-			</svg>
-		</button>
-		
-		<div class="h-full border-l border-gray-200 bg-white flex flex-col shadow-xl overflow-hidden {chatCollapsed ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300">
-			<div class="p-3 border-b border-gray-200 font-bold bg-gray-50 flex justify-between items-center">
-				<span>Assistant</span>
-			</div>
-			
-			<!-- Selected Nodes Badges -->
-			{#if selectedNodes.length > 0}
-				<div class="px-4 py-2 bg-white border-b border-gray-100 flex flex-wrap gap-2 min-h-12 items-center">
-					{#each selectedNodes as node (node.id)}
-						<button 
-							class="px-2 py-1 rounded-full text-xs font-medium border transition-all flex items-center gap-1
-							{editingNodeId === node.id 
-								? 'bg-blue-100 text-blue-700 border-blue-200 ring-1 ring-blue-300' 
-								: 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'}"
-							onclick={() => handleBadgeClick(node)}
-						>
-							<div class="w-1.5 h-1.5 rounded-full {editingNodeId === node.id ? 'bg-green-400' : 'bg-gray-400'}"></div>
-							{node.data.type || 'NODE'}
-						</button>
-					{/each}
-				</div>
-			{/if}
-
-			<div class="flex-1 overflow-hidden relative">
-				<ChatUI {pubchat} preprocess={preprocessChat} bind:historyId={currentHistoryId} {onResponseReceived} />
-			</div>
-		</div>
-	</div>
-</div>
-
-<!-- Publish Modal -->
-{#if showPublishModal}
-	<PublishModal
+	
+	<!-- Studio Sidebar (Left) - Outside SvelteFlow to avoid pointer event conflicts -->
+	<StudioSidebar
 		{nodes}
 		{edges}
-		onClose={() => showPublishModal = false}
+		{selectedNodes}
+		projectId={currentProjectId}
+		{projectName}
+		{isDraft}
+		isAuthenticated={auth.isAuthenticated}
+		onFocusNode={handleFocusNode}
 		onPublish={handlePublish}
 	/>
-{/if}
+	
+	<!-- Context Menu -->
+	{#if contextMenu}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div 
+			class="fixed bg-white rounded-lg shadow-lg border border-gray-200 p-1 z-50 min-w-40"
+			style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
+			onclick={(e) => e.stopPropagation()}
+		>
+			{#if contextMenu.isPaneMenu}
+				<!-- Pane Context Menu -->
+				<div class="relative">
+					<button
+						class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center justify-between gap-2"
+						onmouseenter={() => addNodeSubmenuOpen = true}
+					>
+						<span class="flex items-center gap-2">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+							</svg>
+							Add Node
+						</span>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+						</svg>
+					</button>
+					
+					{#if addNodeSubmenuOpen}
+						<div 
+							class="absolute left-full top-0 ml-1 bg-white rounded-lg shadow-lg border border-gray-200 p-1 min-w-36"
+							onmouseleave={() => addNodeSubmenuOpen = false}
+						>
+							<button
+								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+								onclick={addPromptNode}
+							>
+								<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+								Prompt
+							</button>
+							<button
+								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+								onclick={addInputNode}
+							>
+								<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
+								</svg>
+								Input
+							</button>
+							<button
+								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+								onclick={addVFSNode}
+							>
+								<svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+								</svg>
+								VFS
+							</button>
+							<button
+								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+								onclick={addSandboxNode}
+							>
+								<svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+								</svg>
+								Sandbox
+							</button>
+							<button
+								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+								onclick={addLoaderNode}
+							>
+								<svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+								</svg>
+								Loader
+							</button>
+						</div>
+					{/if}
+				</div>
+				
+				<button
+					class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+					onclick={handleAutoLayout}
+					onmouseenter={() => addNodeSubmenuOpen = false}
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+					</svg>
+					Auto Layout
+				</button>
+			{:else}
+				<!-- Node Context Menu -->
+				{#if contextMenu.nodeId}
+					<button
+						class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
+						onclick={() => {
+							if (contextMenu?.nodeId) {
+								editingNameNodeId = contextMenu.nodeId;
+							}
+							closeContextMenu();
+						}}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+						</svg>
+						Edit Name
+					</button>
+				{/if}
+				<button
+					class="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 rounded-md flex items-center gap-2"
+					onclick={handleDeleteFromContextMenu}
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+					</svg>
+					{#if contextMenu.nodeId}
+						Delete Node
+					{:else}
+						Delete {selectedNodes.length} Node{selectedNodes.length > 1 ? 's' : ''}
+					{/if}
+				</button>
+			{/if}
+		</div>
+	{/if}
+</div>
 
 <style>
 	:global(.svelte-flow__selection-wrapper) {
