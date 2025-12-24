@@ -12,12 +12,14 @@
 
 console.log('[SandboxBootstrap] Module loaded')
 
-import { SandboxMainService } from '@pubwiki/sandbox-service'
+import { SandboxMainService, newMessagePortRpcSession, RpcStub } from '@pubwiki/sandbox-service'
+import { SANDBOX_CLIENT_KEY, type ISandboxClient } from '@pubwiki/sandbox-client'
+import { SandboxClient } from './sandbox-client'
 import type { SandboxContext } from './sandbox-types'
-import { newMessagePortRpcSession, RpcStub } from 'capnweb'
 
 let sandboxContext: SandboxContext | null = null
 let mainRpcClient: RpcStub<SandboxMainService> | null = null
+let sandboxClient: ISandboxClient | null = null
 let vfsRpcPort: MessagePort | null = null
 let bootstrapClientId: string | null = null
 let userIframe: HTMLIFrameElement | null = null
@@ -282,23 +284,27 @@ async function reloadUserIframe(): Promise<void> {
 }
 
 /**
- * Expose sandbox context on window for user iframe to access directly
+ * Expose sandbox client on window for user iframe to access directly
  * Since bootstrap and user iframe are same-origin, user iframe can access
- * window.parent.__sandboxContextForClient__ directly without postMessage
+ * window.parent.__sandboxClient__ directly without postMessage
  */
-function exposeSandboxContext(): void {
+function exposeSandboxClient(): void {
   if (!mainRpcClient || !sandboxContext) {
-    console.error('[SandboxBootstrap] Cannot expose context: not initialized')
+    console.error('[SandboxBootstrap] Cannot expose client: not initialized')
     return
   }
   
-  ;(window as unknown as Record<string, unknown>).__sandboxContextForClient__ = {
-    rpcStub: mainRpcClient,
-    basePath: sandboxContext.basePath,
-    entryFile: sandboxContext.entryFile
-  }
+  // Create the client instance that wraps the RPC stub
+  sandboxClient = new SandboxClient(
+    mainRpcClient,
+    sandboxContext.basePath,
+    sandboxContext.entryFile
+  )
   
-  console.log('[SandboxBootstrap] Exposed sandbox context on window')
+  // Expose the client instance (not the raw RPC stub)
+  ;(window as unknown as Record<string, unknown>)[SANDBOX_CLIENT_KEY] = sandboxClient
+  
+  console.log('[SandboxBootstrap] Exposed sandbox client on window')
 }
 
 /**
@@ -328,8 +334,8 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
     })
     console.log('[SandboxBootstrap] HMR subscription established')
     
-    // Expose context for user iframe to access
-    exposeSandboxContext()
+    // Expose client for user iframe to access
+    exposeSandboxClient()
     
     // Register Service Worker
     await registerServiceWorker()

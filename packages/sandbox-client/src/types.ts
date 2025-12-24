@@ -2,22 +2,7 @@
  * Type definitions for @pubwiki/sandbox-client
  */
 
-import type { RpcStub, SandboxMainService, IHmrService } from '@pubwiki/sandbox-service'
-
-/**
- * Sandbox client context injected by sandbox-bootstrap
- * 
- * Since user iframe and bootstrap iframe are same-origin,
- * we can directly share the RPC stub reference instead of creating new channels.
- */
-export interface SandboxContext {
-  /** Shared RPC stub from bootstrap - directly usable */
-  rpcStub: RpcStub<SandboxMainService>
-  /** Base path within the VFS */
-  basePath: string
-  /** Entry file path */
-  entryFile: string
-}
+import type { RpcStub, IHmrService } from '@pubwiki/sandbox-service'
 
 /**
  * Options for initializing the sandbox client
@@ -29,19 +14,27 @@ export interface InitOptions {
 
 /**
  * Sandbox client interface
+ * 
+ * This is the interface that user code interacts with.
+ * The actual implementation is provided by sandbox-site.
  */
 export interface ISandboxClient {
   /**
-   * Access to the HMR service
+   * Get the base path for this sandbox
    */
-  readonly hmr: RpcStub<IHmrService>
+  readonly basePath: string
+
+  /**
+   * Get the entry file for this sandbox
+   */
+  readonly entryFile: string
 
   /**
    * Get a custom service by ID
    * @param serviceId - The unique service identifier
-   * @returns Service proxy, or undefined if not available
+   * @returns Promise resolving to service proxy, or undefined if not available
    */
-  getService(serviceId: string): unknown
+  getService(serviceId: string): Promise<unknown>
 
   /**
    * List all available custom services
@@ -57,6 +50,6 @@ export interface ISandboxClient {
 }
 
 /**
- * Global sandbox context storage key
+ * Global sandbox client storage key (used by bootstrap)
  */
-export const SANDBOX_CONTEXT_KEY = '__sandboxContext__'
+export const SANDBOX_CLIENT_KEY = '__sandboxClient__'

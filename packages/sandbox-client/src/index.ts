@@ -10,15 +10,16 @@
  * 
  * Architecture:
  * - User iframe and bootstrap iframe are same-origin
- * - Bootstrap directly injects the RPC stub reference into user iframe's window
- * - No MessagePort transfer needed - simple JavaScript object sharing
+ * - Bootstrap creates a SandboxClient instance and exposes it on window
+ * - User code retrieves the client via initSandboxClient()
+ * - No direct RPC stub access needed - everything goes through ISandboxClient
  * 
  * @example
  * ```typescript
  * import { initSandboxClient } from '@pubwiki/sandbox-client'
  * 
- * // Initialize the client (retrieves injected context from bootstrap)
- * const client = await initSandboxClient()
+ * // Initialize the client (retrieves from bootstrap)
+ * const client = initSandboxClient()
  * 
  * // Access built-in HMR service
  * client.hmr.subscribe((update) => {
@@ -43,15 +44,14 @@
 // Main initialization function
 export { initSandboxClient, isSandboxEnvironment } from './init'
 
-// Client class for advanced usage
-export { SandboxClient } from './client'
-
 // Types
 export type {
   ISandboxClient,
-  SandboxContext,
   InitOptions
 } from './types'
 
+export { SANDBOX_CLIENT_KEY } from './types'
+
 // Re-export useful types from sandbox-service
 export type { RpcStub, IHmrService, HmrUpdate } from '@pubwiki/sandbox-service'
+
