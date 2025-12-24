@@ -1,6 +1,6 @@
 {
   "name": "@pubwiki/sandbox-client",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Client SDK for sandbox applications to access main site services",
   "type": "module",
   "main": "./dist/index.js",
