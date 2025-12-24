@@ -282,37 +282,23 @@ async function reloadUserIframe(): Promise<void> {
 }
 
 /**
- * Handle messages from user iframe
+ * Expose sandbox context on window for user iframe to access directly
+ * Since bootstrap and user iframe are same-origin, user iframe can access
+ * window.parent.__sandboxContextForClient__ directly without postMessage
  */
-function handleUserIframeMessage(event: MessageEvent): void {
-  const message = event.data
-  
-  if (message?.type === 'REQUEST_SANDBOX_CONTEXT') {
-    console.log('[SandboxBootstrap] User iframe requesting sandbox context')
-    
-    if (!mainRpcClient || !sandboxContext) {
-      console.error('[SandboxBootstrap] Cannot provide context: not initialized')
-      // Send error response
-      userIframe?.contentWindow?.postMessage({
-        type: 'SANDBOX_CONTEXT_RESPONSE',
-        error: 'Sandbox not initialized'
-      }, '*')
-      return
-    }
-    
-    // Send context to user iframe
-    // Since same-origin, we can pass the RPC stub reference directly
-    userIframe?.contentWindow?.postMessage({
-      type: 'SANDBOX_CONTEXT_RESPONSE',
-      context: {
-        rpcStub: mainRpcClient,
-        basePath: sandboxContext.basePath,
-        entryFile: sandboxContext.entryFile
-      }
-    }, '*')
-    
-    console.log('[SandboxBootstrap] Sent sandbox context to user iframe')
+function exposeSandboxContext(): void {
+  if (!mainRpcClient || !sandboxContext) {
+    console.error('[SandboxBootstrap] Cannot expose context: not initialized')
+    return
   }
+  
+  ;(window as unknown as Record<string, unknown>).__sandboxContextForClient__ = {
+    rpcStub: mainRpcClient,
+    basePath: sandboxContext.basePath,
+    entryFile: sandboxContext.entryFile
+  }
+  
+  console.log('[SandboxBootstrap] Exposed sandbox context on window')
 }
 
 /**
@@ -341,6 +327,9 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
       }
     })
     console.log('[SandboxBootstrap] HMR subscription established')
+    
+    // Expose context for user iframe to access
+    exposeSandboxContext()
     
     // Register Service Worker
     await registerServiceWorker()
@@ -413,9 +402,8 @@ navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
 window.addEventListener('message', (event: MessageEvent) => {
   const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173'
   
-  // Handle messages from user iframe
+  // Ignore messages from user iframe (context is accessed directly via parent window)
   if (userIframe && event.source === userIframe.contentWindow) {
-    handleUserIframeMessage(event)
     return
   }
   

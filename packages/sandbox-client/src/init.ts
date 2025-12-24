@@ -3,8 +3,9 @@
  * 
  * Handles the initialization of the sandbox client.
  * 
- * Since user iframe and bootstrap iframe are same-origin, the bootstrap
- * can directly pass the RPC stub reference via postMessage.
+ * Since user iframe and bootstrap iframe are same-origin, we can directly
+ * access the RPC stub reference from parent window. The bootstrap guarantees
+ * that the context is exposed before the user iframe is loaded.
  */
 
 import { SandboxClient } from './client'
@@ -12,14 +13,17 @@ import type { ISandboxClient, SandboxContext, InitOptions } from './types'
 
 /** Global key for sandbox context storage */
 const SANDBOX_CONTEXT_KEY = '__sandboxContext__'
+/** Key used by bootstrap to expose context */
+const BOOTSTRAP_CONTEXT_KEY = '__sandboxContextForClient__'
 
 /**
  * Initialize the sandbox client
  * 
- * This function requests the sandbox context from the bootstrap iframe
- * via postMessage. The context includes a shared RPC stub reference.
+ * This function retrieves the sandbox context from the bootstrap iframe.
+ * Since both iframes are same-origin, we can directly access parent.window.
+ * The context is guaranteed to be available when the user iframe loads.
  * 
- * @param options - Initialization options
+ * @param options - Initialization options (timeout is kept for backwards compatibility)
  * @returns A promise that resolves to the sandbox client
  * 
  * @example
@@ -41,55 +45,45 @@ const SANDBOX_CONTEXT_KEY = '__sandboxContext__'
  * }
  * ```
  */
-export async function initSandboxClient(options: InitOptions = {}): Promise<ISandboxClient> {
-  const { timeout = 5000 } = options
-
-  // Check if context is already available (from a previous request)
+export async function initSandboxClient(_options: InitOptions = {}): Promise<ISandboxClient> {
+  // Check if context is already cached
   const existingContext = (window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] as SandboxContext | undefined
   if (existingContext) {
     return new SandboxClient(existingContext)
   }
 
-  // Request context from bootstrap iframe via postMessage
-  return new Promise<ISandboxClient>((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
-      window.removeEventListener('message', handleMessage)
-      reject(new Error(`Sandbox client initialization timeout after ${timeout}ms. Make sure this code runs inside a sandbox user iframe.`))
-    }, timeout)
+  // Get context directly from parent window (same-origin access)
+  // Bootstrap guarantees this is available before user iframe loads
+  const context = getContextFromParent()
+  
+  // Cache for reuse
+  ;(window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] = context
+  
+  return new SandboxClient(context)
+}
 
-    const handleMessage = (event: MessageEvent) => {
-      // Only accept messages from parent (bootstrap iframe)
-      if (event.source !== window.parent) {
-        return
-      }
-      
-      if (event.data?.type === 'SANDBOX_CONTEXT_RESPONSE') {
-        clearTimeout(timeoutId)
-        window.removeEventListener('message', handleMessage)
-        
-        if (event.data.error) {
-          reject(new Error(`Failed to get sandbox context: ${event.data.error}`))
-          return
-        }
-        
-        const context = event.data.context as SandboxContext
-        if (!context?.rpcStub) {
-          reject(new Error('Invalid sandbox context: missing rpcStub'))
-          return
-        }
-        
-        // Cache context for potential reuse
-        ;(window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] = context
-        
-        resolve(new SandboxClient(context))
-      }
+/**
+ * Get context from parent window (same-origin access)
+ * @throws Error if context is not available
+ */
+function getContextFromParent(): SandboxContext {
+  try {
+    // Same-origin allows direct access to parent window
+    const parentWindow = window.parent as unknown as Record<string, unknown>
+    const context = parentWindow[BOOTSTRAP_CONTEXT_KEY] as SandboxContext | undefined
+    
+    if (context?.rpcStub) {
+      return context
     }
-
-    window.addEventListener('message', handleMessage)
-
-    // Request context from parent (bootstrap iframe)
-    window.parent.postMessage({ type: 'REQUEST_SANDBOX_CONTEXT' }, '*')
-  })
+    
+    throw new Error('Sandbox context not found on parent window. Make sure this code runs inside a sandbox user iframe.')
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('Sandbox context')) {
+      throw e
+    }
+    // Cross-origin access would throw SecurityError
+    throw new Error(`Cannot access parent window (cross-origin?): ${e}`)
+  }
 }
 
 /**
@@ -98,5 +92,16 @@ export async function initSandboxClient(options: InitOptions = {}): Promise<ISan
  * @returns true if running inside a sandbox with client context available
  */
 export function isSandboxEnvironment(): boolean {
-  return typeof (window as any).__sandboxContext__ !== 'undefined'
+  // Check cached context
+  if ((window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY]) {
+    return true
+  }
+  // Try to access parent context
+  try {
+    const parentWindow = window.parent as unknown as Record<string, unknown>
+    const context = parentWindow[BOOTSTRAP_CONTEXT_KEY] as SandboxContext | undefined
+    return !!context?.rpcStub
+  } catch {
+    return false
+  }
 }
