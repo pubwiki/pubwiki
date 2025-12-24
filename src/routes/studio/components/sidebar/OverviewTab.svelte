@@ -21,7 +21,8 @@
 			GENERATED: [],
 			VFS: [],
 			SANDBOX: [],
-			LOADER: []
+			LOADER: [],
+			STATE: []
 		};
 		
 		for (const node of nodes) {
@@ -54,6 +55,8 @@
 				return { label: 'Sandboxes', color: 'orange', icon: 'monitor' };
 			case 'LOADER':
 				return { label: 'Loaders', color: 'purple', icon: 'database' };
+			case 'STATE':
+				return { label: 'States', color: 'teal', icon: 'cube' };
 			default:
 				return { label: type, color: 'gray', icon: 'cube' };
 		}
@@ -78,6 +81,7 @@
 			green: { bg: 'bg-green-500', text: 'text-green-600', border: 'border-green-200', light: 'bg-green-50' },
 			indigo: { bg: 'bg-indigo-500', text: 'text-indigo-600', border: 'border-indigo-200', light: 'bg-indigo-50' },
 			orange: { bg: 'bg-orange-500', text: 'text-orange-600', border: 'border-orange-200', light: 'bg-orange-50' },
+			teal: { bg: 'bg-teal-500', text: 'text-teal-600', border: 'border-teal-200', light: 'bg-teal-50' },
 			gray: { bg: 'bg-gray-500', text: 'text-gray-600', border: 'border-gray-200', light: 'bg-gray-50' }
 		};
 		return colors[color] || colors.gray;

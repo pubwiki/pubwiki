@@ -150,9 +150,32 @@ export interface LoaderNodeData extends BaseNodeData<string> {
 }
 
 /**
+ * State node data - represents an RDF triple store for Lua State API
+ * Content is an empty string (actual data is stored in quadstore via IndexedDB)
+ * Implements RDFStore interface from @pubwiki/lua
+ */
+export interface StateNodeData extends BaseNodeData<string> {
+  type: 'STATE'
+  /**
+   * Whether the RDF store is currently open and ready
+   */
+  isReady: boolean
+  /**
+   * Error state if store initialization failed
+   */
+  error: string | null
+  /**
+   * Number of triples currently in the store (for display)
+   */
+  tripleCount: number
+  /** Index signature for xyflow compatibility */
+  [key: string]: unknown
+}
+
+/**
  * Union type for all node data types
  */
-export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData | SandboxNodeData | LoaderNodeData
+export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData | SandboxNodeData | LoaderNodeData | StateNodeData
 
 // ============================================================================
 // Utility Functions
@@ -309,6 +332,28 @@ export async function createLoaderNodeData(
     config,
     isActive: false,
     error: null
+  }
+}
+
+/**
+ * Create a new State node data object (RDF triple store)
+ */
+export async function createStateNodeData(
+  name: string = 'State'
+): Promise<StateNodeData> {
+  const id = crypto.randomUUID()
+  const commit = await generateCommitHash('')
+  return {
+    id,
+    name,
+    type: 'STATE',
+    commit,
+    snapshotRefs: [],
+    parents: [],
+    content: '',
+    isReady: false,
+    error: null,
+    tripleCount: 0
   }
 }
 

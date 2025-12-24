@@ -15,6 +15,7 @@ export { default as GeneratedNode } from './GeneratedNode.svelte';
 export { default as VFSNode } from './VFSNode.svelte';
 export { default as SandboxNode } from './SandboxNode.svelte';
 export { default as LoaderNode } from './LoaderNode.svelte';
+export { default as StateNode } from './StateNode.svelte';
 
 // Expanded views
 export { default as VFSExpandedView } from './VFSExpandedView.svelte';

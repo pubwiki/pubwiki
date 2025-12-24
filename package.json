@@ -23,6 +23,7 @@
 		"@sveltejs/vite-plugin-svelte": "^6.2.1",
 		"@tailwindcss/typography": "^0.5.19",
 		"@tailwindcss/vite": "^4.1.17",
+		"@types/n3": "^1.26.1",
 		"@types/node": "^22",
 		"@vitest/browser-playwright": "^4.0.10",
 		"eslint": "^9.39.1",
@@ -45,9 +46,10 @@
 	"dependencies": {
 		"@monaco-editor/loader": "^1.7.0",
 		"@pubwiki/api": "file:../pubwiki-backend/packages/api",
-		"@pubwiki/pubwiki-lua": "file:../pubwiki-lua/pubwiki-lua",
 		"@pubwiki/bundler": "workspace:*",
 		"@pubwiki/chat": "workspace:*",
+		"@pubwiki/lua": "workspace:*",
+		"@pubwiki/pubwiki-lua": "file:../pubwiki-lua/pubwiki-lua",
 		"@pubwiki/sandbox-host": "workspace:*",
 		"@pubwiki/svelte-chat": "workspace:*",
 		"@pubwiki/vfs": "workspace:*",
@@ -55,12 +57,15 @@
 		"@xyflow/svelte": "^1.5.0",
 		"@zenfs/core": "^2.4.4",
 		"@zenfs/dom": "^1.2.6",
+		"browser-level": "^3.0.0",
 		"buffer": "^6.0.3",
 		"dagre": "^0.8.5",
 		"dexie": "^4.2.1",
 		"isomorphic-git": "^1.36.1",
 		"jszip": "^3.10.1",
 		"marked": "^17.0.1",
-		"monaco-editor": "^0.55.1"
+		"monaco-editor": "^0.55.1",
+		"n3": "^1.26.0",
+		"quadstore": "^15.4.1"
 	}
 }

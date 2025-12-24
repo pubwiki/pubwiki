@@ -12,6 +12,9 @@ export type {
   InputNodeData,
   GeneratedNodeData,
   VFSNodeData,
+  SandboxNodeData,
+  LoaderNodeData,
+  StateNodeData,
   NodeRef,
   NodeSnapshot,
   SnapshotEdge
@@ -22,6 +25,9 @@ export {
   createInputNodeData,
   createGeneratedNodeData,
   createVFSNodeData,
+  createSandboxNodeData,
+  createLoaderNodeData,
+  createStateNodeData,
   restoreSnapshot,
   syncNode,
   hasVersionHistory,
@@ -79,6 +85,14 @@ export {
   type GraphStateResult
 } from './stores/live-query.svelte';
 export { setStudioContext, getStudioContext } from './stores/context';
+
+// RDF Store (for State nodes)
+export {
+  QuadstoreRDFStore,
+  getNodeRDFStore,
+  closeNodeRDFStore,
+  closeAllRDFStores
+} from './stores/rdf';
 
 // Import utilities
 export type { ContentFetcher } from './utils/import';
