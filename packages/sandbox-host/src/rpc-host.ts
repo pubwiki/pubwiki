@@ -17,6 +17,7 @@ import type {
   ServiceDefinition
 } from './types'
 export type { MainRpcHost, VfsRpcHost } from './types'
+import type { SandboxMainService } from '@pubwiki/sandbox-service'
 import type { Vfs } from '@pubwiki/vfs'
 import type { z } from 'zod/v4'
 import { VfsServiceImpl, type VfsServiceConfig } from './services/vfs-service'
@@ -92,14 +93,6 @@ export function createVfsRpcHost(
 // =============================================================================
 
 /**
- * Base interface for main services
- * Can be extended with custom services
- */
-interface IMainRpcServices {
-  hmr: HmrServiceImpl
-}
-
-/**
  * Internal function to register a custom service on a MainRpcServices instance.
  * This is NOT exposed via RPC because it's a standalone function, not a class method.
  * 
@@ -144,12 +137,13 @@ function createMainRpcServicesClass(): typeof MainRpcServicesBase {
 /**
  * Main page services container (HMR + extensible)
  * 
+ * Implements SandboxMainService interface from @pubwiki/sandbox-service.
  * Custom services are exposed as dynamic getters on the prototype so they can be accessed via RPC.
  * capnweb checks Object.hasOwn() to detect instance properties - only prototype getters work.
  * For example, if a service is registered as 'counter', it can be accessed as
  * `rpcSession.counter.methodName()` from the client side.
  */
-class MainRpcServicesBase extends RpcTarget implements IMainRpcServices {
+class MainRpcServicesBase extends RpcTarget implements SandboxMainService {
   private hmrService: HmrServiceImpl
   customServicesMap: Map<string, RpcTarget> = new Map()
   serviceSchemas: Map<string, z.ZodType> = new Map()
@@ -181,6 +175,13 @@ class MainRpcServicesBase extends RpcTarget implements IMainRpcServices {
    */
   getService(id: string): RpcTarget | undefined {
     return this.customServicesMap.get(id)
+  }
+
+  /**
+   * List all registered custom service IDs
+   */
+  listServices(): string[] {
+    return Array.from(this.customServicesMap.keys())
   }
 
   /**

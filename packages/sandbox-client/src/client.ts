@@ -11,24 +11,18 @@ import type { RpcStub, SandboxMainService, IHmrService } from '@pubwiki/sandbox-
 import type { ISandboxClient, SandboxContext } from './types'
 
 /**
- * Internal RPC session type extending SandboxMainService with dynamic service access
- */
-type ExtendedSession = RpcStub<SandboxMainService> & Record<string, unknown>
-
-/**
  * Sandbox client implementation
  * 
  * Uses the shared RPC stub from bootstrap iframe (same-origin sharing).
  */
 export class SandboxClient implements ISandboxClient {
-  private session: ExtendedSession
+  private session: RpcStub<SandboxMainService>
   private context: SandboxContext
-  private serviceListCache: string[] | null = null
 
   constructor(context: SandboxContext) {
     this.context = context
     // Directly use the shared RPC stub from bootstrap
-    this.session = context.rpcStub as ExtendedSession
+    this.session = context.rpcStub
   }
 
   /**
@@ -67,8 +61,7 @@ export class SandboxClient implements ISandboxClient {
    * ```
    */
   getService(serviceId: string): unknown {
-    // Services are exposed as properties on the RPC session
-    return this.session[serviceId]
+    return this.session.getService(serviceId)
   }
 
   /**
@@ -77,23 +70,11 @@ export class SandboxClient implements ISandboxClient {
    * @returns Array of service IDs
    */
   async listServices(): Promise<string[]> {
-    // If we have a cached list, return it
-    if (this.serviceListCache !== null) {
-      return this.serviceListCache
-    }
-
-    // Try to call the listServices method if available
     try {
-      if (typeof this.session.listServices === 'function') {
-        const services = await this.session.listServices()
-        this.serviceListCache = services
-        return services
-      }
+      return await this.session.listServices()
     } catch {
-      // listServices not available, return empty array
+      return []
     }
-
-    return []
   }
 
   /**
@@ -104,13 +85,5 @@ export class SandboxClient implements ISandboxClient {
   async hasService(serviceId: string): Promise<boolean> {
     const services = await this.listServices()
     return services.includes(serviceId)
-  }
-
-  /**
-   * Clear the service list cache
-   * Call this if services might have changed
-   */
-  clearServiceCache(): void {
-    this.serviceListCache = null
   }
 }

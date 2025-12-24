@@ -11,8 +11,6 @@
 import { SandboxClient } from './client'
 import type { ISandboxClient, SandboxContext, InitOptions } from './types'
 
-/** Global key for sandbox context storage */
-const SANDBOX_CONTEXT_KEY = '__sandboxContext__'
 /** Key used by bootstrap to expose context */
 const BOOTSTRAP_CONTEXT_KEY = '__sandboxContextForClient__'
 
@@ -23,7 +21,7 @@ const BOOTSTRAP_CONTEXT_KEY = '__sandboxContextForClient__'
  * Since both iframes are same-origin, we can directly access parent.window.
  * The context is guaranteed to be available when the user iframe loads.
  * 
- * @param options - Initialization options (timeout is kept for backwards compatibility)
+ * @param _options - Initialization options (kept for backwards compatibility)
  * @returns A promise that resolves to the sandbox client
  * 
  * @example
@@ -46,19 +44,9 @@ const BOOTSTRAP_CONTEXT_KEY = '__sandboxContextForClient__'
  * ```
  */
 export async function initSandboxClient(_options: InitOptions = {}): Promise<ISandboxClient> {
-  // Check if context is already cached
-  const existingContext = (window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] as SandboxContext | undefined
-  if (existingContext) {
-    return new SandboxClient(existingContext)
-  }
-
   // Get context directly from parent window (same-origin access)
   // Bootstrap guarantees this is available before user iframe loads
   const context = getContextFromParent()
-  
-  // Cache for reuse
-  ;(window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] = context
-  
   return new SandboxClient(context)
 }
 
@@ -92,11 +80,6 @@ function getContextFromParent(): SandboxContext {
  * @returns true if running inside a sandbox with client context available
  */
 export function isSandboxEnvironment(): boolean {
-  // Check cached context
-  if ((window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY]) {
-    return true
-  }
-  // Try to access parent context
   try {
     const parentWindow = window.parent as unknown as Record<string, unknown>
     const context = parentWindow[BOOTSTRAP_CONTEXT_KEY] as SandboxContext | undefined

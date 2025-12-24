@@ -26,13 +26,13 @@ export interface PublishMetadata {
 
 /**
  * Node type mapping from Studio to API
- * SANDBOX nodes are filtered out before publishing, so they don't need mapping
+ * SANDBOX, LOADER, and STATE nodes are filtered out before publishing, so they don't need mapping
  */
 type ApiNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS';
 
 function mapNodeType(type: StudioNodeData['type']): ApiNodeType | null {
-	if (type === 'SANDBOX') {
-		return null; // SANDBOX nodes should not be published
+	if (type === 'SANDBOX' || type === 'LOADER' || type === 'STATE') {
+		return null; // SANDBOX, LOADER, and STATE nodes should not be published
 	}
 	return type;
 }
