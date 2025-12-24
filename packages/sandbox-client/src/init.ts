@@ -4,8 +4,7 @@
  * Handles the initialization of the sandbox client.
  * 
  * Since user iframe and bootstrap iframe are same-origin, the bootstrap
- * can directly inject the RPC stub reference into the user iframe's window.
- * No MessagePort transfer needed.
+ * can directly pass the RPC stub reference via postMessage.
  */
 
 import { SandboxClient } from './client'
@@ -17,8 +16,8 @@ const SANDBOX_CONTEXT_KEY = '__sandboxContext__'
 /**
  * Initialize the sandbox client
  * 
- * This function retrieves the sandbox context that was injected by the
- * sandbox bootstrap. The context includes a shared RPC stub reference.
+ * This function requests the sandbox context from the bootstrap iframe
+ * via postMessage. The context includes a shared RPC stub reference.
  * 
  * @param options - Initialization options
  * @returns A promise that resolves to the sandbox client
@@ -45,28 +44,51 @@ const SANDBOX_CONTEXT_KEY = '__sandboxContext__'
 export async function initSandboxClient(options: InitOptions = {}): Promise<ISandboxClient> {
   const { timeout = 5000 } = options
 
-  // Check if context is already available (injected by bootstrap)
+  // Check if context is already available (from a previous request)
   const existingContext = (window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] as SandboxContext | undefined
   if (existingContext) {
     return new SandboxClient(existingContext)
   }
 
-  // Wait for context to be injected
-  // Bootstrap will inject the context directly into window when user iframe loads
+  // Request context from bootstrap iframe via postMessage
   return new Promise<ISandboxClient>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
+      window.removeEventListener('message', handleMessage)
       reject(new Error(`Sandbox client initialization timeout after ${timeout}ms. Make sure this code runs inside a sandbox user iframe.`))
     }, timeout)
 
-    // Poll for context injection (bootstrap injects it synchronously when iframe loads)
-    const checkInterval = setInterval(() => {
-      const context = (window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] as SandboxContext | undefined
-      if (context) {
-        clearInterval(checkInterval)
+    const handleMessage = (event: MessageEvent) => {
+      // Only accept messages from parent (bootstrap iframe)
+      if (event.source !== window.parent) {
+        return
+      }
+      
+      if (event.data?.type === 'SANDBOX_CONTEXT_RESPONSE') {
         clearTimeout(timeoutId)
+        window.removeEventListener('message', handleMessage)
+        
+        if (event.data.error) {
+          reject(new Error(`Failed to get sandbox context: ${event.data.error}`))
+          return
+        }
+        
+        const context = event.data.context as SandboxContext
+        if (!context?.rpcStub) {
+          reject(new Error('Invalid sandbox context: missing rpcStub'))
+          return
+        }
+        
+        // Cache context for potential reuse
+        ;(window as unknown as Record<string, unknown>)[SANDBOX_CONTEXT_KEY] = context
+        
         resolve(new SandboxClient(context))
       }
-    }, 50)
+    }
+
+    window.addEventListener('message', handleMessage)
+
+    // Request context from parent (bootstrap iframe)
+    window.parent.postMessage({ type: 'REQUEST_SANDBOX_CONTEXT' }, '*')
   })
 }
 

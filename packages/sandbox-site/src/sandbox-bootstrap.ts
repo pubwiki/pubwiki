@@ -255,9 +255,7 @@ async function loadUserIframe(entryFile: string): Promise<void> {
   })
   
   console.log('[SandboxBootstrap] User iframe content loaded')
-  
-  // Inject sandbox context into user iframe for @pubwiki/sandbox-client
-  injectSandboxContextToUserIframe()
+  // Context will be provided on-demand when user iframe calls initSandboxClient()
 }
 
 /**
@@ -284,28 +282,37 @@ async function reloadUserIframe(): Promise<void> {
 }
 
 /**
- * Inject sandbox context into user iframe
- * 
- * Since user iframe and bootstrap are same-origin, we can directly
- * inject the RPC stub reference into the user iframe's window object.
- * This is much simpler than MessagePort transfer.
+ * Handle messages from user iframe
  */
-function injectSandboxContextToUserIframe(): void {
-  if (!userIframe?.contentWindow || !mainRpcClient || !sandboxContext) {
-    console.error('[SandboxBootstrap] Cannot inject context: not ready')
-    return
+function handleUserIframeMessage(event: MessageEvent): void {
+  const message = event.data
+  
+  if (message?.type === 'REQUEST_SANDBOX_CONTEXT') {
+    console.log('[SandboxBootstrap] User iframe requesting sandbox context')
+    
+    if (!mainRpcClient || !sandboxContext) {
+      console.error('[SandboxBootstrap] Cannot provide context: not initialized')
+      // Send error response
+      userIframe?.contentWindow?.postMessage({
+        type: 'SANDBOX_CONTEXT_RESPONSE',
+        error: 'Sandbox not initialized'
+      }, '*')
+      return
+    }
+    
+    // Send context to user iframe
+    // Since same-origin, we can pass the RPC stub reference directly
+    userIframe?.contentWindow?.postMessage({
+      type: 'SANDBOX_CONTEXT_RESPONSE',
+      context: {
+        rpcStub: mainRpcClient,
+        basePath: sandboxContext.basePath,
+        entryFile: sandboxContext.entryFile
+      }
+    }, '*')
+    
+    console.log('[SandboxBootstrap] Sent sandbox context to user iframe')
   }
-  
-  const iframeWindow = userIframe.contentWindow as unknown as Record<string, unknown>
-  
-  // Inject the context directly into user iframe's window
-  iframeWindow.__sandboxContext__ = {
-    rpcStub: mainRpcClient,
-    basePath: sandboxContext.basePath,
-    entryFile: sandboxContext.entryFile
-  }
-  
-  console.log('[SandboxBootstrap] Injected sandbox context into user iframe')
 }
 
 /**
@@ -406,8 +413,9 @@ navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
 window.addEventListener('message', (event: MessageEvent) => {
   const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173'
   
-  // Ignore messages from user iframe (no longer needed - context is injected directly)
+  // Handle messages from user iframe
   if (userIframe && event.source === userIframe.contentWindow) {
+    handleUserIframeMessage(event)
     return
   }
   
