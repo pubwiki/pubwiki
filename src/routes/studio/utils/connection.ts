@@ -53,10 +53,18 @@ export const HandleId = {
   VFS_INPUT: 'vfs-input',
   /** Service input on Sandbox node */
   SERVICE_INPUT: 'service-input',
-  /** Prompt input on Input node */
+  /** Prompt input on Input node (DEPRECATED - use SYSTEM_TAG instead) */
   PROMPT_INPUT: 'prompt-input',
-  /** RefTag handle prefix for dynamic handles */
+  /** RefTag handle prefix for dynamic handles (for prompts) */
   REFTAG_PREFIX: 'reftag-',
+  /** System tag for Input node's prompt connection (always present) */
+  SYSTEM_TAG: 'tag-system',
+  /** Mountpoint tag prefix for VFS mounting (e.g., tag-mount-/dir1) */
+  MOUNTPOINT_PREFIX: 'tag-mount-',
+  /** Tag handle prefix for generic tagged handles */
+  TAG_PREFIX: 'tag-',
+  /** Add mount handle - when VFS connects here, a new mountpoint is created */
+  ADD_MOUNT: 'add-mount',
 } as const;
 
 // ============================================================================
@@ -148,18 +156,27 @@ export const NodeRegistry: Record<string, NodeSpec> = {
     label: 'Input',
     inputs: [
       {
-        id: HandleId.PROMPT_INPUT,
-        label: 'Prompts',
+        id: HandleId.TAG_PREFIX,
+        label: 'Tag',
         dataType: DataType.STRING,
-        cardinality: Cardinality.MANY,
+        cardinality: Cardinality.OPTIONAL,
+        dynamic: true,
         colorClass: 'bg-blue-400',
       },
       {
-        id: HandleId.VFS_INPUT,
-        label: 'VFS',
+        id: HandleId.MOUNTPOINT_PREFIX,
+        label: 'Mountpoint',
         dataType: DataType.VFS,
         cardinality: Cardinality.OPTIONAL,
+        dynamic: true,
         colorClass: 'bg-indigo-400',
+      },
+      {
+        id: HandleId.ADD_MOUNT,
+        label: 'Add Mount',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.MANY,
+        colorClass: 'bg-indigo-300',
       },
     ],
     outputs: [
@@ -290,13 +307,21 @@ export function getHandleSpec(
   if (exact) return exact;
 
   // Dynamic handle match (e.g., reftag-xxx matches reftag- prefix)
+  // Find the longest matching prefix to ensure more specific prefixes are matched first
+  // e.g., 'tag-mount-/path' should match 'tag-mount-' not 'tag-'
+  let bestMatch: HandleSpec | undefined;
+  let bestMatchLength = 0;
+  
   for (const handle of handles) {
     if (handle.dynamic && handleId.startsWith(handle.id)) {
-      return handle;
+      if (handle.id.length > bestMatchLength) {
+        bestMatch = handle;
+        bestMatchLength = handle.id.length;
+      }
     }
   }
 
-  return undefined;
+  return bestMatch;
 }
 
 // ============================================================================
@@ -322,6 +347,56 @@ export function getRefTagName(handleId: string): string {
  */
 export function createRefTagHandleId(tagName: string): string {
   return `${HandleId.REFTAG_PREFIX}${tagName}`;
+}
+
+// ============================================================================
+// Tag Handle Helpers
+// ============================================================================
+
+/**
+ * Check if a handle ID is a tag handle (for Input node)
+ */
+export function isTagHandle(handleId: string | null | undefined): boolean {
+  return typeof handleId === 'string' && handleId.startsWith(HandleId.TAG_PREFIX);
+}
+
+/**
+ * Extract tag name from handle ID (e.g., 'tag-system' -> 'system')
+ */
+export function getTagName(handleId: string): string {
+  return handleId.slice(HandleId.TAG_PREFIX.length);
+}
+
+/**
+ * Create tag handle ID from tag name
+ */
+export function createTagHandleId(tagName: string): string {
+  return `${HandleId.TAG_PREFIX}${tagName}`;
+}
+
+// ============================================================================
+// Mountpoint Handle Helpers
+// ============================================================================
+
+/**
+ * Check if a handle ID is a mountpoint handle (for VFS mounting)
+ */
+export function isMountpointHandle(handleId: string | null | undefined): boolean {
+  return typeof handleId === 'string' && handleId.startsWith(HandleId.MOUNTPOINT_PREFIX);
+}
+
+/**
+ * Extract mountpoint path from handle ID (e.g., 'tag-mount-/dir1' -> '/dir1')
+ */
+export function getMountpointPath(handleId: string): string {
+  return handleId.slice(HandleId.MOUNTPOINT_PREFIX.length);
+}
+
+/**
+ * Create mountpoint handle ID from path
+ */
+export function createMountpointHandleId(path: string): string {
+  return `${HandleId.MOUNTPOINT_PREFIX}${path}`;
 }
 
 // ============================================================================

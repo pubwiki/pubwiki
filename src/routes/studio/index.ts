@@ -39,11 +39,25 @@ export {
 // RefTag utilities
 export {
   parseRefTags,
+  parseMountpoints,
   getUniqueRefTagNames,
+  getUniqueMountpointPaths,
   resolvePromptContent,
   resolvePromptContentFromRefs,
+  resolveInputContent,
   getRefTagConnections,
-  getRefTagConnectionsFromSnapshotEdges
+  getRefTagConnectionsFromSnapshotEdges,
+  getInputTagConnections,
+  getInputTagConnectionsFromSnapshotEdges,
+  getMountpointConnections,
+  getMountpointConnectionsFromSnapshotEdges,
+  getInputTags
+} from './utils/reftag';
+
+export type {
+  ParsedRefTag,
+  ParsedMountpoint,
+  ResolvedPrompt
 } from './utils/reftag';
 
 // Version control

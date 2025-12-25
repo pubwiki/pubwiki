@@ -1,10 +1,4 @@
 /**
- * Type definitions for @pubwiki/sandbox-client
- */
-
-import type { RpcStub, IHmrService } from '@pubwiki/sandbox-service'
-
-/**
  * Options for initializing the sandbox client
  */
 export interface InitOptions {

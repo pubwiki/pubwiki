@@ -29,6 +29,16 @@ export interface PreviewState {
 }
 
 /**
+ * State for editing a mountpoint path
+ */
+export interface EditingMountpoint {
+  /** The Input node ID containing the mountpoint */
+  nodeId: string;
+  /** The current path of the mountpoint being edited */
+  path: string;
+}
+
+/**
  * Studio context interface - provides access to shared state and operations
  */
 export interface StudioContext {
@@ -37,6 +47,7 @@ export interface StudioContext {
   readonly edges: Edge[];
   readonly editingNodeId: string | null;
   readonly editingNameNodeId: string | null;
+  readonly editingMountpoint: EditingMountpoint | null;
   
   // State mutations
   setNodes: (nodes: Node<StudioNodeData>[]) => void;
@@ -44,6 +55,10 @@ export interface StudioContext {
   setEdges: (edges: Edge[]) => void;
   setEditingNodeId: (id: string | null) => void;
   setEditingNameNodeId: (id: string | null) => void;
+  setEditingMountpoint: (mountpoint: EditingMountpoint | null) => void;
+  
+  // Mountpoint operations
+  updateMountpointPath: (nodeId: string, oldPath: string, newPath: string) => void;
   
   // Textarea registry for focus control
   registerTextarea: (id: string, el: HTMLTextAreaElement) => void;

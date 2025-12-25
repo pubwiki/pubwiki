@@ -19,8 +19,12 @@ import {
 } from './types';
 import { 
   resolvePromptContent, 
-  getRefTagConnections 
+  getRefTagConnections,
+  getInputTagConnections,
+  getMountpointConnections,
+  resolveInputContent
 } from './reftag';
+import { isTagHandle, isMountpointHandle } from './connection';
 
 // ============================================================================
 // Types
@@ -65,6 +69,10 @@ export interface PrepareGenerationResult {
   parentRefs: NodeRef[];
   /** Fully resolved system prompt content (with reftags substituted) */
   resolvedSystemPrompt: string;
+  /** Fully resolved user input content (with tags substituted) */
+  resolvedUserInput: string;
+  /** Map of mount paths to VFS node IDs */
+  mountpoints: Map<string, string>;
 }
 
 // ============================================================================
@@ -78,8 +86,8 @@ export interface PrepareGenerationResult {
  * Key insight: We capture refs AFTER ensuring node commits match current content.
  * This way, the ref always points to the exact content being used.
  * 
- * Also resolves reftag references to build the full system prompt and collect
- * indirect prompt refs for version tracking.
+ * Also resolves tag references in input content and reftag references in prompts
+ * to build the full system prompt and collect indirect prompt refs for version tracking.
  */
 export async function prepareForGeneration(
   nodes: Node<StudioNodeData>[],
@@ -91,10 +99,12 @@ export async function prepareForGeneration(
     throw new Error('Invalid input node');
   }
 
-  // Get directly connected prompt nodes
-  const parentPromptIds = edges
-    .filter(e => e.target === inputNodeId)
-    .map(e => e.source);
+  // Get tag connections for the input node (prompts connected via @tag)
+  const tagConnections = getInputTagConnections(inputNodeId, edges);
+  const parentPromptIds = Array.from(tagConnections.values());
+  
+  // Get mountpoint connections (VFS nodes connected via @/path)
+  const mountpoints = getMountpointConnections(inputNodeId, edges);
   
   const parentPromptNodes = nodes.filter(
     n => parentPromptIds.includes(n.id) && n.data.type === 'PROMPT'
@@ -155,7 +165,7 @@ export async function prepareForGeneration(
   
   const parentRefs: NodeRef[] = [inputRef, ...promptRefs];
 
-  // Step 3: Resolve reftags and collect indirect refs
+  // Step 3: Resolve reftags in prompt nodes and collect indirect refs
   const allPromptRefs: NodeRef[] = [];
   const resolvedPrompts: string[] = [];
   
@@ -170,6 +180,16 @@ export async function prepareForGeneration(
     resolvedPrompts.push(resolved.content);
     allPromptRefs.push(...resolved.allPromptRefs);
   }
+
+  // Step 4: Resolve tags in input content
+  const inputResolved = resolveInputContent(
+    inputNodeId,
+    updatedNodes,
+    edges,
+    new Set(),
+    allPromptRefs
+  );
+  const resolvedUserInput = inputResolved.content;
 
   // Separate direct vs indirect refs
   const directPromptIdSet = new Set(promptRefs.map(r => r.id));
@@ -195,7 +215,9 @@ export async function prepareForGeneration(
     promptRefs,
     indirectPromptRefs: uniqueIndirectRefs,
     parentRefs,
-    resolvedSystemPrompt
+    resolvedSystemPrompt,
+    resolvedUserInput,
+    mountpoints
   };
 }
 

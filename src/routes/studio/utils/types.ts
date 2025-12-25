@@ -52,11 +52,13 @@ export interface BaseNodeData<T = unknown> {
 /**
  * Input node data - represents user input that triggered generation
  * Content is string (user text input)
+ * Prompts are connected via @tag references in content
+ * VFS mounts are managed via mountpoints array (not in text)
  */
 export interface InputNodeData extends BaseNodeData<string> {
   type: 'INPUT'
-  /** IDs of prompt nodes that were selected when this input was created */
-  sourcePromptIds: string[]
+  /** VFS mount paths - each path like '/src' represents a mountpoint handle */
+  mountpoints: string[]
 }
 
 /**
@@ -186,9 +188,9 @@ export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData 
  */
 export async function createInputNodeData(
   content: string,
-  sourcePromptIds: string[],
   parents: NodeRef[] = [],
-  name: string = ''
+  name: string = '',
+  mountpoints: string[] = []
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash(content)
@@ -200,7 +202,7 @@ export async function createInputNodeData(
     snapshotRefs: [],
     parents,
     content,
-    sourcePromptIds
+    mountpoints
   }
 }
 

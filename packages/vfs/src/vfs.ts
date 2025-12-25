@@ -27,7 +27,15 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
   protected disposed = false
 
-  constructor(protected readonly provider: P) {}
+  constructor(protected readonly _provider: P) {}
+
+  /**
+   * 获取底层的 VfsProvider
+   * 用于需要直接访问 provider 的场景（如挂载到 MountedVfsProvider）
+   */
+  getProvider(): P {
+    return this._provider
+  }
 
   // ========== 生命周期 ==========
 
@@ -36,8 +44,8 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
    */
   async initialize(): Promise<void> {
     this.checkDisposed()
-    if (this.provider.initialize) {
-      await this.provider.initialize()
+    if (this._provider.initialize) {
+      await this._provider.initialize()
     }
   }
 
@@ -50,8 +58,8 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     this.disposed = true
     this.events.dispose()
 
-    if (this.provider.dispose) {
-      await this.provider.dispose()
+    if (this._provider.dispose) {
+      await this._provider.dispose()
     }
   }
 
@@ -72,11 +80,11 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     // 确保父目录存在
     const parentPath = getParentPath(normalizedPath)
     if (parentPath !== '/') {
-      await this.provider.mkdir(parentPath, { recursive: true })
+      await this._provider.mkdir(parentPath, { recursive: true })
     }
 
     // 写入文件
-    await this.provider.writeFile(normalizedPath, buffer)
+    await this._provider.writeFile(normalizedPath, buffer)
 
     // 获取文件信息
     const file = await this.buildFileObject(normalizedPath, content)
@@ -99,7 +107,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     this.checkDisposed()
 
     const normalizedPath = normalizePath(path)
-    const buffer = await this.provider.readFile(normalizedPath)
+    const buffer = await this._provider.readFile(normalizedPath)
 
     return this.buildFileObject(normalizedPath, buffer)
   }
@@ -117,7 +125,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const buffer = this.toUint8Array(content)
 
     // 写入新内容
-    await this.provider.writeFile(normalizedPath, buffer)
+    await this._provider.writeFile(normalizedPath, buffer)
 
     // 获取更新后的文件信息
     const file = await this.buildFileObject(normalizedPath, content)
@@ -142,10 +150,10 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const normalizedPath = normalizePath(path)
 
     // 获取文件 ID（用于事件）
-    const fileId = await this.provider.id(normalizedPath)
+    const fileId = await this._provider.id(normalizedPath)
 
     // 删除文件
-    await this.provider.unlink(normalizedPath)
+    await this._provider.unlink(normalizedPath)
 
     // 发射事件
     await this.events.emit({
@@ -169,7 +177,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const normalizedPath = normalizePath(path)
 
     // 创建目录
-    await this.provider.mkdir(normalizedPath, { recursive: true })
+    await this._provider.mkdir(normalizedPath, { recursive: true })
 
     // 获取文件夹信息
     const folder = await this.buildFolderObject(normalizedPath)
@@ -192,7 +200,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     this.checkDisposed()
 
     const normalizedPath = normalizePath(path)
-    const entries = await this.provider.readdir(normalizedPath)
+    const entries = await this._provider.readdir(normalizedPath)
     const items: Array<VfsFile | VfsFolder> = []
 
     for (const entry of entries) {
@@ -202,7 +210,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       const entryPath =
         normalizedPath === '/' ? `/${entry}` : `${normalizedPath}/${entry}`
 
-      const stat = await this.provider.stat(entryPath)
+      const stat = await this._provider.stat(entryPath)
 
       if (stat.isDirectory) {
         items.push(await this.buildFolderObject(entryPath))
@@ -231,7 +239,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const folder = await this.buildFolderObject(normalizedPath)
 
     // 删除目录
-    await this.provider.rmdir(normalizedPath, { recursive })
+    await this._provider.rmdir(normalizedPath, { recursive })
 
     // 发射文件夹删除事件
     await this.events.emit({
@@ -247,18 +255,18 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
    * 递归发射删除事件（用于递归删除文件夹时）
    */
   private async emitDeleteEventsRecursive(folderPath: string): Promise<void> {
-    const entries = await this.provider.readdir(folderPath)
+    const entries = await this._provider.readdir(folderPath)
 
     for (const entry of entries) {
       const entryPath = folderPath === '/' ? `/${entry}` : `${folderPath}/${entry}`
-      const stat = await this.provider.stat(entryPath)
+      const stat = await this._provider.stat(entryPath)
 
       if (stat.isDirectory) {
         // 先递归处理子文件夹
         await this.emitDeleteEventsRecursive(entryPath)
 
         // 发射子文件夹删除事件
-        const folderId = await this.provider.id(entryPath)
+        const folderId = await this._provider.id(entryPath)
         await this.events.emit({
           type: 'folder:deleted',
           folderId,
@@ -268,7 +276,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
         })
       } else {
         // 发射文件删除事件
-        const fileId = await this.provider.id(entryPath)
+        const fileId = await this._provider.id(entryPath)
         await this.events.emit({
           type: 'file:deleted',
           fileId,
@@ -291,7 +299,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const normalizedTo = normalizePath(toPath)
 
     // 获取原项目信息
-    const stat = await this.provider.stat(normalizedFrom)
+    const stat = await this._provider.stat(normalizedFrom)
     const isDirectory = stat.isDirectory
 
     // 如果是目录，先收集所有子项信息（在移动之前）
@@ -300,7 +308,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       : []
 
     // 执行移动
-    await this.provider.rename(normalizedFrom, normalizedTo)
+    await this._provider.rename(normalizedFrom, normalizedTo)
 
     // 发射事件
     if (isDirectory) {
@@ -308,7 +316,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       await this.emitMoveEventsForChildren(childItems, normalizedFrom, normalizedTo)
 
       // 最后发射文件夹移动事件
-      const folderId = await this.provider.id(normalizedTo)
+      const folderId = await this._provider.id(normalizedTo)
       await this.events.emit({
         type: 'folder:moved',
         folderId,
@@ -317,7 +325,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
         timestamp: Date.now(),
       })
     } else {
-      const itemId = await this.provider.id(normalizedTo)
+      const itemId = await this._provider.id(normalizedTo)
       const file = await this.buildFileObject(normalizedTo)
       await this.events.emit({
         type: 'file:moved',
@@ -337,11 +345,11 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     folderPath: string
   ): Promise<Array<{ path: string; isDirectory: boolean }>> {
     const items: Array<{ path: string; isDirectory: boolean }> = []
-    const entries = await this.provider.readdir(folderPath)
+    const entries = await this._provider.readdir(folderPath)
 
     for (const entry of entries) {
       const entryPath = folderPath === '/' ? `/${entry}` : `${folderPath}/${entry}`
-      const stat = await this.provider.stat(entryPath)
+      const stat = await this._provider.stat(entryPath)
 
       items.push({ path: entryPath, isDirectory: stat.isDirectory })
 
@@ -367,7 +375,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       const newPath = toBase + relativePath
 
       if (item.isDirectory) {
-        const folderId = await this.provider.id(newPath)
+        const folderId = await this._provider.id(newPath)
         await this.events.emit({
           type: 'folder:moved',
           folderId,
@@ -376,7 +384,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
           timestamp: Date.now(),
         })
       } else {
-        const fileId = await this.provider.id(newPath)
+        const fileId = await this._provider.id(newPath)
         const file = await this.buildFileObject(newPath)
         await this.events.emit({
           type: 'file:moved',
@@ -399,7 +407,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const normalizedFrom = normalizePath(fromPath)
     const normalizedTo = normalizePath(toPath)
 
-    await this.provider.copyFile(normalizedFrom, normalizedTo)
+    await this._provider.copyFile(normalizedFrom, normalizedTo)
 
     // 发射创建事件
     const file = await this.buildFileObject(normalizedTo)
@@ -418,7 +426,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
    */
   async exists(path: string): Promise<boolean> {
     this.checkDisposed()
-    return this.provider.exists(normalizePath(path))
+    return this._provider.exists(normalizePath(path))
   }
 
   /**
@@ -426,7 +434,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
    */
   async stat(path: string): Promise<VfsStat> {
     this.checkDisposed()
-    return this.provider.stat(normalizePath(path))
+    return this._provider.stat(normalizePath(path))
   }
 
   // ========== 私有方法 ==========
@@ -448,10 +456,10 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     path: string,
     content?: ArrayBuffer | string | Uint8Array,
   ): Promise<VfsFile> {
-    const stat = await this.provider.stat(path)
-    const id = await this.provider.id(path)
+    const stat = await this._provider.stat(path)
+    const id = await this._provider.id(path)
     const parentPath = getParentPath(path)
-    const folderId = await this.provider.id(parentPath)
+    const folderId = await this._provider.id(parentPath)
 
     // 处理内容
     let fileContent: ArrayBuffer | string | undefined
@@ -482,10 +490,10 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
   protected async buildFolderObject(
     path: string,
   ): Promise<VfsFolder> {
-    const stat = await this.provider.stat(path)
-    const id = await this.provider.id(path)
+    const stat = await this._provider.stat(path)
+    const id = await this._provider.id(path)
     const parentPath = getParentPath(path)
-    const parentFolderId = await this.provider.id(parentPath)
+    const parentFolderId = await this._provider.id(parentPath)
 
     return {
       id,
@@ -516,7 +524,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     options?: { author?: string; email?: string }
   ): Promise<VfsCommit> {
     this.checkDisposed()
-    const commit = await this.provider.commit(message, options)
+    const commit = await this._provider.commit(message, options)
 
     // 发射事件
     await this.events.emit({
@@ -537,7 +545,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     ref?: string
   }): Promise<VfsCommit[]> {
     this.checkDisposed()
-    return this.provider.getHistory(options)
+    return this._provider.getHistory(options)
   }
 
   /**
@@ -554,11 +562,11 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     this.checkDisposed()
 
     // 获取当前 HEAD 和目标之间的差异（在 checkout 之前）
-    const currentHead = await this.provider.getHead()
-    const diffs = await this.provider.diff(currentHead.hash, ref)
+    const currentHead = await this._provider.getHead()
+    const diffs = await this._provider.diff(currentHead.hash, ref)
 
     // 执行 checkout
-    await this.provider.checkout(ref)
+    await this._provider.checkout(ref)
 
     // 为每个变更的文件/文件夹发射事件
     await this.emitCheckoutChangeEvents(diffs)
@@ -605,7 +613,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
             break
           }
           case 'deleted': {
-            const folderId = await this.provider.id(normalizedPath).catch(() => normalizedPath)
+            const folderId = await this._provider.id(normalizedPath).catch(() => normalizedPath)
             await this.events.emit({
               type: 'folder:deleted',
               folderId: typeof folderId === 'string' ? folderId : normalizedPath,
@@ -631,7 +639,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
             break
           }
           case 'deleted': {
-            const fileId = await this.provider.id(normalizedPath).catch(() => normalizedPath)
+            const fileId = await this._provider.id(normalizedPath).catch(() => normalizedPath)
             await this.events.emit({
               type: 'file:deleted',
               fileId: typeof fileId === 'string' ? fileId : normalizedPath,
@@ -660,7 +668,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
    */
   async diff(commitA: string, commitB: string): Promise<VfsDiff[]> {
     this.checkDisposed()
-    return this.provider.diff(commitA, commitB)
+    return this._provider.diff(commitA, commitB)
   }
 
   /**
@@ -668,7 +676,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
    */
   async getCurrentBranch(): Promise<string> {
     this.checkDisposed()
-    return this.provider.getCurrentBranch()
+    return this._provider.getCurrentBranch()
   }
 
   /**
@@ -676,7 +684,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
    */
   async getHead(): Promise<VfsCommit> {
     this.checkDisposed()
-    return this.provider.getHead()
+    return this._provider.getHead()
   }
 
   /**
@@ -687,11 +695,11 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     this.checkDisposed()
 
     // 获取当前 HEAD 和目标之间的差异（在 revert 之前）
-    const currentHead = await this.provider.getHead()
-    const diffs = await this.provider.diff(currentHead.hash, ref)
+    const currentHead = await this._provider.getHead()
+    const diffs = await this._provider.diff(currentHead.hash, ref)
 
     // 执行 revert
-    await this.provider.revert(ref)
+    await this._provider.revert(ref)
 
     // 为每个变更的文件发射事件
     await this.emitCheckoutChangeEvents(diffs)

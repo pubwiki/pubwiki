@@ -12,9 +12,11 @@
 	import type { PromptNodeData, SnapshotEdge } from '../../utils/types';
 	import { getStudioContext } from '../../stores/context';
 	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../utils/reftag';
-	import { HandleId, createRefTagHandleId } from '../../utils/connection';
+	import { createRefTagHandleId } from '../../utils/connection';
 	import BaseNode from './BaseNode.svelte';
 	import RichTextArea from '../RichTextArea.svelte';
+	import TaggedHandlePanel from './TaggedHandlePanel.svelte';
+	import type { TaggedHandle } from './TaggedHandlePanel.svelte';
 
 	// ============================================================================
 	// Props
@@ -62,6 +64,15 @@
 				}))
 		);
 	});
+
+	// Convert refTagNames to TaggedHandle format
+	const taggedHandles = $derived<TaggedHandle[]>(
+		refTagNames.map(name => ({
+			id: createRefTagHandleId(name),
+			label: name,
+			isConnected: refTagConnections.has(name)
+		}))
+	);
 
 	// ============================================================================
 	// Effects
@@ -126,45 +137,14 @@
 	{/snippet}
 
 	{#snippet rightHandles()}
-		<Handle type="source" position={Position.Right} {isConnectable} class="w-3! h-3! bg-blue-400! border-2! border-white!" />
+		<Handle type="source" position={Position.Right} {isConnectable} class="w-3! h-3! bg-blue-400! border-2! border-white! z-10!" />
 		
-		<!-- RefTag sidebar -->
-		{#if refTagNames.length > 0}
-			<div class="absolute right-[calc(100%-16px)] top-1/2 -translate-y-1/2 min-h-full flex items-stretch z-[-1]">
-				<div class="bg-gray-50 border border-gray-200 rounded-lg flex flex-col justify-center py-2 pl-0 pr-5 gap-2 min-w-8">
-					{#each refTagNames as refTagName, i (refTagName)}
-						{@const isConnected = refTagConnections.has(refTagName)}
-						{@const tagBg = isConnected ? 'bg-blue-50' : 'bg-white'}
-						{@const tagBorder = isConnected ? 'border-blue-300' : 'border-gray-300'}
-						{@const tagText = isConnected ? 'text-blue-600' : 'text-gray-600'}
-						{@const handleColor = isConnected ? 'bg-blue-500' : 'bg-gray-400'}
-						
-						<div class="relative flex items-center group">
-							<!-- Left Tip (Triangle) -->
-							<div class="absolute right-full top-0 h-full flex items-center justify-end pr-px z-20">
-								<div class="relative w-2.5 h-5 overflow-hidden">
-									<div class="absolute top-1/2 right-[-7px] w-3.5 h-3.5 {tagBg} border {tagBorder} transform -translate-y-1/2 rotate-45"></div>
-									
-									<Handle 
-										type="target" 
-										position={Position.Left} 
-										id={createRefTagHandleId(refTagName)}
-										isConnectable={!isConnected} 
-										class="w-1.5! h-1.5! {handleColor}! border-none! min-w-0! min-h-0! z-30"
-										style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); left: auto;"
-									/>
-								</div>
-							</div>
-
-							<!-- Right Body -->
-							<div class="{tagBg} border {tagBorder} border-l-0 rounded-r px-1.5 h-5 flex items-center text-[10px] font-medium {tagText} whitespace-nowrap z-10 relative -ml-px">
-								{refTagName}
-							</div>
-						</div>
-					{/each}
-				</div>
-			</div>
-		{/if}
+		<!-- RefTag panel using the reusable component -->
+		<TaggedHandlePanel 
+			handles={taggedHandles}
+			{isConnectable}
+			nodeOverlap={24}
+		/>
 	{/snippet}
 </BaseNode>
 

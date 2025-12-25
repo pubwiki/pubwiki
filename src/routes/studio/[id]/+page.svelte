@@ -31,13 +31,14 @@
 		styleEdgesForVersions,
 		type HistoricalTreeResult
 	} from '../utils/version';
-	import { resolvePromptContentFromRefs } from '../utils/reftag';
-	import { validateConnection, HandleId } from '../utils/connection';
+	import { resolvePromptContentFromRefs, getMountpointConnections } from '../utils/reftag';
+	import { validateConnection, HandleId, isMountpointHandle, getMountpointPath, createMountpointHandleId } from '../utils/connection';
 	import { publishArtifact, type PublishMetadata } from '../utils/publish';
 	import { setStudioContext, type StudioContext } from '../stores/context';
 	import { initSnapshotStore } from '../stores/snapshot';
 	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
 	import { getNodeVfs } from '../stores/vfs';
+	import { createMountedVfs, getMountedProvider } from '@pubwiki/vfs';
 	import { useAuth } from '$lib/stores/auth.svelte';
 	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
 
@@ -93,6 +94,7 @@
 	let edges = $state.raw<Edge[]>([]);
 	let editingNodeId = $state<string | null>(null);
 	let editingNameNodeId = $state<string | null>(null);
+	let editingMountpoint = $state<{ nodeId: string; path: string } | null>(null);
 	let selectedNodes = $state<Node<StudioNodeData>[]>([]);
 	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
 	let initialized = $state(false);
@@ -194,6 +196,7 @@
 		get edges() { return edges; },
 		get editingNodeId() { return editingNodeId; },
 		get editingNameNodeId() { return editingNameNodeId; },
+		get editingMountpoint() { return editingMountpoint; },
 		
 		setNodes: (newNodes) => { nodes = newNodes; },
 		updateNode: (id, updater) => {
@@ -211,6 +214,34 @@
 			}));
 		},
 		setEditingNameNodeId: (id) => { editingNameNodeId = id; },
+		setEditingMountpoint: (mp) => { editingMountpoint = mp; },
+		
+		updateMountpointPath: (nodeId, oldPath, newPath) => {
+			// Update the mountpoint path in the Input node
+			nodes = nodes.map(n => {
+				if (n.id === nodeId && n.data.type === 'INPUT') {
+					const inputData = n.data as import('../utils/types').InputNodeData;
+					return {
+						...n,
+						data: {
+							...inputData,
+							mountpoints: inputData.mountpoints.map(p => p === oldPath ? newPath : p)
+						}
+					};
+				}
+				return n;
+			});
+			
+			// Update the edge's targetHandle to match the new path
+			const oldHandleId = createMountpointHandleId(oldPath);
+			const newHandleId = createMountpointHandleId(newPath);
+			edges = edges.map(e => {
+				if (e.target === nodeId && e.targetHandle === oldHandleId) {
+					return { ...e, targetHandle: newHandleId };
+				}
+				return e;
+			});
+		},
 		
 		registerTextarea,
 		unregisterTextarea,
@@ -265,38 +296,51 @@
 	// ============================================================================
 	
 	/**
-	 * Find VFS node connected to a node via incoming edges to VFS_INPUT handle
+	 * Find all VFS nodes connected to a node via mountpoint handles
+	 * Returns a map of mount path -> VFS node
 	 */
-	function findConnectedVfsNode(nodeId: string): Node<VFSNodeData> | null {
-		// Find edges where this node is the target and handle is VFS_INPUT
-		const incomingEdges = edges.filter(e => 
-			e.target === nodeId && e.targetHandle === HandleId.VFS_INPUT
-		);
+	function findConnectedVfsNodes(nodeId: string): Map<string, Node<VFSNodeData>> {
+		const result = new Map<string, Node<VFSNodeData>>();
 		
-		for (const edge of incomingEdges) {
-			const sourceNode = nodes.find(n => n.id === edge.source);
-			if (sourceNode && sourceNode.data.type === 'VFS') {
-				return sourceNode as Node<VFSNodeData>;
+		// Find edges where this node is the target and handle is a mountpoint
+		for (const edge of edges) {
+			if (edge.target === nodeId && isMountpointHandle(edge.targetHandle)) {
+				const mountPath = getMountpointPath(edge.targetHandle!);
+				const sourceNode = nodes.find(n => n.id === edge.source);
+				if (sourceNode && sourceNode.data.type === 'VFS') {
+					result.set(mountPath, sourceNode as Node<VFSNodeData>);
+				}
 			}
 		}
-		return null;
+		
+		return result;
 	}
 	
 	async function onGenerate(inputNodeId: string) {
 		const inputNode = nodes.find(n => n.id === inputNodeId);
 		if (!inputNode || inputNode.data.type !== 'INPUT' || !inputNode.data.content) return;
 
-		// Check if there's a VFS node connected to this input node
-		const vfsNode = findConnectedVfsNode(inputNodeId);
+		// Check if there are VFS nodes connected to this input node via mountpoints
+		const vfsNodes = findConnectedVfsNodes(inputNodeId);
 		
-		// If VFS node exists, set up VFS for the generation
-		if (vfsNode) {
-			const vfsData = vfsNode.data as VFSNodeData;
-			const vfs = await getNodeVfs(vfsData.projectId, vfsNode.id);
-			pubchat.setVFS(vfs);
+		// If VFS nodes exist, set up mounted VFS for the generation
+		let mountedVfs = null;
+		if (vfsNodes.size > 0) {
+			mountedVfs = createMountedVfs();
+			const provider = getMountedProvider(mountedVfs);
+			
+			if (provider) {
+				for (const [mountPath, vfsNode] of vfsNodes) {
+					const vfsData = vfsNode.data as VFSNodeData;
+					const vfs = await getNodeVfs(vfsData.projectId, vfsNode.id);
+					provider.mountVfs(mountPath, vfs);
+				}
+			}
+			
+			pubchat.setVFS(mountedVfs);
 		}
 
-		// Prepare for generation - creates snapshots, gets refs, and resolves reftags
+		// Prepare for generation - creates snapshots, gets refs, and resolves tags
 		const prepared = await prepareForGeneration(nodes, edges, inputNodeId);
 		nodes = prepared.nodes;
 
@@ -337,15 +381,15 @@
 		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 
 		try {
-			// Stream generation using resolved system prompt (with reftags substituted)
+			// Stream generation using resolved content (with tags substituted)
 			await streamGeneration(
 				newGeneratedData.id,
-				inputNode.data.content,
+				prepared.resolvedUserInput,
 				prepared.resolvedSystemPrompt
 			);
 		} finally {
 			// Clear VFS after generation completes (success or error)
-			if (vfsNode) {
+			if (mountedVfs) {
 				pubchat.clearVFS();
 			}
 		}
@@ -608,6 +652,107 @@
 	};
 
 	// ============================================================================
+	// Connection Handling (Auto-create mountpoint)
+	// ============================================================================
+
+	/** Counter for generating unique mountpoint names */
+	let mountpointCounter = 0;
+
+	/**
+	 * Add a new mountpoint to an Input node and create the corresponding edge.
+	 */
+	function addMountpointToInputNode(
+		inputNodeId: string,
+		sourceNodeId: string,
+		sourceHandle: string | null | undefined
+	) {
+		// Generate a new mountpoint path
+		const newMountPath = `/mount${mountpointCounter++}`;
+		
+		// Update the Input node to add the new mountpoint
+		nodes = nodes.map(n => {
+			if (n.id === inputNodeId && n.data.type === 'INPUT') {
+				const inputData = n.data as import('../utils/types').InputNodeData;
+				return {
+					...n,
+					data: {
+						...inputData,
+						mountpoints: [...(inputData.mountpoints ?? []), newMountPath]
+					}
+				};
+			}
+			return n;
+		});
+
+		// Create edge to the new mountpoint handle (instead of add-mount)
+		const newEdge: Edge = {
+			id: `e-${sourceNodeId}-${inputNodeId}-${newMountPath}`,
+			source: sourceNodeId,
+			target: inputNodeId,
+			sourceHandle: sourceHandle ?? undefined,
+			targetHandle: createMountpointHandleId(newMountPath)
+		};
+
+		// Filter out any edges to ADD_MOUNT handle and add the new edge
+		edges = [
+			...edges.filter(e => e.targetHandle !== HandleId.ADD_MOUNT),
+			newEdge
+		];
+
+		// Set editing mountpoint to focus the input
+		editingMountpoint = { nodeId: inputNodeId, path: newMountPath };
+	}
+
+	/**
+	 * Handle new connection creation.
+	 */
+	function handleConnect(connection: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }) {
+		// Connection to "add mount" handle -> create new mountpoint
+		if (connection.targetHandle === HandleId.ADD_MOUNT) {
+			const targetNode = nodes.find(n => n.id === connection.target);
+			if (targetNode?.data.type === 'INPUT') {
+				addMountpointToInputNode(connection.target, connection.source, connection.sourceHandle);
+			}
+		}
+	}
+
+	// ============================================================================
+	// Node/Edge Deletion Handling
+	// ============================================================================
+
+	/**
+	 * Remove a mountpoint from an Input node.
+	 */
+	function removeMountpointFromInputNode(inputNodeId: string, mountPath: string) {
+		nodes = nodes.map(n => {
+			if (n.id === inputNodeId && n.data.type === 'INPUT') {
+				const inputData = n.data as import('../utils/types').InputNodeData;
+				return {
+					...n,
+					data: {
+						...inputData,
+						mountpoints: inputData.mountpoints.filter(p => p !== mountPath)
+					}
+				};
+			}
+			return n;
+		});
+	}
+
+	/**
+	 * Handle deletion of nodes and edges.
+	 */
+	function handleDelete({ edges: deletedEdges }: { nodes: Node<StudioNodeData>[]; edges: Edge[] }) {
+		for (const edge of deletedEdges) {
+			// Mountpoint edge deleted -> remove mountpoint from Input node
+			if (isMountpointHandle(edge.targetHandle)) {
+				const mountPath = getMountpointPath(edge.targetHandle!);
+				removeMountpointFromInputNode(edge.target, mountPath);
+			}
+		}
+	}
+
+	// ============================================================================
 	// Layout
 	// ============================================================================
 	
@@ -777,7 +922,7 @@
 	}
 
 	async function addInputNode() {
-		const newInputData = await createInputNodeData('', [], []);
+		const newInputData = await createInputNodeData('');
 		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newInputData.id,
@@ -1039,6 +1184,8 @@
 			onselectionchange={(e) => selectedNodes = e.nodes}
 			onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
 			onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
+			onconnect={(connection) => handleConnect(connection)}
+			ondelete={handleDelete}
 		>
 			<FlowController onInit={(flow) => flowApi = flow} />
 			<Background />
