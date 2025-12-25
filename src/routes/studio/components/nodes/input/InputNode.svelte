@@ -6,14 +6,14 @@
 	 * - Editable text content with @tag references for prompt composition
 	 * - System tag handle (always visible, amber color)
 	 * - Dynamic tag handles from @tag references in content
-	 * - Mountpoint handles from data.mountpoints array (not text parsing)
+	 * - Mountpoint handles from data.mountpoints array
 	 * - "Add Mount" handle for creating new mountpoints via drag connection
 	 * - Generate button to trigger LLM generation
 	 */
 	import { useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { InputNodeData, SnapshotEdge } from '../../utils/types';
-	import { getStudioContext } from '../../stores/context';
+	import type { InputNodeData, SnapshotEdge } from '../../../utils/types';
+	import { getStudioContext } from '../../../stores/context';
 	import { 
 		HandleId,
 		createTagHandleId, 
@@ -21,16 +21,22 @@
 		isTagHandle, 
 		isMountpointHandle, 
 		getTagName, 
-		getMountpointPath 
-	} from '../../utils/connection';
+		getMountpointId 
+	} from '../../../utils/connection';
 	import { 
 		getInputTags, 
 		getInputTagConnectionsFromSnapshotEdges, 
 		getMountpointConnectionsFromSnapshotEdges 
-	} from '../../utils/reftag';
-	import BaseNode from './BaseNode.svelte';
-	import RichTextArea from '../RichTextArea.svelte';
-	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme, type AddHandleConfig } from './TaggedHandlePanel.svelte';
+	} from '../../../utils/reftag';
+	import BaseNode from '../BaseNode.svelte';
+	import RichTextArea from '../../RichTextArea.svelte';
+	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
+	import { 
+		getEditingMountpoint, 
+		setEditingMountpoint, 
+		updateMountpointPath,
+		validateMountpointPath 
+	} from './controller.svelte';
 
 	// ============================================================================
 	// Props
@@ -50,7 +56,6 @@
 	// Color Schemes
 	// ============================================================================
 
-	// System tag - special amber color (always present)
 	const SYSTEM_TAG_CONNECTED: HandleColorScheme = {
 		bg: '#fef3c7',
 		border: '#f59e0b',
@@ -65,7 +70,6 @@
 		handle: 'bg-amber-400'
 	};
 
-	// Regular prompt tags - blue
 	const PROMPT_TAG_CONNECTED: HandleColorScheme = {
 		bg: '#eff6ff',
 		border: '#93c5fd',
@@ -80,7 +84,6 @@
 		handle: 'bg-gray-400'
 	};
 
-	// Mountpoints - indigo
 	const MOUNT_TAG_CONNECTED: HandleColorScheme = {
 		bg: '#eef2ff',
 		border: '#a5b4fc',
@@ -95,7 +98,6 @@
 		handle: 'bg-indigo-300'
 	};
 
-	// Add mount button - light indigo
 	const ADD_MOUNT_COLOR: HandleColorScheme = {
 		bg: '#e0e7ff',
 		border: '#a5b4fc',
@@ -111,10 +113,8 @@
 	const isPreviewing = $derived(!!previewState?.content);
 	const displayContent = $derived(previewState?.content ?? data.content);
 
-	/** Parse tags from content (excludes 'system' as it's handled separately) */
 	const contentTags = $derived(getInputTags(data.content));
 
-	/** Get tag connections from current edges or preview edges */
 	const tagConnections = $derived.by(() => {
 		if (previewState?.incomingEdges) {
 			return getInputTagConnectionsFromSnapshotEdges(previewState.incomingEdges);
@@ -126,19 +126,18 @@
 		);
 	});
 
-	/** Get mountpoint connections from current edges or preview edges */
 	const mountpointConnections = $derived.by(() => {
 		if (previewState?.incomingEdges) {
 			return getMountpointConnectionsFromSnapshotEdges(previewState.incomingEdges);
 		}
+		// Map from mountpoint ID to source node ID
 		return new Map(
 			allEdges.current
 				.filter(e => e.target === id && isMountpointHandle(e.targetHandle))
-				.map(e => [getMountpointPath(e.targetHandle!), e.source])
+				.map(e => [getMountpointId(e.targetHandle!), e.source])
 		);
 	});
 
-	/** System handle - always present */
 	const systemHandle = $derived<TaggedHandle>({
 		id: HandleId.SYSTEM_TAG,
 		label: '@system',
@@ -147,7 +146,6 @@
 		disconnectedColor: SYSTEM_TAG_DISCONNECTED
 	});
 
-	/** Build tagged handles for prompt tags from content */
 	const tagHandles = $derived.by(() => {
 		return contentTags.map((tagName): TaggedHandle => ({
 			id: createTagHandleId(tagName),
@@ -158,33 +156,33 @@
 		}));
 	});
 
-	/** Check if we're currently editing a mountpoint on this node */
-	const editingMountpointPath = $derived(
-		ctx.editingMountpoint?.nodeId === id ? ctx.editingMountpoint.path : null
-	);
+	/** Check if we're editing a mountpoint on this node (from controller state) */
+	const editingMountpointId = $derived.by(() => {
+		const editing = getEditingMountpoint();
+		return editing?.nodeId === id ? editing.mountpointId : null;
+	});
 
-	/** Build tagged handles for mountpoints from data.mountpoints */
 	const mountpointHandles = $derived.by(() => {
 		const mounts = data.mountpoints ?? [];
-		return mounts.map((path): TaggedHandle => ({
-			id: createMountpointHandleId(path),
-			label: path,
-			isConnected: mountpointConnections.has(path),
+		return mounts.map((mp): TaggedHandle => ({
+			id: createMountpointHandleId(mp.id),
+			label: mp.path,
+			isConnected: mountpointConnections.has(mp.id),
 			connectedColor: MOUNT_TAG_CONNECTED,
 			disconnectedColor: MOUNT_TAG_DISCONNECTED,
-			isEditing: path === editingMountpointPath
+			isEditing: mp.id === editingMountpointId,
+			editable: true,
+			// Store the mountpoint ID for editing operations
+			data: { mountpointId: mp.id }
 		}));
 	});
 
-	/** Combined handles for panel display: system first, then tags, then mounts */
 	const allHandles = $derived([systemHandle, ...tagHandles, ...mountpointHandles]);
 
-	/** Count of connected prompt nodes */
 	const connectedPromptCount = $derived(
 		Array.from(tagConnections.values()).length
 	);
 
-	/** Count of connected mountpoints */
 	const connectedMountCount = $derived(
 		Array.from(mountpointConnections.values()).length
 	);
@@ -194,7 +192,6 @@
 	// ============================================================================
 
 	$effect(() => {
-		// Trigger update when tags/mountpoints change so handles are registered
 		contentTags;
 		data.mountpoints;
 		updateNodeInternals(id);
@@ -225,19 +222,44 @@
 		ctx.onGenerate(id);
 	}
 
-	function handleMountpointLabelChange(handleId: string, oldLabel: string, newLabel: string) {
-		// Ensure the new path starts with /
+	function handleMountpointLabelChange(handleId: string, _oldLabel: string, newLabel: string, handleData?: Record<string, unknown>) {
 		let validPath = newLabel.trim();
 		if (!validPath.startsWith('/')) {
 			validPath = '/' + validPath;
 		}
-		if (validPath !== oldLabel) {
-			ctx.updateMountpointPath(id, oldLabel, validPath);
+		
+		// Get the mountpoint ID from handle data
+		const mountpointId = handleData?.mountpointId as string | undefined;
+		if (!mountpointId) {
+			console.warn('Missing mountpointId in handle data');
+			return;
 		}
+		
+		updateMountpointPath(
+			id,
+			mountpointId,
+			validPath,
+			ctx.updateNodes,
+			ctx.updateEdges
+		);
 	}
 
 	function handleMountpointEditComplete(_handleId: string) {
-		ctx.setEditingMountpoint(null);
+		setEditingMountpoint(null);
+	}
+	
+	function handleMountpointValidation(_handleId: string, label: string, handleData?: Record<string, unknown>): string | null {
+		const existingMountpoints = data.mountpoints ?? [];
+		// Get the mountpoint ID being edited from handle data
+		const currentMountpointId = handleData?.mountpointId as string | undefined;
+		return validateMountpointPath(label, existingMountpoints, currentMountpointId);
+	}
+
+	function handleMountpointStartEdit(_handleId: string, handleData?: Record<string, unknown>) {
+		const mountpointId = handleData?.mountpointId as string | undefined;
+		if (mountpointId) {
+			setEditingMountpoint({ nodeId: id, mountpointId });
+		}
 	}
 </script>
 
@@ -252,7 +274,6 @@
 	showLeftHandle={false}
 >
 	{#snippet leftHandles()}
-		<!-- TaggedHandlePanel for system, prompt tags, and mountpoint handles -->
 		<TaggedHandlePanel
 			handles={allHandles}
 			{isConnectable}
@@ -266,6 +287,8 @@
 			}}
 			onLabelChange={handleMountpointLabelChange}
 			onEditComplete={handleMountpointEditComplete}
+			validateLabel={handleMountpointValidation}
+			onStartEdit={handleMountpointStartEdit}
 		/>
 	{/snippet}
 
@@ -288,7 +311,6 @@
 					{connectedMountCount} mount{connectedMountCount > 1 ? 's' : ''}
 				</span>
 			{/if}
-			<!-- Generate button -->
 			<button
 				class="nodrag px-2 py-0.5 text-xs font-medium bg-white/20 hover:bg-white/30 rounded text-white transition-colors flex items-center gap-1"
 				onclick={handleGenerate}

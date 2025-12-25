@@ -38,6 +38,10 @@
 		disconnectedColor?: HandleColorScheme;
 		/** Whether this handle is currently being edited */
 		isEditing?: boolean;
+		/** Whether to use editable mode with dynamic width */
+		editable?: boolean;
+		/** Optional custom data associated with this handle */
+		data?: Record<string, unknown>;
 	}
 
 	export interface AddHandleConfig {
@@ -71,9 +75,13 @@
 		/** Optional "add" handle configuration - displays a + button at the bottom */
 		addHandle?: AddHandleConfig;
 		/** Callback when an editable handle's label changes */
-		onLabelChange?: (handleId: string, oldLabel: string, newLabel: string) => void;
+		onLabelChange?: (handleId: string, oldLabel: string, newLabel: string, data?: Record<string, unknown>) => void;
 		/** Callback when editing is complete (blur or enter) */
 		onEditComplete?: (handleId: string) => void;
+		/** Callback to validate a label - returns error message or null if valid */
+		validateLabel?: (handleId: string, label: string, data?: Record<string, unknown>) => string | null;
+		/** Callback when user clicks to start editing */
+		onStartEdit?: (handleId: string, data?: Record<string, unknown>) => void;
 	}
 
 	const DEFAULT_CONNECTED_COLOR: HandleColorScheme = {
@@ -100,7 +108,9 @@
 		defaultDisconnectedColor = DEFAULT_DISCONNECTED_COLOR,
 		addHandle,
 		onLabelChange,
-		onEditComplete
+		onEditComplete,
+		validateLabel,
+		onStartEdit
 	}: Props = $props();
 
 	// ============================================================================
@@ -112,6 +122,15 @@
 	
 	// Store refs to input elements for focusing
 	let inputRefs = $state<Record<string, HTMLInputElement | null>>({});
+	
+	// Store current edit values (to allow editing before committing)
+	let editValues = $state<Record<string, string>>({});
+	
+	// Store validation errors for each handle
+	let validationErrors = $state<Record<string, string | null>>({});
+	
+	// Store tooltip visibility
+	let showTooltip = $state<Record<string, boolean>>({});
 
 	// ============================================================================
 	// Effects
@@ -121,13 +140,31 @@
 	$effect(() => {
 		for (const handle of handles) {
 			if (handle.isEditing) {
+				// Initialize edit value with current label
+				if (editValues[handle.id] === undefined) {
+					editValues[handle.id] = handle.label;
+				}
 				tick().then(() => {
 					const input = inputRefs[handle.id];
 					if (input) {
 						input.focus();
-						input.select();
+						// Position cursor at the end
+						const len = input.value.length;
+						input.setSelectionRange(len, len);
 					}
 				});
+			}
+		}
+	});
+	
+	// Clean up edit values when editing ends
+	$effect(() => {
+		for (const handleId of Object.keys(editValues)) {
+			const handle = handles.find(h => h.id === handleId);
+			if (!handle?.isEditing) {
+				delete editValues[handleId];
+				delete validationErrors[handleId];
+				delete showTooltip[handleId];
 			}
 		}
 	});
@@ -149,6 +186,97 @@
 		}
 		return handle.disconnectedColor ?? defaultDisconnectedColor;
 	}
+	
+	function handleInputChange(handle: TaggedHandle, value: string) {
+		const handleId = handle.id;
+		const originalLabel = handle.label;
+		
+		// Ensure the leading / is always present for mount paths
+		if (originalLabel.startsWith('/') && !value.startsWith('/')) {
+			value = '/' + value;
+		}
+		
+		editValues[handleId] = value;
+		
+		// Validate on every change
+		if (validateLabel) {
+			validationErrors[handleId] = validateLabel(handleId, value, handle.data);
+		}
+	}
+	
+	function handleKeyDown(e: KeyboardEvent, handle: TaggedHandle) {
+		const handleId = handle.id;
+		const originalLabel = handle.label;
+		const input = e.target as HTMLInputElement;
+		const value = input.value;
+		
+		// Prevent deleting the leading /
+		if (originalLabel.startsWith('/') && e.key === 'Backspace') {
+			if (input.selectionStart === 1 && input.selectionEnd === 1) {
+				e.preventDefault();
+				return;
+			}
+			if (input.selectionStart === 0 && input.selectionEnd === 0) {
+				e.preventDefault();
+				return;
+			}
+		}
+		
+		// Prevent moving cursor before /
+		if (originalLabel.startsWith('/') && e.key === 'ArrowLeft') {
+			if (input.selectionStart === 1) {
+				e.preventDefault();
+				return;
+			}
+		}
+		
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			const error = validationErrors[handleId];
+			if (error) {
+				// Show tooltip with error
+				showTooltip[handleId] = true;
+				// Hide after 2 seconds
+				setTimeout(() => {
+					showTooltip[handleId] = false;
+				}, 2000);
+				return;
+			}
+			// Valid - commit the change
+			if (value !== originalLabel) {
+				onLabelChange?.(handleId, originalLabel, value, handle.data);
+			}
+			onEditComplete?.(handleId);
+		} else if (e.key === 'Escape') {
+			onEditComplete?.(handleId);
+		}
+	}
+	
+	function handleBlur(handle: TaggedHandle) {
+		const handleId = handle.id;
+		const originalLabel = handle.label;
+		const value = editValues[handleId] ?? originalLabel;
+		const error = validationErrors[handleId];
+		
+		// If there's an error, revert to original
+		if (error) {
+			onEditComplete?.(handleId);
+			return;
+		}
+		
+		// Valid - commit if changed
+		if (value !== originalLabel) {
+			onLabelChange?.(handleId, originalLabel, value, handle.data);
+		}
+		onEditComplete?.(handleId);
+	}
+	
+	function getDisplayValue(handle: TaggedHandle): string {
+		if (handle.isEditing && editValues[handle.id] !== undefined) {
+			return editValues[handle.id];
+		}
+		return handle.label;
+	}
 </script>
 
 {#if handles.length > 0 || addHandle}
@@ -156,17 +284,19 @@
 		<div class="bg-gray-100 border border-gray-50 rounded-lg flex flex-col justify-center items-end py-2 pr-7 gap-2 w-11 overflow-visible">
 			{#each handles as handle (handle.id)}
 				{@const colors = getColors(handle)}
+				{@const hasError = !!validationErrors[handle.id]}
+				{@const displayValue = getDisplayValue(handle)}
 				
 				<!-- Tag - extending left from panel -->
-				<div class="flex items-center h-5 relative group min-w-6" bind:clientWidth={tagWidths[handle.id]}>
+				<div class="flex items-center h-5 relative group" style="min-width: 1.5rem;" bind:clientWidth={tagWidths[handle.id]}>
 					<!-- Full SVG Background & Border -->
 					<div class="absolute inset-0 z-20 pointer-events-none">
 						<svg width="100%" height="100%" viewBox="0 0 {tagWidths[handle.id] || 100} 20" class="overflow-visible block">
 							{#if tagWidths[handle.id]}
 								<path 
 									d={getTagPath(tagWidths[handle.id])} 
-									fill={colors.bg} 
-									stroke={colors.border}
+									fill={hasError ? '#fef2f2' : colors.bg} 
+									stroke={hasError ? '#ef4444' : colors.border}
 									stroke-width="1"
 									fill-rule="evenodd"
 									stroke-linejoin="round"
@@ -188,30 +318,36 @@
 					</div>
 
 					<!-- Body Text or Editable Input -->
-					<div class="relative z-20 pl-2 pr-1.5 text-[10px] font-medium {colors.text} whitespace-nowrap">
+					<div class="relative z-20 pl-2 pr-1.5 text-[10px] font-medium {hasError ? 'text-red-600' : colors.text} whitespace-nowrap">
 						{#if handle.isEditing}
+							<!-- Hidden span to measure text width -->
+							<span class="invisible absolute whitespace-pre text-[10px] font-medium" aria-hidden="true">{displayValue || '/'}</span>
 							<input
 								bind:this={inputRefs[handle.id]}
 								type="text"
-								value={handle.label}
-								class="nodrag bg-transparent border-none outline-none text-[10px] font-medium {colors.text} w-16 p-0 m-0"
-								onblur={(e) => {
-									const newValue = (e.target as HTMLInputElement).value;
-									if (newValue !== handle.label) {
-										onLabelChange?.(handle.id, handle.label, newValue);
-									}
-									onEditComplete?.(handle.id);
-								}}
-								onkeydown={(e) => {
-									if (e.key === 'Enter') {
-										(e.target as HTMLInputElement).blur();
-									} else if (e.key === 'Escape') {
-										onEditComplete?.(handle.id);
-									}
-								}}
+								value={displayValue}
+								class="nodrag bg-transparent border-none outline-none text-[10px] font-medium {hasError ? 'text-red-600' : colors.text} p-0 m-0"
+								style="width: {Math.max((displayValue.length || 1) * 0.6, 1)}em;"
+								oninput={(e) => handleInputChange(handle, (e.target as HTMLInputElement).value)}
+								onblur={() => handleBlur(handle)}
+								onkeydown={(e) => handleKeyDown(e, handle)}
 							/>
+							<!-- Error Tooltip -->
+							{#if showTooltip[handle.id] && validationErrors[handle.id]}
+								<div class="absolute left-0 bottom-full mb-1 px-2 py-1 bg-red-500 text-white text-[9px] rounded shadow-lg whitespace-nowrap z-50">
+									{validationErrors[handle.id]}
+									<div class="absolute left-2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-red-500"></div>
+								</div>
+							{/if}
 						{:else}
-							{handle.label}
+							<!-- svelte-ignore a11y_click_events_have_key_events -->
+							<!-- svelte-ignore a11y_no_static_element_interactions -->
+							<span 
+								class={handle.editable ? 'cursor-text hover:underline' : ''}
+								onclick={() => handle.editable && onStartEdit?.(handle.id, handle.data)}
+							>
+								{handle.label}
+							</span>
 						{/if}
 					</div>
 				</div>

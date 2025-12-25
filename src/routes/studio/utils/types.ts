@@ -50,6 +50,16 @@ export interface BaseNodeData<T = unknown> {
 // ============================================================================
 
 /**
+ * Mountpoint definition with stable ID for handle identification
+ */
+export interface Mountpoint {
+  /** Stable random ID used for handle identification */
+  id: string
+  /** User-editable mount path like '/src' */
+  path: string
+}
+
+/**
  * Input node data - represents user input that triggered generation
  * Content is string (user text input)
  * Prompts are connected via @tag references in content
@@ -57,8 +67,8 @@ export interface BaseNodeData<T = unknown> {
  */
 export interface InputNodeData extends BaseNodeData<string> {
   type: 'INPUT'
-  /** VFS mount paths - each path like '/src' represents a mountpoint handle */
-  mountpoints: string[]
+  /** VFS mountpoints - each has a stable ID and editable path */
+  mountpoints: Mountpoint[]
 }
 
 /**
@@ -190,7 +200,7 @@ export async function createInputNodeData(
   content: string,
   parents: NodeRef[] = [],
   name: string = '',
-  mountpoints: string[] = []
+  mountpoints: Mountpoint[] = []
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash(content)

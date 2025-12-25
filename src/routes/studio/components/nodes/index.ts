@@ -10,7 +10,7 @@ export { default as BaseNode } from './BaseNode.svelte';
 
 // Concrete node types
 export { default as PromptNode } from './PromptNode.svelte';
-export { default as InputNode } from './InputNode.svelte';
+export { InputNode, registerInputNodeHandlers } from './input';
 export { default as GeneratedNode } from './GeneratedNode.svelte';
 export { default as VFSNode } from './VFSNode.svelte';
 export { default as SandboxNode } from './SandboxNode.svelte';

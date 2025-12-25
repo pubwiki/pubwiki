@@ -2,10 +2,10 @@
 	import { SvelteFlow, Background, Controls, useSvelteFlow, type Node, type Edge, Position, SelectionMode, type IsValidConnection } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import dagre from 'dagre';
-	import { untrack } from 'svelte';
+	import { untrack, onMount, onDestroy } from 'svelte';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
-	import { GraphNode, VFSNode, SandboxNode, LoaderNode, StateNode } from '../components/nodes';
+	import { GraphNode, VFSNode, SandboxNode, LoaderNode, StateNode, registerInputNodeHandlers } from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
 	import { StudioSidebar } from '../components/sidebar';
 	import { 
@@ -31,10 +31,11 @@
 		styleEdgesForVersions,
 		type HistoricalTreeResult
 	} from '../utils/version';
-	import { resolvePromptContentFromRefs, getMountpointConnections } from '../utils/reftag';
-	import { validateConnection, HandleId, isMountpointHandle, getMountpointPath, createMountpointHandleId } from '../utils/connection';
+	import { resolvePromptContentFromRefs } from '../utils/reftag';
+	import { validateConnection, isMountpointHandle, getMountpointId } from '../utils/connection';
 	import { publishArtifact, type PublishMetadata } from '../utils/publish';
 	import { setStudioContext, type StudioContext } from '../stores/context';
+	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../stores/flow-events';
 	import { initSnapshotStore } from '../stores/snapshot';
 	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
 	import { getNodeVfs } from '../stores/vfs';
@@ -94,7 +95,6 @@
 	let edges = $state.raw<Edge[]>([]);
 	let editingNodeId = $state<string | null>(null);
 	let editingNameNodeId = $state<string | null>(null);
-	let editingMountpoint = $state<{ nodeId: string; path: string } | null>(null);
 	let selectedNodes = $state<Node<StudioNodeData>[]>([]);
 	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
 	let initialized = $state(false);
@@ -196,52 +196,24 @@
 		get edges() { return edges; },
 		get editingNodeId() { return editingNodeId; },
 		get editingNameNodeId() { return editingNameNodeId; },
-		get editingMountpoint() { return editingMountpoint; },
 		
 		setNodes: (newNodes) => { nodes = newNodes; },
+		updateNodes: (updater) => { nodes = updater(nodes); },
 		updateNode: (id, updater) => {
 			nodes = nodes.map(n => 
 				n.id === id ? { ...n, data: updater(n.data) } : n
 			);
 		},
 		setEdges: (newEdges) => { edges = newEdges; },
+		updateEdges: (updater) => { edges = updater(edges); },
 		setEditingNodeId: (id) => { 
 			editingNodeId = id;
-			// Update isEditing state on nodes
 			nodes = nodes.map(n => ({
 				...n,
 				data: { ...n.data, isEditing: n.id === id }
 			}));
 		},
 		setEditingNameNodeId: (id) => { editingNameNodeId = id; },
-		setEditingMountpoint: (mp) => { editingMountpoint = mp; },
-		
-		updateMountpointPath: (nodeId, oldPath, newPath) => {
-			// Update the mountpoint path in the Input node
-			nodes = nodes.map(n => {
-				if (n.id === nodeId && n.data.type === 'INPUT') {
-					const inputData = n.data as import('../utils/types').InputNodeData;
-					return {
-						...n,
-						data: {
-							...inputData,
-							mountpoints: inputData.mountpoints.map(p => p === oldPath ? newPath : p)
-						}
-					};
-				}
-				return n;
-			});
-			
-			// Update the edge's targetHandle to match the new path
-			const oldHandleId = createMountpointHandleId(oldPath);
-			const newHandleId = createMountpointHandleId(newPath);
-			edges = edges.map(e => {
-				if (e.target === nodeId && e.targetHandle === oldHandleId) {
-					return { ...e, targetHandle: newHandleId };
-				}
-				return e;
-			});
-		},
 		
 		registerTextarea,
 		unregisterTextarea,
@@ -264,7 +236,6 @@
 			
 			const override = historicalTree.nodeOverrides.get(nodeId);
 			if (override) {
-				// Node has historical changes
 				return {
 					content: override.content as string,
 					commit: override.commit,
@@ -278,7 +249,6 @@
 				};
 			}
 			
-			// Check if node is used but not changed
 			if (historicalTree.usedNodeIds.has(nodeId)) {
 				return {
 					isUsed: true
@@ -302,13 +272,25 @@
 	function findConnectedVfsNodes(nodeId: string): Map<string, Node<VFSNodeData>> {
 		const result = new Map<string, Node<VFSNodeData>>();
 		
+		// Get the target Input node to look up mountpoint paths
+		const inputNode = nodes.find(n => n.id === nodeId);
+		if (!inputNode || inputNode.data.type !== 'INPUT') {
+			return result;
+		}
+		const inputData = inputNode.data;
+		const mountpoints = inputData.mountpoints ?? [];
+		
 		// Find edges where this node is the target and handle is a mountpoint
 		for (const edge of edges) {
 			if (edge.target === nodeId && isMountpointHandle(edge.targetHandle)) {
-				const mountPath = getMountpointPath(edge.targetHandle!);
+				const mountpointId = getMountpointId(edge.targetHandle!);
+				// Look up the path from the node's mountpoints array
+				const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
+				if (!mountpoint) continue;
+				
 				const sourceNode = nodes.find(n => n.id === edge.source);
 				if (sourceNode && sourceNode.data.type === 'VFS') {
-					result.set(mountPath, sourceNode as Node<VFSNodeData>);
+					result.set(mountpoint.path, sourceNode as Node<VFSNodeData>);
 				}
 			}
 		}
@@ -646,110 +628,70 @@
 				targetHandle: connection.targetHandle ?? null,
 			},
 			(nodeId) => nodes.find(n => n.id === nodeId)?.data.type,
-			edges
+			edges,
+			(nodeId) => nodes.find(n => n.id === nodeId)?.data
 		);
 		return result.valid;
 	};
 
 	// ============================================================================
-	// Connection Handling (Auto-create mountpoint)
+	// Node Controller Registration
 	// ============================================================================
+	
+	// Register node-specific event handlers
+	let unregisterInputNode: (() => void) | null = null;
+	
+	onMount(() => {
+		unregisterInputNode = registerInputNodeHandlers();
+	});
+	
+	onDestroy(() => {
+		unregisterInputNode?.();
+		clearAllHandlers();
+	});
 
-	/** Counter for generating unique mountpoint names */
-	let mountpointCounter = 0;
-
-	/**
-	 * Add a new mountpoint to an Input node and create the corresponding edge.
-	 */
-	function addMountpointToInputNode(
-		inputNodeId: string,
-		sourceNodeId: string,
-		sourceHandle: string | null | undefined
-	) {
-		// Generate a new mountpoint path
-		const newMountPath = `/mount${mountpointCounter++}`;
-		
-		// Update the Input node to add the new mountpoint
-		nodes = nodes.map(n => {
-			if (n.id === inputNodeId && n.data.type === 'INPUT') {
-				const inputData = n.data as import('../utils/types').InputNodeData;
-				return {
-					...n,
-					data: {
-						...inputData,
-						mountpoints: [...(inputData.mountpoints ?? []), newMountPath]
-					}
-				};
-			}
-			return n;
-		});
-
-		// Create edge to the new mountpoint handle (instead of add-mount)
-		const newEdge: Edge = {
-			id: `e-${sourceNodeId}-${inputNodeId}-${newMountPath}`,
-			source: sourceNodeId,
-			target: inputNodeId,
-			sourceHandle: sourceHandle ?? undefined,
-			targetHandle: createMountpointHandleId(newMountPath)
-		};
-
-		// Filter out any edges to ADD_MOUNT handle and add the new edge
-		edges = [
-			...edges.filter(e => e.targetHandle !== HandleId.ADD_MOUNT),
-			newEdge
-		];
-
-		// Set editing mountpoint to focus the input
-		editingMountpoint = { nodeId: inputNodeId, path: newMountPath };
-	}
+	// ============================================================================
+	// Connection Handling (Event-driven)
+	// ============================================================================
 
 	/**
 	 * Handle new connection creation.
+	 * Dispatches to registered node handlers via flow-events.
 	 */
 	function handleConnect(connection: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }) {
-		// Connection to "add mount" handle -> create new mountpoint
-		if (connection.targetHandle === HandleId.ADD_MOUNT) {
-			const targetNode = nodes.find(n => n.id === connection.target);
-			if (targetNode?.data.type === 'INPUT') {
-				addMountpointToInputNode(connection.target, connection.source, connection.sourceHandle);
-			}
-		}
-	}
-
-	// ============================================================================
-	// Node/Edge Deletion Handling
-	// ============================================================================
-
-	/**
-	 * Remove a mountpoint from an Input node.
-	 */
-	function removeMountpointFromInputNode(inputNodeId: string, mountPath: string) {
-		nodes = nodes.map(n => {
-			if (n.id === inputNodeId && n.data.type === 'INPUT') {
-				const inputData = n.data as import('../utils/types').InputNodeData;
-				return {
-					...n,
-					data: {
-						...inputData,
-						mountpoints: inputData.mountpoints.filter(p => p !== mountPath)
-					}
-				};
-			}
-			return n;
+		const handled = dispatchConnection({
+			type: 'connection',
+			source: connection.source,
+			target: connection.target,
+			sourceHandle: connection.sourceHandle ?? null,
+			targetHandle: connection.targetHandle ?? null,
+			nodes: nodes,
+			edges: edges,
+			updateNodes: (updater) => { nodes = updater(nodes); },
+			updateEdges: (updater) => { edges = updater(edges); }
 		});
+		
+		// If no handler handled it, the default SvelteFlow behavior creates the edge
+		// (which is fine for normal connections)
 	}
+
+	// ============================================================================
+	// Node/Edge Deletion Handling (Event-driven)
+	// ============================================================================
 
 	/**
 	 * Handle deletion of nodes and edges.
+	 * Dispatches to registered node handlers via flow-events.
 	 */
-	function handleDelete({ edges: deletedEdges }: { nodes: Node<StudioNodeData>[]; edges: Edge[] }) {
-		for (const edge of deletedEdges) {
-			// Mountpoint edge deleted -> remove mountpoint from Input node
-			if (isMountpointHandle(edge.targetHandle)) {
-				const mountPath = getMountpointPath(edge.targetHandle!);
-				removeMountpointFromInputNode(edge.target, mountPath);
-			}
-		}
+	function handleDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<StudioNodeData>[]; edges: Edge[] }) {
+		// Dispatch edge delete events
+		dispatchEdgeDeletes(
+			deletedEdges,
+			(updater) => { nodes = updater(nodes); }
+		);
+		
+		// Dispatch node delete events
+		dispatchNodeDeletes(deletedNodes);
 	}
 
 	// ============================================================================

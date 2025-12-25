@@ -5,6 +5,8 @@
  * Provides type-safe handle definitions and connection validation.
  */
 
+import type { InputNodeData, StudioNodeData } from './types';
+
 // ============================================================================
 // Data Types
 // ============================================================================
@@ -386,17 +388,24 @@ export function isMountpointHandle(handleId: string | null | undefined): boolean
 }
 
 /**
- * Extract mountpoint path from handle ID (e.g., 'tag-mount-/dir1' -> '/dir1')
+ * Extract mountpoint ID from handle ID (e.g., 'tag-mount-abc123' -> 'abc123')
  */
-export function getMountpointPath(handleId: string): string {
+export function getMountpointId(handleId: string): string {
   return handleId.slice(HandleId.MOUNTPOINT_PREFIX.length);
 }
 
 /**
- * Create mountpoint handle ID from path
+ * Create mountpoint handle ID from mountpoint ID
  */
-export function createMountpointHandleId(path: string): string {
-  return `${HandleId.MOUNTPOINT_PREFIX}${path}`;
+export function createMountpointHandleId(mountpointId: string): string {
+  return `${HandleId.MOUNTPOINT_PREFIX}${mountpointId}`;
+}
+
+/**
+ * Generate a new unique mountpoint ID
+ */
+export function generateMountpointId(): string {
+  return crypto.randomUUID().slice(0, 8);
 }
 
 // ============================================================================
@@ -442,7 +451,8 @@ function canAddConnection(cardinality: Cardinality, currentCount: number): boole
 export function validateConnection(
   connection: ConnectionParams,
   getNodeType: (nodeId: string) => string | undefined,
-  existingEdges: ConnectionParams[]
+  existingEdges: ConnectionParams[],
+  getNodeData?: (nodeId: string) => StudioNodeData | undefined
 ): ValidationResult {
   const sourceType = getNodeType(connection.source);
   const targetType = getNodeType(connection.target);
@@ -490,6 +500,37 @@ export function validateConnection(
     };
   }
 
+  // === Special handling for ADD_MOUNT connections ===
+  if (targetHandleId === HandleId.ADD_MOUNT && targetType === 'INPUT') {
+    // Check 1: VFS already connected to this Input node (to any mountpoint)
+    const vfsAlreadyConnected = existingEdges.some(
+      e => e.source === connection.source && 
+           e.target === connection.target &&
+           isMountpointHandle(e.targetHandle)
+    );
+    if (vfsAlreadyConnected) {
+      return {
+        valid: false,
+        reason: 'This VFS is already mounted to this Input node',
+      };
+    }
+
+    // Check 2: Already has an uncommitted '/' mountpoint
+    if (getNodeData) {
+      const targetData = getNodeData(connection.target);
+      if (targetData?.type === 'INPUT') {
+        const inputData = targetData as InputNodeData;
+        const existingMountpoints = inputData.mountpoints ?? [];
+        if (existingMountpoints.some(mp => mp.path === '/')) {
+          return {
+            valid: false,
+            reason: 'Please edit the existing "/" mountpoint before adding another',
+          };
+        }
+      }
+    }
+  }
+
   // Check cardinality
   const existingToHandle = existingEdges.filter(
     e => e.target === connection.target && 
@@ -516,10 +557,11 @@ export function validateConnection(
  */
 export function createConnectionValidator(
   getNodeType: (nodeId: string) => string | undefined,
-  getEdges: () => ConnectionParams[]
+  getEdges: () => ConnectionParams[],
+  getNodeData?: (nodeId: string) => StudioNodeData | undefined
 ) {
   return (connection: ConnectionParams): boolean => {
-    const result = validateConnection(connection, getNodeType, getEdges());
+    const result = validateConnection(connection, getNodeType, getEdges(), getNodeData);
     if (!result.valid) {
       console.debug('[ConnectionValidator]', result.reason);
     }

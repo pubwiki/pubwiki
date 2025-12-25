@@ -11,7 +11,7 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, NodeRef, PromptNodeData, SnapshotEdge } from './types';
 import { snapshotStore } from './types';
-import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointPath } from './connection';
+import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId } from './connection';
 
 // ============================================================================
 // Types
@@ -240,16 +240,16 @@ export function isMountpointEdge(edge: Edge | SnapshotEdge): boolean {
 }
 
 /**
- * Extract mountpoint path from edge's targetHandle
+ * Extract mountpoint ID from edge's targetHandle
  */
-export function getMountpointPathFromEdge(edge: Edge | SnapshotEdge): string | null {
+export function getMountpointIdFromEdge(edge: Edge | SnapshotEdge): string | null {
   if (!isMountpointEdge(edge)) return null;
-  return getMountpointPath(edge.targetHandle!);
+  return getMountpointId(edge.targetHandle!);
 }
 
 /**
  * Get mountpoint connections for an Input node
- * Returns a map of mount path -> connected VFS node ID
+ * Returns a map of mountpoint ID -> connected VFS node ID
  */
 export function getMountpointConnections(
   nodeId: string,
@@ -259,9 +259,9 @@ export function getMountpointConnections(
   
   for (const edge of edges) {
     if (edge.target === nodeId && isMountpointEdge(edge)) {
-      const mountPath = getMountpointPathFromEdge(edge);
-      if (mountPath) {
-        connections.set(mountPath, edge.source);
+      const mountpointId = getMountpointIdFromEdge(edge);
+      if (mountpointId) {
+        connections.set(mountpointId, edge.source);
       }
     }
   }
@@ -271,7 +271,7 @@ export function getMountpointConnections(
 
 /**
  * Get mountpoint connections from snapshot edges
- * Returns a map of mount path -> connected VFS node ID
+ * Returns a map of mountpoint ID -> connected VFS node ID
  */
 export function getMountpointConnectionsFromSnapshotEdges(
   edges: SnapshotEdge[]
@@ -280,8 +280,8 @@ export function getMountpointConnectionsFromSnapshotEdges(
   
   for (const edge of edges) {
     if (isMountpointHandle(edge.targetHandle)) {
-      const mountPath = getMountpointPath(edge.targetHandle!);
-      connections.set(mountPath, edge.source);
+      const mountpointId = getMountpointId(edge.targetHandle!);
+      connections.set(mountpointId, edge.source);
     }
   }
   
