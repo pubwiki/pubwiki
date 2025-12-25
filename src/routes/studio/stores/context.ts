@@ -2,12 +2,12 @@
  * Studio Context
  * 
  * Provides dependency injection for studio components via Svelte context.
- * This is now a minimal, generic context focused on:
+ * This is a minimal, generic context focused on:
  * - Core flow state (nodes, edges)
  * - Common UI state (editing node)
- * - Generic operations (update node, generate, etc.)
+ * - Generic operations (update node, restore, etc.)
  * 
- * Node-specific logic belongs in node controllers, not here.
+ * Node-specific logic (generate, regenerate) belongs in node controllers, not here.
  */
 
 import { getContext, setContext } from 'svelte';
@@ -34,6 +34,7 @@ export interface PreviewState {
 
 /**
  * Studio context interface - provides access to shared state and operations
+ * Note: Node-specific operations like generate/regenerate are handled by node controllers
  */
 export interface StudioContext {
 	// State accessors (using getters for reactive access)
@@ -55,9 +56,7 @@ export interface StudioContext {
 	registerTextarea: (id: string, el: HTMLTextAreaElement) => void;
 	unregisterTextarea: (id: string) => void;
 	
-	// Operations
-	onGenerate: (inputNodeId: string) => Promise<void>;
-	onRegenerate: (generatedNodeId: string) => Promise<void>;
+	// Operations - generic only
 	onRestore: (nodeId: string, snapshotRef: NodeRef) => void;
 	saveVersionBeforeEdit: (nodeId: string) => Promise<void>;
 	

@@ -10,10 +10,10 @@
 	 */
 	import { Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import type { StateNodeData } from '../../utils/types';
-	import { getStudioContext } from '../../stores/context';
-	import { getNodeRDFStore, closeNodeRDFStore, type QuadstoreRDFStore } from '../../stores/rdf';
-	import BaseNode from './BaseNode.svelte';
+	import type { StateNodeData } from '../../../utils/types';
+	import { getStudioContext } from '../../../stores/context';
+	import { getNodeRDFStore, closeNodeRDFStore, type QuadstoreRDFStore } from '../../../stores/rdf';
+	import BaseNode from '../BaseNode.svelte';
 
 	// ============================================================================
 	// Props & Context

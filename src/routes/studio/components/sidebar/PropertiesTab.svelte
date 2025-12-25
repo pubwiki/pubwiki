@@ -7,6 +7,8 @@
 	import { getStudioContext } from '../../stores/context';
 	import { marked } from 'marked';
 	import RichTextArea from '../RichTextArea.svelte';
+	import { generate } from '../nodes/input/controller.svelte';
+	import { regenerate } from '../nodes/generated/controller.svelte';
 
 	interface Props {
 		selectedNodes: Node<StudioNodeData>[];
@@ -71,14 +73,22 @@
 	}
 
 	// Generation handlers
-	function handleGenerate() {
+	async function handleGenerate() {
 		if (!selectedNode) return;
-		ctx.onGenerate(selectedNode.id);
+		const callbacks = {
+			updateNodes: ctx.updateNodes,
+			updateEdges: ctx.updateEdges,
+		};
+		await generate(selectedNode.id, ctx.nodes, ctx.edges, callbacks);
 	}
 
-	function handleRegenerate() {
+	async function handleRegenerate() {
 		if (!selectedNode) return;
-		ctx.onRegenerate(selectedNode.id);
+		const callbacks = {
+			updateNodes: ctx.updateNodes,
+			updateEdges: ctx.updateEdges,
+		};
+		await regenerate(selectedNode.id, ctx.nodes, ctx.edges, callbacks);
 	}
 
 	// Check if node is editable

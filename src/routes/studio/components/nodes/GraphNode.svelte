@@ -7,9 +7,9 @@
 	 */
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData } from '../../utils/types';
-	import PromptNode from './PromptNode.svelte';
+	import { PromptNode } from './prompt';
 	import { InputNode } from './input';
-	import GeneratedNode from './GeneratedNode.svelte';
+	import { GeneratedNode } from './generated';
 
 	let props: NodeProps<Node<StudioNodeData>> = $props();
 

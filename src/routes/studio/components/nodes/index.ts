@@ -8,18 +8,26 @@
 // Base components
 export { default as BaseNode } from './BaseNode.svelte';
 
-// Concrete node types
-export { default as PromptNode } from './PromptNode.svelte';
-export { InputNode, registerInputNodeHandlers } from './input';
-export { default as GeneratedNode } from './GeneratedNode.svelte';
-export { default as VFSNode } from './VFSNode.svelte';
-export { default as SandboxNode } from './SandboxNode.svelte';
-export { default as LoaderNode } from './LoaderNode.svelte';
-export { default as StateNode } from './StateNode.svelte';
-
-// Expanded views
-export { default as VFSExpandedView } from './VFSExpandedView.svelte';
-export { default as SandboxPreviewView } from './SandboxPreviewView.svelte';
+// Concrete node types - organized by module
+export { PromptNode } from './prompt';
+export { 
+	InputNode, 
+	registerInputNodeHandlers,
+	generate,
+	type GenerationCallbacks
+} from './input';
+export { 
+	GeneratedNode, 
+	registerGeneratedNodeHandlers,
+	initGeneratedNodeController,
+	regenerate,
+	type GenerationConfig,
+	type StreamGenerationCallbacks
+} from './generated';
+export { VFSNode, VFSExpandedView } from './vfs';
+export { SandboxNode, SandboxPreviewView } from './sandbox';
+export { LoaderNode } from './loader';
+export { StateNode } from './state';
 
 // Re-export types
 export type { BaseNodeProps, NodeHeaderProps } from './types';

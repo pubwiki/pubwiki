@@ -8,10 +8,11 @@
 	 * - Regenerate button
 	 */
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { GeneratedNodeData } from '../../utils/types';
-	import { getStudioContext } from '../../stores/context';
+	import type { GeneratedNodeData } from '../../../utils/types';
+	import { getStudioContext } from '../../../stores/context';
 	import { marked } from 'marked';
-	import BaseNode from './BaseNode.svelte';
+	import BaseNode from '../BaseNode.svelte';
+	import { regenerate } from './controller.svelte';
 
 	// ============================================================================
 	// Props
@@ -38,8 +39,12 @@
 	// Event Handlers
 	// ============================================================================
 
-	function handleRegenerate() {
-		ctx.onRegenerate(id);
+	async function handleRegenerate() {
+		const callbacks = {
+			updateNodes: ctx.updateNodes,
+			updateEdges: ctx.updateEdges,
+		};
+		await regenerate(id, ctx.nodes, ctx.edges, callbacks);
 	}
 
 	function handleWheel(e: WheelEvent) {

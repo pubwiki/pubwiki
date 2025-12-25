@@ -10,10 +10,10 @@
 	 */
 	import { Handle, Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount } from 'svelte';
-	import type { LoaderNodeData, LoaderServiceType } from '../../utils/types';
-	import { LOADER_SERVICE_TYPES } from '../../utils/types';
-	import { getStudioContext } from '../../stores/context';
-	import BaseNode from './BaseNode.svelte';
+	import type { LoaderNodeData, LoaderServiceType } from '../../../utils/types';
+	import { LOADER_SERVICE_TYPES } from '../../../utils/types';
+	import { getStudioContext } from '../../../stores/context';
+	import BaseNode from '../BaseNode.svelte';
 
 	// ============================================================================
 	// Props & Context

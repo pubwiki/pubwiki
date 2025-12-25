@@ -11,11 +11,11 @@
 	 */
 	import { Handle, Position, type NodeProps, type Node, useEdges } from '@xyflow/svelte';
 	import { onMount, untrack } from 'svelte';
-	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData } from '../../utils/types';
-	import { getNodeVfs, type VersionedVfs } from '../../stores/vfs';
-	import { getStudioContext } from '../../stores/context';
-	import { HandleId } from '../../utils/connection';
-	import BaseNode from './BaseNode.svelte';
+	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData } from '../../../utils/types';
+	import { getNodeVfs, type VersionedVfs } from '../../../stores/vfs';
+	import { getStudioContext } from '../../../stores/context';
+	import { HandleId } from '../../../utils/connection';
+	import BaseNode from '../BaseNode.svelte';
 	import SandboxPreviewView from './SandboxPreviewView.svelte';
 	import type { ProjectConfig } from '@pubwiki/sandbox-host';
 	import { detectProject } from '@pubwiki/bundler';

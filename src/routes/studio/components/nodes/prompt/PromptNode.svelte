@@ -9,14 +9,14 @@
 	 */
 	import { Handle, Position, useUpdateNodeInternals, useEdges } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { PromptNodeData, SnapshotEdge } from '../../utils/types';
-	import { getStudioContext } from '../../stores/context';
-	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../utils/reftag';
-	import { createRefTagHandleId } from '../../utils/connection';
-	import BaseNode from './BaseNode.svelte';
-	import RichTextArea from '../RichTextArea.svelte';
-	import TaggedHandlePanel from './TaggedHandlePanel.svelte';
-	import type { TaggedHandle } from './TaggedHandlePanel.svelte';
+	import type { PromptNodeData, SnapshotEdge } from '../../../utils/types';
+	import { getStudioContext } from '../../../stores/context';
+	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../../utils/reftag';
+	import { createRefTagHandleId } from '../../../utils/connection';
+	import BaseNode from '../BaseNode.svelte';
+	import RichTextArea from '../../RichTextArea.svelte';
+	import TaggedHandlePanel from '../TaggedHandlePanel.svelte';
+	import type { TaggedHandle } from '../TaggedHandlePanel.svelte';
 
 	// ============================================================================
 	// Props

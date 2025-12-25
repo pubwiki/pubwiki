@@ -9,5 +9,8 @@ export {
 	registerInputNodeHandlers,
 	getEditingMountpoint,
 	setEditingMountpoint,
-	updateMountpointPath
+	updateMountpointPath,
+	findConnectedVfsNodes,
+	generate,
+	type GenerationCallbacks
 } from './controller.svelte';

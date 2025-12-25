@@ -8,7 +8,7 @@
 	import { slide, fade } from 'svelte/transition';
 	import loader from '@monaco-editor/loader';
 	import type * as Monaco from 'monaco-editor';
-	import type { VersionedVfs } from '../../stores/vfs';
+	import type { VersionedVfs } from '../../../stores/vfs';
 
 	// ============================================================================
 	// Types

@@ -1,15 +1,22 @@
 /**
  * InputNode Controller
  * 
- * Handles InputNode-specific logic for flow events:
+ * Handles InputNode-specific logic:
  * - Creating mountpoints when VFS connects to ADD_MOUNT handle
  * - Removing mountpoints when edges are deleted
  * - Managing mountpoint path editing state
+ * - Generation trigger from input nodes (onGenerate)
  */
 
 import { tick } from 'svelte';
-import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData, InputNodeData, Mountpoint } from '../../../utils/types';
+import { Position, type Node, type Edge } from '@xyflow/svelte';
+import type { 
+	StudioNodeData, 
+	InputNodeData, 
+	VFSNodeData,
+	Mountpoint 
+} from '../../../utils/types';
+import { createGeneratedNodeData } from '../../../utils/types';
 import { 
 	HandleId, 
 	isMountpointHandle, 
@@ -23,6 +30,14 @@ import {
 	type ConnectionEvent,
 	type EdgeDeleteEvent
 } from '../../../stores/flow-events';
+import { prepareForGeneration } from '../../../utils/version';
+import { getNodeVfs } from '../../../stores/vfs';
+import { createMountedVfs, getMountedProvider } from '@pubwiki/vfs';
+import { 
+	getPubChat, 
+	streamGeneration, 
+	type StreamGenerationCallbacks 
+} from '../generated/controller.svelte';
 
 // ============================================================================
 // State
@@ -226,6 +241,192 @@ function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
 		}
 		return n;
 	}));
+}
+
+// ============================================================================
+// Generation Logic
+// ============================================================================
+
+/**
+ * Find all VFS nodes connected to a node via mountpoint handles
+ * Returns a map of mount path -> VFS node
+ */
+export function findConnectedVfsNodes(
+	nodeId: string,
+	nodes: Node<StudioNodeData>[],
+	edges: Edge[]
+): Map<string, Node<VFSNodeData>> {
+	const result = new Map<string, Node<VFSNodeData>>();
+	
+	// Get the target Input node to look up mountpoint paths
+	const inputNode = nodes.find(n => n.id === nodeId);
+	if (!inputNode || inputNode.data.type !== 'INPUT') {
+		return result;
+	}
+	const inputData = inputNode.data as InputNodeData;
+	const mountpoints = inputData.mountpoints ?? [];
+	
+	// Find edges where this node is the target and handle is a mountpoint
+	for (const edge of edges) {
+		if (edge.target === nodeId && isMountpointHandle(edge.targetHandle)) {
+			const mountpointId = getMountpointId(edge.targetHandle!);
+			// Look up the path from the node's mountpoints array
+			const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
+			if (!mountpoint) continue;
+			
+			const sourceNode = nodes.find(n => n.id === edge.source);
+			if (sourceNode && sourceNode.data.type === 'VFS') {
+				result.set(mountpoint.path, sourceNode as Node<VFSNodeData>);
+			}
+		}
+	}
+	
+	return result;
+}
+
+/**
+ * Callbacks for generation operations
+ */
+export interface GenerationCallbacks {
+	/** Called to update nodes */
+	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void;
+	/** Called to update edges */
+	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
+	/** Called when generation completes successfully */
+	onComplete?: () => void;
+}
+
+/**
+ * Generate from an input node
+ * This handles the full generation flow including:
+ * - Finding connected VFS nodes and setting up mounts
+ * - Preparing snapshots and refs
+ * - Creating the generated node
+ * - Streaming the response
+ * 
+ * @returns The new generated node, or null if generation cannot proceed
+ */
+export async function generate(
+	inputNodeId: string,
+	nodes: Node<StudioNodeData>[],
+	edges: Edge[],
+	callbacks: GenerationCallbacks
+): Promise<Node<StudioNodeData> | null> {
+	const inputNode = nodes.find(n => n.id === inputNodeId);
+	if (!inputNode || inputNode.data.type !== 'INPUT' || !inputNode.data.content) {
+		return null;
+	}
+
+	const pubchat = getPubChat();
+	if (!pubchat) {
+		console.error('PubChat not initialized');
+		return null;
+	}
+
+	// Check if there are VFS nodes connected to this input node via mountpoints
+	const vfsNodes = findConnectedVfsNodes(inputNodeId, nodes, edges);
+	
+	// If VFS nodes exist, set up mounted VFS for the generation
+	let mountedVfs = null;
+	if (vfsNodes.size > 0) {
+		mountedVfs = createMountedVfs();
+		const provider = getMountedProvider(mountedVfs);
+		
+		if (provider) {
+			for (const [mountPath, vfsNode] of vfsNodes) {
+				const vfsData = vfsNode.data as VFSNodeData;
+				const vfs = await getNodeVfs(vfsData.projectId, vfsNode.id);
+				provider.mountVfs(mountPath, vfs);
+			}
+		}
+		
+		pubchat.setVFS(mountedVfs);
+	}
+
+	// Prepare for generation - creates snapshots, gets refs, and resolves tags
+	const prepared = await prepareForGeneration(nodes, edges, inputNodeId);
+	
+	// Update nodes with synced data
+	callbacks.updateNodes(() => prepared.nodes);
+
+	// Create streaming generated node with indirect refs
+	const newGeneratedData = await createGeneratedNodeData(
+		'',
+		prepared.inputRef,
+		prepared.promptRefs,
+		prepared.indirectPromptRefs,
+		prepared.parentRefs
+	);
+	
+	const generatedNode: Node<StudioNodeData> = {
+		id: newGeneratedData.id,
+		type: 'generated',
+		data: { 
+			...newGeneratedData,
+			isStreaming: true,
+		},
+		position: { x: 0, y: 0 }, // Will be positioned by caller
+		sourcePosition: Position.Right,
+		targetPosition: Position.Left,
+	};
+
+	// Create edge from input to generated
+	const newEdge: Edge = {
+		id: `e-${inputNodeId}-${newGeneratedData.id}`,
+		source: inputNodeId,
+		target: newGeneratedData.id,
+	};
+
+	// Add the generated node and edge
+	callbacks.updateNodes(nodes => [...nodes, generatedNode]);
+	callbacks.updateEdges(edges => [...edges, newEdge]);
+
+	// Define stream callbacks
+	const streamCallbacks: StreamGenerationCallbacks = {
+		onToken: (nodeId, accumulatedContent) => {
+			callbacks.updateNodes(nodes => nodes.map(n => 
+				n.id === nodeId && n.data.type !== 'VFS'
+					? { ...n, data: { ...n.data, content: accumulatedContent } }
+					: n
+			) as Node<StudioNodeData>[]);
+		},
+		onDone: (nodeId, finalContent, finalCommit) => {
+			callbacks.updateNodes(nodes => nodes.map(n => 
+				n.id === nodeId && n.data.type !== 'VFS'
+					? { ...n, data: { ...n.data, content: finalContent, commit: finalCommit, isStreaming: false } }
+					: n
+			) as Node<StudioNodeData>[]);
+			// Clear VFS after generation completes
+			if (mountedVfs) {
+				pubchat.clearVFS();
+			}
+			callbacks.onComplete?.();
+		},
+		onError: (nodeId, _error) => {
+			callbacks.updateNodes(nodes => nodes.map(n => 
+				n.id === nodeId && n.data.type !== 'VFS' 
+					? { ...n, data: { ...n.data, isStreaming: false } } 
+					: n
+			) as Node<StudioNodeData>[]);
+			// Clear VFS on error too
+			if (mountedVfs) {
+				pubchat.clearVFS();
+			}
+		}
+	};
+
+	// Stream generation (don't await - let it run in background)
+	streamGeneration(
+		newGeneratedData.id,
+		prepared.resolvedUserInput,
+		prepared.resolvedSystemPrompt,
+		streamCallbacks
+	).catch(err => {
+		console.error('Generation failed:', err);
+		streamCallbacks.onError(newGeneratedData.id, err);
+	});
+
+	return generatedNode;
 }
 
 // ============================================================================

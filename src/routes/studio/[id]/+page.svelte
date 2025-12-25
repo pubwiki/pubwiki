@@ -5,60 +5,54 @@
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
-	import { GraphNode, VFSNode, SandboxNode, LoaderNode, StateNode, registerInputNodeHandlers } from '../components/nodes';
+	import { 
+		GraphNode, 
+		VFSNode, 
+		SandboxNode, 
+		LoaderNode, 
+		StateNode, 
+		registerInputNodeHandlers,
+		registerGeneratedNodeHandlers,
+		initGeneratedNodeController
+	} from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
 	import { StudioSidebar } from '../components/sidebar';
 	import { 
 		type StudioNodeData, 
 		type NodeRef,
 		type GeneratedNodeData,
-		type VFSNodeData,
-		snapshotStore,
 		createPromptNodeData, 
 		createInputNodeData,
-		createGeneratedNodeData,
 		createVFSNodeData,
 		createSandboxNodeData,
 		createLoaderNodeData,
 		createStateNodeData,
-		generateCommitHash,
 		restoreSnapshot,
 		syncNode
 	} from '../utils/types';
 	import {
-		prepareForGeneration,
 		rebuildHistoricalTree,
 		styleEdgesForVersions,
 		type HistoricalTreeResult
 	} from '../utils/version';
-	import { resolvePromptContentFromRefs } from '../utils/reftag';
-	import { validateConnection, isMountpointHandle, getMountpointId } from '../utils/connection';
+	import { validateConnection } from '../utils/connection';
 	import { publishArtifact, type PublishMetadata } from '../utils/publish';
 	import { setStudioContext, type StudioContext } from '../stores/context';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../stores/flow-events';
 	import { initSnapshotStore } from '../stores/snapshot';
 	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
-	import { getNodeVfs } from '../stores/vfs';
-	import { createMountedVfs, getMountedProvider } from '@pubwiki/vfs';
 	import { useAuth } from '$lib/stores/auth.svelte';
-	import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
 
 	// ============================================================================
 	// LLM Configuration (for internal generation)
 	// ============================================================================
 	
-	const pubchat = new PubChat({
-		llm: {
-			// FIXME: only for test, do not bring to production
-			apiKey: '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',
-			model: 'google/gemini-2.5-flash',
-			baseUrl: 'https://openrouter.ai/api/v1'
-		},
-		messageStore: new MemoryMessageStore(),
-		toolCalling: {
-			enabled: true,
-			maxIterations: 10
-		}
+	// Initialize the generation controller with LLM config
+	initGeneratedNodeController({
+		// FIXME: only for test, do not bring to production
+		apiKey: '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',
+		model: 'google/gemini-2.5-flash',
+		baseUrl: 'https://openrouter.ai/api/v1'
 	});
 
 	// ============================================================================
@@ -218,8 +212,6 @@
 		registerTextarea,
 		unregisterTextarea,
 		
-		onGenerate,
-		onRegenerate,
 		onRestore,
 		saveVersionBeforeEdit: async (nodeId) => {
 			const node = nodes.find(n => n.id === nodeId);
@@ -260,229 +252,6 @@
 	};
 	
 	setStudioContext(studioContext);
-
-	// ============================================================================
-	// Generation (from Input Node)
-	// ============================================================================
-	
-	/**
-	 * Find all VFS nodes connected to a node via mountpoint handles
-	 * Returns a map of mount path -> VFS node
-	 */
-	function findConnectedVfsNodes(nodeId: string): Map<string, Node<VFSNodeData>> {
-		const result = new Map<string, Node<VFSNodeData>>();
-		
-		// Get the target Input node to look up mountpoint paths
-		const inputNode = nodes.find(n => n.id === nodeId);
-		if (!inputNode || inputNode.data.type !== 'INPUT') {
-			return result;
-		}
-		const inputData = inputNode.data;
-		const mountpoints = inputData.mountpoints ?? [];
-		
-		// Find edges where this node is the target and handle is a mountpoint
-		for (const edge of edges) {
-			if (edge.target === nodeId && isMountpointHandle(edge.targetHandle)) {
-				const mountpointId = getMountpointId(edge.targetHandle!);
-				// Look up the path from the node's mountpoints array
-				const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
-				if (!mountpoint) continue;
-				
-				const sourceNode = nodes.find(n => n.id === edge.source);
-				if (sourceNode && sourceNode.data.type === 'VFS') {
-					result.set(mountpoint.path, sourceNode as Node<VFSNodeData>);
-				}
-			}
-		}
-		
-		return result;
-	}
-	
-	async function onGenerate(inputNodeId: string) {
-		const inputNode = nodes.find(n => n.id === inputNodeId);
-		if (!inputNode || inputNode.data.type !== 'INPUT' || !inputNode.data.content) return;
-
-		// Check if there are VFS nodes connected to this input node via mountpoints
-		const vfsNodes = findConnectedVfsNodes(inputNodeId);
-		
-		// If VFS nodes exist, set up mounted VFS for the generation
-		let mountedVfs = null;
-		if (vfsNodes.size > 0) {
-			mountedVfs = createMountedVfs();
-			const provider = getMountedProvider(mountedVfs);
-			
-			if (provider) {
-				for (const [mountPath, vfsNode] of vfsNodes) {
-					const vfsData = vfsNode.data as VFSNodeData;
-					const vfs = await getNodeVfs(vfsData.projectId, vfsNode.id);
-					provider.mountVfs(mountPath, vfs);
-				}
-			}
-			
-			pubchat.setVFS(mountedVfs);
-		}
-
-		// Prepare for generation - creates snapshots, gets refs, and resolves tags
-		const prepared = await prepareForGeneration(nodes, edges, inputNodeId);
-		nodes = prepared.nodes;
-
-		// Create streaming generated node with indirect refs
-		const newGeneratedData = await createGeneratedNodeData(
-			'',
-			prepared.inputRef,
-			prepared.promptRefs,
-			prepared.indirectPromptRefs,
-			prepared.parentRefs
-		);
-		
-		const generatedNode: Node<StudioNodeData> = {
-			id: newGeneratedData.id,
-			type: 'generated',
-			data: { 
-				...newGeneratedData,
-				isStreaming: true,
-			},
-			position: { x: 0, y: 0 },
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-
-		// Create edge from input to generated
-		const newEdge: Edge = {
-			id: `e-${inputNodeId}-${newGeneratedData.id}`,
-			source: inputNodeId,
-			target: newGeneratedData.id,
-		};
-
-		// Add nodes and edges, then position the new generated node relative to its source
-		const allNodes = [...nodes, generatedNode];
-		const allEdges = [...edges, newEdge];
-		nodes = positionNewNodesFromSources([newGeneratedData.id], allNodes, allEdges);
-		edges = allEdges;
-
-		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
-
-		try {
-			// Stream generation using resolved content (with tags substituted)
-			await streamGeneration(
-				newGeneratedData.id,
-				prepared.resolvedUserInput,
-				prepared.resolvedSystemPrompt
-			);
-		} finally {
-			// Clear VFS after generation completes (success or error)
-			if (mountedVfs) {
-				pubchat.clearVFS();
-			}
-		}
-	}
-
-	async function streamGeneration(nodeId: string, userContent: string, systemPrompt: string) {
-		try {
-			let historyId: string | undefined;
-			if (systemPrompt) {
-				const systemMessage = createSystemMessage(systemPrompt, null);
-				const historyIds = await pubchat.addConversation([systemMessage]);
-				historyId = historyIds[historyIds.length - 1];
-			}
-
-			let accumulatedContent = '';
-			for await (const event of pubchat.streamChat(userContent, historyId)) {
-				if (event.type === 'token') {
-					accumulatedContent += event.token;
-					nodes = nodes.map(n => 
-						n.id === nodeId && n.data.type !== 'VFS'
-							? { ...n, data: { ...n.data, content: accumulatedContent } }
-							: n
-					) as typeof nodes;
-				} else if (event.type === 'done') {
-					const finalCommit = await generateCommitHash(accumulatedContent);
-					nodes = nodes.map(n => 
-						n.id === nodeId && n.data.type !== 'VFS'
-							? { ...n, data: { ...n.data, content: accumulatedContent, commit: finalCommit, isStreaming: false } }
-							: n
-					) as typeof nodes;
-				} else if (event.type === 'error') {
-					console.error('Generation error:', event.error);
-					nodes = nodes.map(n => 
-						n.id === nodeId && n.data.type !== 'VFS' ? { ...n, data: { ...n.data, isStreaming: false } } : n
-					) as typeof nodes;
-				}
-			}
-		} catch (error) {
-			console.error('Generation failed:', error);
-			nodes = nodes.map(n => 
-				n.id === nodeId && n.data.type !== 'VFS' ? { ...n, data: { ...n.data, isStreaming: false } } : n
-			) as typeof nodes;
-		}
-	}
-
-	// ============================================================================
-	// Regeneration (from Generated Node)
-	// ============================================================================
-
-	/**
-	 * Regenerate content using the historical snapshots stored in the generated node.
-	 * This uses the original inputRef, promptRefs, and indirectPromptRefs to 
-	 * reconstruct the exact context that was used for the original generation,
-	 * including reftag-substituted content.
-	 */
-	async function onRegenerate(generatedNodeId: string) {
-		const generatedNode = nodes.find(n => n.id === generatedNodeId);
-		if (!generatedNode || generatedNode.data.type !== 'GENERATED') return;
-
-		const genData = generatedNode.data as GeneratedNodeData;
-
-		// Get the historical input content
-		const inputNode = nodes.find(n => n.id === genData.inputRef.id);
-		let inputContent: string;
-		
-		// If the input ref points to an old version, get it from snapshotStore
-		if (inputNode && inputNode.data.commit === genData.inputRef.commit) {
-			// Current version matches the ref - use current content
-			inputContent = inputNode.data.content as string;
-		} else {
-			// Different version - get from snapshot store
-			const snapshot = snapshotStore.get<string>(genData.inputRef.id, genData.inputRef.commit);
-			if (!snapshot) {
-				console.error('Cannot find historical input snapshot');
-				return;
-			}
-			inputContent = snapshot.content;
-		}
-
-		// Combine all refs for content resolution
-		const allRefs = [
-			...genData.promptRefs, 
-			...(genData.indirectPromptRefs || [])
-		];
-
-		// Resolve each direct prompt ref with reftag substitution
-		const resolvedPrompts: string[] = [];
-		for (const promptRef of genData.promptRefs) {
-			const resolved = resolvePromptContentFromRefs(
-				promptRef.id,
-				promptRef.commit,
-				nodes,
-				edges,
-				allRefs,
-				new Set()
-			);
-			resolvedPrompts.push(resolved);
-		}
-
-		const systemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
-
-		// Set streaming state
-		nodes = nodes.map(n => 
-			n.id === generatedNodeId && n.data.type !== 'VFS'
-				? { ...n, data: { ...n.data, isStreaming: true, content: '' } }
-				: n
-		) as typeof nodes;
-
-		// Stream regeneration
-		await streamGeneration(generatedNodeId, inputContent, systemPrompt);
-	}
 
 	// ============================================================================
 	// Version Preview Effects
@@ -640,13 +409,16 @@
 	
 	// Register node-specific event handlers
 	let unregisterInputNode: (() => void) | null = null;
+	let unregisterGeneratedNode: (() => void) | null = null;
 	
 	onMount(() => {
 		unregisterInputNode = registerInputNodeHandlers();
+		unregisterGeneratedNode = registerGeneratedNodeHandlers();
 	});
 	
 	onDestroy(() => {
 		unregisterInputNode?.();
+		unregisterGeneratedNode?.();
 		clearAllHandlers();
 	});
 

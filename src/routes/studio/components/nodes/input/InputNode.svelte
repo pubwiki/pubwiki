@@ -35,7 +35,8 @@
 		getEditingMountpoint, 
 		setEditingMountpoint, 
 		updateMountpointPath,
-		validateMountpointPath 
+		validateMountpointPath,
+		generate
 	} from './controller.svelte';
 
 	// ============================================================================
@@ -218,8 +219,12 @@
 		}));
 	}
 
-	function handleGenerate() {
-		ctx.onGenerate(id);
+	async function handleGenerate() {
+		const callbacks = {
+			updateNodes: ctx.updateNodes,
+			updateEdges: ctx.updateEdges,
+		};
+		await generate(id, ctx.nodes, ctx.edges, callbacks);
 	}
 
 	function handleMountpointLabelChange(handleId: string, _oldLabel: string, newLabel: string, handleData?: Record<string, unknown>) {
