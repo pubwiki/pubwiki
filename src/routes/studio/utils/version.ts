@@ -1,60 +1,32 @@
 /**
- * Version Control Module
+ * Version Control Module - Generation Preparation
  * 
- * Handles version tracking, snapshots, and historical version preview for studio nodes.
+ * Handles version preparation for content generation.
+ * Core version control functionality has been moved to stores/version/
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { 
-  StudioNodeData, 
-  NodeRef, 
-  GeneratedNodeData,
-  BaseNodeData,
-  SnapshotEdge
+  StudioNodeData
 } from './types';
 import { 
-  snapshotStore, 
-  generateCommitHash, 
-  syncNode
-} from './types';
+  syncNode,
+  type NodeRef
+} from '../stores/version';
 import { 
   resolvePromptContent, 
-  getRefTagConnections,
   getInputTagConnections,
   getMountpointConnections,
-  resolveInputContent
+  resolveInputContent,
+  getRefTagConnections
 } from './reftag';
-import { isTagHandle, isMountpointHandle } from './connection';
+
+// Re-export types from new version module for backward compatibility
+export type { HistoricalTreeResult } from '../stores/version';
 
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Result of rebuilding historical dependency tree
- */
-export interface HistoricalTreeResult {
-  /** 
-   * Map of existing node IDs to their historical node data.
-   * These nodes exist in the current graph but need to display historical content.
-   */
-  nodeOverrides: Map<string, StudioNodeData>;
-  /** 
-   * Phantom nodes for deleted nodes that need to be temporarily displayed.
-   * These are full Node objects that can be merged into the nodes array.
-   */
-  phantomNodes: Node<StudioNodeData>[];
-  /** 
-   * Historical edges to display.
-   * These should replace/augment current edges for the involved nodes.
-   */
-  historicalEdges: Edge[];
-  /**
-   * IDs of nodes that are referenced by the generated node (used but not changed).
-   * These nodes exist and their content matches the historical version.
-   */
-  usedNodeIds: Set<string>;
-}
 
 export interface PrepareGenerationResult {
   /** Updated nodes with snapshots created if needed */
@@ -219,203 +191,4 @@ export async function prepareForGeneration(
     resolvedUserInput,
     mountpoints
   };
-}
-
-/**
- * Rebuild the historical dependency tree for a generated node.
- * 
- * This function:
- * 1. Finds all nodes referenced by the generated node (input, prompts, indirect prompts)
- * 2. For existing nodes with different commits, creates nodeOverrides with historical data
- * 3. For deleted nodes, creates phantom nodes from snapshots
- * 4. Reconstructs historical edges from snapshots
- * 
- * @param generatedNode - The generated node to rebuild history for
- * @param allNodes - All current nodes in the graph
- * @param currentEdges - All current edges in the graph
- * @returns HistoricalTreeResult with overrides, phantoms, and edges
- */
-export function rebuildHistoricalTree(
-  generatedNode: Node<StudioNodeData>,
-  allNodes: Node<StudioNodeData>[],
-  currentEdges: Edge[]
-): HistoricalTreeResult {
-  const nodeOverrides = new Map<string, StudioNodeData>();
-  const phantomNodes: Node<StudioNodeData>[] = [];
-  const historicalEdges: Edge[] = [];
-  const usedNodeIds = new Set<string>();
-  
-  if (generatedNode.data.type !== 'GENERATED') {
-    return { nodeOverrides, phantomNodes, historicalEdges, usedNodeIds };
-  }
-
-  const genData = generatedNode.data as GeneratedNodeData;
-  
-  // Collect all refs we need to process
-  const allRefs: NodeRef[] = [
-    genData.inputRef,
-    ...genData.promptRefs,
-    ...(genData.indirectPromptRefs || [])
-  ];
-
-  // First pass: identify phantom nodes (deleted nodes)
-  const phantomNodeIds = new Set<string>();
-  for (const ref of allRefs) {
-    const existingNode = allNodes.find(n => n.id === ref.id);
-    if (!existingNode) {
-      phantomNodeIds.add(ref.id);
-    }
-  }
-
-  // Second pass: process each ref
-  for (const ref of allRefs) {
-    const existingNode = allNodes.find(n => n.id === ref.id);
-    const snapshot = snapshotStore.get<string>(ref.id, ref.commit);
-    
-    if (existingNode) {
-      // Node exists - mark as used
-      usedNodeIds.add(ref.id);
-      
-      // Check if we need to show historical version
-      if (existingNode.data.commit !== ref.commit && snapshot) {
-        // Create override with historical data
-        const historicalData: StudioNodeData = {
-          ...existingNode.data,
-          content: snapshot.content,
-          commit: snapshot.commit
-        };
-        nodeOverrides.set(ref.id, historicalData);
-      }
-      
-      // Check incoming edges to restore connections from phantom nodes
-      // Use historical snapshot if available, otherwise check current edges
-      const edgesToCheck = snapshot?.incomingEdges;
-      if (edgesToCheck) {
-        for (const snapshotEdge of edgesToCheck) {
-          // Only add edge if source is a phantom node (deleted)
-          if (phantomNodeIds.has(snapshotEdge.source)) {
-            historicalEdges.push({
-              id: `historical-${snapshotEdge.source}-${ref.id}-${snapshotEdge.targetHandle || 'default'}`,
-              source: snapshotEdge.source,
-              target: ref.id,
-              sourceHandle: snapshotEdge.sourceHandle,
-              targetHandle: snapshotEdge.targetHandle
-            });
-          }
-        }
-      }
-    } else if (snapshot) {
-      // Node was deleted - create phantom node
-      // Determine node type from the ref context
-      const nodeType = ref.id === genData.inputRef.id ? 'INPUT' : 'PROMPT';
-      
-      const phantomData: StudioNodeData = {
-        id: ref.id,
-        name: snapshot.name,
-        type: nodeType,
-        content: snapshot.content,
-        commit: snapshot.commit,
-        snapshotRefs: [],
-        parents: [],
-        ...(nodeType === 'INPUT' ? { sourcePromptIds: [] } : {})
-      } as StudioNodeData;
-      
-      // Use saved position from snapshot, or calculate fallback position
-      const savedPosition = snapshot.position;
-      const phantomNode: Node<StudioNodeData> = {
-        id: ref.id,
-        type: nodeType.toLowerCase(),
-        position: savedPosition ?? {
-          x: (generatedNode.position?.x ?? 0) - 400,
-          y: (generatedNode.position?.y ?? 0) + phantomNodes.length * 150
-        },
-        data: phantomData
-      };
-      
-      phantomNodes.push(phantomNode);
-      
-      // Add historical edges from snapshot (only from other phantom nodes)
-      if (snapshot.incomingEdges) {
-        for (const snapshotEdge of snapshot.incomingEdges) {
-          // Only add edge if source is also a phantom node
-          if (phantomNodeIds.has(snapshotEdge.source)) {
-            historicalEdges.push({
-              id: `historical-${snapshotEdge.source}-${ref.id}-${snapshotEdge.targetHandle || 'default'}`,
-              source: snapshotEdge.source,
-              target: ref.id,
-              sourceHandle: snapshotEdge.sourceHandle,
-              targetHandle: snapshotEdge.targetHandle
-            });
-          }
-        }
-      }
-    }
-  }
-
-  return { nodeOverrides, phantomNodes, historicalEdges, usedNodeIds };
-}
-
-/**
- * Check if an edge connects to a generated node using an old version reference.
- */
-export function isOldVersionEdge(
-  edge: Edge,
-  nodes: Node<StudioNodeData>[]
-): boolean {
-  const targetNode = nodes.find(n => n.id === edge.target);
-  if (targetNode?.data.type !== 'GENERATED') {
-    return false;
-  }
-
-  const genData = targetNode.data as GeneratedNodeData;
-  const sourceNode = nodes.find(n => n.id === edge.source);
-  
-  if (!sourceNode) {
-    return false;
-  }
-
-  // Check input ref
-  if (genData.inputRef.id === edge.source && 
-      sourceNode.data.commit !== genData.inputRef.commit) {
-    return true;
-  }
-
-  // Check prompt refs
-  const promptRef = genData.promptRefs.find(ref => ref.id === edge.source);
-  if (promptRef && sourceNode.data.commit !== promptRef.commit) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Apply styling to edges based on version references.
- * Old version references get dashed styling.
- */
-export function styleEdgesForVersions(
-  edges: Edge[],
-  nodes: Node<StudioNodeData>[]
-): { edges: Edge[]; changed: boolean } {
-  let changed = false;
-  const OLD_VERSION_STYLE = 'stroke-dasharray: 5 5; stroke: #9ca3af;';
-
-  const styledEdges = edges.map(edge => {
-    const shouldBeDashed = isOldVersionEdge(edge, nodes);
-    
-    if (shouldBeDashed) {
-      if (edge.style !== OLD_VERSION_STYLE) {
-        changed = true;
-        return { ...edge, style: OLD_VERSION_STYLE, animated: false };
-      }
-    } else if (edge.style) {
-      changed = true;
-      const { style, animated, ...rest } = edge;
-      return rest;
-    }
-    
-    return edge;
-  });
-
-  return { edges: styledEdges, changed };
 }

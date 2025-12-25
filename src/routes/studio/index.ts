@@ -4,7 +4,7 @@
  * Re-exports all public types and utilities from the studio module.
  */
 
-// Types
+// Types (excluding version types which are now in stores/version)
 export type {
   StudioNodeData,
   BaseNodeData,
@@ -14,10 +14,7 @@ export type {
   VFSNodeData,
   SandboxNodeData,
   LoaderNodeData,
-  StateNodeData,
-  NodeRef,
-  NodeSnapshot,
-  SnapshotEdge
+  StateNodeData
 } from './utils/types';
 
 export {
@@ -27,13 +24,7 @@ export {
   createVFSNodeData,
   createSandboxNodeData,
   createLoaderNodeData,
-  createStateNodeData,
-  restoreSnapshot,
-  syncNode,
-  hasVersionHistory,
-  getVersionCount,
-  generateCommitHash,
-  snapshotStore
+  createStateNodeData
 } from './utils/types';
 
 // RefTag utilities
@@ -60,19 +51,40 @@ export type {
   ResolvedPrompt
 } from './utils/reftag';
 
-// Version control
-export type { HistoricalTreeResult } from './utils/version';
+// Version control - preparation for generation
 export {
-  prepareForGeneration,
-  rebuildHistoricalTree,
-  styleEdgesForVersions
+  prepareForGeneration
 } from './utils/version';
+
+// Version module - core version control functionality
+export {
+  initSnapshotStore,
+  snapshotStore,
+  generateCommitHash,
+  syncNode,
+  restoreSnapshot,
+  hasVersionHistory,
+  getVersionCount,
+  getNodeSnapshots,
+  rebuildHistoricalTree,
+  styleEdgesForVersions,
+  createPreviewController
+} from './stores/version';
+
+export type {
+  NodeRef,
+  NodeSnapshot,
+  SnapshotEdge,
+  SnapshotPosition,
+  Versionable,
+  VersionRefExtractor,
+  HistoricalTreeResult,
+  PreviewControllerConfig,
+  PreviewController
+} from './stores/version';
 
 // Context
 export type { StudioContext, PreviewState } from './stores/context';
-
-// Persistence (Dexie/IndexedDB)
-export { initSnapshotStore } from './stores/snapshot';
 export {
   db,
   saveGraph,

@@ -12,7 +12,7 @@
 	 */
 	import { useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { InputNodeData, SnapshotEdge } from '../../../utils/types';
+	import type { InputNodeData } from '../../../utils/types';
 	import { getStudioContext } from '../../../stores/context';
 	import { 
 		HandleId,
@@ -180,10 +180,6 @@
 
 	const allHandles = $derived([systemHandle, ...tagHandles, ...mountpointHandles]);
 
-	const connectedPromptCount = $derived(
-		Array.from(tagConnections.values()).length
-	);
-
 	const connectedMountCount = $derived(
 		Array.from(mountpointConnections.values()).length
 	);
@@ -305,9 +301,6 @@
 
 	{#snippet headerActions()}
 		{#if !isPreviewing}
-			{#if connectedPromptCount > 0}
-				<span class="text-xs text-purple-200">{connectedPromptCount} prompt{connectedPromptCount > 1 ? 's' : ''}</span>
-			{/if}
 			{#if connectedMountCount > 0}
 				<span class="text-xs text-indigo-200 flex items-center gap-0.5">
 					<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

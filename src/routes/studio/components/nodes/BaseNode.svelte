@@ -12,8 +12,8 @@
 	 */
 	import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { Snippet } from 'svelte';
-	import type { BaseNodeData, NodeRef } from '../../utils/types';
-	import { hasVersionHistory, getVersionCount } from '../../utils/types';
+	import type { StudioNodeData } from '../../utils/types';
+	import { hasVersionHistory, getVersionCount, type NodeRef } from '../../stores/version';
 	import { getStudioContext } from '../../stores/context';
 	import VersionGallery from '../VersionGallery.svelte';
 
@@ -23,7 +23,7 @@
 
 	interface Props {
 		id: string;
-		data: BaseNodeData;
+		data: StudioNodeData;
 		selected: boolean;
 		isConnectable: boolean;
 		// Node type configuration
@@ -102,13 +102,25 @@
 		return null;
 	});
 
+	// Static mapping for selected border classes (Tailwind needs to see these statically)
+	// prettier-ignore
+	const selectedBorderMap: Record<string, string> = {
+		'bg-purple-500': 'border-purple-500 ring-2 ring-purple-500/20',
+		'bg-indigo-500': 'border-indigo-500 ring-2 ring-indigo-500/20',
+		'bg-blue-500': 'border-blue-500 ring-2 ring-blue-500/20',
+		'bg-teal-500': 'border-teal-500 ring-2 ring-teal-500/20',
+		'bg-green-500': 'border-green-500 ring-2 ring-green-500/20',
+		'bg-orange-500': 'border-orange-500 ring-2 ring-orange-500/20',
+		'bg-cyan-500': 'border-cyan-500 ring-2 ring-cyan-500/20',
+	};
+
 	// Border class - combine custom class with state-based styling
 	const computedBorderClass = $derived(
 		customBorderClass ?? (
 			isPhantom ? 'border-gray-400 ring-2 ring-gray-400/30' :
 			isPreviewing ? 'border-amber-500 ring-2 ring-amber-500/30' :
 			isUsed ? 'border-emerald-500 ring-2 ring-emerald-500/30' :
-			selected ? `${headerBgClass.replace('bg-', 'border-')} ring-2 ${headerBgClass.replace('bg-', 'ring-')}/20` :
+			selected ? (selectedBorderMap[headerBgClass] ?? 'border-gray-400 ring-2 ring-gray-400/20') :
 			'border-gray-200'
 		)
 	);

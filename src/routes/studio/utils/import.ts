@@ -7,7 +7,7 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { ArtifactGraphData, ArtifactNodeDetail } from '$lib/stores/artifacts.svelte';
 import type { StudioNodeData, VFSNodeData } from './types';
-import { generateCommitHash } from './types';
+import { generateCommitHash } from '../stores/version';
 import { getNodeVfs } from '../stores/vfs';
 import { ensureProject, saveGraph, loadGraph } from '../stores/db';
 import { API_BASE_URL } from '$lib/config';

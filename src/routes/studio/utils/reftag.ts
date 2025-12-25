@@ -9,8 +9,8 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData, NodeRef, PromptNodeData, SnapshotEdge } from './types';
-import { snapshotStore } from './types';
+import type { StudioNodeData, PromptNodeData } from './types';
+import { snapshotStore, type NodeRef, type SnapshotEdge } from '../stores/version';
 import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId } from './connection';
 
 // ============================================================================

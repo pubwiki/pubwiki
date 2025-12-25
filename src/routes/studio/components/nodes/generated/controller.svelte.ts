@@ -4,15 +4,15 @@
  * Handles GeneratedNode-specific logic:
  * - Regeneration using historical snapshots
  * - Streaming generation state management
+ * - Version control handler registration
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { 
 	StudioNodeData, 
-	GeneratedNodeData, 
-	NodeRef 
+	GeneratedNodeData
 } from '../../../utils/types';
-import { snapshotStore, generateCommitHash } from '../../../utils/types';
+import { snapshotStore, generateCommitHash, registerVersionHandler, type NodeRef } from '../../../stores/version';
 import { resolvePromptContentFromRefs } from '../../../utils/reftag';
 import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
 
@@ -38,6 +38,22 @@ export interface StreamGenerationCallbacks {
 
 /** PubChat instance for generation */
 let pubchat: PubChat | null = null;
+
+// ============================================================================
+// Version Handler Registration
+// ============================================================================
+
+/**
+ * Register version handler for GENERATED nodes.
+ * This defines how version references are extracted from generated nodes.
+ */
+registerVersionHandler<GeneratedNodeData>('GENERATED', {
+	getVersionRefs: (data) => [
+		data.inputRef,
+		...data.promptRefs,
+		...(data.indirectPromptRefs || [])
+	]
+});
 
 // ============================================================================
 // Initialization

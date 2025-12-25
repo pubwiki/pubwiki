@@ -31,6 +31,7 @@ import {
 	type EdgeDeleteEvent
 } from '../../../stores/flow-events';
 import { prepareForGeneration } from '../../../utils/version';
+import { positionNewNodesFromSources } from '../../../utils/layout';
 import { getNodeVfs } from '../../../stores/vfs';
 import { createMountedVfs, getMountedProvider } from '@pubwiki/vfs';
 import { 
@@ -365,7 +366,7 @@ export async function generate(
 			...newGeneratedData,
 			isStreaming: true,
 		},
-		position: { x: 0, y: 0 }, // Will be positioned by caller
+		position: { x: 0, y: 0 }, // TODO calculate a suitable position Will be positioned by caller
 		sourcePosition: Position.Right,
 		targetPosition: Position.Left,
 	};
@@ -377,9 +378,12 @@ export async function generate(
 		target: newGeneratedData.id,
 	};
 
-	// Add the generated node and edge
-	callbacks.updateNodes(nodes => [...nodes, generatedNode]);
+	// Add the generated node and edge, then position it relative to source
 	callbacks.updateEdges(edges => [...edges, newEdge]);
+	callbacks.updateNodes(nodes => {
+		const updatedNodes = [...nodes, generatedNode];
+		return positionNewNodesFromSources([generatedNode.id], updatedNodes, [...edges, newEdge]);
+	});
 
 	// Define stream callbacks
 	const streamCallbacks: StreamGenerationCallbacks = {

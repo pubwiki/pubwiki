@@ -19,27 +19,26 @@
 	import { StudioSidebar } from '../components/sidebar';
 	import { 
 		type StudioNodeData, 
-		type NodeRef,
 		type GeneratedNodeData,
 		createPromptNodeData, 
 		createInputNodeData,
 		createVFSNodeData,
 		createSandboxNodeData,
 		createLoaderNodeData,
-		createStateNodeData,
-		restoreSnapshot,
-		syncNode
+		createStateNodeData
 	} from '../utils/types';
 	import {
-		rebuildHistoricalTree,
-		styleEdgesForVersions,
-		type HistoricalTreeResult
-	} from '../utils/version';
+		restoreSnapshot,
+		syncNode,
+		initSnapshotStore,
+		createPreviewController,
+		type NodeRef
+	} from '../stores/version';
 	import { validateConnection } from '../utils/connection';
+	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '../utils/layout';
 	import { publishArtifact, type PublishMetadata } from '../utils/publish';
 	import { setStudioContext, type StudioContext } from '../stores/context';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../stores/flow-events';
-	import { initSnapshotStore } from '../stores/snapshot';
 	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
 	import { useAuth } from '$lib/stores/auth.svelte';
 
@@ -48,6 +47,7 @@
 	// ============================================================================
 	
 	// Initialize the generation controller with LLM config
+	// Note: This also registers the version handler for GENERATED nodes
 	initGeneratedNodeController({
 		// FIXME: only for test, do not bring to production
 		apiKey: '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',
@@ -103,9 +103,6 @@
 	
 	// Current project ID (from URL params)
 	let currentProjectId = $derived(data.projectId);
-	
-	// Historical tree state for preview mode
-	let historicalTree = $state<HistoricalTreeResult | null>(null);
 	
 	// Auto-save debounce timer
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -169,17 +166,27 @@
 	// Node Operations (defined before context)
 	// ============================================================================
 
-	function onRestore(id: string, snapshotRef: NodeRef) {
-		nodes = nodes.map(n => {
-			if (n.id === id) {
-				const restoredData = restoreSnapshot(n.data, snapshotRef);
-				if (restoredData) {
+	async function onRestore(id: string, snapshotRef: NodeRef) {
+		const node = nodes.find(n => n.id === id);
+		if (!node) return;
+		
+		const restoredData = await restoreSnapshot(node.data, snapshotRef);
+		if (restoredData) {
+			nodes = nodes.map(n => {
+				if (n.id === id) {
 					return { ...n, data: restoredData };
 				}
-			}
-			return n;
-		});
+				return n;
+			});
+		}
 	}
+
+	// ============================================================================
+	// Version Preview Controller
+	// ============================================================================
+
+	// Preview controller - created after setStudioContext
+	let previewCtrl: ReturnType<typeof createPreviewController> | null = null;
 
 	// ============================================================================
 	// Studio Context (Dependency Injection)
@@ -223,162 +230,30 @@
 			}
 		},
 		
-		getPreviewState: (nodeId) => {
-			if (!historicalTree) return null;
-			
-			const override = historicalTree.nodeOverrides.get(nodeId);
-			if (override) {
-				return {
-					content: override.content as string,
-					commit: override.commit,
-					incomingEdges: historicalTree.historicalEdges
-						.filter(e => e.target === nodeId)
-						.map(e => ({
-							source: e.source,
-							sourceHandle: e.sourceHandle,
-							targetHandle: e.targetHandle
-						}))
-				};
-			}
-			
-			if (historicalTree.usedNodeIds.has(nodeId)) {
-				return {
-					isUsed: true
-				};
-			}
-			
-			return null;
-		},
+		getPreviewState: (nodeId) => previewCtrl?.getPreviewState(nodeId) ?? null
 	};
 	
 	setStudioContext(studioContext);
+	
+	// Create preview controller after context is set
+	previewCtrl = createPreviewController();
 
 	// ============================================================================
 	// Version Preview Effects
 	// ============================================================================
 	
-	// Track phantom node IDs so we can remove them when preview ends
-	let phantomNodeIds = $state<Set<string>>(new Set());
-	
-	// Track hidden edges (edges connected to historical nodes that are temporarily removed)
-	let hiddenEdges = $state<Edge[]>([]);
-	
-	// When a generated node is selected, rebuild historical tree for referenced nodes
+	// Update preview when selection changes
 	$effect(() => {
 		const selected = selectedNodes;
-		
-		if (selected.length !== 1 || selected[0].data.type !== 'GENERATED') {
-			// Clear historical tree and remove phantom nodes when not viewing a single generated node
-			untrack(() => {
-				if (historicalTree !== null) {
-					console.log('[cleanup] restoring hiddenEdges:', hiddenEdges.length);
-					// Remove phantom nodes
-					if (phantomNodeIds.size > 0) {
-						nodes = nodes.filter(n => !phantomNodeIds.has(n.id));
-					}
-					// Remove any edges connected to phantom nodes or historical edges
-					// and restore hidden edges
-					const restoredEdges = [
-						...edges.filter(e => 
-							!phantomNodeIds.has(e.source) && 
-							!phantomNodeIds.has(e.target) &&
-							!e.id.startsWith('historical-')
-						),
-						...hiddenEdges
-					];
-					console.log('[cleanup] edges before:', edges.length, 'after:', restoredEdges.length);
-					edges = restoredEdges;
-					phantomNodeIds = new Set();
-					hiddenEdges = [];
-					historicalTree = null;
-				}
-			});
-			return;
-		}
-
-		untrack(() => {
-			// First, restore any previously hidden edges before processing new selection
-			let currentEdges = edges;
-			if (hiddenEdges.length > 0) {
-				// Remove old phantom nodes if any
-				if (phantomNodeIds.size > 0) {
-					nodes = nodes.filter(n => !phantomNodeIds.has(n.id));
-				}
-				// Restore hidden edges and remove old historical edges
-				currentEdges = [
-					...edges.filter(e => 
-						!phantomNodeIds.has(e.source) && 
-						!phantomNodeIds.has(e.target) &&
-						!e.id.startsWith('historical-')
-					),
-					...hiddenEdges
-				];
-				phantomNodeIds = new Set();
-				hiddenEdges = [];
-			}
-			
-			const tree = rebuildHistoricalTree(selected[0], nodes, currentEdges);
-			historicalTree = tree;
-			
-			const selectedGenNodeId = selected[0].id;
-			
-			// Get IDs of nodes that are truly historical (have overrides, not just used)
-			const historicalNodeIds = new Set(tree.nodeOverrides.keys());
-			
-			// Get all node IDs that are part of the tree (used + historical + phantom + generated)
-			const treeNodeIds = new Set([
-				selectedGenNodeId,
-				...tree.usedNodeIds,
-				...historicalNodeIds,
-				...tree.phantomNodes.map(n => n.id)
-			]);
-			
-			// Hide edges connected to historical nodes, EXCEPT edges that are part of the tree
-			// (i.e., edges where BOTH source and target are in the tree)
-			const edgesToHide = currentEdges.filter(e => 
-				(historicalNodeIds.has(e.source) || historicalNodeIds.has(e.target)) &&
-				!(treeNodeIds.has(e.source) && treeNodeIds.has(e.target))
-			);
-			hiddenEdges = edgesToHide;
-			
-			// Remove hidden edges from current edges
-			const hiddenEdgeIds = new Set(edgesToHide.map(e => e.id));
-			let newEdges = currentEdges.filter(e => !hiddenEdgeIds.has(e.id));
-			
-			// Add phantom nodes to the graph
-			if (tree.phantomNodes.length > 0) {
-				// Mark phantom nodes with special flag for styling
-				const phantomsWithFlag = tree.phantomNodes.map(n => ({
-					...n,
-					data: { ...n.data, isPhantom: true }
-				}));
-				nodes = [...nodes, ...phantomsWithFlag];
-				phantomNodeIds = new Set(tree.phantomNodes.map(n => n.id));
-			}
-			
-			// Add all historical edges (styled differently)
-			if (tree.historicalEdges.length > 0) {
-				const styledHistoricalEdges = tree.historicalEdges.map(e => ({
-					...e,
-					style: 'stroke: #f59e0b; stroke-dasharray: 5 5;',
-					animated: false
-				}));
-				newEdges = [...newEdges, ...styledHistoricalEdges];
-			}
-			
-			edges = newEdges;
-		});
+		untrack(() => previewCtrl?.updateSelection(selected));
 	});
 
-	// Style edges for old version references
+	// Apply edge version styling
 	$effect(() => {
-		const hasGeneratedNodes = nodes.some(n => n.data.type === 'GENERATED');
-		if (!hasGeneratedNodes) return;
-
-		const { edges: styledEdges, changed } = styleEdgesForVersions(edges, nodes);
-		if (changed) {
-			edges = styledEdges;
-		}
+		// Track nodes and edges to trigger on change
+		nodes;
+		edges;
+		untrack(() => previewCtrl?.applyEdgeVersionStyles());
 	});
 
 	// ============================================================================
@@ -469,20 +344,6 @@
 	// ============================================================================
 	// Layout
 	// ============================================================================
-	
-	// Default dimensions used when node hasn't been measured yet
-	const DEFAULT_NODE_WIDTH = 320;
-	const DEFAULT_NODE_HEIGHT = 180;
-
-	/**
-	 * Get the actual dimensions of a node, using measured values if available
-	 */
-	function getNodeDimensions(node: Node): { width: number; height: number } {
-		return {
-			width: node.measured?.width ?? node.width ?? DEFAULT_NODE_WIDTH,
-			height: node.measured?.height ?? node.height ?? DEFAULT_NODE_HEIGHT
-		};
-	}
 
 	/**
 	 * Full dagre layout for all nodes. Only use this when explicitly requested by user.
@@ -531,74 +392,6 @@
 		});
 
 		return { nodes: newNodes, edges: layoutEdges };
-	}
-
-	/**
-	 * Position new nodes relative to their connected source nodes.
-	 * This is used for generation flow where we add input -> generated nodes.
-	 */
-	function positionNewNodesFromSources(
-		newNodeIds: string[],
-		allNodes: Node<StudioNodeData>[],
-		allEdges: Edge[]
-	): Node<StudioNodeData>[] {
-		const newNodeIdSet = new Set(newNodeIds);
-		const HORIZONTAL_GAP = 100;
-		const VERTICAL_GAP = 30;
-
-		return allNodes.map(node => {
-			if (!newNodeIdSet.has(node.id)) {
-				return node;
-			}
-
-			// Find incoming edges to this new node
-			const incomingEdges = allEdges.filter(e => e.target === node.id);
-			if (incomingEdges.length === 0) {
-				// No sources, position based on viewport or existing nodes
-				const existingNodes = allNodes.filter(n => !newNodeIdSet.has(n.id));
-				if (existingNodes.length > 0) {
-					// Position to the right of rightmost existing node
-					const rightmostNode = existingNodes.reduce((max, n) => {
-						const nodeRight = n.position.x + (n.measured?.width ?? DEFAULT_NODE_WIDTH);
-						const maxRight = max.position.x + (max.measured?.width ?? DEFAULT_NODE_WIDTH);
-						return nodeRight > maxRight ? n : max;
-					});
-					return {
-						...node,
-						position: {
-							x: rightmostNode.position.x + (rightmostNode.measured?.width ?? DEFAULT_NODE_WIDTH) + HORIZONTAL_GAP,
-							y: rightmostNode.position.y
-						}
-					};
-				}
-				return node;
-			}
-
-			// Get source nodes
-			const sourceNodes = incomingEdges
-				.map(e => allNodes.find(n => n.id === e.source))
-				.filter((n): n is Node<StudioNodeData> => n !== undefined);
-
-			if (sourceNodes.length === 0) {
-				return node;
-			}
-
-			// Calculate average Y position of sources and position to their right
-			const avgY = sourceNodes.reduce((sum, n) => sum + n.position.y, 0) / sourceNodes.length;
-			const rightmostSource = sourceNodes.reduce((max, n) => {
-				const nodeRight = n.position.x + (n.measured?.width ?? DEFAULT_NODE_WIDTH);
-				const maxRight = max.position.x + (max.measured?.width ?? DEFAULT_NODE_WIDTH);
-				return nodeRight > maxRight ? n : max;
-			});
-
-			return {
-				...node,
-				position: {
-					x: rightmostSource.position.x + (rightmostSource.measured?.width ?? DEFAULT_NODE_WIDTH) + HORIZONTAL_GAP,
-					y: avgY + (newNodeIds.indexOf(node.id) * VERTICAL_GAP)
-				}
-			};
-		});
 	}
 
 	/**
