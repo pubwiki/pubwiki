@@ -5,6 +5,7 @@
 	 * Features:
 	 * - Displays markdown-rendered content
 	 * - Streaming indicator during generation
+	 * - Tool call display during streaming
 	 * - Regenerate button
 	 */
 	import type { NodeProps, Node } from '@xyflow/svelte';
@@ -13,6 +14,7 @@
 	import { marked } from 'marked';
 	import BaseNode from '../BaseNode.svelte';
 	import { regenerate } from './controller.svelte';
+	import ToolCallDisplay from './ToolCallDisplay.svelte';
 
 	// ============================================================================
 	// Props
@@ -31,6 +33,8 @@
 	// ============================================================================
 
 	const isStreaming = $derived(data.isStreaming);
+	const toolCalls = $derived(data.toolCalls || []);
+	const hasToolCalls = $derived(toolCalls.length > 0);
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
 	const displayContent = $derived(previewState?.content ?? data.content);
@@ -96,26 +100,27 @@
 	{/snippet}
 
 	{#snippet children()}
-		{#if isStreaming}
-			<div 
-				class="nodrag nowheel generated-content w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto bg-yellow-50/50"
-				onwheel={handleWheel}
-			>
-				<div class="prose prose-sm max-w-none text-left select-text">
-					{@html marked.parse(displayContent || '')}
+		<div 
+			class="nodrag nowheel generated-content w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto transition-colors duration-300 {isStreaming ? 'bg-yellow-50/50' : 'bg-green-50/30'}"
+			onwheel={handleWheel}
+		>
+			<!-- Tool Calls Display (shown during streaming and after completion) -->
+			{#if hasToolCalls}
+				<div class="mb-2 space-y-1">
+					{#each toolCalls as toolCall (toolCall.id)}
+						<ToolCallDisplay {toolCall} />
+					{/each}
 				</div>
+			{/if}
+			
+			<!-- Content -->
+			<div class="prose prose-sm max-w-none text-left select-text">
+				{@html marked.parse(displayContent || '')}
+			</div>
+			{#if isStreaming}
 				<span class="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-0.5"></span>
-			</div>
-		{:else}
-			<div 
-				class="nodrag nowheel generated-content w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto bg-green-50/30"
-				onwheel={handleWheel}
-			>
-				<div class="prose prose-sm max-w-none text-left select-text">
-					{@html marked.parse(displayContent || '')}
-				</div>
-			</div>
-		{/if}
+			{/if}
+		</div>
 	{/snippet}
 </BaseNode>
 

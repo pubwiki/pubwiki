@@ -210,6 +210,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       const entryPath =
         normalizedPath === '/' ? `/${entry}` : `${normalizedPath}/${entry}`
 
+      console.log("stat entry ", entryPath)
       const stat = await this._provider.stat(entryPath)
 
       if (stat.isDirectory) {

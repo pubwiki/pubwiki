@@ -78,6 +78,29 @@ export interface PromptNodeData extends BaseNodeData<string> {
 }
 
 /**
+ * Tool call status type for streaming display
+ */
+export type ToolCallStatus = 'pending' | 'running' | 'completed' | 'error'
+
+/**
+ * Tool call state for display during streaming
+ */
+export interface ToolCallState {
+  /** Tool call ID */
+  id: string
+  /** Tool name */
+  name: string
+  /** Tool arguments */
+  args: unknown
+  /** Tool call status */
+  status: ToolCallStatus
+  /** Tool result (when completed) */
+  result?: unknown
+  /** Error message (when error) */
+  error?: string
+}
+
+/**
  * Generated node data - represents AI-generated content
  * Content is string (generated text)
  */
@@ -91,6 +114,8 @@ export interface GeneratedNodeData extends BaseNodeData<string> {
   indirectPromptRefs: NodeRef[]
   /** Whether content is being streamed into this node */
   isStreaming?: boolean
+  /** Active tool calls during streaming */
+  toolCalls?: ToolCallState[]
 }
 
 /**
@@ -258,7 +283,8 @@ export async function createGeneratedNodeData(
     inputRef,
     promptRefs,
     indirectPromptRefs,
-    isStreaming: false
+    isStreaming: false,
+    toolCalls: []
   }
 }
 

@@ -14,7 +14,9 @@ import type {
 	StudioNodeData, 
 	InputNodeData, 
 	VFSNodeData,
-	Mountpoint 
+	Mountpoint,
+	GeneratedNodeData,
+	ToolCallState
 } from '../../../utils/types';
 import { createGeneratedNodeData } from '../../../utils/types';
 import { 
@@ -33,7 +35,7 @@ import {
 import { prepareForGeneration } from '../../../utils/version';
 import { positionNewNodesFromSources } from '../../../utils/layout';
 import { getNodeVfs } from '../../../stores/vfs';
-import { createMountedVfs, getMountedProvider } from '@pubwiki/vfs';
+import { createMountedVfs, getMountedProvider, MountedVfsProvider, Vfs } from '@pubwiki/vfs';
 import { 
 	getPubChat, 
 	streamGeneration, 
@@ -328,10 +330,11 @@ export async function generate(
 	const vfsNodes = findConnectedVfsNodes(inputNodeId, nodes, edges);
 	
 	// If VFS nodes exist, set up mounted VFS for the generation
-	let mountedVfs = null;
+	let mountedVfs: Vfs<MountedVfsProvider> | null = null;
 	if (vfsNodes.size > 0) {
+		console.log("vfs", vfsNodes)
 		mountedVfs = createMountedVfs();
-		const provider = getMountedProvider(mountedVfs);
+		const provider = mountedVfs.getProvider()
 		
 		if (provider) {
 			for (const [mountPath, vfsNode] of vfsNodes) {
@@ -393,6 +396,46 @@ export async function generate(
 					? { ...n, data: { ...n.data, content: accumulatedContent } }
 					: n
 			) as Node<StudioNodeData>[]);
+		},
+		onToolCall: (nodeId, toolCallId, name, args) => {
+			callbacks.updateNodes(nodes => nodes.map(n => {
+				if (n.id === nodeId && n.data.type === 'GENERATED') {
+					const genData = n.data as GeneratedNodeData;
+					const newToolCall: ToolCallState = {
+						id: toolCallId,
+						name,
+						args,
+						status: 'running'
+					};
+					return { 
+						...n, 
+						data: { 
+							...genData, 
+							toolCalls: [...(genData.toolCalls || []), newToolCall] 
+						} 
+					};
+				}
+				return n;
+			}) as Node<StudioNodeData>[]);
+		},
+		onToolResult: (nodeId, toolCallId, result) => {
+			callbacks.updateNodes(nodes => nodes.map(n => {
+				if (n.id === nodeId && n.data.type === 'GENERATED') {
+					const genData = n.data as GeneratedNodeData;
+					return { 
+						...n, 
+						data: { 
+							...genData, 
+							toolCalls: (genData.toolCalls || []).map(tc => 
+								tc.id === toolCallId 
+									? { ...tc, status: 'completed' as const, result } 
+									: tc
+							) 
+						} 
+					};
+				}
+				return n;
+			}) as Node<StudioNodeData>[]);
 		},
 		onDone: (nodeId, finalContent, finalCommit) => {
 			callbacks.updateNodes(nodes => nodes.map(n => 

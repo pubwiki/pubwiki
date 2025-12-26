@@ -154,9 +154,11 @@ export class MountedVfsProvider implements VfsProvider {
 
   async readdir(dirPath: string): Promise<string[]> {
     const normalized = normalizePath(dirPath)
+    console.log("readdir", dirPath, normalized, this.mounts)
     
     // Check if we're at root level - need to show mount points
     if (normalized === '/') {
+      console.log("here")
       // Return top-level mount point names
       const topLevel = new Set<string>()
       for (const mountPath of this.mounts.keys()) {
@@ -166,8 +168,10 @@ export class MountedVfsProvider implements VfsProvider {
           topLevel.add(parts[0])
         }
       }
+      console.log("top", topLevel)
       return Array.from(topLevel)
     }
+    console.log("resolve")
     
     const resolved = this.resolvePath(dirPath)
     if (!resolved) {
@@ -219,10 +223,11 @@ export class MountedVfsProvider implements VfsProvider {
     }
     
     const resolved = this.resolvePath(filePath)
+    console.log("resolved", resolved, normalized)
     if (!resolved) {
       // Check if it's a virtual directory
       for (const mountPath of this.mounts.keys()) {
-        if (mountPath.startsWith(normalized + '/')) {
+        if (normalized.startsWith(mountPath + '/')) {
           return {
             isFile: false,
             isDirectory: true,
@@ -326,7 +331,7 @@ export function createMountedVfs(mounts?: Iterable<[string, VfsProvider]>): Vfs<
  */
 export function getMountedProvider(vfs: Vfs): MountedVfsProvider | null {
   // Access the protected provider property
-  const provider = (vfs as any).provider
+  const provider = vfs.getProvider()
   if (provider instanceof MountedVfsProvider) {
     return provider
   }

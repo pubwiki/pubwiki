@@ -10,7 +10,8 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { 
 	StudioNodeData, 
-	GeneratedNodeData
+	GeneratedNodeData,
+	ToolCallState
 } from '../../../utils/types';
 import { snapshotStore, generateCommitHash, registerVersionHandler, type NodeRef } from '../../../stores/version';
 import { resolvePromptContentFromRefs } from '../../../utils/reftag';
@@ -28,6 +29,8 @@ export interface GenerationConfig {
 
 export interface StreamGenerationCallbacks {
 	onToken: (nodeId: string, accumulatedContent: string) => void;
+	onToolCall: (nodeId: string, toolCallId: string, name: string, args: unknown) => void;
+	onToolResult: (nodeId: string, toolCallId: string, result: unknown) => void;
 	onDone: (nodeId: string, finalContent: string, commit: string) => void;
 	onError: (nodeId: string, error: Error) => void;
 }
@@ -115,6 +118,10 @@ export async function streamGeneration(
 			if (event.type === 'token') {
 				accumulatedContent += event.token;
 				callbacks.onToken(nodeId, accumulatedContent);
+			} else if (event.type === 'tool_call') {
+				callbacks.onToolCall(nodeId, event.id, event.name, event.args);
+			} else if (event.type === 'tool_result') {
+				callbacks.onToolResult(nodeId, event.id, event.result);
 			} else if (event.type === 'done') {
 				const finalCommit = await generateCommitHash(accumulatedContent);
 				callbacks.onDone(nodeId, accumulatedContent, finalCommit);
@@ -211,7 +218,7 @@ export async function regenerate(
 	// Set streaming state
 	callbacks.updateNodes(nodes => nodes.map(n =>
 		n.id === generatedNodeId
-			? { ...n, data: { ...n.data, isStreaming: true } }
+			? { ...n, data: { ...n.data, isStreaming: true, toolCalls: [] } }
 			: n
 	));
 
@@ -223,6 +230,46 @@ export async function regenerate(
 					? { ...n, data: { ...n.data, content: accumulatedContent } }
 					: n
 			) as Node<StudioNodeData>[]);
+		},
+		onToolCall: (nodeId, toolCallId, name, args) => {
+			callbacks.updateNodes(nodes => nodes.map(n => {
+				if (n.id === nodeId && n.data.type === 'GENERATED') {
+					const genData = n.data as GeneratedNodeData;
+					const newToolCall: ToolCallState = {
+						id: toolCallId,
+						name,
+						args,
+						status: 'running'
+					};
+					return { 
+						...n, 
+						data: { 
+							...genData, 
+							toolCalls: [...(genData.toolCalls || []), newToolCall] 
+						} 
+					};
+				}
+				return n;
+			}) as Node<StudioNodeData>[]);
+		},
+		onToolResult: (nodeId, toolCallId, result) => {
+			callbacks.updateNodes(nodes => nodes.map(n => {
+				if (n.id === nodeId && n.data.type === 'GENERATED') {
+					const genData = n.data as GeneratedNodeData;
+					return { 
+						...n, 
+						data: { 
+							...genData, 
+							toolCalls: (genData.toolCalls || []).map(tc => 
+								tc.id === toolCallId 
+									? { ...tc, status: 'completed' as const, result } 
+									: tc
+							) 
+						} 
+					};
+				}
+				return n;
+			}) as Node<StudioNodeData>[]);
 		},
 		onDone: (nodeId, finalContent, finalCommit) => {
 			callbacks.updateNodes(nodes => nodes.map(n => 

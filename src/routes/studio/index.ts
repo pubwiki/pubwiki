@@ -14,7 +14,9 @@ export type {
   VFSNodeData,
   SandboxNodeData,
   LoaderNodeData,
-  StateNodeData
+  StateNodeData,
+  ToolCallStatus,
+  ToolCallState
 } from './utils/types';
 
 export {
