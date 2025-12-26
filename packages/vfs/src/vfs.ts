@@ -15,6 +15,7 @@ import {
   getFileExtension,
   normalizePath,
 } from './utils/path'
+import { VfsPath } from './utils/vfs-path'
 
 /**
  * 基础 VFS 类
@@ -199,7 +200,8 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
   async listFolder(path: string): Promise<Array<VfsFile | VfsFolder>> {
     this.checkDisposed()
 
-    const normalizedPath = normalizePath(path)
+    const vp = VfsPath.parse(path)
+    const normalizedPath = vp.toString()
     const entries = await this._provider.readdir(normalizedPath)
     const items: Array<VfsFile | VfsFolder> = []
 
@@ -207,10 +209,8 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       // 跳过隐藏文件
       if (entry.startsWith('.')) continue
 
-      const entryPath =
-        normalizedPath === '/' ? `/${entry}` : `${normalizedPath}/${entry}`
+      const entryPath = vp.append(entry).toString()
 
-      console.log("stat entry ", entryPath)
       const stat = await this._provider.stat(entryPath)
 
       if (stat.isDirectory) {
@@ -256,10 +256,11 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
    * 递归发射删除事件（用于递归删除文件夹时）
    */
   private async emitDeleteEventsRecursive(folderPath: string): Promise<void> {
+    const folderVp = VfsPath.parse(folderPath)
     const entries = await this._provider.readdir(folderPath)
 
     for (const entry of entries) {
-      const entryPath = folderPath === '/' ? `/${entry}` : `${folderPath}/${entry}`
+      const entryPath = folderVp.append(entry).toString()
       const stat = await this._provider.stat(entryPath)
 
       if (stat.isDirectory) {
@@ -345,11 +346,12 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
   private async collectChildItems(
     folderPath: string
   ): Promise<Array<{ path: string; isDirectory: boolean }>> {
+    const folderVp = VfsPath.parse(folderPath)
     const items: Array<{ path: string; isDirectory: boolean }> = []
     const entries = await this._provider.readdir(folderPath)
 
     for (const entry of entries) {
-      const entryPath = folderPath === '/' ? `/${entry}` : `${folderPath}/${entry}`
+      const entryPath = folderVp.append(entry).toString()
       const stat = await this._provider.stat(entryPath)
 
       items.push({ path: entryPath, isDirectory: stat.isDirectory })
@@ -371,9 +373,15 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     fromBase: string,
     toBase: string
   ): Promise<void> {
+    const fromBaseVp = VfsPath.parse(fromBase)
+    const toBaseVp = VfsPath.parse(toBase)
+    
     for (const item of childItems) {
-      const relativePath = item.path.slice(fromBase.length)
-      const newPath = toBase + relativePath
+      const itemVp = VfsPath.parse(item.path)
+      const relative = itemVp.relativeTo(fromBaseVp)
+      if (!relative) continue
+      
+      const newPath = toBaseVp.join(relative).toString()
 
       if (item.isDirectory) {
         const folderId = await this._provider.id(newPath)
@@ -588,8 +596,8 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     // 对于 added：父文件夹应该先创建
     // 对于 deleted：子项应该先删除
     const sortedDiffs = [...diffs].sort((a, b) => {
-      const depthA = a.path.split('/').length
-      const depthB = b.path.split('/').length
+      const depthA = VfsPath.parse(a.path).depth
+      const depthB = VfsPath.parse(b.path).depth
       // added 按深度升序（父先），deleted 按深度降序（子先）
       if (a.type === 'deleted' && b.type === 'deleted') {
         return depthB - depthA

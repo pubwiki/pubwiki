@@ -1,6 +1,6 @@
 import type { VfsProvider } from './vfs-provider'
 import type { VfsStat } from '../types'
-import { normalizePath } from '../utils/path'
+import { VfsPath } from '../utils/vfs-path'
 import { Vfs } from '../vfs'
 
 /**
@@ -30,12 +30,12 @@ export class MountedVfsProvider implements VfsProvider {
    * @param provider The VFS provider to mount
    */
   mount(mountPath: string, provider: VfsProvider): void {
-    // Normalize mount path
-    const normalized = normalizePath(mountPath)
-    if (!normalized.startsWith('/')) {
-      throw new Error(`Mount path must be absolute: ${mountPath}`)
+    const vp = VfsPath.parse(mountPath)
+    if (vp.isRoot) {
+      throw new Error(`Cannot mount at root path`)
     }
-    this.mounts.set(normalized, provider)
+    // Store with normalized path string as key
+    this.mounts.set(vp.toString(), provider)
   }
 
   /**
@@ -52,8 +52,8 @@ export class MountedVfsProvider implements VfsProvider {
    * @param mountPath The path to unmount
    */
   unmount(mountPath: string): void {
-    const normalized = normalizePath(mountPath)
-    this.mounts.delete(normalized)
+    const vp = VfsPath.parse(mountPath)
+    this.mounts.delete(vp.toString())
   }
 
   /**
@@ -69,37 +69,44 @@ export class MountedVfsProvider implements VfsProvider {
    * @returns [provider, relativePath] or null if not found
    */
   private resolvePath(filePath: string): [VfsProvider, string] | null {
-    const normalized = normalizePath(filePath)
+    const vp = VfsPath.parse(filePath)
     
-    // Find the longest matching mount point
+    // Find the longest matching mount point using segments comparison
     let bestMatch: string | null = null
+    let bestMatchPath: VfsPath | null = null
     let bestLength = 0
     
-    for (const mountPath of this.mounts.keys()) {
-      if (normalized === mountPath || normalized.startsWith(mountPath + '/')) {
-        if (mountPath.length > bestLength) {
-          bestMatch = mountPath
-          bestLength = mountPath.length
+    for (const mountPathStr of this.mounts.keys()) {
+      const mountPath = VfsPath.parse(mountPathStr)
+      
+      // Check if vp equals or is under mountPath
+      if (vp.equals(mountPath) || vp.isUnder(mountPath, true)) {
+        if (mountPath.depth > bestLength) {
+          bestMatch = mountPathStr
+          bestMatchPath = mountPath
+          bestLength = mountPath.depth
         }
       }
     }
     
-    if (!bestMatch) {
+    if (!bestMatch || !bestMatchPath) {
       return null
     }
     
     const provider = this.mounts.get(bestMatch)!
     // Get relative path within the mount
-    const relativePath = normalized === bestMatch 
-      ? '/' 
-      : normalized.slice(bestMatch.length)
+    const relativePath = vp.relativeTo(bestMatchPath)
+    const relativeStr = relativePath ? relativePath.toString() : '/'
     
-    return [provider, relativePath]
+    return [provider, relativeStr]
   }
 
   // ========== ID 生成 ==========
 
   async id(filePath: string): Promise<string> {
+    if (filePath === '/') {
+      return "/"
+    }
     const resolved = this.resolvePath(filePath)
     if (!resolved) {
       throw new Error(`Path not mounted: ${filePath}`)
@@ -153,37 +160,35 @@ export class MountedVfsProvider implements VfsProvider {
   }
 
   async readdir(dirPath: string): Promise<string[]> {
-    const normalized = normalizePath(dirPath)
-    console.log("readdir", dirPath, normalized, this.mounts)
+    const vp = VfsPath.parse(dirPath)
     
     // Check if we're at root level - need to show mount points
-    if (normalized === '/') {
-      console.log("here")
+    if (vp.isRoot) {
       // Return top-level mount point names
       const topLevel = new Set<string>()
-      for (const mountPath of this.mounts.keys()) {
-        // Get first path component after /
-        const parts = mountPath.split('/').filter(Boolean)
-        if (parts.length > 0) {
-          topLevel.add(parts[0])
+      for (const mountPathStr of this.mounts.keys()) {
+        const mountPath = VfsPath.parse(mountPathStr)
+        // Get first segment
+        const firstSegment = mountPath.at(0)
+        if (firstSegment) {
+          topLevel.add(firstSegment)
         }
       }
-      console.log("top", topLevel)
       return Array.from(topLevel)
     }
-    console.log("resolve")
     
     const resolved = this.resolvePath(dirPath)
     if (!resolved) {
       // Check if this path is a prefix of any mount point (virtual directory)
       const virtualEntries = new Set<string>()
-      for (const mountPath of this.mounts.keys()) {
-        if (mountPath.startsWith(normalized + '/')) {
-          // Get next path component
-          const remaining = mountPath.slice(normalized.length + 1)
-          const nextPart = remaining.split('/')[0]
-          if (nextPart) {
-            virtualEntries.add(nextPart)
+      for (const mountPathStr of this.mounts.keys()) {
+        const mountPath = VfsPath.parse(mountPathStr)
+        // Check if mountPath is under vp (vp is a prefix of mountPath)
+        if (mountPath.isUnder(vp, true)) {
+          // Get the next segment after vp
+          const nextSegment = mountPath.at(vp.depth)
+          if (nextSegment) {
+            virtualEntries.add(nextSegment)
           }
         }
       }
@@ -209,10 +214,10 @@ export class MountedVfsProvider implements VfsProvider {
   // ========== 状态查询 ==========
 
   async stat(filePath: string): Promise<VfsStat> {
-    const normalized = normalizePath(filePath)
+    const vp = VfsPath.parse(filePath)
     
-    // Check if this is a virtual directory (prefix of mount points)
-    if (normalized === '/') {
+    // Root is always a virtual directory
+    if (vp.isRoot) {
       return {
         isFile: false,
         isDirectory: true,
@@ -223,11 +228,12 @@ export class MountedVfsProvider implements VfsProvider {
     }
     
     const resolved = this.resolvePath(filePath)
-    console.log("resolved", resolved, normalized)
     if (!resolved) {
-      // Check if it's a virtual directory
-      for (const mountPath of this.mounts.keys()) {
-        if (normalized.startsWith(mountPath + '/')) {
+      // Check if it's a virtual directory (prefix of any mount point)
+      for (const mountPathStr of this.mounts.keys()) {
+        const mountPath = VfsPath.parse(mountPathStr)
+        // If mountPath is under vp, then vp is a virtual directory
+        if (mountPath.isUnder(vp, true)) {
           return {
             isFile: false,
             isDirectory: true,
