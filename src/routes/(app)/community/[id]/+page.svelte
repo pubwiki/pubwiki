@@ -1,10 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { createApiClient } from '@pubwiki/api/client';
-	import type { ProjectDetail, ProjectArtifact, ProjectRole } from '@pubwiki/api';
+	import type { ProjectDetail, ProjectArtifact, ProjectRole, ProjectPage, ProjectPageDetail, PostListItem, PostDetail, DiscussionReplyItem } from '@pubwiki/api';
 	import { ItemTree, buildTree, type TreeNode } from '$lib/components/ItemTree';
 	import { goto } from '$app/navigation';
 	import { API_BASE_URL } from '$lib/config';
+	import { fade, fly, scale } from 'svelte/transition';
+	import { cubicOut, backOut } from 'svelte/easing';
 
 	let { data } = $props<{ data: PageData }>();
 
@@ -16,7 +18,20 @@
 	let homepageLoading = $state(false);
 	let error = $state<string | null>(null);
 
-	let activeTab = $state<'homepage' | 'links' | 'info'>('homepage');
+	// Tab state: 'homepage' | 'links' | 'posts' | custom page id
+	let activeTab = $state<string>('homepage');
+	
+	// Posts state
+	let posts = $state<PostListItem[]>([]);
+	let postsLoading = $state(false);
+	let selectedPost = $state<PostDetail | null>(null);
+	let postModalOpen = $state(false);
+	let postReplies = $state<DiscussionReplyItem[]>([]);
+	let repliesLoading = $state(false);
+	
+	// Custom page content state
+	let customPageContent = $state<string | null>(null);
+	let customPageLoading = $state(false);
 	
 	// Role tree node data containing the artifacts for that role
 	interface RoleNodeData {
@@ -51,6 +66,14 @@
 			})
 		});
 	});
+	
+	// Get custom pages (pages excluding homepage)
+	const customPages = $derived.by(() => {
+		if (!project) return [];
+		return project.pages
+			.filter(page => page.id !== project!.homepageId)
+			.sort((a, b) => a.order - b.order);
+	});
 
 	// Fetch project details
 	$effect(() => {
@@ -64,7 +87,9 @@
 			if (result) {
 				project = result;
 				// Fetch homepage after project loads
-				fetchHomepage(projectId);
+				if (result.homepageId) {
+					fetchHomepage(projectId, result.homepageId);
+				}
 			} else {
 				error = apiError?.error || 'Project not found';
 			}
@@ -74,13 +99,29 @@
 			loading = false;
 		});
 	});
+	
+	// Fetch posts when switching to posts tab
+	$effect(() => {
+		if (activeTab === 'posts' && project && posts.length === 0) {
+			fetchPosts(project.id);
+		}
+	});
+	
+	// Fetch custom page content when switching to custom page tab
+	$effect(() => {
+		if (project && activeTab !== 'homepage' && activeTab !== 'links' && activeTab !== 'posts') {
+			fetchCustomPage(project.id, activeTab);
+		}
+	});
 
-	async function fetchHomepage(projectId: string) {
+	async function fetchHomepage(projectId: string, homepageId: string) {
 		homepageLoading = true;
 		try {
-			const response = await fetch(`${API_BASE_URL}/projects/${projectId}/homepage`);
-			if (response.ok) {
-				homepage = await response.text();
+			const { data: pageData } = await client.GET('/projects/{projectId}/pages/{pageId}', {
+				params: { path: { projectId, pageId: homepageId } }
+			});
+			if (pageData) {
+				homepage = pageData.content || null;
 			} else {
 				homepage = null;
 			}
@@ -90,6 +131,75 @@
 			homepageLoading = false;
 		}
 	}
+	
+	async function fetchPosts(projectId: string) {
+		postsLoading = true;
+		try {
+			const { data: result } = await client.GET('/projects/{projectId}/posts', {
+				params: { path: { projectId }, query: { limit: 50 } }
+			});
+			if (result) {
+				posts = result.posts;
+			}
+		} catch {
+			posts = [];
+		} finally {
+			postsLoading = false;
+		}
+	}
+	
+	async function fetchCustomPage(projectId: string, pageId: string) {
+		customPageLoading = true;
+		customPageContent = null;
+		try {
+			const { data: pageData } = await client.GET('/projects/{projectId}/pages/{pageId}', {
+				params: { path: { projectId, pageId } }
+			});
+			if (pageData) {
+				customPageContent = pageData.content || null;
+			}
+		} catch {
+			customPageContent = null;
+		} finally {
+			customPageLoading = false;
+		}
+	}
+	
+	async function openPostModal(post: PostListItem) {
+		if (!project) return;
+		postModalOpen = true;
+		repliesLoading = true;
+		postReplies = [];
+		
+		// Fetch post detail
+		try {
+			const { data: postDetail } = await client.GET('/projects/{projectId}/posts/{postId}', {
+				params: { path: { projectId: project.id, postId: post.id } }
+			});
+			if (postDetail) {
+				selectedPost = postDetail;
+				// Fetch replies if there's a discussion
+				if (postDetail.discussionId) {
+					const { data: repliesData } = await client.GET('/discussions/{discussionId}/replies', {
+						params: { path: { discussionId: postDetail.discussionId }, query: { limit: 100 } }
+					});
+					if (repliesData) {
+						postReplies = repliesData.replies;
+					}
+				}
+			}
+		} catch {
+			selectedPost = null;
+		} finally {
+			repliesLoading = false;
+		}
+	}
+	
+	function closePostModal() {
+		postModalOpen = false;
+		selectedPost = null;
+		postReplies = [];
+	}
 
 	function handleNodeSelect(node: TreeNode<RoleNodeData>) {
 		selectedNode = node;
@@ -97,6 +207,10 @@
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString();
+	}
+	
+	function formatDateTime(dateStr: string): string {
+		return new Date(dateStr).toLocaleString();
 	}
 
 	// Get cover images or use placeholders
@@ -182,13 +296,19 @@
 						<span>{project.maintainers.length + 1} maintainers</span>
 						<span class="text-gray-400">•</span>
 						<span>Updated {formatDate(project.updatedAt)}</span>
+						{#if project.license}
+							<span class="text-gray-400">•</span>
+							<span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
+								{project.license}
+							</span>
+						{/if}
 					</div>
 				</div>
 			</div>
 
 			<!-- Tab Navigation -->
 			<div class="border-b border-gray-200 mt-4">
-				<nav class="flex space-x-8" aria-label="Tabs">
+				<nav class="flex space-x-8 overflow-x-auto" aria-label="Tabs">
 					<button
 						onclick={() => activeTab = 'homepage'}
 						class="{activeTab === 'homepage'
@@ -214,17 +334,35 @@
 						Links
 					</button>
 					<button
-						onclick={() => activeTab = 'info'}
-						class="{activeTab === 'info'
+						onclick={() => activeTab = 'posts'}
+						class="{activeTab === 'posts'
 							? 'border-[#0969da] text-[#0969da]'
 							: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
 							whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2"
 					>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
 						</svg>
-						Project Info
+						Posts
 					</button>
+					{#each customPages as page (page.id)}
+						<button
+							onclick={() => activeTab = page.id}
+							class="{activeTab === page.id
+								? 'border-[#0969da] text-[#0969da]'
+								: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
+								whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors flex items-center gap-2"
+						>
+							{#if page.icon}
+								<span>{page.icon}</span>
+							{:else}
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+							{/if}
+							{page.name}
+						</button>
+					{/each}
 				</nav>
 			</div>
 
@@ -327,8 +465,14 @@
 											{@const artifact = pa.artifact}
 											<a 
 												href="/artifact/{artifact.id}" 
-												class="block bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-md transition group"
+												class="block bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-md transition group relative"
 											>
+												<!-- Official Badge at top-right -->
+												{#if pa.isOfficial}
+													<span class="absolute top-2 right-2 px-2 py-0.5 text-xs font-semibold rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
+														Official
+													</span>
+												{/if}
 												<div class="flex gap-4">
 													<!-- Thumbnail -->
 													<div class="w-20 h-20 rounded-lg overflow-hidden shrink-0 border border-gray-100">
@@ -345,7 +489,7 @@
 															<h4 class="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors truncate">
 																{artifact.name}
 															</h4>
-															<span class="shrink-0 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600">
+															<span class="shrink-0 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 {pa.isOfficial ? 'mr-16' : ''}">
 																{artifact.type}
 															</span>
 														</div>
@@ -360,14 +504,6 @@
 															<span class="flex items-center gap-1">
 																{artifact.author?.displayName || artifact.author?.username || 'Unknown'}
 															</span>
-															{#if pa.isOfficial}
-																<span class="flex items-center gap-1 text-green-600">
-																	<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-																		<path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-																	</svg>
-																	Official
-																</span>
-															{/if}
 														</div>
 													</div>
 												</div>
@@ -390,118 +526,248 @@
 					</div>
 				</div>
 
-			{:else if activeTab === 'info'}
-				<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-					<!-- Main Info -->
-					<div class="lg:col-span-2 space-y-6">
-						<!-- Project Artifacts -->
-						<div class="bg-white rounded-lg border border-gray-200 p-6">
-							<h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-								<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-								</svg>
-								Project Artifacts
-							</h3>
-							{#if project.artifacts.length === 0}
-								<p class="text-gray-500 text-sm">No artifacts linked to this project yet.</p>
-							{:else}
-								<div class="space-y-3">
-									{#each project.artifacts as pa}
-										<a href="/artifact/{pa.artifact.id}" class="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition">
-											<img 
-												src={pa.artifact.thumbnailUrl || 'https://placehold.co/80x80/222/fff?text=No+Img'} 
-												alt={pa.artifact.name}
-												class="w-12 h-12 rounded object-cover"
-											/>
-											<div class="flex-1 min-w-0">
-												<div class="font-medium text-gray-900 truncate">{pa.artifact.name}</div>
-												<div class="text-xs text-gray-500 flex items-center gap-2">
-													<span class="px-1.5 py-0.5 bg-gray-100 rounded">{pa.artifact.type}</span>
-													{#if pa.role}
-														<span class="text-blue-600">• {pa.role.name}</span>
-													{/if}
-												</div>
-											</div>
-										</a>
-									{/each}
-								</div>
-							{/if}
+			{:else if activeTab === 'posts'}
+				<!-- Posts Tab -->
+				<div class="min-h-[400px] max-w-3xl mx-auto">
+					{#if postsLoading}
+						<div class="flex justify-center py-12">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
 						</div>
-					</div>
-
-					<!-- Sidebar -->
-					<div class="space-y-6">
-						<!-- Owner & Maintainers -->
-						<div class="bg-white rounded-lg border border-gray-200 p-6">
-							<h3 class="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide">Team</h3>
-							
-							<!-- Owner -->
-							<div class="mb-4">
-								<div class="text-xs text-gray-500 mb-2">Owner</div>
-								<div class="flex items-center gap-2">
-									{#if project.owner.avatarUrl}
-										<img src={project.owner.avatarUrl} alt="" class="w-8 h-8 rounded-full" />
-									{:else}
-										<div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-500">
-											{(project.owner.displayName || project.owner.username)[0].toUpperCase()}
+					{:else if posts.length === 0}
+						<div class="text-center py-12 text-gray-500">
+							<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+							</svg>
+							<p class="text-lg font-medium">No posts yet</p>
+							<p class="text-sm mt-1">This project hasn't published any posts.</p>
+						</div>
+					{:else}
+						<div class="space-y-4">
+							{#each posts as post (post.id)}
+								<button 
+									type="button"
+									onclick={() => openPostModal(post)}
+									class="w-full text-left bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-md transition group"
+								>
+									<!-- Cover image if exists -->
+									{#if post.coverUrls && post.coverUrls.length > 0}
+										<div class="h-48 overflow-hidden">
+											<img 
+												src={post.coverUrls[0]} 
+												alt=""
+												class="w-full h-full object-cover group-hover:scale-105 transition-transform"
+											/>
 										</div>
 									{/if}
-									<span class="font-medium text-gray-900">
-										{project.owner.displayName || project.owner.username}
-									</span>
-								</div>
-							</div>
-
-							<!-- Maintainers -->
-							{#if project.maintainers.length > 0}
-								<div>
-									<div class="text-xs text-gray-500 mb-2">Maintainers</div>
-									<div class="space-y-2">
-										{#each project.maintainers as maintainer}
-											<div class="flex items-center gap-2">
-												{#if maintainer.avatarUrl}
-													<img src={maintainer.avatarUrl} alt="" class="w-6 h-6 rounded-full" />
+									<div class="p-5">
+										<!-- Pinned badge -->
+										{#if post.isPinned}
+											<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 mb-2">
+												<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+													<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+												</svg>
+												Pinned
+											</span>
+										{/if}
+										<h3 class="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
+											{post.title}
+										</h3>
+										<div class="mt-2 text-sm text-gray-600 line-clamp-3 prose-content">
+											{@html post.content}
+										</div>
+										<div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+											<div class="flex items-center gap-2 text-sm text-gray-500">
+												{#if post.author.avatarUrl}
+													<img src={post.author.avatarUrl} alt="" class="w-5 h-5 rounded-full" />
 												{:else}
-													<div class="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">
-														{(maintainer.displayName || maintainer.username)[0].toUpperCase()}
+													<div class="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">
+														{(post.author.displayName || post.author.username)[0].toUpperCase()}
 													</div>
 												{/if}
-												<span class="text-sm text-gray-700">
-													{maintainer.displayName || maintainer.username}
-												</span>
+												<span>{post.author.displayName || post.author.username}</span>
+												<span class="text-gray-400">•</span>
+												<span>{formatDate(post.createdAt)}</span>
 											</div>
-										{/each}
+											{#if post.replyCount && post.replyCount > 0}
+												<div class="flex items-center gap-1 text-sm text-gray-500">
+													<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+													</svg>
+													{post.replyCount}
+												</div>
+											{/if}
+										</div>
 									</div>
-								</div>
-							{/if}
+								</button>
+							{/each}
 						</div>
+					{/if}
+				</div>
 
-						<!-- Details -->
-						<div class="bg-white rounded-lg border border-gray-200 p-6">
-							<h3 class="text-sm font-semibold text-gray-900 mb-4 uppercase tracking-wide">Details</h3>
-							<dl class="space-y-3 text-sm">
-								{#if project.license}
-									<div>
-										<dt class="text-gray-500">License</dt>
-										<dd class="font-medium text-gray-900">{project.license}</dd>
-									</div>
-								{/if}
-								<div>
-									<dt class="text-gray-500">Created</dt>
-									<dd class="font-medium text-gray-900">{formatDate(project.createdAt)}</dd>
-								</div>
-								<div>
-									<dt class="text-gray-500">Last Updated</dt>
-									<dd class="font-medium text-gray-900">{formatDate(project.updatedAt)}</dd>
-								</div>
-							</dl>
+			{:else}
+				<!-- Custom Page Tab -->
+				<div class="min-h-[400px]">
+					{#if customPageLoading}
+						<div class="flex justify-center py-12">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
 						</div>
-					</div>
+					{:else if customPageContent}
+						<div class="prose max-w-none project-homepage">
+							{@html customPageContent}
+						</div>
+					{:else}
+						<div class="text-center py-12 text-gray-500">
+							<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+							</svg>
+							<p class="text-lg font-medium">No content</p>
+							<p class="text-sm mt-1">This page is empty.</p>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
 	</div>
 </div>
+
+<!-- Post Detail Modal -->
+{#if postModalOpen}
+	<div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+		<!-- Backdrop -->
+		<div 
+			class="fixed inset-0 bg-gray-500/75"
+			transition:fade={{ duration: 200 }}
+			onclick={closePostModal}
+			onkeydown={(e) => e.key === 'Escape' && closePostModal()}
+			role="button"
+			tabindex="0"
+			aria-label="Close modal"
+		></div>
+		
+		<!-- Modal Panel -->
+		<div class="flex min-h-full items-center justify-center p-4">
+			<div 
+				class="relative bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+				transition:fly={{ y: 30, duration: 300, easing: cubicOut }}
+			>
+				<!-- Header -->
+				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+					<h2 id="modal-title" class="text-lg font-semibold text-gray-900 truncate">
+						{selectedPost?.title || 'Loading...'}
+					</h2>
+					<button
+						onclick={closePostModal}
+						class="text-gray-400 hover:text-gray-600 transition-colors"
+						aria-label="Close modal"
+					>
+						<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
+				
+				<!-- Content -->
+				<div class="flex-1 overflow-y-auto">
+					{#if selectedPost}
+						<!-- Post Cover -->
+						{#if selectedPost.coverUrls && selectedPost.coverUrls.length > 0}
+							<div class="h-64 overflow-hidden">
+								<img 
+									src={selectedPost.coverUrls[0]} 
+									alt=""
+									class="w-full h-full object-cover"
+								/>
+							</div>
+						{/if}
+						
+						<!-- Post Content -->
+						<div class="p-6">
+							<!-- Author info -->
+							<div class="flex items-center gap-3 mb-4 pb-4 border-b border-gray-100">
+								{#if selectedPost.author.avatarUrl}
+									<img src={selectedPost.author.avatarUrl} alt="" class="w-10 h-10 rounded-full" />
+								{:else}
+									<div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-500">
+										{(selectedPost.author.displayName || selectedPost.author.username)[0].toUpperCase()}
+									</div>
+								{/if}
+								<div>
+									<div class="font-medium text-gray-900">
+										{selectedPost.author.displayName || selectedPost.author.username}
+									</div>
+									<div class="text-sm text-gray-500">
+										{formatDateTime(selectedPost.createdAt)}
+									</div>
+								</div>
+							</div>
+							
+							<!-- Post body -->
+							<div class="prose max-w-none project-homepage">
+								{@html selectedPost.content}
+							</div>
+							
+							<!-- Comments Section -->
+							<div class="mt-8 pt-6 border-t border-gray-200">
+								<h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+									<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+									</svg>
+									Comments ({postReplies.length})
+								</h3>
+								
+								{#if repliesLoading}
+									<div class="flex justify-center py-8">
+										<div class="animate-spin rounded-full h-6 w-6 border-b-2 border-[#0969da]"></div>
+									</div>
+								{:else if postReplies.length === 0}
+									<div class="text-center py-8 text-gray-500">
+										<p class="text-sm">No comments yet. Be the first to comment!</p>
+									</div>
+								{:else}
+									<div class="space-y-4">
+										{#each postReplies as reply (reply.id)}
+											<div class="flex gap-3 p-4 rounded-lg bg-gray-50">
+												{#if reply.author.avatarUrl}
+													<img src={reply.author.avatarUrl} alt="" class="w-8 h-8 rounded-full shrink-0" />
+												{:else}
+													<div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500 shrink-0">
+														{(reply.author.displayName || reply.author.username)[0].toUpperCase()}
+													</div>
+												{/if}
+												<div class="flex-1 min-w-0">
+													<div class="flex items-center gap-2 mb-1">
+														<span class="font-medium text-gray-900 text-sm">
+															{reply.author.displayName || reply.author.username}
+														</span>
+														<span class="text-xs text-gray-400">
+															{formatDateTime(reply.createdAt)}
+														</span>
+														{#if reply.isAccepted}
+															<span class="px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+																Accepted
+															</span>
+														{/if}
+													</div>
+													<div class="text-sm text-gray-700 prose-content">
+														{@html reply.content}
+													</div>
+												</div>
+											</div>
+										{/each}
+									</div>
+								{/if}
+							</div>
+						</div>
+					{:else}
+						<div class="flex justify-center py-12">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
+						</div>
+					{/if}
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
 {/if}
 
 <style>
@@ -574,6 +840,25 @@
 		color: rgb(75 85 99);
 		margin-top: 1rem;
 		margin-bottom: 1rem;
+	}
+	/* Prose content for posts preview - strip most styling */
+	:global(.prose-content p) {
+		margin: 0;
+		display: inline;
+	}
+	:global(.prose-content br) {
+		display: none;
+	}
+	:global(.prose-content h1),
+	:global(.prose-content h2),
+	:global(.prose-content h3),
+	:global(.prose-content h4),
+	:global(.prose-content h5),
+	:global(.prose-content h6) {
+		font-size: inherit;
+		font-weight: inherit;
+		margin: 0;
+		display: inline;
 	}
 </style>
 
