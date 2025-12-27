@@ -5,6 +5,7 @@
 	import type { Node } from '@xyflow/svelte';
 	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData } from '../../utils/types';
 	import { getStudioContext } from '../../stores/context';
+	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { marked } from 'marked';
 	import RichTextArea from '../RichTextArea.svelte';
 	import { generate } from '../nodes/input/controller.svelte';
@@ -17,6 +18,7 @@
 	let { selectedNodes }: Props = $props();
 
 	const ctx = getStudioContext();
+	const settings = getSettingsStore();
 
 	// Single selected node
 	let selectedNode = $derived(selectedNodes.length === 1 ? selectedNodes[0] : null);
@@ -79,7 +81,12 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		await generate(selectedNode.id, ctx.nodes, ctx.edges, callbacks);
+		const config = {
+			apiKey: settings.api.apiKey,
+			model: settings.api.selectedModel,
+			baseUrl: settings.effectiveBaseUrl
+		};
+		await generate(config, selectedNode.id, ctx.nodes, ctx.edges, callbacks);
 	}
 
 	async function handleRegenerate() {
@@ -88,7 +95,12 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		await regenerate(selectedNode.id, ctx.nodes, ctx.edges, callbacks);
+		const config = {
+			apiKey: settings.api.apiKey,
+			model: settings.api.selectedModel,
+			baseUrl: settings.effectiveBaseUrl
+		};
+		await regenerate(config, selectedNode.id, ctx.nodes, ctx.edges, callbacks);
 	}
 
 	// Check if node is editable

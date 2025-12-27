@@ -79,9 +79,7 @@ export type {
   SnapshotEdge,
   SnapshotPosition,
   Versionable,
-  VersionRefExtractor,
   HistoricalTreeResult,
-  PreviewControllerConfig,
   PreviewController
 } from './stores/version';
 

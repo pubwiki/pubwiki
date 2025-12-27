@@ -37,9 +37,10 @@ import { positionNewNodesFromSources } from '../../../utils/layout';
 import { getNodeVfs } from '../../../stores/vfs';
 import { createMountedVfs, getMountedProvider, MountedVfsProvider, Vfs } from '@pubwiki/vfs';
 import { 
-	getPubChat, 
+	createPubChat, 
 	streamGeneration, 
-	type StreamGenerationCallbacks 
+	type StreamGenerationCallbacks,
+	type GenerationConfig
 } from '../generated/controller.svelte';
 
 // ============================================================================
@@ -307,9 +308,11 @@ export interface GenerationCallbacks {
  * - Creating the generated node
  * - Streaming the response
  * 
+ * @param config - LLM configuration (apiKey, model, baseUrl)
  * @returns The new generated node, or null if generation cannot proceed
  */
 export async function generate(
+	config: GenerationConfig,
 	inputNodeId: string,
 	nodes: Node<StudioNodeData>[],
 	edges: Edge[],
@@ -320,11 +323,8 @@ export async function generate(
 		return null;
 	}
 
-	const pubchat = getPubChat();
-	if (!pubchat) {
-		console.error('PubChat not initialized');
-		return null;
-	}
+	// Create PubChat on-demand so user settings changes take effect immediately
+	const pubchat = createPubChat(config);
 
 	// Check if there are VFS nodes connected to this input node via mountpoints
 	const vfsNodes = findConnectedVfsNodes(inputNodeId, nodes, edges);
@@ -464,10 +464,12 @@ export async function generate(
 
 	// Stream generation (don't await - let it run in background)
 	streamGeneration(
+		config,
 		newGeneratedData.id,
 		prepared.resolvedUserInput,
 		prepared.resolvedSystemPrompt,
-		streamCallbacks
+		streamCallbacks,
+		pubchat  // Pass the configured PubChat instance with VFS
 	).catch(err => {
 		console.error('Generation failed:', err);
 		streamCallbacks.onError(newGeneratedData.id, err);

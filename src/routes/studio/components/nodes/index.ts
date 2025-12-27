@@ -19,7 +19,7 @@ export {
 export { 
 	GeneratedNode, 
 	registerGeneratedNodeHandlers,
-	initGeneratedNodeController,
+	createPubChat,
 	regenerate,
 	type GenerationConfig,
 	type StreamGenerationCallbacks

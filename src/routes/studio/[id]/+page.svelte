@@ -12,8 +12,7 @@
 		LoaderNode, 
 		StateNode, 
 		registerInputNodeHandlers,
-		registerGeneratedNodeHandlers,
-		initGeneratedNodeController
+		registerGeneratedNodeHandlers
 	} from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
 	import { StudioSidebar } from '../components/sidebar';
@@ -41,19 +40,7 @@
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../stores/flow-events';
 	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
 	import { useAuth } from '$lib/stores/auth.svelte';
-
-	// ============================================================================
-	// LLM Configuration (for internal generation)
-	// ============================================================================
-	
-	// Initialize the generation controller with LLM config
-	// Note: This also registers the version handler for GENERATED nodes
-	initGeneratedNodeController({
-		// FIXME: only for test, do not bring to production
-		apiKey: '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',
-		model: 'google/gemini-2.5-flash',
-		baseUrl: 'https://openrouter.ai/api/v1'
-	});
+	import { getSettingsStore } from '$lib/stores/settings.svelte';
 
 	// ============================================================================
 	// Node Types

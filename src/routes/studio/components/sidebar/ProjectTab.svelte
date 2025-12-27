@@ -4,7 +4,8 @@
 	 * Replaces the PublishModal with an inline experience
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
-	import type { StudioNodeData, GeneratedNodeData, NodeRef } from '../../utils/types';
+	import type { StudioNodeData, GeneratedNodeData } from '../../utils/types';
+	import type { NodeRef } from '../../stores/version';
 	import type { PublishMetadata } from '../../utils/publish';
 
 	interface Props {

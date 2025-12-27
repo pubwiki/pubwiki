@@ -36,13 +36,6 @@ export interface StreamGenerationCallbacks {
 }
 
 // ============================================================================
-// State
-// ============================================================================
-
-/** PubChat instance for generation */
-let pubchat: PubChat | null = null;
-
-// ============================================================================
 // Version Handler Registration
 // ============================================================================
 
@@ -59,14 +52,15 @@ registerVersionHandler<GeneratedNodeData>('GENERATED', {
 });
 
 // ============================================================================
-// Initialization
+// PubChat Factory
 // ============================================================================
 
 /**
- * Initialize the GeneratedNode controller with LLM configuration
+ * Create a new PubChat instance with the given configuration.
+ * PubChat is constructed on-demand so that user settings changes are reflected immediately.
  */
-export function initGeneratedNodeController(config: GenerationConfig): void {
-	pubchat = new PubChat({
+export function createPubChat(config: GenerationConfig): PubChat {
+	return new PubChat({
 		llm: {
 			apiKey: config.apiKey,
 			model: config.model,
@@ -80,41 +74,43 @@ export function initGeneratedNodeController(config: GenerationConfig): void {
 	});
 }
 
-/**
- * Get the PubChat instance (for VFS mounting in InputNode)
- */
-export function getPubChat(): PubChat | null {
-	return pubchat;
-}
-
 // ============================================================================
 // Stream Generation
 // ============================================================================
 
 /**
  * Stream generation to a node
- * This is the core streaming logic shared by both generate and regenerate
+ * This is the core streaming logic shared by both generate and regenerate.
+ * PubChat is created on-demand so user settings changes take effect immediately.
+ * 
+ * @param config - LLM configuration (apiKey, model, baseUrl)
+ * @param nodeId - The ID of the node to stream to
+ * @param userContent - The user's input content
+ * @param systemPrompt - Optional system prompt
+ * @param callbacks - Callbacks for streaming events
+ * @param pubchat - Optional pre-configured PubChat instance (for VFS support)
  */
 export async function streamGeneration(
+	config: GenerationConfig,
 	nodeId: string,
 	userContent: string,
 	systemPrompt: string,
-	callbacks: StreamGenerationCallbacks
+	callbacks: StreamGenerationCallbacks,
+	pubchat?: PubChat
 ): Promise<void> {
-	if (!pubchat) {
-		throw new Error('GeneratedNode controller not initialized');
-	}
+	// Create PubChat on-demand if not provided
+	const chat = pubchat ?? createPubChat(config);
 
 	try {
 		let historyId: string | undefined;
 		if (systemPrompt) {
 			const systemMessage = createSystemMessage(systemPrompt, null);
-			const historyIds = await pubchat.addConversation([systemMessage]);
+			const historyIds = await chat.addConversation([systemMessage]);
 			historyId = historyIds[historyIds.length - 1];
 		}
 
 		let accumulatedContent = '';
-		for await (const event of pubchat.streamChat(userContent, historyId)) {
+		for await (const event of chat.streamChat(userContent, historyId)) {
 			if (event.type === 'token') {
 				accumulatedContent += event.token;
 				callbacks.onToken(nodeId, accumulatedContent);
@@ -158,12 +154,14 @@ export interface RegenerationCallbacks {
  * reconstruct the exact context that was used for the original generation,
  * including reftag-substituted content.
  * 
+ * @param config - LLM configuration (apiKey, model, baseUrl)
  * @param generatedNodeId - The ID of the generated node to regenerate
  * @param nodes - Current nodes array
  * @param edges - Current edges array
  * @param callbacks - Callbacks for state updates
  */
 export async function regenerate(
+	config: GenerationConfig,
 	generatedNodeId: string,
 	nodes: Node<StudioNodeData>[],
 	edges: Edge[],
@@ -289,7 +287,7 @@ export async function regenerate(
 	};
 
 	// Stream regeneration (don't await - let it run in background)
-	streamGeneration(generatedNodeId, inputContent, systemPrompt, streamCallbacks)
+	streamGeneration(config, generatedNodeId, inputContent, systemPrompt, streamCallbacks)
 		.catch(err => {
 			console.error('Regeneration failed:', err);
 			streamCallbacks.onError(generatedNodeId, err);

@@ -6,6 +6,7 @@
 	 * - Collapsible to a project name badge at the top
 	 * - Three tabs: Overview, Properties, Project
 	 * - Float above the flow editor
+	 * - Settings button with modal
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { StudioNodeData } from '../../utils/types';
@@ -13,6 +14,7 @@
 	import OverviewTab from './OverviewTab.svelte';
 	import PropertiesTab from './PropertiesTab.svelte';
 	import ProjectTab from './ProjectTab.svelte';
+	import { SettingsModal } from '../settings';
 
 	interface Props {
 		nodes: Node<StudioNodeData>[];
@@ -42,6 +44,7 @@
 	let collapsed = $state(false);
 	let activeTab = $state<'overview' | 'properties' | 'project'>('overview');
 	let sidebarEl: HTMLDivElement | undefined = $state();
+	let showSettings = $state(false);
 
 	// Auto-switch to properties tab when selecting a single node
 	$effect(() => {
@@ -52,6 +55,14 @@
 
 	function toggle() {
 		collapsed = !collapsed;
+	}
+
+	function openSettings() {
+		showSettings = true;
+	}
+
+	function closeSettings() {
+		showSettings = false;
 	}
 
 	const tabs = [
@@ -101,7 +112,7 @@
 			}
 		}}
 	>
-		<!-- Header with project name and collapse button -->
+		<!-- Header with project name, settings button, and collapse button -->
 		<div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
 			<div class="flex items-center gap-2 min-w-0">
 				<svg class="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,15 +123,29 @@
 					<span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">Published</span>
 				{/if}
 			</div>
-			<button
-				class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
-				onclick={toggle}
-				title="Collapse panel"
-			>
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
-				</svg>
-			</button>
+			<div class="flex items-center gap-1">
+				<!-- Settings button -->
+				<button
+					class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+					onclick={openSettings}
+					title="Settings"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+					</svg>
+				</button>
+				<!-- Collapse button -->
+				<button
+					class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+					onclick={toggle}
+					title="Collapse panel"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+					</svg>
+				</button>
+			</div>
 		</div>
 
 		<!-- Tab Navigation -->
@@ -160,4 +185,9 @@
 			{/if}
 		</div>
 	</div>
+{/if}
+
+<!-- Settings Modal -->
+{#if showSettings}
+	<SettingsModal onClose={closeSettings} />
 {/if}

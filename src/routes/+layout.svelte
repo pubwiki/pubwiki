@@ -4,12 +4,14 @@
 	import { createAuth } from '$lib/stores/auth.svelte';
 	import { createArtifactStore } from '$lib/stores/artifacts.svelte';
 	import { createProjectStore } from '$lib/stores/projects.svelte';
+	import { createSettingsStore } from '$lib/stores/settings.svelte';
 
 	let { children } = $props();
 
 	const auth = createAuth();
 	const artifactStore = createArtifactStore();
 	const projectStore = createProjectStore();
+	const settings = createSettingsStore();
 </script>
 
 <svelte:head>

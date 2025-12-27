@@ -11,6 +11,7 @@
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { GeneratedNodeData } from '../../../utils/types';
 	import { getStudioContext } from '../../../stores/context';
+	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { marked } from 'marked';
 	import BaseNode from '../BaseNode.svelte';
 	import { regenerate } from './controller.svelte';
@@ -27,6 +28,7 @@
 	// ============================================================================
 
 	const ctx = getStudioContext();
+	const settings = getSettingsStore();
 
 	// ============================================================================
 	// Derived
@@ -48,7 +50,12 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		await regenerate(id, ctx.nodes, ctx.edges, callbacks);
+		const config = {
+			apiKey: settings.api.apiKey,
+			model: settings.api.selectedModel,
+			baseUrl: settings.effectiveBaseUrl
+		};
+		await regenerate(config, id, ctx.nodes, ctx.edges, callbacks);
 	}
 
 	function handleWheel(e: WheelEvent) {

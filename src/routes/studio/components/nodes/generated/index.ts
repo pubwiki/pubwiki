@@ -7,8 +7,7 @@
 export { default as GeneratedNode } from './GeneratedNode.svelte';
 export { 
 	registerGeneratedNodeHandlers,
-	initGeneratedNodeController,
-	getPubChat,
+	createPubChat,
 	streamGeneration,
 	regenerate,
 	type GenerationConfig,

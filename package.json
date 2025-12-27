@@ -61,6 +61,7 @@
 		"buffer": "^6.0.3",
 		"dagre": "^0.8.5",
 		"dexie": "^4.2.1",
+		"flowbite-svelte": "^1.31.0",
 		"isomorphic-git": "^1.36.1",
 		"jszip": "^3.10.1",
 		"marked": "^17.0.1",

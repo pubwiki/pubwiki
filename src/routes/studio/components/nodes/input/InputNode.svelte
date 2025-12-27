@@ -14,6 +14,7 @@
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { InputNodeData } from '../../../utils/types';
 	import { getStudioContext } from '../../../stores/context';
+	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { 
 		HandleId,
 		createTagHandleId, 
@@ -50,6 +51,7 @@
 	// ============================================================================
 
 	const ctx = getStudioContext();
+	const settings = getSettingsStore();
 	const allEdges = useEdges();
 	const updateNodeInternals = useUpdateNodeInternals();
 
@@ -220,7 +222,12 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		await generate(id, ctx.nodes, ctx.edges, callbacks);
+		const config = {
+			apiKey: settings.api.apiKey,
+			model: settings.api.selectedModel,
+			baseUrl: settings.effectiveBaseUrl
+		};
+		await generate(config, id, ctx.nodes, ctx.edges, callbacks);
 	}
 
 	function handleMountpointLabelChange(handleId: string, _oldLabel: string, newLabel: string, handleData?: Record<string, unknown>) {
