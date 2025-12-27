@@ -17,6 +17,7 @@ use rdf::*;
 use utf8_string::*;
 use async_table::*;
 use js_module::*;
+use json::*;
 
 pub mod callback;
 pub mod require;
@@ -26,6 +27,7 @@ pub mod rdf;
 pub mod utf8_string;
 pub mod async_table;
 pub mod js_module;
+pub mod json;
 
 fn read_c_string(ptr: *const c_char) -> LuaResult<String> {
     if ptr.is_null() {
@@ -87,6 +89,7 @@ impl LuaInstance {
         install_require_loader(&lua)?;
         install_fs_api(&lua, context_id)?;
         install_rdf_api(&lua, context_id)?;
+        install_json_api(&lua)?;
 
         Ok(LuaInstance { lua, output })
     }

@@ -27,3 +27,6 @@ llm-docs
 # Paraglide
 src/lib/paraglide
 project.inlang/cache/
+
+
+target/

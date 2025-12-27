@@ -715,5 +715,210 @@ describe('Error Output Preservation', () => {
 
     instance.destroy()
   })
+
+  describe('JSON module', () => {
+    describe('json.encode', () => {
+      it('should encode nil as null', async () => {
+        const result = await runLua('return json.encode(nil)', { rdfStore: store })
+        expect(result.result).toBe('null')
+        expect(result.error).toBeNull()
+      })
+
+      it('should encode boolean values', async () => {
+        const resultTrue = await runLua('return json.encode(true)', { rdfStore: store })
+        expect(resultTrue.result).toBe('true')
+
+        const resultFalse = await runLua('return json.encode(false)', { rdfStore: store })
+        expect(resultFalse.result).toBe('false')
+      })
+
+      it('should encode integer numbers', async () => {
+        const result = await runLua('return json.encode(42)', { rdfStore: store })
+        expect(result.result).toBe('42')
+      })
+
+      it('should encode floating point numbers', async () => {
+        const result = await runLua('return json.encode(3.14)', { rdfStore: store })
+        expect(JSON.parse(result.result as string)).toBeCloseTo(3.14)
+      })
+
+      it('should encode strings', async () => {
+        const result = await runLua('return json.encode("hello world")', { rdfStore: store })
+        expect(result.result).toBe('"hello world"')
+      })
+
+      it('should encode strings with special characters', async () => {
+        const result = await runLua('return json.encode("hello\\nworld")', { rdfStore: store })
+        expect(JSON.parse(result.result as string)).toBe('hello\nworld')
+      })
+
+      it('should encode arrays (sequential integer keys from 1)', async () => {
+        const result = await runLua('return json.encode({1, 2, 3})', { rdfStore: store })
+        expect(JSON.parse(result.result as string)).toEqual([1, 2, 3])
+      })
+
+      it('should encode objects (string keys)', async () => {
+        const result = await runLua('return json.encode({name = "Alice", age = 30})', { rdfStore: store })
+        const parsed = JSON.parse(result.result as string)
+        expect(parsed.name).toBe('Alice')
+        expect(parsed.age).toBe(30)
+      })
+
+      it('should encode nested structures', async () => {
+        const result = await runLua(`
+          local data = {
+            name = "test",
+            items = {1, 2, 3},
+            nested = {
+              foo = "bar"
+            }
+          }
+          return json.encode(data)
+        `, { rdfStore: store })
+        const parsed = JSON.parse(result.result as string)
+        expect(parsed.name).toBe('test')
+        expect(parsed.items).toEqual([1, 2, 3])
+        expect(parsed.nested.foo).toBe('bar')
+      })
+
+      it('should encode empty table as empty array', async () => {
+        const result = await runLua('return json.encode({})', { rdfStore: store })
+        expect(result.result).toBe('[]')
+      })
+
+      it('should encode mixed arrays as objects', async () => {
+        // Table with both integer and string keys should be an object
+        const result = await runLua('return json.encode({[1] = "a", foo = "bar"})', { rdfStore: store })
+        const parsed = JSON.parse(result.result as string)
+        expect(parsed['1']).toBe('a')
+        expect(parsed.foo).toBe('bar')
+      })
+
+      it('should error on encoding functions', async () => {
+        const result = await runLua('return json.encode(function() end)', { rdfStore: store })
+        expect(result.error).toBeTruthy()
+      })
+    })
+
+    describe('json.decode', () => {
+      it('should decode null to nil', async () => {
+        const result = await runLua('return json.decode("null")', { rdfStore: store })
+        expect(result.result).toBeNull()
+        expect(result.error).toBeNull()
+      })
+
+      it('should decode boolean values', async () => {
+        const resultTrue = await runLua('return json.decode("true")', { rdfStore: store })
+        expect(resultTrue.result).toBe(true)
+
+        const resultFalse = await runLua('return json.decode("false")', { rdfStore: store })
+        expect(resultFalse.result).toBe(false)
+      })
+
+      it('should decode integer numbers', async () => {
+        const result = await runLua('return json.decode("42")', { rdfStore: store })
+        expect(result.result).toBe(42)
+      })
+
+      it('should decode floating point numbers', async () => {
+        const result = await runLua('return json.decode("3.14")', { rdfStore: store })
+        expect(result.result).toBeCloseTo(3.14)
+      })
+
+      it('should decode strings', async () => {
+        const result = await runLua('return json.decode(\'"hello world"\')', { rdfStore: store })
+        expect(result.result).toBe('hello world')
+      })
+
+      it('should decode arrays', async () => {
+        const result = await runLua(`
+          local arr = json.decode('[1, 2, 3]')
+          return {arr[1], arr[2], arr[3]}
+        `, { rdfStore: store })
+        expect(result.result).toEqual([1, 2, 3])
+      })
+
+      it('should decode objects', async () => {
+        const result = await runLua(`
+          local obj = json.decode('{"name": "Alice", "age": 30}')
+          return {obj.name, obj.age}
+        `, { rdfStore: store })
+        expect(result.result).toEqual(['Alice', 30])
+      })
+
+      it('should decode nested structures', async () => {
+        const result = await runLua(`
+          local data = json.decode('{"items": [1, 2, 3], "nested": {"foo": "bar"}}')
+          return {data.items[1], data.items[2], data.nested.foo}
+        `, { rdfStore: store })
+        expect(result.result).toEqual([1, 2, 'bar'])
+      })
+
+      it('should decode empty array', async () => {
+        const result = await runLua(`
+          local arr = json.decode('[]')
+          return #arr
+        `, { rdfStore: store })
+        expect(result.result).toBe(0)
+      })
+
+      it('should decode empty object', async () => {
+        const result = await runLua(`
+          local obj = json.decode('{}')
+          local count = 0
+          for _ in pairs(obj) do count = count + 1 end
+          return count
+        `, { rdfStore: store })
+        expect(result.result).toBe(0)
+      })
+
+      it('should error on invalid JSON', async () => {
+        const result = await runLua('return json.decode("invalid json")', { rdfStore: store })
+        expect(result.error).toBeTruthy()
+      })
+
+      it('should error on truncated JSON', async () => {
+        const result = await runLua('return json.decode(\'{"incomplete":\')', { rdfStore: store })
+        expect(result.error).toBeTruthy()
+      })
+    })
+
+    describe('json roundtrip', () => {
+      it('should roundtrip simple values', async () => {
+        const result = await runLua(`
+          local original = 42
+          local encoded = json.encode(original)
+          local decoded = json.decode(encoded)
+          return decoded
+        `, { rdfStore: store })
+        expect(result.result).toBe(42)
+      })
+
+      it('should roundtrip complex structures', async () => {
+        const result = await runLua(`
+          local original = {
+            name = "test",
+            count = 100,
+            active = true,
+            tags = {"lua", "json", "test"}
+          }
+          local encoded = json.encode(original)
+          local decoded = json.decode(encoded)
+          return {decoded.name, decoded.count, decoded.active, decoded.tags[1], decoded.tags[3]}
+        `, { rdfStore: store })
+        expect(result.result).toEqual(['test', 100, true, 'lua', 'test'])
+      })
+
+      it('should roundtrip UTF-8 strings', async () => {
+        const result = await runLua(`
+          local original = "你好世界 🌍"
+          local encoded = json.encode(original)
+          local decoded = json.decode(encoded)
+          return decoded
+        `, { rdfStore: store })
+        expect(result.result).toBe('你好世界 🌍')
+      })
+    })
+  })
 })
 
