@@ -41,6 +41,7 @@
 	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
 	import { useAuth } from '$lib/stores/auth.svelte';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Node Types
@@ -431,7 +432,7 @@
 	}
 
 	async function addVFSNode() {
-		const newVFSData = await createVFSNodeData(currentProjectId, 'Files');
+		const newVFSData = await createVFSNodeData(currentProjectId, m.studio_default_files());
 		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newVFSData.id,
@@ -446,7 +447,7 @@
 	}
 
 	async function addSandboxNode() {
-		const newSandboxData = await createSandboxNodeData('Preview');
+		const newSandboxData = await createSandboxNodeData(m.studio_default_preview());
 		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newSandboxData.id,
@@ -461,7 +462,7 @@
 	}
 
 	async function addLoaderNode() {
-		const newLoaderData = await createLoaderNodeData('echo', 'Service');
+		const newLoaderData = await createLoaderNodeData('echo', m.studio_default_service());
 		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newLoaderData.id,
@@ -476,7 +477,7 @@
 	}
 
 	async function addStateNode() {
-		const newStateData = await createStateNodeData('State');
+		const newStateData = await createStateNodeData(m.studio_default_state());
 		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newStateData.id,
@@ -720,7 +721,7 @@
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
 							</svg>
-							Add Node
+							{m.studio_context_add_node()}
 						</span>
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
@@ -739,7 +740,7 @@
 								<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 								</svg>
-								Prompt
+								{m.studio_node_type_prompt()}
 							</button>
 							<button
 								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
@@ -748,7 +749,7 @@
 								<svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" />
 								</svg>
-								Input
+								{m.studio_node_type_input()}
 							</button>
 							<button
 								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
@@ -766,7 +767,7 @@
 								<svg class="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
 								</svg>
-								Sandbox
+								{m.studio_node_type_sandbox()}
 							</button>
 							<button
 								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
@@ -775,7 +776,7 @@
 								<svg class="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
 								</svg>
-								Loader
+								{m.studio_node_type_loader()}
 							</button>
 							<button
 								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 rounded-md flex items-center gap-2"
@@ -784,7 +785,7 @@
 								<svg class="w-4 h-4 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
 								</svg>
-								State
+								{m.studio_node_type_state()}
 							</button>
 						</div>
 					{/if}
@@ -798,7 +799,7 @@
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
 					</svg>
-					Auto Layout
+					{m.studio_context_auto_layout()}
 				</button>
 			{:else}
 				<!-- Node Context Menu -->
@@ -815,7 +816,7 @@
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
 						</svg>
-						Edit Name
+						{m.studio_context_edit_name()}
 					</button>
 				{/if}
 				<button
@@ -826,9 +827,9 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
 					</svg>
 					{#if contextMenu.nodeId}
-						Delete Node
+						{m.studio_context_delete_node()}
 					{:else}
-						Delete {selectedNodes.length} Node{selectedNodes.length > 1 ? 's' : ''}
+						{m.studio_context_delete_nodes({ count: selectedNodes.length })}
 					{/if}
 				</button>
 			{/if}

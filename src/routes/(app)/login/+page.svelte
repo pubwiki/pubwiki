@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { useAuth } from '$lib/stores/auth.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	const auth = useAuth();
 
@@ -19,7 +20,7 @@
 		if (result.success) {
 			goto('/');
 		} else {
-			errorMessage = result.error || 'Login failed';
+			errorMessage = result.error || m.login_failed();
 		}
 
 		isSubmitting = false;
@@ -30,19 +31,19 @@
 	<div class="max-w-md w-full space-y-8">
 		<div>
 			<h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-				Sign in to your account
+				{m.login_title()}
 			</h2>
 			<p class="mt-2 text-center text-sm text-gray-600">
-				Or
+				{m.login_or()}
 				<a href="/register" class="font-medium text-[#0969da] hover:text-[#0969da]/80">
-					create a new account
+					{m.login_create_account()}
 				</a>
 			</p>
 		</div>
 		<form class="mt-8 space-y-6" onsubmit={handleSubmit}>
 			<div class="rounded-md shadow-sm -space-y-px">
 				<div>
-					<label for="usernameOrEmail" class="sr-only">Username or Email</label>
+					<label for="usernameOrEmail" class="sr-only">{m.login_username_or_email()}</label>
 					<input
 						id="usernameOrEmail"
 						name="usernameOrEmail"
@@ -50,11 +51,11 @@
 						required
 						bind:value={usernameOrEmail}
 						class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-[#0969da] focus:border-[#0969da] focus:z-10 sm:text-sm"
-						placeholder="Username or Email address"
+						placeholder={m.login_username_or_email_placeholder()}
 					/>
 				</div>
 				<div>
-					<label for="password" class="sr-only">Password</label>
+					<label for="password" class="sr-only">{m.login_password()}</label>
 					<input
 						id="password"
 						name="password"
@@ -62,7 +63,7 @@
 						required
 						bind:value={password}
 						class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-[#0969da] focus:border-[#0969da] focus:z-10 sm:text-sm"
-						placeholder="Password"
+						placeholder={m.login_password_placeholder()}
 					/>
 				</div>
 			</div>
@@ -95,7 +96,7 @@
 							<path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
 						</svg>
 					</span>
-					{isSubmitting ? 'Signing in...' : 'Sign in'}
+					{isSubmitting ? m.login_submitting() : m.login_submit()}
 				</button>
 			</div>
 		</form>

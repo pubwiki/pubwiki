@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { getCurrentProject, setCurrentProject } from './stores/db';
+	import * as m from '$lib/paraglide/messages';
 
 	// On mount, check for current project and redirect accordingly
 	$effect(() => {
@@ -24,5 +25,5 @@
 </script>
 
 <div class="h-screen w-full flex items-center justify-center">
-	<div class="text-gray-500">Loading studio...</div>
+	<div class="text-gray-500">{m.studio_loading()}</div>
 </div>

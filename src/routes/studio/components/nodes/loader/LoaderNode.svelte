@@ -14,6 +14,7 @@
 	import { LOADER_SERVICE_TYPES } from '../../../utils/types';
 	import { getStudioContext } from '../../../stores/context';
 	import BaseNode from '../BaseNode.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Props & Context
@@ -52,26 +53,26 @@
 		switch (serviceType) {
 			case 'echo':
 				return {
-					name: 'Echo',
-					description: 'Simple echo service for testing',
+					name: m.studio_loader_echo(),
+					description: m.studio_loader_echo_desc(),
 					icon: '📢'
 				};
 			case 'counter':
 				return {
-					name: 'Counter',
-					description: 'Stateful counter service',
+					name: m.studio_loader_counter(),
+					description: m.studio_loader_counter_desc(),
 					icon: '🔢'
 				};
 			case 'wikirag':
 				return {
-					name: 'WikiRAG',
-					description: 'RAG-based wiki assistant',
+					name: m.studio_loader_wikirag(),
+					description: m.studio_loader_wikirag_desc(),
 					icon: '📚'
 				};
 			default:
 				return {
 					name: serviceType,
-					description: 'Custom service',
+					description: m.studio_loader_custom(),
 					icon: '⚙️'
 				};
 		}
@@ -161,7 +162,7 @@
 		<div class="p-3 bg-gray-50 space-y-3">
 			<!-- Service Type Selector -->
 			<div>
-				<label for="service-type-{id}" class="block text-xs font-medium text-gray-500 mb-1">Service Type</label>
+				<label for="service-type-{id}" class="block text-xs font-medium text-gray-500 mb-1">{m.studio_loader_service_type()}</label>
 				<select
 					id="service-type-{id}"
 					class="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 nodrag"
@@ -182,24 +183,24 @@
 					<p class="text-xs text-gray-500">{serviceTypeDisplay.description}</p>
 				</div>
 				{#if data.isActive}
-					<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Active</span>
+					<span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">{m.studio_loader_active()}</span>
 				{:else if data.error}
-					<span class="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">Error</span>
+					<span class="px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">{m.studio_loader_error()}</span>
 				{:else}
-					<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">Idle</span>
+					<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">{m.studio_loader_idle()}</span>
 				{/if}
 			</div>
 
 			<!-- Config Section -->
 			<div>
 				<div class="flex items-center justify-between mb-1">
-					<label for="config-{id}" class="text-xs font-medium text-gray-500">Configuration</label>
+					<label for="config-{id}" class="text-xs font-medium text-gray-500">{m.studio_loader_configuration()}</label>
 					{#if !isEditingConfig}
 						<button
 							class="text-xs text-purple-600 hover:text-purple-700 nodrag"
 							onclick={startEditConfig}
 						>
-							Edit
+							{m.studio_loader_edit()}
 						</button>
 					{/if}
 				</div>
@@ -221,14 +222,14 @@
 								class="px-2 py-1 text-xs text-gray-600 hover:text-gray-700 nodrag"
 								onclick={cancelEditConfig}
 							>
-								Cancel
+								{m.studio_loader_cancel()}
 							</button>
 							<button
 								class="px-2 py-1 text-xs bg-purple-500 text-white rounded hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed nodrag"
 								onclick={saveConfig}
 								disabled={!isConfigValid}
 							>
-								Save
+								{m.studio_loader_save()}
 							</button>
 						</div>
 					</div>

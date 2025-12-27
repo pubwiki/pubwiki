@@ -3,6 +3,7 @@
 	import type { StudioNodeData, GeneratedNodeData } from '../utils/types';
 	import type { NodeRef } from '../stores/version';
 	import type { PublishMetadata } from '../utils/publish';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		nodes: Node<StudioNodeData>[];
@@ -121,23 +122,23 @@
 
 		// Validation
 		if (!name.trim()) {
-			errorMessage = 'Name is required';
+			errorMessage = m.studio_error_name_required();
 			return;
 		}
 		if (!slug.trim()) {
-			errorMessage = 'Slug is required';
+			errorMessage = m.studio_error_slug_required();
 			return;
 		}
 		if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-			errorMessage = 'Slug must be lowercase letters and numbers, separated by hyphens';
+			errorMessage = m.studio_error_slug_format();
 			return;
 		}
 		if (!/^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$/.test(version)) {
-			errorMessage = 'Version must be in semver format (e.g., 1.0.0)';
+			errorMessage = m.studio_error_version_format();
 			return;
 		}
 		if (nodesToPublish.length === 0) {
-			errorMessage = 'No nodes to publish';
+			errorMessage = m.studio_error_no_nodes();
 			return;
 		}
 
@@ -160,7 +161,7 @@
 
 			await onPublish(metadata, nodesToPublish, edgesToPublish);
 		} catch (err) {
-			errorMessage = err instanceof Error ? err.message : 'Failed to publish';
+			errorMessage = err instanceof Error ? err.message : m.studio_publish_failed();
 		} finally {
 			isSubmitting = false;
 		}
@@ -173,11 +174,11 @@
 	function getCategoryLabel(type: string): string {
 		switch (type) {
 			case 'PROMPT':
-				return 'Prompts';
+				return m.studio_overview_prompts();
 			case 'INPUT':
-				return 'Inputs';
+				return m.studio_overview_inputs();
 			case 'GENERATED':
-				return 'Generated';
+				return m.studio_overview_generated();
 			default:
 				return type;
 		}
@@ -208,7 +209,7 @@
 	<div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
 		<!-- Header -->
 		<div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-			<h2 class="text-xl font-semibold text-gray-900">Publish Artifact</h2>
+			<h2 class="text-xl font-semibold text-gray-900">{m.studio_publish_artifact()}</h2>
 			<button
 				type="button"
 				class="text-gray-400 hover:text-gray-500 transition-colors"
@@ -228,112 +229,112 @@
 				<div class="space-y-4">
 					<div>
 						<label for="name" class="block text-sm font-medium text-gray-700 mb-1">
-							Name <span class="text-red-500">*</span>
+							{m.studio_form_name()} <span class="text-red-500">*</span>
 						</label>
 						<input
 							id="name"
 							type="text"
 							bind:value={name}
 							oninput={handleNameChange}
-							placeholder="My Awesome Artifact"
+							placeholder={m.studio_publish_name_placeholder()}
 							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent"
 						/>
 					</div>
 
 					<div>
 						<label for="slug" class="block text-sm font-medium text-gray-700 mb-1">
-							Slug <span class="text-red-500">*</span>
+							{m.studio_form_slug()} <span class="text-red-500">*</span>
 						</label>
 						<input
 							id="slug"
 							type="text"
 							bind:value={slug}
-							placeholder="my-awesome-artifact"
+							placeholder={m.studio_form_slug_placeholder()}
 							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent"
 						/>
-						<p class="mt-1 text-xs text-gray-500">URL-friendly identifier (lowercase, numbers, hyphens only)</p>
+						<p class="mt-1 text-xs text-gray-500">{m.studio_publish_slug_hint()}</p>
 					</div>
 
 					<div class="grid grid-cols-2 gap-4">
 						<div>
-							<label for="type" class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+							<label for="type" class="block text-sm font-medium text-gray-700 mb-1">{m.studio_form_type()}</label>
 							<select
 								id="type"
 								bind:value={artifactType}
 								class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent"
 							>
-								<option value="RECIPE">Recipe</option>
-								<option value="GAME">Game</option>
-								<option value="ASSET_PACK">Asset Pack</option>
-								<option value="PROMPT">Prompt</option>
+								<option value="RECIPE">{m.studio_form_type_recipe()}</option>
+								<option value="GAME">{m.studio_form_type_game()}</option>
+								<option value="ASSET_PACK">{m.studio_form_type_asset_pack()}</option>
+								<option value="PROMPT">{m.studio_form_type_prompt()}</option>
 							</select>
 						</div>
 
 						<div>
-							<label for="visibility" class="block text-sm font-medium text-gray-700 mb-1">Visibility</label>
+							<label for="visibility" class="block text-sm font-medium text-gray-700 mb-1">{m.studio_form_visibility()}</label>
 							<select
 								id="visibility"
 								bind:value={visibility}
 								class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent"
 							>
-								<option value="PUBLIC">Public</option>
-								<option value="UNLISTED">Unlisted</option>
-								<option value="PRIVATE">Private</option>
+								<option value="PUBLIC">{m.studio_form_visibility_public()}</option>
+								<option value="UNLISTED">{m.studio_form_visibility_unlisted()}</option>
+								<option value="PRIVATE">{m.studio_form_visibility_private()}</option>
 							</select>
 						</div>
 					</div>
 
 					<div>
 						<label for="version" class="block text-sm font-medium text-gray-700 mb-1">
-							Version <span class="text-red-500">*</span>
+							{m.studio_form_version()} <span class="text-red-500">*</span>
 						</label>
 						<input
 							id="version"
 							type="text"
 							bind:value={version}
-							placeholder="1.0.0"
+							placeholder={m.studio_form_version_placeholder()}
 							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent"
 						/>
-						<p class="mt-1 text-xs text-gray-500">Semantic version (e.g., 1.0.0, 2.1.0-beta)</p>
+						<p class="mt-1 text-xs text-gray-500">{m.studio_publish_version_hint()}</p>
 					</div>
 
 					<div>
-						<label for="description" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+						<label for="description" class="block text-sm font-medium text-gray-700 mb-1">{m.studio_form_description()}</label>
 						<textarea
 							id="description"
 							bind:value={description}
-							placeholder="Describe your artifact..."
+							placeholder={m.studio_publish_description_placeholder()}
 							rows="3"
 							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent resize-none"
 						></textarea>
 					</div>
 
 					<div>
-						<label for="tags" class="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+						<label for="tags" class="block text-sm font-medium text-gray-700 mb-1">{m.studio_form_tags()}</label>
 						<input
 							id="tags"
 							type="text"
 							bind:value={tagsInput}
-							placeholder="tag1, tag2, tag3"
+							placeholder={m.studio_form_tags_placeholder()}
 							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent"
 						/>
-						<p class="mt-1 text-xs text-gray-500">Comma-separated list of tags</p>
+						<p class="mt-1 text-xs text-gray-500">{m.studio_publish_tags_hint()}</p>
 					</div>
 
 					<div>
 						<label for="homepage" class="block text-sm font-medium text-gray-700 mb-1">
-							Homepage
-							<span class="text-gray-400 font-normal">(Markdown)</span>
+							{m.studio_form_homepage()}
+							<span class="text-gray-400 font-normal">({m.studio_form_homepage_markdown()})</span>
 						</label>
 						<textarea
 							id="homepage"
 							bind:value={homepage}
-							placeholder="# Welcome to My Artifact&#10;&#10;Write your artifact's homepage content here using Markdown..."
+							placeholder={m.studio_publish_homepage_placeholder()}
 							rows="8"
 							class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0969da] focus:border-transparent font-mono text-sm resize-y"
 						></textarea>
 						<p class="mt-1 text-xs text-gray-500">
-							Optional homepage content. Supports Markdown formatting. Will be rendered as HTML on the artifact page.
+							{m.studio_publish_homepage_hint()}
 						</p>
 					</div>
 				</div>
@@ -341,7 +342,7 @@
 				<!-- Nodes Preview -->
 				<div class="border-t border-gray-200 pt-6">
 					<h3 class="text-sm font-medium text-gray-700 mb-3">
-						Nodes to Publish ({nodesToPublish.length})
+						{m.studio_nodes_to_publish({ count: nodesToPublish.length })}
 					</h3>
 					
 					<div class="space-y-2">
@@ -358,7 +359,7 @@
 											<span class={`px-2 py-0.5 text-xs font-medium rounded ${getCategoryColor(type)}`}>
 												{getCategoryLabel(type)}
 											</span>
-											<span class="text-sm text-gray-600">{typeNodes.length} node{typeNodes.length !== 1 ? 's' : ''}</span>
+											<span class="text-sm text-gray-600">{typeNodes.length} {typeNodes.length !== 1 ? m.studio_publish_node_plural() : m.studio_publish_node_singular()}</span>
 										</div>
 										<svg
 											class="w-4 h-4 text-gray-500 transition-transform {expandedCategories[type] ? 'rotate-180' : ''}"
@@ -391,8 +392,8 @@
 							<svg class="w-12 h-12 mx-auto mb-2 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
 							</svg>
-							<p>No nodes available to publish</p>
-							<p class="text-xs mt-1">External nodes and nodes referencing historical versions are excluded</p>
+							<p>{m.studio_no_nodes_to_publish()}</p>
+							<p class="text-xs mt-1">{m.studio_publish_no_nodes_hint()}</p>
 						</div>
 					{/if}
 				</div>
@@ -419,7 +420,7 @@
 				onclick={onClose}
 				disabled={isSubmitting}
 			>
-				Cancel
+				{m.common_cancel()}
 			</button>
 			<button
 				type="submit"
@@ -432,12 +433,12 @@
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 					</svg>
-					Publishing...
+					{m.studio_publishing()}
 				{:else}
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
 					</svg>
-					Publish
+					{m.studio_publish()}
 				{/if}
 			</button>
 		</div>

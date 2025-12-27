@@ -15,6 +15,7 @@
 	import PropertiesTab from './PropertiesTab.svelte';
 	import ProjectTab from './ProjectTab.svelte';
 	import { SettingsModal } from '../settings';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		nodes: Node<StudioNodeData>[];
@@ -66,9 +67,9 @@
 	}
 
 	const tabs = [
-		{ id: 'overview' as const, label: 'Overview', icon: 'grid' },
-		{ id: 'properties' as const, label: 'Properties', icon: 'settings' },
-		{ id: 'project' as const, label: 'Project', icon: 'folder' }
+		{ id: 'overview' as const, label: m.studio_overview_tab(), icon: 'grid' },
+		{ id: 'properties' as const, label: m.studio_properties_tab(), icon: 'settings' },
+		{ id: 'project' as const, label: m.studio_project_tab(), icon: 'folder' }
 	];
 </script>
 
@@ -77,12 +78,12 @@
 	<button
 		class="absolute top-4 left-4 z-30 px-3 py-1.5 bg-white border border-gray-200 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center gap-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
 		onclick={toggle}
-		title="Expand panel"
+		title={m.studio_expand_panel()}
 	>
 		<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
 		</svg>
-		<span class="max-w-32 truncate">{projectName || 'Untitled Project'}</span>
+		<span class="max-w-32 truncate">{projectName || m.studio_untitled_project()}</span>
 		<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
 		</svg>
@@ -118,9 +119,9 @@
 				<svg class="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
 				</svg>
-				<span class="font-medium text-gray-700 truncate">{projectName || 'Untitled Project'}</span>
+				<span class="font-medium text-gray-700 truncate">{projectName || m.studio_untitled_project()}</span>
 				{#if !isDraft}
-					<span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">Published</span>
+					<span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">{m.studio_published()}</span>
 				{/if}
 			</div>
 			<div class="flex items-center gap-1">
@@ -128,7 +129,7 @@
 				<button
 					class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
 					onclick={openSettings}
-					title="Settings"
+					title={m.studio_settings()}
 				>
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -139,7 +140,7 @@
 				<button
 					class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
 					onclick={toggle}
-					title="Collapse panel"
+					title={m.studio_collapse_panel()}
 				>
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />

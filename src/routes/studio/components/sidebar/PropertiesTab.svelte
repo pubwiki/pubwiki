@@ -10,6 +10,7 @@
 	import RichTextArea from '../RichTextArea.svelte';
 	import { generate } from '../nodes/input/controller.svelte';
 	import { regenerate } from '../nodes/generated/controller.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		selectedNodes: Node<StudioNodeData>[];
@@ -27,19 +28,19 @@
 	function getTypeInfo(type: string) {
 		switch (type) {
 			case 'PROMPT':
-				return { label: 'Prompt', color: 'blue', description: 'System prompt or instruction template' };
+				return { label: m.studio_node_prompt(), color: 'blue', description: m.studio_properties_prompt_desc() };
 			case 'INPUT':
-				return { label: 'Input', color: 'purple', description: 'User input for generation' };
+				return { label: m.studio_node_input(), color: 'purple', description: m.studio_properties_input_desc() };
 			case 'GENERATED':
-				return { label: 'Generated', color: 'green', description: 'AI-generated content' };
+				return { label: m.studio_properties_generated(), color: 'green', description: m.studio_properties_generated_desc() };
 			case 'VFS':
-				return { label: 'Files', color: 'indigo', description: 'Virtual file system' };
+				return { label: m.studio_overview_files(), color: 'indigo', description: m.studio_properties_vfs_desc() };
 			case 'SANDBOX':
-				return { label: 'Sandbox', color: 'orange', description: 'Code preview environment' };
+				return { label: m.studio_node_sandbox(), color: 'orange', description: m.studio_properties_sandbox_desc() };
 			case 'LOADER':
-				return { label: 'Loader', color: 'purple', description: 'External data loader' };
+				return { label: m.studio_node_loader(), color: 'purple', description: m.studio_properties_loader_desc() };
 			default:
-				return { label: type, color: 'gray', description: 'Unknown node type' };
+				return { label: type, color: 'gray', description: m.studio_properties_unknown_desc() };
 		}
 	}
 
@@ -122,8 +123,8 @@
 			<svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
 			</svg>
-			<p class="text-sm">No node selected</p>
-			<p class="text-xs text-gray-300 mt-1">Click a node to view details</p>
+			<p class="text-sm">{m.studio_properties_no_selection()}</p>
+			<p class="text-xs text-gray-300 mt-1">{m.studio_properties_select_hint()}</p>
 		</div>
 	{:else if selectedNodes.length > 1}
 		<!-- Multiple selection state -->
@@ -131,8 +132,8 @@
 			<svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
 			</svg>
-			<p class="text-sm">{selectedNodes.length} nodes selected</p>
-			<p class="text-xs text-gray-300 mt-1">Select a single node to edit</p>
+			<p class="text-sm">{m.studio_properties_multi_selected({ count: selectedNodes.length })}</p>
+			<p class="text-xs text-gray-300 mt-1">{m.studio_properties_single_hint()}</p>
 		</div>
 	{:else}
 		{@const info = getTypeInfo(selectedNode.data.type)}
@@ -153,12 +154,12 @@
 				
 				<!-- Name input -->
 				<div>
-					<span class="block text-xs font-medium text-gray-500 mb-1">Name</span>
+					<span class="block text-xs font-medium text-gray-500 mb-1">{m.studio_properties_name()}</span>
 					<input
 						type="text"
 						value={selectedNode.data.name || ''}
 						oninput={handleNameChange}
-						placeholder="Untitled"
+						placeholder={m.studio_properties_untitled()}
 						class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 					/>
 				</div>
@@ -170,7 +171,7 @@
 			<!-- Content area -->
 			<div class="p-4">
 				<div class="flex items-center justify-between mb-2">
-					<span class="text-xs font-medium text-gray-500">Content</span>
+					<span class="text-xs font-medium text-gray-500">{m.studio_properties_content()}</span>
 					
 					<!-- Action buttons based on type -->
 					{#if selectedNode.data.type === 'INPUT'}
@@ -181,7 +182,7 @@
 							<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
 							</svg>
-							Generate
+							{m.studio_properties_generate()}
 						</button>
 					{:else if selectedNode.data.type === 'GENERATED'}
 						<button
@@ -191,7 +192,7 @@
 							<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 							</svg>
-							Regenerate
+							{m.studio_properties_regenerate()}
 						</button>
 					{/if}
 				</div>
@@ -202,7 +203,7 @@
 						<div class="properties-textarea">
 							<RichTextArea
 								value={displayContent}
-								placeholder="Enter content..."
+								placeholder={m.studio_properties_enter_content()}
 								onchange={handleContentChange}
 							/>
 						</div>
@@ -219,7 +220,7 @@
 							{#if displayContent}
 								<pre class="whitespace-pre-wrap font-mono text-xs">{displayContent}</pre>
 							{:else}
-								<span class="text-gray-400 italic">No content</span>
+								<span class="text-gray-400 italic">{m.studio_properties_no_content()}</span>
 							{/if}
 						</div>
 					{/if}

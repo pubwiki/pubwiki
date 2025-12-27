@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import type { SettingsStore, ApiProviderKey } from '$lib/stores/settings.svelte';
 	import { API_PROVIDERS } from '$lib/stores/settings.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		settings: SettingsStore;
@@ -70,13 +71,13 @@
 	// Fetch models from API
 	async function fetchModels() {
 		if (!apiKey) {
-			modelsError = 'Please enter an API key first';
+			modelsError = m.studio_api_enter_key_first();
 			return;
 		}
 
 		const baseUrl = provider === 'custom' ? customBaseUrl : API_PROVIDERS[provider].baseUrl;
 		if (!baseUrl) {
-			modelsError = 'Please enter a custom base URL';
+			modelsError = m.studio_api_enter_url_first();
 			return;
 		}
 
@@ -86,12 +87,12 @@
 		try {
 			const fetchedModels = await settings.fetchModels();
 			if (fetchedModels.length === 0) {
-				modelsError = 'No models found or failed to fetch models';
+				modelsError = m.studio_api_no_models();
 			} else {
 				models = fetchedModels;
 			}
 		} catch (error) {
-			modelsError = 'Failed to fetch models';
+			modelsError = m.studio_api_fetch_failed();
 		} finally {
 			isLoadingModels = false;
 		}
@@ -114,14 +115,14 @@
 
 <div class="p-6 space-y-6">
 	<div>
-		<h3 class="text-lg font-medium text-gray-900 mb-1">API Configuration</h3>
-		<p class="text-sm text-gray-500">Configure your API settings for chat and generation features.</p>
+		<h3 class="text-lg font-medium text-gray-900 mb-1">{m.studio_api_config()}</h3>
+		<p class="text-sm text-gray-500">{m.studio_api_config_desc()}</p>
 	</div>
 
 	<!-- API Provider Selection -->
 	<div class="space-y-2">
 		<label for="provider" class="block text-sm font-medium text-gray-700">
-			API Provider
+			{m.studio_api_provider()}
 		</label>
 		<select
 			id="provider"
@@ -135,9 +136,9 @@
 		</select>
 		<p class="text-xs text-gray-500">
 			{#if provider === 'custom'}
-				Enter your custom OpenAI-compatible API endpoint
+				{m.studio_api_custom_hint()}
 			{:else}
-				Using {API_PROVIDERS[provider].baseUrl}
+				{m.studio_api_using({ url: API_PROVIDERS[provider].baseUrl })}
 			{/if}
 		</p>
 	</div>
@@ -146,18 +147,18 @@
 	{#if provider === 'custom'}
 		<div class="space-y-2">
 			<label for="baseUrl" class="block text-sm font-medium text-gray-700">
-				Custom Base URL
+				{m.studio_api_custom_url()}
 			</label>
 			<input
 				id="baseUrl"
 				type="url"
 				value={customBaseUrl}
 				oninput={(e) => handleCustomBaseUrlChange(e.currentTarget.value)}
-				placeholder="https://your-api.example.com/v1"
+				placeholder={m.studio_api_custom_url_placeholder()}
 				class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 			/>
 			<p class="text-xs text-gray-500">
-				Enter the base URL of your OpenAI-compatible API endpoint
+				{m.studio_api_custom_url_hint()}
 			</p>
 		</div>
 	{/if}
@@ -165,7 +166,7 @@
 	<!-- API Key Input -->
 	<div class="space-y-2">
 		<label for="apiKey" class="block text-sm font-medium text-gray-700">
-			API Key
+			{m.studio_api_key()}
 		</label>
 		<div class="relative">
 			<input
@@ -173,7 +174,7 @@
 				type="password"
 				value={apiKey}
 				oninput={(e) => handleApiKeyChange(e.currentTarget.value)}
-				placeholder="sk-..."
+				placeholder={m.studio_api_key_placeholder()}
 				class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
 			/>
 			<div class="absolute inset-y-0 right-0 flex items-center pr-3">
@@ -184,7 +185,7 @@
 			</div>
 		</div>
 		<p class="text-xs text-gray-500">
-			Your API key is stored locally and never sent to our servers
+			{m.studio_api_key_hint()}
 		</p>
 	</div>
 
@@ -192,7 +193,7 @@
 	<div class="space-y-2">
 		<div class="flex items-center justify-between">
 			<label for="model" class="block text-sm font-medium text-gray-700">
-				Model
+				{m.studio_api_model()}
 			</label>
 			<button
 				type="button"
@@ -205,12 +206,12 @@
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 					</svg>
-					Loading...
+					{m.studio_api_loading_models()}
 				{:else}
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 					</svg>
-					Fetch Models
+					{m.studio_api_fetch_models()}
 				{/if}
 			</button>
 		</div>
@@ -226,7 +227,7 @@
 				class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-left flex items-center justify-between disabled:bg-gray-50 disabled:cursor-not-allowed"
 			>
 				<span class={selectedModel ? 'text-gray-900' : 'text-gray-400'}>
-					{selectedModel || (models.length > 0 ? 'Select a model...' : 'Fetch models first')}
+					{selectedModel || (models.length > 0 ? m.studio_api_select_model() : m.studio_api_fetch_first())}
 				</span>
 				<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -241,7 +242,7 @@
 						<input
 							type="text"
 							bind:value={modelSearchQuery}
-							placeholder="Search models..."
+							placeholder={m.studio_api_search_models()}
 							class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 						/>
 					</div>
@@ -263,7 +264,7 @@
 							</VirtualList>
 						{:else}
 							<div class="px-3 py-4 text-sm text-gray-500 text-center">
-								No models match your search
+								{m.studio_api_no_match()}
 							</div>
 						{/if}
 					</div>
@@ -274,27 +275,27 @@
 		{#if modelsError}
 			<p class="text-xs text-red-500">{modelsError}</p>
 		{:else if models.length > 0}
-			<p class="text-xs text-gray-500">{models.length} models available</p>
+			<p class="text-xs text-gray-500">{m.studio_api_models_available({ count: models.length })}</p>
 		{:else}
-			<p class="text-xs text-gray-500">Click "Fetch Models" to load available models</p>
+			<p class="text-xs text-gray-500">{m.studio_api_fetch_hint()}</p>
 		{/if}
 	</div>
 
 	<!-- Status summary -->
 	<div class="mt-6 p-4 bg-gray-50 rounded-lg">
-		<h4 class="text-sm font-medium text-gray-700 mb-2">Current Configuration</h4>
+		<h4 class="text-sm font-medium text-gray-700 mb-2">{m.studio_api_current_config()}</h4>
 		<div class="space-y-1 text-sm text-gray-600">
 			<div class="flex justify-between">
-				<span>Provider:</span>
+				<span>{m.studio_api_provider_label()}:</span>
 				<span class="font-medium">{API_PROVIDERS[provider].name}</span>
 			</div>
 			<div class="flex justify-between">
-				<span>API Key:</span>
-				<span class="font-medium">{apiKey ? '••••••••' + apiKey.slice(-4) : 'Not set'}</span>
+				<span>{m.studio_api_key_label()}:</span>
+				<span class="font-medium">{apiKey ? '••••••••' + apiKey.slice(-4) : m.studio_api_key_not_set()}</span>
 			</div>
 			<div class="flex justify-between">
-				<span>Model:</span>
-				<span class="font-medium">{selectedModel || 'Not selected'}</span>
+				<span>{m.studio_api_model_label()}:</span>
+				<span class="font-medium">{selectedModel || m.studio_api_model_not_selected()}</span>
 			</div>
 		</div>
 	</div>

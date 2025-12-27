@@ -5,6 +5,7 @@
 	import { createApiClient } from '@pubwiki/api/client';
 	import type { ArtifactListItem, UserProjectListItem, Pagination } from '@pubwiki/api';
 	import { API_BASE_URL } from '$lib/config';
+	import * as m from '$lib/paraglide/messages';
 
 	const auth = useAuth();
 
@@ -132,9 +133,9 @@
 		});
 
 		if (result.success) {
-			message = 'Profile updated successfully';
+			message = m.me_profile_updated();
 		} else {
-			error = result.error || 'Update failed';
+			error = result.error || m.me_update_failed();
 		}
 
 		isSubmitting = false;
@@ -148,10 +149,10 @@
 		});
 	}
 
-	const tabs: { id: TabType; label: string; icon: string }[] = [
-		{ id: 'artifacts', label: 'Artifacts', icon: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z' },
-		{ id: 'projects', label: 'Projects', icon: 'M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z' },
-		{ id: 'profile', label: 'Profile', icon: 'M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z' }
+	const tabsConfig: { id: TabType; labelKey: () => string; icon: string }[] = [
+		{ id: 'artifacts', labelKey: () => m.me_artifacts(), icon: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z' },
+		{ id: 'projects', labelKey: () => m.me_projects(), icon: 'M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z' },
+		{ id: 'profile', labelKey: () => m.me_profile(), icon: 'M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z' }
 	];
 </script>
 
@@ -177,7 +178,7 @@
 			<!-- Left Sidebar - Tab Navigation -->
 			<nav class="w-56 shrink-0">
 				<ul class="space-y-1">
-					{#each tabs as tab}
+					{#each tabsConfig as tab}
 						<li>
 							<button
 								onclick={() => activeTab = tab.id}
@@ -189,7 +190,7 @@
 								<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" d={tab.icon} />
 								</svg>
-								{tab.label}
+								{tab.labelKey()}
 							</button>
 						</li>
 					{/each}
@@ -202,19 +203,19 @@
 					<!-- Artifacts List -->
 					<div class="bg-white rounded-lg border border-gray-200 shadow-sm">
 						<div class="px-4 py-3 border-b border-gray-200">
-							<h2 class="text-lg font-semibold text-gray-900">Your Artifacts</h2>
+							<h2 class="text-lg font-semibold text-gray-900">{m.me_your_artifacts()}</h2>
 						</div>
 						
 						{#if artifactsLoading}
-							<div class="p-8 text-center text-gray-500">Loading...</div>
+							<div class="p-8 text-center text-gray-500">{m.common_loading()}</div>
 						{:else if artifacts.length === 0}
 							<div class="p-8 text-center text-gray-500">
 								<svg class="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
 								</svg>
-								<p>You haven't created any artifacts yet.</p>
+								<p>{m.me_no_artifacts()}</p>
 								<a href="/studio" class="inline-block mt-4 px-4 py-2 bg-[#2da44e] text-white text-sm font-medium rounded-lg hover:bg-[#2c974b] transition">
-									Create your first artifact
+									{m.me_create_first_artifact()}
 								</a>
 							</div>
 						{:else}
@@ -229,7 +230,7 @@
 											/>
 											<div class="flex-1 min-w-0">
 												<h3 class="text-sm font-semibold text-gray-900 hover:text-[#0969da] truncate">{artifact.name}</h3>
-												<p class="text-xs text-gray-500 truncate">{artifact.description || 'No description'}</p>
+												<p class="text-xs text-gray-500 truncate">{artifact.description || m.common_no_description()}</p>
 											</div>
 											<div class="text-right shrink-0">
 												<span class="inline-block px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600">{artifact.type}</span>
@@ -247,17 +248,17 @@
 										disabled={artifactsPagination.page <= 1}
 										class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
 									>
-										Previous
+										{m.common_previous()}
 									</button>
 									<span class="px-3 py-1 text-sm text-gray-600">
-										Page {artifactsPagination.page} of {artifactsPagination.totalPages}
+										{m.common_page_of({ current: artifactsPagination.page.toString(), total: artifactsPagination.totalPages.toString() })}
 									</span>
 									<button
 										onclick={() => fetchArtifacts(artifactsPagination!.page + 1)}
 										disabled={artifactsPagination.page >= artifactsPagination.totalPages}
 										class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
 									>
-										Next
+										{m.common_next()}
 									</button>
 								</div>
 							{/if}
@@ -268,7 +269,7 @@
 					<!-- Projects List -->
 					<div class="bg-white rounded-lg border border-gray-200 shadow-sm">
 						<div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
-							<h2 class="text-lg font-semibold text-gray-900">Your Projects</h2>
+							<h2 class="text-lg font-semibold text-gray-900">{m.me_your_projects()}</h2>
 							<a 
 								href="/me/create-project" 
 								class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-[#2da44e] hover:bg-[#2c974b] rounded-lg transition"
@@ -276,20 +277,20 @@
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
 								</svg>
-								New Project
+								{m.me_new_project()}
 							</a>
 						</div>
 						
 						{#if projectsLoading}
-							<div class="p-8 text-center text-gray-500">Loading...</div>
+							<div class="p-8 text-center text-gray-500">{m.common_loading()}</div>
 						{:else if projects.length === 0}
 							<div class="p-8 text-center text-gray-500">
 								<svg class="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
 								</svg>
-								<p>You don't have any projects yet.</p>
+								<p>{m.me_no_projects()}</p>
 								<a href="/me/create-project" class="inline-block mt-4 px-4 py-2 bg-[#2da44e] text-white text-sm font-medium rounded-lg hover:bg-[#2c974b] transition">
-									Create your first project
+									{m.me_create_first_project()}
 								</a>
 							</div>
 						{:else}
@@ -307,7 +308,7 @@
 														{project.role}
 													</span>
 												</div>
-												<p class="text-xs text-gray-500 truncate">#{project.topic} · {project.description || 'No description'}</p>
+												<p class="text-xs text-gray-500 truncate">#{project.topic} · {project.description || m.common_no_description()}</p>
 											</div>
 											<div class="text-right shrink-0">
 												<span class="inline-block px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600">{project.visibility}</span>
@@ -325,17 +326,17 @@
 										disabled={projectsPagination.page <= 1}
 										class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
 									>
-										Previous
+										{m.common_previous()}
 									</button>
 									<span class="px-3 py-1 text-sm text-gray-600">
-										Page {projectsPagination.page} of {projectsPagination.totalPages}
+										{m.common_page_of({ current: projectsPagination.page.toString(), total: projectsPagination.totalPages.toString() })}
 									</span>
 									<button
 										onclick={() => fetchProjects(projectsPagination!.page + 1)}
 										disabled={projectsPagination.page >= projectsPagination.totalPages}
 										class="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
 									>
-										Next
+										{m.common_next()}
 									</button>
 								</div>
 							{/if}
@@ -346,7 +347,7 @@
 					<!-- Profile Form -->
 					<div class="bg-white rounded-lg border border-gray-200 shadow-sm">
 						<div class="px-4 py-3 border-b border-gray-200">
-							<h2 class="text-lg font-semibold text-gray-900">Public Profile</h2>
+							<h2 class="text-lg font-semibold text-gray-900">{m.me_public_profile()}</h2>
 						</div>
 						
 						<div class="p-6">
@@ -366,7 +367,7 @@
 								<div class="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
 									<div class="sm:col-span-6">
 										<label for="displayName" class="block text-sm font-medium text-gray-700">
-											Name
+											{m.me_name()}
 										</label>
 										<div class="mt-1">
 											<input
@@ -378,13 +379,13 @@
 											/>
 										</div>
 										<p class="mt-2 text-sm text-gray-500">
-											Your name may appear around PubWiki where you contribute or are mentioned.
+											{m.me_name_help()}
 										</p>
 									</div>
 
 									<div class="sm:col-span-6">
 										<label for="bio" class="block text-sm font-medium text-gray-700">
-											Bio
+											{m.me_bio()}
 										</label>
 										<div class="mt-1">
 											<textarea
@@ -396,13 +397,13 @@
 											></textarea>
 										</div>
 										<p class="mt-2 text-sm text-gray-500">
-											Tell us a little bit about yourself.
+											{m.me_bio_help()}
 										</p>
 									</div>
 
 									<div class="sm:col-span-6">
 										<label for="website" class="block text-sm font-medium text-gray-700">
-											URL
+											{m.me_url()}
 										</label>
 										<div class="mt-1">
 											<input
@@ -417,7 +418,7 @@
 
 									<div class="sm:col-span-6">
 										<label for="location" class="block text-sm font-medium text-gray-700">
-											Location
+											{m.me_location()}
 										</label>
 										<div class="mt-1">
 											<input
@@ -432,7 +433,7 @@
 									
 									<div class="sm:col-span-6">
 										<label for="avatarUrl" class="block text-sm font-medium text-gray-700">
-											Avatar URL
+											{m.me_avatar_url()}
 										</label>
 										<div class="mt-1 flex items-center gap-4">
 											<img 
@@ -458,7 +459,7 @@
 											disabled={isSubmitting}
 											class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-[#2da44e] hover:bg-[#2c974b] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#2da44e] disabled:opacity-50"
 										>
-											{isSubmitting ? 'Saving...' : 'Update profile'}
+											{isSubmitting ? m.me_saving() : m.me_update_profile()}
 										</button>
 									</div>
 								</div>

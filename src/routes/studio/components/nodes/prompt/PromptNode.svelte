@@ -17,6 +17,7 @@
 	import RichTextArea from '../../RichTextArea.svelte';
 	import TaggedHandlePanel from '../TaggedHandlePanel.svelte';
 	import type { TaggedHandle } from '../TaggedHandlePanel.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Props
@@ -124,7 +125,7 @@
 		<RichTextArea
 			value={displayContent}
 			readonly={isPreviewing}
-			placeholder="Enter prompt content..."
+			placeholder={m.studio_node_enter_prompt()}
 			class={isPreviewing ? 'bg-amber-50/30' : ''}
 			onchange={handleContentChange}
 			onfocus={handleFocus}

@@ -8,6 +8,7 @@
 	import NodeCard from '$lib/components/NodeCard.svelte';
 	import { getCurrentProject, setCurrentProject } from '../../../studio/stores/db';
 	import { importArtifactToNewProject, addArtifactToProject } from '../../../studio/utils/import';
+	import * as m from '$lib/paraglide/messages';
 
 	let { data } = $props<{ data: PageData }>();
 	
@@ -72,7 +73,7 @@
 			}
 			loading = false;
 		}).catch((e) => {
-			error = e instanceof Error ? e.message : 'Failed to load artifact';
+			error = e instanceof Error ? e.message : m.artifact_not_found_message();
 			loading = false;
 		});
 	});
@@ -84,7 +85,13 @@
 	let children = $derived(details?.children ?? []);
 
 	let activeTab = $state('Overview');
-	const tabs = ['Overview', 'Nodes', 'Lineage', 'Discussion'];
+	type TabKey = 'Overview' | 'Nodes' | 'Lineage' | 'Discussion';
+	const tabsConfig: { key: TabKey; labelKey: () => string }[] = [
+		{ key: 'Overview', labelKey: () => m.artifact_overview() },
+		{ key: 'Nodes', labelKey: () => m.artifact_nodes() },
+		{ key: 'Lineage', labelKey: () => m.artifact_lineage() },
+		{ key: 'Discussion', labelKey: () => m.artifact_discussion() }
+	];
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString();
@@ -98,10 +105,10 @@
 {:else if error || !artifact}
 	<div class="min-h-screen bg-[#f6f8fa] flex items-center justify-center">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold text-gray-900 mb-2">Not Found</h1>
-			<p class="text-gray-600 mb-4">{error || 'Artifact not found'}</p>
+			<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
+			<p class="text-gray-600 mb-4">{error || m.artifact_not_found_message()}</p>
 			<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
-				Go back home
+				{m.artifact_go_back()}
 			</button>
 		</div>
 	</div>
@@ -126,7 +133,7 @@
 					<div class="flex items-center bg-white border border-gray-300 rounded-md text-xs overflow-hidden shadow-sm">
 						<button class="px-3 py-1 font-semibold flex items-center gap-1 hover:bg-gray-50 transition">
 							<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
-							Star
+							{m.artifact_star()}
 						</button>
 						<div class="px-2 py-1 bg-gray-50 border-l border-gray-300 font-bold text-gray-700">
 							{(artifact.stats?.starCount ?? 0).toLocaleString()}
@@ -137,7 +144,7 @@
 					<div class="flex items-center bg-white border border-gray-300 rounded-md text-xs overflow-hidden shadow-sm">
 						<button class="px-3 py-1 font-semibold flex items-center gap-1 hover:bg-gray-50 transition">
 							<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-							Fork
+							{m.artifact_fork()}
 						</button>
 						<div class="px-2 py-1 bg-gray-50 border-l border-gray-300 font-bold text-gray-700">
 							{(artifact.stats?.forkCount ?? 0).toLocaleString()}
@@ -173,15 +180,15 @@
 					<!-- Tabs Navigation -->
 					<div class="border-b border-gray-200">
 						<nav class="-mb-px flex space-x-8" aria-label="Tabs">
-							{#each tabs as tab}
+							{#each tabsConfig as tab}
 								<button
-									onclick={() => activeTab = tab}
-									class="{activeTab === tab
+									onclick={() => activeTab = tab.key}
+									class="{activeTab === tab.key
 										? 'border-[#fd8c73] text-gray-900'
 										: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
 										whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
 								>
-									{tab}
+									{tab.labelKey()}
 								</button>
 							{/each}
 						</nav>
@@ -196,14 +203,14 @@
 								</div>
 							{:else}
 								<div class="prose max-w-none">
-									<p class="text-gray-600">{artifact.description || 'No description provided.'}</p>
+									<p class="text-gray-600">{artifact.description || m.common_no_description()}</p>
 								</div>
 							{/if}
 						{:else if activeTab === 'Nodes'}
 							<div>
 								<div class="flex items-center justify-between mb-4">
-									<h3 class="font-bold text-gray-700">Nodes</h3>
-									<span class="text-xs text-gray-500">{nodes.length} nodes</span>
+									<h3 class="font-bold text-gray-700">{m.artifact_nodes()}</h3>
+									<span class="text-xs text-gray-500">{m.artifact_nodes_count({ count: nodes.length.toString() })}</span>
 								</div>
 								
 								{#if nodes.length > 0}
@@ -214,7 +221,7 @@
 									</div>
 								{:else}
 									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
-										No nodes available.
+										{m.artifact_no_nodes()}
 									</div>
 								{/if}
 							</div>
@@ -223,12 +230,12 @@
 								<LineageGraph {artifact} {parents} {children} />
 							{:else}
 								<div class="text-center py-12 text-gray-500">
-									No lineage information available.
+									{m.artifact_no_lineage()}
 								</div>
 							{/if}
 						{:else}
 							<div class="text-center py-12 text-gray-500">
-								No discussions yet.
+								{m.artifact_no_discussions()}
 							</div>
 						{/if}
 					</div>
@@ -252,7 +259,7 @@
 							<span>{formatDate(artifact.createdAt)}</span>
 						</div>
 
-						<p class="text-sm text-gray-700 mb-4 leading-relaxed">{artifact.description || 'No description'}</p>
+						<p class="text-sm text-gray-700 mb-4 leading-relaxed">{artifact.description || m.common_no_description()}</p>
 
 						<div class="flex flex-wrap gap-2 mb-4">
 							{#each artifact.tags as tag}
@@ -272,11 +279,11 @@
 						<div class="grid grid-cols-2 gap-2 text-sm bg-gray-50 p-3 rounded border border-gray-200">
 							<div class="flex items-center gap-2 text-gray-600">
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-								<span>{(artifact.stats?.viewCount ?? 0).toLocaleString()} views</span>
+								<span>{m.artifact_views({ count: (artifact.stats?.viewCount ?? 0).toLocaleString() })}</span>
 							</div>
 							<div class="flex items-center gap-2 text-gray-600">
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-								<span>{(artifact.stats?.downloadCount ?? 0).toLocaleString()} downloads</span>
+								<span>{m.artifact_downloads({ count: (artifact.stats?.downloadCount ?? 0).toLocaleString() })}</span>
 							</div>
 						</div>
 					</div>
@@ -290,7 +297,7 @@
 								class="w-full bg-[#0969da] hover:bg-[#0a53be] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
 							>
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-								Use Artifact
+								{m.artifact_use()}
 							</button>
 						{:else}
 							<!-- Has current project: show "Add to Project" as primary, "Use Artifact" as secondary -->
@@ -299,7 +306,7 @@
 								class="w-full bg-[#2da44e] hover:bg-[#2c974b] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
 							>
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-								Add to Current Project
+								{m.artifact_add_to_project()}
 							</button>
 							
 							<button 
@@ -307,7 +314,7 @@
 								class="w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
 							>
 								<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-								Use in New Project
+								{m.artifact_use_in_new()}
 							</button>
 						{/if}
 					</div>
@@ -316,7 +323,7 @@
 					{#if parents.length > 0}
 						<div>
 							<h3 class="font-bold text-gray-900 mb-3 flex items-center gap-2">
-								Dependencies
+								{m.artifact_dependencies()}
 								<span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{parents.length}</span>
 							</h3>
 							<div class="space-y-3">
@@ -331,7 +338,7 @@
 					{#if children.length > 0}
 						<div>
 							<h3 class="font-bold text-gray-900 mb-3 flex items-center gap-2">
-								Used By
+								{m.artifact_used_by()}
 								<span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{children.length}</span>
 							</h3>
 							<div class="space-y-3">

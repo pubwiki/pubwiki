@@ -16,6 +16,7 @@
 	import { getStudioContext } from '../../../stores/context';
 	import BaseNode from '../BaseNode.svelte';
 	import VFSExpandedView from './VFSExpandedView.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Types
@@ -285,12 +286,12 @@
 		<button
 			class="nodrag px-2 py-0.5 text-xs font-medium bg-white/20 hover:bg-white/30 rounded text-white transition-colors flex items-center gap-1"
 			onclick={() => setExpandedView(true)}
-			title="Open file browser"
+			title={m.studio_node_open_file_browser()}
 		>
 			<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
 			</svg>
-			Open
+			{m.studio_node_open_file_browser()}
 		</button>
 	{/snippet}
 
@@ -299,7 +300,7 @@
 		<div class="max-h-48 overflow-y-auto bg-gray-50 text-sm nodrag nowheel" use:captureWheel>
 			{#if isLoading}
 				<div class="flex items-center justify-center py-8 text-gray-400 text-xs">
-					Loading...
+					{m.studio_vfs_loading()}
 				</div>
 			{:else if error}
 				<div class="flex items-center justify-center py-4 text-red-500 text-xs px-3">
@@ -307,7 +308,7 @@
 				</div>
 			{:else if fileTree.length === 0}
 				<div class="text-gray-400 text-xs px-3 py-6 text-center">
-					Empty folder
+					{m.studio_vfs_empty_folder()}
 				</div>
 			{:else}
 				<div class="p-2">

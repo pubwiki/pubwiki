@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import ApiKeysTab from './ApiKeysTab.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		onClose: () => void;
@@ -10,7 +11,7 @@
 
 	// Tab definitions - extensible for future settings
 	const tabs = [
-		{ id: 'api-keys' as const, label: 'API Keys', icon: 'key' }
+		{ id: 'api-keys' as const, label: m.studio_settings_api_keys(), icon: 'key' }
 		// Future tabs can be added here
 	] as const;
 
@@ -32,12 +33,12 @@
 	<div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
 		<!-- Header -->
 		<div class="px-4 py-2.5 border-b border-gray-200 flex items-center justify-between">
-			<h2 class="text-lg font-semibold text-gray-900">Settings</h2>
+			<h2 class="text-lg font-semibold text-gray-900">{m.studio_settings_title()}</h2>
 			<button
 				type="button"
 				class="text-gray-400 hover:text-gray-500 transition-colors"
 				onclick={onClose}
-				aria-label="Close dialog"
+				aria-label={m.common_cancel()}
 			>
 				<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

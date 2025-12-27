@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { useAuth } from '$lib/stores/auth.svelte';
 	import { goto } from '$app/navigation';
+	import * as m from '$lib/paraglide/messages';
+	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
 
 	let { children } = $props();
 	const auth = useAuth();
@@ -25,10 +27,10 @@
 
 			<!-- Navigation Links (Left Aligned) -->
 			<nav class="flex items-center gap-6 text-sm font-semibold text-[#24292f]">
-				<a href="/" class="hover:text-[#0969da] transition">Hub</a>
-				<a href="/community" class="hover:text-[#0969da] transition">COMMUNITY</a>
-				<a href="/about" class="hover:text-[#0969da] transition">ABOUT</a>
-				<a href="/support" class="hover:text-[#0969da] transition">SUPPORT</a>
+				<a href="/" class="hover:text-[#0969da] transition">{m.nav_hub()}</a>
+				<a href="/community" class="hover:text-[#0969da] transition">{m.nav_community()}</a>
+				<a href="/about" class="hover:text-[#0969da] transition">{m.nav_about()}</a>
+				<a href="/support" class="hover:text-[#0969da] transition">{m.nav_support()}</a>
 			</nav>
 
 			<!-- Spacer -->
@@ -37,7 +39,7 @@
 			<!-- User Actions -->
 			<div class="flex items-center gap-3 text-sm text-[#24292f]">
 				<a href="/studio" target="_blank" class="bg-[#000000] hover:bg-[#2c974b] px-3 py-1 rounded text-xs font-bold text-white border border-transparent">
-					LAUNCH APP
+					{m.nav_launch_app()}
 				</a>
 				{#if auth.isAuthenticated}
 					<a href="/me" class="flex items-center gap-2 hover:text-[#0969da] transition">
@@ -48,11 +50,11 @@
 						/>
 						<span class="font-medium">{auth.currentUser?.displayName || auth.currentUser?.username}</span>
 					</a>
-					<button onclick={handleLogout} class="hover:text-[#0969da]">logout</button>
+					<button onclick={handleLogout} class="hover:text-[#0969da]">{m.nav_logout()}</button>
 				{:else}
-					<a href="/login" class="hover:text-[#0969da]">login</a>
+					<a href="/login" class="hover:text-[#0969da]">{m.nav_login()}</a>
 					<span>|</span>
-					<a href="/register" class="hover:text-[#0969da]">register</a>
+					<a href="/register" class="hover:text-[#0969da]">{m.nav_register()}</a>
 				{/if}
 			</div>
 		</div>
@@ -68,21 +70,22 @@
 		<div class="mx-auto max-w-[1200px] px-4">
 			<div class="grid grid-cols-1 md:grid-cols-4 gap-8">
 				<div class="col-span-2">
-					<h3 class="text-gray-900 font-bold mb-4 text-lg">AI Game Hub</h3>
-					<p class="mb-4 text-xs">© 2025 PubWiki. All rights reserved. All trademarks are property of their respective owners in the US and other countries.</p>
+					<h3 class="text-gray-900 font-bold mb-4 text-lg">{m.footer_title()}</h3>
+					<p class="mb-4 text-xs">{m.footer_copyright()}</p>
+					<LanguageSwitcher />
 				</div>
 				<div>
-					<h3 class="text-gray-900 font-bold mb-2">Resources</h3>
+					<h3 class="text-gray-900 font-bold mb-2">{m.footer_resources()}</h3>
 					<ul class="space-y-1 text-xs">
-						<li><a href="/" class="hover:text-[#0969da]">Documentation</a></li>
-						<li><a href="/" class="hover:text-[#0969da]">API</a></li>
+						<li><a href="/" class="hover:text-[#0969da]">{m.footer_documentation()}</a></li>
+						<li><a href="/" class="hover:text-[#0969da]">{m.footer_api()}</a></li>
 					</ul>
 				</div>
 				<div>
-					<h3 class="text-gray-900 font-bold mb-2">Company</h3>
+					<h3 class="text-gray-900 font-bold mb-2">{m.footer_company()}</h3>
 					<ul class="space-y-1 text-xs">
-						<li><a href="/" class="hover:text-[#0969da]">About</a></li>
-						<li><a href="/" class="hover:text-[#0969da]">Jobs</a></li>
+						<li><a href="/" class="hover:text-[#0969da]">{m.footer_about()}</a></li>
+						<li><a href="/" class="hover:text-[#0969da]">{m.footer_jobs()}</a></li>
 					</ul>
 				</div>
 			</div>

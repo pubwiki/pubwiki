@@ -19,6 +19,7 @@
 	import SandboxPreviewView from './SandboxPreviewView.svelte';
 	import type { ProjectConfig } from '@pubwiki/sandbox-host';
 	import { detectProject } from '@pubwiki/bundler';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Props & Context
@@ -213,7 +214,7 @@
 	{#snippet headerActions()}
 		<!-- Services indicator badge -->
 		{#if connectedServiceCount > 0}
-			<span class="px-1.5 py-0.5 text-xs bg-purple-400/80 rounded text-white flex items-center gap-1" title="Connected services">
+			<span class="px-1.5 py-0.5 text-xs bg-purple-400/80 rounded text-white flex items-center gap-1" title={m.studio_sandbox_services_title()}>
 				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
 				</svg>
@@ -232,8 +233,8 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
 					</svg>
 					<div>
-						<p class="text-sm font-medium">Connect a VFS node</p>
-						<p class="text-xs text-gray-400">Drag from a VFS node's output</p>
+						<p class="text-sm font-medium">{m.studio_sandbox_connect_vfs()}</p>
+						<p class="text-xs text-gray-400">{m.studio_sandbox_connect_hint()}</p>
 					</div>
 				</div>
 			{:else if isLoading}
@@ -243,7 +244,7 @@
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 					</svg>
-					<p class="text-sm">Detecting project...</p>
+					<p class="text-sm">{m.studio_sandbox_detecting()}</p>
 				</div>
 			{:else if error}
 				<!-- Error -->
@@ -260,8 +261,8 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 					</svg>
 					<div>
-						<p class="text-sm font-medium">No project detected</p>
-						<p class="text-xs text-gray-400">Add tsconfig.json to your VFS</p>
+						<p class="text-sm font-medium">{m.studio_sandbox_no_project()}</p>
+						<p class="text-xs text-gray-400">{m.studio_sandbox_add_tsconfig()}</p>
 					</div>
 				</div>
 			{:else}
@@ -271,14 +272,14 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
 					</svg>
 					<div class="flex-1">
-						<p class="text-sm font-medium text-gray-600">Ready to preview</p>
-						<p class="text-xs text-gray-400">Entry: {data.entryFile}</p>
+						<p class="text-sm font-medium text-gray-600">{m.studio_sandbox_ready()}</p>
+						<p class="text-xs text-gray-400">{m.studio_node_entry({ entryFile: data.entryFile })}</p>
 					</div>
 					<button
 						class="px-3 py-1.5 text-sm font-medium bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors nodrag"
 						onclick={openPreview}
 					>
-						Open
+						{m.studio_sandbox_open()}
 					</button>
 				</div>
 			{/if}
@@ -286,7 +287,7 @@
 			<!-- Connected Services List -->
 			{#if connectedLoaderNodes.length > 0}
 				<div class="border-t border-gray-200 pt-2">
-					<p class="text-xs font-medium text-gray-500 mb-1.5">Connected Services</p>
+					<p class="text-xs font-medium text-gray-500 mb-1.5">{m.studio_sandbox_connected_services()}</p>
 					<div class="flex flex-wrap gap-1">
 						{#each connectedLoaderNodes as loader}
 							<span class="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full flex items-center gap-1">

@@ -4,6 +4,7 @@
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { StudioNodeData } from '../../utils/types';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		nodes: Node<StudioNodeData>[];
@@ -44,19 +45,19 @@
 	function getTypeInfo(type: string) {
 		switch (type) {
 			case 'PROMPT':
-				return { label: 'Prompts', color: 'blue', icon: 'document' };
+				return { label: m.studio_overview_prompts(), color: 'blue', icon: 'document' };
 			case 'INPUT':
-				return { label: 'Inputs', color: 'purple', icon: 'chat' };
+				return { label: m.studio_overview_inputs(), color: 'purple', icon: 'chat' };
 			case 'GENERATED':
-				return { label: 'Generated', color: 'green', icon: 'spark' };
+				return { label: m.studio_overview_generated(), color: 'green', icon: 'spark' };
 			case 'VFS':
-				return { label: 'Files', color: 'indigo', icon: 'folder' };
+				return { label: m.studio_overview_files(), color: 'indigo', icon: 'folder' };
 			case 'SANDBOX':
-				return { label: 'Sandboxes', color: 'orange', icon: 'monitor' };
+				return { label: m.studio_overview_sandboxes(), color: 'orange', icon: 'monitor' };
 			case 'LOADER':
-				return { label: 'Loaders', color: 'purple', icon: 'database' };
+				return { label: m.studio_overview_loaders(), color: 'purple', icon: 'database' };
 			case 'STATE':
-				return { label: 'States', color: 'teal', icon: 'cube' };
+				return { label: m.studio_overview_states(), color: 'teal', icon: 'cube' };
 			default:
 				return { label: type, color: 'gray', icon: 'cube' };
 		}
@@ -94,8 +95,8 @@
 			<svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
 			</svg>
-			<p class="text-sm">No nodes yet</p>
-			<p class="text-xs text-gray-300 mt-1">Right-click on canvas to add</p>
+			<p class="text-sm">{m.studio_overview_no_nodes()}</p>
+			<p class="text-xs text-gray-300 mt-1">{m.studio_overview_add_hint()}</p>
 		</div>
 	{:else}
 		<!-- Stats Summary -->

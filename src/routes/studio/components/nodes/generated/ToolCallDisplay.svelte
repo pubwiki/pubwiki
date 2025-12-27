@@ -6,6 +6,7 @@
 	 * Based on packages/svelte-chat/src/lib/blocks/ToolCallBlock.svelte
 	 */
 	import type { ToolCallState } from '../../../utils/types';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		toolCall: ToolCallState;
@@ -94,7 +95,7 @@
 					<svg class="h-2.5 w-2.5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
 					</svg>
-					<span class="text-[10px] text-green-600">Done</span>
+					<span class="text-[10px] text-green-600">{m.studio_tool_done()}</span>
 				</div>
 			{/if}
 			{#if isLoading}
@@ -103,7 +104,7 @@
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 					</svg>
-					<span class="text-[10px] text-blue-600">Running</span>
+					<span class="text-[10px] text-blue-600">{m.studio_tool_running()}</span>
 				</div>
 			{/if}
 			{#if isError}
@@ -111,7 +112,7 @@
 					<svg class="h-2.5 w-2.5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 					</svg>
-					<span class="text-[10px] text-red-600">Error</span>
+					<span class="text-[10px] text-red-600">{m.studio_tool_error()}</span>
 				</div>
 			{/if}
 		</div>
@@ -119,7 +120,7 @@
 		<!-- Expand/Collapse Icon -->
 		<div class="flex items-center gap-1">
 			<span class="text-[10px] text-gray-400">
-				{expanded ? 'Hide' : 'Details'}
+				{expanded ? m.studio_tool_hide() : m.studio_tool_details()}
 			</span>
 			<svg
 				class="h-3 w-3 text-gray-400 transition-transform {expanded ? '' : '-rotate-90'}"
@@ -139,7 +140,7 @@
 			{#if formattedArgs}
 				<div>
 					<div class="mb-1 text-[10px] font-semibold text-gray-500">
-						Arguments
+						{m.studio_tool_arguments()}
 					</div>
 					<pre class="max-h-24 overflow-auto rounded border border-gray-200/50 bg-white/50 p-1.5 text-[10px] text-gray-700"><code>{formattedArgs}</code></pre>
 				</div>
@@ -149,7 +150,7 @@
 			{#if isError && toolCall.error}
 				<div>
 					<div class="mb-1 text-[10px] font-semibold text-red-600">
-						Error
+						{m.studio_tool_error()}
 					</div>
 					<pre class="max-h-24 overflow-auto rounded border border-red-200/50 bg-red-50/50 p-1.5 text-[10px] text-red-700"><code>{toolCall.error}</code></pre>
 				</div>
@@ -159,7 +160,7 @@
 			{#if isCompleted && toolCall.result}
 				<div>
 					<div class="mb-1 text-[10px] font-semibold text-green-600">
-						Result
+						{m.studio_tool_result()}
 					</div>
 					<pre class="max-h-32 overflow-auto rounded border border-green-200/50 bg-green-50/50 p-1.5 text-[10px] text-gray-700"><code>{formattedResult}</code></pre>
 				</div>

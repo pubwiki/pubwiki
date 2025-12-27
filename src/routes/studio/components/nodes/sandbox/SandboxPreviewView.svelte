@@ -11,6 +11,7 @@
 	import { createSandboxConnection, RpcTarget } from '@pubwiki/sandbox-host';
 	import type { VersionedVfs } from '../../../stores/vfs';
 	import type { LoaderNodeData } from '../../../utils/types';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Props
@@ -317,9 +318,9 @@
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
 				</svg>
-				<span class="font-medium">{name || 'Sandbox Preview'}</span>
+				<span class="font-medium">{name || m.studio_node_sandbox_preview()}</span>
 				{#if isLoading}
-					<span class="text-xs bg-white/20 px-2 py-0.5 rounded">Loading...</span>
+					<span class="text-xs bg-white/20 px-2 py-0.5 rounded">{m.studio_node_loading()}</span>
 				{/if}
 			</div>
 			<div class="flex items-center gap-2">
@@ -328,7 +329,7 @@
 					class="p-1.5 hover:bg-white/20 rounded transition-colors disabled:opacity-50"
 					onclick={reloadSandbox}
 					disabled={isLoading || !!error}
-					title="Reload"
+					title={m.studio_node_reload()}
 				>
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -338,7 +339,7 @@
 				<button
 					class="p-1.5 hover:bg-white/20 rounded transition-colors"
 					onclick={handleClose}
-					title="Close"
+					title={m.studio_node_close()}
 				>
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -356,8 +357,8 @@
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 					</svg>
-					<p class="text-gray-600">Starting sandbox...</p>
-					<p class="text-sm text-gray-400 mt-1">Entry: {entryFile}</p>
+					<p class="text-gray-600">{m.studio_node_starting_sandbox()}</p>
+					<p class="text-sm text-gray-400 mt-1">{m.studio_node_entry({ entryFile })}</p>
 				</div>
 			{:else if error}
 				<!-- Error state -->
@@ -370,7 +371,7 @@
 						class="mt-4 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
 						onclick={startSandbox}
 					>
-						Retry
+						{m.studio_node_retry()}
 					</button>
 				</div>
 			{/if}
@@ -382,14 +383,14 @@
 				class="absolute inset-0 w-full h-full border-0 {isLoading || error ? 'invisible' : 'visible'}"
 				sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
 				allow="clipboard-read; clipboard-write"
-				title="Sandbox Preview"
+				title={m.studio_node_sandbox_preview()}
 			></iframe>
 		</div>
 
 		<!-- Footer -->
 		<div class="px-4 py-2 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center justify-between">
-			<span>Entry: {entryFile}</span>
-			<span>Origin: {sandboxOrigin}</span>
+			<span>{m.studio_node_entry({ entryFile })}</span>
+			<span>{m.studio_node_origin({ origin: sandboxOrigin })}</span>
 		</div>
 	</div>
 </div>

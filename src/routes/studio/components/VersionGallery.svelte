@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { NodeRef, NodeSnapshot } from '../stores/version';
 	import { snapshotStore } from '../stores/version';
+	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		/** Current node ID */
@@ -113,7 +114,7 @@
 		const today = new Date();
 		const isToday = date.toDateString() === today.toDateString();
 		if (isToday) {
-			return 'Today';
+			return m.studio_today();
 		}
 		return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 	}
@@ -139,12 +140,12 @@
 			<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
 			</svg>
-			<span class="text-sm font-medium text-gray-700">Version History</span>
+			<span class="text-sm font-medium text-gray-700">{m.studio_version_history()}</span>
 		</div>
 		<button
 			class="p-1 hover:bg-gray-200 rounded transition-colors"
 			onclick={() => onClose?.()}
-			title="Close"
+			title={m.studio_node_close()}
 		>
 			<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -175,7 +176,7 @@
 			</div>
 		{:else}
 			<div class="px-3 py-4 text-sm text-gray-400 text-center">
-				No version history
+				{m.studio_version_no_history()}
 			</div>
 		{/each}
 	</div>
@@ -183,29 +184,29 @@
 	<!-- Footer -->
 	<div class="px-3 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
 		<span class="text-xs text-gray-500">
-			{versions.length} previous version{versions.length !== 1 ? 's' : ''}
+			{versions.length !== 1 ? m.studio_version_previous_plural({ count: versions.length }) : m.studio_version_previous({ count: versions.length })}
 		</span>
 		<div class="flex items-center gap-2">
 			<button
 				class="px-2 py-1 text-xs text-gray-600 hover:bg-gray-200 rounded transition-colors"
 				onclick={() => onClose?.()}
 			>
-				Cancel
+				{m.studio_version_cancel()}
 			</button>
 			{#if versions.length > 0 && versions[selectedIndex]?.commit !== currentCommit}
 				<button
 					class="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded transition-colors"
 					onclick={handleRestore}
 				>
-					Restore
+					{m.studio_version_restore()}
 				</button>
 			{:else if versions.length > 0}
 				<button
 					class="px-2 py-1 text-xs bg-gray-300 text-gray-500 rounded cursor-not-allowed"
 					disabled
-					title="Content is same as current"
+					title={m.studio_version_same_as_current()}
 				>
-					Restore
+					{m.studio_version_restore()}
 				</button>
 			{/if}
 		</div>

@@ -9,6 +9,7 @@
 	import loader from '@monaco-editor/loader';
 	import type * as Monaco from 'monaco-editor';
 	import type { VersionedVfs } from '../../../stores/vfs';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Types
@@ -531,15 +532,15 @@
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
 				</svg>
-				<span class="font-medium">{name || 'Virtual File System'}</span>
+				<span class="font-medium">{name || m.studio_node_vfs_title()}</span>
 				{#if isDirty}
-					<span class="text-xs bg-white/20 px-2 py-0.5 rounded">Unsaved</span>
+					<span class="text-xs bg-white/20 px-2 py-0.5 rounded">{m.studio_node_unsaved()}</span>
 				{/if}
 			</div>
 			<button
 				class="p-1.5 hover:bg-white/20 rounded transition-colors"
 				onclick={handleClose}
-				title="Close"
+				title={m.studio_node_close()}
 			>
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />

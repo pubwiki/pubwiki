@@ -13,7 +13,8 @@
 		"test:unit": "vitest",
 		"test": "npm run test:unit -- --run",
 		"lint": "eslint . && prettier --check .",
-		"format": "prettier --write ."
+		"format": "prettier --write .",
+		"i18n": "pnpm exec paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.4.0",

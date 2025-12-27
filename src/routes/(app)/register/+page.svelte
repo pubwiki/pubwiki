@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { useAuth } from '$lib/stores/auth.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	const auth = useAuth();
 
@@ -17,17 +18,17 @@
 		errorMessage = '';
 
 		if (password !== confirmPassword) {
-			errorMessage = 'Passwords do not match';
+			errorMessage = m.register_passwords_not_match();
 			return;
 		}
 
 		if (password.length < 8) {
-			errorMessage = 'Password must be at least 8 characters';
+			errorMessage = m.register_password_min_length();
 			return;
 		}
 
 		if (username.length < 3 || username.length > 50) {
-			errorMessage = 'Username must be between 3 and 50 characters';
+			errorMessage = m.register_username_length();
 			return;
 		}
 
@@ -43,7 +44,7 @@
 		if (result.success) {
 			goto('/');
 		} else {
-			errorMessage = result.error || 'Registration failed';
+			errorMessage = result.error || m.register_failed();
 		}
 
 		isSubmitting = false;
@@ -54,19 +55,19 @@
 	<div class="max-w-md w-full space-y-8">
 		<div>
 			<h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-				Create your account
+				{m.register_title()}
 			</h2>
 			<p class="mt-2 text-center text-sm text-gray-600">
-				Or
+				{m.register_or()}
 				<a href="/login" class="font-medium text-[#0969da] hover:text-[#0969da]/80">
-					sign in to your existing account
+					{m.register_sign_in()}
 				</a>
 			</p>
 		</div>
 		<form class="mt-8 space-y-6" onsubmit={handleSubmit}>
 			<div class="rounded-md shadow-sm -space-y-px">
 				<div>
-					<label for="username" class="sr-only">Username</label>
+					<label for="username" class="sr-only">{m.register_username()}</label>
 					<input
 						id="username"
 						name="username"
@@ -76,11 +77,11 @@
 						maxlength={50}
 						bind:value={username}
 						class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-[#0969da] focus:border-[#0969da] focus:z-10 sm:text-sm"
-						placeholder="Username (3-50 characters)"
+						placeholder={m.register_username_placeholder()}
 					/>
 				</div>
 				<div>
-					<label for="email" class="sr-only">Email address</label>
+					<label for="email" class="sr-only">{m.register_email()}</label>
 					<input
 						id="email"
 						name="email"
@@ -88,22 +89,22 @@
 						required
 						bind:value={email}
 						class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-[#0969da] focus:border-[#0969da] focus:z-10 sm:text-sm"
-						placeholder="Email address"
+						placeholder={m.register_email_placeholder()}
 					/>
 				</div>
 				<div>
-					<label for="displayName" class="sr-only">Display Name (Optional)</label>
+					<label for="displayName" class="sr-only">{m.register_display_name()}</label>
 					<input
 						id="displayName"
 						name="displayName"
 						type="text"
 						bind:value={displayName}
 						class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-[#0969da] focus:border-[#0969da] focus:z-10 sm:text-sm"
-						placeholder="Display Name (Optional)"
+						placeholder={m.register_display_name_placeholder()}
 					/>
 				</div>
 				<div>
-					<label for="password" class="sr-only">Password</label>
+					<label for="password" class="sr-only">{m.login_password()}</label>
 					<input
 						id="password"
 						name="password"
@@ -112,11 +113,11 @@
 						minlength={8}
 						bind:value={password}
 						class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-[#0969da] focus:border-[#0969da] focus:z-10 sm:text-sm"
-						placeholder="Password (min 8 chars)"
+						placeholder={m.register_password_placeholder()}
 					/>
 				</div>
 				<div>
-					<label for="confirmPassword" class="sr-only">Confirm Password</label>
+					<label for="confirmPassword" class="sr-only">{m.register_confirm_password()}</label>
 					<input
 						id="confirmPassword"
 						name="confirmPassword"
@@ -124,7 +125,7 @@
 						required
 						bind:value={confirmPassword}
 						class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-[#0969da] focus:border-[#0969da] focus:z-10 sm:text-sm"
-						placeholder="Confirm Password"
+						placeholder={m.register_confirm_password_placeholder()}
 					/>
 				</div>
 			</div>
@@ -157,7 +158,7 @@
 							<path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
 						</svg>
 					</span>
-					{isSubmitting ? 'Create Account' : 'Create Account'}
+					{isSubmitting ? m.register_submitting() : m.register_submit()}
 				</button>
 			</div>
 		</form>

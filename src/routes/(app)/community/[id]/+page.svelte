@@ -7,6 +7,7 @@
 	import { API_BASE_URL } from '$lib/config';
 	import { fade, fly, scale } from 'svelte/transition';
 	import { cubicOut, backOut } from 'svelte/easing';
+	import * as m from '$lib/paraglide/messages';
 
 	let { data } = $props<{ data: PageData }>();
 
@@ -235,10 +236,10 @@
 {:else if error || !project}
 	<div class="min-h-screen bg-[#f6f8fa] flex items-center justify-center">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold text-gray-900 mb-2">Not Found</h1>
-			<p class="text-gray-600 mb-4">{error || 'Project not found'}</p>
+			<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.project_not_found()}</h1>
+			<p class="text-gray-600 mb-4">{error || m.project_not_found_message()}</p>
 			<button onclick={() => goto('/community')} class="text-[#0969da] hover:underline">
-				Back to Community
+				{m.project_back_to_community()}
 			</button>
 		</div>
 	</div>
@@ -269,7 +270,7 @@
 						</span>
 						{#if project.isArchived}
 							<span class="px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
-								Archived
+								{m.project_archived()}
 							</span>
 						{/if}
 					</div>
@@ -291,11 +292,11 @@
 							</span>
 						</div>
 						<span class="text-gray-400">•</span>
-						<span>{project.artifacts.length} artifacts</span>
+						<span>{m.project_artifacts_count({ count: project.artifacts.length.toString() })}</span>
 						<span class="text-gray-400">•</span>
-						<span>{project.maintainers.length + 1} maintainers</span>
+						<span>{m.project_maintainers_count({ count: (project.maintainers.length + 1).toString() })}</span>
 						<span class="text-gray-400">•</span>
-						<span>Updated {formatDate(project.updatedAt)}</span>
+						<span>{m.project_updated({ date: formatDate(project.updatedAt) })}</span>
 						{#if project.license}
 							<span class="text-gray-400">•</span>
 							<span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-300 border border-blue-500/30">
@@ -319,7 +320,7 @@
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
 						</svg>
-						Homepage
+						{m.project_homepage()}
 					</button>
 					<button
 						onclick={() => activeTab = 'links'}
@@ -331,7 +332,7 @@
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
 						</svg>
-						Links
+						{m.project_links()}
 					</button>
 					<button
 						onclick={() => activeTab = 'posts'}
@@ -343,7 +344,7 @@
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
 						</svg>
-						Posts
+						{m.project_posts()}
 					</button>
 					{#each customPages as page (page.id)}
 						<button
@@ -383,8 +384,8 @@
 								<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 								</svg>
-								<p class="text-lg font-medium">No homepage yet</p>
-							<p class="text-sm mt-1">This project hasn't created a homepage.</p>
+								<p class="text-lg font-medium">{m.project_no_homepage()}</p>
+							<p class="text-sm mt-1">{m.project_no_homepage_desc()}</p>
 						</div>
 					{/if}
 				</div>
@@ -399,7 +400,7 @@
 								<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
 								</svg>
-								Roles
+								{m.project_roles()}
 							</h3>
 						</div>
 						<div class="overflow-y-auto max-h-[calc(500px-52px)]">
@@ -407,7 +408,7 @@
 								tree={roleTree}
 								selectedId={selectedNode?.id}
 								onLeafClick={handleNodeSelect}
-								emptyMessage="No roles defined"
+								emptyMessage={m.project_no_roles()}
 							>
 								{#snippet badge(node)}
 									{#if node.isLeaf && node.data?.artifacts.length}
@@ -446,7 +447,7 @@
 									{selectedNode.label}
 								</h3>
 								<span class="text-sm text-gray-500">
-									{nodeData.artifacts.length} artifact{nodeData.artifacts.length !== 1 ? 's' : ''}
+									{m.project_artifact_count({ count: nodeData.artifacts.length.toString() })}
 								</span>
 							</div>
 
@@ -457,7 +458,7 @@
 										<svg class="mx-auto h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
 										</svg>
-										<p class="text-sm">No artifacts assigned to this role</p>
+										<p class="text-sm">{m.project_no_artifacts_role()}</p>
 									</div>
 								{:else}
 									<div class="space-y-4">
@@ -470,7 +471,7 @@
 												<!-- Official Badge at top-right -->
 												{#if pa.isOfficial}
 													<span class="absolute top-2 right-2 px-2 py-0.5 text-xs font-semibold rounded bg-emerald-100 text-emerald-700 border border-emerald-200">
-														Official
+														{m.project_official()}
 													</span>
 												{/if}
 												<div class="flex gap-4">
@@ -502,7 +503,7 @@
 
 														<div class="flex items-center gap-3 mt-2 text-xs text-gray-500">
 															<span class="flex items-center gap-1">
-																{artifact.author?.displayName || artifact.author?.username || 'Unknown'}
+																{artifact.author?.displayName || artifact.author?.username || m.project_unknown_author()}
 															</span>
 														</div>
 													</div>
@@ -518,8 +519,8 @@
 									<svg class="mx-auto h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
 									</svg>
-									<p class="text-sm font-medium">Select a role from the sidebar</p>
-									<p class="text-xs mt-1 text-gray-400">Click on a leaf role to view its artifacts</p>
+									<p class="text-sm font-medium">{m.project_select_role()}</p>
+									<p class="text-xs mt-1 text-gray-400">{m.project_select_role_hint()}</p>
 								</div>
 							</div>
 						{/if}
@@ -538,8 +539,8 @@
 							<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
 							</svg>
-							<p class="text-lg font-medium">No posts yet</p>
-							<p class="text-sm mt-1">This project hasn't published any posts.</p>
+							<p class="text-lg font-medium">{m.project_no_posts()}</p>
+							<p class="text-sm mt-1">{m.project_no_posts_desc()}</p>
 						</div>
 					{:else}
 						<div class="space-y-4">
@@ -566,7 +567,7 @@
 												<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
 													<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
 												</svg>
-												Pinned
+												{m.project_pinned()}
 											</span>
 										{/if}
 										<h3 class="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
@@ -620,8 +621,8 @@
 							<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 							</svg>
-							<p class="text-lg font-medium">No content</p>
-							<p class="text-sm mt-1">This page is empty.</p>
+							<p class="text-lg font-medium">{m.project_no_content()}</p>
+							<p class="text-sm mt-1">{m.project_empty_page()}</p>
 						</div>
 					{/if}
 				</div>
@@ -653,7 +654,7 @@
 				<!-- Header -->
 				<div class="flex items-center justify-between px-6 py-4 border-b border-gray-200">
 					<h2 id="modal-title" class="text-lg font-semibold text-gray-900 truncate">
-						{selectedPost?.title || 'Loading...'}
+						{selectedPost?.title || m.common_loading()}
 					</h2>
 					<button
 						onclick={closePostModal}
@@ -706,22 +707,20 @@
 								{@html selectedPost.content}
 							</div>
 							
-							<!-- Comments Section -->
-							<div class="mt-8 pt-6 border-t border-gray-200">
-								<h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-									<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-									</svg>
-									Comments ({postReplies.length})
-								</h3>
-								
-								{#if repliesLoading}
+									<!-- Comments Section -->
+									<div class="mt-8 pt-6 border-t border-gray-200">
+										<h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+											<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+											</svg>
+											{m.project_comments()} ({postReplies.length})
+										</h3>								{#if repliesLoading}
 									<div class="flex justify-center py-8">
 										<div class="animate-spin rounded-full h-6 w-6 border-b-2 border-[#0969da]"></div>
 									</div>
 								{:else if postReplies.length === 0}
 									<div class="text-center py-8 text-gray-500">
-										<p class="text-sm">No comments yet. Be the first to comment!</p>
+										<p class="text-sm">{m.project_no_comments()}</p>
 									</div>
 								{:else}
 									<div class="space-y-4">
@@ -742,11 +741,11 @@
 														<span class="text-xs text-gray-400">
 															{formatDateTime(reply.createdAt)}
 														</span>
-														{#if reply.isAccepted}
-															<span class="px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-																Accepted
-															</span>
-														{/if}
+													{#if reply.isAccepted}
+														<span class="px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+															{m.project_accepted()}
+														</span>
+													{/if}
 													</div>
 													<div class="text-sm text-gray-700 prose-content">
 														{@html reply.content}

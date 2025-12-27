@@ -16,6 +16,7 @@
 	import { hasVersionHistory, getVersionCount, type NodeRef } from '../../stores/version';
 	import { getStudioContext } from '../../stores/context';
 	import VersionGallery from '../VersionGallery.svelte';
+	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Props
@@ -65,6 +66,23 @@
 	// ============================================================================
 
 	const ctx = getStudioContext();
+
+	// ============================================================================
+	// Helpers
+	// ============================================================================
+
+	function getNodeTypeLabel(type: string): string {
+		switch (type) {
+			case 'PROMPT': return m.studio_node_header_prompt();
+			case 'INPUT': return m.studio_node_header_input();
+			case 'GENERATED': return m.studio_node_header_generated();
+			case 'VFS': return m.studio_node_header_vfs();
+			case 'SANDBOX': return m.studio_node_header_sandbox();
+			case 'LOADER': return m.studio_node_header_loader();
+			case 'STATE': return m.studio_node_header_state();
+			default: return type;
+		}
+	}
 
 	// ============================================================================
 	// State
@@ -210,7 +228,7 @@
 				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
 				</svg>
-				Deleted node (historical)
+				{m.studio_node_deleted_historical()}
 			</div>
 		<!-- Preview indicator banner -->
 		{:else if isPreviewing}
@@ -218,7 +236,7 @@
 				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
 				</svg>
-				Historical version: {displayCommit?.slice(0, 7)}
+				{m.studio_node_historical_version({ commit: displayCommit?.slice(0, 7) ?? '' })}
 			</div>
 		<!-- Used indicator banner -->
 		{:else if isUsed}
@@ -226,7 +244,7 @@
 				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
 				</svg>
-				Used in generation
+				{m.studio_node_used_in_generation()}
 			</div>
 		{/if}
 		
@@ -237,13 +255,13 @@
 				{#if headerIcon}
 					{@render headerIcon()}
 				{/if}
-				<span class="text-xs font-bold text-gray-100 uppercase tracking-wider">{nodeType}</span>
+				<span class="text-xs font-bold text-gray-100 uppercase tracking-wider">{getNodeTypeLabel(nodeType)}</span>
 				
 				<!-- Historical version indicator -->
 				{#if isPreviewing}
 					<span
 						class="px-1.5 py-0.5 text-xs bg-white/30 rounded text-white/90 flex items-center gap-1"
-						title="Viewing historical version"
+						title={m.studio_node_viewing_historical()}
 					>
 						<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -254,7 +272,7 @@
 					<button
 						class="nodrag px-1.5 py-0.5 text-xs bg-white/20 hover:bg-white/30 rounded text-white/90 transition-colors cursor-pointer"
 						onclick={handleVersionClick}
-						title="View version history"
+						title={m.studio_node_view_history()}
 					>
 						v{versionCount}
 					</button>
@@ -268,7 +286,7 @@
 						bind:this={nameInputRef}
 						type="text"
 						class="nodrag w-full max-w-32 px-1.5 py-0.5 text-xs bg-white/90 text-gray-800 rounded border-none outline-none text-center"
-						placeholder="Node name"
+						placeholder={m.studio_node_name_placeholder()}
 						bind:value={editingNameValue}
 						onkeydown={handleNameInputKeydown}
 						onblur={saveNameEdit}

@@ -15,6 +15,7 @@
 	import type { InputNodeData } from '../../../utils/types';
 	import { getStudioContext } from '../../../stores/context';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
+	import * as m from '$lib/paraglide/messages';
 	import { 
 		HandleId,
 		createTagHandleId, 
@@ -319,12 +320,12 @@
 			<button
 				class="nodrag px-2 py-0.5 text-xs font-medium bg-white/20 hover:bg-white/30 rounded text-white transition-colors flex items-center gap-1"
 				onclick={handleGenerate}
-				title="Generate from this input"
+				title={m.studio_node_generate_from_input()}
 			>
 				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
 				</svg>
-				Generate
+				{m.studio_properties_generate()}
 			</button>
 		{/if}
 	{/snippet}
@@ -333,7 +334,7 @@
 		<RichTextArea
 			value={displayContent}
 			readonly={isPreviewing}
-			placeholder="Enter your input. Use @tag for prompt references."
+			placeholder={m.studio_node_input_placeholder()}
 			class={isPreviewing ? 'bg-amber-50/30' : ''}
 			onchange={handleContentChange}
 			onfocus={handleFocus}
