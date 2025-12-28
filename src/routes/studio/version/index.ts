@@ -49,3 +49,8 @@ export {
 	createPreviewController,
 	type PreviewController
 } from './preview-controller.svelte'
+
+// Version Preparation (for generation)
+export {
+	prepareForGeneration
+} from './prepare'

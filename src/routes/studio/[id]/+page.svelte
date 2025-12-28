@@ -26,20 +26,20 @@
 		createSandboxNodeData,
 		createLoaderNodeData,
 		createStateNodeData
-	} from '../utils/types';
+	} from '../types';
 	import {
 		restoreSnapshot,
 		syncNode,
 		initSnapshotStore,
 		createPreviewController,
 		type NodeRef
-	} from '../stores/version';
-	import { validateConnection } from '../utils/connection';
-	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '../utils/layout';
-	import { publishArtifact, type PublishMetadata } from '../utils/publish';
-	import { setStudioContext, type StudioContext } from '../stores/context';
-	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../stores/flow-events';
-	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../stores/db';
+	} from '../version';
+	import { validateConnection } from '../graph';
+	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '../graph';
+	import { publishArtifact, type PublishMetadata } from '../io';
+	import { setStudioContext, type StudioContext } from '../state';
+	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../state';
+	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../persistence';
 	import { useAuth } from '$lib/stores/auth.svelte';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import * as m from '$lib/paraglide/messages';

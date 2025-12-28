@@ -9,7 +9,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData } from './types';
+import type { StudioNodeData } from '../types';
 import type { ArtifactType, VisibilityType } from '$lib/types';
 import { API_BASE_URL } from '$lib/config';
 

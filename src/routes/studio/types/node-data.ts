@@ -18,7 +18,7 @@ import {
   type NodeRef, 
   type SnapshotPosition,
   generateCommitHash
-} from '../stores/version'
+} from '../version'
 import type { Edge, Node } from '@xyflow/svelte'
 
 // Import content classes for use in factory functions
@@ -33,7 +33,7 @@ import {
   restoreContent,
   type Mountpoint,
   type NodeContent
-} from './content-types'
+} from './content'
 
 // Re-export content types and classes for external use
 export type { Mountpoint, NodeContent }
@@ -71,6 +71,8 @@ export interface BaseNodeData<T extends NodeContent> {
   content: T
   /** Whether this node references external artifact (not included in export) */
   external?: boolean
+  /** Runtime flag: Whether this is a phantom node (used during version preview) */
+  isPhantom?: boolean
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }

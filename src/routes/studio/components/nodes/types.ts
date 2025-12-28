@@ -3,8 +3,8 @@
  */
 
 import type { Node } from '@xyflow/svelte';
-import type { StudioNodeData, BaseNodeData } from '../../utils/types';
-import type { NodeRef, SnapshotEdge } from '../../stores/version';
+import type { StudioNodeData, BaseNodeData } from '../../types';
+import type { NodeRef, SnapshotEdge } from '../../version';
 
 /**
  * Common props passed to all node types

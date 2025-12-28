@@ -9,11 +9,11 @@
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { ArtifactGraphData, ArtifactNodeDetail } from '$lib/stores/artifacts.svelte';
-import type { StudioNodeData, VFSNodeData, InputNodeData, PromptNodeData, GeneratedNodeData } from './types';
-import { InputContent, PromptContent, GeneratedContent, VFSContent } from './content-types';
-import { generateCommitHash } from '../stores/version';
-import { getNodeVfs } from '../stores/vfs';
-import { ensureProject, saveGraph, loadGraph } from '../stores/db';
+import type { StudioNodeData, VFSNodeData, InputNodeData, PromptNodeData, GeneratedNodeData } from '../types';
+import { InputContent, PromptContent, GeneratedContent, VFSContent } from '../types';
+import { generateCommitHash } from '../version';
+import { getNodeVfs } from '../vfs';
+import { ensureProject, saveGraph, loadGraph } from '../persistence';
 import { API_BASE_URL } from '$lib/config';
 
 // ============================================================================

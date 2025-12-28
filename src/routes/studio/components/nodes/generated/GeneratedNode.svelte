@@ -9,10 +9,10 @@
 	 * - Regenerate button
 	 */
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { GeneratedNodeData } from '../../../utils/types';
+	import type { GeneratedNodeData } from '../../../types';
 	import type { MessageBlock } from '@pubwiki/chat';
 	import { blocksToContent } from '@pubwiki/chat';
-	import { getStudioContext } from '../../../stores/context';
+	import { getStudioContext } from '../../../state';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { marked } from 'marked';
 	import BaseNode from '../BaseNode.svelte';

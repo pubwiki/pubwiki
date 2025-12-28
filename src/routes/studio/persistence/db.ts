@@ -7,9 +7,13 @@
 
 import Dexie, { type EntityTable, liveQuery, type Observable } from 'dexie';
 import type { Edge, Node } from '@xyflow/svelte';
+import { restoreContent, type NodeType, type NodeContent } from '../types/content';
 
-// Type constraint for Node data (required by @xyflow/svelte)
-type NodeData = Record<string, unknown>;
+// Type constraint for Node data with content (required for serialization)
+interface NodeDataWithContent extends Record<string, unknown> {
+  type: NodeType;
+  content: NodeContent;
+}
 
 // ============================================================================
 // Database Types
@@ -250,34 +254,51 @@ const DEFAULT_PROJECT_ID = 'default';
 
 /**
  * Convert XYFlow Node to StoredNode
+ * Serializes content using toJSON() for proper class serialization
  */
-export function nodeToStored<T extends NodeData>(node: Node<T>, projectId: string = DEFAULT_PROJECT_ID): StoredNode {
+export function nodeToStored<T extends NodeDataWithContent>(node: Node<T>, projectId: string = DEFAULT_PROJECT_ID): StoredNode {
+  // Serialize content to JSON-safe format
+  const serializedData = {
+    ...node.data,
+    content: node.data.content.toJSON()
+  };
+  
   return {
     id: node.id,
     projectId,
     type: node.type ?? 'default',
     positionX: node.position?.x ?? 0,
     positionY: node.position?.y ?? 0,
-    data: node.data
+    data: serializedData
   };
 }
 
 /**
  * Convert StoredNode to XYFlow Node
+ * Restores content class instance using restoreContent()
  */
-export function storedToNode<T extends NodeData>(stored: StoredNode): Node<T> {
+export function storedToNode<T extends NodeDataWithContent>(stored: StoredNode): Node<T> {
+  const rawData = stored.data as Record<string, unknown>;
+  const nodeType = rawData.type as NodeType;
+  
+  // Restore content class instance from JSON
+  const restoredData = {
+    ...rawData,
+    content: restoreContent(nodeType, rawData.content)
+  } as T;
+  
   return {
     id: stored.id,
     type: stored.type,
     position: { x: stored.positionX, y: stored.positionY },
-    data: stored.data as T
+    data: restoredData
   };
 }
 
 /**
  * Save nodes to database (replaces all nodes for a project)
  */
-export async function saveNodes<T extends NodeData>(nodes: Node<T>[], projectId: string = DEFAULT_PROJECT_ID): Promise<void> {
+export async function saveNodes<T extends NodeDataWithContent>(nodes: Node<T>[], projectId: string = DEFAULT_PROJECT_ID): Promise<void> {
   await db.transaction('rw', db.nodes, async () => {
     // Delete existing nodes for this project
     await db.nodes.where('projectId').equals(projectId).delete();
@@ -290,7 +311,7 @@ export async function saveNodes<T extends NodeData>(nodes: Node<T>[], projectId:
 /**
  * Get all nodes for a project
  */
-export async function getNodes<T extends NodeData>(projectId: string = DEFAULT_PROJECT_ID): Promise<Node<T>[]> {
+export async function getNodes<T extends NodeDataWithContent>(projectId: string = DEFAULT_PROJECT_ID): Promise<Node<T>[]> {
   const stored = await db.nodes.where('projectId').equals(projectId).toArray();
   return stored.map(s => storedToNode<T>(s));
 }
@@ -298,7 +319,7 @@ export async function getNodes<T extends NodeData>(projectId: string = DEFAULT_P
 /**
  * Update a single node
  */
-export async function updateNode<T extends NodeData>(node: Node<T>, projectId: string = DEFAULT_PROJECT_ID): Promise<void> {
+export async function updateNode<T extends NodeDataWithContent>(node: Node<T>, projectId: string = DEFAULT_PROJECT_ID): Promise<void> {
   await db.nodes.put(nodeToStored(node, projectId));
 }
 
@@ -439,7 +460,7 @@ export async function ensureProject(projectId: string): Promise<StoredProject> {
  * Updates both node.id and node.data.id for non-external nodes
  * Also updates edge source/target references and internal node refs
  */
-export function remapNodeIds<T extends NodeData>(
+export function remapNodeIds<T extends NodeDataWithContent>(
   nodes: Node<T>[],
   edges: Edge[],
   nodeIdMapping: Record<string, string>
@@ -512,7 +533,7 @@ export function remapNodeIds<T extends NodeData>(
 /**
  * Save entire graph state (nodes + edges) atomically
  */
-export async function saveGraph<T extends NodeData>(
+export async function saveGraph<T extends NodeDataWithContent>(
   nodes: Node<T>[], 
   edges: Edge[], 
   projectId: string = DEFAULT_PROJECT_ID
@@ -539,7 +560,7 @@ export async function saveGraph<T extends NodeData>(
 /**
  * Load entire graph state
  */
-export async function loadGraph<T extends NodeData>(
+export async function loadGraph<T extends NodeDataWithContent>(
   projectId: string = DEFAULT_PROJECT_ID
 ): Promise<{ nodes: Node<T>[]; edges: Edge[] }> {
   const [storedNodes, storedEdges] = await Promise.all([
@@ -560,7 +581,7 @@ export async function loadGraph<T extends NodeData>(
 /**
  * Create a live query for nodes
  */
-export function liveNodes<T extends NodeData>(projectId: string = DEFAULT_PROJECT_ID): Observable<Node<T>[]> {
+export function liveNodes<T extends NodeDataWithContent>(projectId: string = DEFAULT_PROJECT_ID): Observable<Node<T>[]> {
   return liveQuery(async () => {
     const stored = await db.nodes.where('projectId').equals(projectId).toArray();
     return stored.map(s => storedToNode<T>(s));

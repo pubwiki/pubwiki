@@ -4,7 +4,7 @@
  * Re-exports all public types and utilities from the studio module.
  */
 
-// Types (excluding version types which are now in stores/version)
+// Types
 export type {
   StudioNodeData,
   BaseNodeData,
@@ -15,11 +15,9 @@ export type {
   SandboxNodeData,
   LoaderNodeData,
   StateNodeData,
-  // Re-export MessageBlock types from @pubwiki/chat
-  MessageBlock,
-  MessageBlockType,
-  ToolCallStatus
-} from './utils/types';
+  Mountpoint,
+  NodeContent
+} from './types';
 
 export {
   createPromptNodeData,
@@ -28,39 +26,65 @@ export {
   createVFSNodeData,
   createSandboxNodeData,
   createLoaderNodeData,
-  createStateNodeData
-} from './utils/types';
+  createStateNodeData,
+  InputContent,
+  PromptContent,
+  GeneratedContent,
+  VFSContent,
+  SandboxContent,
+  LoaderContent,
+  StateContent,
+  restoreContent
+} from './types';
 
-// RefTag utilities
+// Re-export MessageBlock types from @pubwiki/chat
+export type {
+  MessageBlock,
+  MessageBlockType,
+  ToolCallStatus
+} from '@pubwiki/chat';
+
+// Graph utilities
 export {
+  REFTAG_PATTERN,
+  MOUNTPOINT_PATTERN,
   parseRefTags,
   parseMountpoints,
   getUniqueRefTagNames,
   getUniqueMountpointPaths,
-  resolvePromptContent,
   resolvePromptContentFromRefs,
-  resolveInputContent,
-  getRefTagConnections,
   getRefTagConnectionsFromSnapshotEdges,
-  getInputTagConnections,
-  getInputTagConnectionsFromSnapshotEdges,
-  getMountpointConnections,
-  getMountpointConnectionsFromSnapshotEdges,
-  getInputTags
-} from './utils/reftag';
+  HandleId,
+  DataType,
+  Cardinality,
+  validateConnection,
+  createRefTagHandleId,
+  isRefTagHandle,
+  getRefTagName,
+  createMountpointHandleId,
+  isMountpointHandle,
+  getMountpointId,
+  generateMountpointId,
+  createLoaderMountpointHandleId,
+  isLoaderMountpointHandle,
+  getLoaderMountpointId,
+  positionNewNodesFromSources,
+  getNodeDimensions,
+  DEFAULT_NODE_WIDTH,
+  DEFAULT_NODE_HEIGHT,
+  HORIZONTAL_GAP,
+  VERTICAL_GAP
+} from './graph';
 
 export type {
+  HandleSpec,
+  NodeSpec,
   ParsedRefTag,
   ParsedMountpoint,
   ResolvedPrompt
-} from './utils/reftag';
+} from './graph';
 
-// Version control - preparation for generation
-export {
-  prepareForGeneration
-} from './utils/version';
-
-// Version module - core version control functionality
+// Version module
 export {
   initSnapshotStore,
   snapshotStore,
@@ -72,8 +96,12 @@ export {
   getNodeSnapshots,
   rebuildHistoricalTree,
   styleEdgesForVersions,
-  createPreviewController
-} from './stores/version';
+  createPreviewController,
+  prepareForGeneration,
+  versionHandlerRegistry,
+  registerVersionHandler,
+  getVersionHandler
+} from './version';
 
 export type {
   NodeRef,
@@ -82,11 +110,33 @@ export type {
   SnapshotPosition,
   Versionable,
   HistoricalTreeResult,
-  PreviewController
-} from './stores/version';
+  PreviewController,
+  VersionHandler,
+  PreviewState as VersionPreviewState
+} from './version';
 
-// Context
-export type { StudioContext, PreviewState } from './stores/context';
+// State management
+export type { StudioContext, PreviewState } from './state';
+export { setStudioContext, getStudioContext } from './state';
+export {
+  dispatchConnection,
+  dispatchEdgeDeletes,
+  dispatchNodeDeletes,
+  onConnection,
+  onEdgeDelete,
+  onNodeDelete,
+  clearAllHandlers
+} from './state';
+export type {
+  ConnectionEvent,
+  EdgeDeleteEvent,
+  NodeDeleteEvent,
+  ConnectionHandler,
+  EdgeDeleteHandler,
+  NodeDeleteHandler
+} from './state';
+
+// Persistence
 export {
   db,
   saveGraph,
@@ -99,33 +149,39 @@ export {
   liveEdges,
   liveSnapshots,
   liveProjects,
-  type StoredSnapshot,
-  type StoredNode,
-  type StoredEdge,
-  type StoredProject
-} from './stores/db';
-export {
-  useLiveQuery,
-  useObservable,
-  usePersistedState,
-  type LiveQueryResult,
-  type PersistedStateResult,
-  type GraphStateResult
-} from './stores/live-query.svelte';
-export { setStudioContext, getStudioContext } from './stores/context';
+  getCurrentProject,
+  setCurrentProject,
+  clearCurrentProject,
+  ensureProject,
+  saveProject,
+  deleteProject,
+  remapNodeIds
+} from './persistence';
+
+export type {
+  StoredSnapshot,
+  StoredNode,
+  StoredEdge,
+  StoredProject
+} from './persistence';
+
+// VFS
+export { getNodeVfs, getVfsFactory } from './vfs';
+export type { VersionedVfs } from './vfs';
 
 // RDF Store (for State nodes)
 export {
-  QuadstoreRDFStore,
   getNodeRDFStore,
   closeNodeRDFStore,
-  closeAllRDFStores
-} from './stores/rdf';
+  closeAllRDFStores,
+  QuadstoreRDFStore
+} from './rdf';
 
-// Import utilities
-export type { ContentFetcher } from './utils/import';
+// Import/Export
+export type { ContentFetcher, PublishMetadata } from './io';
 export {
   convertArtifactToStudioGraph,
   importArtifactToNewProject,
-  addArtifactToProject
-} from './utils/import';
+  addArtifactToProject,
+  publishArtifact
+} from './io';

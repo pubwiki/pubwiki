@@ -5,7 +5,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData } from './types';
+import type { StudioNodeData } from '../types';
 
 // ============================================================================
 // Layout Constants

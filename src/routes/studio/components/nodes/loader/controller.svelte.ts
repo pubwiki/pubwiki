@@ -15,21 +15,21 @@ import type {
 	LoaderNodeData, 
 	VFSNodeData,
 	Mountpoint
-} from '../../../utils/types';
+} from '../../../types';
 import { 
 	HandleId, 
 	isLoaderMountpointHandle, 
 	getLoaderMountpointId, 
 	createLoaderMountpointHandleId,
 	generateMountpointId
-} from '../../../utils/connection';
+} from '../../../graph';
 import { 
 	onConnection, 
 	onEdgeDelete,
 	type ConnectionEvent,
 	type EdgeDeleteEvent
-} from '../../../stores/flow-events';
-import { getNodeVfs } from '../../../stores/vfs';
+} from '../../../state';
+import { getNodeVfs } from '../../../vfs';
 import { 
 	createMountedVfs, 
 	getMountedProvider, 

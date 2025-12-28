@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { REFTAG_PATTERN } from "../utils/reftag";
+	import { REFTAG_PATTERN } from "../graph";
 	/**
 	 * RichTextArea - Textarea with syntax highlighting using backdrop overlay
 	 * 

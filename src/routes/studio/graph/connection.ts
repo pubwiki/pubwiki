@@ -5,7 +5,7 @@
  * Provides type-safe handle definitions and connection validation.
  */
 
-import type { InputNodeData, StudioNodeData } from './types';
+import type { InputNodeData, StudioNodeData } from '../types';
 
 // ============================================================================
 // Data Types

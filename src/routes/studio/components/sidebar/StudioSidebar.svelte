@@ -9,8 +9,8 @@
 	 * - Settings button with modal
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
-	import type { StudioNodeData } from '../../utils/types';
-	import type { PublishMetadata } from '../../utils/publish';
+	import type { StudioNodeData } from '../../types';
+	import type { PublishMetadata } from '../../io';
 	import OverviewTab from './OverviewTab.svelte';
 	import PropertiesTab from './PropertiesTab.svelte';
 	import ProjectTab from './ProjectTab.svelte';

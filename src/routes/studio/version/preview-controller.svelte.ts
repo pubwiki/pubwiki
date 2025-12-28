@@ -12,10 +12,10 @@ import type {
 	HistoricalTreeResult,
 	PreviewState
 } from './types'
-import type { StudioNodeData } from '../../utils/types'
+import type { StudioNodeData } from '../types'
 import { getVersionHandler } from './types'
 import { rebuildHistoricalTree, styleEdgesForVersions } from './version-service'
-import { getStudioContext } from '../context'
+import { getStudioContext } from '../state'
 
 // ============================================================================
 // Helper Functions

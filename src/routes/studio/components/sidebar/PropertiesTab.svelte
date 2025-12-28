@@ -3,8 +3,8 @@
 	 * PropertiesTab - Shows details and editor for the selected node
 	 */
 	import type { Node } from '@xyflow/svelte';
-	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData } from '../../utils/types';
-	import { getStudioContext } from '../../stores/context';
+	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData } from '../../types';
+	import { getStudioContext } from '../../state';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { marked } from 'marked';
 	import RichTextArea from '../RichTextArea.svelte';
@@ -115,10 +115,10 @@
 		selectedNode && (selectedNode.data.type === 'PROMPT' || selectedNode.data.type === 'INPUT')
 	);
 
-	// Get display content
+	// Get display content (uses polymorphic getText() method)
 	const displayContent = $derived.by(() => {
 		if (!selectedNode) return '';
-		return (selectedNode.data as any).content || '';
+		return selectedNode.data.content.getText();
 	});
 </script>
 

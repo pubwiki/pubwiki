@@ -75,7 +75,7 @@ export interface NodeSnapshot<T = unknown> {
 // Versionable Interface
 // ============================================================================
 
-import type { NodeContent } from '../../utils/content-types'
+import type { NodeContent } from '../types/content'
 
 /**
  * Base interface for versionable node data.

@@ -3,7 +3,7 @@
 	 * OverviewTab - Shows all nodes in the workspace grouped by type
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
-	import type { StudioNodeData } from '../../utils/types';
+	import type { StudioNodeData } from '../../types';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {

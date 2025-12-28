@@ -251,8 +251,8 @@
 					</div>
 
 					<!-- Visibility -->
-					<div>
-						<label class="block text-sm font-medium text-gray-700 mb-2">Visibility</label>
+					<fieldset>
+						<legend class="block text-sm font-medium text-gray-700 mb-2">Visibility</legend>
 						<div class="flex gap-4">
 							<label class="flex items-center gap-2 cursor-pointer">
 								<input type="radio" name="visibility" value="PUBLIC" bind:group={visibility} class="text-[#0969da]" />
@@ -267,7 +267,7 @@
 								<span class="text-sm text-gray-700">Private</span>
 							</label>
 						</div>
-					</div>
+					</fieldset>
 
 					<!-- License -->
 					<div>

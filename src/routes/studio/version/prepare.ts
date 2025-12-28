@@ -2,27 +2,26 @@
  * Version Control Module - Generation Preparation
  * 
  * Handles version preparation for content generation.
- * Core version control functionality has been moved to stores/version/
+ * Core version control functionality is in the version module.
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { 
-  StudioNodeData
-} from './types';
+import type { StudioNodeData } from '../types';
 import { 
   syncNode,
-  type NodeRef
-} from '../stores/version';
+  type NodeRef,
+  type HistoricalTreeResult
+} from './index';
 import { 
   resolvePromptContent, 
   getInputTagConnections,
   getMountpointConnections,
   resolveInputContent,
   getRefTagConnections
-} from './reftag';
+} from '../graph/reftag';
 
-// Re-export types from new version module for backward compatibility
-export type { HistoricalTreeResult } from '../stores/version';
+// Re-export types for backward compatibility
+export type { HistoricalTreeResult };
 
 // ============================================================================
 // Types

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { NodeRef, NodeSnapshot } from '../stores/version';
-	import { snapshotStore } from '../stores/version';
+	import type { NodeRef, NodeSnapshot } from '../version';
+	import { snapshotStore } from '../version';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {

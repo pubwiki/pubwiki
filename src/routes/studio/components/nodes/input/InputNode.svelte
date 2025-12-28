@@ -12,8 +12,8 @@
 	 */
 	import { useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { InputNodeData } from '../../../utils/types';
-	import { getStudioContext } from '../../../stores/context';
+	import type { InputNodeData } from '../../../types';
+	import { getStudioContext } from '../../../state';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import * as m from '$lib/paraglide/messages';
 	import { 
@@ -24,12 +24,12 @@
 		isMountpointHandle, 
 		getTagName, 
 		getMountpointId 
-	} from '../../../utils/connection';
+	} from '../../../graph';
 	import { 
 		getInputTags, 
 		getInputTagConnectionsFromSnapshotEdges, 
 		getMountpointConnectionsFromSnapshotEdges 
-	} from '../../../utils/reftag';
+	} from '../../../graph';
 	import BaseNode from '../BaseNode.svelte';
 	import RichTextArea from '../../RichTextArea.svelte';
 	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';

@@ -16,28 +16,28 @@ import type {
 	VFSNodeData,
 	Mountpoint,
 	GeneratedNodeData
-} from '../../../utils/types';
+} from '../../../types';
 import type { MessageBlock } from '@pubwiki/chat';
-import { createGeneratedNodeData } from '../../../utils/types';
+import { createGeneratedNodeData } from '../../../types';
 import { 
 	HandleId, 
 	isMountpointHandle, 
 	getMountpointId, 
 	createMountpointHandleId,
 	generateMountpointId
-} from '../../../utils/connection';
+} from '../../../graph';
 import { 
 	onConnection, 
 	onEdgeDelete,
 	type ConnectionEvent,
 	type EdgeDeleteEvent
-} from '../../../stores/flow-events';
-import { prepareForGeneration } from '../../../utils/version';
-import { positionNewNodesFromSources } from '../../../utils/layout';
-import { getNodeVfs } from '../../../stores/vfs';
+} from '../../../state';
+import { prepareForGeneration } from '../../../version';
+import { positionNewNodesFromSources } from '../../../graph';
+import { getNodeVfs } from '../../../vfs';
 import { createMountedVfs, getMountedProvider, MountedVfsProvider, Vfs } from '@pubwiki/vfs';
 import { generateBlockId, blocksToContent } from '@pubwiki/chat';
-import { generateCommitHash } from '../../../stores/version';
+import { generateCommitHash } from '../../../version';
 import { 
 	createPubChat, 
 	streamGeneration, 

@@ -12,11 +12,11 @@ import type {
 	StudioNodeData, 
 	GeneratedNodeData,
 	InputNodeData
-} from '../../../utils/types';
-import type { GeneratedContent, InputContent } from '../../../utils/content-types';
+} from '../../../types';
+import type { GeneratedContent, InputContent } from '../../../types';
 import type { MessageBlock } from '@pubwiki/chat';
-import { snapshotStore, generateCommitHash, registerVersionHandler, type NodeRef } from '../../../stores/version';
-import { resolvePromptContentFromRefs } from '../../../utils/reftag';
+import { snapshotStore, generateCommitHash, registerVersionHandler, type NodeRef } from '../../../version';
+import { resolvePromptContentFromRefs } from '../../../graph';
 import { 
 	PubChat, 
 	MemoryMessageStore, 

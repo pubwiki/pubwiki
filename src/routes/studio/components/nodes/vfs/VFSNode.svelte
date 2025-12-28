@@ -11,9 +11,9 @@
 	 */
 	import { Handle, Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import type { VFSNodeData } from '../../../utils/types';
-	import { getNodeVfs, type VersionedVfs } from '../../../stores/vfs';
-	import { getStudioContext } from '../../../stores/context';
+	import type { VFSNodeData } from '../../../types';
+	import { getNodeVfs, type VersionedVfs } from '../../../vfs';
+	import { getStudioContext } from '../../../state';
 	import BaseNode from '../BaseNode.svelte';
 	import VFSExpandedView from './VFSExpandedView.svelte';
 	import * as m from '$lib/paraglide/messages';

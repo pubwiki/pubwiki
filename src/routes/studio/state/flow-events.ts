@@ -7,7 +7,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData } from '../utils/types';
+import type { StudioNodeData } from '../types';
 
 // ============================================================================
 // Event Types

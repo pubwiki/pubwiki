@@ -11,9 +11,9 @@
 	 */
 	import { Handle, Position, useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { LoaderNodeData, VFSNodeData } from '../../../utils/types';
-	import { getStudioContext } from '../../../stores/context';
-	import { getNodeVfs } from '../../../stores/vfs';
+	import type { LoaderNodeData, VFSNodeData } from '../../../types';
+	import { getStudioContext } from '../../../state';
+	import { getNodeVfs } from '../../../vfs';
 	import BaseNode from '../BaseNode.svelte';
 	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -22,7 +22,7 @@
 		createLoaderMountpointHandleId, 
 		isLoaderMountpointHandle, 
 		getLoaderMountpointId 
-	} from '../../../utils/connection';
+	} from '../../../graph';
 	import { 
 		getEditingMountpoint, 
 		setEditingMountpoint, 

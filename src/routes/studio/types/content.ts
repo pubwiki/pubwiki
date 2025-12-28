@@ -9,7 +9,7 @@
  */
 
 import { blocksToContent, type MessageBlock } from '@pubwiki/chat'
-import type { NodeRef } from '../stores/version'
+import type { NodeRef } from '../version'
 
 // ============================================================================
 // Shared Types

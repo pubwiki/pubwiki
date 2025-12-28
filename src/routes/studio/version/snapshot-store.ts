@@ -16,7 +16,7 @@ import {
 	getAllSnapshots as dbGetAllSnapshots,
 	importSnapshots as dbImportSnapshots,
 	type StoredSnapshot
-} from '../db'
+} from '../persistence/db'
 import type { NodeSnapshot } from './types'
 
 // ============================================================================

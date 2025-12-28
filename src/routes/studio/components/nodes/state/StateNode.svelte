@@ -10,9 +10,9 @@
 	 */
 	import { Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import type { StateNodeData } from '../../../utils/types';
-	import { getStudioContext } from '../../../stores/context';
-	import { getNodeRDFStore, closeNodeRDFStore, type QuadstoreRDFStore } from '../../../stores/rdf';
+	import type { StateNodeData } from '../../../types';
+	import { getStudioContext } from '../../../state';
+	import { getNodeRDFStore, closeNodeRDFStore, type QuadstoreRDFStore } from '../../../rdf';
 	import BaseNode from '../BaseNode.svelte';
 	import * as m from '$lib/paraglide/messages';
 

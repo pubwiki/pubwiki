@@ -9,8 +9,8 @@
 	import { fade } from 'svelte/transition';
 	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig } from '@pubwiki/sandbox-host';
 	import { createSandboxConnection, RpcTarget } from '@pubwiki/sandbox-host';
-	import type { VersionedVfs } from '../../../stores/vfs';
-	import type { LoaderNodeData } from '../../../utils/types';
+	import type { VersionedVfs } from '../../../vfs';
+	import type { LoaderNodeData } from '../../../types';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================

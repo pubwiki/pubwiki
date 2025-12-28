@@ -6,7 +6,7 @@
 	 * VFS nodes are handled separately by VFSNode component.
 	 */
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData } from '../../utils/types';
+	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData } from '../../types';
 	import { PromptNode } from './prompt';
 	import { InputNode } from './input';
 	import { GeneratedNode } from './generated';

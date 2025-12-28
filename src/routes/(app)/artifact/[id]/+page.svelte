@@ -6,8 +6,8 @@
 	import ArtifactCard from '$lib/components/ArtifactCard.svelte';
 	import LineageGraph from '$lib/components/LineageGraph.svelte';
 	import NodeCard from '$lib/components/NodeCard.svelte';
-	import { getCurrentProject, setCurrentProject } from '../../../studio/stores/db';
-	import { importArtifactToNewProject, addArtifactToProject } from '../../../studio/utils/import';
+	import { getCurrentProject, setCurrentProject } from '../../../studio/persistence';
+	import { importArtifactToNewProject, addArtifactToProject } from '../../../studio/io';
 	import * as m from '$lib/paraglide/messages';
 
 	let { data } = $props<{ data: PageData }>();

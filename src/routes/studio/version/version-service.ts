@@ -20,7 +20,7 @@ import type {
 	HistoricalTreeResult
 } from './types'
 import { snapshotStore, generateCommitHash } from './snapshot-store'
-import type { NodeContent } from '../../utils/content-types'
+import type { NodeContent } from '../types/content'
 
 // Re-export generateCommitHash for convenience
 export { generateCommitHash }

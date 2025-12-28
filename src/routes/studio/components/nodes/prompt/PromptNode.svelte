@@ -9,10 +9,10 @@
 	 */
 	import { Handle, Position, useUpdateNodeInternals, useEdges } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { PromptNodeData } from '../../../utils/types';
-	import { getStudioContext } from '../../../stores/context';
-	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../../utils/reftag';
-	import { createRefTagHandleId } from '../../../utils/connection';
+	import type { PromptNodeData } from '../../../types';
+	import { getStudioContext } from '../../../state';
+	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../../graph';
+	import { createRefTagHandleId } from '../../../graph';
 	import BaseNode from '../BaseNode.svelte';
 	import RichTextArea from '../../RichTextArea.svelte';
 	import TaggedHandlePanel from '../TaggedHandlePanel.svelte';

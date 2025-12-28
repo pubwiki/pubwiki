@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Node, Edge } from '@xyflow/svelte';
-	import type { StudioNodeData, GeneratedNodeData } from '../utils/types';
-	import type { NodeRef } from '../stores/version';
-	import type { PublishMetadata } from '../utils/publish';
+	import type { StudioNodeData, GeneratedNodeData } from '../types';
+	import type { NodeRef } from '../version';
+	import type { PublishMetadata } from '../io';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {

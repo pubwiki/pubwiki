@@ -12,9 +12,9 @@
 	 */
 	import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { Snippet } from 'svelte';
-	import type { StudioNodeData, GeneratedNodeData, PromptNodeData, InputNodeData } from '../../utils/types';
-	import { hasVersionHistory, getVersionCount, type NodeRef } from '../../stores/version';
-	import { getStudioContext } from '../../stores/context';
+	import type { StudioNodeData, GeneratedNodeData, PromptNodeData, InputNodeData } from '../../types';
+	import { hasVersionHistory, getVersionCount, type NodeRef } from '../../version';
+	import { getStudioContext } from '../../state';
 	import VersionGallery from '../VersionGallery.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -113,7 +113,7 @@
 	const displayCommit = $derived(previewState?.commit ?? data.commit);
 	
 	// Phantom node check
-	const isPhantom = $derived(!!(data as any).isPhantom);
+	const isPhantom = $derived(!!data.isPhantom);
 	
 	// Calculate preview version number
 	const previewVersionNumber = $derived.by(() => {
