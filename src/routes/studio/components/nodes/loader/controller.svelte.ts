@@ -1,0 +1,743 @@
+/**
+ * LoaderNode Controller
+ * 
+ * Handles LoaderNode-specific logic:
+ * - Lua VM initialization and lifecycle management
+ * - Backend VFS connection handling
+ * - Mountpoint management for asset VFS
+ * - Service registration and calling
+ */
+
+import { tick } from 'svelte';
+import { type Node, type Edge } from '@xyflow/svelte';
+import type { 
+	StudioNodeData, 
+	LoaderNodeData, 
+	VFSNodeData,
+	Mountpoint
+} from '../../../utils/types';
+import { 
+	HandleId, 
+	isLoaderMountpointHandle, 
+	getLoaderMountpointId, 
+	createLoaderMountpointHandleId,
+	generateMountpointId
+} from '../../../utils/connection';
+import { 
+	onConnection, 
+	onEdgeDelete,
+	type ConnectionEvent,
+	type EdgeDeleteEvent
+} from '../../../stores/flow-events';
+import { getNodeVfs } from '../../../stores/vfs';
+import { 
+	createMountedVfs, 
+	getMountedProvider, 
+	createVfs,
+	type Vfs, 
+	type MountedVfsProvider,
+	type VfsProvider,
+	type VfsStat
+} from '@pubwiki/vfs';
+import { 
+	loadRunner, 
+	createLuaInstance, 
+	type LuaInstance 
+} from '@pubwiki/lua';
+
+// Core Lua code (embedded)
+import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
+import typesLuaCode from '$lib/assets/lua/types.lua?raw';
+
+// ============================================================================
+// MemoryVfsProvider - Simple in-memory VFS implementation
+// ============================================================================
+
+class MemoryVfsProvider implements VfsProvider {
+	private files = new Map<string, Uint8Array>();
+	private directories = new Set<string>(['/']);
+	private encoder = new TextEncoder();
+
+	private normalizePath(path: string): string {
+		if (!path.startsWith('/')) path = '/' + path;
+		if (path !== '/' && path.endsWith('/')) path = path.slice(0, -1);
+		return path;
+	}
+
+	private getParentPath(path: string): string {
+		const normalized = this.normalizePath(path);
+		const lastSlash = normalized.lastIndexOf('/');
+		if (lastSlash <= 0) return '/';
+		return normalized.substring(0, lastSlash);
+	}
+
+	async id(path: string): Promise<string> {
+		return this.normalizePath(path);
+	}
+
+	async readFile(path: string): Promise<Uint8Array> {
+		const normalized = this.normalizePath(path);
+		const content = this.files.get(normalized);
+		if (!content) {
+			throw new Error(`ENOENT: no such file: ${normalized}`);
+		}
+		return content;
+	}
+
+	async writeFile(path: string, content: Uint8Array): Promise<void> {
+		const normalized = this.normalizePath(path);
+		const parent = this.getParentPath(normalized);
+		if (parent !== '/' && !this.directories.has(parent)) {
+			await this.mkdir(parent, { recursive: true });
+		}
+		this.files.set(normalized, content);
+	}
+
+	async unlink(path: string): Promise<void> {
+		const normalized = this.normalizePath(path);
+		if (!this.files.has(normalized)) {
+			throw new Error(`ENOENT: no such file: ${normalized}`);
+		}
+		this.files.delete(normalized);
+	}
+
+	async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+		const normalized = this.normalizePath(path);
+		if (options?.recursive) {
+			const parts = normalized.split('/').filter(Boolean);
+			let current = '';
+			for (const part of parts) {
+				current += '/' + part;
+				this.directories.add(current);
+			}
+		} else {
+			this.directories.add(normalized);
+		}
+	}
+
+	async readdir(path: string): Promise<string[]> {
+		const normalized = this.normalizePath(path);
+		const prefix = normalized === '/' ? '/' : normalized + '/';
+		const entries = new Set<string>();
+
+		for (const filePath of this.files.keys()) {
+			if (filePath.startsWith(prefix)) {
+				const relative = filePath.substring(prefix.length);
+				const firstPart = relative.split('/')[0];
+				if (firstPart) entries.add(firstPart);
+			}
+		}
+
+		for (const dirPath of this.directories) {
+			if (dirPath.startsWith(prefix) && dirPath !== normalized) {
+				const relative = dirPath.substring(prefix.length);
+				const firstPart = relative.split('/')[0];
+				if (firstPart) entries.add(firstPart);
+			}
+		}
+
+		return Array.from(entries).sort();
+	}
+
+	async rmdir(path: string): Promise<void> {
+		const normalized = this.normalizePath(path);
+		this.directories.delete(normalized);
+	}
+
+	async stat(path: string): Promise<VfsStat> {
+		const normalized = this.normalizePath(path);
+		const now = new Date();
+		if (this.files.has(normalized)) {
+			const content = this.files.get(normalized)!;
+			return {
+				isFile: true,
+				isDirectory: false,
+				size: content.length,
+				createdAt: now,
+				updatedAt: now
+			};
+		}
+		if (this.directories.has(normalized)) {
+			return {
+				isFile: false,
+				isDirectory: true,
+				size: 0,
+				createdAt: now,
+				updatedAt: now
+			};
+		}
+		throw new Error(`ENOENT: no such file or directory: ${normalized}`);
+	}
+
+	async exists(path: string): Promise<boolean> {
+		const normalized = this.normalizePath(path);
+		return this.files.has(normalized) || this.directories.has(normalized);
+	}
+
+	async rename(from: string, to: string): Promise<void> {
+		const normalizedFrom = this.normalizePath(from);
+		const normalizedTo = this.normalizePath(to);
+		const content = this.files.get(normalizedFrom);
+		if (content) {
+			this.files.delete(normalizedFrom);
+			this.files.set(normalizedTo, content);
+		} else if (this.directories.has(normalizedFrom)) {
+			this.directories.delete(normalizedFrom);
+			this.directories.add(normalizedTo);
+		} else {
+			throw new Error(`ENOENT: no such file or directory: ${normalizedFrom}`);
+		}
+	}
+
+	async copyFile(from: string, to: string): Promise<void> {
+		const normalizedFrom = this.normalizePath(from);
+		const normalizedTo = this.normalizePath(to);
+		const content = this.files.get(normalizedFrom);
+		if (!content) {
+			throw new Error(`ENOENT: no such file: ${normalizedFrom}`);
+		}
+		await this.writeFile(normalizedTo, new Uint8Array(content));
+	}
+
+	// Helper to create a file with string content
+	async createFile(path: string, content: string): Promise<void> {
+		await this.writeFile(path, this.encoder.encode(content));
+	}
+}
+
+/** Create a new in-memory VFS */
+function createMemoryVfs(): Vfs<VfsProvider> {
+	return createVfs(new MemoryVfsProvider());
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Loader Node runtime state (stored in memory, not persisted)
+ */
+interface LoaderRuntime {
+	/** Lua VM instance */
+	instance: LuaInstance;
+	/** Mounted VFS */
+	mountedVfs: Vfs<MountedVfsProvider>;
+}
+
+/**
+ * Service call result
+ */
+export interface ServiceCallResult {
+	success: boolean;
+	outputs?: Record<string, unknown>;
+	error?: string;
+}
+
+/**
+ * Service definition (exported from Lua ServiceRegistry)
+ */
+export interface ServiceDefinition {
+	name: string;
+	namespace: string;
+	identifier: string;
+	kind: 'ACTION' | 'PURE';
+	description?: string;
+	inputs: Record<string, unknown>;  // Type schema
+	outputs: Record<string, unknown>; // Type schema
+}
+
+// ============================================================================
+// State
+// ============================================================================
+
+/** Runtime state storage (nodeId -> runtime) */
+const loaderRuntimes = new Map<string, LoaderRuntime>();
+
+/** Currently editing mountpoint (node-local state, exposed for UI) */
+let editingMountpoint: { nodeId: string; mountpointId: string } | null = $state(null);
+
+// ============================================================================
+// Mountpoint Helpers
+// ============================================================================
+
+/** Initial mountpoint path - user must edit */
+const INITIAL_MOUNTPOINT_PATH = '/';
+
+/** Regex for valid mountpoint path characters (after the leading /) */
+const VALID_PATH_CHARS = /^[0-9a-zA-Z]*$/;
+
+/**
+ * Validate a mountpoint path
+ * @param path - The path to validate
+ * @param existingMountpoints - All mountpoints in the node
+ * @param currentMountpointId - The ID of the mountpoint being edited (to exclude from duplicate check)
+ * @returns Error message if invalid, null if valid
+ */
+export function validateMountpointPath(
+	path: string, 
+	existingMountpoints: Mountpoint[], 
+	currentMountpointId?: string
+): string | null {
+	// Must start with /
+	if (!path.startsWith('/')) {
+		return 'Path must start with /';
+	}
+	
+	const pathPart = path.slice(1); // Remove leading /
+	
+	// Only allow alphanumeric characters (empty is OK for root /)
+	if (!VALID_PATH_CHARS.test(pathPart)) {
+		return 'Path can only contain letters and numbers (a-z, A-Z, 0-9)';
+	}
+	
+	// Check for duplicates (excluding the current mountpoint being edited)
+	const otherPaths = existingMountpoints
+		.filter(mp => mp.id !== currentMountpointId)
+		.map(mp => mp.path);
+	
+	if (otherPaths.includes(path)) {
+		return 'This path already exists';
+	}
+	
+	return null; // Valid
+}
+
+// ============================================================================
+// Public API - Mountpoint Management
+// ============================================================================
+
+/**
+ * Get the currently editing mountpoint
+ */
+export function getEditingMountpoint(): { nodeId: string; mountpointId: string } | null {
+	return editingMountpoint;
+}
+
+/**
+ * Set the editing mountpoint (called from UI when editing completes)
+ */
+export function setEditingMountpoint(mp: { nodeId: string; mountpointId: string } | null): void {
+	editingMountpoint = mp;
+}
+
+/**
+ * Update a mountpoint path in a Loader node
+ */
+export function updateMountpointPath(
+	nodeId: string,
+	mountpointId: string,
+	newPath: string,
+	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void
+): void {
+	updateNodes(nodes => nodes.map(n => {
+		if (n.id === nodeId && n.data.type === 'LOADER') {
+			const loaderData = n.data as LoaderNodeData;
+			return {
+				...n,
+				data: {
+					...loaderData,
+					mountpoints: loaderData.mountpoints.map(mp => 
+						mp.id === mountpointId ? { ...mp, path: newPath } : mp
+					)
+				}
+			};
+		}
+		return n;
+	}));
+}
+
+// ============================================================================
+// Public API - Lua VM Management
+// ============================================================================
+
+/**
+ * Initialize Loader Node's Lua VM
+ */
+export async function initializeLoader(
+	nodeId: string,
+	backendVfs: Vfs<VfsProvider>,
+	assetMounts: Map<string, Vfs<VfsProvider>>,
+	updateNode: (id: string, updater: (data: LoaderNodeData) => LoaderNodeData) => void
+): Promise<boolean> {
+	try {
+		updateNode(nodeId, (data) => ({ ...data, vmState: 'loading', error: null }));
+		
+		// Ensure Lua runtime is loaded
+		await loadRunner();
+		
+		// Create mounted VFS
+		const mountedVfs = createMountedVfs();
+		const provider = getMountedProvider(mountedVfs);
+		
+		if (!provider) {
+			throw new Error('Failed to get MountedVfsProvider');
+		}
+		
+		// Create memory VFS for core libraries
+		const coreVfs = createMemoryVfs();
+		await coreVfs.createFile('/service.lua', serviceLuaCode);
+		await coreVfs.createFile('/types.lua', typesLuaCode);
+		provider.mountVfs('/core', coreVfs);
+		
+		// Mount backend VFS
+		provider.mountVfs('/user/backend', backendVfs);
+		
+		// Mount asset VFS
+		for (const [path, vfs] of assetMounts) {
+			provider.mountVfs(`/user/assets${path}`, vfs);
+		}
+		
+		// Create Lua instance
+		const instance = createLuaInstance({
+			vfs: mountedVfs,
+			workingDirectory: '/user/backend'
+		});
+		
+		// Execute init.lua
+		const initResult = await instance.run(`
+			-- Set package.path to support core libraries
+			package.path = "/core/?.lua;" .. package.path
+			
+			-- Load init.lua
+			local init = require("init")
+			
+			-- Return registered services list
+			local ServiceRegistry = require("service")
+			return ServiceRegistry.listServices()
+		`);
+		
+		if (initResult.error) {
+			throw new Error(initResult.error);
+		}
+		
+		// Store runtime state
+		loaderRuntimes.set(nodeId, { instance, mountedVfs });
+		
+		// Update node state
+		const services = (initResult.result as string[]) || [];
+		updateNode(nodeId, (data) => ({
+			...data,
+			vmState: 'ready',
+			error: null,
+			registeredServices: services
+		}));
+		
+		return true;
+	} catch (error) {
+		updateNode(nodeId, (data) => ({
+			...data,
+			vmState: 'error',
+			error: error instanceof Error ? error.message : String(error),
+			registeredServices: []
+		}));
+		return false;
+	}
+}
+
+/**
+ * Destroy Loader Node's Lua VM
+ */
+export async function destroyLoader(
+	nodeId: string,
+	updateNode: (id: string, updater: (data: LoaderNodeData) => LoaderNodeData) => void
+): Promise<void> {
+	const runtime = loaderRuntimes.get(nodeId);
+	if (runtime) {
+		runtime.instance.destroy();
+		loaderRuntimes.delete(nodeId);
+	}
+	
+	updateNode(nodeId, (data) => ({
+		...data,
+		vmState: 'idle',
+		error: null,
+		registeredServices: []
+	}));
+}
+
+/**
+ * Check if Loader Node is ready
+ */
+export function isLoaderReady(nodeId: string): boolean {
+	return loaderRuntimes.has(nodeId);
+}
+
+/**
+ * List services from Loader Node
+ */
+export async function listServices(nodeId: string): Promise<ServiceDefinition[]> {
+	const runtime = loaderRuntimes.get(nodeId);
+	if (!runtime) {
+		throw new Error('Loader not initialized');
+	}
+	
+	const result = await runtime.instance.run(`
+		local ServiceRegistry = require("service")
+		return ServiceRegistry.export()
+	`);
+	
+	if (result.error) {
+		throw new Error(result.error);
+	}
+	
+	// Convert to array format
+	const servicesMap = result.result as Record<string, ServiceDefinition>;
+	return Object.values(servicesMap);
+}
+
+/**
+ * Call a service on Loader Node
+ */
+export async function callService(
+	nodeId: string,
+	identifier: string,
+	inputs: Record<string, unknown>
+): Promise<ServiceCallResult> {
+	const runtime = loaderRuntimes.get(nodeId);
+	if (!runtime) {
+		return { success: false, error: 'Loader not initialized' };
+	}
+	
+	// Serialize inputs to JSON
+	const inputsJson = JSON.stringify(inputs);
+	
+	const result = await runtime.instance.run(`
+		local ServiceRegistry = require("service")
+		local json = require("json")
+		
+		local inputs = json.decode([[${inputsJson}]])
+		local outputs = ServiceRegistry.call("${identifier}", inputs)
+		
+		return outputs
+	`);
+	
+	if (result.error) {
+		return { success: false, error: result.error };
+	}
+	
+	const outputs = result.result as Record<string, unknown>;
+	if (outputs && outputs._error) {
+		return { success: false, error: outputs._error as string };
+	}
+	
+	return { success: true, outputs };
+}
+
+// ============================================================================
+// Connection Helpers
+// ============================================================================
+
+/**
+ * Find the backend VFS node connected to a Loader node
+ */
+export function findBackendVfsNode(
+	nodeId: string,
+	nodes: Node<StudioNodeData>[],
+	edges: Edge[]
+): Node<VFSNodeData> | null {
+	const backendEdge = edges.find(
+		e => e.target === nodeId && e.targetHandle === HandleId.LOADER_BACKEND
+	);
+	
+	if (!backendEdge) return null;
+	
+	const sourceNode = nodes.find(n => n.id === backendEdge.source);
+	if (sourceNode?.data.type === 'VFS') {
+		return sourceNode as Node<VFSNodeData>;
+	}
+	
+	return null;
+}
+
+/**
+ * Find all asset VFS nodes connected to a Loader node via mountpoint handles
+ * Returns a map of mount path -> VFS node
+ */
+export function findMountedVfsNodes(
+	nodeId: string,
+	nodes: Node<StudioNodeData>[],
+	edges: Edge[]
+): Map<string, Node<VFSNodeData>> {
+	const result = new Map<string, Node<VFSNodeData>>();
+	
+	// Get the Loader node to look up mountpoint paths
+	const loaderNode = nodes.find(n => n.id === nodeId);
+	if (!loaderNode || loaderNode.data.type !== 'LOADER') {
+		return result;
+	}
+	const loaderData = loaderNode.data as LoaderNodeData;
+	const mountpoints = loaderData.mountpoints ?? [];
+	
+	// Find edges where this node is the target and handle is a loader mountpoint
+	for (const edge of edges) {
+		if (edge.target === nodeId && isLoaderMountpointHandle(edge.targetHandle)) {
+			const mountpointId = getLoaderMountpointId(edge.targetHandle!);
+			const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
+			if (!mountpoint) continue;
+			
+			const sourceNode = nodes.find(n => n.id === edge.source);
+			if (sourceNode?.data.type === 'VFS') {
+				result.set(mountpoint.path, sourceNode as Node<VFSNodeData>);
+			}
+		}
+	}
+	
+	return result;
+}
+
+// ============================================================================
+// Event Handlers
+// ============================================================================
+
+/**
+ * Handle connection to LOADER_ADD_MOUNT handle
+ * Creates a new mountpoint and redirects the edge
+ */
+function handleAddMountConnection(event: ConnectionEvent): boolean {
+	if (event.targetHandle !== HandleId.LOADER_ADD_MOUNT) {
+		return false;
+	}
+
+	// Get existing mountpoints for validation
+	const targetNode = event.nodes.find(n => n.id === event.target);
+	const existingMountpoints = targetNode?.data.type === 'LOADER' 
+		? (targetNode.data as LoaderNodeData).mountpoints ?? []
+		: [];
+
+	// Use the initial placeholder path - user will edit it
+	const newMountPath = INITIAL_MOUNTPOINT_PATH;
+	
+	// Validate before creating - check for duplicates
+	const validationError = validateMountpointPath(newMountPath, existingMountpoints);
+	if (validationError) {
+		console.warn(`Cannot create mountpoint: ${validationError}`);
+		return true; // Handled (but rejected) - prevent default edge creation
+	}
+	
+	// Generate a stable ID for the new mountpoint
+	const newMountpointId = generateMountpointId();
+	const newMountpoint: Mountpoint = { id: newMountpointId, path: newMountPath };
+	
+	// Update the Loader node to add the new mountpoint
+	event.updateNodes(nodes => nodes.map(n => {
+		if (n.id === event.target && n.data.type === 'LOADER') {
+			const data = n.data as LoaderNodeData;
+			return {
+				...n,
+				data: {
+					...data,
+					mountpoints: [...(data.mountpoints ?? []), newMountpoint]
+				}
+			};
+		}
+		return n;
+	}));
+
+	// Create edge to the new mountpoint handle (using stable ID)
+	const newEdge: Edge = {
+		id: `e-${event.source}-${event.target}-${newMountpointId}`,
+		source: event.source,
+		target: event.target,
+		sourceHandle: event.sourceHandle ?? undefined,
+		targetHandle: createLoaderMountpointHandleId(newMountpointId)
+	};
+
+	// Set editing mountpoint to focus the input
+	editingMountpoint = { nodeId: event.target, mountpointId: newMountpointId };
+
+	// Wait for the node to re-render with the new handle before adding the edge
+	tick().then(() => {
+		requestAnimationFrame(() => {
+			event.updateEdges(edges => [
+				...edges.filter(e => e.targetHandle !== HandleId.LOADER_ADD_MOUNT),
+				newEdge
+			]);
+		});
+	});
+
+	return true; // Handled - prevent default edge creation
+}
+
+/**
+ * Handle edge deletion for loader mountpoint edges
+ * Removes the corresponding mountpoint from the Loader node
+ */
+function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
+	if (!isLoaderMountpointHandle(event.edge.targetHandle)) {
+		return;
+	}
+
+	const mountpointId = getLoaderMountpointId(event.edge.targetHandle!);
+	const targetNodeId = event.edge.target;
+
+	// Remove the mountpoint from the Loader node
+	event.updateNodes(nodes => nodes.map(n => {
+		if (n.id === targetNodeId && n.data.type === 'LOADER') {
+			const loaderData = n.data as LoaderNodeData;
+			return {
+				...n,
+				data: {
+					...loaderData,
+					mountpoints: loaderData.mountpoints.filter(mp => mp.id !== mountpointId)
+				}
+			};
+		}
+		return n;
+	}));
+}
+
+// ============================================================================
+// Loader Interface (for Sandbox Node integration)
+// ============================================================================
+
+/**
+ * Loader Node interface for Sandbox Node
+ */
+export interface LoaderInterface {
+	/** Check if Loader is ready */
+	isReady(): boolean;
+	/** Get registered services list */
+	listServices(): Promise<ServiceDefinition[]>;
+	/** Call a service */
+	callService(identifier: string, inputs: Record<string, unknown>): Promise<ServiceCallResult>;
+	/** Get service definition (for schema generation) */
+	getServiceDefinition(identifier: string): Promise<ServiceDefinition | null>;
+}
+
+/**
+ * Create Loader interface for a node
+ */
+export function createLoaderInterface(nodeId: string): LoaderInterface {
+	return {
+		isReady: () => isLoaderReady(nodeId),
+		listServices: () => listServices(nodeId),
+		callService: (id, inputs) => callService(nodeId, id, inputs),
+		getServiceDefinition: async (id) => {
+			const services = await listServices(nodeId);
+			return services.find(s => s.identifier === id) ?? null;
+		}
+	};
+}
+
+// ============================================================================
+// Event Handler Registration
+// ============================================================================
+
+/**
+ * Register Loader Node event handlers
+ * Should be called once when the Studio component mounts
+ */
+export function registerLoaderNodeHandlers(): () => void {
+	const unsubConnection = onConnection((event) => {
+		return handleAddMountConnection(event);
+	});
+	
+	const unsubEdgeDelete = onEdgeDelete((event) => {
+		handleMountpointEdgeDelete(event);
+	});
+	
+	return () => {
+		unsubConnection();
+		unsubEdgeDelete();
+	};
+}

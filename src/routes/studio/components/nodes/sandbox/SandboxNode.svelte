@@ -9,7 +9,7 @@
 	 * - Opens floating preview panel on start
 	 * - Uses BaseNode for consistent styling
 	 */
-	import { Handle, Position, type NodeProps, type Node, useEdges } from '@xyflow/svelte';
+	import { Handle, Position, type NodeProps, type Node, useEdges, useSvelteFlow } from '@xyflow/svelte';
 	import { onMount, untrack } from 'svelte';
 	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData } from '../../../utils/types';
 	import { getNodeVfs, type VersionedVfs } from '../../../stores/vfs';
@@ -28,6 +28,7 @@
 	let { data, isConnectable, selected, id }: NodeProps<Node<SandboxNodeData, 'sandbox'>> = $props();
 	const ctx = getStudioContext();
 	const allEdges = useEdges();
+	const { fitView } = useSvelteFlow();
 
 	// ============================================================================
 	// State
@@ -71,17 +72,18 @@
 
 	/**
 	 * Find connected Loader nodes by looking at incoming edges to service-input handle
+	 * Returns both node id and data for focus functionality
 	 */
 	const connectedLoaderNodes = $derived.by(() => {
 		const incomingEdges = allEdges.current.filter(e => 
 			e.target === id && e.targetHandle === HandleId.SERVICE_INPUT
 		);
 		
-		const loaders: LoaderNodeData[] = [];
+		const loaders: { id: string; data: LoaderNodeData }[] = [];
 		for (const edge of incomingEdges) {
 			const sourceNode = ctx.nodes.find(n => n.id === edge.source);
 			if (sourceNode?.data.type === 'LOADER') {
-				loaders.push(sourceNode.data as LoaderNodeData);
+				loaders.push({ id: sourceNode.id, data: sourceNode.data as LoaderNodeData });
 			}
 		}
 		return loaders;
@@ -290,12 +292,17 @@
 					<p class="text-xs font-medium text-gray-500 mb-1.5">{m.studio_sandbox_connected_services()}</p>
 					<div class="flex flex-wrap gap-1">
 						{#each connectedLoaderNodes as loader}
-							<span class="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full flex items-center gap-1">
+							<button 
+								type="button"
+								class="nodrag px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full flex items-center gap-1 hover:bg-purple-200 transition-colors cursor-pointer"
+								title={loader.data.registeredServices.join(', ') || 'No services'}
+								onclick={() => fitView({ nodes: [{ id: loader.id }], duration: 300, padding: 0.3 })}
+							>
 								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
 								</svg>
-								{loader.serviceType}
-							</span>
+								{loader.data.name || 'Loader'}
+							</button>
 						{/each}
 					</div>
 				</div>
@@ -312,7 +319,7 @@
 		sandboxOrigin={data.sandboxOrigin}
 		entryFile={data.entryFile}
 		name={data.name}
-		loaderNodes={connectedLoaderNodes}
+		loaderNodes={connectedLoaderNodes.map(l => l.data)}
 		onClose={closePreview}
 	/>
 {/if}

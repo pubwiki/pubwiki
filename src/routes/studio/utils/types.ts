@@ -155,29 +155,33 @@ export interface SandboxNodeData extends BaseNodeData<string> {
 }
 
 /**
- * Loader node data - represents a custom service provider
- * Content is an empty string (service is provided via RPC)
+ * Loader node data - Lua VM service executor
+ * Content is an empty string (service is provided via Lua VM)
  */
 export interface LoaderNodeData extends BaseNodeData<string> {
   type: 'LOADER'
-  /** 
-   * Service type identifier
-   * Each Loader has a specific serviceType, e.g., 'echo', 'wikirag', 'analytics'
-   */
-  serviceType: string
   /**
-   * Service configuration (JSON string)
-   * Each serviceType has its specific config structure
+   * Lua VM state
+   * - 'idle': Not loaded, waiting for user to click Load
+   * - 'loading': Initializing VM and executing init.lua
+   * - 'ready': Services registered, ready to call
+   * - 'error': Initialization failed
    */
-  config: string
+  vmState: 'idle' | 'loading' | 'ready' | 'error'
   /**
-   * Whether the service is currently active/ready
-   */
-  isActive: boolean
-  /**
-   * Error state if service initialization failed
+   * Error message (if any)
    */
   error: string | null
+  /**
+   * Registered services list (from ServiceRegistry)
+   * Format: ['namespace:name', ...]
+   */
+  registeredServices: string[]
+  /**
+   * VFS mountpoints (similar to InputNode's mountpoints)
+   * Mounted to /user/assets/{path}
+   */
+  mountpoints: Mountpoint[]
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }
@@ -339,18 +343,10 @@ export async function createSandboxNodeData(
 }
 
 /**
- * Available service types for Loader nodes
- */
-export const LOADER_SERVICE_TYPES = ['echo', 'counter', 'wikirag'] as const
-export type LoaderServiceType = typeof LOADER_SERVICE_TYPES[number]
-
-/**
- * Create a new Loader node data object
+ * Create a new Loader node data object (Lua VM service executor)
  */
 export async function createLoaderNodeData(
-  serviceType: LoaderServiceType = 'echo',
-  name: string = 'Service',
-  config: string = '{}'
+  name: string = 'Services'
 ): Promise<LoaderNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash('')
@@ -362,10 +358,10 @@ export async function createLoaderNodeData(
     snapshotRefs: [],
     parents: [],
     content: '',
-    serviceType,
-    config,
-    isActive: false,
-    error: null
+    vmState: 'idle',
+    error: null,
+    registeredServices: [],
+    mountpoints: []
   }
 }
 

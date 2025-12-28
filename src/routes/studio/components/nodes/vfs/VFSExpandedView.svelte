@@ -515,7 +515,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
 	use:portal
-	class="fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center"
+	class="fixed inset-0 bg-black/40 z-9999 flex items-center justify-center"
 	transition:fade={{ duration: 150 }}
 	onclick={handleClose}
 >
@@ -634,7 +634,7 @@
 {#if contextMenu.visible}
 	<div
 		use:portal
-		class="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-32 z-[10000]"
+		class="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-32 z-10000"
 		style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
 	>
 		<button

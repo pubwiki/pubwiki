@@ -26,7 +26,14 @@ export {
 } from './generated';
 export { VFSNode, VFSExpandedView } from './vfs';
 export { SandboxNode, SandboxPreviewView } from './sandbox';
-export { LoaderNode } from './loader';
+export { 
+	LoaderNode, 
+	registerLoaderNodeHandlers,
+	createLoaderInterface,
+	type LoaderInterface,
+	type ServiceCallResult,
+	type ServiceDefinition
+} from './loader';
 export { StateNode } from './state';
 
 // Re-export types

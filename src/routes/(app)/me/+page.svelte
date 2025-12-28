@@ -298,7 +298,7 @@
 								{#each projects as project}
 									<li>
 										<a href="/project/{project.id}" class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition">
-											<div class="w-12 h-12 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+											<div class="w-12 h-12 rounded bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
 												{project.name.charAt(0).toUpperCase()}
 											</div>
 											<div class="flex-1 min-w-0">

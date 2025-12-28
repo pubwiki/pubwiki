@@ -12,7 +12,8 @@
 		LoaderNode, 
 		StateNode, 
 		registerInputNodeHandlers,
-		registerGeneratedNodeHandlers
+		registerGeneratedNodeHandlers,
+		registerLoaderNodeHandlers
 	} from '../components/nodes';
 	import FlowController from '../components/FlowController.svelte';
 	import { StudioSidebar } from '../components/sidebar';
@@ -273,15 +274,18 @@
 	// Register node-specific event handlers
 	let unregisterInputNode: (() => void) | null = null;
 	let unregisterGeneratedNode: (() => void) | null = null;
+	let unregisterLoaderNode: (() => void) | null = null;
 	
 	onMount(() => {
 		unregisterInputNode = registerInputNodeHandlers();
 		unregisterGeneratedNode = registerGeneratedNodeHandlers();
+		unregisterLoaderNode = registerLoaderNodeHandlers();
 	});
 	
 	onDestroy(() => {
 		unregisterInputNode?.();
 		unregisterGeneratedNode?.();
+		unregisterLoaderNode?.();
 		clearAllHandlers();
 	});
 
@@ -462,7 +466,7 @@
 	}
 
 	async function addLoaderNode() {
-		const newLoaderData = await createLoaderNodeData('echo', m.studio_default_service());
+		const newLoaderData = await createLoaderNodeData(m.studio_default_service());
 		const position = getNewNodePosition();
 		const newNode: Node<StudioNodeData> = {
 			id: newLoaderData.id,

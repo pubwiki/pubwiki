@@ -157,45 +157,33 @@
 	// ============================================================================
 
 	/**
-	 * Create mock service implementations based on loader node config
-	 * These are placeholder implementations for development and testing
+	 * Create service implementations from connected Loader nodes
+	 * 
+	 * TODO: Integrate with the new Loader Node Lua VM architecture.
+	 * The new LoaderNodeData uses registeredServices from Lua ServiceRegistry.
+	 * Services should be accessed via createLoaderInterface() from the controller.
 	 */
 	function createMockServices(): Map<string, CustomServiceFactory<MainRpcHostConfig>> {
 		const services = new Map<string, CustomServiceFactory<MainRpcHostConfig>>();
 
+		// For now, we iterate over loader nodes and check their state
+		// Full integration with Lua VM services will be added later
 		for (const loader of loaderNodes) {
-			const config = parseLoaderConfig(loader.config);
+			// Skip loaders that aren't ready
+			if (loader.vmState !== 'ready') continue;
 			
-			switch (loader.serviceType) {
-				case 'echo':
-					services.set('echo', () => new EchoService(config));
-					break;
+			// For each registered service, create a placeholder
+			// TODO: Connect to actual Lua service via createLoaderInterface
+			for (const serviceName of loader.registeredServices) {
+				// Service names are in format "namespace:name" or just "name"
+				const shortName = serviceName.includes(':') ? serviceName.split(':')[1] : serviceName;
 				
-				case 'counter':
-					services.set('counter', () => new CounterService(config));
-					break;
-				
-				case 'wikirag':
-					services.set('wikirag', () => new WikiRAGService(config));
-					break;
-				
-				default:
-					services.set(loader.serviceType, () => new GenericService(loader.serviceType, config));
+				// Create a placeholder service that logs calls
+				services.set(shortName, () => new GenericService(shortName, {}));
 			}
 		}
 
 		return services;
-	}
-
-	/**
-	 * Safely parse loader config JSON
-	 */
-	function parseLoaderConfig(configJson: string): Record<string, any> {
-		try {
-			return JSON.parse(configJson) || {};
-		} catch {
-			return {};
-		}
 	}
 
 	// ============================================================================

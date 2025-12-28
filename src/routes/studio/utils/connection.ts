@@ -67,6 +67,14 @@ export const HandleId = {
   TAG_PREFIX: 'tag-',
   /** Add mount handle - when VFS connects here, a new mountpoint is created */
   ADD_MOUNT: 'add-mount',
+  /** Loader Node: Backend VFS input (single) */
+  LOADER_BACKEND: 'loader-backend',
+  /** Loader Node: Mountpoint prefix for asset VFS */
+  LOADER_MOUNTPOINT_PREFIX: 'loader-mount-',
+  /** Loader Node: Add mount handle (dynamically creates mountpoint) */
+  LOADER_ADD_MOUNT: 'loader-add-mount',
+  /** Loader Node: Service output */
+  LOADER_OUTPUT: 'loader-output',
 } as const;
 
 // ============================================================================
@@ -263,17 +271,40 @@ export const NodeRegistry: Record<string, NodeSpec> = {
   LOADER: {
     type: 'LOADER',
     label: 'Loader',
-    inputs: [], // Future: internal logic decides
+    inputs: [
+      {
+        id: HandleId.LOADER_BACKEND,
+        label: 'Backend',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.OPTIONAL,
+        colorClass: 'bg-indigo-400',
+      },
+      {
+        id: HandleId.LOADER_MOUNTPOINT_PREFIX,
+        label: 'Mount',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.OPTIONAL,
+        dynamic: true,
+        colorClass: 'bg-indigo-400',
+      },
+      {
+        id: HandleId.LOADER_ADD_MOUNT,
+        label: 'Add Mount',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.MANY,
+        colorClass: 'bg-indigo-300',
+      },
+    ],
     outputs: [
       {
-        id: HandleId.DEFAULT,
+        id: HandleId.LOADER_OUTPUT,
         label: 'Service Output',
         dataType: DataType.SERVICE,
         cardinality: Cardinality.MANY,
         colorClass: 'bg-purple-400',
       },
     ],
-    manualInput: false,
+    manualInput: true,
     manualOutput: true,
     headerColorClass: 'bg-purple-500',
     handleColorClass: 'bg-purple-400!',
@@ -406,6 +437,31 @@ export function createMountpointHandleId(mountpointId: string): string {
  */
 export function generateMountpointId(): string {
   return crypto.randomUUID().slice(0, 8);
+}
+
+// ============================================================================
+// Loader Mountpoint Handle Helpers
+// ============================================================================
+
+/**
+ * Check if a handle ID is a loader mountpoint handle
+ */
+export function isLoaderMountpointHandle(handleId: string | null | undefined): boolean {
+  return typeof handleId === 'string' && handleId.startsWith(HandleId.LOADER_MOUNTPOINT_PREFIX);
+}
+
+/**
+ * Extract mountpoint ID from loader handle ID (e.g., 'loader-mount-abc123' -> 'abc123')
+ */
+export function getLoaderMountpointId(handleId: string): string {
+  return handleId.slice(HandleId.LOADER_MOUNTPOINT_PREFIX.length);
+}
+
+/**
+ * Create loader mountpoint handle ID from mountpoint ID
+ */
+export function createLoaderMountpointHandleId(mountpointId: string): string {
+  return `${HandleId.LOADER_MOUNTPOINT_PREFIX}${mountpointId}`;
 }
 
 // ============================================================================
