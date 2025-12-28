@@ -59,10 +59,16 @@
 	// Content change handler for editable nodes
 	function handleContentChange(newValue: string) {
 		if (!selectedNode) return;
-		ctx.updateNode(selectedNode.id, (nodeData) => ({
-			...nodeData,
-			content: newValue
-		}));
+		ctx.updateNode(selectedNode.id, (nodeData) => {
+			if (nodeData.type === 'INPUT') {
+				const inputData = nodeData as InputNodeData;
+				return { ...inputData, content: inputData.content.withText(newValue) };
+			} else if (nodeData.type === 'PROMPT') {
+				const promptData = nodeData as PromptNodeData;
+				return { ...promptData, content: promptData.content.withText(newValue) };
+			}
+			return nodeData;
+		});
 	}
 
 	// Name change handler

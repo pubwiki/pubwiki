@@ -121,7 +121,7 @@
 		selectedFilePath = data.selectedFilePath;
 		
 		try {
-			vfs = await getNodeVfs(data.projectId, id);
+			vfs = await getNodeVfs(data.content.projectId, id);
 			await refreshFileTree();
 			
 			// Subscribe to VFS events for reactive updates

@@ -336,9 +336,7 @@ export function updateMountpointPath(
 				...n,
 				data: {
 					...loaderData,
-					mountpoints: loaderData.mountpoints.map(mp => 
-						mp.id === mountpointId ? { ...mp, path: newPath } : mp
-					)
+					content: loaderData.content.updateMountpointPath(mountpointId, newPath)
 				}
 			};
 		}
@@ -566,7 +564,7 @@ export function findMountedVfsNodes(
 		return result;
 	}
 	const loaderData = loaderNode.data as LoaderNodeData;
-	const mountpoints = loaderData.mountpoints ?? [];
+	const mountpoints = loaderData.content.mountpoints ?? [];
 	
 	// Find edges where this node is the target and handle is a loader mountpoint
 	for (const edge of edges) {
@@ -601,7 +599,7 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 	// Get existing mountpoints for validation
 	const targetNode = event.nodes.find(n => n.id === event.target);
 	const existingMountpoints = targetNode?.data.type === 'LOADER' 
-		? (targetNode.data as LoaderNodeData).mountpoints ?? []
+		? (targetNode.data as LoaderNodeData).content.mountpoints ?? []
 		: [];
 
 	// Use the initial placeholder path - user will edit it
@@ -626,7 +624,7 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 				...n,
 				data: {
 					...data,
-					mountpoints: [...(data.mountpoints ?? []), newMountpoint]
+					content: data.content.addMountpoint(newMountpoint)
 				}
 			};
 		}
@@ -678,7 +676,7 @@ function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
 				...n,
 				data: {
 					...loaderData,
-					mountpoints: loaderData.mountpoints.filter(mp => mp.id !== mountpointId)
+					content: loaderData.content.removeMountpoint(mountpointId)
 				}
 			};
 		}

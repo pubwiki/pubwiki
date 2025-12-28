@@ -114,7 +114,7 @@
 		untrack(() => {
 			if (vfsNodeId && vfsNodeData) {
 				// VFS connected - detect project
-				detectProjectConfig(vfsNodeData.projectId, vfsNodeId);
+				detectProjectConfig(vfsNodeData.content.projectId, vfsNodeId);
 			} else {
 				// VFS disconnected - cleanup
 				vfs = null;
@@ -275,7 +275,7 @@
 					</svg>
 					<div class="flex-1">
 						<p class="text-sm font-medium text-gray-600">{m.studio_sandbox_ready()}</p>
-						<p class="text-xs text-gray-400">{m.studio_node_entry({ entryFile: data.entryFile })}</p>
+						<p class="text-xs text-gray-400">{m.studio_node_entry({ entryFile: data.content.entryFile })}</p>
 					</div>
 					<button
 						class="px-3 py-1.5 text-sm font-medium bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors nodrag"
@@ -316,8 +316,8 @@
 	<SandboxPreviewView
 		{vfs}
 		{projectConfig}
-		sandboxOrigin={data.sandboxOrigin}
-		entryFile={data.entryFile}
+		sandboxOrigin={data.content.sandboxOrigin}
+		entryFile={data.content.entryFile}
 		name={data.name}
 		loaderNodes={connectedLoaderNodes.map(l => l.data)}
 		onClose={closePreview}

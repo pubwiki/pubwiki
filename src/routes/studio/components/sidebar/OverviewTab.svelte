@@ -68,8 +68,9 @@
 	}
 
 	function getNodePreview(node: Node<StudioNodeData>): string {
-		const content = node.data.content;
-		if (typeof content === 'string') {
+		// Use polymorphic getText() method
+		const content = node.data.content.getText();
+		if (content) {
 			return content.slice(0, 60) + (content.length > 60 ? '...' : '');
 		}
 		return '';

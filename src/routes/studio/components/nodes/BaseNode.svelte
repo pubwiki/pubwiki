@@ -12,7 +12,7 @@
 	 */
 	import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { Snippet } from 'svelte';
-	import type { StudioNodeData } from '../../utils/types';
+	import type { StudioNodeData, GeneratedNodeData, PromptNodeData, InputNodeData } from '../../utils/types';
 	import { hasVersionHistory, getVersionCount, type NodeRef } from '../../stores/version';
 	import { getStudioContext } from '../../stores/context';
 	import VersionGallery from '../VersionGallery.svelte';
@@ -98,6 +98,9 @@
 	// ============================================================================
 	// Derived
 	// ============================================================================
+
+	// Get content string for version gallery (uses polymorphic getText())
+	const contentForVersionGallery = $derived(data.content.getText());
 
 	// Version control
 	const versionCount = $derived(getVersionCount(data));
@@ -330,7 +333,7 @@
 	{#if showVersionGallery}
 		<VersionGallery
 			nodeId={data.id}
-			currentContent={data.content as string}
+			currentContent={contentForVersionGallery}
 			currentCommit={data.commit}
 			snapshotRefs={data.snapshotRefs}
 			onRestore={handleRestore}

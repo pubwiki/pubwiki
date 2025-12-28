@@ -115,9 +115,9 @@
 
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	const displayContent = $derived(previewState?.content ?? data.content);
+	const displayContent = $derived(previewState?.content ?? data.content.text);
 
-	const contentTags = $derived(getInputTags(data.content));
+	const contentTags = $derived(getInputTags(data.content.text));
 
 	const tagConnections = $derived.by(() => {
 		if (previewState?.incomingEdges) {
@@ -167,7 +167,7 @@
 	});
 
 	const mountpointHandles = $derived.by(() => {
-		const mounts = data.mountpoints ?? [];
+		const mounts = data.content.mountpoints ?? [];
 		return mounts.map((mp): TaggedHandle => ({
 			id: createMountpointHandleId(mp.id),
 			label: mp.path,
@@ -193,7 +193,7 @@
 
 	$effect(() => {
 		contentTags;
-		data.mountpoints;
+		data.content.mountpoints;
 		updateNodeInternals(id);
 	});
 
@@ -212,10 +212,13 @@
 	}
 
 	function handleContentChange(newValue: string) {
-		ctx.updateNode(id, (nodeData) => ({
-			...nodeData,
-			content: newValue
-		}));
+		ctx.updateNode(id, (nodeData) => {
+			const inputData = nodeData as InputNodeData;
+			return {
+				...inputData,
+				content: inputData.content.withText(newValue)
+			};
+		});
 	}
 
 	async function handleGenerate() {
@@ -258,7 +261,7 @@
 	}
 	
 	function handleMountpointValidation(_handleId: string, label: string, handleData?: Record<string, unknown>): string | null {
-		const existingMountpoints = data.mountpoints ?? [];
+		const existingMountpoints = data.content.mountpoints ?? [];
 		// Get the mountpoint ID being edited from handle data
 		const currentMountpointId = handleData?.mountpointId as string | undefined;
 		return validateMountpointPath(label, existingMountpoints, currentMountpointId);

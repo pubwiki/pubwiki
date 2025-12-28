@@ -74,8 +74,13 @@ export function createPreviewController() {
 
 		const override = historicalTree.nodeOverrides.get(nodeId)
 		if (override) {
+			// Use getText() for display content (polymorphic call)
+			const content = override.content
+			const displayContent = typeof content === 'object' && content !== null && 'getText' in content
+				? (content as { getText(): string }).getText()
+				: String(content)
 			return {
-				content: override.content as string,
+				content: displayContent,
 				commit: override.commit,
 				incomingEdges: historicalTree.historicalEdges
 					.filter(e => e.target === nodeId)

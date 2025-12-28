@@ -2,6 +2,10 @@
  * Publish Utilities for Studio
  *
  * Functions to publish workspace nodes as an artifact to the backend.
+ * 
+ * After content-type refactoring:
+ * - All node content is stored in node.data.content
+ * - Content is uploaded as JSON for structured data preservation
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
@@ -103,6 +107,10 @@ function createDescriptor(
 
 /**
  * Create form data for multipart upload
+ * 
+ * After content-type refactoring:
+ * - All node content is uploaded as JSON (node.json)
+ * - This preserves structured data like MessageBlocks, mountpoints, etc.
  */
 function createFormData(
 	metadata: PublishMetadata,
@@ -126,16 +134,20 @@ function createFormData(
 	// Add descriptor as JSON string
 	formData.append('descriptor', JSON.stringify(descriptor));
 
-	// Add node content files
+	// Add node content files as JSON
 	for (const node of nodes) {
 		// Skip external nodes (they don't have content to upload)
 		if (node.data.external) continue;
-
-		const content = node.data.content;
-		if (typeof content === 'string' && content.length > 0) {
-			const blob = new Blob([content], { type: 'text/plain' });
-			formData.append(`nodes[${node.data.id}]`, blob, `${node.data.id}.txt`);
+		
+		// Skip runtime-only nodes (SANDBOX, LOADER, STATE)
+		if (node.data.type === 'SANDBOX' || node.data.type === 'LOADER' || node.data.type === 'STATE') {
+			continue;
 		}
+
+		// Upload content as JSON using toJSON() for proper serialization
+		const contentJson = JSON.stringify(node.data.content.toJSON());
+		const blob = new Blob([contentJson], { type: 'application/json' });
+		formData.append(`nodes[${node.data.id}]`, blob, 'node.json');
 	}
 
 	// Add homepage markdown if provided

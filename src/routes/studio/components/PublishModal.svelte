@@ -48,11 +48,11 @@
 		nodeData: GeneratedNodeData,
 		allNodes: Node<StudioNodeData>[]
 	): boolean {
-		if (isHistoricalRef(nodeData.inputRef, allNodes)) return true;
-		for (const ref of nodeData.promptRefs) {
+		if (isHistoricalRef(nodeData.content.inputRef, allNodes)) return true;
+		for (const ref of nodeData.content.promptRefs) {
 			if (isHistoricalRef(ref, allNodes)) return true;
 		}
-		for (const ref of nodeData.indirectPromptRefs) {
+		for (const ref of nodeData.content.indirectPromptRefs) {
 			if (isHistoricalRef(ref, allNodes)) return true;
 		}
 		return false;

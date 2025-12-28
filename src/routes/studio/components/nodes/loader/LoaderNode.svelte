@@ -119,9 +119,9 @@
 		disconnectedColor: BACKEND_DISCONNECTED
 	});
 
-	/** Mountpoint handles from data.mountpoints */
+	/** Mountpoint handles from data.content.mountpoints */
 	const mountpointHandles = $derived.by(() => {
-		const mounts = data.mountpoints ?? [];
+		const mounts = data.content.mountpoints ?? [];
 		return mounts.map((mp): TaggedHandle => ({
 			id: createLoaderMountpointHandleId(mp.id),
 			label: mp.path,
@@ -188,7 +188,7 @@
 	}
 	
 	function handleMountpointValidation(_handleId: string, label: string, handleData?: Record<string, unknown>): string | null {
-		const existingMountpoints = data.mountpoints ?? [];
+		const existingMountpoints = data.content.mountpoints ?? [];
 		const currentMountpointId = handleData?.mountpointId as string | undefined;
 		return validateMountpointPath(label, existingMountpoints, currentMountpointId);
 	}
@@ -212,7 +212,7 @@
 		
 		// Get backend VFS instance
 		const backendVfsData = backendVfsNode.data as VFSNodeData;
-		const backendVfs = await getNodeVfs(backendVfsData.projectId, backendVfsNode.id);
+		const backendVfs = await getNodeVfs(backendVfsData.content.projectId, backendVfsNode.id);
 		
 		// Find mounted asset VFS nodes
 		const mountedVfsNodes = findMountedVfsNodes(id, ctx.nodes, ctx.edges);
@@ -220,7 +220,7 @@
 		
 		for (const [path, vfsNode] of mountedVfsNodes) {
 			const vfsData = vfsNode.data as VFSNodeData;
-			const vfs = await getNodeVfs(vfsData.projectId, vfsNode.id);
+			const vfs = await getNodeVfs(vfsData.content.projectId, vfsNode.id);
 			assetMounts.set(path, vfs);
 		}
 		

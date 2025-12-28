@@ -11,11 +11,19 @@ import type { Node, Edge } from '@xyflow/svelte';
 import type { 
 	StudioNodeData, 
 	GeneratedNodeData,
-	ToolCallState
+	InputNodeData
 } from '../../../utils/types';
+import type { GeneratedContent, InputContent } from '../../../utils/content-types';
+import type { MessageBlock } from '@pubwiki/chat';
 import { snapshotStore, generateCommitHash, registerVersionHandler, type NodeRef } from '../../../stores/version';
 import { resolvePromptContentFromRefs } from '../../../utils/reftag';
-import { PubChat, MemoryMessageStore, createSystemMessage } from '@pubwiki/chat';
+import { 
+	PubChat, 
+	MemoryMessageStore, 
+	createSystemMessage, 
+	generateBlockId, 
+	blocksToContent 
+} from '@pubwiki/chat';
 
 // ============================================================================
 // Types
@@ -41,14 +49,17 @@ export interface StreamGenerationCallbacks {
 
 /**
  * Register version handler for GENERATED nodes.
- * This defines how version references are extracted from generated nodes.
+ * Only defines getVersionRefs since content is now structured.
  */
 registerVersionHandler<GeneratedNodeData>('GENERATED', {
-	getVersionRefs: (data) => [
-		data.inputRef,
-		...data.promptRefs,
-		...(data.indirectPromptRefs || [])
-	]
+	getVersionRefs: (data) => {
+		const content = data.content as GeneratedContent;
+		return [
+			content.inputRef,
+			...content.promptRefs,
+			...(content.indirectPromptRefs || [])
+		];
+	}
 });
 
 // ============================================================================
@@ -173,33 +184,34 @@ export async function regenerate(
 	}
 
 	const genData = generatedNode.data as GeneratedNodeData;
+	const genContent = genData.content as GeneratedContent;
 
 	// Get the historical input content
-	const inputNode = nodes.find(n => n.id === genData.inputRef.id);
+	const inputNode = nodes.find(n => n.id === genContent.inputRef.id);
 	let inputContent: string;
 	
 	// If the input ref points to an old version, get it from snapshotStore
-	if (inputNode && inputNode.data.commit === genData.inputRef.commit) {
+	if (inputNode && inputNode.data.commit === genContent.inputRef.commit) {
 		// Current version matches the ref - use current content
-		inputContent = inputNode.data.content as string;
+		inputContent = (inputNode.data as InputNodeData).content.text;
 	} else {
 		// Different version - get from snapshot store
-		const snapshot = snapshotStore.get<string>(genData.inputRef.id, genData.inputRef.commit);
+		const snapshot = snapshotStore.get<InputContent>(genContent.inputRef.id, genContent.inputRef.commit);
 		if (!snapshot) {
 			throw new Error('Cannot find historical input snapshot');
 		}
-		inputContent = snapshot.content;
+		inputContent = snapshot.content.text;
 	}
 
 	// Combine all refs for content resolution
 	const allRefs = [
-		...genData.promptRefs, 
-		...(genData.indirectPromptRefs || [])
+		...genContent.promptRefs, 
+		...(genContent.indirectPromptRefs || [])
 	];
 
 	// Resolve each direct prompt ref with reftag substitution
 	const resolvedPrompts: string[] = [];
-	for (const promptRef of genData.promptRefs) {
+	for (const promptRef of genContent.promptRefs) {
 		const resolved = resolvePromptContentFromRefs(
 			promptRef.id,
 			promptRef.commit,
@@ -213,73 +225,139 @@ export async function regenerate(
 
 	const systemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
 
-	// Set streaming state
-	callbacks.updateNodes(nodes => nodes.map(n =>
-		n.id === generatedNodeId
-			? { ...n, data: { ...n.data, isStreaming: true, toolCalls: [] } }
-			: n
-	));
+	// Set streaming state and clear blocks
+	callbacks.updateNodes(nodes => nodes.map(n => {
+		if (n.id === generatedNodeId && n.data.type === 'GENERATED') {
+			const genData = n.data as GeneratedNodeData;
+			return { 
+				...n, 
+				data: { 
+					...genData, 
+					isStreaming: true, 
+					content: { ...genData.content, blocks: [] } 
+				} 
+			};
+		}
+		return n;
+	}) as Node<StudioNodeData>[]);
 
-	// Define stream callbacks
+	// Helper to update blocks in a generated node
+	const updateBlocks = (nodeId: string, updater: (blocks: MessageBlock[]) => MessageBlock[]) => {
+		callbacks.updateNodes(nodes => nodes.map(n => {
+			if (n.id === nodeId && n.data.type === 'GENERATED') {
+				const genData = n.data as GeneratedNodeData;
+				const genContent = genData.content as GeneratedContent;
+				return {
+					...n,
+					data: {
+						...genData,
+						content: {
+							...genContent,
+							blocks: updater(genContent.blocks || [])
+						}
+					}
+				};
+			}
+			return n;
+		}) as Node<StudioNodeData>[]);
+	};
+
+	// Define stream callbacks using MessageBlock model
 	const streamCallbacks: StreamGenerationCallbacks = {
 		onToken: (nodeId, accumulatedContent) => {
-			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type !== 'VFS'
-					? { ...n, data: { ...n.data, content: accumulatedContent } }
-					: n
-			) as Node<StudioNodeData>[]);
+			updateBlocks(nodeId, (blocks) => {
+				// Find the last markdown block that isn't followed by a tool_call
+				const lastBlock = blocks[blocks.length - 1];
+				if (lastBlock && lastBlock.type === 'markdown') {
+					// Update existing markdown block
+					return blocks.map((b, i) =>
+						i === blocks.length - 1
+							? { ...b, content: accumulatedContent }
+							: b
+					);
+				} else {
+					// Create new markdown block
+					const newBlock: MessageBlock = {
+						id: generateBlockId(),
+						type: 'markdown',
+						content: accumulatedContent
+					};
+					return [...blocks, newBlock];
+				}
+			});
 		},
 		onToolCall: (nodeId, toolCallId, name, args) => {
-			callbacks.updateNodes(nodes => nodes.map(n => {
-				if (n.id === nodeId && n.data.type === 'GENERATED') {
-					const genData = n.data as GeneratedNodeData;
-					const newToolCall: ToolCallState = {
-						id: toolCallId,
-						name,
-						args,
-						status: 'running'
-					};
-					return { 
-						...n, 
-						data: { 
-							...genData, 
-							toolCalls: [...(genData.toolCalls || []), newToolCall] 
-						} 
-					};
-				}
-				return n;
-			}) as Node<StudioNodeData>[]);
+			updateBlocks(nodeId, (blocks) => {
+				// Add a new tool_call block
+				const toolCallBlock: MessageBlock = {
+					id: generateBlockId(),
+					type: 'tool_call',
+					content: '',
+					toolCallId,
+					toolName: name,
+					toolArgs: args,
+					toolStatus: 'running'
+				};
+				return [...blocks, toolCallBlock];
+			});
 		},
 		onToolResult: (nodeId, toolCallId, result) => {
+			updateBlocks(nodeId, (blocks) => {
+				// Update the tool_call block status and add a tool_result block
+				const updatedBlocks = blocks.map(b =>
+					b.type === 'tool_call' && b.toolCallId === toolCallId
+						? { ...b, toolStatus: 'completed' as const }
+						: b
+				);
+				// Add tool_result block
+				const resultBlock: MessageBlock = {
+					id: generateBlockId(),
+					type: 'tool_result',
+					content: typeof result === 'string' ? result : JSON.stringify(result),
+					toolCallId
+				};
+				return [...updatedBlocks, resultBlock];
+			});
+		},
+		onDone: async (nodeId, _finalContent, _finalCommit) => {
+			// Compute commit from blocks content
 			callbacks.updateNodes(nodes => nodes.map(n => {
 				if (n.id === nodeId && n.data.type === 'GENERATED') {
 					const genData = n.data as GeneratedNodeData;
-					return { 
-						...n, 
-						data: { 
-							...genData, 
-							toolCalls: (genData.toolCalls || []).map(tc => 
-								tc.id === toolCallId 
-									? { ...tc, status: 'completed' as const, result } 
-									: tc
-							) 
-						} 
+					const genContent = genData.content as GeneratedContent;
+					const content = blocksToContent(genContent.blocks || []);
+					// Note: We compute commit synchronously here for simplicity
+					// The actual commit will be computed after streaming is done
+					return {
+						...n,
+						data: {
+							...genData,
+							isStreaming: false
+						}
 					};
 				}
 				return n;
 			}) as Node<StudioNodeData>[]);
-		},
-		onDone: (nodeId, finalContent, finalCommit) => {
-			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type !== 'VFS'
-					? { ...n, data: { ...n.data, content: finalContent, commit: finalCommit, isStreaming: false } }
-					: n
-			) as Node<StudioNodeData>[]);
+			
+			// Compute and update commit hash asynchronously
+			const node = nodes.find(n => n.id === nodeId);
+			if (node && node.data.type === 'GENERATED') {
+				const genData = node.data as GeneratedNodeData;
+				const genContent = genData.content as GeneratedContent;
+				const blocksJson = JSON.stringify(genContent.blocks || []);
+				const commit = await generateCommitHash(blocksJson);
+				callbacks.updateNodes(ns => ns.map(n =>
+					n.id === nodeId && n.data.type === 'GENERATED'
+						? { ...n, data: { ...n.data, commit } }
+						: n
+				) as Node<StudioNodeData>[]);
+			}
+			
 			callbacks.onComplete?.();
 		},
 		onError: (nodeId, _error) => {
 			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type !== 'VFS' 
+				n.id === nodeId && n.data.type === 'GENERATED' 
 					? { ...n, data: { ...n.data, isStreaming: false } } 
 					: n
 			) as Node<StudioNodeData>[]);

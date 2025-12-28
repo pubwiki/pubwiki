@@ -5,11 +5,12 @@
  * reftag format: @name - Creates a named input slot for prompt composition (e.g., @system, @context)
  * 
  * Note: Mountpoints for VFS are no longer parsed from text. They are managed via
- * InputNodeData.mountpoints array and created through UI interactions.
+ * InputNodeData.content.mountpoints array and created through UI interactions.
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData, PromptNodeData } from './types';
+import type { StudioNodeData, PromptNodeData, InputNodeData } from './types';
+import type { PromptContent, InputContent } from './content-types';
 import { snapshotStore, type NodeRef, type SnapshotEdge } from '../stores/version';
 import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId } from './connection';
 
@@ -339,8 +340,8 @@ export function resolvePromptContent(
     return { content: '', allPromptRefs: promptRefs };
   }
   
-  const promptData = node.data;
-  let content = promptData.content;
+  const promptData = node.data as PromptNodeData;
+  let content = promptData.content.text;
   
   // Add this node's ref
   promptRefs.push({ id: nodeId, commit: promptData.commit });
@@ -396,15 +397,21 @@ export function resolvePromptContentFromRefs(
   const node = nodes.find(n => n.id === nodeId);
   
   if (node && node.data.commit === nodeCommit) {
-    // Current version matches
-    content = node.data.content as string;
+    // Current version matches - extract text from content
+    if (node.data.type === 'PROMPT') {
+      content = (node.data as PromptNodeData).content.text;
+    } else if (node.data.type === 'INPUT') {
+      content = (node.data as InputNodeData).content.text;
+    } else {
+      content = '';
+    }
   } else {
     // Get from snapshot store
-    const snapshot = snapshotStore.get<string>(nodeId, nodeCommit);
+    const snapshot = snapshotStore.get<PromptContent | InputContent>(nodeId, nodeCommit);
     if (!snapshot) {
       return `[Missing snapshot: ${nodeId}:${nodeCommit.slice(0, 7)}]`;
     }
-    content = snapshot.content;
+    content = (snapshot.content as PromptContent | InputContent).text ?? '';
   }
   
   // Get reftag connections (using current edges since we don't store edge history)
@@ -467,7 +474,8 @@ export function resolveInputContent(
     return { content: '', allPromptRefs: promptRefs };
   }
   
-  let content = node.data.content;
+  const inputData = node.data as InputNodeData;
+  let content = inputData.content.text;
   
   // Get tag connections for this input node
   const tagConnections = getInputTagConnections(nodeId, edges);

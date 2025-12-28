@@ -2,11 +2,15 @@
  * Studio Import Utilities
  * 
  * Functions for importing artifacts into studio projects.
+ * 
+ * Note: After content-type refactoring, imported content should be parsed as JSON
+ * when the backend sends JSON content (node.json files).
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { ArtifactGraphData, ArtifactNodeDetail } from '$lib/stores/artifacts.svelte';
-import type { StudioNodeData, VFSNodeData } from './types';
+import type { StudioNodeData, VFSNodeData, InputNodeData, PromptNodeData, GeneratedNodeData } from './types';
+import { InputContent, PromptContent, GeneratedContent, VFSContent } from './content-types';
 import { generateCommitHash } from '../stores/version';
 import { getNodeVfs } from '../stores/vfs';
 import { ensureProject, saveGraph, loadGraph } from '../stores/db';
@@ -111,7 +115,7 @@ export async function convertArtifactToStudioGraph(
 
     if (nodeType === 'VFS') {
       // Create VFS node data with projectId
-      const commit = await generateCommitHash('');
+      const commit = await generateCommitHash(targetProjectId);
       const vfsData: VFSNodeData = {
         id: node.id,
         name: node.name || `Files ${index + 1}`,
@@ -119,8 +123,7 @@ export async function convertArtifactToStudioGraph(
         commit,
         snapshotRefs: [],
         parents: [],
-        content: '',
-        projectId: targetProjectId,
+        content: new VFSContent(targetProjectId),
         expandedFolders: [],
         selectedFilePath: undefined,
         isExpandedViewOpen: false,
@@ -134,6 +137,33 @@ export async function convertArtifactToStudioGraph(
       };
     }
 
+    // Get content from map (may be JSON or plain text depending on backend)
+    const rawContent = contentMap.get(node.id) ?? '';
+    
+    // Try to parse as JSON (new format), fall back to plain text (old format)
+    let parsedContent: InputContent | PromptContent | GeneratedContent;
+    try {
+      const json = JSON.parse(rawContent);
+      // Restore content class instance from JSON
+      if (nodeType === 'INPUT') {
+        parsedContent = InputContent.fromJSON(json);
+      } else if (nodeType === 'PROMPT') {
+        parsedContent = PromptContent.fromJSON(json);
+      } else {
+        parsedContent = GeneratedContent.fromJSON(json);
+      }
+    } catch {
+      // Legacy format: plain text
+      if (nodeType === 'INPUT') {
+        parsedContent = new InputContent(rawContent, []);
+      } else if (nodeType === 'PROMPT') {
+        parsedContent = new PromptContent(rawContent);
+      } else {
+        // GENERATED - legacy format doesn't have structured blocks
+        parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
+      }
+    }
+
     // Create base node data based on type
     const baseData = {
       id: node.id,
@@ -141,7 +171,7 @@ export async function convertArtifactToStudioGraph(
       commit: graphData.version.commitHash,
       snapshotRefs: [],
       parents: [],
-      content: contentMap.get(node.id) ?? '',
+      content: parsedContent,
       external: true,  // Always mark imported nodes as external
       type: nodeType
     };

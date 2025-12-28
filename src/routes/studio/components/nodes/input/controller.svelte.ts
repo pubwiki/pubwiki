@@ -15,9 +15,9 @@ import type {
 	InputNodeData, 
 	VFSNodeData,
 	Mountpoint,
-	GeneratedNodeData,
-	ToolCallState
+	GeneratedNodeData
 } from '../../../utils/types';
+import type { MessageBlock } from '@pubwiki/chat';
 import { createGeneratedNodeData } from '../../../utils/types';
 import { 
 	HandleId, 
@@ -36,6 +36,8 @@ import { prepareForGeneration } from '../../../utils/version';
 import { positionNewNodesFromSources } from '../../../utils/layout';
 import { getNodeVfs } from '../../../stores/vfs';
 import { createMountedVfs, getMountedProvider, MountedVfsProvider, Vfs } from '@pubwiki/vfs';
+import { generateBlockId, blocksToContent } from '@pubwiki/chat';
+import { generateCommitHash } from '../../../stores/version';
 import { 
 	createPubChat, 
 	streamGeneration, 
@@ -133,9 +135,7 @@ export function updateMountpointPath(
 				...n,
 				data: {
 					...inputData,
-					mountpoints: inputData.mountpoints.map(mp => 
-						mp.id === mountpointId ? { ...mp, path: newPath } : mp
-					)
+					content: inputData.content.updateMountpointPath(mountpointId, newPath)
 				}
 			};
 		}
@@ -160,7 +160,7 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 	// Get existing mountpoints for validation
 	const targetNode = event.nodes.find(n => n.id === event.target);
 	const existingMountpoints = targetNode?.data.type === 'INPUT' 
-		? (targetNode.data as InputNodeData).mountpoints ?? []
+		? (targetNode.data as InputNodeData).content.mountpoints ?? []
 		: [];
 
 	// Use the initial placeholder path - user will edit it
@@ -185,7 +185,7 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 				...n,
 				data: {
 					...data,
-					mountpoints: [...(data.mountpoints ?? []), newMountpoint]
+					content: data.content.addMountpoint(newMountpoint)
 				}
 			};
 		}
@@ -239,7 +239,7 @@ function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
 				...n,
 				data: {
 					...inputData,
-					mountpoints: inputData.mountpoints.filter(mp => mp.id !== mountpointId)
+					content: inputData.content.removeMountpoint(mountpointId)
 				}
 			};
 		}
@@ -268,7 +268,7 @@ export function findConnectedVfsNodes(
 		return result;
 	}
 	const inputData = inputNode.data as InputNodeData;
-	const mountpoints = inputData.mountpoints ?? [];
+	const mountpoints = inputData.content.mountpoints ?? [];
 	
 	// Find edges where this node is the target and handle is a mountpoint
 	for (const edge of edges) {
@@ -336,14 +336,12 @@ export async function generate(
 		mountedVfs = createMountedVfs();
 		const provider = mountedVfs.getProvider()
 		
-		if (provider) {
-			for (const [mountPath, vfsNode] of vfsNodes) {
-				const vfsData = vfsNode.data as VFSNodeData;
-				const vfs = await getNodeVfs(vfsData.projectId, vfsNode.id);
-				provider.mountVfs(mountPath, vfs);
-			}
+		for (const [mountPath, vfsNode] of vfsNodes) {
+			const vfsData = vfsNode.data as VFSNodeData;
+			const vfs = await getNodeVfs(vfsData.content.projectId, vfsNode.id);
+			provider.mountVfs(mountPath, vfs);
 		}
-		
+	
 		pubchat.setVFS(mountedVfs);
 	}
 
@@ -353,9 +351,9 @@ export async function generate(
 	// Update nodes with synced data
 	callbacks.updateNodes(() => prepared.nodes);
 
-	// Create streaming generated node with indirect refs
+	// Create streaming generated node with indirect refs (empty blocks to start)
 	const newGeneratedData = await createGeneratedNodeData(
-		'',
+		[],
 		prepared.inputRef,
 		prepared.promptRefs,
 		prepared.indirectPromptRefs,
@@ -388,61 +386,116 @@ export async function generate(
 		return positionNewNodesFromSources([generatedNode.id], updatedNodes, [...edges, newEdge]);
 	});
 
-	// Define stream callbacks
+	// Helper to update blocks in a generated node
+	const updateBlocks = (nodeId: string, updater: (blocks: MessageBlock[]) => MessageBlock[]) => {
+		callbacks.updateNodes(nodes => nodes.map(n => {
+			if (n.id === nodeId && n.data.type === 'GENERATED') {
+				const genData = n.data as GeneratedNodeData;
+				return {
+					...n,
+					data: {
+						...genData,
+						content: {
+							...genData.content,
+							blocks: updater(genData.content.blocks || [])
+						}
+					}
+				};
+			}
+			return n;
+		}) as Node<StudioNodeData>[]);
+	};
+
+	// Define stream callbacks using MessageBlock model
 	const streamCallbacks: StreamGenerationCallbacks = {
 		onToken: (nodeId, accumulatedContent) => {
-			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type !== 'VFS'
-					? { ...n, data: { ...n.data, content: accumulatedContent } }
-					: n
-			) as Node<StudioNodeData>[]);
+			updateBlocks(nodeId, (blocks) => {
+				// Find the last markdown block
+				const lastBlock = blocks[blocks.length - 1];
+				if (lastBlock && lastBlock.type === 'markdown') {
+					// Update existing markdown block
+					return blocks.map((b, i) =>
+						i === blocks.length - 1
+							? { ...b, content: accumulatedContent }
+							: b
+					);
+				} else {
+					// Create new markdown block
+					const newBlock: MessageBlock = {
+						id: generateBlockId(),
+						type: 'markdown',
+						content: accumulatedContent
+					};
+					return [...blocks, newBlock];
+				}
+			});
 		},
 		onToolCall: (nodeId, toolCallId, name, args) => {
-			callbacks.updateNodes(nodes => nodes.map(n => {
-				if (n.id === nodeId && n.data.type === 'GENERATED') {
-					const genData = n.data as GeneratedNodeData;
-					const newToolCall: ToolCallState = {
-						id: toolCallId,
-						name,
-						args,
-						status: 'running'
-					};
-					return { 
-						...n, 
-						data: { 
-							...genData, 
-							toolCalls: [...(genData.toolCalls || []), newToolCall] 
-						} 
-					};
-				}
-				return n;
-			}) as Node<StudioNodeData>[]);
+			updateBlocks(nodeId, (blocks) => {
+				// Add a new tool_call block
+				const toolCallBlock: MessageBlock = {
+					id: generateBlockId(),
+					type: 'tool_call',
+					content: '',
+					toolCallId,
+					toolName: name,
+					toolArgs: args,
+					toolStatus: 'running'
+				};
+				return [...blocks, toolCallBlock];
+			});
 		},
 		onToolResult: (nodeId, toolCallId, result) => {
-			callbacks.updateNodes(nodes => nodes.map(n => {
+			updateBlocks(nodeId, (blocks) => {
+				// Update the tool_call block status and add a tool_result block
+				const updatedBlocks = blocks.map(b =>
+					b.type === 'tool_call' && b.toolCallId === toolCallId
+						? { ...b, toolStatus: 'completed' as const }
+						: b
+				);
+				// Add tool_result block
+				const resultBlock: MessageBlock = {
+					id: generateBlockId(),
+					type: 'tool_result',
+					content: typeof result === 'string' ? result : JSON.stringify(result),
+					toolCallId
+				};
+				return [...updatedBlocks, resultBlock];
+			});
+		},
+		onDone: async (nodeId, _finalContent, _finalCommit) => {
+			// Compute commit from blocks content
+			callbacks.updateNodes(ns => ns.map(n => {
 				if (n.id === nodeId && n.data.type === 'GENERATED') {
-					const genData = n.data as GeneratedNodeData;
-					return { 
-						...n, 
-						data: { 
-							...genData, 
-							toolCalls: (genData.toolCalls || []).map(tc => 
-								tc.id === toolCallId 
-									? { ...tc, status: 'completed' as const, result } 
-									: tc
-							) 
-						} 
+					return {
+						...n,
+						data: {
+							...n.data,
+							isStreaming: false
+						}
 					};
 				}
 				return n;
 			}) as Node<StudioNodeData>[]);
-		},
-		onDone: (nodeId, finalContent, finalCommit) => {
-			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type !== 'VFS'
-					? { ...n, data: { ...n.data, content: finalContent, commit: finalCommit, isStreaming: false } }
+			
+			// Get the current blocks and compute commit hash
+			let currentBlocks: MessageBlock[] = [];
+			callbacks.updateNodes(ns => {
+				const node = ns.find(n => n.id === nodeId);
+				if (node && node.data.type === 'GENERATED') {
+					currentBlocks = (node.data as GeneratedNodeData).content.blocks || [];
+				}
+				return ns;
+			});
+			
+			const contentText = blocksToContent(currentBlocks);
+			const commit = await generateCommitHash(contentText);
+			callbacks.updateNodes(ns => ns.map(n =>
+				n.id === nodeId && n.data.type === 'GENERATED'
+					? { ...n, data: { ...n.data, commit } }
 					: n
 			) as Node<StudioNodeData>[]);
+			
 			// Clear VFS after generation completes
 			if (mountedVfs) {
 				pubchat.clearVFS();
@@ -451,7 +504,7 @@ export async function generate(
 		},
 		onError: (nodeId, _error) => {
 			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type !== 'VFS' 
+				n.id === nodeId && n.data.type === 'GENERATED' 
 					? { ...n, data: { ...n.data, isStreaming: false } } 
 					: n
 			) as Node<StudioNodeData>[]);

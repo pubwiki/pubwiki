@@ -5,11 +5,20 @@
 	 * Displays tool call status during streaming generation.
 	 * Based on packages/svelte-chat/src/lib/blocks/ToolCallBlock.svelte
 	 */
-	import type { ToolCallState } from '../../../utils/types';
+	import type { ToolCallStatus } from '@pubwiki/chat';
 	import * as m from '$lib/paraglide/messages';
 
+	interface ToolCallProps {
+		id: string;
+		name: string;
+		args?: unknown;
+		status: ToolCallStatus;
+		result?: unknown;
+		error?: string;
+	}
+
 	interface Props {
-		toolCall: ToolCallState;
+		toolCall: ToolCallProps;
 		class?: string;
 	}
 

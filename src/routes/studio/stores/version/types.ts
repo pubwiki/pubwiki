@@ -75,11 +75,18 @@ export interface NodeSnapshot<T = unknown> {
 // Versionable Interface
 // ============================================================================
 
+import type { NodeContent } from '../../utils/content-types'
+
 /**
  * Base interface for versionable node data.
  * Any node type that supports version control should extend this interface.
+ * 
+ * Content must implement NodeContent interface for polymorphic operations:
+ * - content.serialize() for commit hash computation
+ * - content.clone() for snapshot creation
+ * - content.getText() for UI display
  */
-export interface Versionable<T = unknown> {
+export interface Versionable {
 	/** Unique node identifier */
 	id: string
 	/** Node type (e.g., 'INPUT', 'PROMPT', 'GENERATED') */
@@ -90,8 +97,8 @@ export interface Versionable<T = unknown> {
 	commit: string
 	/** References to historical snapshots */
 	snapshotRefs: NodeRef[]
-	/** Node content */
-	content: T
+	/** Node content - implements NodeContent interface */
+	content: NodeContent
 	/** Index signature for xyflow compatibility */
 	[key: string]: unknown
 }
@@ -102,56 +109,45 @@ export interface Versionable<T = unknown> {
 
 /**
  * Version handler for a specific node type.
- * Each node type can register its own handler to customize version control behavior.
+ * 
+ * After the content-type refactoring:
+ * - Content implements NodeContent interface with clone()/serialize()
+ * - No custom createSnapshotContent needed - use content.clone()
+ * - No custom getContentForHash needed - use content.serialize()
+ * 
+ * Custom handlers are only needed for:
+ * - getVersionRefs: Extract version references from node data (e.g., GeneratedNode)
  */
-export interface VersionHandler<TData extends Versionable = Versionable, TSnapshot = unknown> {
+export interface VersionHandler<TData extends Versionable = Versionable> {
 	/**
 	 * Extract version references from node data.
 	 * Return undefined if this node type doesn't hold version references.
 	 * Return NodeRef[] if it references specific versions of other nodes.
 	 */
 	getVersionRefs?: (data: TData) => NodeRef[] | undefined
-
-	/**
-	 * Create snapshot content from node data.
-	 * Default: returns data.content directly.
-	 * Override for nodes that need to store a "recipe" (e.g., VFS stores git ref).
-	 */
-	createSnapshotContent?: (data: TData) => TSnapshot
-
-	/**
-	 * Restore display content from snapshot.
-	 * Default: returns snapshot.content directly.
-	 * Override for nodes that need async restoration (e.g., VFS checkout git).
-	 * 
-	 * @returns The content to display (for preview purposes)
-	 */
-	restoreFromSnapshot?: (snapshot: NodeSnapshot<TSnapshot>) => Promise<TData['content']> | TData['content']
 }
 
 /**
  * Global registry for version handlers.
  * Node types register their handlers here.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const versionHandlerRegistry = new Map<string, VersionHandler<any, any>>()
+export const versionHandlerRegistry = new Map<string, VersionHandler>()
 
 /**
  * Register a version handler for a node type.
  */
-export function registerVersionHandler<TData extends Versionable, TSnapshot = unknown>(
+export function registerVersionHandler<TData extends Versionable>(
 	nodeType: string,
-	handler: VersionHandler<TData, TSnapshot>
+	handler: VersionHandler<TData>
 ): void {
-	versionHandlerRegistry.set(nodeType.toUpperCase(), handler)
+	versionHandlerRegistry.set(nodeType.toUpperCase(), handler as VersionHandler)
 }
 
 /**
  * Get version handler for a node type.
  * Returns undefined if no handler is registered.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function getVersionHandler(nodeType: string): VersionHandler<any, any> | undefined {
+export function getVersionHandler(nodeType: string): VersionHandler | undefined {
 	return versionHandlerRegistry.get(nodeType.toUpperCase())
 }
 

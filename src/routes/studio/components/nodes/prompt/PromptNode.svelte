@@ -42,7 +42,11 @@
 	// Preview state
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	const displayContent = $derived(previewState?.content ?? data.content);
+	// displayContent: in preview mode use historical content, otherwise use current content.text
+	const displayContent = $derived(isPreviewing && previewState?.content 
+		? (typeof previewState.content === 'string' ? previewState.content : (previewState.content as { text?: string }).text ?? '')
+		: data.content.text
+	);
 	
 	// RefTag slots - use displayContent for preview mode
 	const refTagNames = $derived(getUniqueRefTagNames(displayContent));
@@ -100,10 +104,13 @@
 	}
 
 	function handleContentChange(newValue: string) {
-		ctx.updateNode(id, (nodeData) => ({
-			...nodeData,
-			content: newValue
-		}));
+		ctx.updateNode(id, (nodeData) => {
+			const promptData = nodeData as PromptNodeData;
+			return {
+				...promptData,
+				content: promptData.content.withText(newValue)
+			};
+		});
 	}
 </script>
 

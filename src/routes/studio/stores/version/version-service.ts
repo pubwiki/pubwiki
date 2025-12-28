@@ -3,6 +3,11 @@
  * 
  * Core version control logic for studio nodes.
  * Handles version synchronization, restoration, and historical tree building.
+ * 
+ * After the content-type refactoring:
+ * - All persistent data is in node.data.content
+ * - Content implements NodeContent interface with clone()/serialize() methods
+ * - Commit hash is computed via content.serialize()
  */
 
 import type { Node, Edge } from '@xyflow/svelte'
@@ -14,8 +19,8 @@ import type {
 	Versionable,
 	HistoricalTreeResult
 } from './types'
-import { getVersionHandler } from './types'
 import { snapshotStore, generateCommitHash } from './snapshot-store'
+import type { NodeContent } from '../../utils/content-types'
 
 // Re-export generateCommitHash for convenience
 export { generateCommitHash }
@@ -41,13 +46,12 @@ export function getIncomingEdges(nodeId: string, edges: Edge[]): SnapshotEdge[] 
  * Save current node state to snapshot store.
  * Call this BEFORE the user edits the content to preserve the current version.
  * 
- * Uses the registered VersionHandler's `createSnapshotContent` if available,
- * otherwise falls back to storing the raw content.
+ * Uses content.clone() for deep copy (polymorphic call).
  * 
  * @internal Used by syncNode - prefer using syncNode directly
  */
-function saveCurrentVersion<T extends Versionable<C>, C>(
-	nodeData: T,
+function saveCurrentVersion(
+	nodeData: Versionable,
 	edges?: Edge[],
 	position?: SnapshotPosition
 ): void {
@@ -55,16 +59,15 @@ function saveCurrentVersion<T extends Versionable<C>, C>(
 	if (!snapshotStore.has(nodeData.id, nodeData.commit)) {
 		const incomingEdges = edges ? getIncomingEdges(nodeData.id, edges) : undefined
 		
-		// Use handler's createSnapshotContent if available, otherwise use raw content
-		const handler = getVersionHandler(nodeData.type)
-		const snapshotContent = handler?.createSnapshotContent?.(nodeData) ?? nodeData.content
+		// Deep clone content for snapshot using polymorphic clone()
+		const snapshotContentData = nodeData.content.clone()
 		
 		const snapshot: NodeSnapshot<unknown> = {
 			nodeId: nodeData.id,
 			commit: nodeData.commit,
 			type: nodeData.type.toLowerCase(),
 			name: nodeData.name,
-			content: snapshotContent,
+			content: snapshotContentData,
 			timestamp: Date.now(),
 			incomingEdges,
 			position
@@ -83,7 +86,7 @@ function saveCurrentVersion<T extends Versionable<C>, C>(
  * @param node - The full node object (including position)
  * @param edges - All edges in the graph (to save incoming connections)
  */
-export async function syncNode<T extends Versionable<C>, C>(
+export async function syncNode<T extends Versionable>(
 	node: Node<T>,
 	edges: Edge[]
 ): Promise<T> {
@@ -92,7 +95,8 @@ export async function syncNode<T extends Versionable<C>, C>(
 		? { x: node.position.x, y: node.position.y }
 		: undefined
 
-	const currentContentHash = await generateCommitHash(nodeData.content)
+	// Get content hash using polymorphic serialize() method
+	const currentContentHash = await generateCommitHash(nodeData.content.serialize())
 
 	// If commit matches current content, save snapshot with current commit and return
 	if (currentContentHash === nodeData.commit) {
@@ -128,11 +132,9 @@ export async function syncNode<T extends Versionable<C>, C>(
 /**
  * Restore node to a specific snapshot version.
  * 
- * Uses the registered VersionHandler's `restoreFromSnapshot` if available,
- * which may need to resolve the snapshot content (e.g., fetch from VFS using git ref).
- * Falls back to directly using snapshot.content if no handler is registered.
+ * Uses content.clone() for deep copy (polymorphic call).
  */
-export async function restoreSnapshot<T extends Versionable<C>, C>(
+export async function restoreSnapshot<T extends Versionable>(
 	nodeData: T,
 	snapshotRef: NodeRef
 ): Promise<T | null> {
@@ -141,9 +143,8 @@ export async function restoreSnapshot<T extends Versionable<C>, C>(
 		return null
 	}
 
-	// Store current version as snapshot before restoring
-	const handler = getVersionHandler(nodeData.type)
-	const currentSnapshotContent = handler?.createSnapshotContent?.(nodeData) ?? nodeData.content
+	// Store current version as snapshot before restoring using clone()
+	const currentSnapshotContent = nodeData.content.clone()
 	
 	const currentSnapshot: NodeSnapshot<unknown> = {
 		nodeId: nodeData.id,
@@ -160,14 +161,10 @@ export async function restoreSnapshot<T extends Versionable<C>, C>(
 		commit: nodeData.commit
 	}
 
-	// Use handler's restoreFromSnapshot if available, otherwise use raw content
-	const restoredContent = handler?.restoreFromSnapshot
-		? await handler.restoreFromSnapshot(snapshot)
-		: snapshot.content
-
+	// Directly use snapshot content (already the correct type)
 	return {
 		...nodeData,
-		content: restoredContent as C,
+		content: snapshot.content,
 		commit: snapshot.commit,
 		snapshotRefs: [...nodeData.snapshotRefs, currentRef]
 	}
@@ -194,7 +191,7 @@ export function getVersionCount(nodeData: Versionable): number {
 /**
  * Get all snapshots for a node from the store
  */
-export function getNodeSnapshots<T>(nodeData: Versionable<T>): NodeSnapshot<T>[] {
+export function getNodeSnapshots<T>(nodeData: Versionable): NodeSnapshot<T>[] {
 	return snapshotStore.getByNodeId<T>(nodeData.id)
 }
 

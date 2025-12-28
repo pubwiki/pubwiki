@@ -15,8 +15,10 @@ export type {
   SandboxNodeData,
   LoaderNodeData,
   StateNodeData,
-  ToolCallStatus,
-  ToolCallState
+  // Re-export MessageBlock types from @pubwiki/chat
+  MessageBlock,
+  MessageBlockType,
+  ToolCallStatus
 } from './utils/types';
 
 export {

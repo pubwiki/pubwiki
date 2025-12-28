@@ -5,11 +5,13 @@
 	 * Features:
 	 * - Displays markdown-rendered content
 	 * - Streaming indicator during generation
-	 * - Tool call display during streaming
+	 * - Tool call display during streaming (inline with content)
 	 * - Regenerate button
 	 */
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { GeneratedNodeData } from '../../../utils/types';
+	import type { MessageBlock } from '@pubwiki/chat';
+	import { blocksToContent } from '@pubwiki/chat';
 	import { getStudioContext } from '../../../stores/context';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { marked } from 'marked';
@@ -36,11 +38,11 @@
 	// ============================================================================
 
 	const isStreaming = $derived(data.isStreaming);
-	const toolCalls = $derived(data.toolCalls || []);
-	const hasToolCalls = $derived(toolCalls.length > 0);
+	const blocks = $derived(data.content.blocks || []);
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	const displayContent = $derived(previewState?.content ?? data.content);
+	// For preview, use string content; otherwise render blocks
+	const displayContent = $derived(isPreviewing ? previewState?.content : blocksToContent(blocks));
 
 	// ============================================================================
 	// Event Handlers
@@ -71,6 +73,18 @@
 				e.stopPropagation();
 			}
 		}
+	}
+
+	// Convert a MessageBlock to a tool call state for ToolCallDisplay
+	function blockToToolCall(block: MessageBlock) {
+		return {
+			id: block.toolCallId || block.id,
+			name: block.toolName || '',
+			args: block.toolArgs,
+			status: block.toolStatus || 'pending',
+			result: undefined,
+			error: undefined
+		};
 	}
 </script>
 
@@ -112,21 +126,29 @@
 			class="nodrag nowheel generated-content w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto transition-colors duration-300 {isStreaming ? 'bg-yellow-50/50' : 'bg-green-50/30'}"
 			onwheel={handleWheel}
 		>
-			<!-- Tool Calls Display (shown during streaming and after completion) -->
-			{#if hasToolCalls}
-				<div class="mb-2 space-y-1">
-					{#each toolCalls as toolCall (toolCall.id)}
-						<ToolCallDisplay {toolCall} />
-					{/each}
+			{#if isPreviewing}
+				<!-- Preview mode: show content as before -->
+				<div class="prose prose-sm max-w-none text-left select-text">
+					{@html marked.parse(displayContent || '')}
 				</div>
-			{/if}
-			
-			<!-- Content -->
-			<div class="prose prose-sm max-w-none text-left select-text">
-				{@html marked.parse(displayContent || '')}
-			</div>
-			{#if isStreaming}
-				<span class="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-0.5"></span>
+			{:else}
+				<!-- Normal mode: render blocks in order -->
+				{#each blocks as block (block.id)}
+					{#if block.type === 'markdown' || block.type === 'text'}
+						<div class="prose prose-sm max-w-none text-left select-text">
+							{@html marked.parse(block.content || '')}
+						</div>
+					{:else if block.type === 'tool_call'}
+						<div class="my-1">
+							<ToolCallDisplay toolCall={blockToToolCall(block)} />
+						</div>
+					{:else if block.type === 'tool_result'}
+						<!-- Tool results are typically hidden or shown within tool call display -->
+					{/if}
+				{/each}
+				{#if isStreaming}
+					<span class="inline-block w-2 h-4 bg-gray-400 animate-pulse ml-0.5"></span>
+				{/if}
 			{/if}
 		</div>
 	{/snippet}

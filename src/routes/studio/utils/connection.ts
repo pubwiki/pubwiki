@@ -576,7 +576,7 @@ export function validateConnection(
       const targetData = getNodeData(connection.target);
       if (targetData?.type === 'INPUT') {
         const inputData = targetData as InputNodeData;
-        const existingMountpoints = inputData.mountpoints ?? [];
+        const existingMountpoints = inputData.content.mountpoints ?? [];
         if (existingMountpoints.some(mp => mp.path === '/')) {
           return {
             valid: false,

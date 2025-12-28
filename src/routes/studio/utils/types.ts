@@ -2,9 +2,16 @@
  * Studio Node Types
  * 
  * Defines the data structure for graph nodes with version control support.
- * Uses a generic GraphNodeData<T> design where T is the content type.
  * 
- * Note: Version control types (NodeRef, NodeSnapshot, etc.) are now in stores/version/
+ * Design Philosophy:
+ * - `content` field contains ALL persistent data that needs to be:
+ *   - Stored in IndexedDB
+ *   - Snapshotted for version control
+ *   - Published to backend
+ * - UI/runtime states (isEditing, isStreaming, vmState, etc.) are separate fields
+ * - Content types are defined in content-types.ts
+ * 
+ * Note: Version control types (NodeRef, NodeSnapshot, etc.) are in stores/version/
  */
 
 import { 
@@ -14,15 +21,42 @@ import {
 } from '../stores/version'
 import type { Edge, Node } from '@xyflow/svelte'
 
+// Import content classes for use in factory functions
+import {
+  InputContent,
+  PromptContent,
+  GeneratedContent,
+  VFSContent,
+  SandboxContent,
+  LoaderContent,
+  StateContent,
+  restoreContent,
+  type Mountpoint,
+  type NodeContent
+} from './content-types'
+
+// Re-export content types and classes for external use
+export type { Mountpoint, NodeContent }
+export {
+  InputContent,
+  PromptContent,
+  GeneratedContent,
+  VFSContent,
+  SandboxContent,
+  LoaderContent,
+  StateContent,
+  restoreContent
+}
+
 // ============================================================================
-// Base Node Data (Generic)
+// Base Node Data
 // ============================================================================
 
 /**
  * Base node data interface with version control
- * @template T - Content type
+ * @template T - Content type (must implement NodeContent interface)
  */
-export interface BaseNodeData<T = unknown> {
+export interface BaseNodeData<T extends NodeContent> {
   /** Unique node identifier */
   id: string
   /** User-defined node name */
@@ -33,7 +67,7 @@ export interface BaseNodeData<T = unknown> {
   snapshotRefs: NodeRef[]
   /** Parent nodes that contributed to this node's creation */
   parents: NodeRef[]
-  /** Node content */
+  /** Node content - implements NodeContent interface for polymorphic operations */
   content: T
   /** Whether this node references external artifact (not included in export) */
   external?: boolean
@@ -46,91 +80,50 @@ export interface BaseNodeData<T = unknown> {
 // ============================================================================
 
 /**
- * Mountpoint definition with stable ID for handle identification
- */
-export interface Mountpoint {
-  /** Stable random ID used for handle identification */
-  id: string
-  /** User-editable mount path like '/src' */
-  path: string
-}
-
-/**
  * Input node data - represents user input that triggered generation
- * Content is string (user text input)
- * Prompts are connected via @tag references in content
- * VFS mounts are managed via mountpoints array (not in text)
+ * Content contains: text (user input) and mountpoints (VFS mount configuration)
  */
-export interface InputNodeData extends BaseNodeData<string> {
+export interface InputNodeData extends BaseNodeData<InputContent> {
   type: 'INPUT'
-  /** VFS mountpoints - each has a stable ID and editable path */
-  mountpoints: Mountpoint[]
 }
 
 /**
  * Prompt node data - represents user-edited prompts/system prompts
- * Content is string (prompt text)
+ * Content contains: text (prompt text)
  */
-export interface PromptNodeData extends BaseNodeData<string> {
+export interface PromptNodeData extends BaseNodeData<PromptContent> {
   type: 'PROMPT'
-  /** Whether this node is currently being edited */
+  /** UI State: Whether this node is currently being edited */
   isEditing?: boolean
 }
 
 /**
- * Tool call status type for streaming display
+ * Re-export MessageBlock and related types from @pubwiki/chat for display
  */
-export type ToolCallStatus = 'pending' | 'running' | 'completed' | 'error'
-
-/**
- * Tool call state for display during streaming
- */
-export interface ToolCallState {
-  /** Tool call ID */
-  id: string
-  /** Tool name */
-  name: string
-  /** Tool arguments */
-  args: unknown
-  /** Tool call status */
-  status: ToolCallStatus
-  /** Tool result (when completed) */
-  result?: unknown
-  /** Error message (when error) */
-  error?: string
-}
+export type { MessageBlock, MessageBlockType, ToolCallStatus } from '@pubwiki/chat'
 
 /**
  * Generated node data - represents AI-generated content
- * Content is string (generated text)
+ * Content contains: blocks (MessageBlock[]), inputRef, promptRefs, indirectPromptRefs
  */
-export interface GeneratedNodeData extends BaseNodeData<string> {
+export interface GeneratedNodeData extends BaseNodeData<GeneratedContent> {
   type: 'GENERATED'
-  /** Reference to the input node that triggered this generation */
-  inputRef: NodeRef
-  /** References to the direct prompt nodes used in generation */
-  promptRefs: NodeRef[]
-  /** References to indirect prompts (resolved via reftags) */
-  indirectPromptRefs: NodeRef[]
-  /** Whether content is being streamed into this node */
+  /** UI State: Whether content is being streamed into this node */
   isStreaming?: boolean
-  /** Active tool calls during streaming */
-  toolCalls?: ToolCallState[]
 }
 
 /**
  * VFS node data - represents a virtual file system
- * Content is an empty string (actual file content is stored in VFS, versioned by git)
+ * Content contains: projectId
+ * Actual file content is stored in VFS and versioned by git
  */
-export interface VFSNodeData extends BaseNodeData<string> {
+export interface VFSNodeData extends BaseNodeData<VFSContent> {
   type: 'VFS'
-  /** Project ID for VFS isolation */
-  projectId: string
-  /** UI State: Expanded folder paths (persisted) */
+  /** UI State: Expanded folder paths */
   expandedFolders?: string[]
-  /** UI State: Currently selected file path (persisted) */
+  /** UI State: Currently selected file path */
   selectedFilePath?: string
-  /** UI State: Whether expanded view is open (persisted) */
+  /** UI State: Whether expanded view is open */
   isExpandedViewOpen?: boolean
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
@@ -138,72 +131,51 @@ export interface VFSNodeData extends BaseNodeData<string> {
 
 /**
  * Sandbox node data - represents a sandbox preview of VFS content
- * Content is an empty string (preview is rendered in iframe)
+ * Content contains: entryFile, sandboxOrigin
  */
-export interface SandboxNodeData extends BaseNodeData<string> {
+export interface SandboxNodeData extends BaseNodeData<SandboxContent> {
   type: 'SANDBOX'
-  /** Entry file path for the sandbox (e.g., '/app.tsx') */
-  entryFile: string
-  /** Whether the sandbox is currently running */
+  /** Runtime State: Whether the sandbox is currently running */
   isRunning: boolean
-  /** Current error message (if any) */
+  /** Runtime State: Current error message (if any) */
   error: string | null
-  /** Sandbox site URL */
-  sandboxOrigin: string
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }
 
 /**
  * Loader node data - Lua VM service executor
- * Content is an empty string (service is provided via Lua VM)
+ * Content contains: mountpoints
  */
-export interface LoaderNodeData extends BaseNodeData<string> {
+export interface LoaderNodeData extends BaseNodeData<LoaderContent> {
   type: 'LOADER'
   /**
-   * Lua VM state
+   * Runtime State: Lua VM state
    * - 'idle': Not loaded, waiting for user to click Load
    * - 'loading': Initializing VM and executing init.lua
    * - 'ready': Services registered, ready to call
    * - 'error': Initialization failed
    */
   vmState: 'idle' | 'loading' | 'ready' | 'error'
-  /**
-   * Error message (if any)
-   */
+  /** Runtime State: Error message (if any) */
   error: string | null
-  /**
-   * Registered services list (from ServiceRegistry)
-   * Format: ['namespace:name', ...]
-   */
+  /** Runtime State: Registered services list (from ServiceRegistry) */
   registeredServices: string[]
-  /**
-   * VFS mountpoints (similar to InputNode's mountpoints)
-   * Mounted to /user/assets/{path}
-   */
-  mountpoints: Mountpoint[]
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }
 
 /**
  * State node data - represents an RDF triple store for Lua State API
- * Content is an empty string (actual data is stored in quadstore via IndexedDB)
- * Implements RDFStore interface from @pubwiki/lua
+ * Content is empty (actual data is stored in quadstore via IndexedDB)
  */
-export interface StateNodeData extends BaseNodeData<string> {
+export interface StateNodeData extends BaseNodeData<StateContent> {
   type: 'STATE'
-  /**
-   * Whether the RDF store is currently open and ready
-   */
+  /** Runtime State: Whether the RDF store is currently open and ready */
   isReady: boolean
-  /**
-   * Error state if store initialization failed
-   */
+  /** Runtime State: Error state if store initialization failed */
   error: string | null
-  /**
-   * Number of triples currently in the store (for display)
-   */
+  /** Runtime State: Number of triples currently in the store (for display) */
   tripleCount: number
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
@@ -215,20 +187,20 @@ export interface StateNodeData extends BaseNodeData<string> {
 export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData | SandboxNodeData | LoaderNodeData | StateNodeData
 
 // ============================================================================
-// Utility Functions
+// Factory Functions
 // ============================================================================
 
 /**
  * Create a new input node data object
  */
 export async function createInputNodeData(
-  content: string,
+  text: string,
   parents: NodeRef[] = [],
   name: string = '',
   mountpoints: Mountpoint[] = []
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash(content)
+  const commit = await generateCommitHash(text)
   return {
     id,
     name,
@@ -236,8 +208,7 @@ export async function createInputNodeData(
     commit,
     snapshotRefs: [],
     parents,
-    content,
-    mountpoints
+    content: new InputContent(text, mountpoints)
   }
 }
 
@@ -245,12 +216,12 @@ export async function createInputNodeData(
  * Create a new prompt node data object
  */
 export async function createPromptNodeData(
-  content: string = '',
+  text: string = '',
   parents: NodeRef[] = [],
   name: string = ''
 ): Promise<PromptNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash(content)
+  const commit = await generateCommitHash(text)
   return {
     id,
     name,
@@ -258,7 +229,7 @@ export async function createPromptNodeData(
     commit,
     snapshotRefs: [],
     parents,
-    content,
+    content: new PromptContent(text),
     isEditing: false
   }
 }
@@ -267,7 +238,7 @@ export async function createPromptNodeData(
  * Create a new generated node data object
  */
 export async function createGeneratedNodeData(
-  content: string = '',
+  blocks: import('@pubwiki/chat').MessageBlock[] = [],
   inputRef: NodeRef,
   promptRefs: NodeRef[],
   indirectPromptRefs: NodeRef[] = [],
@@ -275,7 +246,8 @@ export async function createGeneratedNodeData(
   name: string = ''
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash(content)
+  const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs)
+  const commit = await generateCommitHash(content.serialize())
   return {
     id,
     name,
@@ -284,11 +256,7 @@ export async function createGeneratedNodeData(
     snapshotRefs: [],
     parents,
     content,
-    inputRef,
-    promptRefs,
-    indirectPromptRefs,
-    isStreaming: false,
-    toolCalls: []
+    isStreaming: false
   }
 }
 
@@ -300,9 +268,8 @@ export async function createVFSNodeData(
   name: string = 'Files'
 ): Promise<VFSNodeData> {
   const id = crypto.randomUUID()
-  // VFS nodes don't have traditional content - use empty string for commit hash
-  // The actual file content is stored in VFS and versioned by git
-  const commit = await generateCommitHash('')
+  const content = new VFSContent(projectId)
+  const commit = await generateCommitHash(content.serialize())
   return {
     id,
     name,
@@ -310,8 +277,7 @@ export async function createVFSNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content: '',
-    projectId,
+    content,
     expandedFolders: [],
     selectedFilePath: undefined,
     isExpandedViewOpen: false
@@ -326,7 +292,8 @@ export async function createSandboxNodeData(
   sandboxOrigin: string = 'http://localhost:4001'
 ): Promise<SandboxNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash('')
+  const content = new SandboxContent('index.html', sandboxOrigin)
+  const commit = await generateCommitHash(content.serialize())
   return {
     id,
     name,
@@ -334,11 +301,9 @@ export async function createSandboxNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content: '',
-    entryFile: 'index.html',
+    content,
     isRunning: false,
-    error: null,
-    sandboxOrigin
+    error: null
   }
 }
 
@@ -349,7 +314,8 @@ export async function createLoaderNodeData(
   name: string = 'Services'
 ): Promise<LoaderNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash('')
+  const content = new LoaderContent([])
+  const commit = await generateCommitHash(content.serialize())
   return {
     id,
     name,
@@ -357,11 +323,10 @@ export async function createLoaderNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content: '',
+    content,
     vmState: 'idle',
     error: null,
-    registeredServices: [],
-    mountpoints: []
+    registeredServices: []
   }
 }
 
@@ -372,7 +337,8 @@ export async function createStateNodeData(
   name: string = 'State'
 ): Promise<StateNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash('')
+  const content = new StateContent()
+  const commit = await generateCommitHash(content.serialize())
   return {
     id,
     name,
@@ -380,7 +346,7 @@ export async function createStateNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content: '',
+    content,
     isReady: false,
     error: null,
     tripleCount: 0
