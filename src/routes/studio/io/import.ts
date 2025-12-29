@@ -9,8 +9,25 @@
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { ArtifactGraphData, ArtifactNodeDetail } from '$lib/stores/artifacts.svelte';
-import type { StudioNodeData, VFSNodeData, InputNodeData, PromptNodeData, GeneratedNodeData } from '../types';
-import { InputContent, PromptContent, GeneratedContent, VFSContent } from '../types';
+import type { 
+  StudioNodeData, 
+  VFSNodeData, 
+  InputNodeData, 
+  PromptNodeData, 
+  GeneratedNodeData,
+  SandboxNodeData,
+  LoaderNodeData,
+  StateNodeData
+} from '../types';
+import { 
+  InputContent, 
+  PromptContent, 
+  GeneratedContent, 
+  VFSContent,
+  SandboxContent,
+  LoaderContent,
+  StateContent
+} from '../types';
 import { generateCommitHash } from '../version';
 import { getNodeVfs } from '../vfs';
 import { ensureProject, saveGraph, loadGraph } from '../persistence';
@@ -105,83 +122,204 @@ export async function convertArtifactToStudioGraph(
     }
   }
 
+  // Node type definition for type checking
+  type StudioNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'SANDBOX' | 'LOADER' | 'STATE';
+
   const nodes: Node<StudioNodeData>[] = await Promise.all(graphData.nodes.map(async (node, index) => {
     // Calculate a default position (arranged in a grid)
     const posX = (index % 3) * 300 + 100;
     const posY = Math.floor(index / 3) * 200 + 100;
 
-    // Map artifact node type to studio node type
-    const nodeType = node.type as 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS';
-
-    if (nodeType === 'VFS') {
-      // Create VFS node data with projectId
-      const commit = await generateCommitHash(targetProjectId);
-      const vfsData: VFSNodeData = {
-        id: node.id,
-        name: node.name || `Files ${index + 1}`,
-        type: 'VFS',
-        commit,
-        snapshotRefs: [],
-        parents: [],
-        content: new VFSContent(targetProjectId),
-        expandedFolders: [],
-        selectedFilePath: undefined,
-        isExpandedViewOpen: false,
-        external: true  // Always mark imported nodes as external
-      };
-      return {
-        id: node.id,
-        type: 'vfs',
-        position: { x: posX, y: posY },
-        data: vfsData as unknown as StudioNodeData
-      };
-    }
+    const nodeType = node.type as StudioNodeType;
+    const commit = await generateCommitHash(node.id);
 
     // Get content from map (may be JSON or plain text depending on backend)
     const rawContent = contentMap.get(node.id) ?? '';
-    
-    // Try to parse as JSON (new format), fall back to plain text (old format)
-    let parsedContent: InputContent | PromptContent | GeneratedContent;
-    try {
-      const json = JSON.parse(rawContent);
-      // Restore content class instance from JSON
-      if (nodeType === 'INPUT') {
-        parsedContent = InputContent.fromJSON(json);
-      } else if (nodeType === 'PROMPT') {
-        parsedContent = PromptContent.fromJSON(json);
-      } else {
-        parsedContent = GeneratedContent.fromJSON(json);
+
+    // Handle each node type
+    switch (nodeType) {
+      case 'VFS': {
+        const vfsData: VFSNodeData = {
+          id: node.id,
+          name: node.name || `Files ${index + 1}`,
+          type: 'VFS',
+          commit,
+          snapshotRefs: [],
+          parents: [],
+          content: new VFSContent(targetProjectId),
+          expandedFolders: [],
+          selectedFilePath: undefined,
+          isExpandedViewOpen: false,
+          external: true
+        };
+        return {
+          id: node.id,
+          type: 'vfs',
+          position: { x: posX, y: posY },
+          data: vfsData
+        };
       }
-    } catch {
-      // Legacy format: plain text
-      if (nodeType === 'INPUT') {
-        parsedContent = new InputContent(rawContent, []);
-      } else if (nodeType === 'PROMPT') {
-        parsedContent = new PromptContent(rawContent);
-      } else {
-        // GENERATED - legacy format doesn't have structured blocks
-        parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
+
+      case 'SANDBOX': {
+        let parsedContent: SandboxContent;
+        try {
+          const json = JSON.parse(rawContent);
+          parsedContent = SandboxContent.fromJSON(json);
+        } catch {
+          parsedContent = new SandboxContent();
+        }
+        const sandboxData: SandboxNodeData = {
+          id: node.id,
+          name: node.name || `Sandbox ${index + 1}`,
+          type: 'SANDBOX',
+          commit,
+          snapshotRefs: [],
+          parents: [],
+          content: parsedContent,
+          external: true,
+          isRunning: false,
+          error: null
+        };
+        return {
+          id: node.id,
+          type: 'sandbox',
+          position: { x: posX, y: posY },
+          data: sandboxData
+        };
+      }
+
+      case 'LOADER': {
+        let parsedContent: LoaderContent;
+        try {
+          const json = JSON.parse(rawContent);
+          parsedContent = LoaderContent.fromJSON(json);
+        } catch {
+          parsedContent = new LoaderContent();
+        }
+        const loaderData: LoaderNodeData = {
+          id: node.id,
+          name: node.name || `Loader ${index + 1}`,
+          type: 'LOADER',
+          commit,
+          snapshotRefs: [],
+          parents: [],
+          content: parsedContent,
+          external: true,
+          vmState: 'idle',
+          error: null,
+          registeredServices: []
+        };
+        return {
+          id: node.id,
+          type: 'loader',
+          position: { x: posX, y: posY },
+          data: loaderData
+        };
+      }
+
+      case 'STATE': {
+        const stateData: StateNodeData = {
+          id: node.id,
+          name: node.name || `State ${index + 1}`,
+          type: 'STATE',
+          commit,
+          snapshotRefs: [],
+          parents: [],
+          content: new StateContent(),
+          external: true,
+          isReady: false,
+          error: null,
+          tripleCount: 0
+        };
+        return {
+          id: node.id,
+          type: 'state',
+          position: { x: posX, y: posY },
+          data: stateData
+        };
+      }
+
+      case 'INPUT': {
+        let parsedContent: InputContent;
+        try {
+          const json = JSON.parse(rawContent);
+          parsedContent = InputContent.fromJSON(json);
+        } catch {
+          parsedContent = new InputContent(rawContent, []);
+        }
+        const inputData: InputNodeData = {
+          id: node.id,
+          name: node.name || `Input ${index + 1}`,
+          type: 'INPUT',
+          commit,
+          snapshotRefs: [],
+          parents: [],
+          content: parsedContent,
+          external: true
+        };
+        return {
+          id: node.id,
+          type: 'input',
+          position: { x: posX, y: posY },
+          data: inputData
+        };
+      }
+
+      case 'PROMPT': {
+        let parsedContent: PromptContent;
+        try {
+          const json = JSON.parse(rawContent);
+          parsedContent = PromptContent.fromJSON(json);
+        } catch {
+          parsedContent = new PromptContent(rawContent);
+        }
+        const promptData: PromptNodeData = {
+          id: node.id,
+          name: node.name || `Prompt ${index + 1}`,
+          type: 'PROMPT',
+          commit,
+          snapshotRefs: [],
+          parents: [],
+          content: parsedContent,
+          external: true,
+          isEditing: false
+        };
+        return {
+          id: node.id,
+          type: 'prompt',
+          position: { x: posX, y: posY },
+          data: promptData
+        };
+      }
+
+      case 'GENERATED':
+      default: {
+        let parsedContent: GeneratedContent;
+        try {
+          const json = JSON.parse(rawContent);
+          parsedContent = GeneratedContent.fromJSON(json);
+        } catch {
+          parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
+        }
+        const generatedData: GeneratedNodeData = {
+          id: node.id,
+          name: node.name || `Generated ${index + 1}`,
+          type: 'GENERATED',
+          commit,
+          snapshotRefs: [],
+          parents: [],
+          content: parsedContent,
+          external: true,
+          isStreaming: false
+        };
+        return {
+          id: node.id,
+          type: 'generated',
+          position: { x: posX, y: posY },
+          data: generatedData
+        };
       }
     }
-
-    // Create base node data based on type
-    const baseData = {
-      id: node.id,
-      name: node.name || `Node ${index + 1}`,
-      commit: graphData.version.commitHash,
-      snapshotRefs: [],
-      parents: [],
-      content: parsedContent,
-      external: true,  // Always mark imported nodes as external
-      type: nodeType
-    };
-
-    return {
-      id: node.id,
-      type: nodeType.toLowerCase(),
-      position: { x: posX, y: posY },
-      data: baseData as unknown as StudioNodeData
-    };
   }));
 
   const edges: Edge[] = graphData.edges.map((edge) => ({

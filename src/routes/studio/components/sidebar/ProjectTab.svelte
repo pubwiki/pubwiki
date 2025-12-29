@@ -39,7 +39,11 @@
 	let expandedCategories = $state<Record<string, boolean>>({
 		PROMPT: true,
 		INPUT: false,
-		GENERATED: false
+		GENERATED: false,
+		VFS: false,
+		LOADER: false,
+		SANDBOX: false,
+		STATE: false
 	});
 
 	// Initialize name from projectName prop
@@ -91,7 +95,11 @@
 		const groups: Record<string, Node<StudioNodeData>[]> = {
 			PROMPT: [],
 			INPUT: [],
-			GENERATED: []
+			GENERATED: [],
+			VFS: [],
+			LOADER: [],
+			SANDBOX: [],
+			STATE: []
 		};
 		
 		for (const node of nodesToPublish) {
@@ -187,6 +195,10 @@
 			case 'PROMPT': return m.studio_overview_prompts();
 			case 'INPUT': return m.studio_overview_inputs();
 			case 'GENERATED': return m.studio_overview_generated();
+			case 'VFS': return m.studio_overview_files();
+			case 'LOADER': return m.studio_overview_loaders();
+			case 'SANDBOX': return m.studio_overview_sandboxes();
+			case 'STATE': return m.studio_overview_states();
 			default: return type;
 		}
 	}
@@ -196,6 +208,10 @@
 			case 'PROMPT': return 'bg-blue-100 text-blue-800';
 			case 'INPUT': return 'bg-purple-100 text-purple-800';
 			case 'GENERATED': return 'bg-green-100 text-green-800';
+			case 'VFS': return 'bg-yellow-100 text-yellow-800';
+			case 'LOADER': return 'bg-orange-100 text-orange-800';
+			case 'SANDBOX': return 'bg-pink-100 text-pink-800';
+			case 'STATE': return 'bg-cyan-100 text-cyan-800';
 			default: return 'bg-gray-100 text-gray-800';
 		}
 	}

@@ -234,7 +234,7 @@ export async function regenerate(
 				data: { 
 					...genData, 
 					isStreaming: true, 
-					content: { ...genData.content, blocks: [] } 
+					content: genData.content.withBlocks([]) 
 				} 
 			};
 		}
@@ -246,15 +246,11 @@ export async function regenerate(
 		callbacks.updateNodes(nodes => nodes.map(n => {
 			if (n.id === nodeId && n.data.type === 'GENERATED') {
 				const genData = n.data as GeneratedNodeData;
-				const genContent = genData.content as GeneratedContent;
 				return {
 					...n,
 					data: {
 						...genData,
-						content: {
-							...genContent,
-							blocks: updater(genContent.blocks || [])
-						}
+						content: genData.content.withBlocks(updater(genData.content.blocks || []))
 					}
 				};
 			}

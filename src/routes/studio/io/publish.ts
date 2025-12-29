@@ -29,17 +29,9 @@ export interface PublishMetadata {
 }
 
 /**
- * Node type mapping from Studio to API
- * SANDBOX, LOADER, and STATE nodes are filtered out before publishing, so they don't need mapping
+ * Node type for API - all studio node types are publishable
  */
-type ApiNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS';
-
-function mapNodeType(type: StudioNodeData['type']): ApiNodeType | null {
-	if (type === 'SANDBOX' || type === 'LOADER' || type === 'STATE') {
-		return null; // SANDBOX, LOADER, and STATE nodes should not be published
-	}
-	return type;
-}
+type ApiNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'LOADER' | 'SANDBOX' | 'STATE';
 
 /**
  * Artifact descriptor for API
@@ -68,29 +60,20 @@ interface ArtifactDescriptor {
 
 /**
  * Prepare artifact descriptor from nodes and edges
- * SANDBOX nodes are filtered out as they are runtime-only
+ * All nodes are published (external nodes are marked as such)
  */
 function createDescriptor(
 	nodes: Node<StudioNodeData>[],
 	edges: Edge[]
 ): ArtifactDescriptor {
-	// Filter out SANDBOX nodes
-	const publishableNodes = nodes.filter(node => node.data.type !== 'SANDBOX');
-	
-	const nodeDescriptors: ArtifactNodeDescriptor[] = publishableNodes.map((node) => ({
+	const nodeDescriptors: ArtifactNodeDescriptor[] = nodes.map((node) => ({
 		id: node.data.id,
 		external: node.data.external ?? false,
-		type: mapNodeType(node.data.type)!,
+		type: node.data.type as ApiNodeType,
 		name: node.data.name || undefined
 	}));
 
-	// Filter out edges connected to SANDBOX nodes
-	const sandboxNodeIds = new Set(nodes.filter(n => n.data.type === 'SANDBOX').map(n => n.id));
-	const publishableEdges = edges.filter(edge => 
-		!sandboxNodeIds.has(edge.source) && !sandboxNodeIds.has(edge.target)
-	);
-
-	const edgeDescriptors: ArtifactEdgeDescriptor[] = publishableEdges.map((edge) => ({
+	const edgeDescriptors: ArtifactEdgeDescriptor[] = edges.map((edge) => ({
 		source: edge.source,
 		target: edge.target,
 		sourceHandle: edge.sourceHandle,
@@ -111,6 +94,7 @@ function createDescriptor(
  * After content-type refactoring:
  * - All node content is uploaded as JSON (node.json)
  * - This preserves structured data like MessageBlocks, mountpoints, etc.
+ * - External nodes are skipped (they don't have content to upload)
  */
 function createFormData(
 	metadata: PublishMetadata,
@@ -138,11 +122,6 @@ function createFormData(
 	for (const node of nodes) {
 		// Skip external nodes (they don't have content to upload)
 		if (node.data.external) continue;
-		
-		// Skip runtime-only nodes (SANDBOX, LOADER, STATE)
-		if (node.data.type === 'SANDBOX' || node.data.type === 'LOADER' || node.data.type === 'STATE') {
-			continue;
-		}
 
 		// Upload content as JSON using toJSON() for proper serialization
 		const contentJson = JSON.stringify(node.data.content.toJSON());

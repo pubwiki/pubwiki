@@ -395,10 +395,7 @@ export async function generate(
 					...n,
 					data: {
 						...genData,
-						content: {
-							...genData.content,
-							blocks: updater(genData.content.blocks || [])
-						}
+						content: genData.content.withBlocks(updater(genData.content.blocks || []))
 					}
 				};
 			}
