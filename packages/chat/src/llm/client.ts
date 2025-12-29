@@ -153,9 +153,14 @@ export class LLMClient {
           : msg.role === 'assistant' ? 'assistant' 
           : 'developer'
 
-        input.push(buildEasyInputMessage(role, content))
-
-        // Handle reasoning_details for assistant messages
+        // For assistant messages, preserve reasoning blocks in the correct order:
+        // 1. Reasoning items (thinking process)
+        // 2. Assistant message content (text output) - ONLY if non-empty
+        // 3. Function call items (tool calls)
+        // This order matches the model's response generation flow and is required
+        // by Gemini and other reasoning models for proper context preservation.
+        
+        // Handle reasoning_details for assistant messages (BEFORE text content)
         if (msg.role === 'assistant' && msg.reasoning_details && msg.reasoning_details.length > 0) {
           for (const detail of msg.reasoning_details) {
             const reasoningItem: ResponseReasoningItem & { encrypted_content?: string } = {
@@ -193,7 +198,15 @@ export class LLMClient {
           input.push(reasoningItem)
         }
 
-        // Handle tool_calls for assistant messages
+        // Add message content (AFTER reasoning items)
+        // For assistant messages with tool_calls, skip empty content to avoid
+        // sending unnecessary empty assistant messages in the input
+        const shouldAddMessage = msg.role !== 'assistant' || content || !msg.tool_calls?.length
+        if (shouldAddMessage) {
+          input.push(buildEasyInputMessage(role, content))
+        }
+
+        // Handle tool_calls for assistant messages (AFTER text content)
         if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
           for (const tc of msg.tool_calls) {
             const functionCallItem: FunctionCallInputItem = {
@@ -380,8 +393,14 @@ export class LLMClient {
           : msg.role === 'assistant' ? 'assistant' 
           : 'developer'
 
-        input.push(buildEasyInputMessage(role, content))
+        // For assistant messages, preserve reasoning blocks in the correct order:
+        // 1. Reasoning items (thinking process)
+        // 2. Assistant message content (text output) - ONLY if non-empty
+        // 3. Function call items (tool calls)
+        // This order matches the model's response generation flow and is required
+        // by Gemini and other reasoning models for proper context preservation.
 
+        // Handle reasoning_details for assistant messages (BEFORE text content)
         if (msg.role === 'assistant' && msg.reasoning_details && msg.reasoning_details.length > 0) {
           for (const detail of msg.reasoning_details) {
             const reasoningItem: ResponseReasoningItem & { encrypted_content?: string } = {
@@ -418,6 +437,15 @@ export class LLMClient {
           input.push(reasoningItem)
         }
 
+        // Add message content (AFTER reasoning items)
+        // For assistant messages with tool_calls, skip empty content to avoid
+        // sending unnecessary empty assistant messages in the input
+        const shouldAddMessage = msg.role !== 'assistant' || content || !msg.tool_calls?.length
+        if (shouldAddMessage) {
+          input.push(buildEasyInputMessage(role, content))
+        }
+
+        // Handle tool_calls for assistant messages (AFTER text content)
         if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
           for (const tc of msg.tool_calls) {
             const functionCallItem: FunctionCallInputItem = {
