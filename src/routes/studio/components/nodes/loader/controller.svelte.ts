@@ -375,14 +375,14 @@ export async function initializeLoader(
 		const coreVfs = createMemoryVfs();
 		await coreVfs.createFile('/service.lua', serviceLuaCode);
 		await coreVfs.createFile('/types.lua', typesLuaCode);
-		provider.mountVfs('/core', coreVfs);
+		provider.mount('/core', coreVfs);
 		
 		// Mount backend VFS
-		provider.mountVfs('/user/backend', backendVfs);
+		provider.mount('/user/backend', backendVfs);
 		
 		// Mount asset VFS
 		for (const [path, vfs] of assetMounts) {
-			provider.mountVfs(`/user/assets${path}`, vfs);
+			provider.mount(`/user/assets${path}`, vfs);
 		}
 		
 		// Create Lua instance

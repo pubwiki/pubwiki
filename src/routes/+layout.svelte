@@ -30,8 +30,8 @@
 
 <svelte:head>
 	<link rel="icon" href={favicon} />
-	<title>AI Game Hub</title>
-	<meta name="description" content="Discover AI-generated games" />
+	<title>Pub.Wiki</title>
+	<meta name="description" content="The platform for participatory culture" />
 </svelte:head>
 
 {@render children()}

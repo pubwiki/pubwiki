@@ -4,51 +4,46 @@ import { VfsPath } from '../utils/vfs-path'
 import { Vfs } from '../vfs'
 
 /**
- * MountedVfsProvider - A VFS provider that mounts multiple VFS providers at different paths
+ * MountedVfsProvider - A VFS provider that mounts multiple Vfs instances at different paths
  * 
  * This allows creating a unified virtual file system from multiple sources.
  * Example: Mount VFS1 at /src and VFS2 at /config to access files as /src/app.ts or /config/settings.json
+ * 
+ * IMPORTANT: This provider stores full Vfs instances (not just VfsProvider) to ensure
+ * that events are properly propagated. When operations are performed through MountedVfsProvider,
+ * they are delegated to the underlying Vfs instances, which will emit the appropriate events.
  */
 export class MountedVfsProvider implements VfsProvider {
-  private mounts: Map<string, VfsProvider> = new Map()
+  private mounts: Map<string, Vfs> = new Map()
 
   /**
    * Create a new MountedVfsProvider
-   * @param mounts Initial mount points as [path, provider] pairs
+   * @param mounts Initial mount points as [path, vfs] pairs
    */
-  constructor(mounts?: Iterable<[string, VfsProvider]>) {
+  constructor(mounts?: Iterable<[string, Vfs]>) {
     if (mounts) {
-      for (const [mountPath, provider] of mounts) {
-        this.mount(mountPath, provider)
+      for (const [mountPath, vfs] of mounts) {
+        this.mount(mountPath, vfs)
       }
     }
   }
 
   /**
-   * Mount a VFS provider at a specific path
+   * Mount a Vfs instance at a specific path
    * @param mountPath The path to mount at (e.g., '/src', '/config')
-   * @param provider The VFS provider to mount
+   * @param vfs The Vfs instance to mount
    */
-  mount(mountPath: string, provider: VfsProvider): void {
+  mount(mountPath: string, vfs: Vfs): void {
     const vp = VfsPath.parse(mountPath)
     if (vp.isRoot) {
       throw new Error(`Cannot mount at root path`)
     }
     // Store with normalized path string as key
-    this.mounts.set(vp.toString(), provider)
+    this.mounts.set(vp.toString(), vfs)
   }
 
   /**
-   * Mount a Vfs instance at a specific path by extracting its underlying provider
-   * @param mountPath The path to mount at (e.g., '/src', '/config')  
-   * @param vfs The Vfs instance to mount
-   */
-  mountVfs(mountPath: string, vfs: Vfs): void {
-    this.mount(mountPath, vfs.getProvider())
-  }
-
-  /**
-   * Unmount a VFS provider from a path
+   * Unmount a Vfs instance from a path
    * @param mountPath The path to unmount
    */
   unmount(mountPath: string): void {
@@ -64,11 +59,21 @@ export class MountedVfsProvider implements VfsProvider {
   }
 
   /**
+   * Get the Vfs instance mounted at a specific path
+   * @param mountPath The mount path to look up
+   * @returns The Vfs instance or undefined if not found
+   */
+  getMountedVfs(mountPath: string): Vfs | undefined {
+    const vp = VfsPath.parse(mountPath)
+    return this.mounts.get(vp.toString())
+  }
+
+  /**
    * Resolve a path to its mount point and relative path
    * @param filePath The absolute path to resolve
-   * @returns [provider, relativePath] or null if not found
+   * @returns [vfs, relativePath, mountPath] or null if not found
    */
-  private resolvePath(filePath: string): [VfsProvider, string] | null {
+  private resolvePath(filePath: string): [Vfs, string, string] | null {
     const vp = VfsPath.parse(filePath)
     
     // Find the longest matching mount point using segments comparison
@@ -93,12 +98,12 @@ export class MountedVfsProvider implements VfsProvider {
       return null
     }
     
-    const provider = this.mounts.get(bestMatch)!
+    const vfs = this.mounts.get(bestMatch)!
     // Get relative path within the mount
     const relativePath = vp.relativeTo(bestMatchPath)
     const relativeStr = relativePath ? relativePath.toString() : '/'
     
-    return [provider, relativeStr]
+    return [vfs, relativeStr, bestMatch]
   }
 
   // ========== ID 生成 ==========
@@ -111,11 +116,8 @@ export class MountedVfsProvider implements VfsProvider {
     if (!resolved) {
       throw new Error(`Path not mounted: ${filePath}`)
     }
-    const [provider, relativePath] = resolved
-    // Prefix with mount path to ensure uniqueness across mounts
-    const mountPath = Array.from(this.mounts.entries())
-      .find(([_, p]) => p === provider)?.[0] ?? ''
-    const subId = await provider.id(relativePath)
+    const [vfs, relativePath, mountPath] = resolved
+    const subId = await vfs.getProvider().id(relativePath)
     return `${mountPath}:${subId}`
   }
 
@@ -126,8 +128,16 @@ export class MountedVfsProvider implements VfsProvider {
     if (!resolved) {
       throw new Error(`Path not mounted: ${filePath}`)
     }
-    const [provider, relativePath] = resolved
-    return provider.readFile(relativePath)
+    const [vfs, relativePath] = resolved
+    const file = await vfs.readFile(relativePath)
+    // readFile returns VfsFile, extract content
+    if (file.content === undefined) {
+      throw new Error(`File has no content: ${filePath}`)
+    }
+    if (typeof file.content === 'string') {
+      return new TextEncoder().encode(file.content)
+    }
+    return new Uint8Array(file.content)
   }
 
   async writeFile(filePath: string, content: Uint8Array): Promise<void> {
@@ -135,8 +145,20 @@ export class MountedVfsProvider implements VfsProvider {
     if (!resolved) {
       throw new Error(`Path not mounted: ${filePath}`)
     }
-    const [provider, relativePath] = resolved
-    return provider.writeFile(relativePath, content)
+    const [vfs, relativePath] = resolved
+    
+    // Convert Uint8Array to ArrayBuffer for Vfs methods
+    // Create a new ArrayBuffer to avoid SharedArrayBuffer type issues
+    const buffer = new ArrayBuffer(content.byteLength)
+    new Uint8Array(buffer).set(content)
+    
+    // Check if file exists to decide create vs update
+    const exists = await vfs.exists(relativePath)
+    if (exists) {
+      await vfs.updateFile(relativePath, buffer)
+    } else {
+      await vfs.createFile(relativePath, buffer)
+    }
   }
 
   async unlink(filePath: string): Promise<void> {
@@ -144,8 +166,8 @@ export class MountedVfsProvider implements VfsProvider {
     if (!resolved) {
       throw new Error(`Path not mounted: ${filePath}`)
     }
-    const [provider, relativePath] = resolved
-    return provider.unlink(relativePath)
+    const [vfs, relativePath] = resolved
+    await vfs.deleteFile(relativePath)
   }
 
   // ========== 目录操作 ==========
@@ -155,8 +177,9 @@ export class MountedVfsProvider implements VfsProvider {
     if (!resolved) {
       throw new Error(`Path not mounted: ${dirPath}`)
     }
-    const [provider, relativePath] = resolved
-    return provider.mkdir(relativePath, options)
+    const [vfs, relativePath] = resolved
+    // Vfs.createFolder handles recursive creation internally
+    await vfs.createFolder(relativePath)
   }
 
   async readdir(dirPath: string): Promise<string[]> {
@@ -198,8 +221,9 @@ export class MountedVfsProvider implements VfsProvider {
       throw new Error(`Path not mounted: ${dirPath}`)
     }
     
-    const [provider, relativePath] = resolved
-    return provider.readdir(relativePath)
+    const [vfs, relativePath] = resolved
+    // Use provider directly for readdir since Vfs.listFolder returns objects
+    return vfs.getProvider().readdir(relativePath)
   }
 
   async rmdir(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
@@ -207,8 +231,8 @@ export class MountedVfsProvider implements VfsProvider {
     if (!resolved) {
       throw new Error(`Path not mounted: ${dirPath}`)
     }
-    const [provider, relativePath] = resolved
-    return provider.rmdir(relativePath, options)
+    const [vfs, relativePath] = resolved
+    await vfs.deleteFolder(relativePath, options?.recursive)
   }
 
   // ========== 状态查询 ==========
@@ -246,8 +270,8 @@ export class MountedVfsProvider implements VfsProvider {
       throw new Error(`Path not mounted: ${filePath}`)
     }
     
-    const [provider, relativePath] = resolved
-    return provider.stat(relativePath)
+    const [vfs, relativePath] = resolved
+    return vfs.stat(relativePath)
   }
 
   async exists(filePath: string): Promise<boolean> {
@@ -269,16 +293,30 @@ export class MountedVfsProvider implements VfsProvider {
       throw new Error(`Path not mounted: ${!fromResolved ? from : to}`)
     }
     
-    const [fromProvider, fromRelative] = fromResolved
-    const [toProvider, toRelative] = toResolved
+    const [fromVfs, fromRelative] = fromResolved
+    const [toVfs, toRelative] = toResolved
     
-    if (fromProvider !== toProvider) {
+    if (fromVfs !== toVfs) {
       // Cross-mount rename: copy then delete
-      const content = await fromProvider.readFile(fromRelative)
-      await toProvider.writeFile(toRelative, content)
-      await fromProvider.unlink(fromRelative)
+      // Read from source
+      const file = await fromVfs.readFile(fromRelative)
+      if (file.content === undefined) {
+        throw new Error(`File has no content: ${from}`)
+      }
+      
+      // Write to destination (will emit create event)
+      const destExists = await toVfs.exists(toRelative)
+      if (destExists) {
+        await toVfs.updateFile(toRelative, file.content)
+      } else {
+        await toVfs.createFile(toRelative, file.content)
+      }
+      
+      // Delete from source (will emit delete event)
+      await fromVfs.deleteFile(fromRelative)
     } else {
-      await fromProvider.rename(fromRelative, toRelative)
+      // Same mount - use moveItem for proper event handling
+      await fromVfs.moveItem(fromRelative, toRelative)
     }
   }
 
@@ -290,34 +328,40 @@ export class MountedVfsProvider implements VfsProvider {
       throw new Error(`Path not mounted: ${!fromResolved ? from : to}`)
     }
     
-    const [fromProvider, fromRelative] = fromResolved
-    const [toProvider, toRelative] = toResolved
+    const [fromVfs, fromRelative] = fromResolved
+    const [toVfs, toRelative] = toResolved
     
-    if (fromProvider !== toProvider) {
+    if (fromVfs !== toVfs) {
       // Cross-mount copy
-      const content = await fromProvider.readFile(fromRelative)
-      await toProvider.writeFile(toRelative, content)
+      const file = await fromVfs.readFile(fromRelative)
+      if (file.content === undefined) {
+        throw new Error(`File has no content: ${from}`)
+      }
+      
+      // Write to destination (will emit create event)
+      const destExists = await toVfs.exists(toRelative)
+      if (destExists) {
+        await toVfs.updateFile(toRelative, file.content)
+      } else {
+        await toVfs.createFile(toRelative, file.content)
+      }
     } else {
-      await fromProvider.copyFile(fromRelative, toRelative)
+      // Same mount - use copyItem for proper event handling
+      await fromVfs.copyItem(fromRelative, toRelative)
     }
   }
 
   // ========== 生命周期 ==========
 
   async initialize(): Promise<void> {
-    for (const provider of this.mounts.values()) {
-      if (provider.initialize) {
-        await provider.initialize()
-      }
+    for (const vfs of this.mounts.values()) {
+      await vfs.initialize()
     }
   }
 
   async dispose(): Promise<void> {
-    for (const provider of this.mounts.values()) {
-      if (provider.dispose) {
-        await provider.dispose()
-      }
-    }
+    // Note: We don't dispose the mounted Vfs instances since they may be used elsewhere
+    // The caller is responsible for disposing them if needed
     this.mounts.clear()
   }
 }
@@ -326,7 +370,7 @@ export class MountedVfsProvider implements VfsProvider {
  * Factory function to create a Vfs instance with MountedVfsProvider
  * This allows using multiple VFS sources as a single unified VFS
  */
-export function createMountedVfs(mounts?: Iterable<[string, VfsProvider]>): Vfs<MountedVfsProvider> {
+export function createMountedVfs(mounts?: Iterable<[string, Vfs]>): Vfs<MountedVfsProvider> {
   const provider = new MountedVfsProvider(mounts)
   return new Vfs(provider)
 }

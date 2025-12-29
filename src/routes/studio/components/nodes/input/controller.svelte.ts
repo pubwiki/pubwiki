@@ -339,7 +339,7 @@ export async function generate(
 		for (const [mountPath, vfsNode] of vfsNodes) {
 			const vfsData = vfsNode.data as VFSNodeData;
 			const vfs = await getNodeVfs(vfsData.content.projectId, vfsNode.id);
-			provider.mountVfs(mountPath, vfs);
+			provider.mount(mountPath, vfs);
 		}
 	
 		pubchat.setVFS(mountedVfs);
