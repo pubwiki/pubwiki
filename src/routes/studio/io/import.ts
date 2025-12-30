@@ -205,7 +205,6 @@ export async function convertArtifactToStudioGraph(
           parents: [],
           content: parsedContent,
           external: true,
-          vmState: 'idle',
           error: null,
           registeredServices: []
         };

@@ -44,6 +44,7 @@ import {
 	createLuaInstance, 
 	type LuaInstance 
 } from '@pubwiki/lua';
+import type { ServiceDefinition } from '@pubwiki/sandbox-host';
 
 // Core Lua code (embedded)
 import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
@@ -233,18 +234,9 @@ export interface ServiceCallResult {
 	error?: string;
 }
 
-/**
- * Service definition (exported from Lua ServiceRegistry)
- */
-export interface ServiceDefinition {
-	name: string;
-	namespace: string;
-	identifier: string;
-	kind: 'ACTION' | 'PURE';
-	description?: string;
-	inputs: Record<string, unknown>;  // Type schema
-	outputs: Record<string, unknown>; // Type schema
-}
+// Note: ServiceDefinition is imported from @pubwiki/sandbox-host
+// The Lua ServiceRegistry.export() returns this format with JSON Schema for inputs/outputs
+export type { ServiceDefinition };
 
 // ============================================================================
 // State
@@ -358,7 +350,14 @@ export async function initializeLoader(
 	updateNode: (id: string, updater: (data: LoaderNodeData) => LoaderNodeData) => void
 ): Promise<boolean> {
 	try {
-		updateNode(nodeId, (data) => ({ ...data, vmState: 'loading', error: null }));
+		// Clean up existing runtime if any
+		const existingRuntime = loaderRuntimes.get(nodeId);
+		if (existingRuntime) {
+			existingRuntime.instance.destroy();
+			loaderRuntimes.delete(nodeId);
+		}
+		
+		updateNode(nodeId, (data) => ({ ...data, error: null }));
 		
 		// Ensure Lua runtime is loaded
 		await loadRunner();
@@ -415,16 +414,15 @@ export async function initializeLoader(
 		const services = (initResult.result as string[]) || [];
 		updateNode(nodeId, (data) => ({
 			...data,
-			vmState: 'ready',
 			error: null,
 			registeredServices: services
 		}));
+		console.log("LoaderNode is loaded")
 		
 		return true;
 	} catch (error) {
 		updateNode(nodeId, (data) => ({
 			...data,
-			vmState: 'error',
 			error: error instanceof Error ? error.message : String(error),
 			registeredServices: []
 		}));
@@ -447,7 +445,6 @@ export async function destroyLoader(
 	
 	updateNode(nodeId, (data) => ({
 		...data,
-		vmState: 'idle',
 		error: null,
 		registeredServices: []
 	}));
@@ -498,16 +495,17 @@ export async function callService(
 	
 	// Serialize inputs to JSON
 	const inputsJson = JSON.stringify(inputs);
+	console.log("inputsJson", inputsJson, identifier)
 	
 	const result = await runtime.instance.run(`
 		local ServiceRegistry = require("service")
-		local json = require("json")
 		
 		local inputs = json.decode([[${inputsJson}]])
 		local outputs = ServiceRegistry.call("${identifier}", inputs)
 		
 		return outputs
 	`);
+	console.log("outputs", result)
 	
 	if (result.error) {
 		return { success: false, error: result.error };

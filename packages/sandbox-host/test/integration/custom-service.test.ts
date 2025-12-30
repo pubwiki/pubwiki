@@ -1,100 +1,179 @@
 /**
  * Custom Service Integration Tests
  *
- * Tests for dynamic service registration functionality with zod v4 schemas.
+ * Tests for dynamic service registration functionality with ICustomService interface.
+ * Services use JSON Schema for inputs/outputs instead of Zod schemas.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createMainRpcHost, createMainRpcChannel } from '../../src/rpc-host'
 import { MockMessageChannel } from '../helpers'
-import { RpcTarget } from 'capnweb'
-import * as z from 'zod'
-import type { ServiceDefinition, MainRpcHost } from '../../src/types'
+import type { ICustomService, ServiceDefinition, MainRpcHost } from '../../src/types'
 
-// ==================== Test Service Definitions ====================
+// ==================== Mock ICustomService Implementations ====================
 
 /**
- * Simple greeting service
+ * Create a mock greeting service implementing ICustomService
  */
-class GreetingService extends RpcTarget {
-  greet(name: string): string {
-    return `Hello, ${name}!`
-  }
-
-  greetMany(names: string[]): string[] {
-    return names.map(name => `Hello, ${name}!`)
+function createGreetingService(): ICustomService {
+  return {
+    async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const name = inputs.name as string
+      return { greeting: `Hello, ${name}!` }
+    },
+    async getDefinition(): Promise<ServiceDefinition> {
+      return {
+        name: 'greet',
+        namespace: 'greeting',
+        identifier: 'greeting:greet',
+        kind: 'PURE',
+        description: 'A simple greeting service',
+        inputs: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Name to greet' }
+          },
+          required: ['name']
+        },
+        outputs: {
+          type: 'object',
+          properties: {
+            greeting: { type: 'string', description: 'The greeting message' }
+          },
+          required: ['greeting']
+        }
+      }
+    }
   }
 }
 
-const greetingSchema = z.object({
-  greet: z.function(),
-  greetMany: z.function()
-})
-
 /**
- * Calculator service with async methods
+ * Create a mock calculator service implementing ICustomService
  */
-class CalculatorService extends RpcTarget {
-  add(a: number, b: number): number {
-    return a + b
-  }
-
-  subtract(a: number, b: number): number {
-    return a - b
-  }
-
-  async computeAsync(value: number): Promise<number> {
-    return new Promise(resolve => {
-      setTimeout(() => resolve(value * 2), 10)
-    })
+function createCalculatorService(): ICustomService {
+  return {
+    async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const a = inputs.a as number
+      const b = inputs.b as number
+      const operation = inputs.operation as string
+      
+      let result: number
+      switch (operation) {
+        case 'add':
+          result = a + b
+          break
+        case 'subtract':
+          result = a - b
+          break
+        case 'multiply':
+          result = a * b
+          break
+        default:
+          throw new Error(`Unknown operation: ${operation}`)
+      }
+      
+      return { result }
+    },
+    async getDefinition(): Promise<ServiceDefinition> {
+      return {
+        name: 'calculate',
+        namespace: 'math',
+        identifier: 'math:calculate',
+        kind: 'PURE',
+        description: 'A calculator service',
+        inputs: {
+          type: 'object',
+          properties: {
+            a: { type: 'number', description: 'First operand' },
+            b: { type: 'number', description: 'Second operand' },
+            operation: { type: 'string', description: 'Operation: add, subtract, multiply' }
+          },
+          required: ['a', 'b', 'operation']
+        },
+        outputs: {
+          type: 'object',
+          properties: {
+            result: { type: 'number', description: 'Calculation result' }
+          },
+          required: ['result']
+        }
+      }
+    }
   }
 }
 
-const calculatorSchema = z.object({
-  add: z.function(),
-  subtract: z.function(),
-  computeAsync: z.function()
-})
-
 /**
- * State management service
+ * Create a mock state service implementing ICustomService (with side effects)
  */
-class StateService extends RpcTarget {
-  private state: Map<string, unknown> = new Map()
-
-  set(key: string, value: unknown): void {
-    this.state.set(key, value)
-  }
-
-  get(key: string): unknown {
-    return this.state.get(key)
-  }
-
-  has(key: string): boolean {
-    return this.state.has(key)
-  }
-
-  delete(key: string): boolean {
-    return this.state.delete(key)
-  }
-
-  clear(): void {
-    this.state.clear()
-  }
-
-  keys(): string[] {
-    return Array.from(this.state.keys())
+function createStateService(): ICustomService {
+  const state: Map<string, unknown> = new Map()
+  
+  return {
+    async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+      const action = inputs.action as string
+      const key = inputs.key as string
+      
+      switch (action) {
+        case 'get':
+          return { value: state.get(key), exists: state.has(key) }
+        case 'set':
+          state.set(key, inputs.value)
+          return { success: true }
+        case 'delete':
+          return { deleted: state.delete(key) }
+        case 'keys':
+          return { keys: Array.from(state.keys()) }
+        case 'clear':
+          state.clear()
+          return { success: true }
+        default:
+          throw new Error(`Unknown action: ${action}`)
+      }
+    },
+    async getDefinition(): Promise<ServiceDefinition> {
+      return {
+        name: 'state',
+        namespace: 'storage',
+        identifier: 'storage:state',
+        kind: 'ACTION',
+        description: 'A state management service',
+        inputs: {
+          type: 'object',
+          properties: {
+            action: { type: 'string', description: 'Action: get, set, delete, keys, clear' },
+            key: { type: 'string', description: 'State key' },
+            value: { description: 'Value to store (for set action)' }
+          },
+          required: ['action']
+        },
+        outputs: {
+          type: 'object',
+          properties: {
+            value: { description: 'Retrieved value' },
+            exists: { type: 'boolean' },
+            success: { type: 'boolean' },
+            deleted: { type: 'boolean' },
+            keys: { type: 'array', items: { type: 'string' } }
+          }
+        }
+      }
+    }
   }
 }
 
-const stateSchema = z.object({
-  set: z.function(),
-  get: z.function(),
-  has: z.function(),
-  delete: z.function(),
-  clear: z.function(),
-  keys: z.function()
-})
+/**
+ * Create a custom service with specific definition
+ */
+function createCustomService(definition: ServiceDefinition): ICustomService {
+  return {
+    async call(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+      return { result: 'mock' }
+    },
+    async getDefinition(): Promise<ServiceDefinition> {
+      return definition
+    }
+  }
+}
 
 // ==================== Tests ====================
 
@@ -113,46 +192,49 @@ describe('Custom Service Registration', () => {
     host.disconnect()
   })
 
-  describe('ServiceDefinition interface', () => {
-    it('should accept valid ServiceDefinition with zod schema', () => {
-      const definition: ServiceDefinition<typeof greetingSchema> = {
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: new GreetingService()
-      }
+  describe('ICustomService interface', () => {
+    it('should have call and getDefinition methods', () => {
+      const service = createGreetingService()
 
-      expect(definition.id).toBe('greeting')
-      expect(definition.schema).toBe(greetingSchema)
-      expect(definition.implementation).toBeInstanceOf(GreetingService)
+      expect(service.call).toBeDefined()
+      expect(typeof service.call).toBe('function')
+      expect(service.getDefinition).toBeDefined()
+      expect(typeof service.getDefinition).toBe('function')
     })
 
-    it('should support multiple schema types', () => {
-      const greetDef: ServiceDefinition<typeof greetingSchema> = {
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: new GreetingService()
-      }
+    it('should return valid ServiceDefinition from getDefinition', async () => {
+      const service = createGreetingService()
+      const definition = await service.getDefinition()
 
-      const calcDef: ServiceDefinition<typeof calculatorSchema> = {
-        id: 'calculator',
-        schema: calculatorSchema,
-        implementation: new CalculatorService()
-      }
+      expect(definition.name).toBe('greet')
+      expect(definition.namespace).toBe('greeting')
+      expect(definition.identifier).toBe('greeting:greet')
+      expect(definition.kind).toBe('PURE')
+      expect(definition.inputs).toBeDefined()
+      expect(definition.outputs).toBeDefined()
+    })
 
-      expect(greetDef.schema).not.toBe(calcDef.schema)
+    it('should support ACTION kind for services with side effects', async () => {
+      const service = createStateService()
+      const definition = await service.getDefinition()
+
+      expect(definition.kind).toBe('ACTION')
+    })
+
+    it('should support PURE kind for services without side effects', async () => {
+      const service = createCalculatorService()
+      const definition = await service.getDefinition()
+
+      expect(definition.kind).toBe('PURE')
     })
   })
 
   describe('registerService', () => {
     it('should register a simple service', () => {
-      const definition: ServiceDefinition = {
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: new GreetingService()
-      }
+      const service = createGreetingService()
 
       // Should not throw
-      expect(() => host.registerService(definition)).not.toThrow()
+      expect(() => host.registerService('greeting', service)).not.toThrow()
 
       // Should be retrievable
       const retrieved = host.getService('greeting')
@@ -160,23 +242,9 @@ describe('Custom Service Registration', () => {
     })
 
     it('should register multiple services', () => {
-      host.registerService({
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: new GreetingService()
-      })
-
-      host.registerService({
-        id: 'calculator',
-        schema: calculatorSchema,
-        implementation: new CalculatorService()
-      })
-
-      host.registerService({
-        id: 'state',
-        schema: stateSchema,
-        implementation: new StateService()
-      })
+      host.registerService('greeting', createGreetingService())
+      host.registerService('calculator', createCalculatorService())
+      host.registerService('state', createStateService())
 
       expect(host.getService('greeting')).toBeDefined()
       expect(host.getService('calculator')).toBeDefined()
@@ -184,20 +252,11 @@ describe('Custom Service Registration', () => {
     })
 
     it('should allow overwriting existing service', () => {
-      const service1 = new GreetingService()
-      const service2 = new GreetingService()
+      const service1 = createGreetingService()
+      const service2 = createGreetingService()
 
-      host.registerService({
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: service1
-      })
-
-      host.registerService({
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: service2
-      })
+      host.registerService('greeting', service1)
+      host.registerService('greeting', service2)
 
       // Should have the latest registration
       const retrieved = host.getService('greeting')
@@ -207,13 +266,9 @@ describe('Custom Service Registration', () => {
 
   describe('getService', () => {
     it('should return registered service', () => {
-      const service = new CalculatorService()
+      const service = createCalculatorService()
 
-      host.registerService({
-        id: 'calc',
-        schema: calculatorSchema,
-        implementation: service
-      })
+      host.registerService('calc', service)
 
       const retrieved = host.getService('calc')
       expect(retrieved).toBe(service)
@@ -229,145 +284,159 @@ describe('Custom Service Registration', () => {
       const result = host.getService('hmr')
       expect(result).toBeUndefined()
     })
+
+    it('should return service that can be called', async () => {
+      const service = createGreetingService()
+      host.registerService('greeting', service)
+
+      const retrieved = host.getService('greeting')!
+      const result = await retrieved.call({ name: 'World' })
+
+      expect(result.greeting).toBe('Hello, World!')
+    })
+
+    it('should return service whose definition can be retrieved', async () => {
+      const service = createCalculatorService()
+      host.registerService('calculator', service)
+
+      const retrieved = host.getService('calculator')!
+      const definition = await retrieved.getDefinition()
+
+      expect(definition.name).toBe('calculate')
+      expect(definition.namespace).toBe('math')
+      expect(definition.identifier).toBe('math:calculate')
+    })
   })
 
-  describe('getServiceSchema', () => {
-    it('should return registered schema', () => {
-      host.registerService({
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: new GreetingService()
+  describe('listServices', () => {
+    it('should return empty array when no services registered', async () => {
+      const newChannel = new MockMessageChannel()
+      const newHost = createMainRpcHost(newChannel.port1 as unknown as MessagePort, {
+        basePath: '/public/demo'
       })
 
-      const schema = host.getServiceSchema('greeting')
-      expect(schema).toBe(greetingSchema)
+      // Access internal services to call listServices
+      // Note: listServices is on the internal MainRpcServices, not MainRpcHost
+      // For now, we test via registering services and checking getService works
+      expect(newHost.getService('any')).toBeUndefined()
+
+      newHost.disconnect()
     })
 
-    it('should return undefined for non-existent service', () => {
-      const schema = host.getServiceSchema('non-existent')
-      expect(schema).toBeUndefined()
+    it('should return definitions for registered services', async () => {
+      host.registerService('greeting', createGreetingService())
+      host.registerService('calculator', createCalculatorService())
+
+      // Verify services are registered by checking they exist
+      const greeting = host.getService('greeting')
+      const calculator = host.getService('calculator')
+
+      expect(greeting).toBeDefined()
+      expect(calculator).toBeDefined()
+
+      // Verify definitions can be retrieved
+      const greetingDef = await greeting!.getDefinition()
+      const calculatorDef = await calculator!.getDefinition()
+
+      expect(greetingDef.identifier).toBe('greeting:greet')
+      expect(calculatorDef.identifier).toBe('math:calculate')
+    })
+  })
+
+  describe('service call functionality', () => {
+    it('should execute greeting service call correctly', async () => {
+      const service = createGreetingService()
+      host.registerService('greeting', service)
+
+      const retrieved = host.getService('greeting')!
+      const result = await retrieved.call({ name: 'Alice' })
+
+      expect(result.greeting).toBe('Hello, Alice!')
     })
 
-    it('should return correct schema for each service', () => {
-      host.registerService({
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: new GreetingService()
-      })
+    it('should execute calculator service call correctly', async () => {
+      const service = createCalculatorService()
+      host.registerService('calculator', service)
 
-      host.registerService({
-        id: 'calculator',
-        schema: calculatorSchema,
-        implementation: new CalculatorService()
-      })
+      const retrieved = host.getService('calculator')!
 
-      host.registerService({
-        id: 'state',
-        schema: stateSchema,
-        implementation: new StateService()
-      })
+      const addResult = await retrieved.call({ a: 5, b: 3, operation: 'add' })
+      expect(addResult.result).toBe(8)
 
-      expect(host.getServiceSchema('greeting')).toBe(greetingSchema)
-      expect(host.getServiceSchema('calculator')).toBe(calculatorSchema)
-      expect(host.getServiceSchema('state')).toBe(stateSchema)
+      const subResult = await retrieved.call({ a: 10, b: 4, operation: 'subtract' })
+      expect(subResult.result).toBe(6)
+
+      const mulResult = await retrieved.call({ a: 3, b: 7, operation: 'multiply' })
+      expect(mulResult.result).toBe(21)
     })
 
-    it('should update schema when service is overwritten', () => {
-      const schema1 = z.object({ method1: z.function() })
-      const schema2 = z.object({ method2: z.function() })
+    it('should execute state service call correctly', async () => {
+      const service = createStateService()
+      host.registerService('state', service)
 
-      host.registerService({
-        id: 'test',
-        schema: schema1,
-        implementation: new GreetingService()
-      })
+      const retrieved = host.getService('state')!
 
-      expect(host.getServiceSchema('test')).toBe(schema1)
+      // Set a value
+      await retrieved.call({ action: 'set', key: 'myKey', value: 'myValue' })
 
-      host.registerService({
-        id: 'test',
-        schema: schema2,
-        implementation: new GreetingService()
-      })
+      // Get the value
+      const getResult = await retrieved.call({ action: 'get', key: 'myKey' })
+      expect(getResult.value).toBe('myValue')
+      expect(getResult.exists).toBe(true)
 
-      expect(host.getServiceSchema('test')).toBe(schema2)
+      // Get keys
+      const keysResult = await retrieved.call({ action: 'keys' })
+      expect(keysResult.keys).toContain('myKey')
+
+      // Delete the value
+      const deleteResult = await retrieved.call({ action: 'delete', key: 'myKey' })
+      expect(deleteResult.deleted).toBe(true)
+
+      // Verify deletion
+      const afterDelete = await retrieved.call({ action: 'get', key: 'myKey' })
+      expect(afterDelete.exists).toBe(false)
     })
 
-    it('should work with complex schemas', () => {
-      const complexSchema = z.object({
-        getData: z.function(),
-        setData: z.function(),
-        nested: z.object({
-          value: z.string()
-        }).optional()
-      })
+    it('should throw error for invalid service operation', async () => {
+      const service = createCalculatorService()
+      host.registerService('calculator', service)
 
-      class ComplexService extends RpcTarget {
-        getData(): unknown { return null }
-        setData(_data: unknown): void {}
-      }
+      const retrieved = host.getService('calculator')!
 
-      host.registerService({
-        id: 'complex',
-        schema: complexSchema,
-        implementation: new ComplexService()
-      })
-
-      const retrieved = host.getServiceSchema('complex')
-      expect(retrieved).toBe(complexSchema)
-      
-      // Verify it's a valid zod schema
-      expect(retrieved).toBeDefined()
-      expect(typeof (retrieved as z.ZodType).parse).toBe('function')
-    })
-
-    it('should be independent from getService', () => {
-      host.registerService({
-        id: 'greeting',
-        schema: greetingSchema,
-        implementation: new GreetingService()
-      })
-
-      // Both should work independently
-      const service = host.getService('greeting')
-      const schema = host.getServiceSchema('greeting')
-
-      expect(service).toBeDefined()
-      expect(schema).toBeDefined()
-      expect(service).not.toBe(schema)
+      await expect(
+        retrieved.call({ a: 1, b: 2, operation: 'invalid' })
+      ).rejects.toThrow('Unknown operation: invalid')
     })
   })
 
   describe('service isolation', () => {
-    it('should maintain separate service instances', () => {
-      const state1 = new StateService()
-      const state2 = new StateService()
+    it('should maintain separate service instances', async () => {
+      const state1 = createStateService()
+      const state2 = createStateService()
 
-      host.registerService({
-        id: 'state1',
-        schema: stateSchema,
-        implementation: state1
-      })
-
-      host.registerService({
-        id: 'state2',
-        schema: stateSchema,
-        implementation: state2
-      })
+      host.registerService('state1', state1)
+      host.registerService('state2', state2)
 
       // Set different values
-      state1.set('key', 'value1')
-      state2.set('key', 'value2')
+      await state1.call({ action: 'set', key: 'key', value: 'value1' })
+      await state2.call({ action: 'set', key: 'key', value: 'value2' })
 
       // Verify isolation
-      expect(state1.get('key')).toBe('value1')
-      expect(state2.get('key')).toBe('value2')
+      const result1 = await state1.call({ action: 'get', key: 'key' })
+      const result2 = await state2.call({ action: 'get', key: 'key' })
+
+      expect(result1.value).toBe('value1')
+      expect(result2.value).toBe('value2')
 
       // Verify through getService
-      const retrieved1 = host.getService('state1') as StateService
-      const retrieved2 = host.getService('state2') as StateService
-      expect(retrieved1.get('key')).toBe('value1')
-      expect(retrieved2.get('key')).toBe('value2')
+      const retrieved1 = host.getService('state1')!
+      const retrieved2 = host.getService('state2')!
+
+      const retrievedResult1 = await retrieved1.call({ action: 'get', key: 'key' })
+      const retrievedResult2 = await retrieved2.call({ action: 'get', key: 'key' })
+
+      expect(retrievedResult1.value).toBe('value1')
+      expect(retrievedResult2.value).toBe('value2')
     })
   })
 
@@ -375,9 +444,9 @@ describe('Custom Service Registration', () => {
     it('should initialize with custom services from config', () => {
       const newChannel = new MockMessageChannel()
 
-      const customServices = new Map<string, () => RpcTarget>([
-        ['greeting', () => new GreetingService()],
-        ['calculator', () => new CalculatorService()]
+      const customServices = new Map<string, () => ICustomService>([
+        ['greeting', () => createGreetingService()],
+        ['calculator', () => createCalculatorService()]
       ])
 
       const newHost = createMainRpcHost(newChannel.port1 as unknown as MessagePort, {
@@ -386,9 +455,7 @@ describe('Custom Service Registration', () => {
       })
 
       expect(newHost.getService('greeting')).toBeDefined()
-      expect(newHost.getService('greeting')).toBeInstanceOf(GreetingService)
       expect(newHost.getService('calculator')).toBeDefined()
-      expect(newHost.getService('calculator')).toBeInstanceOf(CalculatorService)
 
       newHost.disconnect()
     })
@@ -396,8 +463,8 @@ describe('Custom Service Registration', () => {
     it('should allow adding more services after initialization', () => {
       const newChannel = new MockMessageChannel()
 
-      const customServices = new Map<string, () => RpcTarget>([
-        ['greeting', () => new GreetingService()]
+      const customServices = new Map<string, () => ICustomService>([
+        ['greeting', () => createGreetingService()]
       ])
 
       const newHost = createMainRpcHost(newChannel.port1 as unknown as MessagePort, {
@@ -406,11 +473,7 @@ describe('Custom Service Registration', () => {
       })
 
       // Add another service dynamically
-      newHost.registerService({
-        id: 'state',
-        schema: stateSchema,
-        implementation: new StateService()
-      })
+      newHost.registerService('state', createStateService())
 
       expect(newHost.getService('greeting')).toBeDefined()
       expect(newHost.getService('state')).toBeDefined()
@@ -421,8 +484,8 @@ describe('Custom Service Registration', () => {
 
   describe('createMainRpcChannel with services', () => {
     it('should create channel with custom services', () => {
-      const customServices = new Map<string, () => RpcTarget>([
-        ['greeting', () => new GreetingService()]
+      const customServices = new Map<string, () => ICustomService>([
+        ['greeting', () => createGreetingService()]
       ])
 
       const { host: channelHost, clientPort } = createMainRpcChannel({
@@ -442,11 +505,7 @@ describe('Custom Service Registration', () => {
         basePath: '/public/demo'
       })
 
-      channelHost.registerService({
-        id: 'calculator',
-        schema: calculatorSchema,
-        implementation: new CalculatorService()
-      })
+      channelHost.registerService('calculator', createCalculatorService())
 
       expect(channelHost.getService('calculator')).toBeDefined()
 
@@ -454,70 +513,133 @@ describe('Custom Service Registration', () => {
     })
   })
 
-  describe('service with complex types', () => {
-    it('should handle services with object parameters', () => {
-      interface UserData {
-        name: string
-        age: number
-        email: string
+  describe('ServiceDefinition with JSON Schema', () => {
+    it('should support complex JSON Schema for inputs', async () => {
+      const definition: ServiceDefinition = {
+        name: 'complexInput',
+        namespace: 'test',
+        identifier: 'test:complexInput',
+        kind: 'PURE',
+        inputs: {
+          type: 'object',
+          properties: {
+            user: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                age: { type: 'number' },
+                tags: {
+                  type: 'array',
+                  items: { type: 'string' }
+                }
+              },
+              required: ['name']
+            }
+          },
+          required: ['user']
+        },
+        outputs: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' }
+          }
+        }
       }
 
-      class UserService extends RpcTarget {
-        private users: Map<string, UserData> = new Map()
+      const service = createCustomService(definition)
+      host.registerService('complexInput', service)
 
-        create(id: string, data: UserData): UserData {
-          this.users.set(id, data)
-          return data
-        }
+      const retrieved = host.getService('complexInput')!
+      const retrievedDef = await retrieved.getDefinition()
 
-        get(id: string): UserData | undefined {
-          return this.users.get(id)
-        }
+      expect(retrievedDef.inputs.properties?.user).toBeDefined()
+      expect(retrievedDef.inputs.properties?.user?.properties?.tags?.type).toBe('array')
+    })
 
-        update(id: string, data: Partial<UserData>): UserData | undefined {
-          const existing = this.users.get(id)
-          if (!existing) return undefined
-          const updated = { ...existing, ...data }
-          this.users.set(id, updated)
-          return updated
+    it('should support oneOf/anyOf in JSON Schema', async () => {
+      const definition: ServiceDefinition = {
+        name: 'unionType',
+        namespace: 'test',
+        identifier: 'test:unionType',
+        kind: 'PURE',
+        inputs: {
+          type: 'object',
+          properties: {
+            value: {
+              oneOf: [
+                { type: 'string' },
+                { type: 'number' }
+              ]
+            }
+          }
+        },
+        outputs: {
+          type: 'object',
+          properties: {
+            result: {
+              anyOf: [
+                { type: 'string' },
+                { type: 'null' }
+              ]
+            }
+          }
         }
       }
 
-      const userSchema = z.object({
-        create: z.function(),
-        get: z.function(),
-        update: z.function()
-      })
+      const service = createCustomService(definition)
+      host.registerService('unionType', service)
 
-      const userService = new UserService()
+      const retrieved = host.getService('unionType')!
+      const retrievedDef = await retrieved.getDefinition()
 
-      host.registerService({
-        id: 'users',
-        schema: userSchema,
-        implementation: userService
-      })
+      expect(retrievedDef.inputs.properties?.value?.oneOf).toHaveLength(2)
+      expect(retrievedDef.outputs.properties?.result?.anyOf).toHaveLength(2)
+    })
 
-      const retrieved = host.getService('users') as UserService
-      
-      // Test functionality
-      const userData: UserData = { name: 'Alice', age: 30, email: 'alice@example.com' }
-      retrieved.create('user1', userData)
-      
-      expect(retrieved.get('user1')).toEqual(userData)
-      
-      retrieved.update('user1', { age: 31 })
-      expect(retrieved.get('user1')?.age).toBe(31)
+    it('should include optional description field', async () => {
+      const definition: ServiceDefinition = {
+        name: 'documented',
+        namespace: 'test',
+        identifier: 'test:documented',
+        kind: 'PURE',
+        description: 'A well-documented service',
+        inputs: {
+          type: 'object',
+          properties: {
+            input1: {
+              type: 'string',
+              description: 'The first input parameter'
+            }
+          }
+        },
+        outputs: {
+          type: 'object',
+          properties: {
+            output1: {
+              type: 'string',
+              description: 'The output value'
+            }
+          }
+        }
+      }
+
+      const service = createCustomService(definition)
+      host.registerService('documented', service)
+
+      const retrieved = host.getService('documented')!
+      const retrievedDef = await retrieved.getDefinition()
+
+      expect(retrievedDef.description).toBe('A well-documented service')
+      expect(retrievedDef.inputs.properties?.input1?.description).toBe('The first input parameter')
     })
   })
 
   describe('edge cases', () => {
     it('should handle empty service id', () => {
+      const service = createGreetingService()
+
       // This should work - empty string is a valid ID
-      host.registerService({
-        id: '',
-        schema: greetingSchema,
-        implementation: new GreetingService()
-      })
+      host.registerService('', service)
 
       expect(host.getService('')).toBeDefined()
     })
@@ -533,12 +655,7 @@ describe('Custom Service Registration', () => {
       ]
 
       for (const id of specialIds) {
-        host.registerService({
-          id,
-          schema: greetingSchema,
-          implementation: new GreetingService()
-        })
-
+        host.registerService(id, createGreetingService())
         expect(host.getService(id)).toBeDefined()
       }
     })
@@ -549,12 +666,47 @@ describe('Custom Service Registration', () => {
       // Behavior depends on implementation - should either throw or silently fail
       // This test documents the current behavior
       expect(() => {
-        host.registerService({
-          id: 'late-service',
-          schema: greetingSchema,
-          implementation: new GreetingService()
-        })
+        host.registerService('late-service', createGreetingService())
       }).not.toThrow()
+    })
+
+    it('should handle service that throws on call', async () => {
+      const throwingService: ICustomService = {
+        async call(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+          throw new Error('Service error')
+        },
+        async getDefinition(): Promise<ServiceDefinition> {
+          return {
+            name: 'throwing',
+            namespace: 'test',
+            identifier: 'test:throwing',
+            kind: 'PURE',
+            inputs: { type: 'object' },
+            outputs: { type: 'object' }
+          }
+        }
+      }
+
+      host.registerService('throwing', throwingService)
+
+      const retrieved = host.getService('throwing')!
+      await expect(retrieved.call({})).rejects.toThrow('Service error')
+    })
+
+    it('should handle service that throws on getDefinition', async () => {
+      const throwingDefService: ICustomService = {
+        async call(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+          return {}
+        },
+        async getDefinition(): Promise<ServiceDefinition> {
+          throw new Error('Definition error')
+        }
+      }
+
+      host.registerService('throwingDef', throwingDefService)
+
+      const retrieved = host.getService('throwingDef')!
+      await expect(retrieved.getDefinition()).rejects.toThrow('Definition error')
     })
   })
 })

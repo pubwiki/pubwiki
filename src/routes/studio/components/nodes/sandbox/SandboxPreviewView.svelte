@@ -3,19 +3,28 @@
 	 * SandboxPreviewView - Floating panel for sandbox preview
 	 * 
 	 * This is the expanded view for sandbox preview, rendered as a portal.
-	 * Supports custom services from connected Loader nodes.
+	 * Supports custom services from connected Loader nodes via Lua VM bridge.
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig } from '@pubwiki/sandbox-host';
+	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig, ICustomService, ServiceDefinition } from '@pubwiki/sandbox-host';
 	import { createSandboxConnection, RpcTarget } from '@pubwiki/sandbox-host';
 	import type { VersionedVfs } from '../../../vfs';
 	import type { LoaderNodeData } from '../../../types';
+	import { createLoaderInterface, type LoaderInterface } from '../loader/controller.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
 	// Props
 	// ============================================================================
+
+	/**
+	 * Connected Loader node info (id + data)
+	 */
+	interface LoaderNodeInfo {
+		id: string;
+		data: LoaderNodeData;
+	}
 
 	interface Props {
 		vfs: VersionedVfs;
@@ -23,7 +32,7 @@
 		sandboxOrigin: string;
 		entryFile: string;
 		name: string;
-		loaderNodes?: LoaderNodeData[];
+		loaderNodes?: LoaderNodeInfo[];
 		onClose: () => void;
 	}
 
@@ -53,133 +62,108 @@
 	const sandboxUrl = $derived(`${sandboxOrigin}/__sandbox.html`);
 
 	// ============================================================================
-	// Mock Service Classes
+	// Lua Service Bridge
 	// ============================================================================
 
 	/**
-	 * Echo service for testing
-	 */
-	class EchoService extends RpcTarget {
-		config: Record<string, any>;
-		
-		constructor(config: Record<string, any>) {
-			super();
-			this.config = config;
-		}
-		
-		echo(msg: string): string {
-			return `Echo: ${msg}`;
-		}
-		
-		reverse(msg: string): string {
-			return msg.split('').reverse().join('');
-		}
-	}
-
-	/**
-	 * Counter service for testing stateful services
-	 */
-	class CounterService extends RpcTarget {
-		private count: number;
-		private initial: number;
-		
-		constructor(config: Record<string, any>) {
-			super();
-			this.initial = config.initial ?? 0;
-			this.count = this.initial;
-		}
-		
-		increment(): number {
-			return ++this.count;
-		}
-		
-		decrement(): number {
-			return --this.count;
-		}
-		
-		getCount(): number {
-			return this.count;
-		}
-		
-		reset(): number {
-			this.count = this.initial;
-			return this.count;
-		}
-	}
-
-	/**
-	 * WikiRAG mock service
-	 */
-	class WikiRAGService extends RpcTarget {
-		config: Record<string, any>;
-		
-		constructor(config: Record<string, any>) {
-			super();
-			this.config = config;
-		}
-		
-		async chat(message: string): Promise<string> {
-			return `[WikiRAG Mock] Received: ${message}`;
-		}
-		
-		async search(query: string): Promise<{ title: string; content: string }[]> {
-			return [
-				{ title: 'Mock Result 1', content: `Results for: ${query}` },
-				{ title: 'Mock Result 2', content: 'Sample content' }
-			];
-		}
-	}
-
-	/**
-	 * Generic passthrough service for unknown types
-	 */
-	class GenericService extends RpcTarget {
-		serviceType: string;
-		config: Record<string, any>;
-		
-		constructor(serviceType: string, config: Record<string, any>) {
-			super();
-			this.serviceType = serviceType;
-			this.config = config;
-		}
-		
-		ping(): string {
-			return `pong from ${this.serviceType}`;
-		}
-		
-		getConfig(): Record<string, any> {
-			return this.config;
-		}
-	}
-
-	// ============================================================================
-	// Mock Services
-	// ============================================================================
-
-	/**
-	 * Create service implementations from connected Loader nodes
+	 * Bridge class that exposes Lua services via RPC.
 	 * 
-	 * TODO: Integrate with the new Loader Node Lua VM architecture.
-	 * The new LoaderNodeData uses registeredServices from Lua ServiceRegistry.
-	 * Services should be accessed via createLoaderInterface() from the controller.
+	 * This creates a dynamic RpcTarget that forwards method calls to the Lua VM.
+	 * When a method is called, it maps to a service call in the Lua ServiceRegistry.
+	 * Implements ICustomService interface for unified service access.
 	 */
-	function createMockServices(): Map<string, CustomServiceFactory<MainRpcHostConfig>> {
+	class LuaServiceBridge extends RpcTarget implements ICustomService {
+		private loaderInterface: LoaderInterface;
+		private serviceIdentifier: string;
+		private serviceDef: ServiceDefinition | null = null;
+		
+		constructor(loaderInterface: LoaderInterface, serviceIdentifier: string) {
+			super();
+			this.loaderInterface = loaderInterface;
+			this.serviceIdentifier = serviceIdentifier;
+		}
+
+		/**
+		 * Initialize the bridge by loading service definition
+		 */
+		async init(): Promise<void> {
+			const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
+			if (def) {
+				this.serviceDef = def;
+			}
+		}
+
+		/**
+		 * Call the Lua service with given inputs.
+		 * This is the main entry point for RPC calls.
+		 * 
+		 * @param inputs - Key-value map of inputs to pass to the service
+		 * @returns The outputs from the service call
+		 */
+		async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+			const result = await this.loaderInterface.callService(this.serviceIdentifier, inputs);
+			if (!result.success) {
+				throw new Error(result.error ?? 'Service call failed');
+			}
+			return result.outputs ?? {};
+		}
+
+		/**
+		 * Get service definition with JSON Schema.
+		 * Required by ICustomService interface.
+		 */
+		async getDefinition(): Promise<ServiceDefinition> {
+			if (!this.serviceDef) {
+				const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
+				if (!def) {
+					throw new Error(`Service definition not found: ${this.serviceIdentifier}`);
+				}
+				this.serviceDef = def;
+			}
+			return this.serviceDef;
+		}
+
+		/**
+		 * Check if the loader is still ready
+		 */
+		isReady(): boolean {
+			return this.loaderInterface.isReady();
+		}
+	}
+
+	// ============================================================================
+	// Service Factory
+	// ============================================================================
+
+	/**
+	 * Create service factories from connected Loader nodes.
+	 * 
+	 * Each service registered in Lua ServiceRegistry is exposed via a LuaServiceBridge.
+	 * The bridge forwards RPC calls to the actual Lua VM implementation.
+	 */
+	function createLoaderServices(): Map<string, CustomServiceFactory<MainRpcHostConfig>> {
 		const services = new Map<string, CustomServiceFactory<MainRpcHostConfig>>();
 
-		// For now, we iterate over loader nodes and check their state
-		// Full integration with Lua VM services will be added later
-		for (const loader of loaderNodes) {
-			// Skip loaders that aren't ready
-			if (loader.vmState !== 'ready') continue;
+		for (const loaderInfo of loaderNodes) {
+			// Create interface for this loader node
+			const loaderInterface = createLoaderInterface(loaderInfo.id);
 			
-			// For each registered service, create a placeholder
-			// TODO: Connect to actual Lua service via createLoaderInterface
-			for (const serviceName of loader.registeredServices) {
-				// Service names are in format "namespace:name" or just "name"
-				const shortName = serviceName.includes(':') ? serviceName.split(':')[1] : serviceName;
+			// Skip loaders that aren't ready
+			if (!loaderInterface.isReady()) continue;
+			
+			// For each registered service, create a factory
+			for (const serviceIdentifier of loaderInfo.data.registeredServices) {
+				// Create factory that returns a LuaServiceBridge
+				services.set(serviceIdentifier, () => {
+					const bridge = new LuaServiceBridge(loaderInterface, serviceIdentifier);
+					// Initialize asynchronously (service definition loading)
+					bridge.init().catch(err => {
+						console.error(`[LuaServiceBridge] Failed to init ${serviceIdentifier}:`, err);
+					});
+					return bridge;
+				});
 				
-				// Create a placeholder service that logs calls
-				services.set(shortName, () => new GenericService(shortName, {}));
+				console.log(`[SandboxPreviewView] Registered Lua service: ${serviceIdentifier}`);
 			}
 		}
 
@@ -231,7 +215,7 @@
 			error = null;
 
 			// Collect custom services from connected Loader nodes
-			const customServices = loaderNodes.length > 0 ? createMockServices() : undefined;
+			const customServices = loaderNodes.length > 0 ? createLoaderServices() : undefined;
 
 			// Create sandbox connection - it will auto-initialize when sandbox sends SANDBOX_READY
 			sandboxConnection = createSandboxConnection({

@@ -10,7 +10,7 @@
 --   - ACTION (默认): 有副作用的服务
 --   - PURE: 纯计算，无副作用
 
-local Type = require("types")
+local Type = require("core/types")
 
 ----------------------------------------------------------------
 -- ServiceRegistry
@@ -48,13 +48,15 @@ local function createBuilder(registry, kind)
         return self
     end
     
-    function builder:inputs(defs)
-        self._inputs = defs
+    function builder:inputs(typeOrObject)
+        assert(Type.isType(typeOrObject), "inputs must be a Type")
+        self._inputs = typeOrObject
         return self
     end
     
-    function builder:outputs(defs)
-        self._outputs = defs
+    function builder:outputs(typeOrObject)
+        assert(Type.isType(typeOrObject), "outputs must be a Type")
+        self._outputs = typeOrObject
         return self
     end
     
@@ -78,19 +80,9 @@ local function createBuilder(registry, kind)
         local namespace = self._namespace
         local identifier = namespace .. ":" .. name
         
-        -- 验证并克隆 inputs
-        local inputs = {}
-        for k, v in pairs(self._inputs or {}) do
-            assert(Type.isType(v), "Input '" .. k .. "' must be a Type")
-            inputs[k] = Type.clone(v)
-        end
-        
-        -- 验证并克隆 outputs
-        local outputs = {}
-        for k, v in pairs(self._outputs or {}) do
-            assert(Type.isType(v), "Output '" .. k .. "' must be a Type")
-            outputs[k] = Type.clone(v)
-        end
+        -- 克隆 inputs/outputs Type（如果存在）
+        local inputs = self._inputs and Type.clone(self._inputs) or Type.Nil
+        local outputs = self._outputs and Type.clone(self._outputs) or Type.Nil
         
         local spec = {
             name = name,
@@ -197,15 +189,16 @@ end
   
   参数:
     identifier: string - 服务标识符 (namespace:name)
-    inputs: table - 输入值 { portName = value, ... }
+    inputs: table - 输入值，结构需符合服务定义的 inputs Type
   
-  返回值: table - ctx.outputs 的内容
+  返回值: table - impl 函数的返回值
     若失败返回 { _error = "错误信息" }
   
   impl 函数接口:
-    function(ctx)
-      local a = ctx.inputs.a      -- 读取输入
-      ctx.outputs.result = a + 1  -- 写入输出
+    function(self, inputs)
+      local a = inputs.a           -- 读取输入
+      local x = self.someData      -- 访问 staticData
+      return { result = a + x }    -- 返回输出
     end
 ]]
 function ServiceRegistry.execute(identifier, inputs)
@@ -214,18 +207,14 @@ function ServiceRegistry.execute(identifier, inputs)
         return { _error = "Service not found: " .. tostring(identifier) }
     end
     
-    local ctx = {
-        inputs = inputs or {},
-        outputs = {},
-        staticData = spec.staticData or {},
-    }
-    
-    local ok, err = pcall(spec.impl, ctx)
-    if not ok then
-        return { _error = tostring(err) }
+    -- 使用 staticData 作为 self，通过冒号语法调用 impl
+    local self_ctx = spec.staticData or {}
+    local status, result = pcall(spec.impl, self_ctx, inputs)
+    if not status then
+        return { _error = tostring(result) }
     end
     
-    return ctx.outputs
+    return result
 end
 
 -- 别名
@@ -235,19 +224,6 @@ ServiceRegistry.call = ServiceRegistry.execute
 -- 序列化导出
 ----------------------------------------------------------------
 
-local function serializeType(t)
-    return Type.serialize(t)
-end
-
-local function serializePorts(ports)
-    if not ports then return {} end
-    local result = {}
-    for k, v in pairs(ports) do
-        result[k] = serializeType(v)
-    end
-    return result
-end
-
 local function serializeService(spec)
     return {
         name = spec.name,
@@ -255,8 +231,8 @@ local function serializeService(spec)
         identifier = spec.identifier,
         kind = spec.kind,
         description = spec.description,
-        inputs = serializePorts(spec.inputs),
-        outputs = serializePorts(spec.outputs),
+        inputs = Type.serialize(spec.inputs),
+        outputs = Type.serialize(spec.outputs),
         staticData = spec.staticData,
     }
 end
@@ -308,5 +284,9 @@ end
 function ServiceRegistry.clear()
     ServiceRegistry._services = {}
 end
+
+
+Service = ServiceRegistry  -- 全局别名
+ServiceRegistry = ServiceRegistry  -- 全局别名
 
 return ServiceRegistry

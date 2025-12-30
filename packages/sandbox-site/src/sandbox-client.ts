@@ -7,41 +7,8 @@
  * not working correctly when accessed across iframes.
  */
 
-import type { RpcStub, SandboxMainService } from '@pubwiki/sandbox-service'
+import type { ICustomService, RpcStub, SandboxMainService, ServiceDefinition } from '@pubwiki/sandbox-service'
 import type { ISandboxClient } from '@pubwiki/sandbox-client'
-
-/**
- * Create a proxy that wraps an RPC stub service.
- * This allows method calls to be forwarded without exposing the raw RPC stub.
- * 
- * @param rpcService - The RPC stub service to wrap
- * @returns A proxy that forwards all method calls to the underlying service
- */
-function createServiceProxy(rpcService: unknown): unknown {
-  if (!rpcService) {
-    return undefined
-  }
-  
-  return new Proxy({}, {
-    get(_target, prop) {
-      const service = rpcService as Record<string | symbol, unknown>
-      const value = service[prop]
-      
-      // If it's a function, return a wrapper that calls it directly
-      // Note: RPC stub methods may be Proxies themselves, so we can't use .apply()
-      if (typeof value === 'function') {
-        return (...args: unknown[]) => (value as (...a: unknown[]) => unknown)(...args)
-      }
-      
-      // For nested properties (like nested services), create another proxy
-      if (value && typeof value === 'object') {
-        return createServiceProxy(value)
-      }
-      
-      return value
-    }
-  })
-}
 
 /**
  * Sandbox client implementation
@@ -82,19 +49,30 @@ export class SandboxClient implements ISandboxClient {
    * Get a custom service by ID
    * 
    * @param serviceId - The unique service identifier
-   * @returns A promise that resolves to a proxy forwarding calls to the underlying RPC service
+   * @returns The ICustomService implementation via RPC
    */
-  async getService(serviceId: string): Promise<unknown> {
+  async getService(serviceId: string): Promise<ICustomService> {
     const rpcService = await this.session.getService(serviceId)
-    return createServiceProxy(rpcService)
+    if (!rpcService) {
+      throw new Error(`Service not found: ${serviceId}`)
+    }
+    // The RPC stub already implements ICustomService interface
+    return {
+      async call(inputs) {
+        return rpcService.call(inputs)
+      },
+      async getDefinition() {
+        return rpcService.getDefinition()
+      },
+    }
   }
 
   /**
-   * List all available custom services
+   * List all available custom service definitions
    * 
-   * @returns Array of service IDs
+   * @returns Array of service definitions with JSON Schema
    */
-  async listServices(): Promise<string[]> {
+  async listServices(): Promise<ServiceDefinition[]> {
     try {
       return await this.session.listServices()
     } catch {
@@ -109,6 +87,6 @@ export class SandboxClient implements ISandboxClient {
    */
   async hasService(serviceId: string): Promise<boolean> {
     const services = await this.listServices()
-    return services.includes(serviceId)
+    return services.some(s => s.identifier === serviceId)
   }
 }

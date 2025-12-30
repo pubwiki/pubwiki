@@ -4,8 +4,7 @@
  * Re-exports types from @pubwiki/bundler and defines sandbox-specific interfaces.
  */
 
-import type { RpcTarget } from 'capnweb'
-import type { z } from 'zod/v4'
+import type { ICustomService } from '@pubwiki/sandbox-service'
 
 // Re-export types from @pubwiki/bundler
 export type {
@@ -20,24 +19,16 @@ export type {
 // Re-export Vfs from @pubwiki/vfs
 export { Vfs } from '@pubwiki/vfs'
 
+// Re-export service types from @pubwiki/sandbox-service
+export type { ICustomService, ServiceDefinition } from '@pubwiki/sandbox-service'
+
 import type { ProjectConfig } from '@pubwiki/bundler'
 
 /**
  * Custom service factory for extending sandbox functionality
+ * Factory receives config and returns an ICustomService implementation
  */
-export type CustomServiceFactory<TConfig = unknown> = (config: TConfig) => RpcTarget
-
-/**
- * Service definition with zod v4 interface schema
- */
-export interface ServiceDefinition<T extends z.ZodType = z.ZodType> {
-  /** Unique service ID */
-  id: string
-  /** Zod v4 interface schema defining the service contract */
-  schema: T
-  /** Service implementation */
-  implementation: RpcTarget
-}
+export type CustomServiceFactory<TConfig = unknown> = (config: TConfig) => ICustomService
 
 /**
  * Configuration for VFS RPC Host
@@ -82,13 +73,9 @@ export interface MainRpcHost {
   /** Get HMR service for direct access */
   getHmrService: () => HmrServiceImpl
   /** Get custom service by ID */
-  getService: (id: string) => RpcTarget | undefined
-  /** Get service schema by ID */
-  getServiceSchema: (id: string) => z.ZodType | undefined
-  /** Register a custom service dynamically */
-  registerService: <T extends z.ZodType>(definition: ServiceDefinition<T>) => void
-  /** Get all custom service schemas */
-  getCustomServices?: () => Map<string, z.ZodType>
+  getService: (id: string) => ICustomService | undefined
+  /** Register a custom service */
+  registerService: (id: string, service: ICustomService) => void
   /** Disconnect and cleanup */
   disconnect: () => void
 }
@@ -128,15 +115,16 @@ export interface SandboxConnection {
   waitForReady(): Promise<boolean>
 
   /**
-   * Add a custom service dynamically
-   * @param definition - Service definition with zod schema and implementation
-   */
-  addCustomService<T extends z.ZodType>(definition: ServiceDefinition<T>): void
-
-  /**
    * Trigger a manual reload via HMR service
    */
   reload(): void
+
+  /**
+   * Add a custom service to the connection
+   * @param id - Unique service identifier
+   * @param service - ICustomService implementation
+   */
+  addCustomService(id: string, service: ICustomService): void
 
   /**
    * Disconnect and cleanup all resources

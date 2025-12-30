@@ -73,13 +73,15 @@ export type {
   MainRpcHostConfig,
   SandboxConnectionConfig,
   CustomServiceFactory,
-  ServiceDefinition,
 
   // Host types
   VfsRpcHost,
   MainRpcHost,
   SandboxConnection
 } from './types'
+
+// Re-export service types from @pubwiki/sandbox-service (via types.ts)
+export type { ICustomService, ServiceDefinition } from './types'
 
 // Re-export Vfs class from @pubwiki/vfs
 export { Vfs } from './types'

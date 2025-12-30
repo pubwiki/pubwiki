@@ -1,3 +1,5 @@
+import { ICustomService, ServiceDefinition } from "@pubwiki/sandbox-service"
+
 /**
  * Options for initializing the sandbox client
  */
@@ -28,13 +30,13 @@ export interface ISandboxClient {
    * @param serviceId - The unique service identifier
    * @returns Promise resolving to service proxy, or undefined if not available
    */
-  getService(serviceId: string): Promise<unknown>
+  getService(serviceId: string): Promise<ICustomService>
 
   /**
-   * List all available custom services
-   * @returns Array of service IDs
+   * List all available custom service definitions
+   * @returns Array of service definitions with JSON Schema
    */
-  listServices(): Promise<string[]>
+  listServices(): Promise<ServiceDefinition[]>
 
   /**
    * Check if a service is available

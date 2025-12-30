@@ -11,8 +11,26 @@ import { describe, it, expect } from 'vitest'
 import { createMainRpcHost, createMainRpcChannel } from '../../src/rpc-host'
 import { HmrServiceImpl } from '../../src/services/hmr-service'
 import { MockMessageChannel } from '../helpers'
-import { RpcTarget } from 'capnweb'
-import * as z from 'zod'
+import type { ICustomService, ServiceDefinition } from '../../src/types'
+
+// Helper to create mock ICustomService
+function createMockService(name: string = 'test'): ICustomService {
+  return {
+    async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+      return { result: `called with ${JSON.stringify(inputs)}` }
+    },
+    async getDefinition(): Promise<ServiceDefinition> {
+      return {
+        name,
+        namespace: 'test',
+        identifier: `test:${name}`,
+        kind: 'PURE',
+        inputs: { type: 'object' },
+        outputs: { type: 'object' }
+      }
+    }
+  }
+}
 
 describe('createMainRpcHost', () => {
   it('should create a Main RPC host', () => {
@@ -66,26 +84,14 @@ describe('createMainRpcHost', () => {
         basePath: '/public/demo'
       })
 
-      // Create a simple service that extends RpcTarget
-      class CustomService extends RpcTarget {
-        greet(name: string): string {
-          return `Hello, ${name}!`
-        }
-      }
+      const mockService = createMockService('custom')
 
-      const serviceSchema = z.object({
-        greet: z.function()
-      })
-
-      host.registerService({
-        id: 'custom',
-        schema: serviceSchema,
-        implementation: new CustomService()
-      })
+      host.registerService('custom', mockService)
 
       // Service should be retrievable
       const retrieved = host.getService('custom')
       expect(retrieved).toBeDefined()
+      expect(retrieved).toBe(mockService)
 
       host.disconnect()
     })
@@ -119,14 +125,8 @@ describe('createMainRpcHost', () => {
     it('should support custom services in config', () => {
       const channel = new MockMessageChannel()
 
-      class ConfigService extends RpcTarget {
-        getValue(): string {
-          return 'test'
-        }
-      }
-
-      const customServices = new Map<string, () => RpcTarget>([
-        ['config', () => new ConfigService()]
+      const customServices = new Map<string, () => ICustomService>([
+        ['config', () => createMockService('config')]
       ])
 
       const host = createMainRpcHost(channel.port1 as unknown as MessagePort, {

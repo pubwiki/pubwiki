@@ -12,15 +12,14 @@
  */
 
 import type { HmrUpdate } from '@pubwiki/sandbox-service'
+import type { ICustomService } from '@pubwiki/sandbox-service'
 import type {
   SandboxConnectionConfig,
   SandboxConnection,
-  ServiceDefinition,
   VfsRpcHost,
   MainRpcHost
 } from './types'
 import type { Vfs } from '@pubwiki/vfs'
-import type { z } from 'zod/v4'
 import {
   createVfsRpcChannel,
   createMainRpcChannel,
@@ -235,14 +234,14 @@ export function createSandboxConnection(
       }
     },
 
-    addCustomService<T extends z.ZodType>(definition: ServiceDefinition<T>): void {
+    addCustomService(id: string, service: ICustomService): void {
       if (!mainRpcHost) {
         console.error(`[SandboxConnection:${id}] Cannot add service: not initialized`)
         return
       }
       
-      mainRpcHost.registerService(definition)
-      console.log(`[SandboxConnection:${id}] Added custom service: ${definition.id}`)
+      mainRpcHost.registerService(id, service)
+      console.log(`[SandboxConnection:${id}] Added custom service: ${id}`)
     },
 
     disconnect(): void {

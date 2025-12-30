@@ -10,11 +10,10 @@ import { createSandboxConnection } from '../../src/connection'
 import { createMainRpcChannel, createVfsRpcChannel } from '../../src/rpc-host'
 import { HmrServiceImpl } from '../../src/services/hmr-service'
 import { createTestVfs, addFile, createRealIframe, removeIframe, waitFor } from './helpers'
-import { RpcTarget } from 'capnweb'
-import * as z from 'zod'
 import type { Vfs } from '@pubwiki/vfs'
 import type { ProjectConfig } from '@pubwiki/bundler'
 import type { HmrUpdate } from '@pubwiki/sandbox-service'
+import type { ICustomService, ServiceDefinition } from '../../src/types'
 
 describe('Full Integration E2E', () => {
   let vfs: Vfs
@@ -142,7 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     })
 
-    it('should create and initialize connection for static website', async () => {
+    it('should create connection for static website', async () => {
       iframe = createRealIframe()
 
       const projectConfig: ProjectConfig = {
@@ -158,14 +157,12 @@ document.addEventListener('DOMContentLoaded', () => {
         basePath: '/website',
         vfs,
         projectConfig,
-        targetOrigin: '*'
+        targetOrigin: '*',
+        entryFile: '/index.html'
       })
 
+      // Connection starts as not connected, waits for SANDBOX_READY message
       expect(connection.isConnected).toBe(false)
-
-      const result = await connection.initialize('/index.html')
-      
-      expect(connection.isConnected).toBe(true)
     })
 
     it('should support adding custom services to connection', async () => {
@@ -184,39 +181,44 @@ document.addEventListener('DOMContentLoaded', () => {
         basePath: '/website',
         vfs,
         projectConfig,
-        targetOrigin: '*'
+        targetOrigin: '*',
+        entryFile: '/index.html'
       })
 
-      await connection.initialize('/index.html')
-
-      // Add an analytics service
-      class AnalyticsService extends RpcTarget {
-        private events: Array<{ name: string; data: unknown; timestamp: number }> = []
-
-        track(name: string, data?: unknown): void {
-          this.events.push({ name, data, timestamp: Date.now() })
-        }
-
-        getEvents(): Array<{ name: string; data: unknown; timestamp: number }> {
-          return [...this.events]
-        }
-
-        clear(): void {
-          this.events = []
+      // Wait for ready (or timeout since we don't have a real sandbox)
+      // Note: In real scenarios, this would wait for SANDBOX_READY message
+      
+      // Add an analytics service using ICustomService interface
+      const events: Array<{ name: string; data: unknown; timestamp: number }> = []
+      
+      const analyticsService: ICustomService = {
+        async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+          const action = inputs.action as string
+          if (action === 'track') {
+            events.push({ name: inputs.name as string, data: inputs.data, timestamp: Date.now() })
+            return { success: true }
+          } else if (action === 'getEvents') {
+            return { events: [...events] }
+          } else if (action === 'clear') {
+            events.length = 0
+            return { success: true }
+          }
+          return {}
+        },
+        async getDefinition(): Promise<ServiceDefinition> {
+          return {
+            name: 'analytics',
+            namespace: 'app',
+            identifier: 'app:analytics',
+            kind: 'ACTION',
+            description: 'Analytics tracking service',
+            inputs: { type: 'object' },
+            outputs: { type: 'object' }
+          }
         }
       }
 
-      const analyticsSchema = z.object({
-        track: z.function(),
-        getEvents: z.function(),
-        clear: z.function()
-      })
-
-      connection.addCustomService({
-        id: 'analytics',
-        schema: analyticsSchema,
-        implementation: new AnalyticsService()
-      })
+      connection.addCustomService('analytics', analyticsService)
 
       // Service should be added successfully
       // (We can't verify directly since mainRpcHost is internal)
@@ -349,12 +351,12 @@ export function Header({ onToggleTheme }: HeaderProps) {
         basePath: '/react-app',
         vfs,
         projectConfig,
-        targetOrigin: '*'
+        targetOrigin: '*',
+        entryFile: '/index.html'
       })
 
-      const result = await connection.initialize('/index.html')
-      
-      expect(connection.isConnected).toBe(true)
+      // Connection starts as not connected, waits for SANDBOX_READY message
+      expect(connection.isConnected).toBe(false)
     }, 30000)
   })
 

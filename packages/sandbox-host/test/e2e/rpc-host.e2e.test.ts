@@ -8,11 +8,28 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createVfsRpcHost, createMainRpcHost, createVfsRpcChannel, createMainRpcChannel } from '../../src/rpc-host'
 import { HmrServiceImpl } from '../../src/services/hmr-service'
 import { createTestVfs, addFile } from './helpers'
-import { RpcTarget } from 'capnweb'
-import * as z from 'zod'
 import type { Vfs } from '@pubwiki/vfs'
 import type { ProjectConfig } from '@pubwiki/bundler'
-import type { VfsRpcHost, MainRpcHost } from '../../src/types'
+import type { VfsRpcHost, MainRpcHost, ICustomService, ServiceDefinition } from '../../src/types'
+
+// Helper to create mock ICustomService
+function createMockService(name: string = 'test'): ICustomService {
+  return {
+    async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+      return { result: `called with ${JSON.stringify(inputs)}` }
+    },
+    async getDefinition(): Promise<ServiceDefinition> {
+      return {
+        name,
+        namespace: 'test',
+        identifier: `test:${name}`,
+        kind: 'PURE',
+        inputs: { type: 'object' },
+        outputs: { type: 'object' }
+      }
+    }
+  }
+}
 
 describe('RPC Host E2E', () => {
   let vfs: Vfs
@@ -134,41 +151,20 @@ describe('RPC Host E2E', () => {
         basePath: '/public/demo'
       })
 
-      class GreetingService extends RpcTarget {
-        greet(name: string): string {
-          return `Hello, ${name}!`
-        }
-      }
+      const greetingService = createMockService('greeting')
 
-      const schema = z.object({
-        greet: z.function()
-      })
-
-      host.registerService({
-        id: 'greeting',
-        schema,
-        implementation: new GreetingService()
-      })
+      host.registerService('greeting', greetingService)
 
       const retrieved = host.getService('greeting')
       expect(retrieved).toBeDefined()
-      expect(retrieved).toBeInstanceOf(GreetingService)
-
-      const retrievedSchema = host.getServiceSchema('greeting')
-      expect(retrievedSchema).toBe(schema)
+      expect(retrieved).toBe(greetingService)
     })
 
     it('should support custom services in config', () => {
       const channel = new MessageChannel()
 
-      class ConfigService extends RpcTarget {
-        getValue(): string {
-          return 'test'
-        }
-      }
-
-      const customServices = new Map<string, () => RpcTarget>([
-        ['config', () => new ConfigService()]
+      const customServices = new Map<string, () => ICustomService>([
+        ['config', () => createMockService('config')]
       ])
 
       host = createMainRpcHost(channel.port1, {
@@ -178,7 +174,6 @@ describe('RPC Host E2E', () => {
 
       const service = host.getService('config')
       expect(service).toBeDefined()
-      expect(service).toBeInstanceOf(ConfigService)
     })
   })
 
@@ -237,17 +232,9 @@ describe('RPC Host E2E', () => {
 
       host = rpcHost
 
-      class CalculatorService extends RpcTarget {
-        add(a: number, b: number): number {
-          return a + b
-        }
-      }
+      const calculatorService = createMockService('calculator')
 
-      host.registerService({
-        id: 'calculator',
-        schema: z.object({ add: z.function() }),
-        implementation: new CalculatorService()
-      })
+      host.registerService('calculator', calculatorService)
 
       expect(host.getService('calculator')).toBeDefined()
     })
@@ -262,21 +249,30 @@ describe('RPC Host E2E', () => {
       })
 
       // Register a service
-      class EchoService extends RpcTarget {
-        echo(message: string): string {
-          return `Echo: ${message}`
+      const echoService: ICustomService = {
+        async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+          const message = inputs.message as string
+          return { echo: `Echo: ${message}` }
+        },
+        async getDefinition(): Promise<ServiceDefinition> {
+          return {
+            name: 'echo',
+            namespace: 'test',
+            identifier: 'test:echo',
+            kind: 'PURE',
+            inputs: { type: 'object', properties: { message: { type: 'string' } } },
+            outputs: { type: 'object', properties: { echo: { type: 'string' } } }
+          }
         }
       }
 
-      host.registerService({
-        id: 'echo',
-        schema: z.object({ echo: z.function() }),
-        implementation: new EchoService()
-      })
+      host.registerService('echo', echoService)
 
       // The service is registered and can be retrieved
-      const service = host.getService('echo') as EchoService
-      expect(service.echo('test')).toBe('Echo: test')
+      const service = host.getService('echo')
+      expect(service).toBeDefined()
+      const result = await service!.call({ message: 'test' })
+      expect(result.echo).toBe('Echo: test')
 
       host.disconnect()
     })

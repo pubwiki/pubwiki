@@ -5,7 +5,7 @@
 	 * Features:
 	 * - Backend VFS handle for init.lua and service implementations
 	 * - Dynamic mountpoint handles for asset VFS
-	 * - Load button to initialize Lua VM and execute init.lua
+	 * - Auto-loads when backend VFS is connected
 	 * - Displays registered services list
 	 * - Service output handle for connecting to Sandbox nodes
 	 */
@@ -29,10 +29,8 @@
 		updateMountpointPath,
 		validateMountpointPath,
 		initializeLoader,
-		destroyLoader,
 		findBackendVfsNode,
-		findMountedVfsNodes,
-		isLoaderReady
+		findMountedVfsNodes
 	} from './controller.svelte';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
@@ -137,17 +135,21 @@
 	/** All left handles */
 	const allHandles = $derived([backendHandle, ...mountpointHandles]);
 
-	/** Whether the loader can be loaded (has backend connected and not currently loading or ready) */
-	const canLoad = $derived(backendConnected && (data.vmState === 'idle' || data.vmState === 'error'));
-
-	/** Whether the loader is currently loading */
-	const isLoading = $derived(data.vmState === 'loading');
-
-	/** Whether the loader is ready */
-	const isReady = $derived(data.vmState === 'ready');
-
 	/** Whether there's an error */
-	const hasError = $derived(data.vmState === 'error');
+	const hasError = $derived(data.error !== null);
+
+	/** Whether the loader is ready (has registered services) */
+	const isReady = $derived(data.registeredServices.length > 0);
+
+	// ============================================================================
+	// Local State
+	// ============================================================================
+
+	/** Prevent multiple load attempts */
+	let isLoading = $state(false);
+
+	/** Track connected VFS nodes to detect changes */
+	let lastConnectedVfsIds = $state<string>('');
 
 	// ============================================================================
 	// Effects
@@ -157,6 +159,30 @@
 		// Update node internals when mountpoints change
 		data.mountpoints;
 		updateNodeInternals(id);
+	});
+
+	// Auto-load when backend is connected and not already loaded/loading
+	$effect(() => {
+		if (backendConnected && !isReady && !isLoading && !hasError) {
+			handleLoad();
+		}
+	});
+
+	// Reload when VFS connections change
+	$effect(() => {
+		// Build a string of all connected VFS node IDs
+		const backendVfsId = allEdges.current.find(
+			e => e.target === id && e.targetHandle === HandleId.LOADER_BACKEND
+		)?.source ?? '';
+		
+		const mountVfsIds = Array.from(mountpointConnections.values()).sort().join(',');
+		const currentVfsIds = `${backendVfsId}|${mountVfsIds}`;
+		
+		// If connections changed and we have a backend, reload
+		if (lastConnectedVfsIds && currentVfsIds !== lastConnectedVfsIds && backendConnected) {
+			handleReload();
+		}
+		lastConnectedVfsIds = currentVfsIds;
 	});
 
 	// ============================================================================
@@ -201,78 +227,63 @@
 	}
 
 	async function handleLoad() {
-		if (!canLoad) return;
+		if (isLoading || isReady) return;
 		
-		// Find backend VFS
-		const backendVfsNode = findBackendVfsNode(id, ctx.nodes, ctx.edges);
-		if (!backendVfsNode) {
-			console.error('No backend VFS connected');
-			return;
-		}
+		isLoading = true;
 		
-		// Get backend VFS instance
-		const backendVfsData = backendVfsNode.data as VFSNodeData;
-		const backendVfs = await getNodeVfs(backendVfsData.content.projectId, backendVfsNode.id);
-		
-		// Find mounted asset VFS nodes
-		const mountedVfsNodes = findMountedVfsNodes(id, ctx.nodes, ctx.edges);
-		const assetMounts = new Map<string, Vfs<VfsProvider>>();
-		
-		for (const [path, vfsNode] of mountedVfsNodes) {
-			const vfsData = vfsNode.data as VFSNodeData;
-			const vfs = await getNodeVfs(vfsData.content.projectId, vfsNode.id);
-			assetMounts.set(path, vfs);
-		}
-		
-		// Initialize loader
-		await initializeLoader(
-			id,
-			backendVfs,
-			assetMounts,
-			(nodeId, updater) => {
-				ctx.updateNode(nodeId, (nodeData) => {
-					if (nodeData.type === 'LOADER') {
-						return updater(nodeData as LoaderNodeData);
-					}
-					return nodeData;
-				});
+		try {
+			// Find backend VFS
+			const backendVfsNode = findBackendVfsNode(id, ctx.nodes, ctx.edges);
+			if (!backendVfsNode) {
+				console.error('No backend VFS connected');
+				return;
 			}
-		);
+			
+			// Get backend VFS instance
+			const backendVfsData = backendVfsNode.data as VFSNodeData;
+			const backendVfs = await getNodeVfs(backendVfsData.content.projectId, backendVfsNode.id);
+			
+			// Find mounted asset VFS nodes
+			const mountedVfsNodes = findMountedVfsNodes(id, ctx.nodes, ctx.edges);
+			const assetMounts = new Map<string, Vfs<VfsProvider>>();
+			
+			for (const [path, vfsNode] of mountedVfsNodes) {
+				const vfsData = vfsNode.data as VFSNodeData;
+				const vfs = await getNodeVfs(vfsData.content.projectId, vfsNode.id);
+				assetMounts.set(path, vfs);
+			}
+			
+			// Initialize loader
+			await initializeLoader(
+				id,
+				backendVfs,
+				assetMounts,
+				(nodeId, updater) => {
+					ctx.updateNode(nodeId, (nodeData) => {
+						if (nodeData.type === 'LOADER') {
+							return updater(nodeData as LoaderNodeData);
+						}
+						return nodeData;
+					});
+				}
+			);
+		} finally {
+			isLoading = false;
+		}
 	}
 
-	async function handleUnload() {
-		if (data.vmState === 'idle') return;
-		
-		await destroyLoader(
-			id,
-			(nodeId, updater) => {
-				ctx.updateNode(nodeId, (nodeData) => {
-					if (nodeData.type === 'LOADER') {
-						return updater(nodeData as LoaderNodeData);
-					}
-					return nodeData;
-				});
+	async function handleReload() {
+		// Clear error state first
+		ctx.updateNode(id, (nodeData) => {
+			if (nodeData.type === 'LOADER') {
+				return { ...nodeData, error: null, registeredServices: [] } as LoaderNodeData;
 			}
-		);
-	}
-
-	// ============================================================================
-	// VM State Display
-	// ============================================================================
-
-	function getVmStateDisplay(): { icon: string; text: string; colorClass: string } {
-		switch (data.vmState) {
-			case 'idle':
-				return { icon: '⏸', text: 'Idle', colorClass: 'bg-gray-100 text-gray-600' };
-			case 'loading':
-				return { icon: '⏳', text: 'Loading...', colorClass: 'bg-yellow-100 text-yellow-700' };
-			case 'ready':
-				return { icon: '✓', text: 'Ready', colorClass: 'bg-green-100 text-green-700' };
-			case 'error':
-				return { icon: '✕', text: 'Error', colorClass: 'bg-red-100 text-red-700' };
-			default:
-				return { icon: '?', text: 'Unknown', colorClass: 'bg-gray-100 text-gray-600' };
-		}
+			return nodeData;
+		});
+		
+		// Reset loading state and trigger reload
+		isLoading = false;
+		await handleLoad();
 	}
 </script>
 
@@ -313,16 +324,25 @@
 	{/snippet}
 
 	{#snippet headerActions()}
-		{@const stateDisplay = getVmStateDisplay()}
-		<span class="px-2 py-0.5 text-xs rounded-full {stateDisplay.colorClass}">
-			{stateDisplay.icon} {stateDisplay.text}
-		</span>
+		{#if isReady}
+			<span class="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">
+				✓ Ready
+			</span>
+		{:else if hasError}
+			<span class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">
+				✕ Error
+			</span>
+		{:else if !backendConnected}
+			<span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+				⏸ Idle
+			</span>
+		{/if}
 	{/snippet}
 
 	{#snippet children()}
-		<div class="p-3 bg-gray-50 space-y-3 min-w-[200px]">
-			<!-- Status and Controls -->
-			<div class="flex items-center justify-between">
+		<div class="p-3 bg-gray-50 space-y-3 min-w-50">
+			<!-- Status Display -->
+			<div class="flex items-center">
 				{#if isReady}
 					<div class="flex items-center gap-1.5 text-green-600">
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -330,36 +350,10 @@
 						</svg>
 						<span class="text-sm font-medium">{data.registeredServices.length} services</span>
 					</div>
-					<button
-						class="nodrag px-2 py-1 text-xs bg-red-100 text-red-600 hover:bg-red-200 rounded transition-colors"
-						onclick={handleUnload}
-					>
-						Unload
-					</button>
-				{:else if isLoading}
-					<div class="flex items-center gap-1.5 text-yellow-600">
-						<svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-						</svg>
-						<span class="text-sm">Initializing...</span>
-					</div>
-				{:else}
-					<div class="text-sm text-gray-500">
-						{#if !backendConnected}
-							Connect backend VFS
-						{:else if hasError}
-							<span class="text-red-500">Load failed</span>
-						{:else}
-							Ready to load
-						{/if}
-					</div>
-					<button
-						class="nodrag px-3 py-1.5 text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-						onclick={handleLoad}
-						disabled={!canLoad}
-					>
-						{hasError ? 'Retry' : 'Load'}
-					</button>
+				{:else if hasError}
+					<div class="text-sm text-red-500">Load failed</div>
+				{:else if !backendConnected}
+					<div class="text-sm text-gray-500">Connect backend VFS</div>
 				{/if}
 			</div>
 
@@ -380,11 +374,20 @@
 
 			<!-- Error Display -->
 			{#if hasError && data.error}
-				<div class="flex items-start gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
-					<svg class="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-					</svg>
-					<p class="text-xs text-red-700 break-all">{data.error}</p>
+				<div class="space-y-2">
+					<div class="flex items-start gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+						<svg class="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+						</svg>
+						<p class="text-xs text-red-700 break-all">{data.error}</p>
+					</div>
+					<button
+						class="nodrag w-full px-3 py-1.5 text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 rounded transition-colors disabled:opacity-50"
+						onclick={handleReload}
+						disabled={isLoading}
+					>
+						{isLoading ? 'Loading...' : 'Reload'}
+					</button>
 				</div>
 			{/if}
 		</div>

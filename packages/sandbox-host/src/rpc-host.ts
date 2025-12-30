@@ -14,12 +14,11 @@ import type {
   VfsRpcHost,
   MainRpcHost,
   CustomServiceFactory,
-  ServiceDefinition
+  ICustomService
 } from './types'
+import type { SandboxMainService, ServiceDefinition } from '@pubwiki/sandbox-service'
 export type { MainRpcHost, VfsRpcHost } from './types'
-import type { SandboxMainService } from '@pubwiki/sandbox-service'
 import type { Vfs } from '@pubwiki/vfs'
-import type { z } from 'zod/v4'
 import { VfsServiceImpl, type VfsServiceConfig } from './services/vfs-service'
 import { HmrServiceImpl } from './services/hmr-service'
 
@@ -98,22 +97,14 @@ export function createVfsRpcHost(
  * 
  * @param services - The MainRpcServices instance to register on
  * @param id - Service identifier
- * @param service - RpcTarget service implementation
- * @param schema - Optional Zod schema for validation
+ * @param service - ICustomService implementation
  */
 function internalRegisterCustomService(
-  services: { 
-    customServicesMap: Map<string, RpcTarget>
-    serviceSchemas: Map<string, z.ZodType>
-  },
+  services: { customServicesMap: Map<string, ICustomService> },
   id: string, 
-  service: RpcTarget, 
-  schema?: z.ZodType
+  service: ICustomService
 ): void {
   services.customServicesMap.set(id, service)
-  if (schema) {
-    services.serviceSchemas.set(id, schema)
-  }
   // Expose service as a getter on prototype (capnweb checks Object.hasOwn, so instance properties fail)
   Object.defineProperty(Object.getPrototypeOf(services), id, {
     get: () => services.customServicesMap.get(id),
@@ -145,8 +136,7 @@ function createMainRpcServicesClass(): typeof MainRpcServicesBase {
  */
 class MainRpcServicesBase extends RpcTarget implements SandboxMainService {
   private hmrService: HmrServiceImpl
-  customServicesMap: Map<string, RpcTarget> = new Map()
-  serviceSchemas: Map<string, z.ZodType> = new Map()
+  customServicesMap: Map<string, ICustomService> = new Map()
 
   constructor(config: MainRpcHostConfigExt) {
     super()
@@ -168,34 +158,28 @@ class MainRpcServicesBase extends RpcTarget implements SandboxMainService {
   get hmr(): HmrServiceImpl {
     return this.hmrService
   }
-  
 
   /**
    * Get custom service by ID
    */
-  getService(id: string): RpcTarget | undefined {
+  getService(id: string): ICustomService | undefined {
     return this.customServicesMap.get(id)
   }
 
   /**
-   * List all registered custom service IDs
+   * List all registered custom service definitions
    */
-  listServices(): string[] {
-    return Array.from(this.customServicesMap.keys())
-  }
-
-  /**
-   * Get service schema by ID
-   */
-  getServiceSchema(id: string): z.ZodType | undefined {
-    return this.serviceSchemas.get(id)
-  }
-
-  /**
-   * Get all custom service schemas
-   */
-  getCustomServices(): Map<string, z.ZodType> {
-    return this.serviceSchemas
+  async listServices(): Promise<ServiceDefinition[]> {
+    const definitions: ServiceDefinition[] = []
+    for (const [_id, service] of this.customServicesMap) {
+      try {
+        const def = await service.getDefinition()
+        definitions.push(def)
+      } catch (e) {
+        console.error(`[MainRpcServices] Failed to get definition for service:`, e)
+      }
+    }
+    return definitions
   }
 
   /**
@@ -206,11 +190,10 @@ class MainRpcServicesBase extends RpcTarget implements SandboxMainService {
     // Dispose custom services if they have dispose method
     for (const service of this.customServicesMap.values()) {
       if ('dispose' in service && typeof service.dispose === 'function') {
-        service.dispose()
+        (service as { dispose: () => void }).dispose()
       }
     }
     this.customServicesMap.clear()
-    this.serviceSchemas.clear()
   }
 }
 
@@ -248,21 +231,8 @@ export function createMainRpcHost(
     getService(serviceId: string) {
       return services.getService(serviceId)
     },
-    getServiceSchema(serviceId: string) {
-      return services.getServiceSchema(serviceId)
-    },
-    registerService<T extends z.ZodType>(definition: ServiceDefinition<T>) {
-      const { id, schema, implementation } = definition
-      
-      if (services.customServicesMap.has(id)) {
-        console.warn(`[MainRpcServices] Service '${id}' already registered, replacing`)
-      }
-      
-      // Use internal function (not exposed via RPC) to register the service
-      internalRegisterCustomService(services, id, implementation, schema)
-    },
-    getCustomServices() {
-      return services.getCustomServices()
+    registerService(serviceId: string, service: ICustomService) {
+      internalRegisterCustomService(services, serviceId, service)
     },
     disconnect() {
       if (!connected) return

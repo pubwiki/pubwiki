@@ -8,7 +8,7 @@
  *   - Stored in IndexedDB
  *   - Snapshotted for version control
  *   - Published to backend
- * - UI/runtime states (isEditing, isStreaming, vmState, etc.) are separate fields
+ * - UI/runtime states (isEditing, isStreaming, error, etc.) are separate fields
  * - Content types are defined in content-types.ts
  * 
  * Note: Version control types (NodeRef, NodeSnapshot, etc.) are in stores/version/
@@ -151,14 +151,6 @@ export interface SandboxNodeData extends BaseNodeData<SandboxContent> {
  */
 export interface LoaderNodeData extends BaseNodeData<LoaderContent> {
   type: 'LOADER'
-  /**
-   * Runtime State: Lua VM state
-   * - 'idle': Not loaded, waiting for user to click Load
-   * - 'loading': Initializing VM and executing init.lua
-   * - 'ready': Services registered, ready to call
-   * - 'error': Initialization failed
-   */
-  vmState: 'idle' | 'loading' | 'ready' | 'error'
   /** Runtime State: Error message (if any) */
   error: string | null
   /** Runtime State: Registered services list (from ServiceRegistry) */
@@ -326,7 +318,6 @@ export async function createLoaderNodeData(
     snapshotRefs: [],
     parents: [],
     content,
-    vmState: 'idle',
     error: null,
     registeredServices: []
   }

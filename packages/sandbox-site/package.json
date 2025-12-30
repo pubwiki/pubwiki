@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^22.19.1",
+    "@types/node": "^22.19.3",
     "esbuild": "^0.24.2",
     "typescript": "^5.9.3",
     "vite": "^6.4.1"
@@ -20,6 +20,6 @@
   "dependencies": {
     "@pubwiki/sandbox-client": "workspace:*",
     "@pubwiki/sandbox-service": "workspace:*",
-    "esbuild-wasm": "^0.27.0"
+    "esbuild-wasm": "^0.27.2"
   }
 }

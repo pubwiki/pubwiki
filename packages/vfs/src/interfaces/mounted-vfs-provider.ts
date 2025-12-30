@@ -172,7 +172,7 @@ export class MountedVfsProvider implements VfsProvider {
 
   // ========== 目录操作 ==========
 
-  async mkdir(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
+  async mkdir(dirPath: string): Promise<void> {
     const resolved = this.resolvePath(dirPath)
     if (!resolved) {
       throw new Error(`Path not mounted: ${dirPath}`)

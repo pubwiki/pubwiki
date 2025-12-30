@@ -319,7 +319,7 @@
 		sandboxOrigin={data.content.sandboxOrigin}
 		entryFile={data.content.entryFile}
 		name={data.name}
-		loaderNodes={connectedLoaderNodes.map(l => l.data)}
+		loaderNodes={connectedLoaderNodes}
 		onClose={closePreview}
 	/>
 {/if}

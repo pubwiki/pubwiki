@@ -79,6 +79,11 @@ function Type.Function(opts)
     return new_type("function", { params = opts.params or {}, returns = opts.returns })
 end
 
+function Type.Record(valueType)
+    assert(Type.isType(valueType), "Record requires a Type for value")
+    return new_type("record", { valueType = valueType })
+end
+
 ----------------------------------------------------------------
 -- 类型代数
 ----------------------------------------------------------------
@@ -110,8 +115,10 @@ end
 ----------------------------------------------------------------
 
 function Type:desc(description)
-    self._desc = description
-    return self
+    -- 克隆当前类型，避免污染单例
+    local clone = Type.clone(self)
+    clone._desc = description
+    return clone
 end
 
 function Type:extend(fields)
@@ -214,6 +221,10 @@ function Type.equals(a, b)
         return Type.equals(a.inner, b.inner)
     end
     
+    if kind == "record" then
+        return Type.equals(a.valueType, b.valueType)
+    end
+    
     if kind == "object" then
         local af, bf = a.fields or {}, b.fields or {}
         local ac, bc = 0, 0
@@ -274,6 +285,15 @@ function Type._check(value, T)
         if type(value) ~= "table" then return false end
         for _, v in ipairs(value) do
             if not Type._check(v, T.inner) then return false end
+        end
+        return true
+    end
+    
+    if kind == "record" then
+        if type(value) ~= "table" then return false end
+        for k, v in pairs(value) do
+            if type(k) ~= "string" then return false end
+            if not Type._check(v, T.valueType) then return false end
         end
         return true
     end
@@ -339,6 +359,15 @@ function Type._checkWithError(value, T, path)
         end
         return true
     end
+    if kind == "record" then
+        if type(value) ~= "table" then return false, path .. ": expected Record" end
+        for k, v in pairs(value) do
+            if type(k) ~= "string" then return false, path .. ": record key must be string" end
+            local ok, err = Type._checkWithError(v, T.valueType, path .. "[\"" .. k .. "\"]")
+            if not ok then return false, err end
+        end
+        return true
+    end
     if kind == "object" then
         if type(value) ~= "table" then return false, path .. ": expected Object" end
         for k, fieldType in pairs(T.fields or {}) do
@@ -358,86 +387,237 @@ function Type._checkWithError(value, T, path)
 end
 
 ----------------------------------------------------------------
--- 序列化 / 反序列化
+-- 序列化 / 反序列化 (JSON Schema 格式)
 ----------------------------------------------------------------
 
-function Type.serialize(T)
+--[[
+  Type.serialize(T) -> JSON Schema
+  
+  将 Type 对象序列化为标准 JSON Schema 格式
+  
+  映射规则:
+    Type.String   -> { type = "string" }
+    Type.Int      -> { type = "integer" }
+    Type.Float    -> { type = "number" }
+    Type.Bool     -> { type = "boolean" }
+    Type.Nil      -> { type = "null" }
+    Type.Any      -> {} (无约束)
+    Type.Void     -> { type = "null" }
+    Type.Optional(T) -> oneOf: [T, { type = "null" }]
+    Type.Array(T) -> { type = "array", items = T }
+    Type.Object({...}) -> { type = "object", properties = {...}, required = [...] }
+    Type.Record(T) -> { type = "object", additionalProperties = T }
+    Type.Or(A, B) -> { oneOf = [A, B] }
+    Type.Function -> { type = "object", x-function = true }
+]]
+function Type.serialize(T, includeDesc)
     if not Type.isType(T) then return nil end
     
+    includeDesc = includeDesc == nil and true or includeDesc
     local kind = T.kind
-    local result = { kind = kind }
-    if T._desc then result._desc = T._desc end
+    local result = {}
     
-    if kind == "optional" or kind == "array" then
-        result.inner = Type.serialize(T.inner)
+    -- 添加描述
+    if includeDesc and T._desc then 
+        result.description = T._desc 
+    end
+    
+    -- 基础类型映射
+    if kind == "string" then
+        result.type = "string"
+    elseif kind == "int" then
+        result.type = "integer"
+    elseif kind == "float" then
+        result.type = "number"
+    elseif kind == "bool" then
+        result.type = "boolean"
+    elseif kind == "nil" or kind == "void" then
+        result.type = "null"
+    elseif kind == "any" then
+        -- Any 类型不添加约束，空 schema 接受任何值
+        -- result 保持为空或只有 description
+    elseif kind == "optional" then
+        -- Optional<T> = T | null
+        local innerSchema = Type.serialize(T.inner, includeDesc)
+        result.oneOf = {
+            innerSchema,
+            { type = "null" }
+        }
+    elseif kind == "array" then
+        result.type = "array"
+        result.items = Type.serialize(T.inner, includeDesc)
+    elseif kind == "record" then
+        result.type = "object"
+        result.additionalProperties = Type.serialize(T.valueType, includeDesc)
     elseif kind == "object" then
-        result.fields = {}
+        result.type = "object"
+        result.properties = {}
+        result.required = {}
+        
         for k, v in pairs(T.fields or {}) do
-            result.fields[k] = Type.serialize(v)
-        end
-    elseif kind == "or" then
-        result.types = {}
-        for i, t in ipairs(T.types) do
-            result.types[i] = Type.serialize(t)
-        end
-    elseif kind == "function" then
-        if T.params then
-            result.params = {}
-            for k, v in pairs(T.params) do
-                result.params[k] = Type.serialize(v)
+            result.properties[k] = Type.serialize(v, includeDesc)
+            -- 非 Optional 字段为必填
+            if v.kind ~= "optional" then
+                table.insert(result.required, k)
             end
         end
-        if T.returns then result.returns = Type.serialize(T.returns) end
+        
+        -- 排序 required 数组保证稳定输出
+        table.sort(result.required)
+        
+        -- 如果没有必填字段，移除 required
+        if #result.required == 0 then
+            result.required = nil
+        end
+        
+        result.additionalProperties = false
+    elseif kind == "or" then
+        result.oneOf = {}
+        for _, t in ipairs(T.types) do
+            table.insert(result.oneOf, Type.serialize(t, includeDesc))
+        end
+    elseif kind == "function" then
+        -- Function 类型使用扩展标记
+        result.type = "object"
+        result["x-function"] = true
+        if T.params then
+            result["x-params"] = {}
+            for k, v in pairs(T.params) do
+                result["x-params"][k] = Type.serialize(v, includeDesc)
+            end
+        end
+        if T.returns then
+            result["x-returns"] = Type.serialize(T.returns, includeDesc)
+        end
     end
     
     return result
 end
 
-function Type.deserialize(spec)
-    if not spec or type(spec) ~= "table" or not spec.kind then return nil end
+--[[
+  Type.deserialize(schema) -> Type
+  
+  从 JSON Schema 反序列化为 Type 对象
+]]
+function Type.deserialize(schema)
+    if not schema or type(schema) ~= "table" then return nil end
     
-    local kind = spec.kind
     local result
+    local schemaType = schema.type
     
-    if kind == "string" then result = Type.String
-    elseif kind == "bool" then result = Type.Bool
-    elseif kind == "int" then result = Type.Int
-    elseif kind == "float" then result = Type.Float
-    elseif kind == "any" then result = Type.Any
-    elseif kind == "nil" then result = Type.Nil
-    elseif kind == "void" then result = Type.Void
-    elseif kind == "optional" and spec.inner then
-        local inner = Type.deserialize(spec.inner)
-        if inner then result = Type.Optional(inner) end
-    elseif kind == "array" and spec.inner then
-        local inner = Type.deserialize(spec.inner)
-        if inner then result = Type.Array(inner) end
-    elseif kind == "object" then
-        local fields = {}
-        for k, v in pairs(spec.fields or {}) do
-            fields[k] = Type.deserialize(v)
-        end
-        result = Type.Object(fields)
-    elseif kind == "or" and spec.types then
+    -- 处理 oneOf (Or 或 Optional)
+    if schema.oneOf then
         local types = {}
-        for _, t in ipairs(spec.types) do
-            local converted = Type.deserialize(t)
-            if converted then table.insert(types, converted) end
-        end
-        if #types >= 2 then result = Type.Or(table.unpack(types)) end
-    elseif kind == "function" then
-        local opts = {}
-        if spec.params then
-            opts.params = {}
-            for k, v in pairs(spec.params) do
-                opts.params[k] = Type.deserialize(v)
+        local hasNull = false
+        local nonNullType = nil
+        
+        for _, subSchema in ipairs(schema.oneOf) do
+            if subSchema.type == "null" then
+                hasNull = true
+            else
+                local t = Type.deserialize(subSchema)
+                if t then 
+                    table.insert(types, t)
+                    nonNullType = t
+                end
             end
         end
-        if spec.returns then opts.returns = Type.deserialize(spec.returns) end
-        result = Type.Function(opts)
+        
+        -- 如果是 [T, null] 模式，转为 Optional
+        if hasNull and #types == 1 then
+            result = Type.Optional(nonNullType)
+        elseif #types >= 2 then
+            result = Type.Or(table.unpack(types))
+        elseif #types == 1 then
+            result = types[1]
+        end
+    -- 处理 anyOf (也当作 Or)
+    elseif schema.anyOf then
+        local types = {}
+        for _, subSchema in ipairs(schema.anyOf) do
+            local t = Type.deserialize(subSchema)
+            if t then table.insert(types, t) end
+        end
+        if #types >= 2 then
+            result = Type.Or(table.unpack(types))
+        elseif #types == 1 then
+            result = types[1]
+        end
+    -- 基础类型
+    elseif schemaType == "string" then
+        result = Type.String
+    elseif schemaType == "integer" then
+        result = Type.Int
+    elseif schemaType == "number" then
+        result = Type.Float
+    elseif schemaType == "boolean" then
+        result = Type.Bool
+    elseif schemaType == "null" then
+        result = Type.Nil
+    elseif schemaType == "array" then
+        if schema.items then
+            local inner = Type.deserialize(schema.items)
+            if inner then result = Type.Array(inner) end
+        else
+            result = Type.Array(Type.Any)
+        end
+    elseif schemaType == "object" then
+        -- 检查是否是 Function 类型
+        if schema["x-function"] then
+            local opts = {}
+            if schema["x-params"] then
+                opts.params = {}
+                for k, v in pairs(schema["x-params"]) do
+                    opts.params[k] = Type.deserialize(v)
+                end
+            end
+            if schema["x-returns"] then
+                opts.returns = Type.deserialize(schema["x-returns"])
+            end
+            result = Type.Function(opts)
+        -- 检查是否是 Record 类型 (additionalProperties 为 schema 而非 false)
+        elseif schema.additionalProperties and type(schema.additionalProperties) == "table" and not schema.properties then
+            local valueType = Type.deserialize(schema.additionalProperties)
+            if valueType then result = Type.Record(valueType) end
+        -- 普通 Object 类型
+        else
+            local fields = {}
+            local required = {}
+            
+            -- 构建 required 集合
+            if schema.required then
+                for _, k in ipairs(schema.required) do
+                    required[k] = true
+                end
+            end
+            
+            -- 解析 properties
+            if schema.properties then
+                for k, v in pairs(schema.properties) do
+                    local fieldType = Type.deserialize(v)
+                    if fieldType then
+                        -- 如果字段不在 required 中且不是 Optional，包装为 Optional
+                        if not required[k] and fieldType.kind ~= "optional" then
+                            fieldType = Type.Optional(fieldType)
+                        end
+                        fields[k] = fieldType
+                    end
+                end
+            end
+            
+            result = Type.Object(fields)
+        end
+    -- 空 schema = Any
+    elseif schemaType == nil and not schema.oneOf and not schema.anyOf then
+        result = Type.Any
     end
     
-    if result and spec._desc then result._desc = spec._desc end
+    -- 恢复描述（需要克隆以避免污染单例）
+    if result and schema.description then
+        result = Type.clone(result)
+        result._desc = schema.description
+    end
+    
     return result
 end
 
@@ -445,43 +625,89 @@ end
 -- 格式化
 ----------------------------------------------------------------
 
-function Type.format(T)
+function Type.format(T, indent, includeDesc)
     if not Type.isType(T) then return "?" end
     
+    indent = indent or 0
+    includeDesc = includeDesc == nil and true or includeDesc  -- 默认包含描述
+    local indentStr = string.rep("  ", indent)
+    
     local kind = T.kind
+    local result = ""
     
-    if kind == "string" then return "String" end
-    if kind == "bool" then return "Bool" end
-    if kind == "int" then return "Int" end
-    if kind == "float" then return "Float" end
-    if kind == "any" then return "Any" end
-    if kind == "nil" then return "Nil" end
-    if kind == "void" then return "Void" end
-    if kind == "function" then return "Function" end
-    if kind == "optional" then return Type.format(T.inner) .. "?" end
-    if kind == "array" then return Type.format(T.inner) .. "[]" end
-    
-    if kind == "object" then
-        local parts = {}
-        for k, v in pairs(T.fields or {}) do
-            table.insert(parts, k .. ": " .. Type.format(v))
+    -- 基础类型
+    if kind == "string" then result = "String"
+    elseif kind == "bool" then result = "Bool"
+    elseif kind == "int" then result = "Int"
+    elseif kind == "float" then result = "Float"
+    elseif kind == "any" then result = "Any"
+    elseif kind == "nil" then result = "Nil"
+    elseif kind == "void" then result = "Void"
+    elseif kind == "function" then result = "Function"
+    elseif kind == "optional" then 
+        result = Type.format(T.inner, indent, includeDesc) .. "?"
+    elseif kind == "array" then 
+        result = Type.format(T.inner, indent, includeDesc) .. "[]"
+    elseif kind == "record" then 
+        result = "Record<" .. Type.format(T.valueType, indent, includeDesc) .. ">"
+    elseif kind == "object" then
+        local lines = {"{"}
+        local fieldNames = {}
+        for k in pairs(T.fields or {}) do
+            table.insert(fieldNames, k)
         end
-        table.sort(parts)
-        return "{ " .. table.concat(parts, ", ") .. " }"
-    end
-    
-    if kind == "or" then
+        table.sort(fieldNames)
+        
+        for _, k in ipairs(fieldNames) do
+            local v = T.fields[k]
+            local fieldType = Type.format(v, indent + 1, includeDesc)
+            local line = string.rep("  ", indent + 1) .. k .. ": " .. fieldType
+            if includeDesc and v._desc then
+                line = line .. "  // " .. v._desc
+            end
+            table.insert(lines, line)
+        end
+        table.insert(lines, indentStr .. "}")
+        result = table.concat(lines, "\n")
+    elseif kind == "or" then
         local parts = {}
-        for _, t in ipairs(T.types) do table.insert(parts, Type.format(t)) end
-        return table.concat(parts, " | ")
+        for _, t in ipairs(T.types) do 
+            table.insert(parts, Type.format(t, indent, includeDesc)) 
+        end
+        result = table.concat(parts, " | ")
+    else
+        result = kind
     end
     
-    return kind
+    -- 添加当前类型的描述（如果需要且存在）
+    if includeDesc and T._desc and kind ~= "object" then
+        result = result .. "  // " .. T._desc
+    end
+    
+    return result
 end
 
 function Type.clone(T)
     if not Type.isType(T) then return nil end
-    return Type.deserialize(Type.serialize(T))
+    
+    -- 深拷贝创建新对象
+    local clone = {}
+    for k, v in pairs(T) do
+        if Type.isType(v) then
+            -- 递归克隆嵌套的 Type
+            clone[k] = Type.clone(v)
+        elseif type(v) == "table" then
+            -- 深拷贝容器 table（如 fields, types, params），其中值都是 Type
+            local tblClone = {}
+            for tk, tv in pairs(v) do
+                tblClone[tk] = Type.isType(tv) and Type.clone(tv) or tv
+            end
+            clone[k] = tblClone
+        else
+            clone[k] = v
+        end
+    end
+    return setmetatable(clone, Type)
 end
 
 ----------------------------------------------------------------
@@ -494,4 +720,6 @@ function Type:__add(other) return Type.Or(self, other) end
 function Type:__call(value) return Type.instantiate(self, value) end
 function Type:__eq(other) return Type.equals(self, other) end
 
+
+Type = Type -- 全局别名
 return Type
