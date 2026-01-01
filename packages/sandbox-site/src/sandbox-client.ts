@@ -59,10 +59,11 @@ export class SandboxClient implements ISandboxClient {
     // The RPC stub already implements ICustomService interface
     return {
       async call(inputs) {
-        return rpcService.call(inputs)
+        const input = structuredClone(inputs)
+        return await rpcService.call(input)
       },
       async getDefinition() {
-        return rpcService.getDefinition()
+        return await rpcService.getDefinition()
       },
     }
   }
