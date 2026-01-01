@@ -387,19 +387,16 @@ export async function initializeLoader(
 		// Create Lua instance
 		const instance = createLuaInstance({
 			vfs: mountedVfs,
-			workingDirectory: '/user/backend'
+			workingDirectory: '/'
 		});
 		
 		// Execute init.lua
 		const initResult = await instance.run(`
-			-- Set package.path to support core libraries
-			package.path = "/core/?.lua;" .. package.path
-			
 			-- Load init.lua
-			local init = require("init")
+			local init = require("user/backend/init")
 			
 			-- Return registered services list
-			local ServiceRegistry = require("service")
+			local ServiceRegistry = require("core/service")
 			return ServiceRegistry.listServices()
 		`);
 		
@@ -411,13 +408,22 @@ export async function initializeLoader(
 		loaderRuntimes.set(nodeId, { instance, mountedVfs });
 		
 		// Update node state
-		const services = (initResult.result as string[]) || [];
+		// Lua tables with numeric keys are converted to objects like {1: "a", 2: "b"}, not arrays
+		let services: string[];
+		if (Array.isArray(initResult.result)) {
+			services = initResult.result;
+		} else if (initResult.result && typeof initResult.result === 'object') {
+			// Convert Lua table (object with numeric keys) to array
+			services = Object.values(initResult.result as Record<string, string>);
+		} else {
+			services = [];
+		}
+		
 		updateNode(nodeId, (data) => ({
 			...data,
 			error: null,
 			registeredServices: services
 		}));
-		console.log("LoaderNode is loaded")
 		
 		return true;
 	} catch (error) {
@@ -467,7 +473,7 @@ export async function listServices(nodeId: string): Promise<ServiceDefinition[]>
 	}
 	
 	const result = await runtime.instance.run(`
-		local ServiceRegistry = require("service")
+		local ServiceRegistry = require("core/service")
 		return ServiceRegistry.export()
 	`);
 	
@@ -495,17 +501,15 @@ export async function callService(
 	
 	// Serialize inputs to JSON
 	const inputsJson = JSON.stringify(inputs);
-	console.log("inputsJson", inputsJson, identifier)
 	
 	const result = await runtime.instance.run(`
-		local ServiceRegistry = require("service")
+		local ServiceRegistry = require("core/service")
 		
 		local inputs = json.decode([[${inputsJson}]])
 		local outputs = ServiceRegistry.call("${identifier}", inputs)
 		
 		return outputs
 	`);
-	console.log("outputs", result)
 	
 	if (result.error) {
 		return { success: false, error: result.error };

@@ -148,6 +148,9 @@
 	/** Prevent multiple load attempts */
 	let isLoading = $state(false);
 
+	/** Track whether load has been attempted (prevents infinite loop when services is empty) */
+	let hasLoaded = $state(false);
+
 	/** Track connected VFS nodes to detect changes */
 	let lastConnectedVfsIds = $state<string>('');
 
@@ -161,9 +164,9 @@
 		updateNodeInternals(id);
 	});
 
-	// Auto-load when backend is connected and not already loaded/loading
+	// Auto-load when backend is connected and not already loaded
 	$effect(() => {
-		if (backendConnected && !isReady && !isLoading && !hasError) {
+		if (backendConnected && !hasLoaded && !hasError) {
 			handleLoad();
 		}
 	});
@@ -179,7 +182,8 @@
 		const currentVfsIds = `${backendVfsId}|${mountVfsIds}`;
 		
 		// If connections changed and we have a backend, reload
-		if (lastConnectedVfsIds && currentVfsIds !== lastConnectedVfsIds && backendConnected) {
+		// Only reload if we have previously loaded (hasLoaded is true) to avoid double-init
+		if (lastConnectedVfsIds && currentVfsIds !== lastConnectedVfsIds && backendConnected && hasLoaded) {
 			handleReload();
 		}
 		lastConnectedVfsIds = currentVfsIds;
@@ -227,9 +231,10 @@
 	}
 
 	async function handleLoad() {
-		if (isLoading || isReady) return;
+		if (isLoading || hasLoaded) return;
 		
 		isLoading = true;
+		hasLoaded = true;
 		
 		try {
 			// Find backend VFS
@@ -283,6 +288,7 @@
 		
 		// Reset loading state and trigger reload
 		isLoading = false;
+		hasLoaded = false;
 		await handleLoad();
 	}
 </script>
