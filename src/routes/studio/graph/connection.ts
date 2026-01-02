@@ -21,6 +21,8 @@ export const DataType = {
   VFS: 'vfs',
   /** Service provider reference */
   SERVICE: 'service',
+  /** RDF state store reference */
+  STATE: 'state',
 } as const;
 
 export type DataType = typeof DataType[keyof typeof DataType];
@@ -73,6 +75,8 @@ export const HandleId = {
   LOADER_MOUNTPOINT_PREFIX: 'loader-mount-',
   /** Loader Node: Add mount handle (dynamically creates mountpoint) */
   LOADER_ADD_MOUNT: 'loader-add-mount',
+  /** Loader Node: State input (connects to State node for RDF store) */
+  LOADER_STATE: 'loader-state',
   /** Loader Node: Service output */
   LOADER_OUTPUT: 'loader-output',
 } as const;
@@ -280,6 +284,13 @@ export const NodeRegistry: Record<string, NodeSpec> = {
         colorClass: 'bg-indigo-400',
       },
       {
+        id: HandleId.LOADER_STATE,
+        label: 'State',
+        dataType: DataType.STATE,
+        cardinality: Cardinality.OPTIONAL,
+        colorClass: 'bg-teal-400',
+      },
+      {
         id: HandleId.LOADER_MOUNTPOINT_PREFIX,
         label: 'Mount',
         dataType: DataType.VFS,
@@ -308,6 +319,25 @@ export const NodeRegistry: Record<string, NodeSpec> = {
     manualOutput: true,
     headerColorClass: 'bg-purple-500',
     handleColorClass: 'bg-purple-400!',
+  },
+
+  STATE: {
+    type: 'STATE',
+    label: 'State',
+    inputs: [],
+    outputs: [
+      {
+        id: HandleId.DEFAULT,
+        label: 'State Output',
+        dataType: DataType.STATE,
+        cardinality: Cardinality.MANY,
+        colorClass: 'bg-teal-400',
+      },
+    ],
+    manualInput: false,
+    manualOutput: true,
+    headerColorClass: 'bg-teal-500',
+    handleColorClass: 'bg-teal-400!',
   },
 };
 

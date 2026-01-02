@@ -17,6 +17,8 @@ import { API_BASE_URL } from '$lib/config';
  * Metadata for publishing an artifact
  */
 export interface PublishMetadata {
+	/** Artifact ID - client-generated UUID, used for both create and update */
+	artifactId: string;
 	type: ArtifactType;
 	name: string;
 	slug: string;
@@ -105,6 +107,7 @@ function createFormData(
 
 	// Add metadata as JSON string
 	const metadataJson = JSON.stringify({
+		artifactId: metadata.artifactId,
 		type: metadata.type,
 		name: metadata.name,
 		slug: metadata.slug,
@@ -141,8 +144,6 @@ function createFormData(
 export interface PublishResult {
 	success: boolean;
 	artifactId?: string;
-	/** Mapping from old node IDs to new server-assigned IDs */
-	nodeIdMapping?: Record<string, string>;
 	error?: string;
 }
 
@@ -182,8 +183,7 @@ export async function publishArtifact(
 		const data = await response.json();
 		return {
 			success: true,
-			artifactId: data.artifact?.id,
-			nodeIdMapping: data.nodeIdMapping
+			artifactId: data.artifact?.id
 		};
 	} catch (err) {
 		return {

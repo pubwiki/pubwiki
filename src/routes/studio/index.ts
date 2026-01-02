@@ -154,8 +154,7 @@ export {
   clearCurrentProject,
   ensureProject,
   saveProject,
-  deleteProject,
-  remapNodeIds
+  deleteProject
 } from './persistence';
 
 export type {

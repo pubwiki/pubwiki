@@ -11,9 +11,10 @@
 	 */
 	import { Handle, Position, useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { LoaderNodeData, VFSNodeData } from '../../../types';
+	import type { LoaderNodeData, VFSNodeData, StateNodeData } from '../../../types';
 	import { getStudioContext } from '../../../state';
 	import { getNodeVfs } from '../../../vfs';
+	import { getNodeRDFStore } from '../../../rdf';
 	import BaseNode from '../BaseNode.svelte';
 	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -29,8 +30,10 @@
 		updateMountpointPath,
 		validateMountpointPath,
 		initializeLoader,
+		destroyLoader,
 		findBackendVfsNode,
-		findMountedVfsNodes
+		findMountedVfsNodes,
+		findStateNode
 	} from './controller.svelte';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
@@ -82,6 +85,20 @@
 		handle: 'bg-indigo-400'
 	};
 
+	const STATE_CONNECTED: HandleColorScheme = {
+		bg: '#ccfbf1',
+		border: '#14b8a6',
+		text: 'text-teal-700',
+		handle: 'bg-teal-600'
+	};
+
+	const STATE_DISCONNECTED: HandleColorScheme = {
+		bg: '#ccfbf1',
+		border: '#2dd4bf',
+		text: 'text-teal-600',
+		handle: 'bg-teal-500'
+	};
+
 	// ============================================================================
 	// Derived
 	// ============================================================================
@@ -90,6 +107,13 @@
 	const backendConnected = $derived(
 		allEdges.current.some(
 			e => e.target === id && e.targetHandle === HandleId.LOADER_BACKEND
+		)
+	);
+
+	/** Check if State node is connected */
+	const stateConnected = $derived(
+		allEdges.current.some(
+			e => e.target === id && e.targetHandle === HandleId.LOADER_STATE
 		)
 	);
 
@@ -117,6 +141,15 @@
 		disconnectedColor: BACKEND_DISCONNECTED
 	});
 
+	/** State handle definition */
+	const stateHandle = $derived<TaggedHandle>({
+		id: HandleId.LOADER_STATE,
+		label: 'state',
+		isConnected: stateConnected,
+		connectedColor: STATE_CONNECTED,
+		disconnectedColor: STATE_DISCONNECTED
+	});
+
 	/** Mountpoint handles from data.content.mountpoints */
 	const mountpointHandles = $derived.by(() => {
 		const mounts = data.content.mountpoints ?? [];
@@ -133,7 +166,7 @@
 	});
 
 	/** All left handles */
-	const allHandles = $derived([backendHandle, ...mountpointHandles]);
+	const allHandles = $derived([backendHandle, stateHandle, ...mountpointHandles]);
 
 	/** Whether there's an error */
 	const hasError = $derived(data.error !== null);
@@ -148,11 +181,14 @@
 	/** Prevent multiple load attempts */
 	let isLoading = $state(false);
 
+	/** Track whether a reload is in progress (to show loading UI while keeping old data) */
+	let isReloading = $state(false);
+
 	/** Track whether load has been attempted (prevents infinite loop when services is empty) */
 	let hasLoaded = $state(false);
 
-	/** Track connected VFS nodes to detect changes */
-	let lastConnectedVfsIds = $state<string>('');
+	/** Track connected VFS and State nodes to detect changes */
+	let lastConnectedIds = $state<string>('');
 
 	// ============================================================================
 	// Effects
@@ -171,22 +207,39 @@
 		}
 	});
 
-	// Reload when VFS connections change
+	// Reload when VFS or State connections change
 	$effect(() => {
-		// Build a string of all connected VFS node IDs
+		// Build a string of all connected node IDs (VFS + State)
 		const backendVfsId = allEdges.current.find(
 			e => e.target === id && e.targetHandle === HandleId.LOADER_BACKEND
 		)?.source ?? '';
 		
-		const mountVfsIds = Array.from(mountpointConnections.values()).sort().join(',');
-		const currentVfsIds = `${backendVfsId}|${mountVfsIds}`;
+		const stateNodeId = allEdges.current.find(
+			e => e.target === id && e.targetHandle === HandleId.LOADER_STATE
+		)?.source ?? '';
 		
-		// If connections changed and we have a backend, reload
-		// Only reload if we have previously loaded (hasLoaded is true) to avoid double-init
-		if (lastConnectedVfsIds && currentVfsIds !== lastConnectedVfsIds && backendConnected && hasLoaded) {
-			handleReload();
+		const mountVfsIds = Array.from(mountpointConnections.values()).sort().join(',');
+		const currentIds = `${backendVfsId}|${stateNodeId}|${mountVfsIds}`;
+		
+		// If connections changed and we have previously loaded
+		if (lastConnectedIds && currentIds !== lastConnectedIds && hasLoaded) {
+			if (backendConnected) {
+				// Backend still connected, reload with new connections
+				handleReload();
+			} else {
+				// Backend disconnected, destroy the loader and clear state
+				destroyLoader(id, (nodeId, updater) => {
+					ctx.updateNode(nodeId, (nodeData) => {
+						if (nodeData.type === 'LOADER') {
+							return updater(nodeData as LoaderNodeData);
+						}
+						return nodeData;
+					});
+				});
+				hasLoaded = false;
+			}
 		}
-		lastConnectedVfsIds = currentVfsIds;
+		lastConnectedIds = currentIds;
 	});
 
 	// ============================================================================
@@ -258,11 +311,16 @@
 				assetMounts.set(path, vfs);
 			}
 			
+			// Find State node and get RDF store (if connected)
+			const stateNode = findStateNode(id, ctx.nodes, ctx.edges);
+			const rdfStore = stateNode ? await getNodeRDFStore(stateNode.id) : undefined;
+			
 			// Initialize loader
 			await initializeLoader(
 				id,
 				backendVfs,
 				assetMounts,
+				rdfStore,
 				(nodeId, updater) => {
 					ctx.updateNode(nodeId, (nodeData) => {
 						if (nodeData.type === 'LOADER') {
@@ -278,10 +336,13 @@
 	}
 
 	async function handleReload() {
-		// Clear error state first
+		// Set reloading state - keep old data visible during reload
+		isReloading = true;
+		
+		// Clear error state only
 		ctx.updateNode(id, (nodeData) => {
 			if (nodeData.type === 'LOADER') {
-				return { ...nodeData, error: null, registeredServices: [] } as LoaderNodeData;
+				return { ...nodeData, error: null } as LoaderNodeData;
 			}
 			return nodeData;
 		});
@@ -289,7 +350,11 @@
 		// Reset loading state and trigger reload
 		isLoading = false;
 		hasLoaded = false;
-		await handleLoad();
+		try {
+			await handleLoad();
+		} finally {
+			isReloading = false;
+		}
 	}
 </script>
 
@@ -346,7 +411,7 @@
 	{/snippet}
 
 	{#snippet children()}
-		<div class="p-3 bg-gray-50 space-y-3 min-w-50">
+		<div class="p-3 bg-gray-50 space-y-3 min-w-50 min-h-24 flex flex-col {!backendConnected ? 'justify-center items-center' : ''}">
 			<!-- Status Display -->
 			<div class="flex items-center">
 				{#if isReady}

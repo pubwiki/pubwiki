@@ -39,9 +39,10 @@
 	import { publishArtifact, type PublishMetadata } from '../io';
 	import { setStudioContext, type StudioContext } from '../state';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../state';
-	import { loadGraph, saveGraph, saveProject, ensureProject, deleteProject, remapNodeIds, setCurrentProject } from '../persistence';
+	import { loadGraph, saveGraph, saveProject, deleteProject, setCurrentProject, getProject } from '../persistence';
 	import { useAuth } from '$lib/stores/auth.svelte';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
+	import { API_BASE_URL } from '$lib/config';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
@@ -503,8 +504,28 @@
 	}
 
 	// ============================================================================
-	// Initialization (Load from IndexedDB)
+	// Initialization (Load from IndexedDB and check API)
 	// ============================================================================
+	
+	/**
+	 * Check if an artifact exists on the backend
+	 * Returns artifact info if exists, null otherwise
+	 */
+	async function checkArtifactExists(artifactId: string, token?: string | null): Promise<boolean> {
+		try {
+			const headers: HeadersInit = {};
+			if (token) {
+				headers['Authorization'] = `Bearer ${token}`;
+			}
+			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/graph?version=latest`, {
+				method: 'GET',
+				headers
+			});
+			return response.ok;
+		} catch {
+			return false;
+		}
+	}
 	
 	$effect(() => {
 		if (!initialized) {
@@ -514,10 +535,42 @@
 					// Initialize snapshot store (loads from IndexedDB)
 					await initSnapshotStore();
 					
-					// Ensure project exists and get its metadata
-					const project = await ensureProject(currentProjectId);
-					isDraft = project.isDraft;
-					projectName = project.name;
+					// Check if artifact exists on backend to determine isDraft status
+					const existsOnBackend = await checkArtifactExists(currentProjectId, auth.token.value);
+					
+					// Get local project if exists
+					const localProject = await getProject(currentProjectId);
+					
+					if (existsOnBackend) {
+						// Artifact exists on backend - not a draft
+						isDraft = false;
+						projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
+						
+						// Update or create local project record
+						await saveProject({
+							id: currentProjectId,
+							name: projectName,
+							artifactId: currentProjectId,
+							createdAt: localProject?.createdAt ?? Date.now(),
+							updatedAt: Date.now(),
+							isDraft: false
+						});
+					} else {
+						// Artifact does not exist on backend - this is a draft
+						isDraft = true;
+						projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
+						
+						// Create local project record if not exists
+						if (!localProject) {
+							await saveProject({
+								id: currentProjectId,
+								name: projectName,
+								createdAt: Date.now(),
+								updatedAt: Date.now(),
+								isDraft: true
+							});
+						}
+					}
 					
 					// Set this project as the current project
 					setCurrentProject(currentProjectId);
@@ -621,45 +674,35 @@
 			throw new Error(result.error || 'Failed to publish');
 		}
 		
-		// If we have nodeIdMapping, update local state with new IDs
-		if (result.nodeIdMapping && Object.keys(result.nodeIdMapping).length > 0) {
-			// Remap all nodes and edges with new server-assigned IDs
-			const remapped = remapNodeIds(nodes, edges, result.nodeIdMapping);
-			nodes = remapped.nodes;
-			edges = remapped.edges;
-			
-			// Use artifactId directly as project ID
-			if (result.artifactId) {
-				const newProjectId = result.artifactId;
-				const oldProjectId = currentProjectId;
-				
-				// Save the remapped graph to the new project (with artifact ID, isDraft = false)
-				await saveProject({
-					id: newProjectId,
-					name: metadata.name,
-					artifactId: result.artifactId,
-					createdAt: Date.now(),
-					updatedAt: Date.now(),
-					isDraft: false
-				});
-				await saveGraph(nodes, edges, newProjectId);
-				
-				// Delete the old temporary project if it's different from the new one
-				if (oldProjectId !== newProjectId) {
-					await deleteProject(oldProjectId);
-				}
-				
-				// Update local state
-				isDraft = false;
-				projectName = metadata.name;
-				
-				// Set the new project as current project
-				setCurrentProject(newProjectId);
-				
-				// Navigate to the new project URL (artifact ID based)
-				goto(`/studio/${newProjectId}`);
-			}
+		// Use artifactId (from metadata) as the new project ID
+		const newProjectId = metadata.artifactId;
+		const oldProjectId = currentProjectId;
+		
+		// Save the graph to the new project (with artifact ID, isDraft = false)
+		await saveProject({
+			id: newProjectId,
+			name: metadata.name,
+			artifactId: metadata.artifactId,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+			isDraft: false
+		});
+		await saveGraph(nodes, edges, newProjectId);
+		
+		// Delete the old temporary project if it's different from the new one
+		if (oldProjectId !== newProjectId) {
+			await deleteProject(oldProjectId);
 		}
+		
+		// Update local state
+		isDraft = false;
+		projectName = metadata.name;
+		
+		// Set the new project as current project
+		setCurrentProject(newProjectId);
+		
+		// Navigate to the new project URL (artifact ID based)
+		goto(`/studio/${newProjectId}`);
 	}
 </script>
 

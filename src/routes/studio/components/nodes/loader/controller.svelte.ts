@@ -14,6 +14,7 @@ import type {
 	StudioNodeData, 
 	LoaderNodeData, 
 	VFSNodeData,
+	StateNodeData,
 	Mountpoint
 } from '../../../types';
 import { 
@@ -42,7 +43,8 @@ import {
 import { 
 	loadRunner, 
 	createLuaInstance, 
-	type LuaInstance 
+	type LuaInstance,
+	type RDFStore
 } from '@pubwiki/lua';
 import type { ServiceDefinition } from '@pubwiki/sandbox-host';
 
@@ -347,6 +349,7 @@ export async function initializeLoader(
 	nodeId: string,
 	backendVfs: Vfs<VfsProvider>,
 	assetMounts: Map<string, Vfs<VfsProvider>>,
+	rdfStore: RDFStore | undefined,
 	updateNode: (id: string, updater: (data: LoaderNodeData) => LoaderNodeData) => void
 ): Promise<boolean> {
 	try {
@@ -384,10 +387,11 @@ export async function initializeLoader(
 			provider.mount(`/user/assets${path}`, vfs);
 		}
 		
-		// Create Lua instance
+		// Create Lua instance with RDF store if provided
 		const instance = createLuaInstance({
 			vfs: mountedVfs,
-			workingDirectory: '/'
+			workingDirectory: '/',
+			rdfStore: rdfStore
 		});
 		
 		// Execute init.lua
@@ -583,6 +587,28 @@ export function findMountedVfsNodes(
 	}
 	
 	return result;
+}
+
+/**
+ * Find the State node connected to a Loader node via the state handle
+ */
+export function findStateNode(
+	nodeId: string,
+	nodes: Node<StudioNodeData>[],
+	edges: Edge[]
+): Node<StateNodeData> | null {
+	const stateEdge = edges.find(
+		e => e.target === nodeId && e.targetHandle === HandleId.LOADER_STATE
+	);
+	
+	if (!stateEdge) return null;
+	
+	const sourceNode = nodes.find(n => n.id === stateEdge.source);
+	if (sourceNode?.data.type === 'STATE') {
+		return sourceNode as Node<StateNodeData>;
+	}
+	
+	return null;
 }
 
 // ============================================================================

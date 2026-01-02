@@ -166,7 +166,11 @@
 		isSubmitting = true;
 
 		try {
+			// Use existing projectId if already published, otherwise generate a new UUID
+			const artifactId = isDraft ? crypto.randomUUID() : projectId;
+			
 			const metadata: PublishMetadata = {
+				artifactId,
 				type: artifactType,
 				name: name.trim(),
 				slug: slug.trim(),

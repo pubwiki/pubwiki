@@ -53,7 +53,6 @@ export {
   ensureProject,
   
   // Helper functions
-  remapNodeIds,
   saveGraph,
   loadGraph,
   
