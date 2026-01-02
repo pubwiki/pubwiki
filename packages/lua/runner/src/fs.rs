@@ -22,6 +22,8 @@ extern "C" {
     fn js_fs_exists_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
     fn js_fs_mkdir_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
     fn js_fs_rmdir_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
+    fn js_fs_stat_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
+    fn js_fs_readdir_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
 }
 
 // 文件系统 Promise 回调管理器
@@ -304,6 +306,137 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
     
     fs_table.set("rmdir", rmdir_fn)?;
     
+    // 异步获取文件/目录状态信息
+    let stat_fn = lua.create_async_function(move |lua, path: String| async move {
+        // 解析路径（处理相对路径）
+        let resolved_path = resolve_path(&lua, &path);
+        
+        // 注册回调通道并获取 callback id
+        let (callback_id, rx) = register_promise_callback();
+        
+        let path_c = CString::new(resolved_path)
+            .map_err(|e| LuaError::external(e))?;
+        
+        let promise_id = unsafe {
+            js_fs_stat_async(context_id, path_c.as_ptr(), callback_id)
+        };
+        
+        if promise_id == 0 {
+            return Err(LuaError::external("Failed to start async operation"));
+        }
+        
+        match rx.recv().await {
+            Ok(PromiseResult::Success { data }) => {
+                // data 是 JSON 格式的 stat 信息
+                let json_str = String::from_utf8(data)
+                    .map_err(|e| LuaError::external(format!("Invalid UTF-8: {}", e)))?;
+                
+                // 解析 JSON 并转换为 Lua table
+                let stat_table = lua.create_table()?;
+                
+                // 使用 serde_json 解析
+                let stat: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| LuaError::external(format!("Invalid JSON: {}", e)))?;
+                
+                if let serde_json::Value::Object(obj) = stat {
+                    for (key, value) in obj {
+                        match value {
+                            serde_json::Value::Number(n) => {
+                                if let Some(i) = n.as_i64() {
+                                    stat_table.set(key.as_str(), i)?;
+                                } else if let Some(f) = n.as_f64() {
+                                    stat_table.set(key.as_str(), f)?;
+                                }
+                            }
+                            serde_json::Value::Bool(b) => {
+                                stat_table.set(key.as_str(), b)?;
+                            }
+                            serde_json::Value::String(s) => {
+                                stat_table.set(key.as_str(), s)?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                
+                Ok((Some(stat_table), None::<String>))
+            }
+            Ok(PromiseResult::Error { message }) => Ok((None, Some(message))),
+            Err(e) => Ok((None, Some(format!("Channel error: {}", e)))),
+        }
+    })?;
+    
+    fs_table.set("stat", stat_fn)?;
+    
+    // 异步读取目录内容（返回带有 stat 信息的列表）
+    let readdir_fn = lua.create_async_function(move |lua, path: String| async move {
+        // 解析路径（处理相对路径）
+        let resolved_path = resolve_path(&lua, &path);
+        
+        // 注册回调通道并获取 callback id
+        let (callback_id, rx) = register_promise_callback();
+        
+        let path_c = CString::new(resolved_path)
+            .map_err(|e| LuaError::external(e))?;
+        
+        let promise_id = unsafe {
+            js_fs_readdir_async(context_id, path_c.as_ptr(), callback_id)
+        };
+        
+        if promise_id == 0 {
+            return Err(LuaError::external("Failed to start async operation"));
+        }
+        
+        match rx.recv().await {
+            Ok(PromiseResult::Success { data }) => {
+                // data 是 JSON 数组，每个元素包含 name 和 stat 信息
+                let json_str = String::from_utf8(data)
+                    .map_err(|e| LuaError::external(format!("Invalid UTF-8: {}", e)))?;
+                
+                let entries: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| LuaError::external(format!("Invalid JSON: {}", e)))?;
+                
+                let result_table = lua.create_table()?;
+                
+                if let serde_json::Value::Array(arr) = entries {
+                    for (idx, entry) in arr.into_iter().enumerate() {
+                        if let serde_json::Value::Object(obj) = entry {
+                            let entry_table = lua.create_table()?;
+                            
+                            for (key, value) in obj {
+                                match value {
+                                    serde_json::Value::Number(n) => {
+                                        if let Some(i) = n.as_i64() {
+                                            entry_table.set(key.as_str(), i)?;
+                                        } else if let Some(f) = n.as_f64() {
+                                            entry_table.set(key.as_str(), f)?;
+                                        }
+                                    }
+                                    serde_json::Value::Bool(b) => {
+                                        entry_table.set(key.as_str(), b)?;
+                                    }
+                                    serde_json::Value::String(s) => {
+                                        entry_table.set(key.as_str(), s)?;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            
+                            // Lua 数组从 1 开始
+                            result_table.set(idx + 1, entry_table)?;
+                        }
+                    }
+                }
+                
+                Ok((Some(result_table), None::<String>))
+            }
+            Ok(PromiseResult::Error { message }) => Ok((None, Some(message))),
+            Err(e) => Ok((None, Some(format!("Channel error: {}", e)))),
+        }
+    })?;
+    
+    fs_table.set("readdir", readdir_fn)?;
+
     lua.globals().set("fs", fs_table)?;
     Ok(())
 }

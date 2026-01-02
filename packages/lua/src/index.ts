@@ -12,6 +12,7 @@ import {
   getRDFStore
 } from './rdf-bridge'
 import type { Vfs, VfsProvider } from '@pubwiki/vfs'
+import { isVfsFile } from '@pubwiki/vfs'
 import {
   createVfsContext,
   createVfsContextWithId,
@@ -826,6 +827,96 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             vfs.deleteFolder(path)
               .then(() => {
                 module._lua_fs_promise_resolve(callbackId, 0, 0)
+                module._lua_executor_tick()
+              })
+              .catch((error: Error) => {
+                const errorMsg = String(error)
+                const errorPtr = allocateUTF8(errorMsg, module)
+                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._free(errorPtr)
+                module._lua_executor_tick()
+              })
+            
+            return 1
+          }
+          
+          env.js_fs_stat_async = (contextId: number, pathPtr: number, callbackId: number) => {
+            const module = localModule
+            if (!module) return 0
+            const path = module.UTF8ToString(pathPtr)
+            
+            const vfs = getVfs(contextId)
+            if (!vfs) {
+              const errorMsg = `VFS not found for context ${contextId}`
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              return 0
+            }
+            
+            vfs.stat(path)
+              .then((stat) => {
+                // 返回 VfsStat 的 JSON 表示
+                const statJson = JSON.stringify({
+                  size: stat.size,
+                  isDirectory: stat.isDirectory,
+                  createdAt: stat.createdAt.toISOString(),
+                  updatedAt: stat.updatedAt.toISOString()
+                })
+                const bytes = textEncoder.encode(statJson)
+                const dataPtr = module._malloc(bytes.length)
+                setHeapViews(module)
+                heapU8!.set(bytes, dataPtr)
+                
+                module._lua_fs_promise_resolve(callbackId, dataPtr, bytes.length)
+                module._free(dataPtr)
+                module._lua_executor_tick()
+              })
+              .catch((error: Error) => {
+                const errorMsg = String(error)
+                const errorPtr = allocateUTF8(errorMsg, module)
+                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._free(errorPtr)
+                module._lua_executor_tick()
+              })
+            
+            return 1
+          }
+          
+          env.js_fs_readdir_async = (contextId: number, pathPtr: number, callbackId: number) => {
+            const module = localModule
+            if (!module) return 0
+            const path = module.UTF8ToString(pathPtr)
+            
+            const vfs = getVfs(contextId)
+            if (!vfs) {
+              const errorMsg = `VFS not found for context ${contextId}`
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              return 0
+            }
+            
+            vfs.listFolder(path)
+              .then((items) => {
+                // 构建包含 stat 信息的条目列表
+                const entries = items.map(item => ({
+                  name: item.name,
+                  path: item.path,
+                  size: isVfsFile(item) ? item.size : 0,
+                  isDirectory: !isVfsFile(item),
+                  createdAt: item.createdAt,
+                  updatedAt: item.updatedAt
+                }))
+                
+                const entriesJson = JSON.stringify(entries)
+                const bytes = textEncoder.encode(entriesJson)
+                const dataPtr = module._malloc(bytes.length)
+                setHeapViews(module)
+                heapU8!.set(bytes, dataPtr)
+                
+                module._lua_fs_promise_resolve(callbackId, dataPtr, bytes.length)
+                module._free(dataPtr)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {

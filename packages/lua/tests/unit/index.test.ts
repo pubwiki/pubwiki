@@ -922,3 +922,347 @@ describe('Error Output Preservation', () => {
   })
 })
 
+// ============= VFS 文件系统测试 =============
+import * as fs from 'node:fs/promises'
+import * as path from 'node:path'
+import * as os from 'node:os'
+import { createVfs, type Vfs, type VfsProvider } from '@pubwiki/vfs'
+
+// 简单的内存 VfsProvider 实现用于测试
+class MemoryVfsProvider implements VfsProvider {
+  private files = new Map<string, { content: Uint8Array; createdAt: Date; updatedAt: Date }>()
+  private directories = new Set<string>(['/'])
+
+  private normalizePath(p: string): string {
+    return path.posix.normalize('/' + p).replace(/\/+$/, '') || '/'
+  }
+
+  async id(filePath: string): Promise<string> {
+    return this.normalizePath(filePath)
+  }
+
+  async readFile(filePath: string): Promise<Uint8Array> {
+    const p = this.normalizePath(filePath)
+    const file = this.files.get(p)
+    if (!file) throw new Error(`File not found: ${p}`)
+    return file.content
+  }
+
+  async writeFile(filePath: string, content: Uint8Array): Promise<void> {
+    const p = this.normalizePath(filePath)
+    const now = new Date()
+    const existing = this.files.get(p)
+    this.files.set(p, {
+      content,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    })
+  }
+
+  async unlink(filePath: string): Promise<void> {
+    const p = this.normalizePath(filePath)
+    if (!this.files.has(p)) throw new Error(`File not found: ${p}`)
+    this.files.delete(p)
+  }
+
+  async mkdir(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
+    const p = this.normalizePath(dirPath)
+    if (options?.recursive) {
+      const parts = p.split('/').filter(Boolean)
+      let current = ''
+      for (const part of parts) {
+        current += '/' + part
+        this.directories.add(current)
+      }
+    } else {
+      this.directories.add(p)
+    }
+  }
+
+  async readdir(dirPath: string): Promise<string[]> {
+    const p = this.normalizePath(dirPath)
+    
+    // 检查目录是否存在
+    if (!this.directories.has(p)) {
+      throw new Error(`Directory not found: ${p}`)
+    }
+    
+    const entries: string[] = []
+    
+    // 查找文件
+    for (const [filePath] of this.files) {
+      const parent = path.posix.dirname(filePath)
+      if (parent === p) {
+        entries.push(path.posix.basename(filePath))
+      }
+    }
+    
+    // 查找子目录
+    for (const dir of this.directories) {
+      if (dir !== p && path.posix.dirname(dir) === p) {
+        entries.push(path.posix.basename(dir))
+      }
+    }
+    
+    return entries
+  }
+
+  async rmdir(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
+    const p = this.normalizePath(dirPath)
+    if (options?.recursive) {
+      // 删除目录下的所有文件
+      for (const [filePath] of this.files) {
+        if (filePath.startsWith(p + '/') || filePath === p) {
+          this.files.delete(filePath)
+        }
+      }
+      // 删除目录及子目录
+      for (const dir of this.directories) {
+        if (dir.startsWith(p + '/') || dir === p) {
+          this.directories.delete(dir)
+        }
+      }
+    } else {
+      this.directories.delete(p)
+    }
+  }
+
+  async stat(filePath: string): Promise<{ size: number; isFile: boolean; isDirectory: boolean; createdAt: Date; updatedAt: Date }> {
+    const p = this.normalizePath(filePath)
+    
+    // 检查是否是文件
+    const file = this.files.get(p)
+    if (file) {
+      return {
+        size: file.content.length,
+        isFile: true,
+        isDirectory: false,
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt
+      }
+    }
+    
+    // 检查是否是目录
+    if (this.directories.has(p)) {
+      const now = new Date()
+      return {
+        size: 0,
+        isFile: false,
+        isDirectory: true,
+        createdAt: now,
+        updatedAt: now
+      }
+    }
+    
+    throw new Error(`Path not found: ${p}`)
+  }
+
+  async exists(filePath: string): Promise<boolean> {
+    const p = this.normalizePath(filePath)
+    return this.files.has(p) || this.directories.has(p)
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    const fromPath = this.normalizePath(from)
+    const toPath = this.normalizePath(to)
+    
+    const file = this.files.get(fromPath)
+    if (file) {
+      this.files.delete(fromPath)
+      this.files.set(toPath, file)
+    } else if (this.directories.has(fromPath)) {
+      this.directories.delete(fromPath)
+      this.directories.add(toPath)
+    } else {
+      throw new Error(`Path not found: ${fromPath}`)
+    }
+  }
+
+  async copyFile(from: string, to: string): Promise<void> {
+    const fromPath = this.normalizePath(from)
+    const toPath = this.normalizePath(to)
+    
+    const file = this.files.get(fromPath)
+    if (!file) throw new Error(`File not found: ${fromPath}`)
+    
+    const now = new Date()
+    this.files.set(toPath, {
+      content: new Uint8Array(file.content),
+      createdAt: now,
+      updatedAt: now
+    })
+  }
+
+  async initialize(): Promise<void> {}
+  async dispose(): Promise<void> {}
+}
+
+describe('VFS File System Operations', () => {
+  let store: MemoryRDFStore
+  let vfs: Vfs<VfsProvider>
+
+  beforeAll(async () => {
+    await loadRunner()
+  })
+
+  beforeEach(() => {
+    store = new MemoryRDFStore()
+    const provider = new MemoryVfsProvider()
+    vfs = createVfs(provider)
+  })
+
+  describe('fs.stat', () => {
+    it('should get file stat', async () => {
+      // 先创建一个文件
+      await vfs.createFile('/test.txt', 'Hello, World!')
+
+      const result = await runLua(`
+        local stat, err = fs.stat('/test.txt')
+        if err then return { error = err } end
+        return {
+          size = stat.size,
+          isDirectory = stat.isDirectory,
+          hasCreatedAt = stat.createdAt ~= nil,
+          hasUpdatedAt = stat.updatedAt ~= nil
+        }
+      `, { rdfStore: store, vfs })
+
+      expect(result.error).toBeNull()
+      expect(result.result.size).toBe(13) // "Hello, World!" 长度
+      expect(result.result.isDirectory).toBe(false)
+      expect(result.result.hasCreatedAt).toBe(true)
+      expect(result.result.hasUpdatedAt).toBe(true)
+    })
+
+    it('should get directory stat', async () => {
+      await vfs.createFolder('/mydir')
+
+      const result = await runLua(`
+        local stat, err = fs.stat('/mydir')
+        if err then return { error = err } end
+        return {
+          isDirectory = stat.isDirectory,
+          size = stat.size
+        }
+      `, { rdfStore: store, vfs })
+
+      expect(result.error).toBeNull()
+      expect(result.result.isDirectory).toBe(true)
+      expect(result.result.size).toBe(0)
+    })
+
+    it('should return error for non-existent path', async () => {
+      const result = await runLua(`
+        local stat, err = fs.stat('/nonexistent')
+        return { stat = stat, hasError = err ~= nil }
+      `, { rdfStore: store, vfs })
+
+      expect(result.error).toBeNull()
+      expect(result.result.stat).toBeFalsy()
+      expect(result.result.hasError).toBe(true)
+    })
+  })
+
+  describe('fs.readdir', () => {
+    it('should list directory contents', async () => {
+      // 创建一些文件和目录
+      await vfs.createFile('/dir/file1.txt', 'content1')
+      await vfs.createFile('/dir/file2.txt', 'content2')
+      await vfs.createFolder('/dir/subdir')
+
+      const result = await runLua(`
+        local entries, err = fs.readdir('/dir')
+        if err then return { error = err } end
+        
+        local names = {}
+        for _, entry in ipairs(entries) do
+          table.insert(names, entry.name)
+        end
+        table.sort(names)
+        return names
+      `, { rdfStore: store, vfs })
+
+      expect(result.error).toBeNull()
+      expect(result.result).toEqual(['file1.txt', 'file2.txt', 'subdir'])
+    })
+
+    it('should return entries with stat info', async () => {
+      await vfs.createFile('/testdir/hello.txt', 'Hello!')
+      await vfs.createFolder('/testdir/folder')
+
+      const result = await runLua(`
+        local entries, err = fs.readdir('/testdir')
+        if err then return { error = err } end
+        
+        local result = {}
+        for _, entry in ipairs(entries) do
+          table.insert(result, {
+            name = entry.name,
+            isDirectory = entry.isDirectory,
+            size = entry.size,
+            hasPath = entry.path ~= nil
+          })
+        end
+        return result
+      `, { rdfStore: store, vfs })
+
+      expect(result.error).toBeNull()
+      expect(result.result).toHaveLength(2)
+      
+      // 检查文件
+      const file = result.result.find((e: any) => e.name === 'hello.txt')
+      expect(file).toBeDefined()
+      expect(file.isDirectory).toBe(false)
+      expect(file.size).toBe(6) // "Hello!" 长度
+      expect(file.hasPath).toBe(true)
+      
+      // 检查目录
+      const folder = result.result.find((e: any) => e.name === 'folder')
+      expect(folder).toBeDefined()
+      expect(folder.isDirectory).toBe(true)
+    })
+
+    it('should return empty array for empty directory', async () => {
+      await vfs.createFolder('/emptydir')
+
+      const result = await runLua(`
+        local entries, err = fs.readdir('/emptydir')
+        if err then return { error = err } end
+        return #entries
+      `, { rdfStore: store, vfs })
+
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(0)
+    })
+
+    it('should return error for non-existent directory', async () => {
+      const result = await runLua(`
+        local entries, err = fs.readdir('/nonexistent')
+        if err then
+          return { hasError = true, errorMsg = err }
+        end
+        return { hasError = false, count = #entries }
+      `, { rdfStore: store, vfs })
+
+      expect(result.error).toBeNull()
+      expect(result.result.hasError).toBe(true)
+      expect(result.result.errorMsg).toContain('not found')
+    })
+  })
+
+  describe('fs.stat with relative paths', () => {
+    it('should resolve relative paths from working directory', async () => {
+      await vfs.createFile('/work/project/file.txt', 'content')
+
+      const result = await runLua(`
+        local stat, err = fs.stat('./file.txt')
+        if err then return { error = err } end
+        return { size = stat.size, isDirectory = stat.isDirectory }
+      `, { rdfStore: store, vfs, workingDirectory: '/work/project' })
+
+      expect(result.error).toBeNull()
+      expect(result.result.size).toBe(7)
+      expect(result.result.isDirectory).toBe(false)
+    })
+  })
+})
