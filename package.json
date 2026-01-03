@@ -51,7 +51,6 @@
 		"@pubwiki/bundler": "workspace:*",
 		"@pubwiki/chat": "workspace:*",
 		"@pubwiki/lua": "workspace:*",
-		"@pubwiki/pubwiki-lua": "file:../pubwiki-lua/pubwiki-lua",
 		"@pubwiki/sandbox-host": "workspace:*",
 		"@pubwiki/svelte-chat": "workspace:*",
 		"@pubwiki/vfs": "workspace:*",
