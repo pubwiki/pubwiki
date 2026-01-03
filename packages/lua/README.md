@@ -512,6 +512,130 @@ await runLua(`
 
 See [FILESYSTEM_API.md](../FILESYSTEM_API.md) for complete file system API documentation.
 
+## File System API
+
+The Lua `fs` object provides methods for file system operations. **All operations are asynchronous** but appear synchronous in Lua code. A VFS (Virtual File System) instance must be provided via the `vfs` option.
+
+### fs.read(path)
+
+Read file content as a string (async). Returns `(content, error)`.
+
+```lua
+local content, err = fs.read('/config.json')
+if err then
+  print('Error: ' .. err)
+else
+  print(content)
+end
+```
+
+### fs.write(path, content)
+
+Write content to a file (async). Creates parent directories if needed. Returns `(success, error)`.
+
+```lua
+local ok, err = fs.write('/data/config.json', '{"version": 1}')
+if not ok then
+  print('Write failed: ' .. err)
+end
+```
+
+### fs.exists(path)
+
+Check if a file or directory exists (async). Returns `boolean`.
+
+```lua
+if fs.exists('/config.json') then
+  print('Config exists')
+end
+```
+
+### fs.unlink(path)
+
+Delete a file (async). Returns `(success, error)`.
+
+```lua
+local ok, err = fs.unlink('/temp/cache.txt')
+```
+
+### fs.mkdir(path)
+
+Create a directory (async). Returns `(success, error)`.
+
+```lua
+local ok, err = fs.mkdir('/data/cache')
+```
+
+### fs.rmdir(path)
+
+Delete a directory (async). Returns `(success, error)`.
+
+```lua
+local ok, err = fs.rmdir('/data/cache')
+```
+
+### fs.stat(path)
+
+Get file or directory status information (async). Returns `(stat, error)`.
+
+```lua
+local stat, err = fs.stat('/myfile.txt')
+if err then
+  print('Error: ' .. err)
+else
+  print('Size: ' .. stat.size)
+  print('Is directory: ' .. tostring(stat.isDirectory))
+  print('Created: ' .. stat.createdAt)
+  print('Updated: ' .. stat.updatedAt)
+end
+```
+
+The `stat` table contains:
+- `size` - File size in bytes (0 for directories)
+- `isDirectory` - `true` if path is a directory, `false` if file
+- `createdAt` - Creation time (ISO 8601 string)
+- `updatedAt` - Last modification time (ISO 8601 string)
+
+### fs.readdir(path)
+
+List directory contents with stat information (async). Returns `(entries, error)`.
+
+```lua
+local entries, err = fs.readdir('/mydir')
+if err then
+  print('Error: ' .. err)
+else
+  for _, entry in ipairs(entries) do
+    print(entry.name)
+    if entry.isDirectory then
+      print('  [DIR]')
+    else
+      print('  Size: ' .. entry.size)
+    end
+  end
+end
+```
+
+Each entry table contains:
+- `name` - File or directory name
+- `path` - Full path
+- `size` - File size in bytes (0 for directories)
+- `isDirectory` - `true` if directory, `false` if file
+- `createdAt` - Creation time (ISO 8601 string)
+- `updatedAt` - Last modification time (ISO 8601 string)
+
+### Working Directory
+
+Relative paths (starting with `./` or `../`) are resolved from the working directory:
+
+```ts
+const result = await runLua(`
+  -- Relative to /project/src
+  local stat, err = fs.stat('./config.json')  -- resolves to /project/src/config.json
+  local parent, err = fs.readdir('..')        -- resolves to /project
+`, { rdfStore: store, vfs, workingDirectory: '/project/src' })
+```
+
 ## Architecture
 
 ### Async-First Design
@@ -538,12 +662,14 @@ runLua() ──────▶ _lua_run_async() ──▶ Spawn async task
                     │                       │                  │
                     ▼                       ▼                  ▼
             State.insert()           State.query()       fs.read()
+                    │                       │           fs.stat()
+                    │                       │         fs.readdir()
                     │                       │                  │
                     ▼                       ▼                  ▼
-        js_rdf_insert_async()   js_rdf_query_async()  js_fs_read_async()
+        js_rdf_insert_async()   js_rdf_query_async()  js_fs_*_async()
                     │                       │                  │
                     ▼                       ▼                  ▼
-            store.insert()            store.query()    fileSystem.readFile()
+            store.insert()            store.query()      vfs.*()
                     │                       │                  │
                     └───────────────────────┴──────────────────┘
                                             │
@@ -623,6 +749,13 @@ export interface FileSystem {
   exists(path: string): Promise<boolean>
   mkdir(path: string): Promise<void>
   rmdir(path: string): Promise<void>
+  stat(path: string): Promise<{
+    size: number
+    isDirectory: boolean
+    createdAt: Date
+    updatedAt: Date
+  }>
+  readdir(path: string): Promise<string[]>
 }
 ```
 
