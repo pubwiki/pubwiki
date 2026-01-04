@@ -11,7 +11,7 @@ export default defineConfig({
 		paraglideVitePlugin({ project: './project.inlang', outdir: './src/lib/paraglide' })
 	],
 
-	server: { fs: { allow: ['packages'] } },
+	server: { fs: { allow: ['../packages'] } },
 
 	ssr: {
 		noExternal: ['@xyflow/svelte', '@pubwiki/chat', '@pubwiki/svelte-chat']

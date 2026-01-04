@@ -13,3 +13,4 @@ packages:
   - "packages/sandbox-service"
   - "packages/sandbox-client"
   - "packages/lua"
+  - "frontend"
