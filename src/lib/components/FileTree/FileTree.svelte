@@ -538,7 +538,7 @@
 <!-- Context Menu -->
 {#if contextMenu.visible}
 	<div
-		class="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-32 z-[10000]"
+		class="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-32 z-10000"
 		style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
 	>
 		{#if contextMenu.targetType === 'root' || contextMenu.target?.type === 'folder'}
