@@ -4,9 +4,9 @@
 	 * 
 	 * Features:
 	 * - Compact file tree preview in node card
-	 * - Opens expanded view (floating panel) for full editing
+	 * - File editing via sidebar properties panel
 	 * - Uses BaseNode for consistent styling
-	 * - Persists UI state (expanded folders, selected file, expanded view state)
+	 * - Persists UI state (expanded folders, selected file)
 	 * - Reactive updates via VFS event system
 	 */
 	import { Handle, Position, type NodeProps, type Node } from '@xyflow/svelte';
@@ -15,7 +15,6 @@
 	import { getNodeVfs, type VersionedVfs } from '../../../vfs';
 	import { getStudioContext } from '../../../state';
 	import BaseNode from '../BaseNode.svelte';
-	import VFSExpandedView from './VFSExpandedView.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
@@ -49,9 +48,7 @@
 	let eventUnsubscribers: (() => void)[] = [];
 	
 	// UI state - initialized in onMount from persisted data
-	let showExpandedView = $state(false);
 	let expandedFolders = $state<Set<string>>(new Set());
-	let selectedFilePath = $state<string | undefined>(undefined);
 
 	// ============================================================================
 	// Derived
@@ -89,25 +86,11 @@
 	 */
 	function persistUIState(updates: Partial<{
 		expandedFolders: string[];
-		selectedFilePath: string | undefined;
-		isExpandedViewOpen: boolean;
 	}>) {
 		ctx.updateNode(id, (nodeData) => ({
 			...nodeData,
 			...updates
 		}));
-	}
-
-	// Persist expanded view state when toggled
-	function setExpandedView(open: boolean) {
-		showExpandedView = open;
-		persistUIState({ isExpandedViewOpen: open });
-	}
-
-	// Persist selected file when changed
-	function setSelectedFile(path: string | undefined) {
-		selectedFilePath = path;
-		persistUIState({ selectedFilePath: path });
 	}
 
 	// ============================================================================
@@ -116,9 +99,7 @@
 
 	onMount(async () => {
 		// Initialize UI state from persisted data
-		showExpandedView = data.isExpandedViewOpen ?? false;
 		expandedFolders = new Set(data.expandedFolders ?? []);
-		selectedFilePath = data.selectedFilePath;
 		
 		try {
 			vfs = await getNodeVfs(data.content.projectId, id);
@@ -231,16 +212,6 @@
 		persistUIState({ expandedFolders: Array.from(newExpanded) });
 	}
 
-	function handleExpandedFoldersChange(folders: Set<string>) {
-		expandedFolders = folders;
-		// Persist expanded folders
-		persistUIState({ expandedFolders: Array.from(folders) });
-	}
-
-	function handleSelectedFileChange(path: string | undefined) {
-		setSelectedFile(path);
-	}
-
 	// Action to capture wheel events and prevent canvas zoom/pan
 	function captureWheel(node: HTMLElement) {
 		function handleWheel(e: WheelEvent): void {
@@ -282,19 +253,6 @@
 		</svg>
 	{/snippet}
 
-	{#snippet headerActions()}
-		<button
-			class="nodrag px-2 py-0.5 text-xs font-medium bg-white/20 hover:bg-white/30 rounded text-white transition-colors flex items-center gap-1"
-			onclick={() => setExpandedView(true)}
-			title={m.studio_node_open_file_browser()}
-		>
-			<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-			</svg>
-			{m.studio_node_open_file_browser()}
-		</button>
-	{/snippet}
-
 	{#snippet children()}
 		<!-- Compact File Tree -->
 		<div class="max-h-48 overflow-y-auto bg-gray-50 text-sm nodrag nowheel" use:captureWheel>
@@ -326,21 +284,6 @@
 		</div>
 	{/snippet}
 </BaseNode>
-
-<!-- Expanded View -->
-{#if showExpandedView && vfs}
-	<VFSExpandedView
-		{vfs}
-		name={data.name}
-		{fileTree}
-		{expandedFolders}
-		initialSelectedFilePath={selectedFilePath}
-		onClose={() => setExpandedView(false)}
-		onRefresh={refreshFileTree}
-		onExpandedFoldersChange={handleExpandedFoldersChange}
-		onSelectedFileChange={handleSelectedFileChange}
-	/>
-{/if}
 
 <!-- Compact File Tree Item Snippet -->
 {#snippet compactFileTreeItem(item: FileItem, depth: number)}

@@ -125,8 +125,6 @@ export interface VFSNodeData extends BaseNodeData<VFSContent> {
   expandedFolders?: string[]
   /** UI State: Currently selected file path */
   selectedFilePath?: string
-  /** UI State: Whether expanded view is open */
-  isExpandedViewOpen?: boolean
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }

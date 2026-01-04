@@ -88,6 +88,27 @@
 	let dragOverItem = $state<FileItem | null>(null);
 	let dragOverRoot = $state(false);
 
+	// File upload input references and dropdown state
+	let fileInput: HTMLInputElement | undefined = $state();
+	let folderInput: HTMLInputElement | undefined = $state();
+	let showUploadMenu = $state(false);
+	let uploadButtonRef: HTMLButtonElement | undefined = $state();
+
+	// ============================================================================
+	// Upload Handler
+	// ============================================================================
+
+	async function handleFileUpload(e: Event) {
+		const input = e.target as HTMLInputElement;
+		if (!input.files || input.files.length === 0) return;
+		
+		await operations?.onUpload?.(input.files);
+		await onRefresh?.();
+		
+		// Reset input to allow uploading the same files again
+		input.value = '';
+	}
+
 	// ============================================================================
 	// Folder Operations
 	// ============================================================================
@@ -425,24 +446,90 @@
 
 	<!-- Quick Actions -->
 	{#if showQuickActions && operations?.onCreateFile && operations?.onCreateFolder}
-		<div class="border-t border-gray-200 p-2 flex gap-1">
+		<div class="border-t border-gray-200 px-2 py-1 flex justify-end gap-1">
+			{#if operations?.onUpload}
+				<div class="relative">
+					<button
+						bind:this={uploadButtonRef}
+						class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
+						onclick={() => showUploadMenu = !showUploadMenu}
+						title="Upload"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+						</svg>
+					</button>
+					{#if showUploadMenu}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class="absolute bottom-full right-0 mb-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-28 z-50"
+							onmouseleave={() => showUploadMenu = false}
+						>
+							<button
+								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+								onclick={() => { fileInput?.click(); showUploadMenu = false; }}
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+								Files
+							</button>
+							<button
+								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+								onclick={() => { folderInput?.click(); showUploadMenu = false; }}
+							>
+								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+								</svg>
+								Folder
+							</button>
+						</div>
+					{/if}
+				</div>
+				<input
+					bind:this={fileInput}
+					type="file"
+					multiple
+					class="hidden"
+					onchange={handleFileUpload}
+				/>
+				<!-- @ts-ignore webkitdirectory is a non-standard attribute -->
+				<input
+					bind:this={folderInput}
+					type="file"
+					webkitdirectory
+					class="hidden"
+					onchange={handleFileUpload}
+				/>
+			{/if}
+			{#if operations?.onDownload}
+				<button
+					class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
+					onclick={() => operations?.onDownload?.()}
+					title="Download as zip"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+					</svg>
+				</button>
+			{/if}
 			<button
-				class="flex-1 px-2 py-1.5 text-xs bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center gap-1 transition-colors"
+				class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
 				onclick={startNewFile}
+				title="New file"
 			>
-				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 				</svg>
-				File
 			</button>
 			<button
-				class="flex-1 px-2 py-1.5 text-xs bg-gray-200 hover:bg-gray-300 rounded flex items-center justify-center gap-1 transition-colors"
+				class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
 				onclick={startNewFolder}
+				title="New folder"
 			>
-				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
 				</svg>
-				Folder
 			</button>
 		</div>
 	{/if}

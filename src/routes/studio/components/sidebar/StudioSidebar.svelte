@@ -27,6 +27,7 @@
 		isAuthenticated: boolean;
 		onFocusNode: (node: Node<StudioNodeData>) => void;
 		onPublish: (metadata: PublishMetadata, nodes: Node<StudioNodeData>[], edges: Edge[]) => Promise<void>;
+		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 	}
 
 	let { 
@@ -38,7 +39,8 @@
 		isDraft,
 		isAuthenticated,
 		onFocusNode,
-		onPublish
+		onPublish,
+		onOpenVfsFile
 	}: Props = $props();
 
 	// Sidebar state
@@ -172,7 +174,7 @@
 			{#if activeTab === 'overview'}
 				<OverviewTab {nodes} {edges} {onFocusNode} />
 			{:else if activeTab === 'properties'}
-				<PropertiesTab {selectedNodes} />
+				<PropertiesTab {selectedNodes} {onOpenVfsFile} />
 			{:else if activeTab === 'project'}
 				<ProjectTab 
 					{nodes} 

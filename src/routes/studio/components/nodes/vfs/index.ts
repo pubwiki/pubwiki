@@ -5,4 +5,4 @@
  */
 
 export { default as VFSNode } from './VFSNode.svelte';
-export { default as VFSExpandedView } from './VFSExpandedView.svelte';
+export { default as VFSFileEditor } from './VFSFileEditor.svelte';

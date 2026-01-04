@@ -3,20 +3,22 @@
 	 * PropertiesTab - Shows details and editor for the selected node
 	 */
 	import type { Node } from '@xyflow/svelte';
-	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData } from '../../types';
+	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData, VFSNodeData } from '../../types';
 	import { getStudioContext } from '../../state';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { marked } from 'marked';
 	import RichTextArea from '../RichTextArea.svelte';
+	import VFSPropertiesPanel from './VFSPropertiesPanel.svelte';
 	import { generate } from '../nodes/input/controller.svelte';
 	import { regenerate } from '../nodes/generated/controller.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		selectedNodes: Node<StudioNodeData>[];
+		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 	}
 
-	let { selectedNodes }: Props = $props();
+	let { selectedNodes, onOpenVfsFile }: Props = $props();
 
 	const ctx = getStudioContext();
 	const settings = getSettingsStore();
@@ -176,61 +178,70 @@
 
 			<!-- Content area -->
 			<div class="p-4">
-				<div class="flex items-center justify-between mb-2">
-					<span class="text-xs font-medium text-gray-500">{m.studio_properties_content()}</span>
-					
-					<!-- Action buttons based on type -->
-					{#if selectedNode.data.type === 'INPUT'}
-						<button
-							class="px-2 py-1 text-xs font-medium bg-purple-500 hover:bg-purple-600 text-white rounded transition-colors flex items-center gap-1"
-							onclick={handleGenerate}
-						>
-							<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-							</svg>
-							{m.studio_properties_generate()}
-						</button>
-					{:else if selectedNode.data.type === 'GENERATED'}
-						<button
-							class="px-2 py-1 text-xs font-medium bg-green-500 hover:bg-green-600 text-white rounded transition-colors flex items-center gap-1"
-							onclick={handleRegenerate}
-						>
-							<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-							</svg>
-							{m.studio_properties_regenerate()}
-						</button>
-					{/if}
-				</div>
+				{#if selectedNode.data.type === 'VFS'}
+					<!-- VFS File List -->
+					<VFSPropertiesPanel
+						nodeId={selectedNode.id}
+						data={selectedNode.data as VFSNodeData}
+						onOpenFile={(nodeId, filePath) => onOpenVfsFile?.(nodeId, filePath)}
+					/>
+				{:else}
+					<div class="flex items-center justify-between mb-2">
+						<span class="text-xs font-medium text-gray-500">{m.studio_properties_content()}</span>
+						
+						<!-- Action buttons based on type -->
+						{#if selectedNode.data.type === 'INPUT'}
+							<button
+								class="px-2 py-1 text-xs font-medium bg-purple-500 hover:bg-purple-600 text-white rounded transition-colors flex items-center gap-1"
+								onclick={handleGenerate}
+							>
+								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+								</svg>
+								{m.studio_properties_generate()}
+							</button>
+						{:else if selectedNode.data.type === 'GENERATED'}
+							<button
+								class="px-2 py-1 text-xs font-medium bg-green-500 hover:bg-green-600 text-white rounded transition-colors flex items-center gap-1"
+								onclick={handleRegenerate}
+							>
+								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+								</svg>
+								{m.studio_properties_regenerate()}
+							</button>
+						{/if}
+					</div>
 
-				<!-- Content editor/viewer -->
-				<div class="rounded-lg border border-gray-200 min-h-48">
-					{#if isEditable}
-						<div class="properties-textarea">
-							<RichTextArea
-								value={displayContent}
-								placeholder={m.studio_properties_enter_content()}
-								onchange={handleContentChange}
-							/>
-						</div>
-					{:else if selectedNode.data.type === 'GENERATED'}
-						<!-- Markdown rendered content for generated nodes -->
-						<div class="p-3 bg-green-50/30">
-							<div class="prose prose-sm max-w-none text-left select-text">
-								{@html marked.parse(displayContent || '')}
+					<!-- Content editor/viewer -->
+					<div class="rounded-lg border border-gray-200 min-h-48">
+						{#if isEditable}
+							<div class="properties-textarea">
+								<RichTextArea
+									value={displayContent}
+									placeholder={m.studio_properties_enter_content()}
+									onchange={handleContentChange}
+								/>
 							</div>
-						</div>
-					{:else}
-						<!-- Readonly display for other types -->
-						<div class="p-3 bg-gray-50 text-sm text-gray-600">
-							{#if displayContent}
-								<pre class="whitespace-pre-wrap font-mono text-xs">{displayContent}</pre>
-							{:else}
-								<span class="text-gray-400 italic">{m.studio_properties_no_content()}</span>
-							{/if}
-						</div>
-					{/if}
-				</div>
+						{:else if selectedNode.data.type === 'GENERATED'}
+							<!-- Markdown rendered content for generated nodes -->
+							<div class="p-3 bg-green-50/30">
+								<div class="prose prose-sm max-w-none text-left select-text">
+									{@html marked.parse(displayContent || '')}
+								</div>
+							</div>
+						{:else}
+							<!-- Readonly display for other types -->
+							<div class="p-3 bg-gray-50 text-sm text-gray-600">
+								{#if displayContent}
+									<pre class="whitespace-pre-wrap font-mono text-xs">{displayContent}</pre>
+								{:else}
+									<span class="text-gray-400 italic">{m.studio_properties_no_content()}</span>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
 

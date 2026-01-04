@@ -15,11 +15,13 @@
 		registerGeneratedNodeHandlers,
 		registerLoaderNodeHandlers
 	} from '../components/nodes';
+	import VFSFileEditor from '../components/nodes/vfs/VFSFileEditor.svelte';
 	import FlowController from '../components/FlowController.svelte';
 	import { StudioSidebar } from '../components/sidebar';
 	import { 
 		type StudioNodeData, 
 		type GeneratedNodeData,
+		type VFSNodeData,
 		createPromptNodeData, 
 		createInputNodeData,
 		createVFSNodeData,
@@ -40,6 +42,7 @@
 	import { setStudioContext, type StudioContext } from '../state';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../state';
 	import { loadGraph, saveGraph, saveProject, deleteProject, setCurrentProject, getProject } from '../persistence';
+	import { getNodeVfs, type VersionedVfs } from '../vfs';
 	import { useAuth } from '$lib/stores/auth.svelte';
 	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { API_BASE_URL } from '$lib/config';
@@ -93,6 +96,40 @@
 	
 	// Current project ID (from URL params)
 	let currentProjectId = $derived(data.projectId);
+
+	// ============================================================================
+	// VFS File Editor State
+	// ============================================================================
+	
+	let vfsEditorState = $state<{
+		nodeId: string;
+		filePath: string;
+		vfs: VersionedVfs;
+	} | null>(null);
+
+	async function handleOpenVfsFile(nodeId: string, filePath: string) {
+		// If editor is already open for the same node, just update the file path
+		if (vfsEditorState && vfsEditorState.nodeId === nodeId) {
+			vfsEditorState = { ...vfsEditorState, filePath };
+			return;
+		}
+		
+		// Otherwise, open a new editor with the VFS
+		const node = nodes.find(n => n.id === nodeId);
+		if (!node || node.data.type !== 'VFS') return;
+		
+		const vfsData = node.data as VFSNodeData;
+		try {
+			const vfs = await getNodeVfs(vfsData.content.projectId, nodeId);
+			vfsEditorState = { nodeId, filePath, vfs };
+		} catch (err) {
+			console.error('Failed to open VFS file:', err);
+		}
+	}
+
+	function handleCloseVfsEditor() {
+		vfsEditorState = null;
+	}
 	
 	// Auto-save debounce timer
 	let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -746,7 +783,17 @@
 		isAuthenticated={auth.isAuthenticated}
 		onFocusNode={handleFocusNode}
 		onPublish={handlePublish}
+		onOpenVfsFile={handleOpenVfsFile}
 	/>
+
+	<!-- VFS File Editor (Right side floating panel) -->
+	{#if vfsEditorState}
+		<VFSFileEditor
+			vfs={vfsEditorState.vfs}
+			filePath={vfsEditorState.filePath}
+			onClose={handleCloseVfsEditor}
+		/>
+	{/if}
 	
 	<!-- Context Menu -->
 	{#if contextMenu}

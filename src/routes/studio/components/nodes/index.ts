@@ -24,7 +24,7 @@ export {
 	type GenerationConfig,
 	type StreamGenerationCallbacks
 } from './generated';
-export { VFSNode, VFSExpandedView } from './vfs';
+export { VFSNode, VFSFileEditor } from './vfs';
 export { SandboxNode, SandboxPreviewView } from './sandbox';
 export { 
 	LoaderNode, 

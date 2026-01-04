@@ -39,6 +39,10 @@ export interface FileOperations {
 	onCreateFolder?: (path: string) => Promise<void>;
 	/** Called when moving a file/folder via drag-drop */
 	onMove?: (oldPath: string, newPath: string) => Promise<void>;
+	/** Called when uploading files - receives FileList with webkitRelativePath for folder structure */
+	onUpload?: (files: FileList) => Promise<void>;
+	/** Called when downloading all files as zip */
+	onDownload?: () => Promise<void>;
 }
 
 /**
