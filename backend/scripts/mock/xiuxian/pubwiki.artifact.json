@@ -1,0 +1,41 @@
+{
+  "authorUsername": "worldbuilder",
+  "type": "PROMPT",
+  "name": "修仙世界观",
+  "slug": "xiuxian-worldview",
+  "description": "完整的修仙世界设定集，包含境界体系、宗门势力、法宝丹药和故事写作指南。",
+  "visibility": "PUBLIC",
+  "license": "CC-BY-4.0",
+  "thumbnailUrl": "https://placehold.co/600x400/dc2626/white?text=修仙世界",
+  "version": "1.0.0",
+  "changelog": "初始版本发布",
+  "tags": ["settings", "xiuxian", "cultivation", "fantasy", "chinese"],
+  "nodes": [
+    {
+      "id": "cultivation-system",
+      "type": "PROMPT",
+      "name": "境界体系",
+      "external": false
+    },
+    {
+      "id": "sects-factions",
+      "type": "PROMPT",
+      "name": "宗门势力",
+      "external": false
+    },
+    {
+      "id": "artifacts-pills",
+      "type": "PROMPT",
+      "name": "法宝丹药",
+      "external": false
+    },
+    {
+      "id": "story-guide",
+      "type": "PROMPT",
+      "name": "故事写作指南",
+      "external": false
+    }
+  ],
+  "edges": [],
+  "homepage": "https://example.com/xiuxian-worldview"
+}

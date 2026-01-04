@@ -1,0 +1,41 @@
+{
+  "authorUsername": "worldbuilder",
+  "type": "PROMPT",
+  "name": "哈利波特世界观",
+  "slug": "harry-potter-worldview",
+  "description": "完整的哈利波特魔法世界设定集，包含角色设定、世界观构建、魔法体系和故事元素指南。",
+  "visibility": "PUBLIC",
+  "license": "CC-BY-4.0",
+  "thumbnailUrl": "https://placehold.co/600x400/7c3aed/white?text=Harry+Potter",
+  "version": "1.0.0",
+  "changelog": "初始版本发布",
+  "tags": ["settings", "harrypotter", "fantasy", "magic", "worldbuilding"],
+  "nodes": [
+    {
+      "id": "characters",
+      "type": "PROMPT",
+      "name": "角色设定",
+      "external": false
+    },
+    {
+      "id": "worldbuilding",
+      "type": "PROMPT",
+      "name": "世界观构建",
+      "external": false
+    },
+    {
+      "id": "magic-system",
+      "type": "PROMPT",
+      "name": "魔法体系",
+      "external": false
+    },
+    {
+      "id": "story-elements",
+      "type": "PROMPT",
+      "name": "故事元素",
+      "external": false
+    }
+  ],
+  "edges": [],
+  "homepage": "https://example.com/harry-potter-worldview"
+}

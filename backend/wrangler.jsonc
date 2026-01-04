@@ -1,0 +1,40 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "pubwiki-backend",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-12-10",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"vars": {
+		"JWT_SECRET": "your-jwt-secret-change-in-production"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "pubwiki-db",
+			"database_id": "64a2c724-fc1f-4219-af77-9cca91deff61",
+			"migrations_dir": "packages/db/drizzle",
+			"remote": false
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "R2_BUCKET",
+			"bucket_name": "pubwiki-storage"
+		}
+	]
+	// "kv_namespaces": [
+	//   {
+	//     "binding": "MY_KV_NAMESPACE",
+	//     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	//   }
+	// ],
+	// "ai": {
+	//   "binding": "AI"
+	// },
+	// "observability": {
+	//   "enabled": true,
+	//   "head_sampling_rate": 1
+	// }
+}

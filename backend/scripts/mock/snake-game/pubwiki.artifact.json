@@ -1,0 +1,37 @@
+{
+  "authorUsername": "gamedev",
+  "type": "GAME",
+  "name": "贪吃蛇 - React TypeScript 版",
+  "slug": "react-snake-game",
+  "description": "经典贪吃蛇游戏的现代实现，使用 React 18 和 TypeScript 开发，支持键盘控制和触屏操作。",
+  "visibility": "PUBLIC",
+  "license": "MIT",
+  "thumbnailUrl": "https://placehold.co/600x400/22c55e/white?text=Snake+Game",
+  "version": "1.0.0",
+  "changelog": "初始版本发布",
+  "tags": ["app", "game", "react", "typescript", "snake", "frontend"],
+  "nodes": [
+    {
+      "id": "snake-game-vfs",
+      "type": "VFS",
+      "name": "游戏源代码",
+      "external": false,
+      "vfsFilePaths": [
+        "index.html",
+        "package.json",
+        "tsconfig.json",
+        "vite.config.ts",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/App.css",
+        "src/components/GameBoard.tsx",
+        "src/components/ScoreBoard.tsx",
+        "src/hooks/useSnakeGame.ts",
+        "src/types/index.ts",
+        "src/utils/gameLogic.ts"
+      ]
+    }
+  ],
+  "edges": [],
+  "homepage": "https://example.com/snake-game"
+}

@@ -1,0 +1,36 @@
+{
+  "authorUsername": "gamedev",
+  "type": "GAME",
+  "name": "万界模拟器",
+  "slug": "universal-simulator",
+  "description": "一个通用的模拟类游戏前端框架，支持各种世界观的模拟体验。基于 React + TypeScript + Vite 构建，可与任何世界观设定配合使用。",
+  "visibility": "PUBLIC",
+  "license": "MIT",
+  "thumbnailUrl": "https://placehold.co/600x400/6366f1/white?text=Universal+Simulator",
+  "version": "1.0.0",
+  "changelog": "初始版本发布",
+  "tags": ["app", "simulation", "game", "react", "typescript", "framework"],
+  "nodes": [
+    {
+      "id": "simulator-vfs",
+      "type": "VFS",
+      "name": "模拟器源代码",
+      "external": false,
+      "vfsFilePaths": [
+        "index.html",
+        "package.json",
+        "tsconfig.json",
+        "vite.config.ts",
+        "src/main.tsx",
+        "src/App.tsx",
+        "src/App.css",
+        "src/types/index.ts",
+        "src/components/SimulatorCanvas.tsx",
+        "src/components/ControlPanel.tsx",
+        "src/hooks/useSimulation.ts"
+      ]
+    }
+  ],
+  "edges": [],
+  "homepage": "# 万界模拟器\n\n> 通用模拟类游戏前端框架\n\n## 🎮 特性\n\n- **通用框架** - 适配任何世界观设定\n- **React 18** - 现代化 React 开发体验\n- **TypeScript** - 完整类型支持\n- **Vite** - 极速开发与构建\n- **响应式** - 支持多种设备\n\n## 🚀 快速开始\n\n```bash\nnpm install\nnpm run dev\n```\n\n## 📦 项目结构\n\n```\nsrc/\n├── main.tsx          # 入口\n├── App.tsx           # 主应用\n├── components/       # UI组件\n├── hooks/            # React Hooks\n└── types/            # TypeScript类型\n```\n\n## 🔧 配置世界观\n\n通过导入世界观配置文件，可以快速切换模拟的世界：\n\n```typescript\nimport { loadWorldConfig } from './world';\n\nconst world = await loadWorldConfig('stellar-nexus');\n```\n\n---\n\n*创造你自己的模拟世界*"
+}

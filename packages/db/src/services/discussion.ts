@@ -1,0 +1,815 @@
+import { eq, and, desc, asc, count, sql } from 'drizzle-orm';
+import type { Database } from '../client';
+import { discussions, discussionReplies, type Discussion, type DiscussionReply, type NewDiscussion, type NewDiscussionReply } from '../schema/discussions';
+import { users, type User } from '../schema/users';
+import type { ServiceError, ServiceResult } from './user';
+import type {
+  DiscussionListItem,
+  DiscussionDetail,
+  DiscussionReplyItem,
+  DiscussionTargetType,
+  DiscussionCategory,
+  Pagination as PaginationInfo,
+  CreateDiscussionRequest,
+  CreateDiscussionReplyRequest,
+  UpdateDiscussionRequest,
+} from '@pubwiki/api';
+
+// 重新导出供其他模块使用
+export type { DiscussionListItem, DiscussionDetail, DiscussionReplyItem };
+
+// 讨论目标
+export interface DiscussionTarget {
+  type: DiscussionTargetType;
+  id: string;
+}
+
+// 列表查询参数
+export interface ListDiscussionsParams {
+  target: DiscussionTarget;
+  page?: number;
+  limit?: number;
+  category?: DiscussionCategory;
+  sortBy?: 'createdAt' | 'updatedAt' | 'replyCount';
+  sortOrder?: 'asc' | 'desc';
+  includePinned?: boolean; // 是否置顶的排在最前面
+}
+
+// 列表响应
+export interface ListDiscussionsResult {
+  discussions: DiscussionListItem[];
+  pagination: PaginationInfo;
+}
+
+// 回复列表参数
+export interface ListRepliesParams {
+  discussionId: string;
+  page?: number;
+  limit?: number;
+  sortOrder?: 'asc' | 'desc';
+}
+
+// 回复列表响应
+export interface ListRepliesResult {
+  replies: DiscussionReplyItem[];
+  pagination: PaginationInfo;
+}
+
+// 作者信息
+interface AuthorInfo {
+  id: string;
+  username: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+export class DiscussionService {
+  constructor(private db: Database) {}
+
+  // 获取作者信息
+  private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
+    const result = await this.db
+      .select({
+        id: users.id,
+        username: users.username,
+        displayName: users.displayName,
+        avatarUrl: users.avatarUrl,
+      })
+      .from(users)
+      .where(eq(users.id, authorId))
+      .limit(1);
+
+    return result[0] ?? null;
+  }
+
+  // 转换为列表项
+  private toListItem(discussion: Discussion, author: AuthorInfo): DiscussionListItem {
+    return {
+      id: discussion.id,
+      targetType: discussion.targetType,
+      targetId: discussion.targetId,
+      author: {
+        id: author.id,
+        username: author.username,
+        displayName: author.displayName ?? undefined,
+        avatarUrl: author.avatarUrl ?? undefined,
+      },
+      title: discussion.title ?? undefined,
+      content: discussion.content,
+      category: discussion.category,
+      isPinned: discussion.isPinned,
+      isLocked: discussion.isLocked,
+      replyCount: discussion.replyCount,
+      createdAt: discussion.createdAt,
+      updatedAt: discussion.updatedAt,
+    };
+  }
+
+  // 转换为详情
+  private toDetail(discussion: Discussion, author: AuthorInfo): DiscussionDetail {
+    return {
+      ...this.toListItem(discussion, author),
+    };
+  }
+
+  // 转换回复为列表项
+  private toReplyItem(reply: DiscussionReply, author: AuthorInfo): DiscussionReplyItem {
+    return {
+      id: reply.id,
+      discussionId: reply.discussionId,
+      author: {
+        id: author.id,
+        username: author.username,
+        displayName: author.displayName ?? undefined,
+        avatarUrl: author.avatarUrl ?? undefined,
+      },
+      parentReplyId: reply.parentReplyId ?? undefined,
+      content: reply.content,
+      isAccepted: reply.isAccepted,
+      createdAt: reply.createdAt,
+      updatedAt: reply.updatedAt,
+    };
+  }
+
+  // 列出讨论
+  async listDiscussions(params: ListDiscussionsParams): Promise<ServiceResult<ListDiscussionsResult>> {
+    const { target, page = 1, limit = 20, category, sortBy = 'createdAt', sortOrder = 'desc', includePinned = true } = params;
+
+    try {
+      // 构建查询条件
+      const conditions = [
+        eq(discussions.targetType, target.type),
+        eq(discussions.targetId, target.id),
+      ];
+
+      if (category) {
+        conditions.push(eq(discussions.category, category));
+      }
+
+      // 计算总数
+      const [totalResult] = await this.db
+        .select({ count: count() })
+        .from(discussions)
+        .where(and(...conditions));
+
+      const total = totalResult?.count ?? 0;
+      const totalPages = Math.ceil(total / limit);
+      const offset = (page - 1) * limit;
+
+      // 构建排序
+      const orderClauses: ReturnType<typeof desc>[] = [];
+      
+      // 如果需要置顶排在最前面
+      if (includePinned) {
+        orderClauses.push(desc(discussions.isPinned));
+      }
+
+      // 添加主排序
+      const sortColumn = sortBy === 'replyCount' ? discussions.replyCount : 
+                         sortBy === 'updatedAt' ? discussions.updatedAt : 
+                         discussions.createdAt;
+      orderClauses.push(sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn));
+
+      // 查询讨论列表
+      const discussionList = await this.db
+        .select()
+        .from(discussions)
+        .where(and(...conditions))
+        .orderBy(...orderClauses)
+        .limit(limit)
+        .offset(offset);
+
+      // 获取所有作者信息
+      const authorIds = [...new Set(discussionList.map(d => d.authorId))];
+      const authorsMap = new Map<string, AuthorInfo>();
+
+      if (authorIds.length > 0) {
+        const authorsResult = await this.db
+          .select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+          })
+          .from(users)
+          .where(sql`${users.id} IN ${authorIds}`);
+
+        for (const author of authorsResult) {
+          authorsMap.set(author.id, author);
+        }
+      }
+
+      // 转换为列表项
+      const items: DiscussionListItem[] = discussionList.map(d => {
+        const author = authorsMap.get(d.authorId)!;
+        return this.toListItem(d, author);
+      });
+
+      return {
+        success: true,
+        data: {
+          discussions: items,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Error listing discussions:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to list discussions' },
+      };
+    }
+  }
+
+  // 获取讨论详情
+  async getDiscussion(id: string): Promise<ServiceResult<DiscussionDetail>> {
+    try {
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, id))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      const author = await this.getAuthor(discussion.authorId);
+      if (!author) {
+        return {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: 'Author not found' },
+        };
+      }
+
+      return {
+        success: true,
+        data: this.toDetail(discussion, author),
+      };
+    } catch (error) {
+      console.error('Error getting discussion:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to get discussion' },
+      };
+    }
+  }
+
+  // 创建讨论
+  async createDiscussion(
+    target: DiscussionTarget,
+    authorId: string,
+    data: CreateDiscussionRequest
+  ): Promise<ServiceResult<DiscussionDetail>> {
+    try {
+      // 验证作者存在
+      const author = await this.getAuthor(authorId);
+      if (!author) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Author not found' },
+        };
+      }
+
+      const newDiscussion: NewDiscussion = {
+        targetType: target.type,
+        targetId: target.id,
+        authorId,
+        title: data.title,
+        content: data.content,
+        category: data.category ?? 'GENERAL',
+      };
+
+      const [inserted] = await this.db
+        .insert(discussions)
+        .values(newDiscussion)
+        .returning();
+
+      return {
+        success: true,
+        data: this.toDetail(inserted, author),
+      };
+    } catch (error) {
+      console.error('Error creating discussion:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to create discussion' },
+      };
+    }
+  }
+
+  // 更新讨论
+  async updateDiscussion(
+    id: string,
+    authorId: string,
+    data: UpdateDiscussionRequest
+  ): Promise<ServiceResult<DiscussionDetail>> {
+    try {
+      // 获取讨论
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, id))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      // 检查权限
+      if (discussion.authorId !== authorId) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Not authorized to update this discussion' },
+        };
+      }
+
+      // 检查是否锁定
+      if (discussion.isLocked) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Discussion is locked' },
+        };
+      }
+
+      // 更新
+      const updateData: Partial<Discussion> = {
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (data.title !== undefined) updateData.title = data.title;
+      if (data.content !== undefined) updateData.content = data.content;
+      if (data.category !== undefined) updateData.category = data.category;
+
+      const [updated] = await this.db
+        .update(discussions)
+        .set(updateData)
+        .where(eq(discussions.id, id))
+        .returning();
+
+      const author = await this.getAuthor(updated.authorId);
+
+      return {
+        success: true,
+        data: this.toDetail(updated, author!),
+      };
+    } catch (error) {
+      console.error('Error updating discussion:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to update discussion' },
+      };
+    }
+  }
+
+  // 删除讨论
+  async deleteDiscussion(id: string, userId: string, isAdmin: boolean = false): Promise<ServiceResult<void>> {
+    try {
+      // 获取讨论
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, id))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      // 检查权限（作者或管理员）
+      if (discussion.authorId !== userId && !isAdmin) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Not authorized to delete this discussion' },
+        };
+      }
+
+      await this.db.delete(discussions).where(eq(discussions.id, id));
+
+      return { success: true, data: undefined };
+    } catch (error) {
+      console.error('Error deleting discussion:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to delete discussion' },
+      };
+    }
+  }
+
+  // 置顶/取消置顶讨论（管理员功能）
+  async pinDiscussion(id: string, isPinned: boolean): Promise<ServiceResult<DiscussionDetail>> {
+    try {
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, id))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      const [updated] = await this.db
+        .update(discussions)
+        .set({ isPinned, updatedAt: new Date().toISOString() })
+        .where(eq(discussions.id, id))
+        .returning();
+
+      const author = await this.getAuthor(updated.authorId);
+
+      return {
+        success: true,
+        data: this.toDetail(updated, author!),
+      };
+    } catch (error) {
+      console.error('Error pinning discussion:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to pin discussion' },
+      };
+    }
+  }
+
+  // 锁定/解锁讨论（管理员功能）
+  async lockDiscussion(id: string, isLocked: boolean): Promise<ServiceResult<DiscussionDetail>> {
+    try {
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, id))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      const [updated] = await this.db
+        .update(discussions)
+        .set({ isLocked, updatedAt: new Date().toISOString() })
+        .where(eq(discussions.id, id))
+        .returning();
+
+      const author = await this.getAuthor(updated.authorId);
+
+      return {
+        success: true,
+        data: this.toDetail(updated, author!),
+      };
+    } catch (error) {
+      console.error('Error locking discussion:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to lock discussion' },
+      };
+    }
+  }
+
+  // ========== 回复相关方法 ==========
+
+  // 列出回复
+  async listReplies(params: ListRepliesParams): Promise<ServiceResult<ListRepliesResult>> {
+    const { discussionId, page = 1, limit = 50, sortOrder = 'asc' } = params;
+
+    try {
+      // 检查讨论是否存在
+      const [discussion] = await this.db
+        .select({ id: discussions.id })
+        .from(discussions)
+        .where(eq(discussions.id, discussionId))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      // 计算总数
+      const [totalResult] = await this.db
+        .select({ count: count() })
+        .from(discussionReplies)
+        .where(eq(discussionReplies.discussionId, discussionId));
+
+      const total = totalResult?.count ?? 0;
+      const totalPages = Math.ceil(total / limit);
+      const offset = (page - 1) * limit;
+
+      // 查询回复列表
+      const replyList = await this.db
+        .select()
+        .from(discussionReplies)
+        .where(eq(discussionReplies.discussionId, discussionId))
+        .orderBy(sortOrder === 'asc' ? asc(discussionReplies.createdAt) : desc(discussionReplies.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      // 获取所有作者信息
+      const authorIds = [...new Set(replyList.map(r => r.authorId))];
+      const authorsMap = new Map<string, AuthorInfo>();
+
+      if (authorIds.length > 0) {
+        const authorsResult = await this.db
+          .select({
+            id: users.id,
+            username: users.username,
+            displayName: users.displayName,
+            avatarUrl: users.avatarUrl,
+          })
+          .from(users)
+          .where(sql`${users.id} IN ${authorIds}`);
+
+        for (const author of authorsResult) {
+          authorsMap.set(author.id, author);
+        }
+      }
+
+      // 转换为列表项
+      const items: DiscussionReplyItem[] = replyList.map(r => {
+        const author = authorsMap.get(r.authorId)!;
+        return this.toReplyItem(r, author);
+      });
+
+      return {
+        success: true,
+        data: {
+          replies: items,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Error listing replies:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to list replies' },
+      };
+    }
+  }
+
+  // 创建回复
+  async createReply(
+    discussionId: string,
+    authorId: string,
+    data: CreateDiscussionReplyRequest
+  ): Promise<ServiceResult<DiscussionReplyItem>> {
+    try {
+      // 获取讨论
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, discussionId))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      // 检查是否锁定
+      if (discussion.isLocked) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Discussion is locked' },
+        };
+      }
+
+      // 验证作者存在
+      const author = await this.getAuthor(authorId);
+      if (!author) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Author not found' },
+        };
+      }
+
+      // 如果有父回复，验证其存在
+      if (data.parentReplyId) {
+        const [parentReply] = await this.db
+          .select({ id: discussionReplies.id })
+          .from(discussionReplies)
+          .where(and(
+            eq(discussionReplies.id, data.parentReplyId),
+            eq(discussionReplies.discussionId, discussionId)
+          ))
+          .limit(1);
+
+        if (!parentReply) {
+          return {
+            success: false,
+            error: { code: 'NOT_FOUND', message: 'Parent reply not found' },
+          };
+        }
+      }
+
+      const newReply: NewDiscussionReply = {
+        discussionId,
+        authorId,
+        parentReplyId: data.parentReplyId,
+        content: data.content,
+      };
+
+      // 使用 batch 保证原子性：插入回复 + 更新讨论回复计数
+      const replyId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      
+      await this.db.batch([
+        this.db.insert(discussionReplies).values({
+          ...newReply,
+          id: replyId,
+          createdAt: now,
+          updatedAt: now,
+        }),
+        this.db
+          .update(discussions)
+          .set({
+            replyCount: sql`${discussions.replyCount} + 1`,
+            updatedAt: now,
+          })
+          .where(eq(discussions.id, discussionId)),
+      ]);
+
+      // 获取插入的回复
+      const [inserted] = await this.db
+        .select()
+        .from(discussionReplies)
+        .where(eq(discussionReplies.id, replyId))
+        .limit(1);
+
+      return {
+        success: true,
+        data: this.toReplyItem(inserted, author),
+      };
+    } catch (error) {
+      console.error('Error creating reply:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to create reply' },
+      };
+    }
+  }
+
+  // 删除回复
+  async deleteReply(replyId: string, userId: string, isAdmin: boolean = false): Promise<ServiceResult<void>> {
+    try {
+      // 获取回复
+      const [reply] = await this.db
+        .select()
+        .from(discussionReplies)
+        .where(eq(discussionReplies.id, replyId))
+        .limit(1);
+
+      if (!reply) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Reply not found' },
+        };
+      }
+
+      // 检查权限（作者或管理员）
+      if (reply.authorId !== userId && !isAdmin) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Not authorized to delete this reply' },
+        };
+      }
+
+      // 获取讨论
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, reply.discussionId))
+        .limit(1);
+
+      // 使用 batch 保证原子性：删除回复 + 更新讨论回复计数
+      if (discussion) {
+        await this.db.batch([
+          this.db.delete(discussionReplies).where(eq(discussionReplies.id, replyId)),
+          this.db
+            .update(discussions)
+            .set({
+              replyCount: sql`CASE WHEN ${discussions.replyCount} > 0 THEN ${discussions.replyCount} - 1 ELSE 0 END`,
+              updatedAt: new Date().toISOString(),
+            })
+            .where(eq(discussions.id, reply.discussionId)),
+        ]);
+      } else {
+        await this.db.delete(discussionReplies).where(eq(discussionReplies.id, replyId));
+      }
+
+      return { success: true, data: undefined };
+    } catch (error) {
+      console.error('Error deleting reply:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to delete reply' },
+      };
+    }
+  }
+
+  // 采纳回复作为答案
+  async acceptReply(replyId: string, discussionAuthorId: string): Promise<ServiceResult<DiscussionReplyItem>> {
+    try {
+      // 获取回复
+      const [reply] = await this.db
+        .select()
+        .from(discussionReplies)
+        .where(eq(discussionReplies.id, replyId))
+        .limit(1);
+
+      if (!reply) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Reply not found' },
+        };
+      }
+
+      // 获取讨论，验证权限
+      const [discussion] = await this.db
+        .select()
+        .from(discussions)
+        .where(eq(discussions.id, reply.discussionId))
+        .limit(1);
+
+      if (!discussion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
+        };
+      }
+
+      // 只有讨论作者可以采纳答案
+      if (discussion.authorId !== discussionAuthorId) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'Only discussion author can accept answers' },
+        };
+      }
+
+      const now = new Date().toISOString();
+
+      // 使用 batch 保证原子性：取消其他回复的采纳状态 + 采纳当前回复
+      await this.db.batch([
+        // 取消其他已采纳的回复
+        this.db
+          .update(discussionReplies)
+          .set({ isAccepted: false })
+          .where(and(
+            eq(discussionReplies.discussionId, reply.discussionId),
+            eq(discussionReplies.isAccepted, true)
+          )),
+        // 采纳当前回复
+        this.db
+          .update(discussionReplies)
+          .set({ isAccepted: true, updatedAt: now })
+          .where(eq(discussionReplies.id, replyId)),
+      ]);
+
+      // 获取更新后的回复
+      const [updated] = await this.db
+        .select()
+        .from(discussionReplies)
+        .where(eq(discussionReplies.id, replyId))
+        .limit(1);
+
+      const author = await this.getAuthor(updated.authorId);
+
+      return {
+        success: true,
+        data: this.toReplyItem(updated, author!),
+      };
+    } catch (error) {
+      console.error('Error accepting reply:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to accept reply' },
+      };
+    }
+  }
+}

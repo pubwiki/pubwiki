@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `cover_urls` text;

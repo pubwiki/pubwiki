@@ -1,0 +1,52 @@
+{
+  "ownerUsername": "worldbuilder",
+  "name": "星际纽带：共创纪元",
+  "slug": "stellar-nexus-chronicles",
+  "topic": "collaborative-fiction",
+  "description": "一个开放的科幻创作社区项目。在银河联邦纪元391年，每一位创作者都可以在这个宇宙中留下自己的印记。",
+  "visibility": "PUBLIC",
+  "license": "CC-BY-SA-4.0",
+  "coverUrls": [
+    "https://placehold.co/1200x400/1e3a5f/white?text=Stellar+Nexus+Chronicles"
+  ],
+  "roles": [
+    { "name": "World", "description": "世界观设定和基础规则" },
+    { "name": "Characters", "description": "角色设定和人物档案", "parentName": "World" },
+    { "name": "Chapters", "description": "故事章节和剧情", "parentName": "World" }
+  ],
+  "pages": [
+    {
+      "name": "欢迎",
+      "icon": "🌌",
+      "content": "<h1>星际纽带：共创纪元</h1><blockquote>在银河联邦纪元391年，书写你自己的星际传奇</blockquote><h2>🌌 欢迎来到共创宇宙</h2><p>这是一个开放的科幻创作社区项目。我们一起构建这个浩瀚的宇宙，每一位创作者都可以：</p><ul><li>创造自己的角色</li><li>书写独特的故事</li><li>丰富世界观设定</li><li>与其他创作者互动</li></ul><hr/><p><em>每一颗星星都有它的故事。你的故事是什么？</em></p>"
+    },
+    {
+      "name": "项目结构",
+      "icon": "📚",
+      "content": "<h2>📚 项目结构</h2><table><thead><tr><th>分类</th><th>说明</th></tr></thead><tbody><tr><td><strong>World</strong></td><td>官方世界观设定，是所有创作的基础</td></tr><tr><td><strong>Characters</strong></td><td>社区创作的角色，任何人都可以贡献</td></tr><tr><td><strong>Chapters</strong></td><td>故事章节，可以使用任何角色</td></tr></tbody></table>"
+    },
+    {
+      "name": "如何参与",
+      "icon": "🚀",
+      "content": "<h2>🚀 如何参与</h2><ol><li>阅读 <strong>World</strong> 分类下的官方世界观</li><li>在 <strong>Characters</strong> 分类下创建你的角色</li><li>在 <strong>Chapters</strong> 分类下书写故事</li><li>与社区分享并获得反馈</li></ol>"
+    },
+    {
+      "name": "创作指南",
+      "icon": "⭐",
+      "content": "<h2>⭐ 创作指南</h2><ul><li>请遵循基础世界观设定</li><li>尊重其他创作者的角色和故事</li><li>在使用他人角色前请获得许可</li><li>欢迎创意，但请保持内部一致性</li></ul>"
+    }
+  ],
+  "homepageIndex": 0,
+  "officialArtifacts": [
+    {
+      "artifactSlug": "stellar-nexus-universe",
+      "roleName": "World"
+    }
+  ],
+  "communityArtifacts": [
+    {
+      "artifactSlug": "ayla-stardust-navigator",
+      "roleName": "Characters"
+    }
+  ]
+}

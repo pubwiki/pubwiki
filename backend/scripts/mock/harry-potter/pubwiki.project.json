@@ -1,0 +1,38 @@
+{
+  "ownerUsername": "worldbuilder",
+  "name": "魔法世界：共创魔法",
+  "slug": "wizarding-world-collab",
+  "topic": "fantasy-fiction",
+  "description": "探索J.K.罗琳笔下的魔法世界，创作你自己的巫师故事、角色和冒险。",
+  "visibility": "PUBLIC",
+  "license": "CC-BY-NC-4.0",
+  "coverUrls": [
+    "https://placehold.co/1200x400/7c3aed/white?text=Wizarding+World"
+  ],
+  "roles": [
+    { "name": "Lore", "description": "世界观和魔法体系设定" },
+    { "name": "Characters", "description": "角色设定", "parentName": "Lore" },
+    { "name": "Spells", "description": "咒语和魔法", "parentName": "Lore" },
+    { "name": "Stories", "description": "同人故事", "parentName": "Lore" }
+  ],
+  "pages": [
+    {
+      "name": "欢迎来到魔法世界",
+      "icon": "🧙",
+      "content": "<h1>魔法世界：共创魔法</h1><p>欢迎来到霍格沃茨！在这里，你可以创作自己的巫师故事，设计新的角色，甚至发明新的咒语。</p><h2>✨ 项目亮点</h2><ul><li>完整的哈利波特世界观参考</li><li>角色创建模板</li><li>魔法体系指南</li><li>社区故事分享</li></ul>"
+    },
+    {
+      "name": "创作规则",
+      "icon": "📜",
+      "content": "<h2>📜 创作规则</h2><ol><li>尊重原作设定，保持魔法世界的内在逻辑</li><li>原创角色需要有合理的背景故事</li><li>新咒语需要符合拉丁语命名规范</li><li>故事需要标注时间线（霍格沃茨大战前/后）</li></ol><p><strong>注意：</strong>本项目仅供同人创作交流，不涉及商业用途。</p>"
+    }
+  ],
+  "homepageIndex": 0,
+  "officialArtifacts": [
+    {
+      "artifactSlug": "harry-potter-worldview",
+      "roleName": "Lore"
+    }
+  ],
+  "communityArtifacts": []
+}

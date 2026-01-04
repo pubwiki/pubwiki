@@ -1,5 +1,6 @@
 onlyBuiltDependencies:
   - esbuild
+  - better-sqlite3
 
 packages:
   - "packages/types"
@@ -13,4 +14,7 @@ packages:
   - "packages/sandbox-service"
   - "packages/sandbox-client"
   - "packages/lua"
+  - "packages/db"
+  - "packages/api"
   - "frontend"
+  - "backend"

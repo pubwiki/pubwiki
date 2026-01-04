@@ -1,0 +1,41 @@
+{
+  "authorUsername": "worldbuilder",
+  "type": "PROMPT",
+  "name": "星际纽带：共创宇宙",
+  "slug": "stellar-nexus-universe",
+  "description": "一个开放的科幻宇宙世界观框架，设定于公元2847年的银河联邦时代。这个世界观专为社区协作创作设计，任何人都可以在这个框架下创造自己的角色、势力和故事。",
+  "visibility": "PUBLIC",
+  "license": "CC-BY-SA-4.0",
+  "thumbnailUrl": "https://placehold.co/600x400/1e3a5f/white?text=Stellar+Nexus",
+  "version": "1.0.0",
+  "changelog": "初始版本发布 - 银河联邦纪元开启",
+  "tags": ["settings", "scifi", "worldbuilding", "collaborative", "space-opera"],
+  "nodes": [
+    {
+      "id": "universe-foundation",
+      "type": "PROMPT",
+      "name": "宇宙基础设定",
+      "external": false
+    },
+    {
+      "id": "factions-powers",
+      "type": "PROMPT",
+      "name": "势力与阵营",
+      "external": false
+    },
+    {
+      "id": "technology-systems",
+      "type": "PROMPT",
+      "name": "科技体系",
+      "external": false
+    },
+    {
+      "id": "character-creation",
+      "type": "PROMPT",
+      "name": "角色创建指南",
+      "external": false
+    }
+  ],
+  "edges": [],
+  "homepage": "# 星际纽带：共创宇宙\n\n> 一个为社区协作创作设计的开放科幻世界观\n\n## 🌌 欢迎来到银河联邦纪元\n\n公元2847年，人类已经走出摇篮，在银河系中建立起繁荣的星际文明。**星际纽带**是一个开放的世界观框架，邀请每一位创作者在这片浩瀚的宇宙中留下自己的印记。\n\n## ✨ 为什么选择星际纽带？\n\n- **开放创作** - 任何人都可以创造角色和故事\n- **丰富设定** - 完整的科技、势力和历史框架\n- **社区驱动** - 你的创作会成为这个宇宙的一部分\n- **灵活框架** - 足够详细却不限制想象力\n\n## 📚 世界观架构\n\n| 模块 | 描述 |\n|------|------|\n| 宇宙基础 | 时间线、空间结构、物理法则 |\n| 势力阵营 | 银河联邦、自由商盟、深空流浪者 |\n| 科技体系 | 超光速航行、人工智能、基因改造 |\n| 角色创建 | 如何在这个世界中创造你的角色 |\n\n## 🚀 开始创作\n\n1. 阅读基础设定，了解宇宙规则\n2. 选择或创建你角色所属的势力\n3. 使用角色创建指南塑造你的角色\n4. 分享你的创作，成为星际纽带的一部分\n\n---\n\n*在无尽的星海中，每个故事都值得被讲述*"
+}
