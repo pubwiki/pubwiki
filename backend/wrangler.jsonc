@@ -6,6 +6,12 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"routes": [
+      {
+        "pattern": "api.pub.wiki",
+        "custom_domain": true
+      }
+    ],
 	"vars": {
 		"JWT_SECRET": "your-jwt-secret-change-in-production"
 	},

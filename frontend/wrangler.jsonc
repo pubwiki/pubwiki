@@ -9,5 +9,11 @@
   "assets": {
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
-	}
+	},
+  "routes": [
+    {
+      "pattern": "pub.wiki",
+      "custom_domain": true
+    }
+  ]
 }
