@@ -208,6 +208,9 @@ importers:
       vitest-browser-svelte:
         specifier: ^2.0.1
         version: 2.0.1(svelte@5.46.1)(vitest@4.0.16)
+      wrangler:
+        specifier: ^4.54.0
+        version: 4.54.0(@cloudflare/workers-types@4.20260103.0)
 
   packages/api:
     dependencies:
