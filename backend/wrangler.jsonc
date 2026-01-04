@@ -12,6 +12,14 @@
         "custom_domain": true
       }
     ],
+	"observability": {
+  	  "logs": {
+  	    "enabled": true,
+  	    "head_sampling_rate": 1,
+  	    "invocation_logs": true,
+  	    "persist": true
+  	  }
+  	},
 	"vars": {
 		"JWT_SECRET": "your-jwt-secret-change-in-production"
 	},
@@ -20,7 +28,7 @@
 			"binding": "DB",
 			"database_name": "pubwiki-db",
 			"database_id": "64a2c724-fc1f-4219-af77-9cca91deff61",
-			"migrations_dir": "packages/db/drizzle",
+			"migrations_dir": "../packages/db/drizzle",
 			"remote": false
 		}
 	],
