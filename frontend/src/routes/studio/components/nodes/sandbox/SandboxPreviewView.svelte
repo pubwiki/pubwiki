@@ -98,7 +98,7 @@
 		 */
 		async init(): Promise<void> {
 			const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
-
+			
 			if (def) {
 				this.serviceDef = def;
 				this._isStreaming = isStreamingService(def);
@@ -139,16 +139,11 @@
 		 */
 		async stream(
 			inputs: Record<string, unknown>,
-			on: ((value: unknown) => Promise<void> | void) | { on(value: unknown): Promise<void> }
+			callback: (value: unknown) => Promise<void> | void
 		): Promise<void> {
 			if (!this._isStreaming) {
 				throw new Error(`Service ${this.serviceIdentifier} is not a streaming service`);
 			}
-			
-			// Handle both RpcTarget stub (object with `on` method) and direct callback
-			const callback = typeof on === 'function' 
-				? on 
-				: (value: unknown) => on.on(value);
 			
 			const result = await this.loaderInterface.streamService(
 				this.serviceIdentifier,

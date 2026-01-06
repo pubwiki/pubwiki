@@ -7,28 +7,9 @@
  * not working correctly when accessed across iframes.
  */
 
-import type { ICustomService, RpcStub, SandboxMainService, ServiceDefinition } from '@pubwiki/sandbox-service'
+import { ICustomService, RpcStub, SandboxMainService, ServiceDefinition } from '@pubwiki/sandbox-service'
 import { RpcTarget } from '@pubwiki/sandbox-service'
 import type { ISandboxClient } from '@pubwiki/sandbox-client'
-
-/**
- * RpcTarget wrapper for stream callback
- * 
- * This wraps the user's callback function in an RpcTarget so it can be
- * passed across the RPC boundary to the host side.
- */
-class StreamCallback extends RpcTarget {
-  private handler: (value: unknown) => Promise<void> | void
-  
-  constructor(handler: (value: unknown) => Promise<void> | void) {
-    super()
-    this.handler = handler
-  }
-  
-  async on(value: unknown): Promise<void> {
-    await this.handler(value)
-  }
-}
 
 /**
  * Sandbox client implementation
@@ -91,11 +72,12 @@ export class SandboxClient implements ISandboxClient {
         
         async stream(inputs, on) {
           const input = structuredClone(inputs)
-          // Create RpcTarget wrapper for the callback
-          const callback = new StreamCallback(on)
           // RPC call stream, passing the callback as RpcTarget
           // The stream method is guaranteed to exist for streaming services
-          await (rpcService as any).stream(input, callback)
+          // This manual construction is required to avoid some serialization errors caused by
+          // different js realms on different windows
+          const callback = new RpcStub(on)
+          await rpcService.stream!(input, callback)
         },
         
         async getDefinition() {

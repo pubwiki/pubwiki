@@ -126,8 +126,7 @@ export interface ICustomService {
  * @returns true if the service is a streaming service
  */
 export function isStreamingService(definition: ServiceDefinition): boolean {
-    const returns = definition.outputs?.['x-returns'] as JsonSchema | undefined
-    if (!returns) return false
+    const returns = definition.outputs
     
     // Must be a function
     if (returns['x-function'] !== true) return false
@@ -137,10 +136,9 @@ export function isStreamingService(definition: ServiceDefinition): boolean {
     if (params && Object.keys(params).length > 0) return false
     
     // Return value must be oneOf containing null
-    const funcReturns = returns['x-returns'] as JsonSchema | undefined
-    if (!funcReturns?.oneOf) return false
+    if (!returns['x-returns']?.oneOf) return false
     
-    const hasNull = (funcReturns.oneOf as JsonSchema[]).some(
+    const hasNull = returns['x-returns'].oneOf.some(
         (schema) => schema.type === 'null'
     )
     
