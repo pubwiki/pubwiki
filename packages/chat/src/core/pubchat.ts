@@ -26,14 +26,7 @@ import { z } from 'zod'
  */
 export interface PubChatConfig {
   /** LLM configuration (OpenAI compatible API only) */
-  llm: {
-    apiKey: string
-    baseUrl?: string  // Default OpenAI, can configure OpenRouter etc.
-    model: string
-    temperature?: number
-    maxTokens?: number
-    organizationId?: string
-  }
+  llm: LLMConfig
   
   /** Message store provider */
   messageStore: MessageStoreProvider
@@ -52,6 +45,18 @@ export interface PubChatConfig {
    * @returns true to continue, false to stop
    */
   onIterationLimitReached?: (currentIteration: number, maxIterations: number) => Promise<boolean>
+}
+
+/**
+ * LLM configuration override options
+ */
+export interface LLMConfig {
+  model: string
+  apiKey: string
+  baseUrl?: string
+  temperature?: number
+  maxTokens?: number
+  organizationId?: string
 }
 
 /**
@@ -189,11 +194,13 @@ export class PubChat implements ChatProvider {
    * 
    * @param prompt User input
    * @param historyId History ID (leaf node ID of message chain), creates new conversation if not provided
+   * @param overrideConfig Optional LLM configuration overrides
    * @returns AsyncGenerator<ChatStreamEvent>
    */
   async *streamChat(
     prompt: string,
-    historyId?: string
+    historyId?: string,
+    overrideConfig?: Partial<LLMConfig>
   ): AsyncGenerator<ChatStreamEvent> {
     // Create abort controller
     this.abortController = new AbortController()
@@ -218,13 +225,23 @@ export class PubChat implements ChatProvider {
       // Convert to ChatMessage format
       const chatMessages = messagesToChatMessages(conversationMessages)
       
+      // Merge config with overrides
+      const llmConfig = {
+        model: overrideConfig?.model ?? this.config.llm.model,
+        apiKey: overrideConfig?.apiKey ?? this.config.llm.apiKey,
+        baseUrl: overrideConfig?.baseUrl ?? this.config.llm.baseUrl,
+        temperature: overrideConfig?.temperature ?? this.config.llm.temperature,
+        maxTokens: overrideConfig?.maxTokens ?? this.config.llm.maxTokens,
+        organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
+      }
+      
       // Create pipeline
       const pipeline = new ChatStreamPipeline({
-        model: this.config.llm.model,
-        apiKey: this.config.llm.apiKey,
-        baseUrl: this.config.llm.baseUrl,
-        temperature: this.config.llm.temperature,
-        maxTokens: this.config.llm.maxTokens,
+        model: llmConfig.model,
+        apiKey: llmConfig.apiKey,
+        baseUrl: llmConfig.baseUrl,
+        temperature: llmConfig.temperature,
+        maxTokens: llmConfig.maxTokens,
         organizationId: this.config.llm.organizationId,
         tools: this.config.toolCalling?.enabled ? this.toolRegistry : undefined,
         maxIterations: this.config.toolCalling?.maxIterations ?? 10,
@@ -320,7 +337,7 @@ export class PubChat implements ChatProvider {
           content: accumulatedContent
         }],
         timestamp: Date.now(),
-        model: this.config.llm.model,
+        model: llmConfig.model,
         metadata: summary?.reasoning_details ? {
           reasoning_details: summary.reasoning_details
         } : undefined
@@ -351,15 +368,17 @@ export class PubChat implements ChatProvider {
    * 
    * @param prompt User input
    * @param historyId History ID
+   * @param overrideConfig Optional LLM configuration overrides
    * @returns Generated message and new history ID
    */
   async chat(
     prompt: string,
-    historyId?: string
+    historyId?: string,
+    overrideConfig?: Partial<LLMConfig>
   ): Promise<ChatResult> {
     let result: ChatResult | undefined
     
-    for await (const event of this.streamChat(prompt, historyId)) {
+    for await (const event of this.streamChat(prompt, historyId, overrideConfig)) {
       if (event.type === 'done') {
         result = {
           message: event.message,
