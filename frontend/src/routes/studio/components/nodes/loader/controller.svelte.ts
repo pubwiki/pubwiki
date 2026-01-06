@@ -527,6 +527,72 @@ export async function callService(
 	return { success: true, outputs };
 }
 
+/**
+ * Call a streaming service on Loader Node
+ * 
+ * For services that return an iterator, this function iterates over all values
+ * and invokes the callback for each yielded value.
+ * 
+ * @param nodeId - The Loader node ID
+ * @param identifier - Service identifier (namespace:name)
+ * @param inputs - Input parameters for the service
+ * @param on - Callback invoked for each yielded value
+ * @returns ServiceCallResult indicating success/failure
+ */
+export async function streamService(
+	nodeId: string,
+	identifier: string,
+	inputs: Record<string, unknown>,
+	on: (value: unknown) => Promise<void> | void
+): Promise<ServiceCallResult> {
+	const runtime = loaderRuntimes.get(nodeId);
+	if (!runtime) {
+		return { success: false, error: 'Loader not initialized' };
+	}
+	
+	// Serialize inputs to JSON
+	const inputsJson = JSON.stringify(inputs);
+	
+	// Run service and get iterator
+	const iter = runtime.instance.runIter(`
+		local ServiceRegistry = require("core/service")
+		local inputs = json.decode([[${inputsJson}]])
+		local iterator = ServiceRegistry.call("${identifier}", inputs)
+		-- If returned value is an iterator function, wrap it for Lua iteration
+		if type(iterator) == "function" then
+			return function()
+				local value = iterator()
+				return value
+			end
+		end
+		-- Otherwise wrap as single-value iterator
+		local called = false
+		return function()
+			if called then return nil end
+			called = true
+			return iterator
+		end
+	`);
+	
+	try {
+		for await (const values of iter) {
+			// Lua iterator returns array of values, we take the first one
+			const value = Array.isArray(values) && values.length > 0 ? values[0] : values;
+			// Stop iteration if value is null/undefined (end of stream)
+			if (value === null || value === undefined) {
+				break;
+			}
+			await on(value);
+		}
+		return { success: true };
+	} catch (error) {
+		return { 
+			success: false, 
+			error: error instanceof Error ? error.message : String(error) 
+		};
+	}
+}
+
 // ============================================================================
 // Connection Helpers
 // ============================================================================
@@ -724,8 +790,14 @@ export interface LoaderInterface {
 	isReady(): boolean;
 	/** Get registered services list */
 	listServices(): Promise<ServiceDefinition[]>;
-	/** Call a service */
+	/** Call a service (non-streaming) */
 	callService(identifier: string, inputs: Record<string, unknown>): Promise<ServiceCallResult>;
+	/** Call a streaming service with callback */
+	streamService(
+		identifier: string, 
+		inputs: Record<string, unknown>,
+		on: (value: unknown) => Promise<void> | void
+	): Promise<ServiceCallResult>;
 	/** Get service definition (for schema generation) */
 	getServiceDefinition(identifier: string): Promise<ServiceDefinition | null>;
 }
@@ -738,6 +810,7 @@ export function createLoaderInterface(nodeId: string): LoaderInterface {
 		isReady: () => isLoaderReady(nodeId),
 		listServices: () => listServices(nodeId),
 		callService: (id, inputs) => callService(nodeId, id, inputs),
+		streamService: (id, inputs, on) => streamService(nodeId, id, inputs, on),
 		getServiceDefinition: async (id) => {
 			const services = await listServices(nodeId);
 			return services.find(s => s.identifier === id) ?? null;

@@ -68,6 +68,57 @@ if (await client.hasService('calculator')) {
 }
 ```
 
+### Working with Streaming Services
+
+Some services return an iterator (streaming services) that yield multiple values over time. These are useful for:
+- Progress feedback
+- Paginated results
+- Real-time data streams
+
+```typescript
+// Get a streaming service
+const streamService = await client.getService('data:streamNumbers')
+
+// Check if it's a streaming service
+if (streamService.isStreaming) {
+  // Use stream() method with a callback
+  await streamService.stream!({}, async (value) => {
+    console.log('Received:', value)
+    // Process each value as it arrives
+  })
+  console.log('Stream completed')
+} else {
+  // Regular service - use call()
+  const result = await streamService.call({ input: 'test' })
+  console.log('Result:', result)
+}
+```
+
+#### Streaming Service Schema
+
+Streaming services are identified by their return schema pattern:
+
+```json
+{
+  "x-returns": {
+    "type": "object",
+    "x-function": true,
+    "x-params": {},
+    "x-returns": {
+      "oneOf": [
+        { "type": "number" },
+        { "type": "null" }
+      ]
+    }
+  }
+}
+```
+
+Key characteristics:
+- `x-function: true` - Returns a function (iterator)
+- `x-params: {}` - Iterator takes no arguments
+- `x-returns.oneOf` containing `null` - Yields `T | null`, where `null` signals end of stream
+
 ### Working with Service Definitions
 
 Each service provides a `ServiceDefinition` with JSON Schema for type information:
@@ -188,15 +239,43 @@ if (await client.hasService('my-service')) {
 
 The unified interface for all custom services.
 
+#### Properties
+
+##### `isStreaming: boolean`
+
+Whether this is a streaming service. If `true`, use `stream()` method instead of `call()`.
+
+```typescript
+if (service.isStreaming) {
+  await service.stream!(inputs, callback)
+} else {
+  const result = await service.call(inputs)
+}
+```
+
 #### Methods
 
 ##### `call(inputs: Record<string, unknown>): Promise<Record<string, unknown>>`
 
-Call the service with the given inputs and receive outputs.
+Call a non-streaming service with the given inputs and receive outputs.
 
 ```typescript
 const result = await service.call({ input1: 'value1', input2: 42 })
 ```
+
+> **Note:** For streaming services, calling `call()` will throw an error. Use `stream()` instead.
+
+##### `stream(inputs: Record<string, unknown>, on: (value: unknown) => Promise<void> | void): Promise<void>`
+
+Call a streaming service with a callback for each yielded value.
+
+```typescript
+await service.stream!({}, async (value) => {
+  console.log('Received:', value)
+})
+```
+
+> **Note:** This method only exists on streaming services (`isStreaming === true`).
 
 ##### `getDefinition(): Promise<ServiceDefinition>`
 

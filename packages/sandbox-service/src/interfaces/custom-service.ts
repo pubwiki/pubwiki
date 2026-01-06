@@ -54,6 +54,9 @@ export interface ServiceDefinition {
  * This is the unified interface for all custom services registered by Loader nodes.
  * Services expose their schema and a generic `call` method.
  * 
+ * For streaming services (x-function: true with oneOf null), use `stream()` method
+ * to receive values via callback.
+ * 
  * @example
  * ```typescript
  * const service = mainService.getService('myNamespace:myService')
@@ -61,14 +64,21 @@ export interface ServiceDefinition {
  *     const definition = await service.getDefinition()
  *     console.log('Inputs:', definition.inputs)
  *     
- *     const result = await service.call({ input1: 'value' })
- *     console.log('Output:', result)
+ *     if (service.isStreaming) {
+ *         await service.stream!({ input1: 'value' }, (value) => {
+ *             console.log('Received:', value)
+ *         })
+ *     } else {
+ *         const result = await service.call({ input1: 'value' })
+ *         console.log('Output:', result)
+ *     }
  * }
  * ```
  */
 export interface ICustomService {
     /**
      * Call the service with given inputs
+     * For streaming services, use stream() instead
      * @param inputs - Key-value map matching the service's input schema
      * @returns Output values matching the service's output schema
      * @throws Error if service call fails
@@ -76,8 +86,63 @@ export interface ICustomService {
     call(inputs: Record<string, unknown>): Promise<Record<string, unknown>>
     
     /**
+     * Call a streaming service with callback
+     * 
+     * For services that return an iterator (x-function: true with oneOf null),
+     * this method iterates over all values and invokes the callback for each.
+     * 
+     * @param inputs - Input parameters for the service
+     * @param on - Callback invoked for each yielded value
+     * @returns Promise that resolves when streaming completes
+     * @throws Error if service is not a streaming service
+     */
+    stream?(
+        inputs: Record<string, unknown>,
+        on: (value: unknown) => Promise<void> | void
+    ): Promise<void>
+    
+    /**
      * Get the service definition including JSON Schema for inputs/outputs
      * @returns Service definition with metadata and schemas
      */
     getDefinition(): Promise<ServiceDefinition>
+    
+    /**
+     * Check if this is a streaming service
+     * Returns true if the service returns an iterator function
+     */
+    readonly isStreaming: boolean
+}
+
+/**
+ * Check if a ServiceDefinition represents a streaming service
+ * 
+ * Streaming services have a return schema that:
+ * 1. Has x-function: true (returns a function)
+ * 2. Has empty x-params (function takes no arguments)
+ * 3. Has x-returns.oneOf containing null (returns T | null)
+ * 
+ * @param definition - The service definition to check
+ * @returns true if the service is a streaming service
+ */
+export function isStreamingService(definition: ServiceDefinition): boolean {
+    const returns = definition.outputs?.['x-returns'] as JsonSchema | undefined
+    if (!returns) return false
+    
+    // Must be a function
+    if (returns['x-function'] !== true) return false
+    
+    // Function params must be empty
+    const params = returns['x-params'] as Record<string, unknown> | undefined
+    if (params && Object.keys(params).length > 0) return false
+    
+    // Return value must be oneOf containing null
+    const funcReturns = returns['x-returns'] as JsonSchema | undefined
+    if (!funcReturns?.oneOf) return false
+    
+    const hasNull = (funcReturns.oneOf as JsonSchema[]).some(
+        (schema) => schema.type === 'null'
+    )
+    
+    return hasNull
 }

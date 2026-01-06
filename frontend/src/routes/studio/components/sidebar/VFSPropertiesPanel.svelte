@@ -2,7 +2,7 @@
 	/**
 	 * VFSPropertiesPanel - File list and management for VFS nodes in sidebar
 	 */
-	import { onMount, onDestroy } from 'svelte';
+	import { onDestroy } from 'svelte';
 	import type { VFSNodeData } from '../../types';
 	import { getNodeVfs, type VersionedVfs } from '../../vfs';
 	import { getStudioContext } from '../../state';
@@ -198,7 +198,18 @@
 	// Initialization
 	// ============================================================================
 
-	onMount(async () => {
+	async function initializeVfs() {
+		// Clean up previous event listeners
+		for (const unsubscribe of eventUnsubscribers) {
+			unsubscribe();
+		}
+		eventUnsubscribers = [];
+		
+		// Reset state
+		isLoading = true;
+		error = null;
+		fileTree = [];
+		
 		// Initialize UI state from persisted data
 		expandedFolders = new Set(data.expandedFolders ?? []);
 		selectedFilePath = data.selectedFilePath ?? undefined;
@@ -213,6 +224,13 @@
 			error = err instanceof Error ? err.message : 'Failed to initialize';
 			isLoading = false;
 		}
+	}
+
+	// Re-initialize when nodeId changes
+	$effect(() => {
+		// Track nodeId dependency
+		const currentNodeId = nodeId;
+		initializeVfs();
 	});
 
 	onDestroy(() => {

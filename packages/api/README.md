@@ -59,6 +59,24 @@ import type {
   NodeVersionInfo,
   NodeFileInfo,
   
+  // Discussion 相关类型
+  DiscussionTargetType,
+  DiscussionCategory,
+  DiscussionAuthor,
+  DiscussionListItem,
+  DiscussionDetail,
+  DiscussionReplyItem,
+  CreateDiscussionRequest,
+  UpdateDiscussionRequest,
+  CreateDiscussionReplyRequest,
+  
+  // Post 相关类型
+  PostAuthor,
+  PostListItem,
+  PostDetail,
+  CreatePostRequest,
+  UpdatePostRequest,
+  
   // 请求类型
   RegisterRequest,
   LoginRequest,
@@ -82,11 +100,29 @@ import type {
   GetUserArtifactsResponse,
   GetUserProjectsResponse,
   
+  // Discussion 响应类型
+  ListDiscussionsResponse,
+  CreateDiscussionResponse,
+  GetDiscussionResponse,
+  UpdateDiscussionResponse,
+  ListDiscussionRepliesResponse,
+  CreateDiscussionReplyResponse,
+  
+  // Post 响应类型
+  ListProjectPostsResponse,
+  CreateProjectPostResponse,
+  GetProjectPostResponse,
+  UpdateProjectPostResponse,
+  DeleteProjectPostResponse,
+  
   // 查询参数类型
   ListArtifactsQuery,
   ListProjectsQuery,
   GetUserArtifactsQuery,
   GetUserProjectsQuery,
+  ListDiscussionsQuery,
+  ListDiscussionRepliesQuery,
+  ListProjectPostsQuery,
 } from '@pubwiki/api';
 ```
 
@@ -467,7 +503,11 @@ const requestBody = {
     { name: 'Villain', description: '反派' },
   ],
   // 可选：创建时同时关联 artifacts（这些 artifacts 的 isOfficial 会设为 true）
-  artifactIds: ['artifact-uuid-1', 'artifact-uuid-2'],
+  // 使用 artifacts 数组，每个元素包含 artifactId 和 roleName
+  artifacts: [
+    { artifactId: 'artifact-uuid-1', roleName: 'Main Character' },
+    { artifactId: 'artifact-uuid-2', roleName: 'Sidekick' },
+  ],
   // 可选：创建项目页面（HTML 内容），页面顺序由数组顺序决定
   pages: [
     { name: 'Home', icon: '🏠', content: '<h1>Welcome to My Project</h1><p>Project description...</p>' },
@@ -553,6 +593,133 @@ if (userProjects) {
     // project.role 为 'owner' 或 'maintainer'
   }
 }
+
+// 获取 Project 的动态列表
+const { data: postsData } = await client.GET('/projects/{projectId}/posts', {
+  params: {
+    path: { projectId: 'project-uuid-here' },
+    query: {
+      page: 1,
+      limit: 20,
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+    },
+  },
+});
+
+if (postsData) {
+  console.log(`Found ${postsData.pagination.total} posts`);
+  for (const post of postsData.posts) {
+    console.log(`${post.title} by ${post.author.username}`);
+    console.log(`  Pinned: ${post.isPinned}, Replies: ${post.replyCount}`);
+  }
+}
+
+// 创建动态（仅 owner/maintainer）
+const { data: createPostData } = await authClient.POST('/projects/{projectId}/posts', {
+  params: {
+    path: { projectId: 'project-uuid-here' },
+  },
+  body: {
+    title: 'New Update!',
+    content: '<p>We just released a new feature...</p>',
+    coverUrls: ['https://example.com/cover.png'],
+  },
+});
+
+if (createPostData) {
+  console.log(`Created post: ${createPostData.post.id}`);
+  console.log(`Discussion ID: ${createPostData.post.discussionId}`);  // 自动创建关联讨论
+}
+
+// 获取讨论列表
+const { data: discussionsData } = await client.GET('/discussions', {
+  params: {
+    query: {
+      targetType: 'ARTIFACT',
+      targetId: 'artifact-uuid-here',
+      category: 'QUESTION',
+      page: 1,
+      limit: 20,
+      sortBy: 'replyCount',
+      sortOrder: 'desc',
+    },
+  },
+});
+
+if (discussionsData) {
+  console.log(`Found ${discussionsData.pagination.total} discussions`);
+  for (const discussion of discussionsData.discussions) {
+    console.log(`${discussion.title || '(no title)'} - ${discussion.category}`);
+    console.log(`  Replies: ${discussion.replyCount}, Pinned: ${discussion.isPinned}`);
+  }
+}
+
+// 创建讨论
+const { data: createDiscussionData } = await authClient.POST('/discussions', {
+  params: {
+    query: {
+      targetType: 'ARTIFACT',
+      targetId: 'artifact-uuid-here',
+    },
+  },
+  body: {
+    title: 'How to use this artifact?',
+    content: 'I am trying to...',
+    category: 'QUESTION',
+  },
+});
+
+if (createDiscussionData) {
+  console.log(`Created discussion: ${createDiscussionData.discussion.id}`);
+}
+
+// 获取讨论回复
+const { data: repliesData } = await client.GET('/discussions/{discussionId}/replies', {
+  params: {
+    path: { discussionId: 'discussion-uuid-here' },
+    query: {
+      page: 1,
+      limit: 50,
+      sortOrder: 'asc',
+    },
+  },
+});
+
+if (repliesData) {
+  for (const reply of repliesData.replies) {
+    console.log(`${reply.author.username}: ${reply.content}`);
+    if (reply.isAccepted) {
+      console.log('  ✓ Accepted answer');
+    }
+  }
+}
+
+// 创建回复
+const { data: createReplyData } = await authClient.POST('/discussions/{discussionId}/replies', {
+  params: {
+    path: { discussionId: 'discussion-uuid-here' },
+  },
+  body: {
+    content: 'You can do this by...',
+    parentReplyId: 'parent-reply-uuid',  // 可选，用于嵌套回复
+  },
+});
+
+if (createReplyData) {
+  console.log(`Created reply: ${createReplyData.reply.id}`);
+}
+
+// 采纳回复为答案（仅讨论作者）
+const { data: acceptData } = await authClient.POST('/discussions/replies/{replyId}/accept', {
+  params: {
+    path: { replyId: 'reply-uuid-here' },
+  },
+});
+
+if (acceptData) {
+  console.log(`Reply accepted: ${acceptData.reply.isAccepted}`);
+}
 ```
 
 ### 错误处理
@@ -591,8 +758,24 @@ if (error) {
 | GET | `/projects/{projectId}/pages/{pageId}` | 获取 Project 页面详情 | 🔒* |
 | GET | `/projects/{projectId}/artifacts` | 获取 Project 的 Artifact 列表 | 🔒* |
 | POST | `/projects/{projectId}/artifacts` | 将 Artifact 链接到 Project | ✅ |
+| GET | `/projects/{projectId}/posts` | 获取 Project 动态列表 | 🔒* |
+| POST | `/projects/{projectId}/posts` | 创建动态 | ✅ |
+| GET | `/projects/{projectId}/posts/{postId}` | 获取动态详情 | 🔒* |
+| PATCH | `/projects/{projectId}/posts/{postId}` | 更新动态 | ✅ |
+| DELETE | `/projects/{projectId}/posts/{postId}` | 删除动态 | ✅ |
 | GET | `/users/{userId}/artifacts` | 获取用户的 Artifact 列表 | 🔒* |
 | GET | `/users/{userId}/projects` | 获取用户的 Project 列表（own 或 maintain） | 🔒* |
+| GET | `/discussions` | 获取讨论列表 | ❌ |
+| POST | `/discussions` | 创建讨论 | ✅ |
+| GET | `/discussions/{discussionId}` | 获取讨论详情 | ❌ |
+| PATCH | `/discussions/{discussionId}` | 更新讨论 | ✅ |
+| DELETE | `/discussions/{discussionId}` | 删除讨论 | ✅ |
+| POST | `/discussions/{discussionId}/pin` | 置顶/取消置顶讨论 | ✅ |
+| POST | `/discussions/{discussionId}/lock` | 锁定/解锁讨论 | ✅ |
+| GET | `/discussions/{discussionId}/replies` | 获取讨论回复列表 | ❌ |
+| POST | `/discussions/{discussionId}/replies` | 创建回复 | ✅ |
+| DELETE | `/discussions/replies/{replyId}` | 删除回复 | ✅ |
+| POST | `/discussions/replies/{replyId}/accept` | 采纳回复为答案 | ✅ |
 
 ### 谱系查询参数
 
@@ -647,6 +830,35 @@ if (error) {
 | `role` | string | 按用户角色过滤：`owner`, `maintainer` |
 | `sortBy` | string | 排序字段：`createdAt`（默认）, `updatedAt` |
 | `sortOrder` | string | 排序方向：`asc`, `desc`（默认） |
+
+### Project Posts 查询参数
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `page` | integer | 页码，默认 1 |
+| `limit` | integer | 每页数量，默认 20，最大 100 |
+| `sortBy` | string | 排序字段：`createdAt`（默认）, `updatedAt` |
+| `sortOrder` | string | 排序方向：`asc`, `desc`（默认） |
+
+### Discussions 查询参数
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `targetType` | string | **必填**，目标类型：`ARTIFACT`, `PROJECT`, `POST` |
+| `targetId` | string | **必填**，目标 ID |
+| `category` | string | 按分类筛选：`QUESTION`, `FEEDBACK`, `BUG_REPORT`, `FEATURE_REQUEST`, `GENERAL` |
+| `page` | integer | 页码，默认 1 |
+| `limit` | integer | 每页数量，默认 20，最大 100 |
+| `sortBy` | string | 排序字段：`createdAt`（默认）, `updatedAt`, `replyCount` |
+| `sortOrder` | string | 排序方向：`asc`, `desc`（默认） |
+
+### Discussion Replies 查询参数
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `page` | integer | 页码，默认 1 |
+| `limit` | integer | 每页数量，默认 50，最大 100 |
+| `sortOrder` | string | 排序方向：`asc`（默认）, `desc` |
 
 > \* 权限说明：
 > - PUBLIC artifact/project: 所有人可访问
@@ -754,10 +966,15 @@ interface CreateProjectMetadata {
   visibility?: VisibilityType;  // 可选，默认 PUBLIC
   license?: string;          // 可选，最大 50 字符
   coverUrls?: string[];      // 可选，封面图片 URL 数组
-  artifactIds?: string[];    // 可选，要关联的 artifact ID 列表
+  artifacts?: CreateProjectArtifact[];  // 可选，要关联的 artifact 列表
   roles: CreateProjectRole[];  // 必填，至少需要一个角色
   pages?: CreateProjectPage[];  // 可选，要创建的页面列表
   homepageIndex?: number;    // 可选，首页在 pages 数组中的索引（从 0 开始）
+}
+
+interface CreateProjectArtifact {
+  artifactId: string;        // 要关联的 Artifact ID
+  roleName: string;          // 角色名称（必须是叶子角色）
 }
 ```
 
@@ -1175,6 +1392,154 @@ interface UserProjectListItem {
   maintainerCount?: number;   // 管理者数量
   artifactCount?: number;     // 关联 artifact 数量
   role: UserProjectRole;      // 用户在此 project 中的角色
+}
+```
+
+### DiscussionTargetType
+
+讨论目标类型：
+
+```typescript
+type DiscussionTargetType = 'ARTIFACT' | 'PROJECT' | 'POST';
+```
+
+### DiscussionCategory
+
+讨论分类：
+
+```typescript
+type DiscussionCategory = 'QUESTION' | 'FEEDBACK' | 'BUG_REPORT' | 'FEATURE_REQUEST' | 'GENERAL';
+```
+
+### DiscussionListItem
+
+讨论列表项：
+
+```typescript
+interface DiscussionListItem {
+  id: string;
+  targetType: DiscussionTargetType;
+  targetId: string;
+  author: DiscussionAuthor;
+  title?: string;           // 最大 200 字符
+  content: string;
+  category: DiscussionCategory;
+  isPinned: boolean;
+  isLocked: boolean;
+  replyCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### DiscussionAuthor
+
+讨论作者信息：
+
+```typescript
+interface DiscussionAuthor {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatarUrl?: string;
+}
+```
+
+### DiscussionReplyItem
+
+讨论回复项：
+
+```typescript
+interface DiscussionReplyItem {
+  id: string;
+  discussionId: string;
+  author: DiscussionAuthor;
+  parentReplyId?: string;   // 父回复 ID，用于嵌套回复
+  content: string;
+  isAccepted: boolean;      // 是否被采纳为答案
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### CreateDiscussionRequest
+
+创建讨论请求：
+
+```typescript
+interface CreateDiscussionRequest {
+  title?: string;           // 最大 200 字符
+  content: string;          // 必填
+  category?: DiscussionCategory;
+}
+```
+
+### CreateDiscussionReplyRequest
+
+创建讨论回复请求：
+
+```typescript
+interface CreateDiscussionReplyRequest {
+  content: string;          // 必填
+  parentReplyId?: string;   // 父回复 ID，用于嵌套回复
+}
+```
+
+### PostListItem
+
+动态列表项：
+
+```typescript
+interface PostListItem {
+  id: string;
+  projectId: string;
+  author: PostAuthor;
+  discussionId?: string;    // 关联的讨论 ID
+  title: string;            // 最大 200 字符
+  content: string;          // HTML 内容
+  coverUrls?: string[];     // 封面图片 URL 数组
+  isPinned: boolean;
+  replyCount?: number;      // 关联讨论的回复数
+  createdAt: string;
+  updatedAt: string;
+}
+```
+
+### PostAuthor
+
+动态作者信息：
+
+```typescript
+interface PostAuthor {
+  id: string;
+  username: string;
+  displayName?: string;
+  avatarUrl?: string;
+}
+```
+
+### CreatePostRequest
+
+创建动态请求：
+
+```typescript
+interface CreatePostRequest {
+  title: string;            // 必填，1-200 字符
+  content: string;          // HTML 内容
+  coverUrls?: string[];     // 封面图片 URL 数组
+}
+```
+
+### UpdatePostRequest
+
+更新动态请求：
+
+```typescript
+interface UpdatePostRequest {
+  title?: string;           // 1-200 字符
+  content?: string;         // HTML 内容
+  coverUrls?: string[];     // 封面图片 URL 数组
+  isPinned?: boolean;       // 是否置顶（仅 owner 和 maintainer 可设置）
 }
 ```
 

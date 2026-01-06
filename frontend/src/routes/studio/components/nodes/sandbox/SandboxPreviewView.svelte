@@ -7,8 +7,8 @@
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig, ICustomService, ServiceDefinition } from '@pubwiki/sandbox-host';
-	import { createSandboxConnection, RpcTarget } from '@pubwiki/sandbox-host';
+	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig, ICustomService, ServiceDefinition, JsonSchema } from '@pubwiki/sandbox-host';
+	import { createSandboxConnection, RpcTarget, isStreamingService } from '@pubwiki/sandbox-host';
 	import type { VersionedVfs } from '../../../vfs';
 	import type { LoaderNodeData } from '../../../types';
 	import { createLoaderInterface, type LoaderInterface } from '../loader/controller.svelte';
@@ -71,11 +71,14 @@
 	 * This creates a dynamic RpcTarget that forwards method calls to the Lua VM.
 	 * When a method is called, it maps to a service call in the Lua ServiceRegistry.
 	 * Implements ICustomService interface for unified service access.
+	 * 
+	 * For streaming services (iterator-based), use the stream() method with callback.
 	 */
 	class LuaServiceBridge extends RpcTarget implements ICustomService {
 		private loaderInterface: LoaderInterface;
 		private serviceIdentifier: string;
 		private serviceDef: ServiceDefinition | null = null;
+		private _isStreaming: boolean = false;
 		
 		constructor(loaderInterface: LoaderInterface, serviceIdentifier: string) {
 			super();
@@ -84,28 +87,78 @@
 		}
 
 		/**
+		 * Check if this is a streaming service
+		 */
+		get isStreaming(): boolean {
+			return this._isStreaming;
+		}
+
+		/**
 		 * Initialize the bridge by loading service definition
 		 */
 		async init(): Promise<void> {
 			const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
+
 			if (def) {
 				this.serviceDef = def;
+				this._isStreaming = isStreamingService(def);
 			}
 		}
 
 		/**
 		 * Call the Lua service with given inputs.
-		 * This is the main entry point for RPC calls.
+		 * This is the main entry point for RPC calls (non-streaming).
 		 * 
 		 * @param inputs - Key-value map of inputs to pass to the service
 		 * @returns The outputs from the service call
 		 */
 		async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+			if (this._isStreaming) {
+				throw new Error(`Service ${this.serviceIdentifier} is a streaming service. Use stream() method instead.`);
+			}
+
 			const result = await this.loaderInterface.callService(this.serviceIdentifier, inputs);
 			if (!result.success) {
 				throw new Error(result.error ?? 'Service call failed');
 			}
 			return result.outputs ?? {};
+		}
+
+		/**
+		 * Call a streaming service with callback.
+		 * 
+		 * For services that return an iterator, this method iterates over all values
+		 * and invokes the callback for each yielded value.
+		 * 
+		 * Note: The `on` parameter comes as an RpcTarget stub from the sandbox side,
+		 * which has an `on(value)` method. We type it as `any` here because the RPC
+		 * layer transforms the callback function into an RpcTarget stub.
+		 * 
+		 * @param inputs - Input parameters for the service
+		 * @param on - RpcTarget stub with on(value) method, or callback function
+		 */
+		async stream(
+			inputs: Record<string, unknown>,
+			on: ((value: unknown) => Promise<void> | void) | { on(value: unknown): Promise<void> }
+		): Promise<void> {
+			if (!this._isStreaming) {
+				throw new Error(`Service ${this.serviceIdentifier} is not a streaming service`);
+			}
+			
+			// Handle both RpcTarget stub (object with `on` method) and direct callback
+			const callback = typeof on === 'function' 
+				? on 
+				: (value: unknown) => on.on(value);
+			
+			const result = await this.loaderInterface.streamService(
+				this.serviceIdentifier,
+				inputs,
+				callback
+			);
+			
+			if (!result.success) {
+				throw new Error(result.error ?? 'Service streaming failed');
+			}
 		}
 
 		/**

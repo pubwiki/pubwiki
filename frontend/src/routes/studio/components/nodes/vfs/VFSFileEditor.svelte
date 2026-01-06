@@ -67,14 +67,6 @@
 
 	// Create editor when container is ready and content is loaded
 	$effect(() => {
-		console.log('[VFSFileEditor] createEditor effect:', { 
-			hasMonaco: !!monaco, 
-			hasContainer: !!editorContainer, 
-			isLoading, 
-			hasError: !!error, 
-			hasEditor: !!editor,
-			fileContentLength: fileContent.length
-		});
 		if (monaco && editorContainer && !isLoading && !error && !editor) {
 			console.log('[VFSFileEditor] Creating editor');
 			createEditor(fileContent, fileName);

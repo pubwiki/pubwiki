@@ -20,7 +20,7 @@ export type {
 export { Vfs } from '@pubwiki/vfs'
 
 // Re-export service types from @pubwiki/sandbox-service
-export type { ICustomService, ServiceDefinition } from '@pubwiki/sandbox-service'
+export type { ICustomService, ServiceDefinition, JsonSchema } from '@pubwiki/sandbox-service'
 
 import type { ProjectConfig } from '@pubwiki/bundler'
 
