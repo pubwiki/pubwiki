@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // API 基础 URL
-const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:8787/api';
+const API_BASE_URL = process.env.API_BASE_URL || 'https://api.pub.wiki/api';
 
 // Mock 用户数据
 const mockUsers = [
@@ -155,8 +155,12 @@ async function getOrCreateUserToken(user: typeof mockUsers[0]): Promise<string> 
 async function createArtifact(artifact: MockArtifact, token: string): Promise<string | null | 'PENDING'> {
   const formData = new FormData();
   
+  // 生成 artifactId (客户端生成的 UUID)
+  const artifactId = crypto.randomUUID();
+  
   // 添加 metadata
   const metadata = {
+    artifactId, // 必填字段
     type: artifact.type,
     name: artifact.name,
     slug: artifact.slug,

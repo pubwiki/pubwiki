@@ -12,25 +12,25 @@
   "tags": ["settings", "harrypotter", "fantasy", "magic", "worldbuilding"],
   "nodes": [
     {
-      "id": "characters",
+      "id": "33333333-3333-3333-3333-333333333001",
       "type": "PROMPT",
       "name": "角色设定",
       "external": false
     },
     {
-      "id": "worldbuilding",
+      "id": "33333333-3333-3333-3333-333333333002",
       "type": "PROMPT",
       "name": "世界观构建",
       "external": false
     },
     {
-      "id": "magic-system",
+      "id": "33333333-3333-3333-3333-333333333003",
       "type": "PROMPT",
       "name": "魔法体系",
       "external": false
     },
     {
-      "id": "story-elements",
+      "id": "33333333-3333-3333-3333-333333333004",
       "type": "PROMPT",
       "name": "故事元素",
       "external": false

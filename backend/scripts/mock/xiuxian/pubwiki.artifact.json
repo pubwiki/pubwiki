@@ -12,25 +12,25 @@
   "tags": ["settings", "xiuxian", "cultivation", "fantasy", "chinese"],
   "nodes": [
     {
-      "id": "cultivation-system",
+      "id": "44444444-4444-4444-4444-444444444001",
       "type": "PROMPT",
       "name": "境界体系",
       "external": false
     },
     {
-      "id": "sects-factions",
+      "id": "44444444-4444-4444-4444-444444444002",
       "type": "PROMPT",
       "name": "宗门势力",
       "external": false
     },
     {
-      "id": "artifacts-pills",
+      "id": "44444444-4444-4444-4444-444444444003",
       "type": "PROMPT",
       "name": "法宝丹药",
       "external": false
     },
     {
-      "id": "story-guide",
+      "id": "44444444-4444-4444-4444-444444444004",
       "type": "PROMPT",
       "name": "故事写作指南",
       "external": false

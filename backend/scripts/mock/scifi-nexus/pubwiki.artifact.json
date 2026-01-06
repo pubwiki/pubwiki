@@ -12,25 +12,25 @@
   "tags": ["settings", "scifi", "worldbuilding", "collaborative", "space-opera"],
   "nodes": [
     {
-      "id": "universe-foundation",
+      "id": "11111111-1111-1111-1111-111111111001",
       "type": "PROMPT",
       "name": "宇宙基础设定",
       "external": false
     },
     {
-      "id": "factions-powers",
+      "id": "11111111-1111-1111-1111-111111111002",
       "type": "PROMPT",
       "name": "势力与阵营",
       "external": false
     },
     {
-      "id": "technology-systems",
+      "id": "11111111-1111-1111-1111-111111111003",
       "type": "PROMPT",
       "name": "科技体系",
       "external": false
     },
     {
-      "id": "character-creation",
+      "id": "11111111-1111-1111-1111-111111111004",
       "type": "PROMPT",
       "name": "角色创建指南",
       "external": false
