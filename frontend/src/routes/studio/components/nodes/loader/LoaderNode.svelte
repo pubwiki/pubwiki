@@ -13,6 +13,7 @@
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { LoaderNodeData, VFSNodeData, StateNodeData } from '../../../types';
 	import { getStudioContext } from '../../../state';
+	import { getSettingsStore } from '$lib/stores/settings.svelte';
 	import { getNodeVfs } from '../../../vfs';
 	import { getNodeRDFStore } from '../../../rdf';
 	import BaseNode from '../BaseNode.svelte';
@@ -43,6 +44,7 @@
 
 	let { data, isConnectable, selected, id }: NodeProps<Node<LoaderNodeData, 'loader'>> = $props();
 	const ctx = getStudioContext();
+	const settings = getSettingsStore();
 	const allEdges = useEdges();
 	const updateNodeInternals = useUpdateNodeInternals();
 
@@ -315,12 +317,20 @@
 			const stateNode = findStateNode(id, ctx.nodes, ctx.edges);
 			const rdfStore = stateNode ? await getNodeRDFStore(stateNode.id) : undefined;
 			
+			// Get LLM config from settings
+			const llmConfig = settings.api.apiKey && settings.api.selectedModel ? {
+				apiKey: settings.api.apiKey,
+				model: settings.api.selectedModel,
+				baseUrl: settings.effectiveBaseUrl
+			} : undefined;
+			
 			// Initialize loader
 			await initializeLoader(
 				id,
 				backendVfs,
 				assetMounts,
 				rdfStore,
+				llmConfig,
 				(nodeId, updater) => {
 					ctx.updateNode(nodeId, (nodeData) => {
 						if (nodeData.type === 'LOADER') {

@@ -44,8 +44,15 @@ import {
 	loadRunner, 
 	createLuaInstance, 
 	type LuaInstance,
-	type RDFStore
+	type RDFStore,
+	type JsModuleDefinition
 } from '@pubwiki/lua';
+import { 
+	PubChat, 
+	MemoryMessageStore,
+	type LLMConfig,
+	type ChatStreamEvent
+} from '@pubwiki/chat';
 import type { ServiceDefinition } from '@pubwiki/sandbox-host';
 
 // Core Lua code (embedded)
@@ -225,6 +232,8 @@ interface LoaderRuntime {
 	instance: LuaInstance;
 	/** Mounted VFS */
 	mountedVfs: Vfs<MountedVfsProvider>;
+	/** PubChat instance for LLM access */
+	pubchat?: PubChat;
 }
 
 /**
@@ -239,6 +248,66 @@ export interface ServiceCallResult {
 // Note: ServiceDefinition is imported from @pubwiki/sandbox-host
 // The Lua ServiceRegistry.export() returns this format with JSON Schema for inputs/outputs
 export type { ServiceDefinition };
+
+// Re-export LLMConfig for LoaderNode to use
+export type { LLMConfig };
+
+// ============================================================================
+// LLM Module Factory
+// ============================================================================
+
+/**
+ * Create a JS module definition for LLM access in Lua
+ * 
+ * The module exposes:
+ * - LLM.chat(prompt: string, historyId?: string, overrideConfig?: table) -> {content: string, historyId: string}
+ * - LLM.stream(prompt: string, historyId?: string, overrideConfig?: table) -> iterator of events
+ * 
+ * @param pubchat PubChat instance to wrap
+ * @returns JsModuleDefinition for registerJsModule
+ */
+function createLLMModule(pubchat: PubChat): JsModuleDefinition {
+	return {
+		/**
+		 * Non-streaming chat
+		 * @param prompt User prompt
+		 * @param historyId Optional history ID for conversation continuity
+		 * @param overrideConfig Optional config overrides {model?, apiKey?, baseUrl?, temperature?, maxTokens?}
+		 * @returns {content: string, historyId: string}
+		 */
+		async chat(prompt: string, historyId?: string, overrideConfig?: Partial<LLMConfig>) {
+			const result = await pubchat.chat(prompt, historyId, overrideConfig);
+			// Extract text content from message blocks
+			const content = result.message.blocks
+				.filter(b => b.type === 'markdown' || b.type === 'text')
+				.map(b => b.content)
+				.join('');
+			return {
+				content,
+				historyId: result.historyId
+			};
+		},
+		
+		/**
+		 * Streaming chat - returns an async iterator
+		 * @param prompt User prompt
+		 * @param historyId Optional history ID for conversation continuity
+		 * @param overrideConfig Optional config overrides
+		 * @returns Async iterator yielding {type: string, ...data}
+		 */
+		stream(prompt: string, historyId?: string, overrideConfig?: Partial<LLMConfig>) {
+			// Return an async iterator that Lua can consume
+			return pubchat.streamChat(prompt, historyId, overrideConfig);
+		},
+		
+		/**
+		 * Abort current generation
+		 */
+		abort() {
+			pubchat.abort();
+		}
+	};
+}
 
 // ============================================================================
 // State
@@ -344,12 +413,20 @@ export function updateMountpointPath(
 
 /**
  * Initialize Loader Node's Lua VM
+ * 
+ * @param nodeId - The node ID
+ * @param backendVfs - Backend VFS instance
+ * @param assetMounts - Map of mount paths to VFS instances
+ * @param rdfStore - Optional RDF store for State API
+ * @param llmConfig - LLM configuration from user settings (apiKey, model, baseUrl)
+ * @param updateNode - Node update callback
  */
 export async function initializeLoader(
 	nodeId: string,
 	backendVfs: Vfs<VfsProvider>,
 	assetMounts: Map<string, Vfs<VfsProvider>>,
 	rdfStore: RDFStore | undefined,
+	llmConfig: LLMConfig | undefined,
 	updateNode: (id: string, updater: (data: LoaderNodeData) => LoaderNodeData) => void
 ): Promise<boolean> {
 	try {
@@ -394,6 +471,17 @@ export async function initializeLoader(
 			rdfStore: rdfStore
 		});
 		
+		// Create PubChat instance and register LLM module if config is provided
+		let pubchat: PubChat | undefined;
+		if (llmConfig && llmConfig.apiKey && llmConfig.model) {
+			pubchat = new PubChat({
+				llm: llmConfig,
+				messageStore: new MemoryMessageStore(),
+				toolCalling: { enabled: false }
+			});
+			instance.registerJsModule('LLM', createLLMModule(pubchat));
+		}
+		
 		// Execute init.lua
 		const initResult = await instance.run(`
 			-- Load init.lua
@@ -409,7 +497,7 @@ export async function initializeLoader(
 		}
 		
 		// Store runtime state
-		loaderRuntimes.set(nodeId, { instance, mountedVfs });
+		loaderRuntimes.set(nodeId, { instance, mountedVfs, pubchat });
 		
 		// Update node state
 		// Lua tables with numeric keys are converted to objects like {1: "a", 2: "b"}, not arrays
