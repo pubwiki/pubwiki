@@ -90,7 +90,7 @@ export { isStreamingService } from '@pubwiki/sandbox-service'
 export { Vfs } from './types'
 
 // Re-export RpcTarget from capnweb for custom service implementations
-export { RpcTarget } from 'capnweb'
+export { RpcTarget, RpcStub } from 'capnweb'
 
 // Utility functions
 export {

@@ -16,5 +16,6 @@ packages:
   - "packages/lua"
   - "packages/db"
   - "packages/api"
-  - "frontend"
-  - "backend"
+  - "apps/hub"
+  - "apps/studio"
+  - "services"

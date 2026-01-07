@@ -8,7 +8,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig, ICustomService, ServiceDefinition, JsonSchema } from '@pubwiki/sandbox-host';
-	import { createSandboxConnection, RpcTarget, isStreamingService } from '@pubwiki/sandbox-host';
+	import { createSandboxConnection, RpcTarget, RpcStub, isStreamingService } from '@pubwiki/sandbox-host';
 	import type { VersionedVfs } from '../../../vfs';
 	import type { LoaderNodeData } from '../../../types';
 	import { createLoaderInterface, type LoaderInterface } from '../loader/controller.svelte';
@@ -139,21 +139,17 @@
 		 */
 		async stream(
 			inputs: Record<string, unknown>,
-			callback: (value: unknown) => Promise<void> | void
+			callback: RpcStub<(value: unknown) => Promise<void> | void>
 		): Promise<void> {
 			if (!this._isStreaming) {
 				throw new Error(`Service ${this.serviceIdentifier} is not a streaming service`);
 			}
 			
-			const result = await this.loaderInterface.streamService(
+			await this.loaderInterface.streamService(
 				this.serviceIdentifier,
 				inputs,
 				callback
 			);
-			
-			if (!result.success) {
-				throw new Error(result.error ?? 'Service streaming failed');
-			}
 		}
 
 		/**

@@ -53,7 +53,7 @@ import {
 	type LLMConfig,
 	type ChatStreamEvent
 } from '@pubwiki/chat';
-import type { ServiceDefinition } from '@pubwiki/sandbox-host';
+import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
 
 // Core Lua code (embedded)
 import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
@@ -631,11 +631,11 @@ export async function streamService(
 	nodeId: string,
 	identifier: string,
 	inputs: Record<string, unknown>,
-	on: (value: unknown) => Promise<void> | void
-): Promise<ServiceCallResult> {
+	on: RpcStub<(value: unknown) => Promise<void> | void>
+): Promise<void> {
 	const runtime = loaderRuntimes.get(nodeId);
 	if (!runtime) {
-		return { success: false, error: 'Loader not initialized' };
+		throw new Error('Loader not initialized');
 	}
 	
 	// Serialize inputs to JSON
@@ -662,22 +662,14 @@ export async function streamService(
 		end
 	`);
 	
-	try {
-		for await (const values of iter) {
-			// Lua iterator returns array of values, we take the first one
-			const value = Array.isArray(values) && values.length > 0 ? values[0] : values;
-			// Stop iteration if value is null/undefined (end of stream)
-			if (value === null || value === undefined) {
-				break;
-			}
-			await on(value);
+	for await (const values of iter) {
+		// Lua iterator returns array of values, we take the first one
+		const value = Array.isArray(values) && values.length > 0 ? values[0] : values;
+		// Stop iteration if value is null/undefined (end of stream)
+		if (value === null || value === undefined) {
+			break;
 		}
-		return { success: true };
-	} catch (error) {
-		return { 
-			success: false, 
-			error: error instanceof Error ? error.message : String(error) 
-		};
+		await on(value);
 	}
 }
 
@@ -884,8 +876,8 @@ export interface LoaderInterface {
 	streamService(
 		identifier: string, 
 		inputs: Record<string, unknown>,
-		on: (value: unknown) => Promise<void> | void
-	): Promise<ServiceCallResult>;
+		on: RpcStub<(value: unknown) => Promise<void> | void>
+	): Promise<void>;
 	/** Get service definition (for schema generation) */
 	getServiceDefinition(identifier: string): Promise<ServiceDefinition | null>;
 }
