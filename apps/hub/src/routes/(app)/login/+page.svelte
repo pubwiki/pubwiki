@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { useAuth } from '$lib/stores/auth.svelte';
+	import { useAuth } from '@pubwiki/ui/stores';
 	import * as m from '$lib/paraglide/messages';
 
 	const auth = useAuth();

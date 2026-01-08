@@ -6,57 +6,37 @@
 	import ArtifactCard from '$lib/components/ArtifactCard.svelte';
 	import LineageGraph from '$lib/components/LineageGraph.svelte';
 	import NodeCard from '$lib/components/NodeCard.svelte';
-	import { getCurrentProject, setCurrentProject } from '../../../studio/persistence';
-	import { importArtifactToNewProject, addArtifactToProject } from '../../../studio/io';
+	import { PUBLIC_STUDIO_URL } from '$env/static/public';
 	import * as m from '$lib/paraglide/messages';
 
 	let { data } = $props<{ data: PageData }>();
 	
 	const artifactStore = useArtifactStore();
 	
+	// Studio URL - defaults to localhost for development
+	const studioUrl = PUBLIC_STUDIO_URL || 'http://localhost:5174';
+	
 	let details = $state<ArtifactDetails | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	
-	// Check if there's a current project in studio
-	let currentProject = $state<string | null>(null);
-	
-	$effect(() => {
-		if (browser) {
-			currentProject = getCurrentProject();
-		}
-	});
 
 	/**
-	 * Create a new studio project and import the artifact
+	 * Open artifact in Studio (new project)
 	 */
-	async function handleUseArtifact() {
-		if (!details?.graph) return;
-		
-		const newProjectId = await importArtifactToNewProject(
-			details.graph,
-			artifact!.id,
-			artifactStore
-		);
-		
-		setCurrentProject(newProjectId);
-		goto(`/studio/${newProjectId}`);
+	function handleUseArtifact() {
+		if (!artifact) return;
+		// Open Studio with artifact import parameter
+		window.open(`${studioUrl}?import=${artifact.id}`, '_blank');
 	}
 
 	/**
-	 * Add artifact nodes to the current studio project
+	 * Open artifact in Studio (add to current project would require studio state)
+	 * For now, just redirect to studio with the artifact
 	 */
-	async function handleAddToProject() {
-		if (!details?.graph || !currentProject) return;
-		
-		await addArtifactToProject(
-			details.graph,
-			artifact!.id,
-			currentProject,
-			artifactStore
-		);
-		
-		goto(`/studio/${currentProject}`);
+	function handleAddToProject() {
+		if (!artifact) return;
+		// Open Studio with artifact import parameter
+		window.open(`${studioUrl}?import=${artifact.id}`, '_blank');
 	}
 
 	// Fetch artifact details when component mounts or id changes
@@ -290,33 +270,14 @@
 
 					<!-- 2. Action Buttons -->
 					<div class="space-y-2">
-						{#if !currentProject}
-							<!-- No current project: show single "Use Artifact" button -->
-							<button 
-								onclick={handleUseArtifact}
-								class="w-full bg-[#0969da] hover:bg-[#0a53be] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
-							>
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-								{m.artifact_use()}
-							</button>
-						{:else}
-							<!-- Has current project: show "Add to Project" as primary, "Use Artifact" as secondary -->
-							<button 
-								onclick={handleAddToProject}
-								class="w-full bg-[#2da44e] hover:bg-[#2c974b] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
-							>
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-								{m.artifact_add_to_project()}
-							</button>
-							
-							<button 
-								onclick={handleUseArtifact}
-								class="w-full bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
-							>
-								<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-								{m.artifact_use_in_new()}
-							</button>
-						{/if}
+						<!-- Open in Studio button -->
+						<button 
+							onclick={handleUseArtifact}
+							class="w-full bg-[#0969da] hover:bg-[#0a53be] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
+						>
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+							{m.artifact_use()}
+						</button>
 					</div>
 
 					<!-- 3. Parents (Dependencies) -->

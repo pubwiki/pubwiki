@@ -2,6 +2,9 @@ onlyBuiltDependencies:
   - esbuild
   - better-sqlite3
 
+catalog:
+  svelte: ^5.46.1
+
 packages:
   - "packages/types"
   - "packages/vfs"
@@ -16,6 +19,7 @@ packages:
   - "packages/lua"
   - "packages/db"
   - "packages/api"
+  - "packages/ui"
   - "apps/hub"
   - "apps/studio"
   - "services"

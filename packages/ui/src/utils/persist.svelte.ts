@@ -1,0 +1,34 @@
+import { onMount } from 'svelte';
+
+/**
+ * Creates a persisted state value that syncs with localStorage
+ * @param key The localStorage key
+ * @param initialValue The initial value if nothing is stored
+ * @returns An object with a reactive value property
+ */
+export default function persist<T>(key: string, initialValue: T) {
+	let value = $state<T>(initialValue);
+
+	onMount(() => {
+		const currentValue = localStorage.getItem(key);
+		if (currentValue) value = JSON.parse(currentValue);
+	});
+
+	const save = () => {
+		if (value !== null && value !== undefined) {
+			localStorage.setItem(key, JSON.stringify(value));
+		} else {
+			localStorage.removeItem(key);
+		}
+	};
+
+	return {
+		get value() {
+			return value;
+		},
+		set value(v: T) {
+			value = v;
+			save();
+		}
+	};
+}

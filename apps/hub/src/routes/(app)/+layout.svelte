@@ -1,11 +1,15 @@
 <script lang="ts">
-	import { useAuth } from '$lib/stores/auth.svelte';
+	import { useAuth } from '@pubwiki/ui/stores';
 	import { goto } from '$app/navigation';
 	import * as m from '$lib/paraglide/messages';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
+	import { PUBLIC_STUDIO_URL } from '$env/static/public';
 
 	let { children } = $props();
 	const auth = useAuth();
+
+	// Studio URL - defaults to /studio for local development
+	const studioUrl = PUBLIC_STUDIO_URL || 'http://localhost:5174';
 
 	function handleLogout() {
 		auth.logout();
@@ -38,7 +42,7 @@
 
 			<!-- User Actions -->
 			<div class="flex items-center gap-3 text-sm text-[#24292f]">
-				<a href="/studio" target="_blank" class="bg-[#000000] hover:bg-[#2c974b] px-3 py-1 rounded text-xs font-bold text-white border border-transparent">
+				<a href={studioUrl} target="_blank" class="bg-[#000000] hover:bg-[#2c974b] px-3 py-1 rounded text-xs font-bold text-white border border-transparent">
 					{m.nav_launch_app()}
 				</a>
 				{#if auth.isAuthenticated}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { useAuth } from '$lib/stores/auth.svelte';
+	import { useAuth } from '@pubwiki/ui/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
 	import { createApiClient } from '@pubwiki/api/client';
@@ -50,7 +50,7 @@
 	});
 
 	function getClient() {
-		return createApiClient(API_BASE_URL, auth.token.value ?? undefined);
+		return createApiClient(API_BASE_URL, auth.token ?? undefined);
 	}
 
 	async function fetchUserArtifacts() {
@@ -142,7 +142,7 @@
 			const response = await fetch(`${API_BASE_URL}/projects`, {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${auth.token.value}`
+					Authorization: `Bearer ${auth.token}`
 				},
 				body: formData
 			});

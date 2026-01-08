@@ -3,14 +3,14 @@
 	import { locales, localizeHref, getLocale, setLocale } from '$lib/paraglide/runtime';
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import { createAuth } from '$lib/stores/auth.svelte';
+	import { createAuth, createSettingsStore } from '@pubwiki/ui/stores';
 	import { createArtifactStore } from '$lib/stores/artifacts.svelte';
 	import { createProjectStore } from '$lib/stores/projects.svelte';
-	import { createSettingsStore } from '$lib/stores/settings.svelte';
+	import { API_BASE_URL } from '$lib/config';
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
-	const auth = createAuth();
+	const auth = createAuth(API_BASE_URL);
 	const artifactStore = createArtifactStore();
 	const projectStore = createProjectStore();
 	const settings = createSettingsStore();
