@@ -122,15 +122,12 @@ export async function convertArtifactToStudioGraph(
     }
   }
 
-  // Node type definition for type checking
-  type StudioNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'SANDBOX' | 'LOADER' | 'STATE';
-
   const nodes: Node<StudioNodeData>[] = await Promise.all(graphData.nodes.map(async (node: ArtifactNodeSummary, index: number) => {
     // Calculate a default position (arranged in a grid)
     const posX = (index % 3) * 300 + 100;
     const posY = Math.floor(index / 3) * 200 + 100;
 
-    const nodeType = node.type as StudioNodeType;
+    const nodeType = node.type;
     const commit = await generateCommitHash(node.id);
 
     // Get content from map (may be JSON or plain text depending on backend)
@@ -142,7 +139,7 @@ export async function convertArtifactToStudioGraph(
         const vfsData: VFSNodeData = {
           id: node.id,
           name: node.name || `Files ${index + 1}`,
-          type: 'VFS',
+          type: nodeType,
           commit,
           snapshotRefs: [],
           parents: [],
@@ -154,7 +151,7 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: node.id,
-          type: 'vfs',
+          type: nodeType,
           position: { x: posX, y: posY },
           data: vfsData
         };
@@ -171,7 +168,7 @@ export async function convertArtifactToStudioGraph(
         const sandboxData: SandboxNodeData = {
           id: node.id,
           name: node.name || `Sandbox ${index + 1}`,
-          type: 'SANDBOX',
+          type: nodeType,
           commit,
           snapshotRefs: [],
           parents: [],
@@ -182,7 +179,7 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: node.id,
-          type: 'sandbox',
+          type: nodeType,
           position: { x: posX, y: posY },
           data: sandboxData
         };
@@ -199,7 +196,7 @@ export async function convertArtifactToStudioGraph(
         const loaderData: LoaderNodeData = {
           id: node.id,
           name: node.name || `Loader ${index + 1}`,
-          type: 'LOADER',
+          type: nodeType,
           commit,
           snapshotRefs: [],
           parents: [],
@@ -210,7 +207,7 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: node.id,
-          type: 'loader',
+          type: nodeType,
           position: { x: posX, y: posY },
           data: loaderData
         };
@@ -220,7 +217,7 @@ export async function convertArtifactToStudioGraph(
         const stateData: StateNodeData = {
           id: node.id,
           name: node.name || `State ${index + 1}`,
-          type: 'STATE',
+          type: nodeType,
           commit,
           snapshotRefs: [],
           parents: [],
@@ -232,7 +229,7 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: node.id,
-          type: 'state',
+          type: nodeType,
           position: { x: posX, y: posY },
           data: stateData
         };
@@ -249,7 +246,7 @@ export async function convertArtifactToStudioGraph(
         const inputData: InputNodeData = {
           id: node.id,
           name: node.name || `Input ${index + 1}`,
-          type: 'INPUT',
+          type: nodeType,
           commit,
           snapshotRefs: [],
           parents: [],
@@ -258,7 +255,7 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: node.id,
-          type: 'input',
+          type: nodeType,
           position: { x: posX, y: posY },
           data: inputData
         };
@@ -275,7 +272,7 @@ export async function convertArtifactToStudioGraph(
         const promptData: PromptNodeData = {
           id: node.id,
           name: node.name || `Prompt ${index + 1}`,
-          type: 'PROMPT',
+          type: nodeType,
           commit,
           snapshotRefs: [],
           parents: [],
@@ -285,7 +282,7 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: node.id,
-          type: 'prompt',
+          type: nodeType,
           position: { x: posX, y: posY },
           data: promptData
         };
@@ -303,7 +300,7 @@ export async function convertArtifactToStudioGraph(
         const generatedData: GeneratedNodeData = {
           id: node.id,
           name: node.name || `Generated ${index + 1}`,
-          type: 'GENERATED',
+          type: nodeType,
           commit,
           snapshotRefs: [],
           parents: [],
@@ -313,7 +310,7 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: node.id,
-          type: 'generated',
+          type: nodeType,
           position: { x: posX, y: posY },
           data: generatedData
         };

@@ -27,7 +27,7 @@
 	// Props (Minimal - just for SvelteFlow)
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'prompt'>> = $props();
+	let { data, isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'PROMPT'>> = $props();
 
 	// ============================================================================
 	// Context and Stores

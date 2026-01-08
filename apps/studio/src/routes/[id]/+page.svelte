@@ -715,7 +715,7 @@
 							const layout = layouts.get(nodeId) ?? { x: 0, y: 0 };
 							return {
 								id: nodeId,
-								type: nodeData.type.toLowerCase(),
+								type: nodeData.type,
 								position: layout,
 								data: { id: nodeId, type: nodeData.type },
 								sourcePosition: Position.Right,
@@ -745,7 +745,7 @@
 						// Add flow node
 						nodes = [{
 							id: initialPromptData.id,
-							type: 'prompt',
+							type: 'PROMPT',
 							data: { id: initialPromptData.id, type: 'PROMPT' as NodeType },
 							position,
 							sourcePosition: Position.Right,
@@ -794,7 +794,7 @@
 					
 					nodes = [{
 						id: initialPromptData.id,
-						type: 'prompt',
+						type: "PROMPT",
 						data: { id: initialPromptData.id, type: 'PROMPT' as NodeType },
 						position,
 						sourcePosition: Position.Right,
@@ -849,6 +849,12 @@
 			flowApi.fitView({ nodes: [{ id: node.id }], duration: 400, padding: 0.2 });
 		}
 		setTimeout(() => focusNode(node.id), 100);
+	}
+
+	function handleNewProject() {
+		// Generate a new project ID and open in a new tab
+		const newId = crypto.randomUUID();
+		window.open(`/${newId}`, '_blank');
 	}
 
 	async function handlePublish(
@@ -943,6 +949,7 @@
 		onFocusNode={handleFocusNode}
 		onPublish={handlePublish}
 		onOpenVfsFile={handleOpenVfsFile}
+		onNewProject={handleNewProject}
 	/>
 
 	<!-- VFS File Editor (Right side floating panel) -->

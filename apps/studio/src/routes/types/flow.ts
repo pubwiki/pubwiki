@@ -29,7 +29,7 @@ export interface FlowNodeData extends Record<string, unknown> {
   /** Node ID - used to look up data in NodeStore */
   id: string;
   /** Node type - used for component routing (lowercase for SvelteFlow) */
-  type: string;
+  type: NodeType;
 }
 
 /**

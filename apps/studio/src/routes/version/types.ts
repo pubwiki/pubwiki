@@ -54,8 +54,8 @@ export interface NodeSnapshot<T = unknown> {
 	nodeId: string
 	/** Commit hash (content hash) */
 	commit: string
-	/** Node type (e.g., 'input', 'prompt') at time of snapshot */
-	type: string
+	/** Node type at time of snapshot */
+	type: NodeType
 	/** Node name at time of snapshot */
 	name: string
 	/** 
@@ -75,7 +75,7 @@ export interface NodeSnapshot<T = unknown> {
 // Versionable Interface
 // ============================================================================
 
-import type { NodeContent } from '../types/content'
+import type { NodeContent, NodeType } from '../types/content'
 
 /**
  * Base interface for versionable node data.
@@ -90,7 +90,7 @@ export interface Versionable {
 	/** Unique node identifier */
 	id: string
 	/** Node type (e.g., 'INPUT', 'PROMPT', 'GENERATED') */
-	type: string
+	type: NodeType
 	/** User-defined node name */
 	name: string
 	/** Current commit hash (content hash) */
@@ -190,7 +190,7 @@ export interface HistoricalTreeResult<TData = unknown> {
 	 */
 	phantomNodes: Array<{
 		id: string
-		type: string
+		type: NodeType
 		position: SnapshotPosition
 		data: TData
 	}>

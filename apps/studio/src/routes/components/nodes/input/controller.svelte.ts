@@ -392,10 +392,10 @@ export async function generate(
 	// Create the flow node (minimal data for SvelteFlow)
 	const generatedNode: Node<FlowNodeData> = {
 		id: newGeneratedData.id,
-		type: 'generated',
+		type: 'GENERATED',
 		data: { 
 			id: newGeneratedData.id,
-			type: 'generated',
+			type: 'GENERATED',
 		},
 		position,
 		sourcePosition: Position.Right,

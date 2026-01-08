@@ -237,7 +237,7 @@ export function createPreviewController() {
 				position: n.position,
 				data: { 
 					id: n.id, 
-					type: n.type || 'prompt',  // lowercase for SvelteFlow
+					type: n.type || 'PROMPT',  // lowercase for SvelteFlow
 					isPhantom: true 
 				}
 			}))

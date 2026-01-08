@@ -30,7 +30,7 @@
 		if (e.target === e.currentTarget) onClose();
 	}}
 >
-	<div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+	<div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[80vh] overflow-hidden flex flex-col">
 		<!-- Header -->
 		<div class="px-4 py-2.5 border-b border-gray-200 flex items-center justify-between">
 			<h2 class="text-lg font-semibold text-gray-900">{m.studio_settings_title()}</h2>
