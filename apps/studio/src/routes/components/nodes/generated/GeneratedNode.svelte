@@ -7,16 +7,20 @@
 	 * - Streaming indicator during generation
 	 * - Tool call display during streaming (inline with content)
 	 * - Regenerate button
+	 * 
+	 * Runtime state (isStreaming) is component-local, managed via event callbacks.
 	 */
+	import { onMount } from 'svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { GeneratedNodeData } from '../../../types';
+	import type { GeneratedNodeData, FlowNodeData } from '../../../types';
 	import type { MessageBlock } from '@pubwiki/chat';
 	import { blocksToContent } from '@pubwiki/chat';
 	import { getStudioContext } from '../../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
+	import { nodeStore } from '../../../persistence';
+	import { onStreamingChange, regenerate } from './controller.svelte';
 	import { marked } from 'marked';
 	import BaseNode from '../BaseNode.svelte';
-	import { regenerate } from './controller.svelte';
 	import ToolCallDisplay from './ToolCallDisplay.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -24,7 +28,7 @@
 	// Props
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<GeneratedNodeData, 'generated'>> = $props();
+	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'generated'>> = $props();
 
 	// ============================================================================
 	// Context
@@ -34,11 +38,29 @@
 	const settings = getSettingsStore();
 
 	// ============================================================================
+	// Node Data
+	// ============================================================================
+
+	const nodeData = $derived(nodeStore.get(id) as GeneratedNodeData | undefined);
+
+	// ============================================================================
+	// Local State
+	// ============================================================================
+
+	let isStreaming = $state(false);
+
+	// Subscribe to streaming events on mount
+	onMount(() => {
+		return onStreamingChange(id, (streaming) => {
+			isStreaming = streaming;
+		});
+	});
+
+	// ============================================================================
 	// Derived
 	// ============================================================================
 
-	const isStreaming = $derived(data.isStreaming);
-	const blocks = $derived(data.content.blocks || []);
+	const blocks = $derived(nodeData?.content?.blocks || []);
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
 	// For preview, use string content; otherwise render blocks
@@ -50,7 +72,7 @@
 
 	async function handleRegenerate() {
 		const callbacks = {
-			updateNodes: ctx.updateNodes,
+			updateNodeData: ctx.updateNodeData,
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {
@@ -90,7 +112,6 @@
 
 <BaseNode
 	{id}
-	{data}
 	{selected}
 	{isConnectable}
 	nodeType="GENERATED"

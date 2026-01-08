@@ -6,10 +6,14 @@
 	 * - Editable rich text content
 	 * - RefTag handles for connecting to other nodes
 	 * - Version history support
+	 * 
+	 * Layer Separation: Business data comes from nodeStore, not props.
 	 */
 	import { Handle, Position, useUpdateNodeInternals, useEdges } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { PromptNodeData } from '../../../types';
+	import type { FlowNodeData } from '../../../types/flow';
+	import { PromptContent, type PromptNodeData } from '../../../types';
+	import { nodeStore } from '../../../persistence';
 	import { getStudioContext } from '../../../state';
 	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../../graph';
 	import { createRefTagHandleId } from '../../../graph';
@@ -20,18 +24,22 @@
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
-	// Props
+	// Props (Minimal - just for SvelteFlow)
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<PromptNodeData, 'prompt'>> = $props();
+	let { data, isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'prompt'>> = $props();
 
 	// ============================================================================
-	// Context
+	// Context and Stores
 	// ============================================================================
 
 	const ctx = getStudioContext();
 	const updateNodeInternals = useUpdateNodeInternals();
 	const currentEdges = useEdges();
+	
+	// Get business data from nodeStore (reactive)
+	const nodeData = $derived(nodeStore.get(id));
+	const content = $derived(nodeData?.content as PromptContent | undefined);
 
 	// ============================================================================
 	// Derived
@@ -45,7 +53,7 @@
 	// displayContent: in preview mode use historical content, otherwise use current content.text
 	const displayContent = $derived(isPreviewing && previewState?.content 
 		? (typeof previewState.content === 'string' ? previewState.content : (previewState.content as { text?: string }).text ?? '')
-		: data.content.text
+		: content?.text ?? ''
 	);
 	
 	// RefTag slots - use displayContent for preview mode
@@ -104,8 +112,8 @@
 	}
 
 	function handleContentChange(newValue: string) {
-		ctx.updateNode(id, (nodeData) => {
-			const promptData = nodeData as PromptNodeData;
+		ctx.updateNodeData(id, (data) => {
+			const promptData = data as PromptNodeData;
 			return {
 				...promptData,
 				content: promptData.content.withText(newValue)

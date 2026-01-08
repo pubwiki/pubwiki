@@ -20,6 +20,8 @@
 
 	/**
 	 * Connected Loader node info (id + data)
+	 * Note: registeredServices is now in LoaderNode local state, not persisted.
+	 * Use LoaderInterface.listServices() to get services dynamically.
 	 */
 	interface LoaderNodeInfo {
 		id: string;
@@ -184,8 +186,10 @@
 	 * 
 	 * Each service registered in Lua ServiceRegistry is exposed via a LuaServiceBridge.
 	 * The bridge forwards RPC calls to the actual Lua VM implementation.
+	 * 
+	 * This is now async because registeredServices is obtained via listServices().
 	 */
-	function createLoaderServices(): Map<string, CustomServiceFactory<MainRpcHostConfig>> {
+	async function createLoaderServices(): Promise<Map<string, CustomServiceFactory<MainRpcHostConfig>>> {
 		const services = new Map<string, CustomServiceFactory<MainRpcHostConfig>>();
 
 		for (const loaderInfo of loaderNodes) {
@@ -195,8 +199,18 @@
 			// Skip loaders that aren't ready
 			if (!loaderInterface.isReady()) continue;
 			
+			// Get registered services from the loader
+			let serviceDefinitions: ServiceDefinition[];
+			try {
+				serviceDefinitions = await loaderInterface.listServices();
+			} catch (e) {
+				console.warn(`[SandboxPreviewView] Failed to list services for loader ${loaderInfo.id}:`, e);
+				continue;
+			}
+			
 			// For each registered service, create a factory
-			for (const serviceIdentifier of loaderInfo.data.registeredServices) {
+			for (const serviceDef of serviceDefinitions) {
+				const serviceIdentifier = serviceDef.identifier;
 				// Create factory that returns a LuaServiceBridge
 				services.set(serviceIdentifier, () => {
 					const bridge = new LuaServiceBridge(loaderInterface, serviceIdentifier);
@@ -259,7 +273,7 @@
 			error = null;
 
 			// Collect custom services from connected Loader nodes
-			const customServices = loaderNodes.length > 0 ? createLoaderServices() : undefined;
+			const customServices = loaderNodes.length > 0 ? await createLoaderServices() : undefined;
 
 			// Create sandbox connection - it will auto-initialize when sandbox sends SANDBOX_READY
 			sandboxConnection = createSandboxConnection({

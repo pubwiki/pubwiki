@@ -9,7 +9,7 @@
 	 * - Settings button with modal
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
-	import type { StudioNodeData } from '../../types';
+	import type { FlowNodeData } from '../../types/flow';
 	import type { PublishMetadata } from '../../io';
 	import OverviewTab from './OverviewTab.svelte';
 	import PropertiesTab from './PropertiesTab.svelte';
@@ -18,15 +18,15 @@
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
-		nodes: Node<StudioNodeData>[];
+		nodes: Node<FlowNodeData>[];
 		edges: Edge[];
-		selectedNodes: Node<StudioNodeData>[];
+		selectedNodes: Node<FlowNodeData>[];
 		projectId: string;
 		projectName: string;
 		isDraft: boolean;
 		isAuthenticated: boolean;
-		onFocusNode: (node: Node<StudioNodeData>) => void;
-		onPublish: (metadata: PublishMetadata, nodes: Node<StudioNodeData>[], edges: Edge[]) => Promise<void>;
+		onFocusNode: (node: Node<FlowNodeData>) => void;
+		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
 		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 	}
 

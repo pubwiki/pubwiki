@@ -22,16 +22,18 @@
 		type StudioNodeData, 
 		type GeneratedNodeData,
 		type VFSNodeData,
+		type FlowNodeData,
+		type NodeType,
 		createPromptNodeData, 
 		createInputNodeData,
 		createVFSNodeData,
 		createSandboxNodeData,
 		createLoaderNodeData,
-		createStateNodeData
+		createStateNodeData,
+		createFlowNode
 	} from '../types';
 	import {
 		restoreSnapshot,
-		syncNode,
 		initSnapshotStore,
 		createPreviewController,
 		type NodeRef
@@ -41,7 +43,16 @@
 	import { publishArtifact, type PublishMetadata } from '../io';
 	import { setStudioContext, type StudioContext } from '../state';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../state';
-	import { loadGraph, saveGraph, saveProject, deleteProject, setCurrentProject, getProject } from '../persistence';
+	import { 
+		nodeStore, 
+		layoutStore, 
+		saveProject, 
+		deleteProject, 
+		setCurrentProject, 
+		getProject,
+		saveEdges,
+		getEdges
+	} from '../persistence';
 	import { getNodeVfs, type VersionedVfs } from '../vfs';
 	import { useAuth, getSettingsStore } from '@pubwiki/ui/stores';
 	import { API_BASE_URL } from '$lib/config';
@@ -74,19 +85,20 @@
 	let { data }: { data: PageData } = $props();
 
 	// ============================================================================
-	// Flow State
+	// Flow State (Rendering Layer Only)
+	// Business data is managed by nodeStore, positions by layoutStore
 	// ============================================================================
 	
-	let nodes = $state.raw<Node<StudioNodeData>[]>([]);
+	let nodes = $state.raw<Node<FlowNodeData>[]>([]);
 	let edges = $state.raw<Edge[]>([]);
 	let editingNodeId = $state<string | null>(null);
 	let editingNameNodeId = $state<string | null>(null);
-	let selectedNodes = $state<Node<StudioNodeData>[]>([]);
+	let selectedNodes = $state<Node<FlowNodeData>[]>([]);
 	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
 	let initialized = $state(false);
 	let loaded = $state(false);
 	let saving = $state(false);
-	
+
 	// Whether this project is a draft (not yet published)
 	let isDraft = $state(true);
 	
@@ -114,12 +126,12 @@
 		}
 		
 		// Otherwise, open a new editor with the VFS
-		const node = nodes.find(n => n.id === nodeId);
-		if (!node || node.data.type !== 'VFS') return;
+		const nodeData = nodeStore.get(nodeId);
+		if (!nodeData || nodeData.type !== 'VFS') return;
 		
-		const vfsData = node.data as VFSNodeData;
 		try {
-			const vfs = await getNodeVfs(vfsData.content.projectId, nodeId);
+			const vfsContent = nodeData.content as import('../types').VFSContent;
+			const vfs = await getNodeVfs(vfsContent.projectId, nodeId);
 			vfsEditorState = { nodeId, filePath, vfs };
 		} catch (err) {
 			console.error('Failed to open VFS file:', err);
@@ -130,41 +142,44 @@
 		vfsEditorState = null;
 	}
 	
-	// Auto-save debounce timer
-	let saveTimer: ReturnType<typeof setTimeout> | null = null;
-	const SAVE_DEBOUNCE_MS = 500;
+	// ============================================================================
+	// Edge Auto-save (Node data and layouts are saved by their stores)
+	// ============================================================================
 	
-	// Schedule a debounced save to IndexedDB
-	function scheduleSave() {
-		if (!loaded) return;
-		
-		if (saveTimer) {
-			clearTimeout(saveTimer);
+	let edgeSaveTimer: ReturnType<typeof setTimeout> | null = null;
+	const EDGE_SAVE_DEBOUNCE_MS = 500;
+	
+	// Schedule a debounced save of edges to IndexedDB
+	function scheduleEdgeSave() {
+		if (!loaded) {
+			console.log('[Studio] scheduleEdgeSave skipped - not loaded yet');
+			return;
 		}
 		
-		saveTimer = setTimeout(async () => {
+		if (edgeSaveTimer) {
+			clearTimeout(edgeSaveTimer);
+		}
+		
+		edgeSaveTimer = setTimeout(async () => {
 			saving = true;
+			console.log('[Studio] Saving edges to IndexedDB...', { projectId: currentProjectId, edgesCount: edges.length });
 			try {
-				await saveGraph(
-					untrack(() => nodes),
-					untrack(() => edges),
-					currentProjectId
-				);
+				await saveEdges(untrack(() => edges), currentProjectId);
+				console.log('[Studio] Edges saved successfully');
 			} catch (err) {
-				console.error('[Studio] Failed to save graph:', err);
+				console.error('[Studio] Failed to save edges:', err);
 			} finally {
 				saving = false;
 			}
-		}, SAVE_DEBOUNCE_MS);
+		}, EDGE_SAVE_DEBOUNCE_MS);
 	}
 	
-	// Watch for changes and auto-save
+	// Watch for edge changes and auto-save
 	$effect(() => {
-		// Access nodes and edges to track them
-		nodes;
+		// Access edges to track them
 		edges;
 		// Schedule save on any change
-		untrack(() => scheduleSave());
+		untrack(() => scheduleEdgeSave());
 	});
 
 	// ============================================================================
@@ -193,17 +208,17 @@
 	// ============================================================================
 
 	async function onRestore(id: string, snapshotRef: NodeRef) {
-		const node = nodes.find(n => n.id === id);
-		if (!node) return;
+		const nodeData = nodeStore.get(id);
+		if (!nodeData) return;
 		
-		const restoredData = await restoreSnapshot(node.data, snapshotRef);
-		if (restoredData) {
-			nodes = nodes.map(n => {
-				if (n.id === id) {
-					return { ...n, data: restoredData };
-				}
-				return n;
-			});
+		// restoreSnapshot works with Versionable data (StudioNodeData implements Versionable)
+		const restored = await restoreSnapshot(nodeData, snapshotRef);
+		if (restored) {
+			// Update nodeStore with restored data
+			nodeStore.set(id, restored);
+			console.log('[Studio] Restored snapshot for node:', id, snapshotRef);
+		} else {
+			console.warn('[Studio] Failed to restore snapshot for node:', id, snapshotRef);
 		}
 	}
 
@@ -226,35 +241,22 @@
 		
 		setNodes: (newNodes) => { nodes = newNodes; },
 		updateNodes: (updater) => { nodes = updater(nodes); },
-		updateNode: (id, updater) => {
-			nodes = nodes.map(n => 
-				n.id === id ? { ...n, data: updater(n.data) } : n
-			);
-		},
 		setEdges: (newEdges) => { edges = newEdges; },
 		updateEdges: (updater) => { edges = updater(edges); },
 		setEditingNodeId: (id) => { 
 			editingNodeId = id;
-			nodes = nodes.map(n => ({
-				...n,
-				data: { ...n.data, isEditing: n.id === id }
-			}));
 		},
 		setEditingNameNodeId: (id) => { editingNameNodeId = id; },
+		
+		// Business data updates go through nodeStore
+		updateNodeData: (id, updater) => {
+			nodeStore.update(id, updater);
+		},
 		
 		registerTextarea,
 		unregisterTextarea,
 		
 		onRestore,
-		saveVersionBeforeEdit: async (nodeId) => {
-			const node = nodes.find(n => n.id === nodeId);
-			if (node) {
-				const synced = await syncNode(node, edges);
-				if (synced !== node.data) {
-					nodes = nodes.map(n => n.id === nodeId ? { ...n, data: synced } : n);
-				}
-			}
-		},
 		
 		getPreviewState: (nodeId) => previewCtrl?.getPreviewState(nodeId) ?? null
 	};
@@ -297,9 +299,9 @@
 				sourceHandle: connection.sourceHandle ?? null,
 				targetHandle: connection.targetHandle ?? null,
 			},
-			(nodeId) => nodes.find(n => n.id === nodeId)?.data.type,
+			(nodeId) => nodeStore.get(nodeId)?.type,
 			edges,
-			(nodeId) => nodes.find(n => n.id === nodeId)?.data
+			(nodeId) => nodeStore.get(nodeId) as StudioNodeData | undefined
 		);
 		return result.valid;
 	};
@@ -359,15 +361,54 @@
 	 * Handle deletion of nodes and edges.
 	 * Dispatches to registered node handlers via flow-events.
 	 */
-	function handleDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<StudioNodeData>[]; edges: Edge[] }) {
+	function handleDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) {
 		// Dispatch edge delete events
 		dispatchEdgeDeletes(
 			deletedEdges,
 			(updater) => { nodes = updater(nodes); }
 		);
 		
-		// Dispatch node delete events
+		// Delete from stores
+		for (const node of deletedNodes) {
+			nodeStore.delete(node.id);
+			layoutStore.delete(node.id);
+		}
+		
+		// Dispatch node delete events for any cleanup handlers
 		dispatchNodeDeletes(deletedNodes);
+	}
+	
+	// ============================================================================
+	// Drag Event Handlers (Layout Persistence)
+	// ============================================================================
+	
+	/**
+	 * Handle node drag stop - save positions to layoutStore
+	 * Event type: { targetNode: Node | null; nodes: Node[]; event: MouseEvent | TouchEvent }
+	 */
+	function handleNodeDragStop(event: { targetNode: Node<FlowNodeData> | null; nodes: Node<FlowNodeData>[]; event: MouseEvent | TouchEvent }) {
+		const updates = event.nodes.map(n => ({
+			nodeId: n.id,
+			x: n.position.x,
+			y: n.position.y
+		}));
+		layoutStore.updateMany(updates);
+	}
+	
+	/**
+	 * Handle selection drag stop - save positions to layoutStore
+	 * Note: SvelteFlow passes the event inside a wrapper object
+	 */
+	function handleSelectionDragStop(event: MouseEvent) {
+		// Selection drag stop just receives the MouseEvent
+		// We need to save all selected node positions
+		const selected = nodes.filter(n => n.selected);
+		const updates = selected.map(n => ({
+			nodeId: n.id,
+			x: n.position.x,
+			y: n.position.y
+		}));
+		layoutStore.updateMany(updates);
 	}
 
 	// ============================================================================
@@ -435,104 +476,151 @@
 		const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(nodes, edges);
 		nodes = layoutedNodes;
 		edges = layoutedEdges;
+		
+		// Update layoutStore with new positions
+		const updates = layoutedNodes.map(n => ({
+			nodeId: n.id,
+			x: n.position.x,
+			y: n.position.y
+		}));
+		layoutStore.updateMany(updates);
+		
 		setTimeout(() => flowApi?.fitView({ padding: 0.2, duration: 300 }), 50);
 	}
 
 	// ============================================================================
-	// Node Management
+	// Node Management (Using Layer Separation)
 	// ============================================================================
+	
+	/**
+	 * Helper to add a new node with layer separation
+	 * 1. Creates business data in nodeStore
+	 * 2. Creates layout in layoutStore  
+	 * 3. Creates minimal flow node for SvelteFlow
+	 */
+	async function addNode(
+		nodeData: import('../types').StudioNodeData,
+		position: { x: number; y: number }
+	) {
+		// 1. Add business data to nodeStore
+		nodeStore.create(nodeData);
+		
+		// 2. Add layout to layoutStore
+		layoutStore.add(nodeData.id, position.x, position.y);
+		
+		// 3. Add flow node (minimal data for rendering)
+		const flowNode = createFlowNode(nodeData.id, nodeData.type, position);
+		nodes = [...nodes, {
+			...flowNode,
+			sourcePosition: Position.Right,
+			targetPosition: Position.Left,
+		}];
+	}
 	
 	async function addPromptNode() {
 		const newPromptData = await createPromptNodeData('');
 		const position = getNewNodePosition();
-		const newNode: Node<StudioNodeData> = {
+		await addNode({
 			id: newPromptData.id,
-			type: 'prompt',
-			data: newPromptData,
-			position,
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-		nodes = [...nodes, newNode];
+			type: 'PROMPT',
+			name: newPromptData.name,
+			commit: newPromptData.commit,
+			snapshotRefs: newPromptData.snapshotRefs,
+			parents: newPromptData.parents,
+			content: newPromptData.content,
+			external: newPromptData.external
+		}, position);
 		closeContextMenu();
 	}
 
 	async function addInputNode() {
 		const newInputData = await createInputNodeData('');
 		const position = getNewNodePosition();
-		const newNode: Node<StudioNodeData> = {
+		await addNode({
 			id: newInputData.id,
-			type: 'input',
-			data: newInputData,
-			position,
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-		nodes = [...nodes, newNode];
+			type: 'INPUT',
+			name: newInputData.name,
+			commit: newInputData.commit,
+			snapshotRefs: newInputData.snapshotRefs,
+			parents: newInputData.parents,
+			content: newInputData.content,
+			external: newInputData.external
+		}, position);
 		closeContextMenu();
 	}
 
 	async function addVFSNode() {
 		const newVFSData = await createVFSNodeData(currentProjectId, m.studio_default_files());
 		const position = getNewNodePosition();
-		const newNode: Node<StudioNodeData> = {
+		await addNode({
 			id: newVFSData.id,
-			type: 'vfs',
-			data: newVFSData,
-			position,
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-		nodes = [...nodes, newNode];
+			type: 'VFS',
+			name: newVFSData.name,
+			commit: newVFSData.commit,
+			snapshotRefs: newVFSData.snapshotRefs,
+			parents: newVFSData.parents,
+			content: newVFSData.content,
+			external: newVFSData.external
+		}, position);
 		closeContextMenu();
 	}
 
 	async function addSandboxNode() {
 		const newSandboxData = await createSandboxNodeData(m.studio_default_preview());
 		const position = getNewNodePosition();
-		const newNode: Node<StudioNodeData> = {
+		await addNode({
 			id: newSandboxData.id,
-			type: 'sandbox',
-			data: newSandboxData,
-			position,
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-		nodes = [...nodes, newNode];
+			type: 'SANDBOX',
+			name: newSandboxData.name,
+			commit: newSandboxData.commit,
+			snapshotRefs: newSandboxData.snapshotRefs,
+			parents: newSandboxData.parents,
+			content: newSandboxData.content,
+			external: newSandboxData.external
+		}, position);
 		closeContextMenu();
 	}
 
 	async function addLoaderNode() {
 		const newLoaderData = await createLoaderNodeData(m.studio_default_service());
 		const position = getNewNodePosition();
-		const newNode: Node<StudioNodeData> = {
+		await addNode({
 			id: newLoaderData.id,
-			type: 'loader',
-			data: newLoaderData,
-			position,
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-		nodes = [...nodes, newNode];
+			type: 'LOADER',
+			name: newLoaderData.name,
+			commit: newLoaderData.commit,
+			snapshotRefs: newLoaderData.snapshotRefs,
+			parents: newLoaderData.parents,
+			content: newLoaderData.content,
+			external: newLoaderData.external
+		}, position);
 		closeContextMenu();
 	}
 
 	async function addStateNode() {
 		const newStateData = await createStateNodeData(m.studio_default_state());
 		const position = getNewNodePosition();
-		const newNode: Node<StudioNodeData> = {
+		await addNode({
 			id: newStateData.id,
-			type: 'state',
-			data: newStateData,
-			position,
-			sourcePosition: Position.Right,
-			targetPosition: Position.Left,
-		};
-		nodes = [...nodes, newNode];
+			type: 'STATE',
+			name: newStateData.name,
+			commit: newStateData.commit,
+			snapshotRefs: newStateData.snapshotRefs,
+			parents: newStateData.parents,
+			content: newStateData.content,
+			external: newStateData.external
+		}, position);
 		closeContextMenu();
 	}
 
 	function deleteNodes(nodeIds: string[]) {
+		// Delete from stores
+		for (const nodeId of nodeIds) {
+			nodeStore.delete(nodeId);
+			layoutStore.delete(nodeId);
+		}
+		
+		// Update flow state
 		nodes = nodes.filter(n => !nodeIds.includes(n.id));
 		edges = edges.filter(e => !nodeIds.includes(e.source) && !nodeIds.includes(e.target));
 		selectedNodes = selectedNodes.filter(n => !nodeIds.includes(n.id));
@@ -548,103 +636,165 @@
 	 * Returns artifact info if exists, null otherwise
 	 */
 	async function checkArtifactExists(artifactId: string, token?: string | null): Promise<boolean> {
+		console.log('[Studio] checkArtifactExists called:', { artifactId, hasToken: !!token, apiUrl: API_BASE_URL });
 		try {
 			const headers: HeadersInit = {};
 			if (token) {
 				headers['Authorization'] = `Bearer ${token}`;
 			}
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+			
 			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/graph?version=latest`, {
 				method: 'GET',
-				headers
+				headers,
+				signal: controller.signal
 			});
+			clearTimeout(timeoutId);
+			console.log('[Studio] checkArtifactExists response:', response.ok);
 			return response.ok;
-		} catch {
+		} catch (err) {
+			console.log('[Studio] checkArtifactExists error:', err);
 			return false;
 		}
 	}
 	
 	$effect(() => {
+		console.log('[Studio] Init $effect running, initialized:', initialized, 'loaded:', loaded);
 		if (!initialized) {
 			initialized = true;
+			console.log('[Studio] Starting initialization...');
 			(async () => {
 				try {
 					// Initialize snapshot store (loads from IndexedDB)
 					await initSnapshotStore();
-					
-					// Check if artifact exists on backend to determine isDraft status
-					const existsOnBackend = await checkArtifactExists(currentProjectId, auth.token ?? undefined);
+					console.log('[Studio] Snapshot store initialized');
 					
 					// Get local project if exists
 					const localProject = await getProject(currentProjectId);
+					console.log('[Studio] Local project:', localProject);
 					
-					if (existsOnBackend) {
-						// Artifact exists on backend - not a draft
-						isDraft = false;
-						projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
-						
-						// Update or create local project record
+					// Set initial state from local project
+					projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
+					isDraft = localProject?.isDraft ?? true;
+					
+					// Create local project record if not exists
+					if (!localProject) {
 						await saveProject({
 							id: currentProjectId,
 							name: projectName,
-							artifactId: currentProjectId,
-							createdAt: localProject?.createdAt ?? Date.now(),
+							createdAt: Date.now(),
 							updatedAt: Date.now(),
-							isDraft: false
+							isDraft: true
 						});
-					} else {
-						// Artifact does not exist on backend - this is a draft
-						isDraft = true;
-						projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
-						
-						// Create local project record if not exists
-						if (!localProject) {
-							await saveProject({
-								id: currentProjectId,
-								name: projectName,
-								createdAt: Date.now(),
-								updatedAt: Date.now(),
-								isDraft: true
-							});
-						}
 					}
 					
 					// Set this project as the current project
 					setCurrentProject(currentProjectId);
+					console.log('[Studio] Current project set:', currentProjectId);
 					
-					// Load graph from IndexedDB
-					const savedGraph = await loadGraph<StudioNodeData>(currentProjectId);
+					// Initialize stores (Layer Separation)
+					console.log('[Studio] Initializing stores for project:', currentProjectId);
+					await nodeStore.init(currentProjectId);
+					const layouts = await layoutStore.init(currentProjectId);
+					const savedEdges = await getEdges(currentProjectId);
 					
-					if (savedGraph.nodes.length > 0) {
-						// Restore saved graph
-						nodes = savedGraph.nodes.map(n => ({
-							...n,
-							sourcePosition: Position.Right,
-							targetPosition: Position.Left,
-						}));
-						edges = savedGraph.edges;
+					console.log('[Studio] Stores loaded:', { 
+						nodesCount: nodeStore.getAllIds().length, 
+						layoutsCount: layouts.size,
+						edgesCount: savedEdges.length 
+					});
+					
+					if (nodeStore.getAllIds().length > 0) {
+						// Restore saved graph - build flow nodes from stores
+						console.log('[Studio] Restoring saved graph with', nodeStore.getAllIds().length, 'nodes');
+						nodes = nodeStore.getAllIds().map(nodeId => {
+							const nodeData = nodeStore.get(nodeId)!;
+							const layout = layouts.get(nodeId) ?? { x: 0, y: 0 };
+							return {
+								id: nodeId,
+								type: nodeData.type.toLowerCase(),
+								position: layout,
+								data: { id: nodeId, type: nodeData.type },
+								sourcePosition: Position.Right,
+								targetPosition: Position.Left,
+							};
+						});
+						edges = savedEdges;
 					} else {
 						// Create initial empty prompt node
+						console.log('[Studio] No saved graph found, creating initial node');
 						const initialPromptData = await createPromptNodeData('');
+						const position = { x: 0, y: 0 };
+						
+						// Add to stores
+						nodeStore.create({
+							id: initialPromptData.id,
+							type: 'PROMPT',
+							name: initialPromptData.name,
+							commit: initialPromptData.commit,
+							snapshotRefs: initialPromptData.snapshotRefs,
+							parents: initialPromptData.parents,
+							content: initialPromptData.content,
+							external: initialPromptData.external
+						});
+						layoutStore.add(initialPromptData.id, position.x, position.y);
+						
+						// Add flow node
 						nodes = [{
 							id: initialPromptData.id,
 							type: 'prompt',
-							data: initialPromptData,
-							position: { x: 0, y: 0 },
+							data: { id: initialPromptData.id, type: 'PROMPT' as NodeType },
+							position,
 							sourcePosition: Position.Right,
 							targetPosition: Position.Left,
 						}];
 					}
 					
 					loaded = true;
+					console.log('[Studio] Graph loading complete, loaded set to:', loaded);
+					
+					// Check backend status asynchronously (non-blocking)
+					// This only affects the publish button text (Publish vs Update)
+					checkArtifactExists(currentProjectId, auth.token ?? undefined).then(async (existsOnBackend) => {
+						console.log('[Studio] Backend check complete, exists:', existsOnBackend);
+						if (existsOnBackend) {
+							isDraft = false;
+							// Update local project record
+							const project = await getProject(currentProjectId);
+							if (project && project.isDraft) {
+								await saveProject({ ...project, isDraft: false, artifactId: currentProjectId });
+							}
+						}
+					});
 				} catch (err) {
 					console.error('[Studio] Failed to load from IndexedDB:', err);
 					// Fallback: create initial node
 					const initialPromptData = await createPromptNodeData('');
+					const position = { x: 0, y: 0 };
+					
+					// Initialize stores first
+					await nodeStore.init(currentProjectId);
+					await layoutStore.init(currentProjectId);
+					
+					// Add to stores
+					nodeStore.create({
+						id: initialPromptData.id,
+						type: 'PROMPT',
+						name: initialPromptData.name,
+						commit: initialPromptData.commit,
+						snapshotRefs: initialPromptData.snapshotRefs,
+						parents: initialPromptData.parents,
+						content: initialPromptData.content,
+						external: initialPromptData.external
+					});
+					layoutStore.add(initialPromptData.id, position.x, position.y);
+					
 					nodes = [{
 						id: initialPromptData.id,
 						type: 'prompt',
-						data: initialPromptData,
-						position: { x: 0, y: 0 },
+						data: { id: initialPromptData.id, type: 'PROMPT' as NodeType },
+						position,
 						sourcePosition: Position.Right,
 						targetPosition: Position.Left,
 					}];
@@ -692,7 +842,7 @@
 		}
 	}
 
-	function handleFocusNode(node: Node<StudioNodeData>) {
+	function handleFocusNode(node: Node<FlowNodeData>) {
 		if (flowApi) {
 			flowApi.fitView({ nodes: [{ id: node.id }], duration: 400, padding: 0.2 });
 		}
@@ -701,7 +851,7 @@
 
 	async function handlePublish(
 		metadata: PublishMetadata,
-		nodesToPublish: Node<StudioNodeData>[],
+		nodesToPublish: Node<FlowNodeData>[],
 		edgesToPublish: Edge[]
 	) {
 		const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, auth.token ?? '');
@@ -723,7 +873,11 @@
 			updatedAt: Date.now(),
 			isDraft: false
 		});
-		await saveGraph(nodes, edges, newProjectId);
+		
+		// Flush stores and save edges
+		await nodeStore.flush();
+		await layoutStore.flush();
+		await saveEdges(edges, newProjectId);
 		
 		// Delete the old temporary project if it's different from the new one
 		if (oldProjectId !== newProjectId) {
@@ -738,8 +892,10 @@
 		setCurrentProject(newProjectId);
 		
 		// Navigate to the new project URL (artifact ID based)
-		goto(`/studio/${newProjectId}`);
+		goto(`/${newProjectId}`);
 	}
+
+	
 </script>
 
 <svelte:window onclick={() => contextMenu && closeContextMenu()} />
@@ -764,6 +920,8 @@
 			onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
 			onconnect={(connection) => handleConnect(connection)}
 			ondelete={handleDelete}
+			onnodedragstop={handleNodeDragStop}
+			onselectiondragstop={handleSelectionDragStop}
 		>
 			<FlowController onInit={(flow) => flowApi = flow} />
 			<Background />

@@ -7,11 +7,14 @@
 	 * - Displays store status and triple count
 	 * - Auto-initializes on mount, cleanup on unmount
 	 * - Uses BaseNode for consistent styling
+	 * 
+	 * Runtime state (isReady, error, tripleCount) is managed locally,
+	 * not persisted to nodeStore.
 	 */
 	import { Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import type { StateNodeData } from '../../../types';
-	import { getStudioContext } from '../../../state';
+	import type { StateNodeData, FlowNodeData } from '../../../types';
+	import { nodeStore } from '../../../persistence';
 	import { getNodeRDFStore, closeNodeRDFStore, type QuadstoreRDFStore } from '../../../rdf';
 	import BaseNode from '../BaseNode.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -20,15 +23,23 @@
 	// Props & Context
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<StateNodeData, 'state'>> = $props();
-	const ctx = getStudioContext();
+	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'state'>> = $props();
 
 	// ============================================================================
-	// State
+	// Node Data (persistent)
+	// ============================================================================
+
+	const nodeData = $derived(nodeStore.get(id) as StateNodeData | undefined);
+
+	// ============================================================================
+	// Runtime State (local, not persisted)
 	// ============================================================================
 
 	let store = $state<QuadstoreRDFStore | null>(null);
 	let isInitializing = $state(false);
+	let isReady = $state(false);
+	let error = $state<string | null>(null);
+	let tripleCount = $state(0);
 
 	// ============================================================================
 	// Lifecycle
@@ -52,23 +63,15 @@
 		isInitializing = true;
 		try {
 			store = await getNodeRDFStore(id);
-			
-			// Update node data with ready state
-			ctx.updateNode(id, (nodeData) => ({
-				...nodeData,
-				isReady: true,
-				error: null
-			}));
+			isReady = true;
+			error = null;
 
 			// Get initial triple count
 			await updateTripleCount();
 		} catch (e) {
 			const errorMsg = e instanceof Error ? e.message : 'Failed to initialize RDF store';
-			ctx.updateNode(id, (nodeData) => ({
-				...nodeData,
-				isReady: false,
-				error: errorMsg
-			}));
+			isReady = false;
+			error = errorMsg;
 		} finally {
 			isInitializing = false;
 		}
@@ -80,10 +83,7 @@
 		try {
 			// Query all triples to get count
 			const triples = await store.query({});
-			ctx.updateNode(id, (nodeData) => ({
-				...nodeData,
-				tripleCount: triples.length
-			}));
+			tripleCount = triples.length;
 		} catch (e) {
 			console.error('[StateNode] Failed to get triple count:', e);
 		}
@@ -98,11 +98,7 @@
 			for (const triple of triples) {
 				await store.delete(triple.subject, triple.predicate, triple.object);
 			}
-			
-			ctx.updateNode(id, (nodeData) => ({
-				...nodeData,
-				tripleCount: 0
-			}));
+			tripleCount = 0;
 		} catch (e) {
 			console.error('[StateNode] Failed to clear store:', e);
 		}
@@ -113,17 +109,16 @@
 	// ============================================================================
 
 	const statusColor = $derived(
-		data.error ? 'red' : data.isReady ? 'green' : 'gray'
+		error ? 'red' : isReady ? 'green' : 'gray'
 	);
 
 	const statusText = $derived(
-		data.error ? m.studio_state_error() : data.isReady ? m.studio_state_ready() : isInitializing ? m.studio_state_initializing() : m.studio_state_idle()
+		error ? m.studio_state_error() : isReady ? m.studio_state_ready() : isInitializing ? m.studio_state_initializing() : m.studio_state_idle()
 	);
 </script>
 
 <BaseNode
 	{id}
-	{data}
 	{selected}
 	{isConnectable}
 	nodeType="STATE"
@@ -167,13 +162,13 @@
 			<!-- Triple Count -->
 			<div class="flex items-center justify-between">
 				<span class="text-xs font-medium text-gray-500">{m.studio_state_triples()}</span>
-				<span class="text-sm font-mono text-gray-700">{data.tripleCount}</span>
+				<span class="text-sm font-mono text-gray-700">{tripleCount}</span>
 			</div>
 
 			<!-- Error Display -->
-			{#if data.error}
+			{#if error}
 				<div class="px-2 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg border border-red-200">
-					{data.error}
+					{error}
 				</div>
 			{/if}
 
@@ -189,14 +184,14 @@
 				<button
 					class="flex-1 px-2 py-1.5 text-xs bg-teal-500 text-white rounded-lg hover:bg-teal-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors nodrag"
 					onclick={updateTripleCount}
-					disabled={!data.isReady}
+					disabled={!isReady}
 				>
 					{m.studio_state_refresh()}
 				</button>
 				<button
 					class="flex-1 px-2 py-1.5 text-xs bg-red-100 text-red-600 rounded-lg hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors nodrag"
 					onclick={clearStore}
-					disabled={!data.isReady || data.tripleCount === 0}
+					disabled={!isReady || tripleCount === 0}
 				>
 					{m.studio_state_clear()}
 				</button>

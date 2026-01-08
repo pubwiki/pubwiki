@@ -17,6 +17,8 @@ import type {
 	StateNodeData,
 	Mountpoint
 } from '../../../types';
+import type { FlowNodeData } from '../../../types/flow';
+import { nodeStore } from '../../../persistence';
 import { 
 	HandleId, 
 	isLoaderMountpointHandle, 
@@ -237,6 +239,15 @@ interface LoaderRuntime {
 }
 
 /**
+ * Initialize Loader result
+ */
+export interface LoaderInitResult {
+	success: boolean;
+	services: string[];
+	error: string | null;
+}
+
+/**
  * Service call result
  */
 export interface ServiceCallResult {
@@ -389,22 +400,16 @@ export function setEditingMountpoint(mp: { nodeId: string; mountpointId: string 
 export function updateMountpointPath(
 	nodeId: string,
 	mountpointId: string,
-	newPath: string,
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void
+	newPath: string
 ): void {
-	updateNodes(nodes => nodes.map(n => {
-		if (n.id === nodeId && n.data.type === 'LOADER') {
-			const loaderData = n.data as LoaderNodeData;
-			return {
-				...n,
-				data: {
-					...loaderData,
-					content: loaderData.content.updateMountpointPath(mountpointId, newPath)
-				}
-			};
-		}
-		return n;
-	}));
+	nodeStore.update(nodeId, (data) => {
+		if (data.type !== 'LOADER') return data;
+		const loaderContent = data.content as import('../../../types').LoaderContent;
+		return {
+			...data,
+			content: loaderContent.updateMountpointPath(mountpointId, newPath)
+		};
+	});
 }
 
 // ============================================================================
@@ -414,21 +419,23 @@ export function updateMountpointPath(
 /**
  * Initialize Loader Node's Lua VM
  * 
+ * Returns the result instead of updating node data - the component should
+ * store the result in local state.
+ * 
  * @param nodeId - The node ID
  * @param backendVfs - Backend VFS instance
  * @param assetMounts - Map of mount paths to VFS instances
  * @param rdfStore - Optional RDF store for State API
  * @param llmConfig - LLM configuration from user settings (apiKey, model, baseUrl)
- * @param updateNode - Node update callback
+ * @returns LoaderInitResult with success, services, and error
  */
 export async function initializeLoader(
 	nodeId: string,
 	backendVfs: Vfs<VfsProvider>,
 	assetMounts: Map<string, Vfs<VfsProvider>>,
 	rdfStore: RDFStore | undefined,
-	llmConfig: LLMConfig | undefined,
-	updateNode: (id: string, updater: (data: LoaderNodeData) => LoaderNodeData) => void
-): Promise<boolean> {
+	llmConfig: LLMConfig | undefined
+): Promise<LoaderInitResult> {
 	try {
 		// Clean up existing runtime if any
 		const existingRuntime = loaderRuntimes.get(nodeId);
@@ -436,8 +443,6 @@ export async function initializeLoader(
 			existingRuntime.instance.destroy();
 			loaderRuntimes.delete(nodeId);
 		}
-		
-		updateNode(nodeId, (data) => ({ ...data, error: null }));
 		
 		// Ensure Lua runtime is loaded
 		await loadRunner();
@@ -499,7 +504,7 @@ export async function initializeLoader(
 		// Store runtime state
 		loaderRuntimes.set(nodeId, { instance, mountedVfs, pubchat });
 		
-		// Update node state
+		// Extract services list
 		// Lua tables with numeric keys are converted to objects like {1: "a", 2: "b"}, not arrays
 		let services: string[];
 		if (Array.isArray(initResult.result)) {
@@ -511,41 +516,31 @@ export async function initializeLoader(
 			services = [];
 		}
 		
-		updateNode(nodeId, (data) => ({
-			...data,
-			error: null,
-			registeredServices: services
-		}));
-		
-		return true;
+		return {
+			success: true,
+			services,
+			error: null
+		};
 	} catch (error) {
-		updateNode(nodeId, (data) => ({
-			...data,
-			error: error instanceof Error ? error.message : String(error),
-			registeredServices: []
-		}));
-		return false;
+		return {
+			success: false,
+			services: [],
+			error: error instanceof Error ? error.message : String(error)
+		};
 	}
 }
 
 /**
  * Destroy Loader Node's Lua VM
+ * 
+ * The component should reset its local state after calling this.
  */
-export async function destroyLoader(
-	nodeId: string,
-	updateNode: (id: string, updater: (data: LoaderNodeData) => LoaderNodeData) => void
-): Promise<void> {
+export async function destroyLoader(nodeId: string): Promise<void> {
 	const runtime = loaderRuntimes.get(nodeId);
 	if (runtime) {
 		runtime.instance.destroy();
 		loaderRuntimes.delete(nodeId);
 	}
-	
-	updateNode(nodeId, (data) => ({
-		...data,
-		error: null,
-		registeredServices: []
-	}));
 }
 
 /**
@@ -679,12 +674,13 @@ export async function streamService(
 
 /**
  * Find the backend VFS node connected to a Loader node
+ * Returns the node ID of the connected VFS node if found
  */
 export function findBackendVfsNode(
 	nodeId: string,
-	nodes: Node<StudioNodeData>[],
+	nodes: Node<FlowNodeData>[],
 	edges: Edge[]
-): Node<VFSNodeData> | null {
+): string | null {
 	const backendEdge = edges.find(
 		e => e.target === nodeId && e.targetHandle === HandleId.LOADER_BACKEND
 	);
@@ -692,8 +688,11 @@ export function findBackendVfsNode(
 	if (!backendEdge) return null;
 	
 	const sourceNode = nodes.find(n => n.id === backendEdge.source);
-	if (sourceNode?.data.type === 'VFS') {
-		return sourceNode as Node<VFSNodeData>;
+	if (!sourceNode) return null;
+	
+	const sourceData = nodeStore.get(sourceNode.id);
+	if (sourceData?.type === 'VFS') {
+		return sourceNode.id;
 	}
 	
 	return null;
@@ -701,22 +700,22 @@ export function findBackendVfsNode(
 
 /**
  * Find all asset VFS nodes connected to a Loader node via mountpoint handles
- * Returns a map of mount path -> VFS node
+ * Returns a map of mount path -> VFS node ID
  */
 export function findMountedVfsNodes(
 	nodeId: string,
-	nodes: Node<StudioNodeData>[],
+	nodes: Node<FlowNodeData>[],
 	edges: Edge[]
-): Map<string, Node<VFSNodeData>> {
-	const result = new Map<string, Node<VFSNodeData>>();
+): Map<string, string> {
+	const result = new Map<string, string>();
 	
-	// Get the Loader node to look up mountpoint paths
-	const loaderNode = nodes.find(n => n.id === nodeId);
-	if (!loaderNode || loaderNode.data.type !== 'LOADER') {
+	// Get the Loader node's business data to look up mountpoint paths
+	const loaderData = nodeStore.get(nodeId);
+	if (!loaderData || loaderData.type !== 'LOADER') {
 		return result;
 	}
-	const loaderData = loaderNode.data as LoaderNodeData;
-	const mountpoints = loaderData.content.mountpoints ?? [];
+	const loaderContent = loaderData.content as import('../../../types').LoaderContent;
+	const mountpoints = loaderContent.mountpoints ?? [];
 	
 	// Find edges where this node is the target and handle is a loader mountpoint
 	for (const edge of edges) {
@@ -726,8 +725,11 @@ export function findMountedVfsNodes(
 			if (!mountpoint) continue;
 			
 			const sourceNode = nodes.find(n => n.id === edge.source);
-			if (sourceNode?.data.type === 'VFS') {
-				result.set(mountpoint.path, sourceNode as Node<VFSNodeData>);
+			if (!sourceNode) continue;
+			
+			const sourceData = nodeStore.get(sourceNode.id);
+			if (sourceData?.type === 'VFS') {
+				result.set(mountpoint.path, sourceNode.id);
 			}
 		}
 	}
@@ -737,12 +739,13 @@ export function findMountedVfsNodes(
 
 /**
  * Find the State node connected to a Loader node via the state handle
+ * Returns the node ID of the connected State node if found
  */
 export function findStateNode(
 	nodeId: string,
-	nodes: Node<StudioNodeData>[],
+	nodes: Node<FlowNodeData>[],
 	edges: Edge[]
-): Node<StateNodeData> | null {
+): string | null {
 	const stateEdge = edges.find(
 		e => e.target === nodeId && e.targetHandle === HandleId.LOADER_STATE
 	);
@@ -750,8 +753,11 @@ export function findStateNode(
 	if (!stateEdge) return null;
 	
 	const sourceNode = nodes.find(n => n.id === stateEdge.source);
-	if (sourceNode?.data.type === 'STATE') {
-		return sourceNode as Node<StateNodeData>;
+	if (!sourceNode) return null;
+	
+	const sourceData = nodeStore.get(sourceNode.id);
+	if (sourceData?.type === 'STATE') {
+		return sourceNode.id;
 	}
 	
 	return null;
@@ -770,10 +776,10 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 		return false;
 	}
 
-	// Get existing mountpoints for validation
-	const targetNode = event.nodes.find(n => n.id === event.target);
-	const existingMountpoints = targetNode?.data.type === 'LOADER' 
-		? (targetNode.data as LoaderNodeData).content.mountpoints ?? []
+	// Get existing mountpoints for validation from nodeStore
+	const targetData = nodeStore.get(event.target);
+	const existingMountpoints = targetData?.type === 'LOADER' 
+		? (targetData.content as import('../../../types').LoaderContent).mountpoints ?? []
 		: [];
 
 	// Use the initial placeholder path - user will edit it
@@ -790,20 +796,15 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 	const newMountpointId = generateMountpointId();
 	const newMountpoint: Mountpoint = { id: newMountpointId, path: newMountPath };
 	
-	// Update the Loader node to add the new mountpoint
-	event.updateNodes(nodes => nodes.map(n => {
-		if (n.id === event.target && n.data.type === 'LOADER') {
-			const data = n.data as LoaderNodeData;
-			return {
-				...n,
-				data: {
-					...data,
-					content: data.content.addMountpoint(newMountpoint)
-				}
-			};
-		}
-		return n;
-	}));
+	// Update the Loader node to add the new mountpoint via nodeStore
+	nodeStore.update(event.target, (data) => {
+		if (data.type !== 'LOADER') return data;
+		const loaderContent = data.content as import('../../../types').LoaderContent;
+		return {
+			...data,
+			content: loaderContent.addMountpoint(newMountpoint)
+		};
+	});
 
 	// Create edge to the new mountpoint handle (using stable ID)
 	const newEdge: Edge = {
@@ -842,20 +843,15 @@ function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
 	const mountpointId = getLoaderMountpointId(event.edge.targetHandle!);
 	const targetNodeId = event.edge.target;
 
-	// Remove the mountpoint from the Loader node
-	event.updateNodes(nodes => nodes.map(n => {
-		if (n.id === targetNodeId && n.data.type === 'LOADER') {
-			const loaderData = n.data as LoaderNodeData;
-			return {
-				...n,
-				data: {
-					...loaderData,
-					content: loaderData.content.removeMountpoint(mountpointId)
-				}
-			};
-		}
-		return n;
-	}));
+	// Remove the mountpoint from the Loader node via nodeStore
+	nodeStore.update(targetNodeId, (data) => {
+		if (data.type !== 'LOADER') return data;
+		const loaderContent = data.content as import('../../../types').LoaderContent;
+		return {
+			...data,
+			content: loaderContent.removeMountpoint(mountpointId)
+		};
+	});
 }
 
 // ============================================================================

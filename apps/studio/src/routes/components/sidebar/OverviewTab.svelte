@@ -3,20 +3,21 @@
 	 * OverviewTab - Shows all nodes in the workspace grouped by type
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
-	import type { StudioNodeData } from '../../types';
+	import type { FlowNodeData } from '../../types/flow';
+	import { nodeStore } from '../../persistence/node-store.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
-		nodes: Node<StudioNodeData>[];
+		nodes: Node<FlowNodeData>[];
 		edges: Edge[];
-		onFocusNode: (node: Node<StudioNodeData>) => void;
+		onFocusNode: (node: Node<FlowNodeData>) => void;
 	}
 
 	let { nodes, edges, onFocusNode }: Props = $props();
 
 	// Group nodes by type
 	let nodesByType = $derived.by(() => {
-		const groups: Record<string, Node<StudioNodeData>[]> = {
+		const groups: Record<string, Node<FlowNodeData>[]> = {
 			PROMPT: [],
 			INPUT: [],
 			GENERATED: [],
@@ -63,13 +64,16 @@
 		}
 	}
 
-	function getNodeDisplayName(node: Node<StudioNodeData>): string {
-		return node.data.name || node.id.slice(0, 8);
+	function getNodeDisplayName(node: Node<FlowNodeData>): string {
+		const businessData = nodeStore.get(node.id);
+		return businessData?.name || node.id.slice(0, 8);
 	}
 
-	function getNodePreview(node: Node<StudioNodeData>): string {
+	function getNodePreview(node: Node<FlowNodeData>): string {
+		const businessData = nodeStore.get(node.id);
+		if (!businessData) return '';
 		// Use polymorphic getText() method
-		const content = node.data.content.getText();
+		const content = businessData.content.getText();
 		if (content) {
 			return content.slice(0, 60) + (content.length > 60 ? '...' : '');
 		}

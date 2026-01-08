@@ -8,12 +8,16 @@
 	 * - Detects project configuration from tsconfig.json
 	 * - Opens floating preview panel on start
 	 * - Uses BaseNode for consistent styling
+	 * 
+	 * Runtime state (error, isLoading, etc.) is managed locally,
+	 * not persisted to nodeStore.
 	 */
 	import { Handle, Position, type NodeProps, type Node, useEdges, useSvelteFlow } from '@xyflow/svelte';
-	import { onMount, untrack } from 'svelte';
-	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData } from '../../../types';
+	import { untrack } from 'svelte';
+	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData, FlowNodeData } from '../../../types';
 	import { getNodeVfs, type VersionedVfs } from '../../../vfs';
 	import { getStudioContext } from '../../../state';
+	import { nodeStore } from '../../../persistence';
 	import { HandleId } from '../../../graph';
 	import BaseNode from '../BaseNode.svelte';
 	import SandboxPreviewView from './SandboxPreviewView.svelte';
@@ -25,10 +29,16 @@
 	// Props & Context
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<SandboxNodeData, 'sandbox'>> = $props();
+	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'sandbox'>> = $props();
 	const ctx = getStudioContext();
 	const allEdges = useEdges();
 	const { fitView } = useSvelteFlow();
+
+	// ============================================================================
+	// Node Data
+	// ============================================================================
+
+	const nodeData = $derived(nodeStore.get(id) as SandboxNodeData | undefined);
 
 	// ============================================================================
 	// State
@@ -53,9 +63,9 @@
 		);
 		
 		for (const edge of incomingEdges) {
-			const sourceNode = ctx.nodes.find(n => n.id === edge.source);
-			if (sourceNode?.data.type === 'VFS') {
-				return sourceNode.id;
+			const sourceData = nodeStore.get(edge.source);
+			if (sourceData?.type === 'VFS') {
+				return edge.source;
 			}
 		}
 		return null;
@@ -66,8 +76,8 @@
 	 */
 	const connectedVfsNode = $derived.by(() => {
 		if (!connectedVfsNodeId) return null;
-		const node = ctx.nodes.find(n => n.id === connectedVfsNodeId);
-		return node?.data.type === 'VFS' ? node.data as VFSNodeData : null;
+		const data = nodeStore.get(connectedVfsNodeId);
+		return data?.type === 'VFS' ? data as VFSNodeData : null;
 	});
 
 	/**
@@ -81,9 +91,9 @@
 		
 		const loaders: { id: string; data: LoaderNodeData }[] = [];
 		for (const edge of incomingEdges) {
-			const sourceNode = ctx.nodes.find(n => n.id === edge.source);
-			if (sourceNode?.data.type === 'LOADER') {
-				loaders.push({ id: sourceNode.id, data: sourceNode.data as LoaderNodeData });
+			const sourceData = nodeStore.get(edge.source);
+			if (sourceData?.type === 'LOADER') {
+				loaders.push({ id: edge.source, data: sourceData as LoaderNodeData });
 			}
 		}
 		return loaders;
@@ -98,10 +108,7 @@
 	// Lifecycle
 	// ============================================================================
 
-	onMount(() => {
-		// Initialize error state from data
-		error = data.error;
-	});
+	// Note: error state is fully local, not persisted to nodeStore
 
 	// ============================================================================
 	// Watch for VFS connection changes
@@ -177,7 +184,6 @@
 
 <BaseNode
 	{id}
-	{data}
 	{selected}
 	{isConnectable}
 	nodeType="SANDBOX"
@@ -275,7 +281,7 @@
 					</svg>
 					<div class="flex-1">
 						<p class="text-sm font-medium text-gray-600">{m.studio_sandbox_ready()}</p>
-						<p class="text-xs text-gray-400">{m.studio_node_entry({ entryFile: data.content.entryFile })}</p>
+						<p class="text-xs text-gray-400">{m.studio_node_entry({ entryFile: nodeData?.content?.entryFile ?? 'index.ts' })}</p>
 					</div>
 					<button
 						class="px-3 py-1.5 text-sm font-medium bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors nodrag"
@@ -295,7 +301,7 @@
 							<button 
 								type="button"
 								class="nodrag px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full flex items-center gap-1 hover:bg-purple-200 transition-colors cursor-pointer"
-								title={loader.data.registeredServices.join(', ') || 'No services'}
+								title={loader.data.name || 'Loader'}
 								onclick={() => fitView({ nodes: [{ id: loader.id }], duration: 300, padding: 0.3 })}
 							>
 								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -312,13 +318,13 @@
 </BaseNode>
 
 <!-- Preview Panel -->
-{#if showPreview && vfs && projectConfig}
+{#if showPreview && vfs && projectConfig && nodeData}
 	<SandboxPreviewView
 		{vfs}
 		{projectConfig}
-		sandboxOrigin={data.content.sandboxOrigin}
-		entryFile={data.content.entryFile}
-		name={data.name}
+		sandboxOrigin={nodeData.content.sandboxOrigin}
+		entryFile={nodeData.content.entryFile}
+		name={nodeData.name}
 		loaderNodes={connectedLoaderNodes}
 		onClose={closePreview}
 	/>

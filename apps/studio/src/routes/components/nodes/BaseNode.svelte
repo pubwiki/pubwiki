@@ -9,10 +9,14 @@
 	 * - Header with type icon, name editing, version indicator
 	 * - Slot for node-specific content
 	 * - Handle positioning
+	 * 
+	 * Layer Separation: Business data comes from nodeStore, not props.
 	 */
 	import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { Snippet } from 'svelte';
-	import type { StudioNodeData, GeneratedNodeData, PromptNodeData, InputNodeData } from '../../types';
+	import type { FlowNodeData } from '../../types/flow';
+	import { nodeStore } from '../../persistence';
+	import type { StudioNodeData } from '../../types';
 	import { hasVersionHistory, getVersionCount, type NodeRef } from '../../version';
 	import { getStudioContext } from '../../state';
 	import VersionGallery from '../VersionGallery.svelte';
@@ -24,7 +28,7 @@
 
 	interface Props {
 		id: string;
-		data: StudioNodeData;
+		data?: FlowNodeData;  // Minimal flow data (id, type) - optional, we can use id directly
 		selected: boolean;
 		isConnectable: boolean;
 		// Node type configuration
@@ -62,10 +66,13 @@
 	}: Props = $props();
 
 	// ============================================================================
-	// Context
+	// Context and Store
 	// ============================================================================
 
 	const ctx = getStudioContext();
+	
+	// Get business data from nodeStore (reactive)
+	const nodeData = $derived(nodeStore.get(id));
 
 	// ============================================================================
 	// Helpers
@@ -100,25 +107,25 @@
 	// ============================================================================
 
 	// Get content string for version gallery (uses polymorphic getText())
-	const contentForVersionGallery = $derived(data.content.getText());
+	const contentForVersionGallery = $derived(nodeData?.content.getText() ?? '');
 
-	// Version control
-	const versionCount = $derived(getVersionCount(data));
-	const hasHistory = $derived(hasVersionHistory(data));
+	// Version control - adapted to use StudioNodeData shape
+	const versionCount = $derived(nodeData ? getVersionCount(nodeData) : 0);
+	const hasHistory = $derived(nodeData ? hasVersionHistory(nodeData) : false);
 	
 	// Preview state from context
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
 	const isUsed = $derived(!!previewState?.isUsed);
-	const displayCommit = $derived(previewState?.commit ?? data.commit);
+	const displayCommit = $derived(previewState?.commit ?? nodeData?.commit ?? '');
 	
-	// Phantom node check
-	const isPhantom = $derived(!!data.isPhantom);
+	// Phantom node check (this flag is not in StudioNodeData, so we skip it for now)
+	const isPhantom = $derived(false);
 	
 	// Calculate preview version number
 	const previewVersionNumber = $derived.by(() => {
-		if (!isPreviewing || !previewState?.commit) return null;
-		const index = data.snapshotRefs.findIndex(ref => ref.commit === previewState.commit);
+		if (!isPreviewing || !previewState?.commit || !nodeData) return null;
+		const index = nodeData.snapshotRefs.findIndex(ref => ref.commit === previewState.commit);
 		if (index >= 0) return index + 1;
 		return null;
 	});
@@ -152,7 +159,7 @@
 
 	$effect(() => {
 		if (ctx.editingNameNodeId === id) {
-			editingNameValue = data.name || '';
+			editingNameValue = nodeData?.name || '';
 			setTimeout(() => nameInputRef?.focus(), 0);
 		}
 	});
@@ -181,8 +188,8 @@
 	}
 
 	function saveNameEdit() {
-		ctx.updateNode(id, (nodeData) => ({
-			...nodeData,
+		ctx.updateNodeData(id, (data) => ({
+			...data,
 			name: editingNameValue.trim()
 		}));
 		ctx.setEditingNameNodeId(null);
@@ -294,9 +301,9 @@
 						onkeydown={handleNameInputKeydown}
 						onblur={saveNameEdit}
 					/>
-				{:else if data.name}
-					<span class="text-xs text-white/90 truncate max-w-32" title={data.name}>
-						{data.name}
+				{:else if nodeData?.name}
+					<span class="text-xs text-white/90 truncate max-w-32" title={nodeData.name}>
+						{nodeData.name}
 					</span>
 				{/if}
 			</div>
@@ -332,10 +339,10 @@
 	<!-- Version Gallery -->
 	{#if showVersionGallery}
 		<VersionGallery
-			nodeId={data.id}
+			nodeId={id}
 			currentContent={contentForVersionGallery}
-			currentCommit={data.commit}
-			snapshotRefs={data.snapshotRefs}
+			currentCommit={nodeData?.commit ?? ''}
+			snapshotRefs={nodeData?.snapshotRefs ?? []}
 			onRestore={handleRestore}
 			onClose={() => showVersionGallery = false}
 		/>

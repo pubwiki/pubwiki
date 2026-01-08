@@ -1,23 +1,65 @@
 /**
- * Studio Database
+ * Studio Database (v2)
  * 
- * Dexie-based IndexedDB persistence for Studio nodes, edges, and snapshots.
- * Designed for integration with Svelte 5 runes via liveQuery.
+ * Redesigned for layer separation:
+ * - Layouts: Rendering position data (managed by LayoutStore)
+ * - NodeData: Business data (managed by NodeStore)
+ * - Edges: Graph structure
+ * - Projects: Metadata
+ * - Snapshots: Version history
+ * 
+ * Key change: No more `nodes` table with mixed data.
+ * Instead, `layouts` and `nodeData` are separate.
  */
 
 import Dexie, { type EntityTable, liveQuery, type Observable } from 'dexie';
-import type { Edge, Node } from '@xyflow/svelte';
+import type { Edge } from '@xyflow/svelte';
 import { restoreContent, type NodeType, type NodeContent } from '../types/content';
-
-// Type constraint for Node data with content (required for serialization)
-interface NodeDataWithContent extends Record<string, unknown> {
-  type: NodeType;
-  content: NodeContent;
-}
+import type { NodeRef } from '../version';
 
 // ============================================================================
 // Database Types
 // ============================================================================
+
+/**
+ * Stored layout in IndexedDB
+ * Key: composite [projectId, nodeId]
+ */
+export interface StoredLayout {
+  /** Project ID */
+  projectId: string;
+  /** Node ID */
+  nodeId: string;
+  /** Position X */
+  x: number;
+  /** Position Y */
+  y: number;
+}
+
+/**
+ * Stored node business data in IndexedDB
+ * Key: composite [projectId, nodeId]
+ */
+export interface StoredNodeData {
+  /** Project ID */
+  projectId: string;
+  /** Node ID */
+  nodeId: string;
+  /** Node type: 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'SANDBOX' | 'LOADER' | 'STATE' */
+  type: string;
+  /** User-defined node name */
+  name: string;
+  /** Current commit hash (content hash) */
+  commit: string;
+  /** References to historical snapshots */
+  snapshotRefs: NodeRef[];
+  /** Parent nodes that contributed to this node's creation */
+  parents: NodeRef[];
+  /** Node content (JSON serialized) */
+  content: unknown;
+  /** Whether this node references external artifact */
+  external?: boolean;
+}
 
 /**
  * Stored snapshot in IndexedDB
@@ -53,25 +95,6 @@ export interface StoredSnapshotEdge {
 export interface StoredPosition {
   x: number;
   y: number;
-}
-
-/**
- * Stored node in IndexedDB
- * Flattened structure for storage (Node<StudioNodeData> -> StoredNode)
- */
-export interface StoredNode {
-  /** Node ID */
-  id: string;
-  /** Project/workspace ID for multi-project support */
-  projectId: string;
-  /** Node type: 'prompt' | 'input' | 'generated' */
-  type: string;
-  /** Position X */
-  positionX: number;
-  /** Position Y */
-  positionY: number;
-  /** Node data (JSON serialized) */
-  data: unknown;
 }
 
 /**
@@ -113,29 +136,55 @@ export interface StoredProject {
 }
 
 // ============================================================================
-// Database Definition
+// Database Definition (Version 2 - Layer Separation)
 // ============================================================================
 
 /**
- * Studio Dexie Database
+ * Studio Dexie Database v2
+ * 
+ * Changes from v1:
+ * - Removed `nodes` table
+ * - Added `layouts` table for position data
+ * - Added `nodeData` table for business data
  */
 export class StudioDatabase extends Dexie {
   snapshots!: EntityTable<StoredSnapshot, 'nodeId'>;
-  nodes!: EntityTable<StoredNode, 'id'>;
+  layouts!: EntityTable<StoredLayout, 'nodeId'>;
+  nodeData!: EntityTable<StoredNodeData, 'nodeId'>;
   edges!: EntityTable<StoredEdge, 'id'>;
   projects!: EntityTable<StoredProject, 'id'>;
 
   constructor() {
     super('StudioDB');
     
-    this.version(1).stores({
-      // Snapshots: composite key [nodeId, commit], indexed by nodeId for range queries
+    // Version 2: New schema with layer separation
+    // Note: This is a breaking change - old data will be migrated or discarded
+    this.version(2).stores({
+      // Layouts: position data only
+      layouts: '[projectId+nodeId], projectId',
+      // NodeData: business data only
+      nodeData: '[projectId+nodeId], projectId, type',
+      // Snapshots: version history
       snapshots: '[nodeId+commit], nodeId, timestamp',
-      // Nodes: indexed by projectId for project-based queries
-      nodes: 'id, projectId, type',
-      // Edges: indexed by projectId, source and target for graph queries
+      // Edges: graph structure
       edges: 'id, projectId, source, target',
-      // Projects: basic metadata
+      // Projects: metadata
+      projects: 'id, createdAt, updatedAt'
+    }).upgrade(async tx => {
+      // Migration: convert old nodes table to new structure
+      // For simplicity, we'll just let the old data be discarded
+      // Users can start fresh with the new schema
+      console.log('[DB Migration] Upgrading to v2 schema with layer separation');
+      
+      // Delete old nodes table if it exists (Dexie handles this automatically)
+      // The old table will be removed since it's not in the new schema
+    });
+    
+    // Keep v1 for reference (will be upgraded automatically)
+    this.version(1).stores({
+      snapshots: '[nodeId+commit], nodeId, timestamp',
+      nodes: 'id, projectId, type',
+      edges: 'id, projectId, source, target',
       projects: 'id, createdAt, updatedAt'
     });
   }
@@ -247,92 +296,10 @@ export async function clearSnapshots(): Promise<void> {
 }
 
 // ============================================================================
-// Node Operations
+// Edge Operations
 // ============================================================================
 
 const DEFAULT_PROJECT_ID = 'default';
-
-/**
- * Convert XYFlow Node to StoredNode
- * Serializes content using toJSON() for proper class serialization
- */
-export function nodeToStored<T extends NodeDataWithContent>(node: Node<T>, projectId: string = DEFAULT_PROJECT_ID): StoredNode {
-  // Serialize content to JSON-safe format
-  const serializedData = {
-    ...node.data,
-    content: node.data.content.toJSON()
-  };
-  
-  return {
-    id: node.id,
-    projectId,
-    type: node.type ?? 'default',
-    positionX: node.position?.x ?? 0,
-    positionY: node.position?.y ?? 0,
-    data: serializedData
-  };
-}
-
-/**
- * Convert StoredNode to XYFlow Node
- * Restores content class instance using restoreContent()
- */
-export function storedToNode<T extends NodeDataWithContent>(stored: StoredNode): Node<T> {
-  const rawData = stored.data as Record<string, unknown>;
-  const nodeType = rawData.type as NodeType;
-  
-  // Restore content class instance from JSON
-  const restoredData = {
-    ...rawData,
-    content: restoreContent(nodeType, rawData.content)
-  } as T;
-  
-  return {
-    id: stored.id,
-    type: stored.type,
-    position: { x: stored.positionX, y: stored.positionY },
-    data: restoredData
-  };
-}
-
-/**
- * Save nodes to database (replaces all nodes for a project)
- */
-export async function saveNodes<T extends NodeDataWithContent>(nodes: Node<T>[], projectId: string = DEFAULT_PROJECT_ID): Promise<void> {
-  await db.transaction('rw', db.nodes, async () => {
-    // Delete existing nodes for this project
-    await db.nodes.where('projectId').equals(projectId).delete();
-    // Insert new nodes
-    const storedNodes = nodes.map(n => nodeToStored(n, projectId));
-    await db.nodes.bulkPut(storedNodes);
-  });
-}
-
-/**
- * Get all nodes for a project
- */
-export async function getNodes<T extends NodeDataWithContent>(projectId: string = DEFAULT_PROJECT_ID): Promise<Node<T>[]> {
-  const stored = await db.nodes.where('projectId').equals(projectId).toArray();
-  return stored.map(s => storedToNode<T>(s));
-}
-
-/**
- * Update a single node
- */
-export async function updateNode<T extends NodeDataWithContent>(node: Node<T>, projectId: string = DEFAULT_PROJECT_ID): Promise<void> {
-  await db.nodes.put(nodeToStored(node, projectId));
-}
-
-/**
- * Delete a node
- */
-export async function deleteNode(nodeId: string): Promise<void> {
-  await db.nodes.delete(nodeId);
-}
-
-// ============================================================================
-// Edge Operations
-// ============================================================================
 
 /**
  * Convert XYFlow Edge to StoredEdge
@@ -425,13 +392,13 @@ export async function getAllProjects(): Promise<StoredProject[]> {
  * Delete a project and all its data
  */
 export async function deleteProject(projectId: string): Promise<void> {
-  await db.transaction('rw', [db.projects, db.nodes, db.edges], async () => {
-    await db.nodes.where('projectId').equals(projectId).delete();
+  await db.transaction('rw', [db.projects, db.layouts, db.nodeData, db.edges], async () => {
+    await db.layouts.where('projectId').equals(projectId).delete();
+    await db.nodeData.where('projectId').equals(projectId).delete();
     await db.edges.where('projectId').equals(projectId).delete();
     await db.projects.delete(projectId);
   });
 }
-
 
 /**
  * Ensure a project exists by ID (creates if not exists)
@@ -452,66 +419,8 @@ export async function ensureProject(projectId: string): Promise<StoredProject> {
 }
 
 // ============================================================================
-// Bulk Operations
-// ============================================================================
-
-/**
- * Save entire graph state (nodes + edges) atomically
- */
-export async function saveGraph<T extends NodeDataWithContent>(
-  nodes: Node<T>[], 
-  edges: Edge[], 
-  projectId: string = DEFAULT_PROJECT_ID
-): Promise<void> {
-  await db.transaction('rw', [db.nodes, db.edges, db.projects], async () => {
-    // Update project timestamp
-    const project = await db.projects.get(projectId);
-    if (project) {
-      await db.projects.put({ ...project, updatedAt: Date.now() });
-    }
-    
-    // Save nodes
-    await db.nodes.where('projectId').equals(projectId).delete();
-    const storedNodes = nodes.map(n => nodeToStored(n, projectId));
-    await db.nodes.bulkPut(storedNodes);
-    
-    // Save edges
-    await db.edges.where('projectId').equals(projectId).delete();
-    const storedEdges = edges.map(e => edgeToStored(e, projectId));
-    await db.edges.bulkPut(storedEdges);
-  });
-}
-
-/**
- * Load entire graph state
- */
-export async function loadGraph<T extends NodeDataWithContent>(
-  projectId: string = DEFAULT_PROJECT_ID
-): Promise<{ nodes: Node<T>[]; edges: Edge[] }> {
-  const [storedNodes, storedEdges] = await Promise.all([
-    db.nodes.where('projectId').equals(projectId).toArray(),
-    db.edges.where('projectId').equals(projectId).toArray()
-  ]);
-  
-  return {
-    nodes: storedNodes.map(s => storedToNode<T>(s)),
-    edges: storedEdges.map(storedToEdge)
-  };
-}
-
-// ============================================================================
 // Live Queries (for Svelte 5 integration)
 // ============================================================================
-
-/**
- * Create a live query for nodes
- */
-export function liveNodes<T extends NodeDataWithContent>(projectId: string = DEFAULT_PROJECT_ID): Observable<Node<T>[]> {
-  return liveQuery(async () => {
-    const stored = await db.nodes.where('projectId').equals(projectId).toArray();
-    return stored.map(s => storedToNode<T>(s));
-  });
-}
 
 /**
  * Create a live query for edges

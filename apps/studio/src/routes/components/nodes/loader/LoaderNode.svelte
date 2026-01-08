@@ -8,14 +8,18 @@
 	 * - Auto-loads when backend VFS is connected
 	 * - Displays registered services list
 	 * - Service output handle for connecting to Sandbox nodes
+	 * 
+	 * Runtime state (error, registeredServices) is managed locally,
+	 * not persisted to nodeStore.
 	 */
 	import { Handle, Position, useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { LoaderNodeData, VFSNodeData, StateNodeData } from '../../../types';
+	import type { LoaderNodeData, VFSNodeData, StateNodeData, FlowNodeData, VFSContent } from '../../../types';
 	import { getStudioContext } from '../../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { getNodeVfs } from '../../../vfs';
 	import { getNodeRDFStore } from '../../../rdf';
+	import { nodeStore } from '../../../persistence';
 	import BaseNode from '../BaseNode.svelte';
 	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -42,11 +46,27 @@
 	// Props & Context
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<LoaderNodeData, 'loader'>> = $props();
+	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'loader'>> = $props();
 	const ctx = getStudioContext();
 	const settings = getSettingsStore();
 	const allEdges = useEdges();
 	const updateNodeInternals = useUpdateNodeInternals();
+
+	// ============================================================================
+	// Node Data (persistent)
+	// ============================================================================
+
+	const nodeData = $derived(nodeStore.get(id) as LoaderNodeData | undefined);
+
+	// ============================================================================
+	// Runtime State (local, not persisted)
+	// ============================================================================
+
+	/** Error message from loader initialization */
+	let error = $state<string | null>(null);
+	
+	/** Registered services after successful initialization */
+	let registeredServices = $state<string[]>([]);
 
 	// ============================================================================
 	// Color Schemes
@@ -152,9 +172,9 @@
 		disconnectedColor: STATE_DISCONNECTED
 	});
 
-	/** Mountpoint handles from data.content.mountpoints */
+	/** Mountpoint handles from nodeData.content.mountpoints */
 	const mountpointHandles = $derived.by(() => {
-		const mounts = data.content.mountpoints ?? [];
+		const mounts = nodeData?.content?.mountpoints ?? [];
 		return mounts.map((mp): TaggedHandle => ({
 			id: createLoaderMountpointHandleId(mp.id),
 			label: mp.path,
@@ -171,10 +191,10 @@
 	const allHandles = $derived([backendHandle, stateHandle, ...mountpointHandles]);
 
 	/** Whether there's an error */
-	const hasError = $derived(data.error !== null);
+	const hasError = $derived(error !== null);
 
 	/** Whether the loader is ready (has registered services) */
-	const isReady = $derived(data.registeredServices.length > 0);
+	const isReady = $derived(registeredServices.length > 0);
 
 	// ============================================================================
 	// Local State
@@ -198,7 +218,7 @@
 
 	$effect(() => {
 		// Update node internals when mountpoints change
-		data.mountpoints;
+		nodeData?.mountpoints;
 		updateNodeInternals(id);
 	});
 
@@ -230,14 +250,9 @@
 				handleReload();
 			} else {
 				// Backend disconnected, destroy the loader and clear state
-				destroyLoader(id, (nodeId, updater) => {
-					ctx.updateNode(nodeId, (nodeData) => {
-						if (nodeData.type === 'LOADER') {
-							return updater(nodeData as LoaderNodeData);
-						}
-						return nodeData;
-					});
-				});
+				destroyLoader(id);
+				error = null;
+				registeredServices = [];
 				hasLoaded = false;
 			}
 		}
@@ -260,11 +275,11 @@
 			return;
 		}
 		
+		// updateMountpointPath now uses nodeStore directly
 		updateMountpointPath(
 			id,
 			mountpointId,
-			validPath,
-			ctx.updateNodes
+			validPath
 		);
 	}
 
@@ -273,7 +288,7 @@
 	}
 	
 	function handleMountpointValidation(_handleId: string, label: string, handleData?: Record<string, unknown>): string | null {
-		const existingMountpoints = data.content.mountpoints ?? [];
+		const existingMountpoints = nodeData?.content?.mountpoints ?? [];
 		const currentMountpointId = handleData?.mountpointId as string | undefined;
 		return validateMountpointPath(label, existingMountpoints, currentMountpointId);
 	}
@@ -293,29 +308,36 @@
 		
 		try {
 			// Find backend VFS
-			const backendVfsNode = findBackendVfsNode(id, ctx.nodes, ctx.edges);
-			if (!backendVfsNode) {
-				console.error('No backend VFS connected');
+			const backendVfsNodeId = findBackendVfsNode(id, ctx.nodes, ctx.edges);
+			if (!backendVfsNodeId) {
+				error = 'No backend VFS connected';
 				return;
 			}
 			
-			// Get backend VFS instance
-			const backendVfsData = backendVfsNode.data as VFSNodeData;
-			const backendVfs = await getNodeVfs(backendVfsData.content.projectId, backendVfsNode.id);
+			// Get backend VFS instance using nodeStore
+			const backendVfsData = nodeStore.get(backendVfsNodeId);
+			if (!backendVfsData || backendVfsData.type !== 'VFS') {
+				error = 'Backend VFS node data not found';
+				return;
+			}
+			const backendVfsContent = backendVfsData.content as VFSContent;
+			const backendVfs = await getNodeVfs(backendVfsContent.projectId, backendVfsNodeId);
 			
 			// Find mounted asset VFS nodes
-			const mountedVfsNodes = findMountedVfsNodes(id, ctx.nodes, ctx.edges);
+			const mountedVfsNodeIds = findMountedVfsNodes(id, ctx.nodes, ctx.edges);
 			const assetMounts = new Map<string, Vfs<VfsProvider>>();
 			
-			for (const [path, vfsNode] of mountedVfsNodes) {
-				const vfsData = vfsNode.data as VFSNodeData;
-				const vfs = await getNodeVfs(vfsData.content.projectId, vfsNode.id);
+			for (const [path, vfsNodeId] of mountedVfsNodeIds) {
+				const vfsData = nodeStore.get(vfsNodeId);
+				if (!vfsData || vfsData.type !== 'VFS') continue;
+				const vfsContent = vfsData.content as VFSContent;
+				const vfs = await getNodeVfs(vfsContent.projectId, vfsNodeId);
 				assetMounts.set(path, vfs);
 			}
 			
 			// Find State node and get RDF store (if connected)
-			const stateNode = findStateNode(id, ctx.nodes, ctx.edges);
-			const rdfStore = stateNode ? await getNodeRDFStore(stateNode.id) : undefined;
+			const stateNodeId = findStateNode(id, ctx.nodes, ctx.edges);
+			const rdfStore = stateNodeId ? await getNodeRDFStore(stateNodeId) : undefined;
 			
 			// Get LLM config from settings
 			const llmConfig = settings.api.apiKey && settings.api.selectedModel ? {
@@ -324,22 +346,21 @@
 				baseUrl: settings.effectiveBaseUrl
 			} : undefined;
 			
-			// Initialize loader
-			await initializeLoader(
+			// Initialize loader and get result
+			const result = await initializeLoader(
 				id,
 				backendVfs,
 				assetMounts,
 				rdfStore,
-				llmConfig,
-				(nodeId, updater) => {
-					ctx.updateNode(nodeId, (nodeData) => {
-						if (nodeData.type === 'LOADER') {
-							return updater(nodeData as LoaderNodeData);
-						}
-						return nodeData;
-					});
-				}
+				llmConfig
 			);
+			
+			// Update local state with result
+			error = result.error;
+			registeredServices = result.services;
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+			registeredServices = [];
 		} finally {
 			isLoading = false;
 		}
@@ -349,13 +370,8 @@
 		// Set reloading state - keep old data visible during reload
 		isReloading = true;
 		
-		// Clear error state only
-		ctx.updateNode(id, (nodeData) => {
-			if (nodeData.type === 'LOADER') {
-				return { ...nodeData, error: null } as LoaderNodeData;
-			}
-			return nodeData;
-		});
+		// Clear error state only (keep services visible during reload)
+		error = null;
 		
 		// Reset loading state and trigger reload
 		isLoading = false;
@@ -370,7 +386,6 @@
 
 <BaseNode
 	{id}
-	{data}
 	{selected}
 	{isConnectable}
 	nodeType="LOADER"
@@ -429,7 +444,7 @@
 						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
 						</svg>
-						<span class="text-sm font-medium">{data.registeredServices.length} services</span>
+						<span class="text-sm font-medium">{registeredServices.length} services</span>
 					</div>
 				{:else if hasError}
 					<div class="text-sm text-red-500">Load failed</div>
@@ -439,11 +454,11 @@
 			</div>
 
 			<!-- Registered Services List -->
-			{#if isReady && data.registeredServices.length > 0}
+			{#if isReady && registeredServices.length > 0}
 				<div class="border-t border-gray-200 pt-2">
 					<div class="text-xs font-medium text-gray-500 mb-1.5">Registered Services</div>
 					<div class="space-y-1 max-h-32 overflow-y-auto">
-						{#each data.registeredServices as service}
+						{#each registeredServices as service}
 							<div class="flex items-center gap-1.5 text-xs">
 								<span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
 								<span class="font-mono text-gray-700">{service}</span>
@@ -454,13 +469,13 @@
 			{/if}
 
 			<!-- Error Display -->
-			{#if hasError && data.error}
+			{#if hasError && error}
 				<div class="space-y-2">
 					<div class="flex items-start gap-2 p-2 bg-red-50 border border-red-200 rounded-lg">
 						<svg class="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
 						</svg>
-						<p class="text-xs text-red-700 break-all">{data.error}</p>
+						<p class="text-xs text-red-700 break-all">{error}</p>
 					</div>
 					<button
 						class="nodrag w-full px-3 py-1.5 text-xs font-medium bg-purple-500 text-white hover:bg-purple-600 rounded transition-colors disabled:opacity-50"

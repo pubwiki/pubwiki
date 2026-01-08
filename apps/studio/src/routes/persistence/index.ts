@@ -1,6 +1,15 @@
 /**
  * Studio Persistence - Unified exports
+ * 
+ * Version 2: Layer Separation Architecture
+ * - NodeStore: Business data (content, commit, snapshotRefs, etc.)
+ * - LayoutStore: Rendering positions (x, y)
+ * - Edges: Graph structure (separate from node data)
  */
+
+// ============================================================================
+// Database and Types
+// ============================================================================
 
 export {
   // Database instance and types
@@ -9,7 +18,8 @@ export {
   type StoredSnapshot,
   type StoredSnapshotEdge,
   type StoredPosition,
-  type StoredNode,
+  type StoredLayout,
+  type StoredNodeData,
   type StoredEdge,
   type StoredProject,
   
@@ -29,14 +39,6 @@ export {
   importSnapshots,
   clearSnapshots,
   
-  // Node operations
-  nodeToStored,
-  storedToNode,
-  saveNodes,
-  getNodes,
-  updateNode,
-  deleteNode,
-  
   // Edge operations
   edgeToStored,
   storedToEdge,
@@ -52,13 +54,15 @@ export {
   deleteProject,
   ensureProject,
   
-  // Helper functions
-  saveGraph,
-  loadGraph,
-  
   // Live queries
-  liveNodes,
   liveEdges,
   liveSnapshots,
   liveProjects
 } from './db';
+
+// ============================================================================
+// Stores (New Layer Separation)
+// ============================================================================
+
+export { nodeStore, type StudioNodeData } from './node-store.svelte';
+export { layoutStore, type NodeLayout } from './layout-store';

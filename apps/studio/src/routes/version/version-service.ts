@@ -8,6 +8,10 @@
  * - All persistent data is in node.data.content
  * - Content implements NodeContent interface with clone()/serialize() methods
  * - Commit hash is computed via content.serialize()
+ * 
+ * After layer separation refactoring:
+ * - Flow layer (positions) is separate from business layer (node data)
+ * - Business data is accessed via nodeStore or a getNodeData callback
  */
 
 import type { Node, Edge } from '@xyflow/svelte'
@@ -19,6 +23,7 @@ import type {
 	Versionable,
 	HistoricalTreeResult
 } from './types'
+import type { FlowNodeData } from '../types/flow'
 import { snapshotStore, generateCommitHash } from './snapshot-store'
 import type { NodeContent } from '../types/content'
 
@@ -208,19 +213,25 @@ export function getNodeSnapshots<T>(nodeData: Versionable): NodeSnapshot<T>[] {
  * 3. For deleted nodes, creates phantom nodes from snapshots
  * 4. Reconstructs historical edges from snapshots
  * 
+ * After layer separation:
+ * - allNodes contains flow data only (id, position, type)
+ * - getNodeData callback fetches business data from nodeStore
+ * 
  * @param versionRefs - Array of version references to process
  * @param refHolderNodeId - ID of the node that holds these references
  * @param refHolderPosition - Position of the ref holder node (for positioning phantoms)
- * @param allNodes - All current nodes in the graph
+ * @param allNodes - All current nodes in the graph (flow layer)
  * @param currentEdges - All current edges in the graph
+ * @param getNodeData - Callback to get business data for a node ID
  * @returns HistoricalTreeResult with overrides, phantoms, and edges
  */
 export function rebuildHistoricalTree<TData extends Versionable>(
 	versionRefs: NodeRef[],
 	refHolderNodeId: string,
 	refHolderPosition: { x: number; y: number } | undefined,
-	allNodes: Node<TData>[],
-	currentEdges: Edge[]
+	allNodes: Node<FlowNodeData>[],
+	currentEdges: Edge[],
+	getNodeData: (nodeId: string) => TData | undefined
 ): HistoricalTreeResult<TData> {
 	const nodeOverrides = new Map<string, TData>()
 	const phantomNodes: HistoricalTreeResult<TData>['phantomNodes'] = []
@@ -245,11 +256,14 @@ export function rebuildHistoricalTree<TData extends Versionable>(
 			// Node exists - mark as used
 			usedNodeIds.add(ref.id)
 
+			// Get business data from nodeStore via callback
+			const nodeData = getNodeData(existingNode.id)
+			
 			// Check if we need to show historical version
-			if (existingNode.data.commit !== ref.commit && snapshot) {
+			if (nodeData && nodeData.commit !== ref.commit && snapshot) {
 				// Create override with historical data
 				const historicalData: TData = {
-					...existingNode.data,
+					...nodeData,
 					content: snapshot.content,
 					commit: snapshot.commit
 				}
@@ -329,27 +343,39 @@ const OLD_VERSION_STYLE = 'stroke-dasharray: 5 5; stroke: #9ca3af;'
 /**
  * Check if an edge connects to a node using an old version reference.
  * 
+ * After layer separation:
+ * - nodes contains flow data only
+ * - getNodeData callback fetches business data
+ * 
  * @param edge - The edge to check
- * @param nodes - All nodes in the graph
+ * @param nodes - All nodes in the graph (flow layer)
+ * @param getNodeData - Callback to get business data for a node ID
  * @param getVersionRefs - Function to extract version refs from node data
  */
 export function isOldVersionEdge<TData extends Versionable>(
 	edge: Edge,
-	nodes: Node<TData>[],
+	nodes: Node<FlowNodeData>[],
+	getNodeData: (nodeId: string) => TData | undefined,
 	getVersionRefs: (data: TData) => NodeRef[] | undefined
 ): boolean {
 	const targetNode = nodes.find(n => n.id === edge.target)
 	if (!targetNode) return false
 
-	const refs = getVersionRefs(targetNode.data)
+	const targetData = getNodeData(targetNode.id)
+	if (!targetData) return false
+
+	const refs = getVersionRefs(targetData)
 	if (!refs) return false
 
 	const sourceNode = nodes.find(n => n.id === edge.source)
 	if (!sourceNode) return false
 
+	const sourceData = getNodeData(sourceNode.id)
+	if (!sourceData) return false
+
 	// Check if source is referenced at an old version
 	const matchingRef = refs.find(ref => ref.id === edge.source)
-	if (matchingRef && sourceNode.data.commit !== matchingRef.commit) {
+	if (matchingRef && sourceData.commit !== matchingRef.commit) {
 		return true
 	}
 
@@ -360,19 +386,25 @@ export function isOldVersionEdge<TData extends Versionable>(
  * Apply styling to edges based on version references.
  * Old version references get dashed styling.
  * 
+ * After layer separation:
+ * - nodes contains flow data only
+ * - getNodeData callback fetches business data
+ * 
  * @param edges - All edges in the graph
- * @param nodes - All nodes in the graph
+ * @param nodes - All nodes in the graph (flow layer)
+ * @param getNodeData - Callback to get business data for a node ID
  * @param getVersionRefs - Function to extract version refs from node data
  */
 export function styleEdgesForVersions<TData extends Versionable>(
 	edges: Edge[],
-	nodes: Node<TData>[],
+	nodes: Node<FlowNodeData>[],
+	getNodeData: (nodeId: string) => TData | undefined,
 	getVersionRefs: (data: TData) => NodeRef[] | undefined
 ): { edges: Edge[]; changed: boolean } {
 	let changed = false
 
 	const styledEdges = edges.map(edge => {
-		const shouldBeDashed = isOldVersionEdge(edge, nodes, getVersionRefs)
+		const shouldBeDashed = isOldVersionEdge(edge, nodes, getNodeData, getVersionRefs)
 
 		if (shouldBeDashed) {
 			if (edge.style !== OLD_VERSION_STYLE) {

@@ -2,16 +2,16 @@
  * Studio Context
  * 
  * Provides dependency injection for studio components via Svelte context.
- * This is a minimal, generic context focused on:
- * - Core flow state (nodes, edges)
- * - Common UI state (editing node)
- * - Generic operations (update node, restore, etc.)
  * 
- * Node-specific logic (generate, regenerate) belongs in node controllers, not here.
+ * Version 2 - Layer Separation:
+ * - Node business data is accessed via nodeStore (not through context)
+ * - Context provides flow state (edges) and UI state (editing node)
+ * - updateNode now updates via nodeStore
  */
 
 import { getContext, setContext } from 'svelte';
 import type { Node, Edge } from '@xyflow/svelte';
+import type { FlowNodeData } from '../types/flow';
 import type { StudioNodeData } from '../types';
 import type { NodeRef, SnapshotEdge } from '../version';
 
@@ -35,31 +35,37 @@ export interface PreviewState {
 
 /**
  * Studio context interface - provides access to shared state and operations
- * Note: Node-specific operations like generate/regenerate are handled by node controllers
+ * 
+ * Note: Business data is accessed via nodeStore, not through this context.
+ * This context provides:
+ * - Flow state (nodes for rendering, edges)
+ * - UI state (editing node)
+ * - Operations that affect flow (not business data)
  */
 export interface StudioContext {
-	// State accessors (using getters for reactive access)
-	readonly nodes: Node<StudioNodeData>[];
+	// Flow state accessors (rendering layer)
+	readonly nodes: Node<FlowNodeData>[];
 	readonly edges: Edge[];
 	readonly editingNodeId: string | null;
 	readonly editingNameNodeId: string | null;
 	
-	// State mutations - generic
-	setNodes: (nodes: Node<StudioNodeData>[]) => void;
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void;
-	updateNode: (id: string, updater: (data: StudioNodeData) => StudioNodeData) => void;
+	// Flow state mutations
+	setNodes: (nodes: Node<FlowNodeData>[]) => void;
+	updateNodes: (updater: (nodes: Node<FlowNodeData>[]) => Node<FlowNodeData>[]) => void;
 	setEdges: (edges: Edge[]) => void;
 	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
 	setEditingNodeId: (id: string | null) => void;
 	setEditingNameNodeId: (id: string | null) => void;
 	
+	// Business data mutations (delegates to nodeStore)
+	updateNodeData: (id: string, updater: (data: StudioNodeData) => StudioNodeData) => void;
+	
 	// Textarea registry for focus control
 	registerTextarea: (id: string, el: HTMLTextAreaElement) => void;
 	unregisterTextarea: (id: string) => void;
 	
-	// Operations - generic only
+	// Operations
 	onRestore: (nodeId: string, snapshotRef: NodeRef) => void;
-	saveVersionBeforeEdit: (nodeId: string) => Promise<void>;
 	
 	// Preview state (for historical version display)
 	getPreviewState: (nodeId: string) => PreviewState | null;

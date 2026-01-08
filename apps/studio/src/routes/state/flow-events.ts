@@ -7,7 +7,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData } from '../types';
+import type { FlowNodeData } from '../types/flow';
 
 // ============================================================================
 // Event Types
@@ -20,11 +20,11 @@ export interface ConnectionEvent {
 	sourceHandle: string | null;
 	targetHandle: string | null;
 	/** Current nodes state (read-only snapshot for inspection) */
-	nodes: Node<StudioNodeData>[];
+	nodes: Node<FlowNodeData>[];
 	/** Current edges state (read-only snapshot for inspection) */
 	edges: Edge[];
 	/** Callback to update nodes */
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void;
+	updateNodes: (updater: (nodes: Node<FlowNodeData>[]) => Node<FlowNodeData>[]) => void;
 	/** Callback to update edges */
 	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
 }
@@ -33,12 +33,12 @@ export interface EdgeDeleteEvent {
 	type: 'edge-delete';
 	edge: Edge;
 	/** Callback to update nodes */
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void;
+	updateNodes: (updater: (nodes: Node<FlowNodeData>[]) => Node<FlowNodeData>[]) => void;
 }
 
 export interface NodeDeleteEvent {
 	type: 'node-delete';
-	node: Node<StudioNodeData>;
+	node: Node<FlowNodeData>;
 }
 
 export type FlowEvent = ConnectionEvent | EdgeDeleteEvent | NodeDeleteEvent;

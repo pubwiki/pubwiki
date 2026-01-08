@@ -12,9 +12,10 @@
 	 */
 	import { useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { InputNodeData } from '../../../types';
+	import type { InputNodeData, FlowNodeData } from '../../../types';
 	import { getStudioContext } from '../../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
+	import { nodeStore } from '../../../persistence';
 	import * as m from '$lib/paraglide/messages';
 	import { 
 		HandleId,
@@ -45,7 +46,7 @@
 	// Props
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<InputNodeData, 'input'>> = $props();
+	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'input'>> = $props();
 
 	// ============================================================================
 	// Context
@@ -55,6 +56,12 @@
 	const settings = getSettingsStore();
 	const allEdges = useEdges();
 	const updateNodeInternals = useUpdateNodeInternals();
+
+	// ============================================================================
+	// Node Data
+	// ============================================================================
+
+	const nodeData = $derived(nodeStore.get(id) as InputNodeData | undefined);
 
 	// ============================================================================
 	// Color Schemes
@@ -115,9 +122,9 @@
 
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	const displayContent = $derived(previewState?.content ?? data.content.text);
+	const displayContent = $derived(previewState?.content ?? nodeData?.content?.text ?? '');
 
-	const contentTags = $derived(getInputTags(data.content.text));
+	const contentTags = $derived(getInputTags(nodeData?.content?.text ?? ''));
 
 	const tagConnections = $derived.by(() => {
 		if (previewState?.incomingEdges) {
@@ -167,7 +174,7 @@
 	});
 
 	const mountpointHandles = $derived.by(() => {
-		const mounts = data.content.mountpoints ?? [];
+		const mounts = nodeData?.content?.mountpoints ?? [];
 		return mounts.map((mp): TaggedHandle => ({
 			id: createMountpointHandleId(mp.id),
 			label: mp.path,
@@ -193,7 +200,7 @@
 
 	$effect(() => {
 		contentTags;
-		data.content.mountpoints;
+		nodeData?.content?.mountpoints;
 		updateNodeInternals(id);
 	});
 
@@ -212,8 +219,8 @@
 	}
 
 	function handleContentChange(newValue: string) {
-		ctx.updateNode(id, (nodeData) => {
-			const inputData = nodeData as InputNodeData;
+		ctx.updateNodeData(id, (data) => {
+			const inputData = data as InputNodeData;
 			return {
 				...inputData,
 				content: inputData.content.withText(newValue)
@@ -223,7 +230,7 @@
 
 	async function handleGenerate() {
 		const callbacks = {
-			updateNodes: ctx.updateNodes,
+			updateNodeData: ctx.updateNodeData,
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {
@@ -247,12 +254,11 @@
 			return;
 		}
 		
+		// updateMountpointPath now uses nodeStore directly
 		updateMountpointPath(
 			id,
 			mountpointId,
-			validPath,
-			ctx.updateNodes,
-			ctx.updateEdges
+			validPath
 		);
 	}
 
@@ -261,7 +267,7 @@
 	}
 	
 	function handleMountpointValidation(_handleId: string, label: string, handleData?: Record<string, unknown>): string | null {
-		const existingMountpoints = data.content.mountpoints ?? [];
+		const existingMountpoints = nodeData?.content?.mountpoints ?? [];
 		// Get the mountpoint ID being edited from handle data
 		const currentMountpointId = handleData?.mountpointId as string | undefined;
 		return validateMountpointPath(label, existingMountpoints, currentMountpointId);
@@ -277,7 +283,6 @@
 
 <BaseNode
 	{id}
-	{data}
 	{selected}
 	{isConnectable}
 	nodeType="INPUT"

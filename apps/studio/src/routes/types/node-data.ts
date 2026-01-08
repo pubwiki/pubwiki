@@ -54,6 +54,14 @@ export {
 
 /**
  * Base node data interface with version control
+ * 
+ * Contains ONLY persistent data that should be:
+ * - Stored in IndexedDB
+ * - Snapshotted for version control
+ * - Published to backend
+ * 
+ * Runtime/UI states should be managed in the component's local state.
+ * 
  * @template T - Content type (must implement NodeContent interface)
  */
 export interface BaseNodeData<T extends NodeContent> {
@@ -71,8 +79,6 @@ export interface BaseNodeData<T extends NodeContent> {
   content: T
   /** Whether this node references external artifact (not included in export) */
   external?: boolean
-  /** Runtime flag: Whether this is a phantom node (used during version preview) */
-  isPhantom?: boolean
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }
@@ -95,8 +101,6 @@ export interface InputNodeData extends BaseNodeData<InputContent> {
  */
 export interface PromptNodeData extends BaseNodeData<PromptContent> {
   type: 'PROMPT'
-  /** UI State: Whether this node is currently being edited */
-  isEditing?: boolean
 }
 
 /**
@@ -110,8 +114,6 @@ export type { MessageBlock, MessageBlockType, ToolCallStatus } from '@pubwiki/ch
  */
 export interface GeneratedNodeData extends BaseNodeData<GeneratedContent> {
   type: 'GENERATED'
-  /** UI State: Whether content is being streamed into this node */
-  isStreaming?: boolean
 }
 
 /**
@@ -121,12 +123,6 @@ export interface GeneratedNodeData extends BaseNodeData<GeneratedContent> {
  */
 export interface VFSNodeData extends BaseNodeData<VFSContent> {
   type: 'VFS'
-  /** UI State: Expanded folder paths */
-  expandedFolders?: string[]
-  /** UI State: Currently selected file path */
-  selectedFilePath?: string
-  /** Index signature for xyflow compatibility */
-  [key: string]: unknown
 }
 
 /**
@@ -135,12 +131,6 @@ export interface VFSNodeData extends BaseNodeData<VFSContent> {
  */
 export interface SandboxNodeData extends BaseNodeData<SandboxContent> {
   type: 'SANDBOX'
-  /** Runtime State: Whether the sandbox is currently running */
-  isRunning: boolean
-  /** Runtime State: Current error message (if any) */
-  error: string | null
-  /** Index signature for xyflow compatibility */
-  [key: string]: unknown
 }
 
 /**
@@ -149,12 +139,6 @@ export interface SandboxNodeData extends BaseNodeData<SandboxContent> {
  */
 export interface LoaderNodeData extends BaseNodeData<LoaderContent> {
   type: 'LOADER'
-  /** Runtime State: Error message (if any) */
-  error: string | null
-  /** Runtime State: Registered services list (from ServiceRegistry) */
-  registeredServices: string[]
-  /** Index signature for xyflow compatibility */
-  [key: string]: unknown
 }
 
 /**
@@ -163,14 +147,6 @@ export interface LoaderNodeData extends BaseNodeData<LoaderContent> {
  */
 export interface StateNodeData extends BaseNodeData<StateContent> {
   type: 'STATE'
-  /** Runtime State: Whether the RDF store is currently open and ready */
-  isReady: boolean
-  /** Runtime State: Error state if store initialization failed */
-  error: string | null
-  /** Runtime State: Number of triples currently in the store (for display) */
-  tripleCount: number
-  /** Index signature for xyflow compatibility */
-  [key: string]: unknown
 }
 
 /**
@@ -221,8 +197,7 @@ export async function createPromptNodeData(
     commit,
     snapshotRefs: [],
     parents,
-    content: new PromptContent(text),
-    isEditing: false
+    content: new PromptContent(text)
   }
 }
 
@@ -247,8 +222,7 @@ export async function createGeneratedNodeData(
     commit,
     snapshotRefs: [],
     parents,
-    content,
-    isStreaming: false
+    content
   }
 }
 
@@ -269,10 +243,7 @@ export async function createVFSNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content,
-    expandedFolders: [],
-    selectedFilePath: undefined,
-    isExpandedViewOpen: false
+    content
   }
 }
 
@@ -293,9 +264,7 @@ export async function createSandboxNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content,
-    isRunning: false,
-    error: null
+    content
   }
 }
 
@@ -315,9 +284,7 @@ export async function createLoaderNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content,
-    error: null,
-    registeredServices: []
+    content
   }
 }
 
@@ -337,9 +304,6 @@ export async function createStateNodeData(
     commit,
     snapshotRefs: [],
     parents: [],
-    content,
-    isReady: false,
-    error: null,
-    tripleCount: 0
+    content
   }
 }

@@ -13,10 +13,12 @@ import type {
 	GeneratedNodeData,
 	InputNodeData
 } from '../../../types';
+import type { FlowNodeData } from '../../../types/flow';
 import type { GeneratedContent, InputContent } from '../../../types';
 import type { MessageBlock } from '@pubwiki/chat';
 import { snapshotStore, generateCommitHash, registerVersionHandler, type NodeRef } from '../../../version';
 import { resolvePromptContentFromRefs } from '../../../graph';
+import { nodeStore } from '../../../persistence';
 import { 
 	PubChat, 
 	MemoryMessageStore, 
@@ -24,6 +26,47 @@ import {
 	generateBlockId, 
 	blocksToContent 
 } from '@pubwiki/chat';
+
+// ============================================================================
+// Streaming Event System
+// ============================================================================
+
+/**
+ * Simple event system for streaming state changes.
+ * Components register callbacks, controllers notify them.
+ */
+type StreamingCallback = (streaming: boolean) => void;
+const streamingCallbacks = new Map<string, StreamingCallback>();
+const pendingStreaming = new Set<string>();
+
+/**
+ * Register a callback for streaming state changes.
+ * If the node is already streaming, callback is called immediately with true.
+ * Returns unsubscribe function.
+ */
+export function onStreamingChange(nodeId: string, callback: StreamingCallback): () => void {
+	streamingCallbacks.set(nodeId, callback);
+	// If already streaming when registered, notify immediately
+	if (pendingStreaming.has(nodeId)) {
+		callback(true);
+	}
+	return () => {
+		streamingCallbacks.delete(nodeId);
+	};
+}
+
+/**
+ * Notify streaming state change for a node.
+ * Called by controllers when streaming starts/ends.
+ */
+export function notifyStreamingChange(nodeId: string, streaming: boolean): void {
+	if (streaming) {
+		pendingStreaming.add(nodeId);
+	} else {
+		pendingStreaming.delete(nodeId);
+	}
+	streamingCallbacks.get(nodeId)?.(streaming);
+}
 
 // ============================================================================
 // Types
@@ -151,8 +194,8 @@ export async function streamGeneration(
  * Callbacks for regeneration operations
  */
 export interface RegenerationCallbacks {
-	/** Called to update nodes */
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void;
+	/** Called to update a specific node's data */
+	updateNodeData: (nodeId: string, updater: (data: StudioNodeData) => StudioNodeData) => void;
 	/** Called to update edges */
 	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
 	/** Called when regeneration completes successfully */
@@ -165,35 +208,38 @@ export interface RegenerationCallbacks {
  * reconstruct the exact context that was used for the original generation,
  * including reftag-substituted content.
  * 
+ * After layer separation:
+ * - Uses FlowNodeData for flow layer
+ * - Uses nodeStore for business data
+ * 
  * @param config - LLM configuration (apiKey, model, baseUrl)
  * @param generatedNodeId - The ID of the generated node to regenerate
- * @param nodes - Current nodes array
+ * @param nodes - Current nodes array (flow layer)
  * @param edges - Current edges array
  * @param callbacks - Callbacks for state updates
  */
 export async function regenerate(
 	config: GenerationConfig,
 	generatedNodeId: string,
-	nodes: Node<StudioNodeData>[],
+	nodes: Node<FlowNodeData>[],
 	edges: Edge[],
 	callbacks: RegenerationCallbacks
 ): Promise<void> {
-	const generatedNode = nodes.find(n => n.id === generatedNodeId);
-	if (!generatedNode || generatedNode.data.type !== 'GENERATED') {
+	const genData = nodeStore.get(generatedNodeId) as GeneratedNodeData | undefined;
+	if (!genData || genData.type !== 'GENERATED') {
 		throw new Error('Invalid generated node');
 	}
 
-	const genData = generatedNode.data as GeneratedNodeData;
 	const genContent = genData.content as GeneratedContent;
 
 	// Get the historical input content
-	const inputNode = nodes.find(n => n.id === genContent.inputRef.id);
+	const inputData = nodeStore.get(genContent.inputRef.id) as InputNodeData | undefined;
 	let inputContent: string;
 	
 	// If the input ref points to an old version, get it from snapshotStore
-	if (inputNode && inputNode.data.commit === genContent.inputRef.commit) {
+	if (inputData && inputData.commit === genContent.inputRef.commit) {
 		// Current version matches the ref - use current content
-		inputContent = (inputNode.data as InputNodeData).content.text;
+		inputContent = inputData.content.text;
 	} else {
 		// Different version - get from snapshot store
 		const snapshot = snapshotStore.get<InputContent>(genContent.inputRef.id, genContent.inputRef.commit);
@@ -225,37 +271,29 @@ export async function regenerate(
 
 	const systemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
 
-	// Set streaming state and clear blocks
-	callbacks.updateNodes(nodes => nodes.map(n => {
-		if (n.id === generatedNodeId && n.data.type === 'GENERATED') {
-			const genData = n.data as GeneratedNodeData;
-			return { 
-				...n, 
-				data: { 
-					...genData, 
-					isStreaming: true, 
-					content: genData.content.withBlocks([]) 
-				} 
-			};
-		}
-		return n;
-	}) as Node<StudioNodeData>[]);
+	// Notify streaming start and clear blocks via nodeStore
+	notifyStreamingChange(generatedNodeId, true);
+	nodeStore.update(generatedNodeId, (data) => {
+		const genData = data as GeneratedNodeData;
+		return {
+			...genData,
+			content: genData.content.withBlocks([])
+		};
+	});
 
 	// Helper to update blocks in a generated node
 	const updateBlocks = (nodeId: string, updater: (blocks: MessageBlock[]) => MessageBlock[]) => {
-		callbacks.updateNodes(nodes => nodes.map(n => {
-			if (n.id === nodeId && n.data.type === 'GENERATED') {
-				const genData = n.data as GeneratedNodeData;
+		const currentData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
+		if (currentData && currentData.type === 'GENERATED') {
+			const newBlocks = updater(currentData.content.blocks || []);
+			nodeStore.update(nodeId, (data) => {
+				const genData = data as GeneratedNodeData;
 				return {
-					...n,
-					data: {
-						...genData,
-						content: genData.content.withBlocks(updater(genData.content.blocks || []))
-					}
+					...genData,
+					content: genData.content.withBlocks(newBlocks)
 				};
-			}
-			return n;
-		}) as Node<StudioNodeData>[]);
+			});
+		}
 	};
 
 	// Define stream callbacks using MessageBlock model
@@ -316,47 +354,25 @@ export async function regenerate(
 			});
 		},
 		onDone: async (nodeId, _finalContent, _finalCommit) => {
-			// Compute commit from blocks content
-			callbacks.updateNodes(nodes => nodes.map(n => {
-				if (n.id === nodeId && n.data.type === 'GENERATED') {
-					const genData = n.data as GeneratedNodeData;
-					const genContent = genData.content as GeneratedContent;
-					const content = blocksToContent(genContent.blocks || []);
-					// Note: We compute commit synchronously here for simplicity
-					// The actual commit will be computed after streaming is done
-					return {
-						...n,
-						data: {
-							...genData,
-							isStreaming: false
-						}
-					};
-				}
-				return n;
-			}) as Node<StudioNodeData>[]);
+			// Notify streaming complete
+			notifyStreamingChange(nodeId, false);
 			
-			// Compute and update commit hash asynchronously
-			const node = nodes.find(n => n.id === nodeId);
-			if (node && node.data.type === 'GENERATED') {
-				const genData = node.data as GeneratedNodeData;
-				const genContent = genData.content as GeneratedContent;
-				const blocksJson = JSON.stringify(genContent.blocks || []);
+			// Compute and update commit hash
+			const updatedData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
+			if (updatedData && updatedData.type === 'GENERATED') {
+				const blocksJson = JSON.stringify(updatedData.content.blocks || []);
 				const commit = await generateCommitHash(blocksJson);
-				callbacks.updateNodes(ns => ns.map(n =>
-					n.id === nodeId && n.data.type === 'GENERATED'
-						? { ...n, data: { ...n.data, commit } }
-						: n
-				) as Node<StudioNodeData>[]);
+				nodeStore.update(nodeId, (data) => ({
+					...data,
+					commit
+				}));
 			}
 			
 			callbacks.onComplete?.();
 		},
 		onError: (nodeId, _error) => {
-			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type === 'GENERATED' 
-					? { ...n, data: { ...n.data, isStreaming: false } } 
-					: n
-			) as Node<StudioNodeData>[]);
+			// Notify streaming complete on error
+			notifyStreamingChange(nodeId, false);
 		}
 	};
 

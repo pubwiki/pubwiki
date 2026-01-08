@@ -4,19 +4,22 @@
 	 * Replaces the PublishModal with an inline experience
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
-	import type { StudioNodeData, GeneratedNodeData } from '../../types';
+	import type { FlowNodeData } from '../../types/flow';
+	import type { GeneratedNodeData } from '../../types';
+	import type { StudioNodeData } from '../../types';
 	import type { NodeRef } from '../../version';
 	import type { PublishMetadata } from '../../io';
+	import { nodeStore } from '../../persistence/node-store.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
-		nodes: Node<StudioNodeData>[];
+		nodes: Node<FlowNodeData>[];
 		edges: Edge[];
 		projectId: string;
 		projectName: string;
 		isDraft: boolean;
 		isAuthenticated: boolean;
-		onPublish: (metadata: PublishMetadata, nodes: Node<StudioNodeData>[], edges: Edge[]) => Promise<void>;
+		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
 	}
 
 	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, onPublish }: Props = $props();
@@ -56,33 +59,36 @@
 	});
 
 	// Check if a NodeRef references a historical version
-	function isHistoricalRef(ref: NodeRef, allNodes: Node<StudioNodeData>[]): boolean {
-		const targetNode = allNodes.find((n) => n.id === ref.id);
-		if (!targetNode) return true;
-		return targetNode.data.commit !== ref.commit;
+	function isHistoricalRef(ref: NodeRef, getNodeData: (id: string) => StudioNodeData | undefined): boolean {
+		const targetNodeData = getNodeData(ref.id);
+		if (!targetNodeData) return true;
+		return targetNodeData.commit !== ref.commit;
 	}
 
 	// Check if a generated node references any historical versions
 	function referencesHistoricalVersions(
 		nodeData: GeneratedNodeData,
-		allNodes: Node<StudioNodeData>[]
+		getNodeData: (id: string) => StudioNodeData | undefined
 	): boolean {
-		if (isHistoricalRef(nodeData.content.inputRef, allNodes)) return true;
+		if (isHistoricalRef(nodeData.content.inputRef, getNodeData)) return true;
 		for (const ref of nodeData.content.promptRefs) {
-			if (isHistoricalRef(ref, allNodes)) return true;
+			if (isHistoricalRef(ref, getNodeData)) return true;
 		}
 		for (const ref of nodeData.content.indirectPromptRefs) {
-			if (isHistoricalRef(ref, allNodes)) return true;
+			if (isHistoricalRef(ref, getNodeData)) return true;
 		}
 		return false;
 	}
 
 	// Get nodes that will be published
 	let nodesToPublish = $derived.by(() => {
+		const getNodeData = (id: string) => nodeStore.get(id);
 		return nodes.filter((node) => {
-			if (node.data.external) return false;
-			if (node.data.type === 'GENERATED') {
-				if (referencesHistoricalVersions(node.data as GeneratedNodeData, nodes)) {
+			const nodeData = getNodeData(node.id);
+			if (!nodeData) return false;
+			if (nodeData.external) return false;
+			if (nodeData.type === 'GENERATED') {
+				if (referencesHistoricalVersions(nodeData as GeneratedNodeData, getNodeData)) {
 					return false;
 				}
 			}
@@ -92,7 +98,7 @@
 
 	// Group nodes by type
 	let nodesByType = $derived.by(() => {
-		const groups: Record<string, Node<StudioNodeData>[]> = {
+		const groups: Record<string, Node<FlowNodeData>[]> = {
 			PROMPT: [],
 			INPUT: [],
 			GENERATED: [],
@@ -103,8 +109,9 @@
 		};
 		
 		for (const node of nodesToPublish) {
-			if (node.data.type in groups) {
-				groups[node.data.type].push(node);
+			const nodeType = node.data.type;
+			if (nodeType in groups) {
+				groups[nodeType].push(node);
 			}
 		}
 		
@@ -190,8 +197,9 @@
 		}
 	}
 
-	function getNodeDisplayName(node: Node<StudioNodeData>): string {
-		return node.data.name || node.id.slice(0, 8);
+	function getNodeDisplayName(node: Node<FlowNodeData>): string {
+		const nodeData = nodeStore.get(node.id);
+		return nodeData?.name || node.id.slice(0, 8);
 	}
 
 	function getCategoryLabel(type: string): string {

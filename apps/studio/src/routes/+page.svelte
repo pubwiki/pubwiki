@@ -12,12 +12,12 @@
 				
 				if (currentProjectId) {
 					// Redirect to the existing current project
-					goto(`/studio/${currentProjectId}`, { replaceState: true });
+					goto(`/${currentProjectId}`, { replaceState: true });
 				} else {
 					// Generate a new temporary UUID and redirect
 					const tempId = crypto.randomUUID();
 					setCurrentProject(tempId);
-					goto(`/studio/${tempId}`, { replaceState: true });
+					goto(`/${tempId}`, { replaceState: true });
 				}
 			})();
 		}

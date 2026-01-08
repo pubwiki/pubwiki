@@ -7,13 +7,19 @@
  * - All node content is stored in node.data.content
  * - Content is uploaded as JSON for structured data preservation
  * - VFS nodes upload all files and include file list in descriptor
+ * 
+ * After layer separation:
+ * - FlowNodeData for flow layer
+ * - nodeStore for business data
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, VFSNodeData } from '../types';
+import type { FlowNodeData } from '../types/flow';
 import type { ArtifactType, VisibilityType } from '$lib/types';
 import { API_BASE_URL } from '$lib/config';
 import { getNodeVfs } from '../vfs';
+import { nodeStore } from '../persistence';
 
 /**
  * Metadata for publishing an artifact
@@ -265,16 +271,32 @@ export interface PublishResult {
 
 /**
  * Publish nodes as an artifact to the backend
+ * 
+ * After layer separation:
+ * - Takes FlowNodeData nodes from flow layer
+ * - Gets business data from nodeStore
  */
 export async function publishArtifact(
 	metadata: PublishMetadata,
-	nodes: Node<StudioNodeData>[],
+	flowNodes: Node<FlowNodeData>[],
 	edges: Edge[],
 	token: string | null
 ): Promise<PublishResult> {
 	if (!token) {
 		return { success: false, error: 'Authentication required' };
 	}
+
+	// Reconstruct full nodes with business data from nodeStore
+	const nodes: Node<StudioNodeData>[] = flowNodes
+		.map(n => {
+			const data = nodeStore.get(n.id);
+			if (!data) return null;
+			return {
+				...n,
+				data: data as StudioNodeData
+			};
+		})
+		.filter((n): n is Node<StudioNodeData> => n !== null);
 
 	const descriptor = await createDescriptor(nodes, edges);
 	const formData = await createFormData(metadata, descriptor, nodes);

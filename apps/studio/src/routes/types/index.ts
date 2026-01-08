@@ -47,3 +47,7 @@ export {
   StateContent as StateContentClass,
   restoreContent as restoreContentFromJSON
 } from './content';
+
+// Flow types (for SvelteFlow rendering layer)
+export type { FlowNodeData, FlowNode } from './flow';
+export { createFlowNode, getFlowNodeType } from './flow';

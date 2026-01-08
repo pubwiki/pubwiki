@@ -11,9 +11,10 @@
 	 */
 	import { Handle, Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import type { VFSNodeData } from '../../../types';
+	import type { VFSNodeData, FlowNodeData } from '../../../types';
 	import { getNodeVfs, type VersionedVfs } from '../../../vfs';
 	import { getStudioContext } from '../../../state';
+	import { nodeStore } from '../../../persistence';
 	import BaseNode from '../BaseNode.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -32,8 +33,14 @@
 	// Props & Context
 	// ============================================================================
 
-	let { data, isConnectable, selected, id }: NodeProps<Node<VFSNodeData, 'vfs'>> = $props();
+	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'vfs'>> = $props();
 	const ctx = getStudioContext();
+
+	// ============================================================================
+	// Node Data
+	// ============================================================================
+
+	const nodeData = $derived(nodeStore.get(id) as VFSNodeData | undefined);
 
 	// ============================================================================
 	// State (shared with expanded view)
@@ -78,31 +85,27 @@
 	}
 
 	// ============================================================================
-	// State Persistence
+	// UI State Helpers
 	// ============================================================================
 
-	/**
-	 * Persist UI state to node data (saved to IndexedDB via graph state)
-	 */
-	function persistUIState(updates: Partial<{
-		expandedFolders: string[];
-	}>) {
-		ctx.updateNode(id, (nodeData) => ({
-			...nodeData,
-			...updates
-		}));
-	}
+	// Note: UI state (expandedFolders) is now local only, not persisted
 
 	// ============================================================================
 	// Initialization
 	// ============================================================================
 
 	onMount(async () => {
-		// Initialize UI state from persisted data
-		expandedFolders = new Set(data.expandedFolders ?? []);
+		// Note: expandedFolders is now local state only, not persisted
+		// It resets when the page reloads
+		
+		if (!nodeData?.content?.projectId) {
+			error = 'Missing project ID';
+			isLoading = false;
+			return;
+		}
 		
 		try {
-			vfs = await getNodeVfs(data.content.projectId, id);
+			vfs = await getNodeVfs(nodeData.content.projectId, id);
 			await refreshFileTree();
 			
 			// Subscribe to VFS events for reactive updates
@@ -208,8 +211,7 @@
 			newExpanded.add(path);
 		}
 		expandedFolders = newExpanded;
-		// Persist expanded folders
-		persistUIState({ expandedFolders: Array.from(newExpanded) });
+		// Note: expandedFolders is local state only, not persisted
 	}
 
 	// Action to capture wheel events and prevent canvas zoom/pan
@@ -240,7 +242,6 @@
 
 <BaseNode
 	{id}
-	{data}
 	{selected}
 	{isConnectable}
 	nodeType="VFS"

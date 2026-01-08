@@ -17,6 +17,7 @@ import type {
 	Mountpoint,
 	GeneratedNodeData
 } from '../../../types';
+import type { FlowNodeData } from '../../../types/flow';
 import type { MessageBlock } from '@pubwiki/chat';
 import { createGeneratedNodeData } from '../../../types';
 import { 
@@ -41,9 +42,13 @@ import { generateCommitHash } from '../../../version';
 import { 
 	createPubChat, 
 	streamGeneration, 
+	notifyStreamingChange,
 	type StreamGenerationCallbacks,
 	type GenerationConfig
 } from '../generated/controller.svelte';
+import { nodeStore, layoutStore } from '../../../persistence';
+
+
 
 // ============================================================================
 // State
@@ -119,28 +124,25 @@ export function setEditingMountpoint(mp: { nodeId: string; mountpointId: string 
 /**
  * Update a mountpoint path in an Input node
  * Note: Since we use stable IDs for handles, we only need to update the node data, not the edges
+ * Now uses nodeStore directly, no longer requires updateNodes/updateEdges callbacks
  */
 export function updateMountpointPath(
 	nodeId: string,
 	mountpointId: string,
-	newPath: string,
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void,
-	_updateEdges: (updater: (edges: Edge[]) => Edge[]) => void
+	newPath: string
 ): void {
-	// Update the mountpoint path in the Input node
-	updateNodes(nodes => nodes.map(n => {
-		if (n.id === nodeId && n.data.type === 'INPUT') {
-			const inputData = n.data as InputNodeData;
+	// Update the mountpoint path in the Input node via nodeStore
+	const nodeData = nodeStore.get(nodeId);
+	if (nodeData && nodeData.type === 'INPUT') {
+		const inputData = nodeData as InputNodeData;
+		nodeStore.update(nodeId, (data) => {
+			const input = data as InputNodeData;
 			return {
-				...n,
-				data: {
-					...inputData,
-					content: inputData.content.updateMountpointPath(mountpointId, newPath)
-				}
+				...input,
+				content: inputData.content.updateMountpointPath(mountpointId, newPath)
 			};
-		}
-		return n;
-	}));
+		});
+	}
 	// No need to update edges - they use the stable mountpoint ID
 }
 
@@ -157,10 +159,10 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 		return false;
 	}
 
-	// Get existing mountpoints for validation
-	const targetNode = event.nodes.find(n => n.id === event.target);
-	const existingMountpoints = targetNode?.data.type === 'INPUT' 
-		? (targetNode.data as InputNodeData).content.mountpoints ?? []
+	// Get existing mountpoints for validation from nodeStore
+	const nodeData = nodeStore.get(event.target);
+	const existingMountpoints = nodeData?.type === 'INPUT' 
+		? (nodeData as InputNodeData).content.mountpoints ?? []
 		: [];
 
 	// Use the initial placeholder path - user will edit it
@@ -177,20 +179,17 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 	const newMountpointId = generateMountpointId();
 	const newMountpoint: Mountpoint = { id: newMountpointId, path: newMountPath };
 	
-	// Update the Input node to add the new mountpoint
-	event.updateNodes(nodes => nodes.map(n => {
-		if (n.id === event.target && n.data.type === 'INPUT') {
-			const data = n.data as InputNodeData;
+	// Update the Input node to add the new mountpoint via nodeStore
+	if (nodeData && nodeData.type === 'INPUT') {
+		const inputData = nodeData as InputNodeData;
+		nodeStore.update(event.target, (data) => {
+			const input = data as InputNodeData;
 			return {
-				...n,
-				data: {
-					...data,
-					content: data.content.addMountpoint(newMountpoint)
-				}
+				...input,
+				content: inputData.content.addMountpoint(newMountpoint)
 			};
-		}
-		return n;
-	}));
+		});
+	}
 
 	// Create edge to the new mountpoint handle (using stable ID)
 	const newEdge: Edge = {
@@ -231,20 +230,18 @@ function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
 	const mountpointId = getMountpointId(event.edge.targetHandle!);
 	const targetNodeId = event.edge.target;
 
-	// Remove the mountpoint from the Input node
-	event.updateNodes(nodes => nodes.map(n => {
-		if (n.id === targetNodeId && n.data.type === 'INPUT') {
-			const inputData = n.data as InputNodeData;
+	// Remove the mountpoint from the Input node via nodeStore
+	const nodeData = nodeStore.get(targetNodeId);
+	if (nodeData && nodeData.type === 'INPUT') {
+		const inputData = nodeData as InputNodeData;
+		nodeStore.update(targetNodeId, (data) => {
+			const input = data as InputNodeData;
 			return {
-				...n,
-				data: {
-					...inputData,
-					content: inputData.content.removeMountpoint(mountpointId)
-				}
+				...input,
+				content: inputData.content.removeMountpoint(mountpointId)
 			};
-		}
-		return n;
-	}));
+		});
+	}
 }
 
 // ============================================================================
@@ -253,22 +250,25 @@ function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
 
 /**
  * Find all VFS nodes connected to a node via mountpoint handles
- * Returns a map of mount path -> VFS node
+ * Returns a map of mount path -> VFS node ID
+ * 
+ * After layer separation:
+ * - Uses FlowNodeData for flow layer
+ * - Uses nodeStore for business data lookup
  */
 export function findConnectedVfsNodes(
 	nodeId: string,
-	nodes: Node<StudioNodeData>[],
+	nodes: Node<FlowNodeData>[],
 	edges: Edge[]
-): Map<string, Node<VFSNodeData>> {
-	const result = new Map<string, Node<VFSNodeData>>();
+): Map<string, string> {
+	const result = new Map<string, string>();
 	
-	// Get the target Input node to look up mountpoint paths
-	const inputNode = nodes.find(n => n.id === nodeId);
-	if (!inputNode || inputNode.data.type !== 'INPUT') {
+	// Get the target Input node's business data
+	const inputData = nodeStore.get(nodeId);
+	if (!inputData || inputData.type !== 'INPUT') {
 		return result;
 	}
-	const inputData = inputNode.data as InputNodeData;
-	const mountpoints = inputData.content.mountpoints ?? [];
+	const mountpoints = (inputData as InputNodeData).content.mountpoints ?? [];
 	
 	// Find edges where this node is the target and handle is a mountpoint
 	for (const edge of edges) {
@@ -279,8 +279,11 @@ export function findConnectedVfsNodes(
 			if (!mountpoint) continue;
 			
 			const sourceNode = nodes.find(n => n.id === edge.source);
-			if (sourceNode && sourceNode.data.type === 'VFS') {
-				result.set(mountpoint.path, sourceNode as Node<VFSNodeData>);
+			if (!sourceNode) continue;
+			
+			const sourceData = nodeStore.get(sourceNode.id);
+			if (sourceData && sourceData.type === 'VFS') {
+				result.set(mountpoint.path, sourceNode.id);
 			}
 		}
 	}
@@ -292,8 +295,8 @@ export function findConnectedVfsNodes(
  * Callbacks for generation operations
  */
 export interface GenerationCallbacks {
-	/** Called to update nodes */
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void;
+	/** Called to update a specific node's data */
+	updateNodeData: (nodeId: string, updater: (data: StudioNodeData) => StudioNodeData) => void;
 	/** Called to update edges */
 	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
 	/** Called when generation completes successfully */
@@ -308,18 +311,22 @@ export interface GenerationCallbacks {
  * - Creating the generated node
  * - Streaming the response
  * 
+ * After layer separation:
+ * - Uses FlowNodeData for flow layer
+ * - Uses nodeStore for business data
+ * 
  * @param config - LLM configuration (apiKey, model, baseUrl)
  * @returns The new generated node, or null if generation cannot proceed
  */
 export async function generate(
 	config: GenerationConfig,
 	inputNodeId: string,
-	nodes: Node<StudioNodeData>[],
+	nodes: Node<FlowNodeData>[],
 	edges: Edge[],
 	callbacks: GenerationCallbacks
-): Promise<Node<StudioNodeData> | null> {
-	const inputNode = nodes.find(n => n.id === inputNodeId);
-	if (!inputNode || inputNode.data.type !== 'INPUT' || !inputNode.data.content) {
+): Promise<Node<FlowNodeData> | null> {
+	const inputData = nodeStore.get(inputNodeId);
+	if (!inputData || inputData.type !== 'INPUT' || !inputData.content) {
 		return null;
 	}
 
@@ -327,18 +334,19 @@ export async function generate(
 	const pubchat = createPubChat(config);
 
 	// Check if there are VFS nodes connected to this input node via mountpoints
-	const vfsNodes = findConnectedVfsNodes(inputNodeId, nodes, edges);
+	const vfsNodeIds = findConnectedVfsNodes(inputNodeId, nodes, edges);
 	
 	// If VFS nodes exist, set up mounted VFS for the generation
 	let mountedVfs: Vfs<MountedVfsProvider> | null = null;
-	if (vfsNodes.size > 0) {
-		console.log("vfs", vfsNodes)
+	if (vfsNodeIds.size > 0) {
+		console.log("vfs", vfsNodeIds)
 		mountedVfs = createMountedVfs();
 		const provider = mountedVfs.getProvider()
 		
-		for (const [mountPath, vfsNode] of vfsNodes) {
-			const vfsData = vfsNode.data as VFSNodeData;
-			const vfs = await getNodeVfs(vfsData.content.projectId, vfsNode.id);
+		for (const [mountPath, vfsNodeId] of vfsNodeIds) {
+			const vfsData = nodeStore.get(vfsNodeId);
+			if (!vfsData || vfsData.type !== 'VFS') continue;
+			const vfs = await getNodeVfs((vfsData as VFSNodeData).content.projectId, vfsNodeId);
 			provider.mount(mountPath, vfs);
 		}
 	
@@ -346,10 +354,16 @@ export async function generate(
 	}
 
 	// Prepare for generation - creates snapshots, gets refs, and resolves tags
-	const prepared = await prepareForGeneration(nodes, edges, inputNodeId);
+	// Note: prepareForGeneration needs to be updated to use FlowNodeData and nodeStore
+	const prepared = await prepareForGeneration(nodes, edges, inputNodeId, (nodeId) => nodeStore.get(nodeId) as StudioNodeData | undefined);
 	
-	// Update nodes with synced data
-	callbacks.updateNodes(() => prepared.nodes);
+	// Update nodes with synced data via nodeStore
+	for (const n of prepared.nodes) {
+		const existingData = nodeStore.get(n.id);
+		if (existingData && JSON.stringify(existingData) !== JSON.stringify(n.data)) {
+			nodeStore.set(n.id, n.data);
+		}
+	}
 
 	// Create streaming generated node with indirect refs (empty blocks to start)
 	const newGeneratedData = await createGeneratedNodeData(
@@ -360,14 +374,30 @@ export async function generate(
 		prepared.parentRefs
 	);
 	
-	const generatedNode: Node<StudioNodeData> = {
+	// Calculate position for the new node using flow nodes
+	const inputNode = nodes.find(n => n.id === inputNodeId);
+	const position = inputNode 
+		? { x: inputNode.position.x + 400, y: inputNode.position.y }
+		: { x: 0, y: 0 };
+	
+	// Store the new node data in nodeStore
+	nodeStore.create(newGeneratedData);
+	
+	// Mark as streaming (component will subscribe when mounted)
+	notifyStreamingChange(newGeneratedData.id, true);
+	
+	// Store the position in layoutStore
+	layoutStore.add(newGeneratedData.id, position.x, position.y);
+	
+	// Create the flow node (minimal data for SvelteFlow)
+	const generatedNode: Node<FlowNodeData> = {
 		id: newGeneratedData.id,
 		type: 'generated',
 		data: { 
-			...newGeneratedData,
-			isStreaming: true,
+			id: newGeneratedData.id,
+			type: 'generated',
 		},
-		position: { x: 0, y: 0 }, // TODO calculate a suitable position Will be positioned by caller
+		position,
 		sourcePosition: Position.Right,
 		targetPosition: Position.Left,
 	};
@@ -379,28 +409,22 @@ export async function generate(
 		target: newGeneratedData.id,
 	};
 
-	// Add the generated node and edge, then position it relative to source
+	// Add the edge
 	callbacks.updateEdges(edges => [...edges, newEdge]);
-	callbacks.updateNodes(nodes => {
-		const updatedNodes = [...nodes, generatedNode];
-		return positionNewNodesFromSources([generatedNode.id], updatedNodes, [...edges, newEdge]);
-	});
 
 	// Helper to update blocks in a generated node
 	const updateBlocks = (nodeId: string, updater: (blocks: MessageBlock[]) => MessageBlock[]) => {
-		callbacks.updateNodes(nodes => nodes.map(n => {
-			if (n.id === nodeId && n.data.type === 'GENERATED') {
-				const genData = n.data as GeneratedNodeData;
+		const currentData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
+		if (currentData && currentData.type === 'GENERATED') {
+			const newBlocks = updater(currentData.content.blocks || []);
+			nodeStore.update(nodeId, (data) => {
+				const genData = data as GeneratedNodeData;
 				return {
-					...n,
-					data: {
-						...genData,
-						content: genData.content.withBlocks(updater(genData.content.blocks || []))
-					}
+					...genData,
+					content: genData.content.withBlocks(newBlocks)
 				};
-			}
-			return n;
-		}) as Node<StudioNodeData>[]);
+			});
+		}
 	};
 
 	// Define stream callbacks using MessageBlock model
@@ -461,37 +485,23 @@ export async function generate(
 			});
 		},
 		onDone: async (nodeId, _finalContent, _finalCommit) => {
-			// Compute commit from blocks content
-			callbacks.updateNodes(ns => ns.map(n => {
-				if (n.id === nodeId && n.data.type === 'GENERATED') {
-					return {
-						...n,
-						data: {
-							...n.data,
-							isStreaming: false
-						}
-					};
-				}
-				return n;
-			}) as Node<StudioNodeData>[]);
+			// Notify streaming complete
+			notifyStreamingChange(nodeId, false);
 			
 			// Get the current blocks and compute commit hash
-			let currentBlocks: MessageBlock[] = [];
-			callbacks.updateNodes(ns => {
-				const node = ns.find(n => n.id === nodeId);
-				if (node && node.data.type === 'GENERATED') {
-					currentBlocks = (node.data as GeneratedNodeData).content.blocks || [];
-				}
-				return ns;
-			});
-			
+			const updatedData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
+			const currentBlocks = updatedData?.content?.blocks || [];
 			const contentText = blocksToContent(currentBlocks);
 			const commit = await generateCommitHash(contentText);
-			callbacks.updateNodes(ns => ns.map(n =>
-				n.id === nodeId && n.data.type === 'GENERATED'
-					? { ...n, data: { ...n.data, commit } }
-					: n
-			) as Node<StudioNodeData>[]);
+			
+			// Update commit
+			const finalData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
+			if (finalData) {
+				nodeStore.update(nodeId, (data) => ({
+					...data,
+					commit
+				}));
+			}
 			
 			// Clear VFS after generation completes
 			if (mountedVfs) {
@@ -500,11 +510,9 @@ export async function generate(
 			callbacks.onComplete?.();
 		},
 		onError: (nodeId, _error) => {
-			callbacks.updateNodes(nodes => nodes.map(n => 
-				n.id === nodeId && n.data.type === 'GENERATED' 
-					? { ...n, data: { ...n.data, isStreaming: false } } 
-					: n
-			) as Node<StudioNodeData>[]);
+			// Notify streaming complete (even on error)
+			notifyStreamingChange(nodeId, false);
+			
 			// Clear VFS on error too
 			if (mountedVfs) {
 				pubchat.clearVFS();

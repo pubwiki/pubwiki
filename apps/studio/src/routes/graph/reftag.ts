@@ -10,8 +10,10 @@
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, PromptNodeData, InputNodeData } from '../types';
+import type { FlowNodeData } from '../types/flow';
 import type { PromptContent, InputContent } from '../types/content';
 import { snapshotStore, type NodeRef, type SnapshotEdge } from '../version';
+import { nodeStore } from '../persistence';
 import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId } from './connection';
 
 // ============================================================================
@@ -378,11 +380,16 @@ export function resolvePromptContent(
 /**
  * Resolve prompt content using historical versions from refs.
  * Used for regeneration to reproduce exact historical context.
+ * 
+ * After layer separation:
+ * - Uses FlowNodeData for flow layer
+ * - Uses nodeStore for current business data
+ * - Uses snapshotStore for historical versions
  */
 export function resolvePromptContentFromRefs(
   nodeId: string,
   nodeCommit: string,
-  nodes: Node<StudioNodeData>[],
+  nodes: Node<FlowNodeData>[],
   edges: Edge[],
   allRefs: NodeRef[],
   visited: Set<string> = new Set()
@@ -394,14 +401,14 @@ export function resolvePromptContentFromRefs(
   
   // Find the content for this ref
   let content: string;
-  const node = nodes.find(n => n.id === nodeId);
+  const nodeData = nodeStore.get(nodeId);
   
-  if (node && node.data.commit === nodeCommit) {
+  if (nodeData && nodeData.commit === nodeCommit) {
     // Current version matches - extract text from content
-    if (node.data.type === 'PROMPT') {
-      content = (node.data as PromptNodeData).content.text;
-    } else if (node.data.type === 'INPUT') {
-      content = (node.data as InputNodeData).content.text;
+    if (nodeData.type === 'PROMPT') {
+      content = (nodeData as PromptNodeData).content.text;
+    } else if (nodeData.type === 'INPUT') {
+      content = (nodeData as InputNodeData).content.text;
     } else {
       content = '';
     }

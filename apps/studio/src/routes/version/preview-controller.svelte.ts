@@ -13,6 +13,8 @@ import type {
 	PreviewState
 } from './types'
 import type { StudioNodeData } from '../types'
+import type { FlowNodeData } from '../types/flow'
+import { nodeStore } from '../persistence'
 import { getVersionHandler } from './types'
 import { rebuildHistoricalTree, styleEdgesForVersions } from './version-service'
 import { getStudioContext } from '../state'
@@ -24,9 +26,10 @@ import { getStudioContext } from '../state'
 /**
  * Get version references from node data using registered handler.
  */
-function getVersionRefsFromRegistry(data: StudioNodeData): NodeRef[] | undefined {
+function getVersionRefsFromRegistry(data: StudioNodeData | undefined): NodeRef[] | undefined {
+	if (!data) return undefined
 	const handler = getVersionHandler(data.type)
-	return handler?.getVersionRefs?.(data)
+	return handler?.getVersionRefs?.(data as StudioNodeData)
 }
 
 // ============================================================================
@@ -133,13 +136,17 @@ export function createPreviewController() {
 	 * Update preview state based on selected nodes.
 	 * Call this in a $effect when selectedNodes changes.
 	 */
-	function updateSelection(selectedNodes: Node<StudioNodeData>[]) {
+	function updateSelection(selectedNodes: Node<FlowNodeData>[]) {
 		const nodes = ctx.nodes
 		const edges = ctx.edges
 
 		// Get version refs for single selected node (if any)
-		const versionRefs = selectedNodes.length === 1 
-			? getVersionRefsFromRegistry(selectedNodes[0].data)
+		// Fetch business data from nodeStore
+		const selectedNodeData = selectedNodes.length === 1 
+			? nodeStore.get(selectedNodes[0].id)
+			: undefined
+		const versionRefs = selectedNodeData
+			? getVersionRefsFromRegistry(selectedNodeData)
 			: undefined
 
 		// Non-single selection or selected doesn't have version refs - cleanup and return
@@ -188,13 +195,14 @@ export function createPreviewController() {
 			hiddenEdges = []
 		}
 
-		// Build historical tree
+		// Build historical tree with data getter callback
 		const tree = rebuildHistoricalTree(
 			versionRefs,
 			selected.id,
 			selected.position,
 			nodes,
-			currentEdges
+			currentEdges,
+			(nodeId) => nodeStore.get(nodeId) as StudioNodeData | undefined
 		)
 		historicalTree = tree
 
@@ -221,12 +229,19 @@ export function createPreviewController() {
 		let newEdges = currentEdges.filter(e => !hiddenEdgeIds.has(e.id))
 
 		// Add phantom nodes to the graph
+		// Phantom nodes are flow nodes - their business data comes from snapshots
 		if (tree.phantomNodes.length > 0) {
-			const phantomsWithFlag = tree.phantomNodes.map(n => ({
-				...n,
-				data: { ...n.data, isPhantom: true }
-			})) as Node<StudioNodeData>[]
-			ctx.setNodes([...nodes, ...phantomsWithFlag])
+			const phantomFlowNodes: Node<FlowNodeData>[] = tree.phantomNodes.map(n => ({
+				id: n.id,
+				type: n.type,
+				position: n.position,
+				data: { 
+					id: n.id, 
+					type: n.type || 'prompt',  // lowercase for SvelteFlow
+					isPhantom: true 
+				}
+			}))
+			ctx.setNodes([...nodes, ...phantomFlowNodes])
 			phantomNodeIds = new Set(tree.phantomNodes.map(n => n.id))
 		}
 
@@ -251,14 +266,18 @@ export function createPreviewController() {
 		const nodes = ctx.nodes
 		const edges = ctx.edges
 
-		// Check if any node has version refs
-		const hasRefHolders = nodes.some(n => getVersionRefsFromRegistry(n.data) !== undefined)
+		// Check if any node has version refs (using nodeStore for business data)
+		const hasRefHolders = nodes.some(n => {
+			const data = nodeStore.get(n.id)
+			return data ? getVersionRefsFromRegistry(data) !== undefined : false
+		})
 		if (!hasRefHolders) return
 
 		const { edges: styledEdges, changed } = styleEdgesForVersions(
 			edges,
 			nodes,
-			getVersionRefsFromRegistry
+			(nodeId) => nodeStore.get(nodeId) as StudioNodeData | undefined,
+			(data) => getVersionRefsFromRegistry(data)
 		)
 		if (changed) {
 			ctx.setEdges(styledEdges)

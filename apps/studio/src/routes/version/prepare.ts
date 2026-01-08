@@ -7,6 +7,7 @@
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData } from '../types';
+import type { FlowNodeData } from '../types/flow';
 import { 
   syncNode,
   type NodeRef,
@@ -59,14 +60,19 @@ export interface PrepareGenerationResult {
  * 
  * Also resolves tag references in input content and reftag references in prompts
  * to build the full system prompt and collect indirect prompt refs for version tracking.
+ * 
+ * After layer separation:
+ * - Uses FlowNodeData for flow layer
+ * - Uses getNodeData callback for business data
  */
 export async function prepareForGeneration(
-  nodes: Node<StudioNodeData>[],
+  nodes: Node<FlowNodeData>[],
   edges: Edge[],
-  inputNodeId: string
+  inputNodeId: string,
+  getNodeData: (nodeId: string) => StudioNodeData | undefined
 ): Promise<PrepareGenerationResult> {
-  const inputNode = nodes.find(n => n.id === inputNodeId);
-  if (!inputNode || inputNode.data.type !== 'INPUT') {
+  const inputData = getNodeData(inputNodeId);
+  if (!inputData || inputData.type !== 'INPUT') {
     throw new Error('Invalid input node');
   }
 
@@ -76,10 +82,6 @@ export async function prepareForGeneration(
   
   // Get mountpoint connections (VFS nodes connected via @/path)
   const mountpoints = getMountpointConnections(inputNodeId, edges);
-  
-  const parentPromptNodes = nodes.filter(
-    n => parentPromptIds.includes(n.id) && n.data.type === 'PROMPT'
-  );
 
   // Collect all node IDs that might be involved (direct + indirect via reftags)
   const collectAllInvolvedNodes = (nodeIds: string[], visited: Set<string> = new Set()): string[] => {
@@ -90,8 +92,8 @@ export async function prepareForGeneration(
       result.push(nodeId);
       
       // Get reftag connections for this node
-      const node = nodes.find(n => n.id === nodeId);
-      if (node && node.data.type === 'PROMPT') {
+      const nodeData = getNodeData(nodeId);
+      if (nodeData && nodeData.type === 'PROMPT') {
         const refTagConnections = getRefTagConnections(nodeId, edges);
         const connectedIds = Array.from(refTagConnections.values());
         result.push(...collectAllInvolvedNodes(connectedIds, visited));
@@ -102,8 +104,17 @@ export async function prepareForGeneration(
 
   const allInvolvedPromptIds = collectAllInvolvedNodes(parentPromptIds);
 
+  // Build nodes with data for syncing
+  const nodesWithData: Node<StudioNodeData>[] = nodes
+    .map(n => {
+      const data = getNodeData(n.id);
+      if (!data) return null;
+      return { ...n, data } as Node<StudioNodeData>;
+    })
+    .filter((n): n is Node<StudioNodeData> => n !== null);
+
   // Sync all involved nodes: save snapshots AND update commits in one step
-  let updatedNodes = await Promise.all(nodes.map(async n => {
+  let updatedNodes = await Promise.all(nodesWithData.map(async n => {
     // Process input and all involved prompt nodes
     if (n.id !== inputNodeId && !allInvolvedPromptIds.includes(n.id)) {
       return n;

@@ -273,7 +273,6 @@ export function usePersistedState<T>(
 // ============================================================================
 
 import type { Node, Edge } from '@xyflow/svelte';
-import { loadGraph, saveGraph } from './db';
 
 // Type constraint for Node data (required by @xyflow/svelte)
 type NodeData = Record<string, unknown>;

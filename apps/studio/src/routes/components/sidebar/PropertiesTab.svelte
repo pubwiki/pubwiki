@@ -3,7 +3,9 @@
 	 * PropertiesTab - Shows details and editor for the selected node
 	 */
 	import type { Node } from '@xyflow/svelte';
-	import type { StudioNodeData, PromptNodeData, InputNodeData, GeneratedNodeData, VFSNodeData } from '../../types';
+	import type { FlowNodeData } from '../../types/flow';
+	import type { PromptNodeData, InputNodeData, VFSNodeData } from '../../types';
+	import { nodeStore } from '../../persistence/node-store.svelte';
 	import { getStudioContext } from '../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { marked } from 'marked';
@@ -14,7 +16,7 @@
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
-		selectedNodes: Node<StudioNodeData>[];
+		selectedNodes: Node<FlowNodeData>[];
 		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 	}
 
@@ -25,6 +27,9 @@
 
 	// Single selected node
 	let selectedNode = $derived(selectedNodes.length === 1 ? selectedNodes[0] : null);
+	
+	// Get business data for selected node from nodeStore
+	let selectedNodeData = $derived(selectedNode ? nodeStore.get(selectedNode.id) : null);
 
 	// Node type info
 	function getTypeInfo(type: string) {
@@ -60,8 +65,8 @@
 
 	// Content change handler for editable nodes
 	function handleContentChange(newValue: string) {
-		if (!selectedNode) return;
-		ctx.updateNode(selectedNode.id, (nodeData) => {
+		if (!selectedNode || !selectedNodeData) return;
+		nodeStore.update(selectedNode.id, (nodeData) => {
 			if (nodeData.type === 'INPUT') {
 				const inputData = nodeData as InputNodeData;
 				return { ...inputData, content: inputData.content.withText(newValue) };
@@ -77,7 +82,7 @@
 	function handleNameChange(e: Event) {
 		if (!selectedNode) return;
 		const target = e.target as HTMLInputElement;
-		ctx.updateNode(selectedNode.id, (nodeData) => ({
+		nodeStore.update(selectedNode.id, (nodeData) => ({
 			...nodeData,
 			name: target.value
 		}));
@@ -87,7 +92,9 @@
 	async function handleGenerate() {
 		if (!selectedNode) return;
 		const callbacks = {
-			updateNodes: ctx.updateNodes,
+			updateNodeData: (nodeId: string, updater: (data: any) => any) => {
+				nodeStore.update(nodeId, updater);
+			},
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {
@@ -101,7 +108,9 @@
 	async function handleRegenerate() {
 		if (!selectedNode) return;
 		const callbacks = {
-			updateNodes: ctx.updateNodes,
+			updateNodeData: (nodeId: string, updater: (data: any) => any) => {
+				nodeStore.update(nodeId, updater);
+			},
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {
@@ -114,13 +123,13 @@
 
 	// Check if node is editable
 	const isEditable = $derived(
-		selectedNode && (selectedNode.data.type === 'PROMPT' || selectedNode.data.type === 'INPUT')
+		selectedNodeData && (selectedNodeData.type === 'PROMPT' || selectedNodeData.type === 'INPUT')
 	);
 
 	// Get display content (uses polymorphic getText() method)
 	const displayContent = $derived.by(() => {
-		if (!selectedNode) return '';
-		return selectedNode.data.content.getText();
+		if (!selectedNodeData) return '';
+		return selectedNodeData.content.getText();
 	});
 </script>
 
@@ -165,7 +174,7 @@
 					<span class="block text-xs font-medium text-gray-500 mb-1">{m.studio_properties_name()}</span>
 					<input
 						type="text"
-						value={selectedNode.data.name || ''}
+						value={selectedNodeData?.name || ''}
 						oninput={handleNameChange}
 						placeholder={m.studio_properties_untitled()}
 						class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -178,11 +187,11 @@
 
 			<!-- Content area -->
 			<div class="p-4">
-				{#if selectedNode.data.type === 'VFS'}
+				{#if selectedNodeData?.type === 'VFS'}
 					<!-- VFS File List -->
 					<VFSPropertiesPanel
 						nodeId={selectedNode.id}
-						data={selectedNode.data as VFSNodeData}
+						data={selectedNodeData as VFSNodeData}
 						onOpenFile={(nodeId, filePath) => onOpenVfsFile?.(nodeId, filePath)}
 					/>
 				{:else}
@@ -190,7 +199,7 @@
 						<span class="text-xs font-medium text-gray-500">{m.studio_properties_content()}</span>
 						
 						<!-- Action buttons based on type -->
-						{#if selectedNode.data.type === 'INPUT'}
+						{#if selectedNodeData?.type === 'INPUT'}
 							<button
 								class="px-2 py-1 text-xs font-medium bg-purple-500 hover:bg-purple-600 text-white rounded transition-colors flex items-center gap-1"
 								onclick={handleGenerate}
@@ -200,7 +209,7 @@
 								</svg>
 								{m.studio_properties_generate()}
 							</button>
-						{:else if selectedNode.data.type === 'GENERATED'}
+						{:else if selectedNodeData?.type === 'GENERATED'}
 							<button
 								class="px-2 py-1 text-xs font-medium bg-green-500 hover:bg-green-600 text-white rounded transition-colors flex items-center gap-1"
 								onclick={handleRegenerate}
@@ -223,7 +232,7 @@
 									onchange={handleContentChange}
 								/>
 							</div>
-						{:else if selectedNode.data.type === 'GENERATED'}
+						{:else if selectedNodeData?.type === 'GENERATED'}
 							<!-- Markdown rendered content for generated nodes -->
 							<div class="p-3 bg-green-50/30">
 								<div class="prose prose-sm max-w-none text-left select-text">
@@ -246,13 +255,13 @@
 		</div>
 
 		<!-- Metadata footer (fixed at bottom) -->
-		{#if selectedNode.data.commit}
+		{#if selectedNodeData?.commit}
 			<div class="shrink-0 p-4 border-t border-gray-100 bg-gray-50">
 				<div class="flex items-center gap-2 text-xs text-gray-400">
 					<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
 					</svg>
-					<span>Commit: {selectedNode.data.commit.slice(0, 8)}</span>
+					<span>Commit: {selectedNodeData.commit.slice(0, 8)}</span>
 				</div>
 			</div>
 		{/if}
