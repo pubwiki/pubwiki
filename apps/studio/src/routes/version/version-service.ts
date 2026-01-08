@@ -70,7 +70,7 @@ function saveCurrentVersion(
 		const snapshot: NodeSnapshot<unknown> = {
 			nodeId: nodeData.id,
 			commit: nodeData.commit,
-			type: nodeData.type.toLowerCase(),
+			type: nodeData.type,
 			name: nodeData.name,
 			content: snapshotContentData,
 			timestamp: Date.now(),
@@ -154,7 +154,7 @@ export async function restoreSnapshot<T extends Versionable>(
 	const currentSnapshot: NodeSnapshot<unknown> = {
 		nodeId: nodeData.id,
 		commit: nodeData.commit,
-		type: nodeData.type.toLowerCase(),
+		type: nodeData.type,
 		name: nodeData.name,
 		content: currentSnapshotContent,
 		timestamp: Date.now()

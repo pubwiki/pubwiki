@@ -6,7 +6,9 @@
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
 	import { 
-		GraphNode, 
+		PromptNode,
+		InputNode,
+		GeneratedNode,
 		VFSNode, 
 		SandboxNode, 
 		LoaderNode, 
@@ -63,13 +65,13 @@
 	// ============================================================================
 	
 	const nodeTypes = {
-		prompt: GraphNode,
-		input: GraphNode,
-		generated: GraphNode,
-		vfs: VFSNode,
-		sandbox: SandboxNode,
-		loader: LoaderNode,
-		state: StateNode
+		PROMPT: PromptNode,
+		INPUT: InputNode,
+		GENERATED: GeneratedNode,
+		VFS: VFSNode,
+		SANDBOX: SandboxNode,
+		LOADER: LoaderNode,
+		STATE: StateNode
 	};
 
 	// ============================================================================

@@ -38,6 +38,3 @@ export { StateNode } from './state';
 
 // Re-export types
 export type { BaseNodeProps, NodeHeaderProps } from './types';
-
-// Unified GraphNode that handles all standard text-based node types
-export { default as GraphNode } from './GraphNode.svelte';

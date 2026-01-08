@@ -51,7 +51,7 @@ export function createFlowNode(
 ): FlowNode {
   return {
     id,
-    type: type.toLowerCase(), // SvelteFlow uses lowercase type names
+    type,
     position,
     data: { id, type }
   };
@@ -61,5 +61,5 @@ export function createFlowNode(
  * Get the SvelteFlow node type string from NodeType
  */
 export function getFlowNodeType(nodeType: NodeType): string {
-  return nodeType.toLowerCase();
+  return nodeType;
 }
