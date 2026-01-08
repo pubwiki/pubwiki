@@ -74,7 +74,6 @@
 			await vfs.moveItem(oldPath, newPath);
 			if (selectedFilePath === oldPath) {
 				selectedFilePath = newPath;
-				persistUIState({ selectedFilePath: newPath });
 			}
 		},
 		onDelete: async (path, isFolder) => {
@@ -99,14 +98,12 @@
 			const newExpanded = new Set(expandedFolders);
 			newExpanded.add(path);
 			expandedFolders = newExpanded;
-			persistUIState({ expandedFolders: Array.from(newExpanded) });
 		},
 		onMove: async (oldPath, newPath) => {
 			if (!vfs) return;
 			await vfs.moveItem(oldPath, newPath);
 			if (selectedFilePath === oldPath) {
 				selectedFilePath = newPath;
-				persistUIState({ selectedFilePath: newPath });
 			}
 		},
 		onUpload: async (files: FileList) => {
@@ -208,10 +205,8 @@
 		isLoading = true;
 		error = null;
 		fileTree = [];
-		
-		// Initialize UI state from persisted data
-		expandedFolders = new Set(data.expandedFolders ?? []);
-		selectedFilePath = data.selectedFilePath ?? undefined;
+		expandedFolders = new Set();
+		selectedFilePath = undefined;
 		
 		try {
 			vfs = await getNodeVfs(data.content.projectId, nodeId);
@@ -311,30 +306,15 @@
 
 	function handleFileClick(item: FileItem) {
 		selectedFilePath = item.path;
-		persistUIState({ selectedFilePath: item.path });
 		onOpenFile(nodeId, item.path);
 	}
 
 	function handleExpandedChange(folders: Set<string>) {
 		expandedFolders = folders;
-		persistUIState({ expandedFolders: Array.from(folders) });
 	}
 
 	function handleSelectionChange(path: string | undefined) {
 		selectedFilePath = path;
-		if (path) {
-			persistUIState({ selectedFilePath: path });
-		}
-	}
-
-	function persistUIState(updates: Partial<{
-		expandedFolders: string[];
-		selectedFilePath: string;
-	}>) {
-		ctx.updateNode(nodeId, (nodeData) => ({
-			...nodeData,
-			...updates
-		}));
 	}
 </script>
 

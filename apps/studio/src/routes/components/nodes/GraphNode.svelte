@@ -16,11 +16,11 @@
 	const nodeType = $derived(props.data.type);
 </script>
 
-{#if nodeType === 'prompt'}
+{#if nodeType === 'PROMPT'}
 	<PromptNode {...props as NodeProps<Node<FlowNodeData, 'prompt'>>} />
-{:else if nodeType === 'input'}
+{:else if nodeType === 'INPUT'}
 	<InputNode {...props as NodeProps<Node<FlowNodeData, 'input'>>} />
-{:else if nodeType === 'generated'}
+{:else if nodeType === 'GENERATED'}
 	<GeneratedNode {...props as NodeProps<Node<FlowNodeData, 'generated'>>} />
 {:else}
 	<div class="p-3 text-sm text-gray-500 bg-white rounded-lg border border-gray-200">

@@ -7,7 +7,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { FlowNodeData } from '../types/flow';
+import type { FlowNodeData } from '../types';
 
 // ============================================================================
 // Event Types
@@ -121,7 +121,7 @@ export function dispatchConnection(event: ConnectionEvent): boolean {
  */
 export function dispatchEdgeDeletes(
 	edges: Edge[],
-	updateNodes: (updater: (nodes: Node<StudioNodeData>[]) => Node<StudioNodeData>[]) => void
+	updateNodes: (updater: (nodes: Node<FlowNodeData>[]) => Node<FlowNodeData>[]) => void
 ): void {
 	for (const edge of edges) {
 		const event: EdgeDeleteEvent = {
@@ -138,7 +138,7 @@ export function dispatchEdgeDeletes(
 /**
  * Dispatch node delete events.
  */
-export function dispatchNodeDeletes(nodes: Node<StudioNodeData>[]): void {
+export function dispatchNodeDeletes(nodes: Node<FlowNodeData>[]): void {
 	for (const node of nodes) {
 		const event: NodeDeleteEvent = {
 			type: 'node-delete',

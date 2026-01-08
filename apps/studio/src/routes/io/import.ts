@@ -30,7 +30,7 @@ import {
 } from '../types';
 import { generateCommitHash } from '../version';
 import { getNodeVfs } from '../vfs';
-import { ensureProject, saveGraph, loadGraph } from '../persistence';
+import { ensureProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
 import { API_BASE_URL } from '$lib/config';
 
 // ============================================================================
@@ -355,8 +355,22 @@ export async function importArtifactToNewProject(
     contentFetcher
   );
   
-  // Save the graph
-  await saveGraph(nodes, edges, newProjectId);
+  // Initialize stores with the new project
+  await nodeStore.init(newProjectId);
+  await layoutStore.init(newProjectId);
+  
+  // Save node data and layouts
+  for (const node of nodes) {
+    nodeStore.set(node.id, node.data);
+    layoutStore.add(node.id, node.position.x, node.position.y);
+  }
+  
+  // Save edges
+  await saveEdges(edges, newProjectId);
+  
+  // Flush stores to persist
+  await nodeStore.flush();
+  await layoutStore.flush();
   
   return newProjectId;
 }
@@ -378,22 +392,36 @@ export async function addArtifactToProject(
     contentFetcher
   );
   
-  // Load existing graph
-  const existing = await loadGraph<StudioNodeData>(projectId);
+  // Ensure stores are initialized for this project
+  if (nodeStore.currentProjectId !== projectId) {
+    await nodeStore.init(projectId);
+  }
+  if (!layoutStore.isInitialized) {
+    await layoutStore.init(projectId);
+  }
   
-  // Calculate offset for new nodes to avoid overlap
-  const maxX = existing.nodes.reduce((max, n) => Math.max(max, n.position.x), 0);
+  // Get existing layouts to calculate offset
+  const existingLayouts = layoutStore.getAll();
+  let maxX = 0;
+  for (const layout of existingLayouts.values()) {
+    if (layout.x > maxX) maxX = layout.x;
+  }
   const offsetX = maxX + 400;
   
-  // Offset new nodes
-  const offsetNodes = newNodes.map(n => ({
-    ...n,
-    position: { x: n.position.x + offsetX, y: n.position.y }
-  }));
+  // Get existing edges
+  const existingEdges = await getEdges(projectId);
   
-  // Merge and save
-  const mergedNodes = [...existing.nodes, ...offsetNodes];
-  const mergedEdges = [...existing.edges, ...newEdges];
+  // Save new nodes with offset
+  for (const node of newNodes) {
+    nodeStore.set(node.id, node.data);
+    layoutStore.add(node.id, node.position.x + offsetX, node.position.y);
+  }
   
-  await saveGraph(mergedNodes, mergedEdges, projectId);
+  // Merge and save edges
+  const mergedEdges = [...existingEdges, ...newEdges];
+  await saveEdges(mergedEdges, projectId);
+  
+  // Flush stores to persist
+  await nodeStore.flush();
+  await layoutStore.flush();
 }

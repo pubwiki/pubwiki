@@ -139,13 +139,8 @@ export type {
 // Persistence
 export {
   db,
-  saveGraph,
-  loadGraph,
-  saveNodes,
-  getNodes,
   saveEdges,
   getEdges,
-  liveNodes,
   liveEdges,
   liveSnapshots,
   liveProjects,
@@ -154,14 +149,17 @@ export {
   clearCurrentProject,
   ensureProject,
   saveProject,
-  deleteProject
+  deleteProject,
+  nodeStore,
+  layoutStore
 } from './persistence';
 
 export type {
   StoredSnapshot,
-  StoredNode,
+  StoredNodeData,
   StoredEdge,
-  StoredProject
+  StoredProject,
+  NodeLayout
 } from './persistence';
 
 // VFS
