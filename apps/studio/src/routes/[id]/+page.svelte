@@ -56,7 +56,7 @@
 		getEdges
 	} from '../persistence';
 	import { getNodeVfs, type VersionedVfs } from '../vfs';
-	import { useAuth, getSettingsStore } from '@pubwiki/ui/stores';
+	import { useAuth } from '@pubwiki/ui/stores';
 	import { API_BASE_URL } from '$lib/config';
 	import * as m from '$lib/paraglide/messages';
 

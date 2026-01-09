@@ -11,7 +11,7 @@ export default defineConfig({
 	],
 
 	server: { 
-		fs: { allow: ['../packages'] },
+		fs: { allow: ['../../packages'] },
 		port: 5174
 	},
 

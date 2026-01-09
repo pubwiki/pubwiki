@@ -17,6 +17,7 @@
 	import ProjectMenu from './ProjectMenu.svelte';
 	import ProjectListModal from './ProjectListModal.svelte';
 	import { SettingsModal } from '../settings';
+	import { persist } from '@pubwiki/ui/utils';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -53,6 +54,43 @@
 	let sidebarEl: HTMLDivElement | undefined = $state();
 	let showSettings = $state(false);
 	let showProjectList = $state(false);
+
+	// Resize state
+	const MIN_WIDTH = 320;
+	const MAX_WIDTH = 600;
+	const DEFAULT_WIDTH = 360;
+	const persistedWidth = persist<number>('studio-sidebar-width', DEFAULT_WIDTH);
+	let isResizing = $state(false);
+
+	// Getter/setter for sidebarWidth that syncs with persisted storage
+	let sidebarWidth = $derived(persistedWidth.value);
+
+	function startResize(e: PointerEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		isResizing = true;
+		const startX = e.clientX;
+		const startWidth = sidebarWidth;
+
+		const target = e.target as HTMLElement;
+		target.setPointerCapture(e.pointerId);
+
+		function onPointerMove(e: PointerEvent) {
+			const delta = e.clientX - startX;
+			const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+			persistedWidth.value = newWidth;
+		}
+
+		function onPointerUp(e: PointerEvent) {
+			isResizing = false;
+			target.releasePointerCapture(e.pointerId);
+			target.removeEventListener('pointermove', onPointerMove);
+			target.removeEventListener('pointerup', onPointerUp);
+		}
+
+		target.addEventListener('pointermove', onPointerMove);
+		target.addEventListener('pointerup', onPointerUp);
+	}
 
 	// Auto-switch to properties tab when selecting a single node
 	$effect(() => {
@@ -110,7 +148,8 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div 
 		bind:this={sidebarEl}
-		class="absolute top-4 left-4 bottom-4 z-20 w-80 bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col overflow-hidden"
+		class="absolute top-4 left-4 bottom-4 z-20 bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col overflow-hidden"
+		style="width: {sidebarWidth}px;"
 		onpointerdown={(e) => {
 			e.stopPropagation();
 			// Only capture pointer for text selection (in textarea/input or text content)
@@ -128,6 +167,19 @@
 			}
 		}}
 	>
+		<!-- Resize Handle -->
+		<div
+			class="group absolute top-1/2 -translate-y-1/2 -right-1 w-2 h-12 cursor-ew-resize z-10 flex items-center justify-center"
+			onpointerdown={startResize}
+			role="separator"
+			aria-orientation="vertical"
+			aria-valuenow={sidebarWidth}
+			aria-valuemin={MIN_WIDTH}
+			aria-valuemax={MAX_WIDTH}
+		>
+			<!-- Visual indicator line -->
+			<div class="w-0.5 h-8 rounded-full transition-all duration-150 {isResizing ? 'bg-blue-500 h-10 opacity-100' : 'bg-gray-400 opacity-0 group-hover:opacity-100 group-hover:h-10'}"></div>
+		</div>
 		<!-- Header with project name, settings button, and collapse button -->
 		<div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
 			<div class="flex items-center gap-2 min-w-0">
