@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { users } from './users';
+import { user } from './auth';
 import type { DiscussionCategory, DiscussionTargetType } from './enums';
 
 // 当前时间戳 (ISO 格式字符串)
@@ -16,7 +16,7 @@ export const discussions = sqliteTable(
     targetId: text('target_id').notNull(),
     authorId: text('author_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     title: text('title', { length: 200 }),
     content: text('content').notNull(),
     category: text('category').$type<DiscussionCategory>().default('GENERAL').notNull(),
@@ -44,7 +44,7 @@ export const discussionReplies = sqliteTable(
       .references(() => discussions.id, { onDelete: 'cascade' }),
     authorId: text('author_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     parentReplyId: text('parent_reply_id'), // 嵌套回复，自引用稍后处理
     content: text('content').notNull(),
     isAccepted: integer('is_accepted', { mode: 'boolean' }).default(false).notNull(),

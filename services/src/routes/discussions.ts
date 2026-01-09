@@ -119,7 +119,7 @@ discussionsRoute.post('/', authMiddleware, async (c) => {
 
   const result = await discussionService.createDiscussion(
     { type: query.targetType, id: query.targetId },
-    user.sub,
+    user.id,
     body
   );
 
@@ -172,7 +172,7 @@ discussionsRoute.patch('/:discussionId', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'Invalid category' }, 400);
   }
 
-  const result = await discussionService.updateDiscussion(discussionId, user.sub, body);
+  const result = await discussionService.updateDiscussion(discussionId, user.id, body);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
@@ -194,7 +194,7 @@ discussionsRoute.delete('/:discussionId', authMiddleware, async (c) => {
 
   const discussionId = c.req.param('discussionId');
 
-  const result = await discussionService.deleteDiscussion(discussionId, user.sub, user.isAdmin);
+  const result = await discussionService.deleteDiscussion(discussionId, user.id, user.isAdmin);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
@@ -322,7 +322,7 @@ discussionsRoute.post('/:discussionId/replies', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'content is required' }, 400);
   }
 
-  const result = await discussionService.createReply(discussionId, user.sub, body);
+  const result = await discussionService.createReply(discussionId, user.id, body);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
@@ -344,7 +344,7 @@ discussionsRoute.delete('/replies/:replyId', authMiddleware, async (c) => {
 
   const replyId = c.req.param('replyId');
 
-  const result = await discussionService.deleteReply(replyId, user.sub, user.isAdmin);
+  const result = await discussionService.deleteReply(replyId, user.id, user.isAdmin);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
@@ -363,7 +363,7 @@ discussionsRoute.post('/replies/:replyId/accept', authMiddleware, async (c) => {
 
   const replyId = c.req.param('replyId');
 
-  const result = await discussionService.acceptReply(replyId, user.sub);
+  const result = await discussionService.acceptReply(replyId, user.id);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :

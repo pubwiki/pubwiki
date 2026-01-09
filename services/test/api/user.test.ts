@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RegisterResponse, GetMeResponse, UpdateProfileResponse, ApiError } from '@pubwiki/api';
-import { getTestDb, clearDatabase, sendRequest, registerAndLogin, users, eq, type TestDb } from './helpers';
+import { getTestDb, clearDatabase, sendRequest, registerAndGetSession, user, eq, type TestDb } from './helpers';
 
 describe('User API', () => {
   let db: TestDb;
@@ -11,15 +11,15 @@ describe('User API', () => {
   });
 
   describe('GET /api/me', () => {
-    let authToken: string;
+    let sessionCookie: string;
 
     beforeEach(async () => {
-      authToken = await registerAndLogin('metest');
+      sessionCookie = await registerAndGetSession('metest');
     });
 
-    it('should return current user info with valid token', async () => {
+    it('should return current user info with valid session', async () => {
       const request = new Request('http://localhost/api/me', {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -29,29 +29,29 @@ describe('User API', () => {
       expect(data.user.email).toBe('metest@example.com');
     });
 
-    it('should return 401 without token', async () => {
+    it('should return 401 without session cookie', async () => {
       const request = new Request('http://localhost/api/me');
       const response = await sendRequest(request);
 
       expect(response.status).toBe(401);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Authorization token required');
+      expect(data.error).toBe('Authorization required');
     });
 
-    it('should return 401 with invalid token', async () => {
+    it('should return 401 with invalid session token', async () => {
       const request = new Request('http://localhost/api/me', {
-        headers: { Authorization: 'Bearer invalid-token' },
+        headers: { Cookie: 'better-auth.session_token=invalid-token' },
       });
       const response = await sendRequest(request);
 
       expect(response.status).toBe(401);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Invalid or expired token');
+      expect(data.error).toBe('Authorization required');
     });
 
-    it('should return 401 with malformed authorization header', async () => {
+    it('should return 401 with malformed cookie value', async () => {
       const request = new Request('http://localhost/api/me', {
-        headers: { Authorization: 'Basic some-credentials' },
+        headers: { Cookie: 'invalid-cookie-format' },
       });
       const response = await sendRequest(request);
 
@@ -60,10 +60,10 @@ describe('User API', () => {
   });
 
   describe('PATCH /api/me', () => {
-    let authToken: string;
+    let sessionCookie: string;
 
     beforeEach(async () => {
-      authToken = await registerAndLogin('profiletest');
+      sessionCookie = await registerAndGetSession('profiletest');
     });
 
     it('should update user profile with valid data', async () => {
@@ -71,7 +71,7 @@ describe('User API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           displayName: 'Updated Name',
@@ -91,9 +91,9 @@ describe('User API', () => {
       expect(data.user.location).toBe('Tokyo, Japan');
 
       // 验证数据库状态
-      const dbUser = await db.select().from(users).where(eq(users.username, 'profiletest'));
+      const dbUser = await db.select().from(user).where(eq(user.username, 'profiletest'));
       expect(dbUser).toHaveLength(1);
-      expect(dbUser[0].displayName).toBe('Updated Name');
+      expect(dbUser[0].name).toBe('Updated Name');
       expect(dbUser[0].bio).toBe('This is my bio');
       expect(dbUser[0].website).toBe('https://example.com');
       expect(dbUser[0].location).toBe('Tokyo, Japan');
@@ -104,7 +104,7 @@ describe('User API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           bio: 'Only bio updated',
@@ -124,7 +124,7 @@ describe('User API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           avatarUrl: 'https://example.com/avatar.png',
@@ -137,7 +137,7 @@ describe('User API', () => {
       expect(data.user.avatarUrl).toBe('https://example.com/avatar.png');
     });
 
-    it('should return 401 without token', async () => {
+    it('should return 401 without session cookie', async () => {
       const request = new Request('http://localhost/api/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -150,12 +150,12 @@ describe('User API', () => {
       expect(response.status).toBe(401);
     });
 
-    it('should return 401 with invalid token', async () => {
+    it('should return 401 with invalid session token', async () => {
       const request = new Request('http://localhost/api/me', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: 'Bearer invalid-token',
+          Cookie: 'better-auth.session_token=invalid-token',
         },
         body: JSON.stringify({
           displayName: 'Should Not Work',
@@ -165,27 +165,27 @@ describe('User API', () => {
 
       expect(response.status).toBe(401);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Invalid or expired token');
+      expect(data.error).toBe('Authorization required');
     });
 
     it('should update updatedAt timestamp', async () => {
       // Get original user
       const getRequest1 = new Request('http://localhost/api/me', {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response1 = await sendRequest(getRequest1);
       const originalData = await response1.json<GetMeResponse>();
-      const originalUpdatedAt = originalData.user.updatedAt;
+      const originalUpdatedAt = new Date(originalData.user.updatedAt).getTime();
 
-      // Wait a small amount to ensure timestamp difference
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      // Wait enough time to ensure timestamp difference (SQLite timestamp has second precision)
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       // Update profile
       const updateRequest = new Request('http://localhost/api/me', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           bio: 'New bio for timestamp test',
@@ -193,8 +193,10 @@ describe('User API', () => {
       });
       const response2 = await sendRequest(updateRequest);
       const updatedData = await response2.json<UpdateProfileResponse>();
+      const newUpdatedAt = new Date(updatedData.user.updatedAt).getTime();
 
-      expect(updatedData.user.updatedAt).not.toBe(originalUpdatedAt);
+      // The new timestamp should be at least 1 second later
+      expect(newUpdatedAt).toBeGreaterThan(originalUpdatedAt);
     });
   });
 });

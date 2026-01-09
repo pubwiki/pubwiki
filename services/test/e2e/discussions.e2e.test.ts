@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
+import { registerUser } from './helpers';
 
 describe('E2E: Discussions API', () => {
   let worker: Unstable_DevWorker;
   let client: ReturnType<typeof createApiClient>;
   let baseUrl: string;
-  let authToken: string;
+  let sessionCookie: string;
   let testUserId: string;
-  let secondUserToken: string;
+  let secondUserCookie: string;
   let secondUserId: string;
 
   beforeAll(async () => {
@@ -16,34 +17,23 @@ describe('E2E: Discussions API', () => {
     worker = await unstable_dev('src/index.ts', {
       experimental: { disableExperimentalWarning: true },
       local: true,
+      
       persist: false,
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
     client = createApiClient(baseUrl);
 
-    // 创建测试用户并获取 token
+    // 创建测试用户并获取 session cookie
     const username = `discussion_test_${Date.now()}`;
-    const { data } = await client.POST('/auth/register', {
-      body: {
-        username,
-        email: `${username}@example.com`,
-        password: 'password123',
-      },
-    });
-    authToken = data!.token;
-    testUserId = data!.user.id;
+    const result = await registerUser(baseUrl, username);
+    sessionCookie = result.sessionCookie;
+    testUserId = result.userId;
 
     // 创建第二个用户
     const username2 = `discussion_test2_${Date.now()}`;
-    const { data: data2 } = await client.POST('/auth/register', {
-      body: {
-        username: username2,
-        email: `${username2}@example.com`,
-        password: 'password123',
-      },
-    });
-    secondUserToken = data2!.token;
-    secondUserId = data2!.user.id;
+    const result2 = await registerUser(baseUrl, username2);
+    secondUserCookie = result2.sessionCookie;
+    secondUserId = result2.userId;
   });
 
   afterAll(async () => {
@@ -70,7 +60,7 @@ describe('E2E: Discussions API', () => {
     
     const response = await fetch(`${baseUrl}/artifacts`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` },
+      headers: { Cookie: sessionCookie },
       body: formData,
     });
     const data = await response.json() as { artifact: { id: string } };
@@ -84,7 +74,7 @@ describe('E2E: Discussions API', () => {
     const response = await fetch(`${baseUrl}/projects`, {
       method: 'POST',
       headers: { 
-        Authorization: `Bearer ${authToken}`,
+        Cookie: sessionCookie,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -112,7 +102,7 @@ describe('E2E: Discussions API', () => {
       const response = await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -138,7 +128,7 @@ describe('E2E: Discussions API', () => {
       const response = await fetch(`${baseUrl}/discussions?targetType=PROJECT&targetId=${projectId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -180,7 +170,7 @@ describe('E2E: Discussions API', () => {
       await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -193,7 +183,7 @@ describe('E2E: Discussions API', () => {
       await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -218,7 +208,7 @@ describe('E2E: Discussions API', () => {
       await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -231,7 +221,7 @@ describe('E2E: Discussions API', () => {
       await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -260,7 +250,7 @@ describe('E2E: Discussions API', () => {
       const createResponse = await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -294,7 +284,7 @@ describe('E2E: Discussions API', () => {
       const createResponse = await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -310,7 +300,7 @@ describe('E2E: Discussions API', () => {
       const replyResponse = await fetch(`${baseUrl}/discussions/${discussionId}/replies`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${secondUserToken}`,
+          Cookie: secondUserCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -347,7 +337,7 @@ describe('E2E: Discussions API', () => {
       const createResponse = await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -363,7 +353,7 @@ describe('E2E: Discussions API', () => {
       await fetch(`${baseUrl}/discussions/${discussionId}/replies`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ content: 'Reply 1' }),
@@ -372,7 +362,7 @@ describe('E2E: Discussions API', () => {
       await fetch(`${baseUrl}/discussions/${discussionId}/replies`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${secondUserToken}`,
+          Cookie: secondUserCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ content: 'Reply 2' }),
@@ -395,7 +385,7 @@ describe('E2E: Discussions API', () => {
       const createResponse = await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -411,7 +401,7 @@ describe('E2E: Discussions API', () => {
       const replyResponse = await fetch(`${baseUrl}/discussions/${discussionId}/replies`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${secondUserToken}`,
+          Cookie: secondUserCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ content: 'This is a helpful reply' }),
@@ -423,7 +413,7 @@ describe('E2E: Discussions API', () => {
       const acceptResponse = await fetch(`${baseUrl}/discussions/replies/${replyId}/accept`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
       });
 
@@ -439,7 +429,7 @@ describe('E2E: Discussions API', () => {
       const createResponse = await fetch(`${baseUrl}/discussions?targetType=ARTIFACT&targetId=${artifactId}`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -455,7 +445,7 @@ describe('E2E: Discussions API', () => {
       const replyResponse = await fetch(`${baseUrl}/discussions/${discussionId}/replies`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${secondUserToken}`,
+          Cookie: secondUserCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ content: 'Reply to accept' }),
@@ -467,7 +457,7 @@ describe('E2E: Discussions API', () => {
       const acceptResponse = await fetch(`${baseUrl}/discussions/replies/${replyId}/accept`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${secondUserToken}`,
+          Cookie: secondUserCookie,
         },
       });
 

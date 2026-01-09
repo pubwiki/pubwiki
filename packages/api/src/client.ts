@@ -1,54 +1,96 @@
 import createClient from 'openapi-fetch';
+import { createAuthClient as createBetterAuthClient } from 'better-auth/client';
+import { usernameClient } from 'better-auth/client/plugins';
 import type { paths } from './generated/openapi';
 
 export type { paths };
 
 /**
- * 创建 PubWiki API 客户端
+ * 创建 PubWiki 认证客户端
+ * 
+ * 使用 Better-Auth 进行认证操作（注册、登录、会话管理）。
+ * 登录后 session cookie 会自动管理，OpenAPI 客户端请求 API 时会自动携带认证信息。
+ * 
+ * @param baseURL - API 基础 URL（不包含 /api 路径），例如 'https://api.pubwiki.com'
  * 
  * @example
  * ```ts
- * import { createApiClient } from '@pubwiki/api/client';
+ * import { createAuthClient, createApiClient } from '@pubwiki/api/client';
  * 
- * const client = createApiClient('https://api.pubwiki.com');
- * 
- * // 健康检查
- * const { data, error } = await client.GET('/');
+ * const authClient = createAuthClient('https://api.pubwiki.com');
  * 
  * // 注册
- * const { data, error } = await client.POST('/auth/register', {
- *   body: {
- *     username: 'testuser',
- *     email: 'test@example.com',
- *     password: 'password123',
- *   },
+ * await authClient.signUp.email({
+ *   email: 'user@example.com',
+ *   password: 'password123',
+ *   name: 'User Name',
+ *   username: 'username',
  * });
  * 
- * // 登录
- * const { data, error } = await client.POST('/auth/login', {
- *   body: {
- *     usernameOrEmail: 'testuser',
- *     password: 'password123',
- *   },
+ * // 使用邮箱登录
+ * await authClient.signIn.email({
+ *   email: 'user@example.com',
+ *   password: 'password123',
  * });
  * 
- * // 获取当前用户（需要认证）
- * const authenticatedClient = createApiClient('https://api.pubwiki.com', token);
- * const { data, error } = await authenticatedClient.GET('/me');
+ * // 使用用户名登录
+ * await authClient.signIn.username({
+ *   username: 'username',
+ *   password: 'password123',
+ * });
+ * 
+ * // 获取当前会话
+ * const session = await authClient.getSession();
+ * 
+ * // 登出
+ * await authClient.signOut();
  * ```
  */
-export function createApiClient(baseUrl: string, token?: string) {
-  return createClient<paths>({
-    baseUrl,
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+export function createAuthClient(baseURL: string) {
+  return createBetterAuthClient({
+    baseURL,
+    basePath: '/api/auth',
+    plugins: [
+      usernameClient(), // 支持用户名登录
+    ],
   });
 }
 
 /**
- * 创建带认证的 API 客户端
+ * 创建 PubWiki API 客户端
+ * 
+ * 用于调用 PubWiki API（除认证外的所有端点）。
+ * 认证请使用 `createAuthClient()`，登录后 session cookie 会自动携带。
+ * 
+ * @param baseUrl - API 基础 URL（包含 /api 路径），例如 'https://api.pubwiki.com/api'
+ * 
+ * @example
+ * ```ts
+ * import { createAuthClient, createApiClient } from '@pubwiki/api/client';
+ * 
+ * // 1. 先使用 authClient 登录
+ * const authClient = createAuthClient('https://api.pubwiki.com');
+ * await authClient.signIn.email({ email: 'user@example.com', password: 'password123' });
+ * 
+ * // 2. 登录后使用 apiClient 调用其他 API
+ * const apiClient = createApiClient('https://api.pubwiki.com/api');
+ * 
+ * // 健康检查（无需认证）
+ * const { data, error } = await apiClient.GET('/');
+ * 
+ * // 获取当前用户（需要已登录）
+ * const { data: meData } = await apiClient.GET('/me');
+ * 
+ * // 创建项目（需要已登录）
+ * const { data: project } = await apiClient.POST('/projects', {
+ *   body: { name: 'My Project', slug: 'my-project', topic: 'general' },
+ * });
+ * ```
  */
-export function createAuthenticatedClient(baseUrl: string, token: string) {
-  return createApiClient(baseUrl, token);
+export function createApiClient(baseUrl: string) {
+  return createClient<paths>({
+    baseUrl,
+  });
 }
 
 // 导出 openapi-fetch 的类型

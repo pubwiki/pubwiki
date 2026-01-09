@@ -3,7 +3,7 @@ import type { Database } from '../client';
 import { projectPosts, type ProjectPost, type NewProjectPost } from '../schema/posts';
 import { projects, projectMaintainers } from '../schema/projects';
 import { discussions, discussionReplies, type NewDiscussion } from '../schema/discussions';
-import { users } from '../schema/users';
+import { user } from '../schema/auth';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   PostListItem,
@@ -60,13 +60,13 @@ export class PostService {
   private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
     const result = await this.db
       .select({
-        id: users.id,
-        username: users.username,
-        displayName: users.displayName,
-        avatarUrl: users.avatarUrl,
+        id: user.id,
+        username: user.username,
+        displayName: user.name,
+        avatarUrl: user.image,
       })
-      .from(users)
-      .where(eq(users.id, authorId))
+      .from(user)
+      .where(eq(user.id, authorId))
       .limit(1);
 
     return result[0] ?? null;
@@ -193,14 +193,14 @@ export class PostService {
         .select({
           post: projectPosts,
           author: {
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            avatarUrl: users.avatarUrl,
+            id: user.id,
+            username: user.username,
+            displayName: user.name,
+            avatarUrl: user.image,
           },
         })
         .from(projectPosts)
-        .leftJoin(users, eq(projectPosts.authorId, users.id))
+        .leftJoin(user, eq(projectPosts.authorId, user.id))
         .where(eq(projectPosts.projectId, projectId))
         .orderBy(desc(projectPosts.isPinned), orderFn(orderColumn))
         .limit(validLimit)
@@ -259,14 +259,14 @@ export class PostService {
         .select({
           post: projectPosts,
           author: {
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            avatarUrl: users.avatarUrl,
+            id: user.id,
+            username: user.username,
+            displayName: user.name,
+            avatarUrl: user.image,
           },
         })
         .from(projectPosts)
-        .leftJoin(users, eq(projectPosts.authorId, users.id))
+        .leftJoin(user, eq(projectPosts.authorId, user.id))
         .where(and(
           eq(projectPosts.projectId, projectId),
           eq(projectPosts.id, postId)

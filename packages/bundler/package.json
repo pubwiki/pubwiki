@@ -49,7 +49,7 @@
     "esbuild-wasm": "^0.24.2"
   },
   "devDependencies": {
-    "@types/node": "^22.15.21",
+    "@types/node": "catalog:",
     "@vitest/browser": "^4.0.15",
     "@vitest/browser-playwright": "^4.0.15",
     "@vitest/web-worker": "^4.0.15",

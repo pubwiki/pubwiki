@@ -2,7 +2,44 @@ openapi: 3.1.0
 info:
   title: PubWiki API
   version: 1.0.0
-  description: PubWiki Backend API
+  description: |
+    PubWiki Backend API
+    
+    ## 认证说明
+    
+    本 API 使用 [Better-Auth](https://www.better-auth.com/) 进行身份认证。
+    
+    **重要**: 认证相关的 API（注册、登录、会话管理等）不包含在此 OpenAPI 规范中。
+    客户端应该使用 `better-auth/client` 库进行认证操作，而不是通过此处定义的 OpenAPI 客户端。
+    
+    ### 客户端认证示例
+    
+    ```typescript
+    import { createAuthClient } from 'better-auth/client';
+    
+    const authClient = createAuthClient({
+      baseURL: 'https://api.pubwiki.com',
+    });
+    
+    // 注册
+    await authClient.signUp.email({
+      email: 'user@example.com',
+      password: 'password123',
+      name: 'User Name',
+      username: 'username',
+    });
+    
+    // 登录
+    await authClient.signIn.email({
+      email: 'user@example.com',
+      password: 'password123',
+    });
+    
+    // 获取会话
+    const session = await authClient.getSession();
+    ```
+    
+    认证成功后，Better-Auth 会自动设置 session cookie，后续请求会自动携带认证信息。
 
 servers:
   - url: /api
@@ -10,10 +47,11 @@ servers:
 
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: better-auth.session_token
+      description: Better-Auth session cookie (由 better-auth/client 自动管理)
 
   schemas:
     # 错误响应
@@ -1349,10 +1387,19 @@ paths:
 
   /auth/register:
     post:
-      summary: 用户注册
+      summary: 用户注册 (已废弃)
+      description: |
+        **已废弃**: 请使用 better-auth/client 进行注册。
+        
+        ```typescript
+        import { createAuthClient } from 'better-auth/client';
+        const authClient = createAuthClient({ baseURL: 'https://api.pubwiki.com' });
+        await authClient.signUp.email({ email, password, name, username });
+        ```
+      deprecated: true
       operationId: register
       tags:
-        - Auth
+        - Auth (Deprecated)
       requestBody:
         required: true
         content:
@@ -1411,10 +1458,19 @@ paths:
 
   /auth/login:
     post:
-      summary: 用户登录
+      summary: 用户登录 (已废弃)
+      description: |
+        **已废弃**: 请使用 better-auth/client 进行登录。
+        
+        ```typescript
+        import { createAuthClient } from 'better-auth/client';
+        const authClient = createAuthClient({ baseURL: 'https://api.pubwiki.com' });
+        await authClient.signIn.email({ email, password });
+        ```
+      deprecated: true
       operationId: login
       tags:
-        - Auth
+        - Auth (Deprecated)
       requestBody:
         required: true
         content:
@@ -1460,11 +1516,12 @@ paths:
   /me:
     get:
       summary: 获取当前用户信息
+      description: 需要通过 Better-Auth session cookie 认证。使用 better-auth/client 登录后会自动设置 cookie。
       operationId: getMe
       tags:
         - User
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       responses:
         '200':
           description: 成功获取用户信息
@@ -1490,7 +1547,7 @@ paths:
       tags:
         - User
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       requestBody:
         required: true
         content:
@@ -1640,7 +1697,7 @@ paths:
       tags:
         - Artifacts
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       requestBody:
         required: true
         content:
@@ -2245,7 +2302,7 @@ paths:
       tags:
         - Projects
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       requestBody:
         required: true
         content:
@@ -2469,7 +2526,7 @@ paths:
       tags:
         - Projects
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: projectId
           in: path
@@ -2643,7 +2700,7 @@ paths:
       tags:
         - Projects
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: projectId
           in: path
@@ -2761,7 +2818,7 @@ paths:
       tags:
         - Projects
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: projectId
           in: path
@@ -2834,7 +2891,7 @@ paths:
       tags:
         - Projects
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: projectId
           in: path
@@ -3154,7 +3211,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: targetType
           in: query
@@ -3238,7 +3295,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: discussionId
           in: path
@@ -3294,7 +3351,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: discussionId
           in: path
@@ -3342,7 +3399,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: discussionId
           in: path
@@ -3404,7 +3461,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: discussionId
           in: path
@@ -3525,7 +3582,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: discussionId
           in: path
@@ -3588,7 +3645,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: replyId
           in: path
@@ -3636,7 +3693,7 @@ paths:
       tags:
         - Discussions
       security:
-        - bearerAuth: []
+        - cookieAuth: []
       parameters:
         - name: replyId
           in: path

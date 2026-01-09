@@ -2,6 +2,51 @@
 
 PubWiki API 类型定义和客户端库。基于 OpenAPI 3.1 规范自动生成类型安全的 TypeScript 类型和 HTTP 客户端。
 
+## ⚠️ 认证说明
+
+**重要**: 认证功能已迁移到 [Better-Auth](https://www.better-auth.com/)。
+
+本包已集成 Better-Auth 客户端，使用 `createAuthClient` 进行认证操作（注册、登录、会话管理）。
+
+```typescript
+import { createAuthClient, createApiClient } from '@pubwiki/api/client';
+
+// 创建认证客户端
+const authClient = createAuthClient('https://api.pubwiki.com');
+
+// 注册
+await authClient.signUp.email({
+  email: 'user@example.com',
+  password: 'password123',
+  name: 'User Name',
+  username: 'username',
+});
+
+// 使用邮箱登录
+await authClient.signIn.email({
+  email: 'user@example.com',
+  password: 'password123',
+});
+
+// 使用用户名登录
+await authClient.signIn.username({
+  username: 'username',
+  password: 'password123',
+});
+
+// 获取当前会话
+const session = await authClient.getSession();
+
+// 登出
+await authClient.signOut();
+
+// 登录后使用 API 客户端
+const apiClient = createApiClient('https://api.pubwiki.com/api');
+const { data: meData } = await apiClient.GET('/me');
+```
+
+Better-Auth 会自动管理 session cookie，登录后使用 API 客户端请求其他端点时会自动携带认证信息。
+
 ## 安装
 
 ```bash
@@ -14,6 +59,7 @@ pnpm add @pubwiki/api
 - 🚀 **零运行时开销** - 类型仅在编译时使用
 - 📝 **API 文档即代码** - OpenAPI 规范作为单一真相来源
 - 🔄 **自动同步** - 类型与 API 实现始终保持一致
+- 🔐 **Better-Auth 集成** - 内置认证客户端，支持邮箱/用户名登录
 
 ## 使用方法
 
@@ -141,56 +187,50 @@ if (data) {
   console.log(data.version); // "1.0.0"
 }
 
-// 用户注册
-const { data, error } = await client.POST('/auth/register', {
-  body: {
-    username: 'newuser',
-    email: 'user@example.com',
-    password: 'securePassword123',
-    displayName: 'New User', // 可选
-  },
+// ⚠️ 认证请使用 better-auth/client，不要使用 OpenAPI 客户端
+import { createAuthClient } from 'better-auth/client';
+
+const authClient = createAuthClient({
+  baseURL: 'https://api.pubwiki.com',
 });
 
-if (data) {
-  console.log(data.message);      // "Registration successful"
-  console.log(data.user.username); // "newuser"
-  console.log(data.token);         // JWT token
-}
+// 用户注册
+await authClient.signUp.email({
+  email: 'user@example.com',
+  password: 'securePassword123',
+  name: 'New User',
+  username: 'newuser',
+});
 
 // 用户登录
-const { data, error } = await client.POST('/auth/login', {
-  body: {
-    usernameOrEmail: 'newuser', // 可以是用户名或邮箱
-    password: 'securePassword123',
-  },
+await authClient.signIn.email({
+  email: 'user@example.com',
+  password: 'securePassword123',
 });
 
-if (data) {
-  const token = data.token;
-  // 使用 token 创建认证客户端
-  const authClient = createApiClient('https://api.pubwiki.com/api', token);
-  
-  // 获取当前用户信息
-  const { data: meData } = await authClient.GET('/me');
-  if (meData) {
-    console.log(meData.user.username);
-    console.log(meData.user.email);
-  }
+// 登录后，session cookie 会自动设置
+// 使用 OpenAPI 客户端时会自动携带认证信息
 
-  // 更新用户 Profile
-  const { data: updateData } = await authClient.PATCH('/me', {
-    body: {
-      displayName: 'My New Name',
-      bio: 'A short bio about me',
-      website: 'https://mywebsite.com',
-      location: 'Tokyo, Japan',
-      avatarUrl: 'https://example.com/avatar.png',
-    },
-  });
-  if (updateData) {
-    console.log(updateData.message);        // "Profile updated successfully"
-    console.log(updateData.user.displayName); // "My New Name"
-  }
+// 获取当前用户信息
+const { data: meData } = await client.GET('/me');
+if (meData) {
+  console.log(meData.user.username);
+  console.log(meData.user.email);
+}
+
+// 更新用户 Profile
+const { data: updateData } = await client.PATCH('/me', {
+  body: {
+    displayName: 'My New Name',
+    bio: 'A short bio about me',
+    website: 'https://mywebsite.com',
+    location: 'Tokyo, Japan',
+    avatarUrl: 'https://example.com/avatar.png',
+  },
+});
+if (updateData) {
+  console.log(updateData.message);        // "Profile updated successfully"
+  console.log(updateData.user.displayName); // "My New Name"
 }
 
 // 创建/更新 Artifact（支持文件上传）

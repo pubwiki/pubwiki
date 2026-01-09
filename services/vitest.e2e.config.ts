@@ -4,8 +4,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['test/e2e/**/*.e2e.test.ts'],
-    testTimeout: 30000, // E2E 测试需要更长的超时时间
-    hookTimeout: 30000,
+    testTimeout: 60000, // E2E 测试需要更长的超时时间
+    hookTimeout: 60000, // 启动 worker 可能需要更长时间
     globals: true,
     // E2E 测试需要串行运行，因为每个测试文件都会启动自己的 worker 实例
     // 并行运行会导致多个 worker 实例访问同一个 D1 数据库产生冲突

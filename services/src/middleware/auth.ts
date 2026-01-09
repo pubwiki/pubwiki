@@ -1,55 +1,72 @@
 import { createMiddleware } from 'hono/factory';
 import type { Env } from '../types';
-import { verifyToken, extractToken, createDb, UserService } from '@pubwiki/db';
-import type { JwtPayload, ApiError } from '@pubwiki/api';
+import { createAuth } from '../lib/auth';
+import type { ApiError } from '@pubwiki/api';
+
+// Better-Auth session 中的 user 类型
+type SessionUser = {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  image: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  username: string;
+  bio: string | null;
+  website: string | null;
+  location: string | null;
+  isAdmin: boolean;
+  isVerified: boolean;
+};
+
+// Better-Auth session 类型
+type SessionData = {
+  id: string;
+  expiresAt: Date;
+  token: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  userId: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 // 扩展 Hono Context 的类型
 declare module 'hono' {
   interface ContextVariableMap {
-    user: JwtPayload;
+    user: SessionUser;
+    session: SessionData;
   }
 }
 
 // 认证中间件 - 必须登录
 export const authMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next) => {
-  const authHeader = c.req.header('Authorization') ?? null;
-  const token = extractToken(authHeader);
+  const auth = createAuth(c.env);
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
   
-  if (!token) {
-    return c.json<ApiError>({ error: 'Authorization token required' }, 401);
+  if (!session) {
+    return c.json<ApiError>({ error: 'Authorization required' }, 401);
   }
   
-  const payload = await verifyToken(token, c.env.JWT_SECRET);
-  
-  if (!payload) {
-    return c.json<ApiError>({ error: 'Invalid or expired token' }, 401);
-  }
-  
-  // 验证用户是否存在于数据库中
-  const db = createDb(c.env.DB);
-  const userService = new UserService(db, c.env.JWT_SECRET);
-  const userResult = await userService.getUserById(payload.sub);
-  
-  if (!userResult.success || !userResult.data) {
-    return c.json<ApiError>({ error: 'User not found or has been deleted' }, 401);
-  }
-  
-  // 将用户信息存储到 context 中
-  c.set('user', payload);
+  c.set('user', session.user as SessionUser);
+  c.set('session', session.session as SessionData);
   
   await next();
 });
 
 // 可选认证中间件 - 登录则设置用户信息，不登录也允许继续
 export const optionalAuthMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next) => {
-  const authHeader = c.req.header('Authorization') ?? null;
-  const token = extractToken(authHeader);
+  const auth = createAuth(c.env);
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
   
-  if (token) {
-    const payload = await verifyToken(token, c.env.JWT_SECRET);
-    if (payload) {
-      c.set('user', payload);
-    }
+  if (session) {
+    c.set('user', session.user as SessionUser);
+    c.set('session', session.session as SessionData);
   }
   
   await next();

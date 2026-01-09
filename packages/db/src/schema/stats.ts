@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { artifacts } from './artifacts';
-import { users } from './users';
+import { user } from './auth';
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
@@ -28,7 +28,7 @@ export const artifactStars = sqliteTable(
   {
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     artifactId: text('artifact_id')
       .notNull()
       .references(() => artifacts.id, { onDelete: 'cascade' }),
@@ -49,7 +49,7 @@ export const artifactViews = sqliteTable(
     artifactId: text('artifact_id')
       .notNull()
       .references(() => artifacts.id, { onDelete: 'cascade' }),
-    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
     ipHash: text('ip_hash', { length: 64 }), // 匿名用户的 IP hash
     userAgent: text('user_agent', { length: 500 }),
     referer: text('referer', { length: 500 }),

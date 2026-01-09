@@ -1,8 +1,17 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { RegisterResponse, LoginResponse, ApiError } from '@pubwiki/api';
-import { getTestDb, clearDatabase, sendRequest, users, eq, type TestDb } from './helpers';
+import { getTestDb, clearDatabase, sendRequest, user, session, eq, type TestDb } from './helpers';
 
-describe('Auth API', () => {
+/**
+ * Better-Auth API 测试
+ * 
+ * Better-Auth 提供以下端点：
+ * - POST /api/auth/sign-up/email - 邮箱注册
+ * - POST /api/auth/sign-in/email - 邮箱登录
+ * - POST /api/auth/sign-in/username - 用户名登录 (需要 username plugin)
+ * - GET /api/auth/session - 获取当前 session
+ * - POST /api/auth/sign-out - 登出
+ */
+describe('Better-Auth API', () => {
   let db: TestDb;
 
   beforeEach(async () => {
@@ -10,12 +19,13 @@ describe('Auth API', () => {
     await clearDatabase(db);
   });
 
-  describe('POST /api/auth/register', () => {
+  describe('POST /api/auth/sign-up/email', () => {
     it('should register a new user', async () => {
-      const request = new Request('http://localhost/api/auth/register', {
+      const request = new Request('http://localhost/api/auth/sign-up/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: 'Test User',
           username: 'testuser',
           email: 'test@example.com',
           password: 'password123',
@@ -23,82 +33,70 @@ describe('Auth API', () => {
       });
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(201);
-      const data = await response.json<RegisterResponse>();
-      expect(data.message).toBe('Registration successful');
-      expect(data.user.username).toBe('testuser');
-      expect(data.token).toBeTruthy();
+      expect(response.status).toBe(200);
+      
+      // Better-Auth 返回 user 和 session
+      const data = await response.json<{ user: { id: string; email: string; name: string }; }>();
+      expect(data.user.email).toBe('test@example.com');
+      expect(data.user.name).toBe('Test User');
+
+      // 验证返回了 session cookie
+      const setCookie = response.headers.get('Set-Cookie');
+      expect(setCookie).toBeTruthy();
+      expect(setCookie).toContain('better-auth');
 
       // 验证数据库状态
-      const dbUser = await db.select().from(users).where(eq(users.username, 'testuser'));
-      expect(dbUser).toHaveLength(1);
-      expect(dbUser[0].email).toBe('test@example.com');
-      expect(dbUser[0].passwordHash).toBeTruthy();
-      expect(dbUser[0].passwordHash).not.toBe('password123'); // 确保密码已加密
+      const dbUsers = await db.select().from(user).where(eq(user.username, 'testuser'));
+      expect(dbUsers).toHaveLength(1);
+      expect(dbUsers[0].email).toBe('test@example.com');
     });
 
-    it('should return 400 for invalid input', async () => {
-      const request = new Request('http://localhost/api/auth/register', {
+    it('should return error for duplicate email', async () => {
+      // 第一次注册
+      const firstRequest = new Request('http://localhost/api/auth/sign-up/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: 'ab', // too short
-          email: 'test@example.com',
-          password: 'password123',
-        }),
-      });
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(400);
-      const data = await response.json<ApiError>();
-      expect(data.error).toBeTruthy();
-
-      // 验证数据库状态 - 用户不应被创建
-      const dbUsers = await db.select().from(users);
-      expect(dbUsers).toHaveLength(0);
-    });
-
-    it('should return 409 for duplicate username', async () => {
-      // First registration
-      const firstRequest = new Request('http://localhost/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: 'duplicate',
-          email: 'first@example.com',
+          name: 'First User',
+          username: 'firstuser',
+          email: 'duplicate@example.com',
           password: 'password123',
         }),
       });
       await sendRequest(firstRequest);
 
-      // Second registration with same username
-      const secondRequest = new Request('http://localhost/api/auth/register', {
+      // 第二次用相同邮箱注册
+      const secondRequest = new Request('http://localhost/api/auth/sign-up/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          username: 'duplicate',
-          email: 'second@example.com',
+          name: 'Second User',
+          username: 'seconduser',
+          email: 'duplicate@example.com',
           password: 'password123',
         }),
       });
       const response = await sendRequest(secondRequest);
 
-      expect(response.status).toBe(409);
+      // Better-Auth 对重复邮箱返回错误
+      expect(response.ok).toBe(false);
+      expect(response.status).toBe(422);
 
       // 验证数据库状态 - 只有第一个用户被创建
-      const dbUsers = await db.select().from(users);
+      const dbUsers = await db.select().from(user);
       expect(dbUsers).toHaveLength(1);
-      expect(dbUsers[0].email).toBe('first@example.com');
+      expect(dbUsers[0].username).toBe('firstuser');
     });
   });
 
-  describe('POST /api/auth/login', () => {
+  describe('POST /api/auth/sign-in/email', () => {
     beforeEach(async () => {
-      // Create a test user
-      const request = new Request('http://localhost/api/auth/register', {
+      // 创建测试用户
+      const request = new Request('http://localhost/api/auth/sign-up/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: 'Login Test',
           username: 'logintest',
           email: 'login@example.com',
           password: 'password123',
@@ -107,63 +105,104 @@ describe('Auth API', () => {
       await sendRequest(request);
     });
 
-    it('should login with username', async () => {
-      const request = new Request('http://localhost/api/auth/login', {
+    it('should login with email and password', async () => {
+      const request = new Request('http://localhost/api/auth/sign-in/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          usernameOrEmail: 'logintest',
+          email: 'login@example.com',
           password: 'password123',
         }),
       });
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
-      const data = await response.json<LoginResponse>();
-      expect(data.message).toBe('Login successful');
-      expect(data.token).toBeTruthy();
+      
+      // 验证返回了 session cookie
+      const setCookie = response.headers.get('Set-Cookie');
+      expect(setCookie).toBeTruthy();
+
+      // 验证创建了 session
+      const sessions = await db.select().from(session);
+      expect(sessions.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('should login with email', async () => {
-      const request = new Request('http://localhost/api/auth/login', {
+    it('should return error for wrong password', async () => {
+      const request = new Request('http://localhost/api/auth/sign-in/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          usernameOrEmail: 'login@example.com',
-          password: 'password123',
-        }),
-      });
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-    });
-
-    it('should return 401 for wrong password', async () => {
-      const request = new Request('http://localhost/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          usernameOrEmail: 'logintest',
+          email: 'login@example.com',
           password: 'wrongpassword',
         }),
       });
       const response = await sendRequest(request);
 
+      expect(response.ok).toBe(false);
       expect(response.status).toBe(401);
     });
 
-    it('should return 401 for non-existent user', async () => {
-      const request = new Request('http://localhost/api/auth/login', {
+    it('should return error for non-existent user', async () => {
+      const request = new Request('http://localhost/api/auth/sign-in/email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          usernameOrEmail: 'nonexistent',
+          email: 'nonexistent@example.com',
           password: 'password123',
         }),
       });
       const response = await sendRequest(request);
 
+      expect(response.ok).toBe(false);
       expect(response.status).toBe(401);
     });
   });
+
+  describe('GET /api/auth/get-session', () => {
+    it('should return session for authenticated user', async () => {
+      // 先注册用户
+      const signUpRequest = new Request('http://localhost/api/auth/sign-up/email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Session Test',
+          username: 'sessiontest',
+          email: 'session@example.com',
+          password: 'password123',
+        }),
+      });
+      const signUpResponse = await sendRequest(signUpRequest);
+      const sessionCookie = signUpResponse.headers.get('Set-Cookie') || '';
+
+      // 使用 cookie 获取 session
+      const sessionRequest = new Request('http://localhost/api/auth/get-session', {
+        method: 'GET',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(sessionRequest);
+
+      expect(response.status).toBe(200);
+      const data = await response.json<{ session: { userId: string }; user: { email: string } }>();
+      expect(data.user.email).toBe('session@example.com');
+    });
+
+    it('should return null session without cookie', async () => {
+      const request = new Request('http://localhost/api/auth/get-session', {
+        method: 'GET',
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(200);
+      const data = await response.json<{ session: null }>();
+      // Better-Auth 对于无 session 返回 null
+      expect(data).toBeNull();
+    });
+  });
+
+  // sign-out 测试需要处理 CSRF token，暂时跳过
+  // describe('POST /api/auth/sign-out', () => {
+  //   it('should invalidate session on sign out', async () => {
+  //     // ...
+  //   });
+  // });
 });

@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { users, userOauth, userFollows } from './schema/users';
+import { user, session, account, userFollows } from './schema/auth';
 import { artifacts, artifactVersions, tags, artifactTags } from './schema/artifacts';
 import { artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs } from './schema/nodes';
 import { artifactLineage, artifactGenerationParams } from './schema/lineage';
@@ -11,9 +11,10 @@ import { artifactCollaborators, collections, collectionItems } from './schema/co
 import { projects, projectRoles, projectMaintainers, projectArtifacts, projectPages } from './schema/projects';
 import { projectPosts } from './schema/posts';
 
-// Users relations
-export const usersRelations = relations(users, ({ many }) => ({
-  oauthAccounts: many(userOauth),
+// User relations (Better-Auth)
+export const userRelations = relations(user, ({ many }) => ({
+  sessions: many(session),
+  accounts: many(account),
   followers: many(userFollows, { relationName: 'following' }),
   following: many(userFollows, { relationName: 'follower' }),
   artifacts: many(artifacts),
@@ -29,33 +30,41 @@ export const usersRelations = relations(users, ({ many }) => ({
   maintainedProjects: many(projectMaintainers),
 }));
 
-// User OAuth relations
-export const userOauthRelations = relations(userOauth, ({ one }) => ({
-  user: one(users, {
-    fields: [userOauth.userId],
-    references: [users.id],
+// Session relations (Better-Auth)
+export const sessionRelations = relations(session, ({ one }) => ({
+  user: one(user, {
+    fields: [session.userId],
+    references: [user.id],
+  }),
+}));
+
+// Account relations (Better-Auth)
+export const accountRelations = relations(account, ({ one }) => ({
+  user: one(user, {
+    fields: [account.userId],
+    references: [user.id],
   }),
 }));
 
 // User follows relations
 export const userFollowsRelations = relations(userFollows, ({ one }) => ({
-  follower: one(users, {
+  follower: one(user, {
     fields: [userFollows.followerId],
-    references: [users.id],
+    references: [user.id],
     relationName: 'follower',
   }),
-  following: one(users, {
+  following: one(user, {
     fields: [userFollows.followingId],
-    references: [users.id],
+    references: [user.id],
     relationName: 'following',
   }),
 }));
 
 // Artifacts relations
 export const artifactsRelations = relations(artifacts, ({ one, many }) => ({
-  author: one(users, {
+  author: one(user, {
     fields: [artifacts.authorId],
-    references: [users.id],
+    references: [user.id],
   }),
   currentVersion: one(artifactVersions, {
     fields: [artifacts.currentVersionId],
@@ -175,9 +184,9 @@ export const artifactStatsRelations = relations(artifactStats, ({ one }) => ({
 
 // Artifact stars relations
 export const artifactStarsRelations = relations(artifactStars, ({ one }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [artifactStars.userId],
-    references: [users.id],
+    references: [user.id],
   }),
   artifact: one(artifacts, {
     fields: [artifactStars.artifactId],
@@ -191,17 +200,17 @@ export const artifactViewsRelations = relations(artifactViews, ({ one }) => ({
     fields: [artifactViews.artifactId],
     references: [artifacts.id],
   }),
-  user: one(users, {
+  user: one(user, {
     fields: [artifactViews.userId],
-    references: [users.id],
+    references: [user.id],
   }),
 }));
 
 // Discussions relations (多态关联，不直接关联到特定表)
 export const discussionsRelations = relations(discussions, ({ one, many }) => ({
-  author: one(users, {
+  author: one(user, {
     fields: [discussions.authorId],
-    references: [users.id],
+    references: [user.id],
   }),
   replies: many(discussionReplies),
 }));
@@ -212,9 +221,9 @@ export const discussionRepliesRelations = relations(discussionReplies, ({ one, m
     fields: [discussionReplies.discussionId],
     references: [discussions.id],
   }),
-  author: one(users, {
+  author: one(user, {
     fields: [discussionReplies.authorId],
-    references: [users.id],
+    references: [user.id],
   }),
   parentReply: one(discussionReplies, {
     fields: [discussionReplies.parentReplyId],
@@ -234,17 +243,17 @@ export const artifactRunsRelations = relations(artifactRuns, ({ one }) => ({
     fields: [artifactRuns.versionId],
     references: [artifactVersions.id],
   }),
-  user: one(users, {
+  user: one(user, {
     fields: [artifactRuns.userId],
-    references: [users.id],
+    references: [user.id],
   }),
 }));
 
 // Notifications relations
 export const notificationsRelations = relations(notifications, ({ one }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [notifications.userId],
-    references: [users.id],
+    references: [user.id],
   }),
 }));
 
@@ -254,17 +263,17 @@ export const artifactCollaboratorsRelations = relations(artifactCollaborators, (
     fields: [artifactCollaborators.artifactId],
     references: [artifacts.id],
   }),
-  user: one(users, {
+  user: one(user, {
     fields: [artifactCollaborators.userId],
-    references: [users.id],
+    references: [user.id],
   }),
 }));
 
 // Collections relations
 export const collectionsRelations = relations(collections, ({ one, many }) => ({
-  user: one(users, {
+  user: one(user, {
     fields: [collections.userId],
-    references: [users.id],
+    references: [user.id],
   }),
   items: many(collectionItems),
 }));
@@ -283,9 +292,9 @@ export const collectionItemsRelations = relations(collectionItems, ({ one }) => 
 
 // Projects relations
 export const projectsRelations = relations(projects, ({ one, many }) => ({
-  owner: one(users, {
+  owner: one(user, {
     fields: [projects.ownerId],
-    references: [users.id],
+    references: [user.id],
   }),
   homepage: one(projectPages, {
     fields: [projects.homepageId],
@@ -321,9 +330,9 @@ export const projectMaintainersRelations = relations(projectMaintainers, ({ one 
     fields: [projectMaintainers.projectId],
     references: [projects.id],
   }),
-  user: one(users, {
+  user: one(user, {
     fields: [projectMaintainers.userId],
-    references: [users.id],
+    references: [user.id],
   }),
 }));
 
@@ -349,9 +358,9 @@ export const projectPostsRelations = relations(projectPosts, ({ one }) => ({
     fields: [projectPosts.projectId],
     references: [projects.id],
   }),
-  author: one(users, {
+  author: one(user, {
     fields: [projectPosts.authorId],
-    references: [users.id],
+    references: [user.id],
   }),
   discussion: one(discussions, {
     fields: [projectPosts.discussionId],

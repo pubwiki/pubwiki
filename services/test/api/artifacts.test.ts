@@ -11,9 +11,9 @@ import {
   getTestR2Bucket,
   clearDatabase,
   sendRequest,
-  registerAndLogin,
+  registerUser,
   createTestUser,
-  users,
+  user,
   artifacts,
   tags,
   artifactTags,
@@ -313,7 +313,6 @@ describe('Artifacts API', () => {
 
   describe('GET /api/artifacts/:artifactId/lineage', () => {
     let testUserId: string;
-    let authToken: string;
 
     async function createTestArtifact(
       authorId: string,
@@ -622,14 +621,13 @@ describe('Artifacts API', () => {
     });
 
     it('should return lineage for unlisted artifact with auth', async () => {
-      await db.delete(users);
-      authToken = await registerAndLogin('unlistedlineage');
+      await db.delete(user);
+      const { sessionCookie, userId } = await registerUser('unlistedlineage');
       
-      const [user] = await db.select().from(users).where(eq(users.username, 'unlistedlineage'));
-      const artifactId = await createTestArtifact(user.id, 'Unlisted', 'UNLISTED');
+      const artifactId = await createTestArtifact(userId, 'Unlisted', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/lineage`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -639,10 +637,10 @@ describe('Artifacts API', () => {
     it('should return 403 for private artifact with non-owner auth', async () => {
       const artifactId = await createTestArtifact(testUserId, 'Private', 'PRIVATE');
       
-      authToken = await registerAndLogin('otherlineageuser');
+      const { sessionCookie } = await registerUser('otherlineageuser');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/lineage`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -650,14 +648,13 @@ describe('Artifacts API', () => {
     });
 
     it('should return lineage for private artifact with owner auth', async () => {
-      await db.delete(users);
-      authToken = await registerAndLogin('privatelineage');
+      await db.delete(user);
+      const { sessionCookie, userId } = await registerUser('privatelineage');
       
-      const [user] = await db.select().from(users).where(eq(users.username, 'privatelineage'));
-      const artifactId = await createTestArtifact(user.id, 'Private', 'PRIVATE');
+      const artifactId = await createTestArtifact(userId, 'Private', 'PRIVATE');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/lineage`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -680,10 +677,11 @@ describe('Artifacts API', () => {
   });
 
   describe('POST /api/artifacts', () => {
-    let authToken: string;
+    let sessionCookie: string;
 
     beforeEach(async () => {
-      authToken = await registerAndLogin('createartifactuser');
+      const result = await registerUser('createartifactuser');
+      sessionCookie = result.sessionCookie;
     });
 
     // 创建 VFS 类型的节点 FormData（多文件）
@@ -838,7 +836,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -868,7 +866,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -917,7 +915,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -952,7 +950,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -973,7 +971,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -996,7 +994,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1019,7 +1017,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1045,7 +1043,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1063,7 +1061,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1081,7 +1079,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1103,7 +1101,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1126,7 +1124,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1146,7 +1144,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1166,7 +1164,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1186,7 +1184,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1206,7 +1204,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1222,7 +1220,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1243,7 +1241,7 @@ describe('Artifacts API', () => {
 
       const request1 = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData1,
       });
       const response1 = await sendRequest(request1);
@@ -1259,7 +1257,7 @@ describe('Artifacts API', () => {
 
       const request2 = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData2,
       });
       const response2 = await sendRequest(request2);
@@ -1280,14 +1278,14 @@ describe('Artifacts API', () => {
 
       const request1 = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData1,
       });
       const response1 = await sendRequest(request1);
       expect(response1.status).toBe(200);
 
       // Create artifact with second user using same slug
-      const authToken2 = await registerAndLogin('createartifactuser2');
+      const { sessionCookie: sessionCookie2 } = await registerUser('createartifactuser2');
       const formData2 = createVfsFormData({
         type: 'RECIPE',
         name: 'User2 Recipe',
@@ -1297,7 +1295,7 @@ describe('Artifacts API', () => {
 
       const request2 = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken2}` },
+        headers: { Cookie: sessionCookie2 },
         body: formData2,
       });
       const response2 = await sendRequest(request2);
@@ -1324,7 +1322,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1351,7 +1349,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1385,7 +1383,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1426,7 +1424,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1466,7 +1464,7 @@ describe('Artifacts API', () => {
 
       const request = new Request('http://localhost/api/artifacts', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
         body: formData,
       });
       const response = await sendRequest(request);
@@ -1500,7 +1498,7 @@ describe('Artifacts API', () => {
 
         const createRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData,
         });
         const createResponse = await sendRequest(createRequest);
@@ -1520,7 +1518,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1545,7 +1543,7 @@ describe('Artifacts API', () => {
 
         const createRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData,
         });
         const createResponse = await sendRequest(createRequest);
@@ -1569,7 +1567,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1592,7 +1590,7 @@ describe('Artifacts API', () => {
 
         const request = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: formData,
         });
         const response = await sendRequest(request);
@@ -1605,7 +1603,7 @@ describe('Artifacts API', () => {
 
       it('should return 403 when trying to update artifact owned by another user', async () => {
         // 创建另一个用户的 artifact
-        const otherUserToken = await registerAndLogin('otheruser');
+        const { sessionCookie: otherUserSessionCookie } = await registerUser('otheruser');
         const createFormData = createVfsFormData({
           type: 'RECIPE',
           name: 'Other User Recipe',
@@ -1615,7 +1613,7 @@ describe('Artifacts API', () => {
 
         const createRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${otherUserToken}` },
+          headers: { Cookie: otherUserSessionCookie },
           body: createFormData,
         });
         const createResponse = await sendRequest(createRequest);
@@ -1634,7 +1632,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1655,7 +1653,7 @@ describe('Artifacts API', () => {
 
         const createRequest1 = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData1,
         });
         await sendRequest(createRequest1);
@@ -1670,7 +1668,7 @@ describe('Artifacts API', () => {
 
         const createRequest2 = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData2,
         });
         const createResponse2 = await sendRequest(createRequest2);
@@ -1689,7 +1687,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1710,7 +1708,7 @@ describe('Artifacts API', () => {
 
         const createRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData,
         });
         const createResponse = await sendRequest(createRequest);
@@ -1729,7 +1727,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1758,7 +1756,7 @@ describe('Artifacts API', () => {
 
         const createRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData,
         });
         const createResponse = await sendRequest(createRequest);
@@ -1783,7 +1781,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1814,7 +1812,7 @@ describe('Artifacts API', () => {
 
         const createRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData,
         });
         const createResponse = await sendRequest(createRequest);
@@ -1840,7 +1838,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1867,7 +1865,7 @@ describe('Artifacts API', () => {
 
         const createRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData,
         });
         const createResponse = await sendRequest(createRequest);
@@ -1887,7 +1885,7 @@ describe('Artifacts API', () => {
 
         const updateRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: updateFormData,
         });
         const updateResponse = await sendRequest(updateRequest);
@@ -1914,7 +1912,7 @@ describe('Artifacts API', () => {
 
         const createRequest1 = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData1,
         });
         const createResponse1 = await sendRequest(createRequest1);
@@ -1932,7 +1930,7 @@ describe('Artifacts API', () => {
 
         const createRequest2 = new Request('http://localhost/api/artifacts', {
           method: 'POST',
-          headers: { Authorization: `Bearer ${authToken}` },
+          headers: { Cookie: sessionCookie },
           body: createFormData2,
         });
         const createResponse2 = await sendRequest(createRequest2);
@@ -1945,7 +1943,6 @@ describe('Artifacts API', () => {
 
   describe('GET /api/artifacts/:artifactId/homepage', () => {
     let testUserId: string;
-    let authToken: string;
 
     async function createTestArtifact(
       authorId: string,
@@ -2021,12 +2018,12 @@ describe('Artifacts API', () => {
     });
 
     it('should return homepage for unlisted artifact with auth', async () => {
-      authToken = await registerAndLogin('autheduser');
+      const { sessionCookie } = await registerUser('autheduser');
       const artifactId = await createTestArtifact(testUserId, 'Unlisted Artifact', 'UNLISTED');
       await storeHomepage(artifactId, '<h1>Unlisted Content</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -2046,12 +2043,12 @@ describe('Artifacts API', () => {
     });
 
     it('should return 403 for private artifact from different user', async () => {
-      authToken = await registerAndLogin('differentuser');
+      const { sessionCookie } = await registerUser('differentuser');
       const artifactId = await createTestArtifact(testUserId, 'Private Artifact', 'PRIVATE');
       await storeHomepage(artifactId, '<h1>Private</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -2060,14 +2057,13 @@ describe('Artifacts API', () => {
 
     it('should return homepage for private artifact owned by user', async () => {
       // Register user and get their ID
-      authToken = await registerAndLogin('owneruser');
-      const [owner] = await db.select().from(users).where(eq(users.username, 'owneruser'));
+      const { sessionCookie, userId: ownerId } = await registerUser('owneruser');
       
-      const artifactId = await createTestArtifact(owner.id, 'My Private Artifact', 'PRIVATE');
+      const artifactId = await createTestArtifact(ownerId, 'My Private Artifact', 'PRIVATE');
       await storeHomepage(artifactId, '<h1>My Private Content</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 

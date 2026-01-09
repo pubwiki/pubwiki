@@ -9,12 +9,12 @@ import {
   clearDatabase,
   sendRequest,
   createTestUser,
-  registerAndLogin,
+  registerUser,
   artifacts,
   projects,
   projectMaintainers,
   artifactStats,
-  users,
+  user,
   eq,
   type TestDb,
 } from './helpers';
@@ -97,14 +97,14 @@ describe('Users API', () => {
     });
 
     it('should return public and unlisted artifacts for authenticated user viewing others', async () => {
-      const viewerToken = await registerAndLogin('viewer');
+      const { sessionCookie } = await registerUser('viewer');
       
       await createTestArtifact(testUserId, 'RECIPE', 'Public Recipe', 'PUBLIC');
       await createTestArtifact(testUserId, 'GAME', 'Private Game', 'PRIVATE');
       await createTestArtifact(testUserId, 'ASSET_PACK', 'Unlisted Pack', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts`, {
-        headers: { Authorization: `Bearer ${viewerToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -117,18 +117,14 @@ describe('Users API', () => {
     });
 
     it('should return all artifacts for authenticated user viewing self', async () => {
-      const ownerToken = await registerAndLogin('owner');
-      
-      // 获取注册用户的 ID
-      const ownerUser = await db.select().from(users).where(eq(users.username, 'owner')).limit(1);
-      const ownerId = ownerUser[0].id;
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       
       await createTestArtifact(ownerId, 'RECIPE', 'Public Recipe', 'PUBLIC');
       await createTestArtifact(ownerId, 'GAME', 'Private Game', 'PRIVATE');
       await createTestArtifact(ownerId, 'ASSET_PACK', 'Unlisted Pack', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/users/${ownerId}/artifacts`, {
-        headers: { Authorization: `Bearer ${ownerToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -381,14 +377,14 @@ describe('Users API', () => {
     });
 
     it('should return public and unlisted projects for authenticated user viewing others', async () => {
-      const viewerToken = await registerAndLogin('viewer');
+      const { sessionCookie } = await registerUser('viewer');
       
       await createTestProject(testUserId, 'Public Project', 'PUBLIC');
       await createTestProject(testUserId, 'Private Project', 'PRIVATE');
       await createTestProject(testUserId, 'Unlisted Project', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/users/${testUserId}/projects`, {
-        headers: { Authorization: `Bearer ${viewerToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -401,18 +397,14 @@ describe('Users API', () => {
     });
 
     it('should return all projects for authenticated user viewing self', async () => {
-      const ownerToken = await registerAndLogin('owner');
-      
-      // 获取注册用户的 ID
-      const ownerUser = await db.select().from(users).where(eq(users.username, 'owner')).limit(1);
-      const ownerId = ownerUser[0].id;
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       
       await createTestProject(ownerId, 'Public Project', 'PUBLIC');
       await createTestProject(ownerId, 'Private Project', 'PRIVATE');
       await createTestProject(ownerId, 'Unlisted Project', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/users/${ownerId}/projects`, {
-        headers: { Authorization: `Bearer ${ownerToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 

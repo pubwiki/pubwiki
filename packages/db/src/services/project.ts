@@ -4,7 +4,7 @@ import type { Database } from '../client';
 import { projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, type Project, type ProjectRole, type ProjectPage } from '../schema/projects';
 import { artifacts, tags, artifactTags } from '../schema/artifacts';
 import { artifactStats } from '../schema/stats';
-import { users, type User } from '../schema/users';
+import { user, type User } from '../schema/auth';
 import type { ServiceError, ServiceResult } from './user';
 import type { PaginationInfo } from './artifact';
 import type {
@@ -150,12 +150,12 @@ export class ProjectService {
           createdAt: projects.createdAt,
           updatedAt: projects.updatedAt,
           ownerId: projects.ownerId,
-          ownerUsername: users.username,
-          ownerDisplayName: users.displayName,
-          ownerAvatarUrl: users.avatarUrl,
+          ownerUsername: user.username,
+          ownerDisplayName: user.name,
+          ownerAvatarUrl: user.image,
         })
         .from(projects)
-        .leftJoin(users, eq(projects.ownerId, users.id))
+        .leftJoin(user, eq(projects.ownerId, user.id))
         .where(and(...baseConditions))
         .orderBy(orderFn(orderColumn))
         .limit(validLimit)
@@ -248,7 +248,7 @@ export class ProjectService {
       const result = await this.db
         .select()
         .from(projects)
-        .leftJoin(users, eq(projects.ownerId, users.id))
+        .leftJoin(user, eq(projects.ownerId, user.id))
         .where(eq(projects.id, projectId))
         .limit(1);
 
@@ -266,7 +266,7 @@ export class ProjectService {
         success: true,
         data: {
           project: result[0].projects,
-          owner: result[0].users!,
+          owner: result[0].user!,
         },
       };
     } catch (error) {
@@ -319,12 +319,12 @@ export class ProjectService {
           createdAt: projects.createdAt,
           updatedAt: projects.updatedAt,
           ownerId: projects.ownerId,
-          ownerUsername: users.username,
-          ownerDisplayName: users.displayName,
-          ownerAvatarUrl: users.avatarUrl,
+          ownerUsername: user.username,
+          ownerDisplayName: user.name,
+          ownerAvatarUrl: user.image,
         })
         .from(projects)
-        .leftJoin(users, eq(projects.ownerId, users.id))
+        .leftJoin(user, eq(projects.ownerId, user.id))
         .where(eq(projects.id, projectId))
         .limit(1);
 
@@ -343,13 +343,13 @@ export class ProjectService {
       // 2. 获取 maintainers
       const maintainerRows = await this.db
         .select({
-          id: users.id,
-          username: users.username,
-          displayName: users.displayName,
-          avatarUrl: users.avatarUrl,
+          id: user.id,
+          username: user.username,
+          displayName: user.name,
+          avatarUrl: user.image,
         })
         .from(projectMaintainers)
-        .innerJoin(users, eq(projectMaintainers.userId, users.id))
+        .innerJoin(user, eq(projectMaintainers.userId, user.id))
         .where(eq(projectMaintainers.projectId, projectId));
 
       // 3. 获取 roles
@@ -400,13 +400,13 @@ export class ProjectService {
           updatedAt: artifacts.updatedAt,
           authorId: artifacts.authorId,
           // Author 信息
-          authorUsername: users.username,
-          authorDisplayName: users.displayName,
-          authorAvatarUrl: users.avatarUrl,
+          authorUsername: user.username,
+          authorDisplayName: user.name,
+          authorAvatarUrl: user.image,
         })
         .from(projectArtifacts)
         .innerJoin(artifacts, eq(projectArtifacts.artifactId, artifacts.id))
-        .leftJoin(users, eq(artifacts.authorId, users.id))
+        .leftJoin(user, eq(artifacts.authorId, user.id))
         .where(eq(projectArtifacts.projectId, projectId));
 
       // 创建 role 映射
@@ -619,12 +619,12 @@ export class ProjectService {
           createdAt: projects.createdAt,
           updatedAt: projects.updatedAt,
           ownerId: projects.ownerId,
-          ownerUsername: users.username,
-          ownerDisplayName: users.displayName,
-          ownerAvatarUrl: users.avatarUrl,
+          ownerUsername: user.username,
+          ownerDisplayName: user.name,
+          ownerAvatarUrl: user.image,
         })
         .from(projects)
-        .leftJoin(users, eq(projects.ownerId, users.id))
+        .leftJoin(user, eq(projects.ownerId, user.id))
         .where(inArray(projects.id, allProjectIds))
         .orderBy(orderFn(orderColumn))
         .limit(validLimit)
@@ -1100,13 +1100,13 @@ export class ProjectService {
           updatedAt: artifacts.updatedAt,
           authorId: artifacts.authorId,
           // Author 信息
-          authorUsername: users.username,
-          authorDisplayName: users.displayName,
-          authorAvatarUrl: users.avatarUrl,
+          authorUsername: user.username,
+          authorDisplayName: user.name,
+          authorAvatarUrl: user.image,
         })
         .from(projectArtifacts)
         .innerJoin(artifacts, eq(projectArtifacts.artifactId, artifacts.id))
-        .leftJoin(users, eq(artifacts.authorId, users.id))
+        .leftJoin(user, eq(artifacts.authorId, user.id))
         .where(whereClause)
         .orderBy(orderFn(orderByColumn))
         .limit(validLimit)
@@ -1385,13 +1385,13 @@ export class ProjectService {
       // 获取 author 信息
       const [author] = await this.db
         .select({
-          id: users.id,
-          username: users.username,
-          displayName: users.displayName,
-          avatarUrl: users.avatarUrl,
+          id: user.id,
+          username: user.username,
+          displayName: user.name,
+          avatarUrl: user.image,
         })
-        .from(users)
-        .where(eq(users.id, artifact.authorId))
+        .from(user)
+        .where(eq(user.id, artifact.authorId))
         .limit(1);
 
       // 获取 tags

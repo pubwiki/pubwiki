@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
+import { registerUser } from './helpers';
 import type { CreateProjectMetadata, CreateProjectRole, CreatePostRequest, PostDetail, ListProjectPostsResponse } from '@pubwiki/api';
 
 describe('E2E: Project Posts API', () => {
   let worker: Unstable_DevWorker;
   let client: ReturnType<typeof createApiClient>;
   let baseUrl: string;
-  let authToken: string;
+  let sessionCookie: string;
   let testUserId: string;
   let testProjectId: string;
 
@@ -16,29 +17,24 @@ describe('E2E: Project Posts API', () => {
     worker = await unstable_dev('src/index.ts', {
       experimental: { disableExperimentalWarning: true },
       local: true,
+      
       persist: false,
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
     client = createApiClient(baseUrl);
 
-    // 创建测试用户并获取 token
+    // 创建测试用户并获取 session cookie
     const username = `post_test_${Date.now()}`;
-    const { data } = await client.POST('/auth/register', {
-      body: {
-        username,
-        email: `${username}@example.com`,
-        password: 'password123',
-      },
-    });
-    authToken = data!.token;
-    testUserId = data!.user.id;
+    const result = await registerUser(baseUrl, username);
+    sessionCookie = result.sessionCookie;
+    testUserId = result.userId;
 
     // 创建测试 project
     const slug = `test-project-${Date.now()}`;
     const response = await fetch(`${baseUrl}/projects`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${authToken}`,
+        Cookie: sessionCookie,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -61,7 +57,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -83,7 +79,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -116,18 +112,12 @@ describe('E2E: Project Posts API', () => {
     it('should reject post creation from non-member', async () => {
       // 创建另一个用户
       const otherUsername = `other_user_${Date.now()}`;
-      const { data: otherUser } = await client.POST('/auth/register', {
-        body: {
-          username: otherUsername,
-          email: `${otherUsername}@example.com`,
-          password: 'password123',
-        },
-      });
+      const differentCookie = (await registerUser(baseUrl, otherUsername)).sessionCookie;
 
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${otherUser!.token}`,
+          Cookie: differentCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -148,7 +138,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -204,7 +194,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -245,7 +235,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -261,7 +251,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts/${postId}`, {
         method: 'PATCH',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -280,7 +270,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts/${postId}`, {
         method: 'PATCH',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -297,7 +287,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts/${postId}`, {
         method: 'PATCH',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -331,7 +321,7 @@ describe('E2E: Project Posts API', () => {
       const createResponse = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -346,7 +336,7 @@ describe('E2E: Project Posts API', () => {
       const deleteResponse = await fetch(`${baseUrl}/projects/${testProjectId}/posts/${postId}`, {
         method: 'DELETE',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
       });
 
@@ -364,7 +354,7 @@ describe('E2E: Project Posts API', () => {
       const createResponse = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -391,7 +381,7 @@ describe('E2E: Project Posts API', () => {
         await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -412,7 +402,7 @@ describe('E2E: Project Posts API', () => {
         await fetch(`${baseUrl}/projects/${testProjectId}/posts/${nonPinnedPost.id}`, {
           method: 'PATCH',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ isPinned: true }),
@@ -441,7 +431,7 @@ describe('E2E: Project Posts API', () => {
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -467,7 +457,7 @@ describe('E2E: Project Posts API', () => {
       const createResponse = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -482,7 +472,7 @@ describe('E2E: Project Posts API', () => {
       const replyResponse = await fetch(`${baseUrl}/discussions/${discussionId}/replies`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

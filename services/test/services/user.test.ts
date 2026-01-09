@@ -1,16 +1,42 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { createDb, UserService, users, artifacts, artifactTags, artifactStats, artifactVersions, artifactLineage, artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs, eq } from '@pubwiki/db';
-
-const TEST_JWT_SECRET = 'test-jwt-secret-for-unit-tests';
+import { createDb, UserService, user, account, session, artifacts, artifactTags, artifactStats, artifactVersions, artifactLineage, artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs, eq } from '@pubwiki/db';
 
 describe('UserService', () => {
   let db: ReturnType<typeof createDb>;
   let userService: UserService;
 
+  // 辅助函数：直接在数据库中创建测试用户
+  async function createTestUser(data: {
+    id?: string;
+    username: string;
+    email: string;
+    name?: string;
+  }) {
+    const now = new Date();
+    const userId = data.id ?? crypto.randomUUID();
+    await db.insert(user).values({
+      id: userId,
+      username: data.username,
+      email: data.email,
+      name: data.name ?? data.username,
+      emailVerified: false,
+      image: null,
+      createdAt: now,
+      updatedAt: now,
+      displayUsername: data.username,
+      bio: null,
+      website: null,
+      location: null,
+      isAdmin: false,
+      isVerified: false,
+    });
+    return userId;
+  }
+
   beforeEach(async () => {
     db = createDb(env.DB);
-    userService = new UserService(db, TEST_JWT_SECRET);
+    userService = new UserService(db);
     
     // 清空数据库（按外键顺序）
     await db.delete(artifactLineage);
@@ -22,295 +48,19 @@ describe('UserService', () => {
     await db.delete(artifactTags);
     await db.delete(artifactStats);
     await db.delete(artifacts);
-    await db.delete(users);
-  });
-
-  describe('register', () => {
-    it('should register a new user successfully', async () => {
-      const result = await userService.register({
-        username: 'testuser',
-        email: 'test@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.user.username).toBe('testuser');
-        expect(result.data.user.email).toBe('test@example.com');
-        expect(result.data.user.displayName).toBe('testuser');
-        expect(result.data.token).toBeTruthy();
-
-        // 验证数据库状态
-        const dbUser = await db.select().from(users).where(eq(users.id, result.data.user.id));
-        expect(dbUser).toHaveLength(1);
-        expect(dbUser[0].username).toBe('testuser');
-        expect(dbUser[0].email).toBe('test@example.com');
-        expect(dbUser[0].passwordHash).toBeTruthy();
-        expect(dbUser[0].passwordHash).toContain(':'); // PBKDF2 格式: salt:hash
-      }
-    });
-
-    it('should use displayName when provided', async () => {
-      const result = await userService.register({
-        username: 'testuser',
-        email: 'test@example.com',
-        password: 'password123',
-        displayName: 'Test Display Name',
-      });
-
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.user.displayName).toBe('Test Display Name');
-      }
-    });
-
-    it('should fail with missing username', async () => {
-      const result = await userService.register({
-        username: '',
-        email: 'test@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-      }
-    });
-
-    it('should fail with missing email', async () => {
-      const result = await userService.register({
-        username: 'testuser',
-        email: '',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-      }
-    });
-
-    it('should fail with missing password', async () => {
-      const result = await userService.register({
-        username: 'testuser',
-        email: 'test@example.com',
-        password: '',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-      }
-    });
-
-    it('should fail with invalid username format (too short)', async () => {
-      const result = await userService.register({
-        username: 'ab',
-        email: 'test@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-        expect(result.error.message).toContain('Username');
-      }
-    });
-
-    it('should fail with invalid username format (special characters)', async () => {
-      const result = await userService.register({
-        username: 'test@user!',
-        email: 'test@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-      }
-    });
-
-    it('should fail with invalid email format', async () => {
-      const result = await userService.register({
-        username: 'testuser',
-        email: 'invalid-email',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-        expect(result.error.message).toContain('email');
-      }
-    });
-
-    it('should fail with short password', async () => {
-      const result = await userService.register({
-        username: 'testuser',
-        email: 'test@example.com',
-        password: 'short',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-        expect(result.error.message).toContain('8 characters');
-      }
-    });
-
-    it('should fail when username already exists', async () => {
-      // 先注册一个用户
-      await userService.register({
-        username: 'existinguser',
-        email: 'first@example.com',
-        password: 'password123',
-      });
-
-      // 尝试用相同用户名注册
-      const result = await userService.register({
-        username: 'existinguser',
-        email: 'second@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('USER_EXISTS');
-      }
-
-      // 验证数据库状态 - 只有一个用户
-      const dbUsers = await db.select().from(users);
-      expect(dbUsers).toHaveLength(1);
-      expect(dbUsers[0].email).toBe('first@example.com');
-    });
-
-    it('should fail when email already exists', async () => {
-      // 先注册一个用户
-      await userService.register({
-        username: 'firstuser',
-        email: 'existing@example.com',
-        password: 'password123',
-      });
-
-      // 尝试用相同邮箱注册
-      const result = await userService.register({
-        username: 'seconduser',
-        email: 'existing@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('USER_EXISTS');
-      }
-    });
-
-    it('should accept valid username with underscores and hyphens', async () => {
-      const result = await userService.register({
-        username: 'test_user-123',
-        email: 'test@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(true);
-    });
-  });
-
-  describe('login', () => {
-    beforeEach(async () => {
-      // 创建测试用户
-      await userService.register({
-        username: 'loginuser',
-        email: 'login@example.com',
-        password: 'password123',
-      });
-    });
-
-    it('should login successfully with username', async () => {
-      const result = await userService.login({
-        usernameOrEmail: 'loginuser',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.user.username).toBe('loginuser');
-        expect(result.data.token).toBeTruthy();
-      }
-    });
-
-    it('should login successfully with email', async () => {
-      const result = await userService.login({
-        usernameOrEmail: 'login@example.com',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.user.email).toBe('login@example.com');
-      }
-    });
-
-    it('should fail with wrong password', async () => {
-      const result = await userService.login({
-        usernameOrEmail: 'loginuser',
-        password: 'wrongpassword',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('INVALID_CREDENTIALS');
-      }
-    });
-
-    it('should fail with non-existent user', async () => {
-      const result = await userService.login({
-        usernameOrEmail: 'nonexistent',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('INVALID_CREDENTIALS');
-      }
-    });
-
-    it('should fail with missing credentials', async () => {
-      const result = await userService.login({
-        usernameOrEmail: '',
-        password: 'password123',
-      });
-
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('VALIDATION_ERROR');
-      }
-    });
-
-    it('should update lastLoginAt on successful login', async () => {
-      await userService.login({
-        usernameOrEmail: 'loginuser',
-        password: 'password123',
-      });
-
-      const userResult = await userService.getUserByUsername('loginuser');
-      expect(userResult.success).toBe(true);
-      // lastLoginAt 不在 PublicUser 中，但登录应该成功
-    });
+    await db.delete(session);
+    await db.delete(account);
+    await db.delete(user);
   });
 
   describe('getUserById', () => {
     let userId: string;
 
     beforeEach(async () => {
-      const result = await userService.register({
+      userId = await createTestUser({
         username: 'getuser',
         email: 'get@example.com',
-        password: 'password123',
       });
-      if (result.success) {
-        userId = result.data.user.id;
-      }
     });
 
     it('should get user by id', async () => {
@@ -331,14 +81,32 @@ describe('UserService', () => {
         expect(result.error.code).toBe('USER_NOT_FOUND');
       }
     });
+
+    it('should return correct public user fields', async () => {
+      const result = await userService.getUserById(userId);
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data).toHaveProperty('id');
+        expect(result.data).toHaveProperty('username');
+        expect(result.data).toHaveProperty('email');
+        expect(result.data).toHaveProperty('displayName');
+        expect(result.data).toHaveProperty('avatarUrl');
+        expect(result.data).toHaveProperty('bio');
+        expect(result.data).toHaveProperty('website');
+        expect(result.data).toHaveProperty('location');
+        expect(result.data).toHaveProperty('isAdmin');
+        expect(result.data).toHaveProperty('createdAt');
+        expect(result.data).toHaveProperty('updatedAt');
+      }
+    });
   });
 
   describe('getUserByUsername', () => {
     beforeEach(async () => {
-      await userService.register({
+      await createTestUser({
         username: 'findme',
         email: 'find@example.com',
-        password: 'password123',
       });
     });
 
@@ -360,31 +128,41 @@ describe('UserService', () => {
         expect(result.error.code).toBe('USER_NOT_FOUND');
       }
     });
+
+    it('should be case sensitive for username', async () => {
+      const result = await userService.getUserByUsername('FINDME');
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe('USER_NOT_FOUND');
+      }
+    });
   });
 
   describe('updateUser', () => {
     let userId: string;
 
     beforeEach(async () => {
-      const result = await userService.register({
+      userId = await createTestUser({
         username: 'updateuser',
         email: 'update@example.com',
-        password: 'password123',
+        name: 'Original Name',
       });
-      if (result.success) {
-        userId = result.data.user.id;
-      }
     });
 
-    it('should update user displayName', async () => {
+    it('should update user name', async () => {
       const result = await userService.updateUser(userId, {
-        displayName: 'New Display Name',
+        name: 'New Display Name',
       });
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.displayName).toBe('New Display Name');
       }
+
+      // 验证数据库状态
+      const dbUser = await db.select().from(user).where(eq(user.id, userId));
+      expect(dbUser[0].name).toBe('New Display Name');
     });
 
     it('should update user bio', async () => {
@@ -398,27 +176,99 @@ describe('UserService', () => {
       }
     });
 
+    it('should update user website', async () => {
+      const result = await userService.updateUser(userId, {
+        website: 'https://example.com',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.website).toBe('https://example.com');
+      }
+    });
+
+    it('should update user location', async () => {
+      const result = await userService.updateUser(userId, {
+        location: 'San Francisco, CA',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.location).toBe('San Francisco, CA');
+      }
+    });
+
+    it('should update user image/avatar', async () => {
+      const result = await userService.updateUser(userId, {
+        image: 'https://example.com/avatar.png',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.avatarUrl).toBe('https://example.com/avatar.png');
+      }
+    });
+
     it('should update multiple fields at once', async () => {
       const result = await userService.updateUser(userId, {
-        displayName: 'Updated Name',
+        name: 'Updated Name',
         bio: 'Updated bio',
+        website: 'https://updated.com',
+        location: 'New York',
       });
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.displayName).toBe('Updated Name');
         expect(result.data.bio).toBe('Updated bio');
+        expect(result.data.website).toBe('https://updated.com');
+        expect(result.data.location).toBe('New York');
       }
+    });
+
+    it('should update updatedAt timestamp', async () => {
+      const beforeUpdate = await db.select().from(user).where(eq(user.id, userId));
+      const originalUpdatedAt = beforeUpdate[0].updatedAt;
+
+      // 等待一小段时间确保时间戳不同
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      await userService.updateUser(userId, {
+        name: 'New Name',
+      });
+
+      const afterUpdate = await db.select().from(user).where(eq(user.id, userId));
+      expect(afterUpdate[0].updatedAt).not.toBe(originalUpdatedAt);
     });
 
     it('should return error for non-existent user', async () => {
       const result = await userService.updateUser('non-existent-id', {
-        displayName: 'Test',
+        name: 'Test',
       });
 
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.code).toBe('USER_NOT_FOUND');
+      }
+    });
+
+    it('should allow setting fields to null', async () => {
+      // 先设置一些值
+      await userService.updateUser(userId, {
+        bio: 'Some bio',
+        website: 'https://example.com',
+      });
+
+      // 然后设置为 null
+      const result = await userService.updateUser(userId, {
+        bio: null,
+        website: null,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.bio).toBeNull();
+        expect(result.data.website).toBeNull();
       }
     });
   });

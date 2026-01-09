@@ -1,1 +1,0 @@
-ALTER TABLE `projects` ADD `license` text(50);

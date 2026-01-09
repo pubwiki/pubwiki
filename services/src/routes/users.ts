@@ -10,7 +10,7 @@ const usersRoute = new Hono<{ Bindings: Env }>();
 usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
-  const userService = new UserService(db, c.env.JWT_SECRET);
+  const userService = new UserService(db);
   const userId = c.req.param('userId');
   const currentUser = c.get('user');
 
@@ -63,7 +63,7 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
   let visibilityFilter: VisibilityType[];
   if (!currentUser) {
     visibilityFilter = ['PUBLIC'];
-  } else if (currentUser.sub === userId) {
+  } else if (currentUser.id === userId) {
     visibilityFilter = ['PUBLIC', 'UNLISTED', 'PRIVATE'];
   } else {
     visibilityFilter = ['PUBLIC', 'UNLISTED'];
@@ -92,7 +92,7 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
 usersRoute.get('/:userId/projects', optionalAuthMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const projectService = new ProjectService(db);
-  const userService = new UserService(db, c.env.JWT_SECRET);
+  const userService = new UserService(db);
   const userId = c.req.param('userId');
   const currentUser = c.get('user');
 
@@ -129,7 +129,7 @@ usersRoute.get('/:userId/projects', optionalAuthMiddleware, async (c) => {
   let visibilityFilter: VisibilityType[];
   if (!currentUser) {
     visibilityFilter = ['PUBLIC'];
-  } else if (currentUser.sub === userId) {
+  } else if (currentUser.id === userId) {
     visibilityFilter = ['PUBLIC', 'UNLISTED', 'PRIVATE'];
   } else {
     visibilityFilter = ['PUBLIC', 'UNLISTED'];

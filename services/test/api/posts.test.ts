@@ -11,7 +11,7 @@ import {
   getTestDb,
   clearDatabase,
   sendRequest,
-  registerAndLogin,
+  registerUser,
   projects,
   projectMaintainers,
   projectPosts,
@@ -50,16 +50,9 @@ describe('Project Posts API', () => {
     await db.insert(projectMaintainers).values({ projectId, userId });
   }
 
-  // Helper: 从 token 获取 userId
-  function getUserIdFromToken(token: string): string {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.sub;
-  }
-
   describe('GET /api/projects/:projectId/posts', () => {
     it('should return empty list when no posts exist', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`);
@@ -72,8 +65,7 @@ describe('Project Posts API', () => {
     });
 
     it('should return posts for public project', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 post
@@ -81,7 +73,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'First Post',
@@ -102,8 +94,7 @@ describe('Project Posts API', () => {
     });
 
     it('should require auth for private project posts', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Private Project', 'PRIVATE');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`);
@@ -113,8 +104,7 @@ describe('Project Posts API', () => {
     });
 
     it('should require auth for unlisted project posts', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Unlisted Project', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`);
@@ -131,8 +121,7 @@ describe('Project Posts API', () => {
     });
 
     it('should paginate posts correctly', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 3 个 posts
@@ -141,7 +130,7 @@ describe('Project Posts API', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            Cookie: sessionCookie,
           },
           body: JSON.stringify({
             title: `Post ${i}`,
@@ -164,15 +153,14 @@ describe('Project Posts API', () => {
 
   describe('POST /api/projects/:projectId/posts', () => {
     it('should create a post as owner', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'New Post',
@@ -192,10 +180,8 @@ describe('Project Posts API', () => {
     });
 
     it('should create a post as maintainer', async () => {
-      const ownerToken = await registerAndLogin('owner');
-      const maintainerToken = await registerAndLogin('maintainer');
-      const ownerId = getUserIdFromToken(ownerToken);
-      const maintainerId = getUserIdFromToken(maintainerToken);
+      const { userId: ownerId } = await registerUser('owner');
+      const { sessionCookie: maintainerCookie, userId: maintainerId } = await registerUser('maintainer');
       const projectId = await createTestProject(ownerId, 'Test Project');
       await addMaintainer(projectId, maintainerId);
 
@@ -203,7 +189,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${maintainerToken}`,
+          Cookie: maintainerCookie,
         },
         body: JSON.stringify({
           title: 'Maintainer Post',
@@ -216,16 +202,15 @@ describe('Project Posts API', () => {
     });
 
     it('should reject post creation from non-member', async () => {
-      const ownerToken = await registerAndLogin('owner');
-      const otherToken = await registerAndLogin('other');
-      const ownerId = getUserIdFromToken(ownerToken);
+      const { userId: ownerId } = await registerUser('owner');
+      const { sessionCookie: otherCookie } = await registerUser('other');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${otherToken}`,
+          Cookie: otherCookie,
         },
         body: JSON.stringify({
           title: 'Unauthorized Post',
@@ -238,8 +223,7 @@ describe('Project Posts API', () => {
     });
 
     it('should require authentication', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`, {
@@ -258,15 +242,14 @@ describe('Project Posts API', () => {
     });
 
     it('should require title', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           content: '<p>Content without title</p>',
@@ -278,15 +261,14 @@ describe('Project Posts API', () => {
     });
 
     it('should require content', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'Title without content',
@@ -300,8 +282,7 @@ describe('Project Posts API', () => {
 
   describe('GET /api/projects/:projectId/posts/:postId', () => {
     it('should return post detail with discussion', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 post
@@ -309,7 +290,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'Test Post',
@@ -333,8 +314,7 @@ describe('Project Posts API', () => {
     });
 
     it('should return 404 for non-existent post', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts/00000000-0000-0000-0000-000000000000`);
@@ -346,8 +326,7 @@ describe('Project Posts API', () => {
 
   describe('PATCH /api/projects/:projectId/posts/:postId', () => {
     it('should update post as author', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 post
@@ -355,7 +334,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'Original Title',
@@ -370,7 +349,7 @@ describe('Project Posts API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'Updated Title',
@@ -386,8 +365,7 @@ describe('Project Posts API', () => {
     });
 
     it('should allow owner to pin post', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 post
@@ -395,7 +373,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'Test Post',
@@ -410,7 +388,7 @@ describe('Project Posts API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           isPinned: true,
@@ -424,9 +402,8 @@ describe('Project Posts API', () => {
     });
 
     it('should reject update from unauthorized user', async () => {
-      const ownerToken = await registerAndLogin('owner');
-      const otherToken = await registerAndLogin('other');
-      const ownerId = getUserIdFromToken(ownerToken);
+      const { sessionCookie: ownerCookie, userId: ownerId } = await registerUser('owner');
+      const { sessionCookie: otherCookie } = await registerUser('other');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 post
@@ -434,7 +411,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ownerToken}`,
+          Cookie: ownerCookie,
         },
         body: JSON.stringify({
           title: 'Test Post',
@@ -449,7 +426,7 @@ describe('Project Posts API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${otherToken}`,
+          Cookie: otherCookie,
         },
         body: JSON.stringify({
           title: 'Hacked Title',
@@ -463,8 +440,7 @@ describe('Project Posts API', () => {
 
   describe('DELETE /api/projects/:projectId/posts/:postId', () => {
     it('should delete post as author', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 post
@@ -472,7 +448,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'To Delete',
@@ -487,7 +463,7 @@ describe('Project Posts API', () => {
       const request = new Request(`http://localhost/api/projects/${projectId}/posts/${postId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
       });
       const response = await sendRequest(request);
@@ -506,10 +482,8 @@ describe('Project Posts API', () => {
     });
 
     it('should allow maintainer to delete post', async () => {
-      const ownerToken = await registerAndLogin('owner');
-      const maintainerToken = await registerAndLogin('maintainer');
-      const ownerId = getUserIdFromToken(ownerToken);
-      const maintainerId = getUserIdFromToken(maintainerToken);
+      const { sessionCookie: ownerCookie, userId: ownerId } = await registerUser('owner');
+      const { sessionCookie: maintainerCookie, userId: maintainerId } = await registerUser('maintainer');
       const projectId = await createTestProject(ownerId, 'Test Project');
       await addMaintainer(projectId, maintainerId);
 
@@ -518,7 +492,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ownerToken}`,
+          Cookie: ownerCookie,
         },
         body: JSON.stringify({
           title: 'Owner Post',
@@ -532,7 +506,7 @@ describe('Project Posts API', () => {
       const request = new Request(`http://localhost/api/projects/${projectId}/posts/${postId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${maintainerToken}`,
+          Cookie: maintainerCookie,
         },
       });
       const response = await sendRequest(request);
@@ -541,9 +515,8 @@ describe('Project Posts API', () => {
     });
 
     it('should reject delete from unauthorized user', async () => {
-      const ownerToken = await registerAndLogin('owner');
-      const otherToken = await registerAndLogin('other');
-      const ownerId = getUserIdFromToken(ownerToken);
+      const { sessionCookie: ownerCookie, userId: ownerId } = await registerUser('owner');
+      const { sessionCookie: otherCookie } = await registerUser('other');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 post
@@ -551,7 +524,7 @@ describe('Project Posts API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${ownerToken}`,
+          Cookie: ownerCookie,
         },
         body: JSON.stringify({
           title: 'Protected Post',
@@ -565,7 +538,7 @@ describe('Project Posts API', () => {
       const request = new Request(`http://localhost/api/projects/${projectId}/posts/${postId}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${otherToken}`,
+          Cookie: otherCookie,
         },
       });
       const response = await sendRequest(request);
@@ -576,8 +549,7 @@ describe('Project Posts API', () => {
 
   describe('Pinned posts ordering', () => {
     it('should return pinned posts first', async () => {
-      const token = await registerAndLogin('owner');
-      const ownerId = getUserIdFromToken(token);
+      const { sessionCookie, userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       // 创建 3 个 posts
@@ -586,7 +558,7 @@ describe('Project Posts API', () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
+            Cookie: sessionCookie,
           },
           body: JSON.stringify({
             title: `Post ${i}`,
@@ -605,7 +577,7 @@ describe('Project Posts API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           isPinned: true,

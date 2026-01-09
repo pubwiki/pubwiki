@@ -11,14 +11,14 @@ import {
   clearDatabase,
   sendRequest,
   createTestUser,
-  registerAndLogin,
+  registerUser,
   projects,
   projectMaintainers,
   projectArtifacts,
   projectRoles,
   projectPages,
   artifacts,
-  users,
+  user,
   eq,
   type TestDb,
 } from './helpers';
@@ -334,13 +334,12 @@ describe('Projects API', () => {
     });
 
     it('should return unlisted project with auth', async () => {
-      await db.delete(users);
-      const authToken = await registerAndLogin('unlistedprojectuser');
-      const [user] = await db.select().from(users).where(eq(users.username, 'unlistedprojectuser'));
-      const projectId = await createTestProject(user.id, 'Unlisted Project', 'UNLISTED');
+      await db.delete(user);
+      const { sessionCookie, userId } = await registerUser('unlistedprojectuser');
+      const projectId = await createTestProject(userId, 'Unlisted Project', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -349,10 +348,10 @@ describe('Projects API', () => {
 
     it('should return 403 for private project with non-owner auth', async () => {
       const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
-      const authToken = await registerAndLogin('otheruser');
+      const { sessionCookie } = await registerUser('otheruser');
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -360,13 +359,12 @@ describe('Projects API', () => {
     });
 
     it('should return private project for owner', async () => {
-      await db.delete(users);
-      const authToken = await registerAndLogin('privateprojectowner');
-      const [user] = await db.select().from(users).where(eq(users.username, 'privateprojectowner'));
-      const projectId = await createTestProject(user.id, 'Private Project', 'PRIVATE');
+      await db.delete(user);
+      const { sessionCookie, userId } = await registerUser('privateprojectowner');
+      const projectId = await createTestProject(userId, 'Private Project', 'PRIVATE');
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -377,12 +375,11 @@ describe('Projects API', () => {
       const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
       
       // Create maintainer via API
-      const authToken = await registerAndLogin('maintaineruser');
-      const [maintainer] = await db.select().from(users).where(eq(users.username, 'maintaineruser'));
-      await addMaintainer(projectId, maintainer.id);
+      const { sessionCookie, userId: maintainerId } = await registerUser('maintaineruser');
+      await addMaintainer(projectId, maintainerId);
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -418,12 +415,12 @@ describe('Projects API', () => {
     });
 
     it('should create a project with basic metadata', async () => {
-      const authToken = await registerAndLogin('projectcreator');
+      const { sessionCookie } = await registerUser('projectcreator');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -454,12 +451,12 @@ describe('Projects API', () => {
     });
 
     it('should create a project with specified visibility', async () => {
-      const authToken = await registerAndLogin('projectcreator2');
+      const { sessionCookie } = await registerUser('projectcreator2');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -480,14 +477,13 @@ describe('Projects API', () => {
     });
 
     it('should create a project with linked artifacts', async () => {
-      const authToken = await registerAndLogin('projectcreator3');
-      const [user] = await db.select().from(users).where(eq(users.username, 'projectcreator3'));
-      const artifactId = await createTestArtifact(user.id, 'Test Artifact');
+      const { sessionCookie, userId } = await registerUser('projectcreator3');
+      const artifactId = await createTestArtifact(userId, 'Test Artifact');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -512,12 +508,12 @@ describe('Projects API', () => {
     });
 
     it('should create a project with roles', async () => {
-      const authToken = await registerAndLogin('projectcreatorwithroles');
+      const { sessionCookie } = await registerUser('projectcreatorwithroles');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -548,12 +544,12 @@ describe('Projects API', () => {
     });
 
     it('should return 400 when role parentName is invalid', async () => {
-      const authToken = await registerAndLogin('projectcreatorinvalidrole');
+      const { sessionCookie } = await registerUser('projectcreatorinvalidrole');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -573,12 +569,12 @@ describe('Projects API', () => {
     });
 
     it('should create a project with pages', async () => {
-      const authToken = await registerAndLogin('projectcreatorwithpages');
+      const { sessionCookie } = await registerUser('projectcreatorwithpages');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -617,12 +613,12 @@ describe('Projects API', () => {
     });
 
     it('should return 400 when homepageIndex is out of range', async () => {
-      const authToken = await registerAndLogin('projectcreatorinvalidhomepage');
+      const { sessionCookie } = await registerUser('projectcreatorinvalidhomepage');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -647,12 +643,12 @@ describe('Projects API', () => {
     });
 
     it('should return 400 when required fields are missing', async () => {
-      const authToken = await registerAndLogin('projectcreator6');
+      const { sessionCookie } = await registerUser('projectcreator6');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -668,12 +664,12 @@ describe('Projects API', () => {
     });
 
     it('should return 400 for invalid slug format', async () => {
-      const authToken = await registerAndLogin('projectcreator7');
+      const { sessionCookie } = await registerUser('projectcreator7');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -693,13 +689,13 @@ describe('Projects API', () => {
     });
 
     it('should return 409 when slug already exists', async () => {
-      const authToken = await registerAndLogin('projectcreator8');
+      const { sessionCookie } = await registerUser('projectcreator8');
 
       // Create first project
       await sendRequest(new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -716,7 +712,7 @@ describe('Projects API', () => {
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -736,12 +732,12 @@ describe('Projects API', () => {
     });
 
     it('should return 400 when artifact not found', async () => {
-      const authToken = await registerAndLogin('projectcreator9');
+      const { sessionCookie } = await registerUser('projectcreator9');
 
       const request = new Request('http://localhost/api/projects', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -845,14 +841,13 @@ describe('Projects API', () => {
     });
 
     it('should return page for unlisted project with auth', async () => {
-      await db.delete(users);
-      const authToken = await registerAndLogin('unlistedpageuser');
-      const [user] = await db.select().from(users).where(eq(users.username, 'unlistedpageuser'));
-      const projectId = await createTestProject(user.id, 'Unlisted Project', 'UNLISTED');
+      await db.delete(user);
+      const { sessionCookie, userId } = await registerUser('unlistedpageuser');
+      const projectId = await createTestProject(userId, 'Unlisted Project', 'UNLISTED');
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -862,10 +857,10 @@ describe('Projects API', () => {
     it('should return 403 for private project page with non-owner auth', async () => {
       const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
-      const authToken = await registerAndLogin('otheruser');
+      const { sessionCookie } = await registerUser('otheruser');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -873,14 +868,13 @@ describe('Projects API', () => {
     });
 
     it('should return private project page for owner', async () => {
-      await db.delete(users);
-      const authToken = await registerAndLogin('privatepageowner');
-      const [user] = await db.select().from(users).where(eq(users.username, 'privatepageowner'));
-      const projectId = await createTestProject(user.id, 'Private Project', 'PRIVATE');
+      await db.delete(user);
+      const { sessionCookie, userId } = await registerUser('privatepageowner');
+      const projectId = await createTestProject(userId, 'Private Project', 'PRIVATE');
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -891,12 +885,11 @@ describe('Projects API', () => {
       const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
       
-      const authToken = await registerAndLogin('maintaineruser');
-      const [maintainer] = await db.select().from(users).where(eq(users.username, 'maintaineruser'));
-      await addMaintainer(projectId, maintainer.id);
+      const { sessionCookie, userId: maintainerId } = await registerUser('maintaineruser');
+      await addMaintainer(projectId, maintainerId);
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`, {
-        headers: { Authorization: `Bearer ${authToken}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 

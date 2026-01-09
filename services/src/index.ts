@@ -2,13 +2,13 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import type { Env } from './types';
-import { auth } from './routes/auth';
+import { createAuth } from './lib/auth';
 import { artifactsRoute } from './routes/artifacts';
 import { projectsRoute } from './routes/projects';
 import { usersRoute } from './routes/users';
 import { discussionsRoute } from './routes/discussions';
 import { authMiddleware } from './middleware/auth';
-import { createDb, UserService } from '@pubwiki/db';
+import { createDb, eq, user as userTable } from '@pubwiki/db';
 import type { HealthCheckResponse, GetMeResponse, UpdateProfileRequest, UpdateProfileResponse, ApiError } from '@pubwiki/api';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -31,8 +31,11 @@ app.get('/api/', (c) => {
   return c.json<HealthCheckResponse>({ message: 'PubWiki API is running', version: '1.0.0' });
 });
 
-// 认证路由
-app.route('/api/auth', auth);
+// Better-Auth handler
+app.on(['GET', 'POST'], '/api/auth/*', (c) => {
+  const auth = createAuth(c.env);
+  return auth.handler(c.req.raw);
+});
 
 // Artifacts 路由（公开）
 app.route('/api/artifacts', artifactsRoute);
@@ -46,47 +49,83 @@ app.route('/api/users', usersRoute);
 // Discussions 路由（讨论区）
 app.route('/api/discussions', discussionsRoute);
 
-// 需要认证的路由示例 - 获取当前用户信息
+// 需要认证的路由 - 获取当前用户信息
 app.get('/api/me', authMiddleware, async (c) => {
-  const user = c.get('user');
+  const sessionUser = c.get('user');
   const db = createDb(c.env.DB);
-  const userService = new UserService(db, c.env.JWT_SECRET);
   
-  const result = await userService.getUserById(user.sub);
+  const [userData] = await db.select().from(userTable).where(eq(userTable.id, sessionUser.id)).limit(1);
   
-  if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 404);
+  if (!userData) {
+    return c.json<ApiError>({ error: 'User not found' }, 404);
   }
   
-  return c.json<GetMeResponse>({ user: result.data });
+  return c.json<GetMeResponse>({
+    user: {
+      id: userData.id,
+      username: userData.username,
+      email: userData.email,
+      displayName: userData.name,
+      avatarUrl: userData.image,
+      bio: userData.bio,
+      website: userData.website,
+      location: userData.location,
+      isAdmin: userData.isAdmin,
+      createdAt: userData.createdAt.toISOString(),
+      updatedAt: userData.updatedAt.toISOString(),
+    },
+  });
 });
 
 // 更新当前用户 Profile
 app.patch('/api/me', authMiddleware, async (c) => {
-  const user = c.get('user');
+  const sessionUser = c.get('user');
   const db = createDb(c.env.DB);
-  const userService = new UserService(db, c.env.JWT_SECRET);
 
   const body = await c.req.json<UpdateProfileRequest>();
   
   // 提取允许更新的字段
-  const updates: Parameters<typeof userService.updateUser>[1] = {};
-  if (body.displayName !== undefined) updates.displayName = body.displayName;
-  if (body.avatarUrl !== undefined) updates.avatarUrl = body.avatarUrl;
+  const updates: Partial<{
+    name: string;
+    image: string | null;
+    bio: string | null;
+    website: string | null;
+    location: string | null;
+    updatedAt: Date;
+  }> = {
+    updatedAt: new Date(),
+  };
+  
+  if (body.displayName !== undefined) updates.name = body.displayName;
+  if (body.avatarUrl !== undefined) updates.image = body.avatarUrl;
   if (body.bio !== undefined) updates.bio = body.bio;
   if (body.website !== undefined) updates.website = body.website;
   if (body.location !== undefined) updates.location = body.location;
 
-  const result = await userService.updateUser(user.sub, updates);
+  const [updated] = await db.update(userTable)
+    .set(updates)
+    .where(eq(userTable.id, sessionUser.id))
+    .returning();
 
-  if (!result.success) {
-    const status = result.error.code === 'USER_NOT_FOUND' ? 404 : 400;
-    return c.json<ApiError>({ error: result.error.message }, status);
+  if (!updated) {
+    return c.json<ApiError>({ error: 'User not found' }, 404);
   }
 
   return c.json<UpdateProfileResponse>({
     message: 'Profile updated successfully',
-    user: result.data,
+    user: {
+      id: updated.id,
+      username: updated.username,
+      email: updated.email,
+      displayName: updated.name,
+      avatarUrl: updated.image,
+      bio: updated.bio,
+      website: updated.website,
+      location: updated.location,
+      isAdmin: updated.isAdmin,
+      createdAt: updated.createdAt.toISOString(),
+      updatedAt: updated.updatedAt.toISOString(),
+    },
   });
 });
 

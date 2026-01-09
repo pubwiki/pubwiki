@@ -77,7 +77,7 @@ projectsRoute.post('/', authMiddleware, async (c) => {
 
   // 创建 project
   const result = await projectService.createProject({
-    ownerId: user.sub,
+    ownerId: user.id,
     metadata,
   });
 
@@ -127,8 +127,8 @@ projectsRoute.get('/:projectId', optionalAuthMiddleware, async (c) => {
       return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
     }
     // 检查是否是owner或maintainer
-    const isOwner = user.sub === projectDetail.owner.id;
-    const isMaintainer = projectDetail.maintainers.some(m => m.id === user.sub);
+    const isOwner = user.id === projectDetail.owner.id;
+    const isMaintainer = projectDetail.maintainers.some(m => m.id === user.id);
     if (!isOwner && !isMaintainer) {
       return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
     }
@@ -168,8 +168,8 @@ projectsRoute.get('/:projectId/pages/:pageId', optionalAuthMiddleware, async (c)
       return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
     }
     // 检查是否是owner或maintainer
-    const isOwner = user.sub === project.ownerId;
-    const isMaintainer = await projectService.isMaintainer(projectId, user.sub);
+    const isOwner = user.id === project.ownerId;
+    const isMaintainer = await projectService.isMaintainer(projectId, user.id);
     if (!isOwner && !isMaintainer) {
       return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
     }
@@ -263,7 +263,7 @@ projectsRoute.post('/:projectId/artifacts', authMiddleware, async (c) => {
     artifactId: body.artifactId,
     roleId: body.roleId,
     isOfficial: body.isOfficial,
-    userId: user.sub,
+    userId: user.id,
   });
 
   if (!result.success) {
@@ -316,8 +316,8 @@ projectsRoute.get('/:projectId/posts', optionalAuthMiddleware, async (c) => {
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
     }
-    const isOwner = user.sub === project.ownerId;
-    const isMaintainer = await projectService.isMaintainer(projectId, user.sub);
+    const isOwner = user.id === project.ownerId;
+    const isMaintainer = await projectService.isMaintainer(projectId, user.id);
     if (!isOwner && !isMaintainer) {
       return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
     }
@@ -369,7 +369,7 @@ projectsRoute.post('/:projectId/posts', authMiddleware, async (c) => {
   }
 
   // 检查是否是 owner 或 maintainer
-  const memberResult = await postService.isProjectMember(projectId, user.sub);
+  const memberResult = await postService.isProjectMember(projectId, user.id);
   if (!memberResult.success) {
     return c.json<ApiError>({ error: memberResult.error.message }, 500);
   }
@@ -398,7 +398,7 @@ projectsRoute.post('/:projectId/posts', authMiddleware, async (c) => {
   // 创建 post
   const result = await postService.createPost({
     projectId,
-    authorId: user.sub,
+    authorId: user.id,
     data: body,
   });
 
@@ -440,8 +440,8 @@ projectsRoute.get('/:projectId/posts/:postId', optionalAuthMiddleware, async (c)
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
     }
-    const isOwner = user.sub === project.ownerId;
-    const isMaintainer = await projectService.isMaintainer(projectId, user.sub);
+    const isOwner = user.id === project.ownerId;
+    const isMaintainer = await projectService.isMaintainer(projectId, user.id);
     if (!isOwner && !isMaintainer) {
       return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
     }
@@ -476,7 +476,7 @@ projectsRoute.patch('/:projectId/posts/:postId', authMiddleware, async (c) => {
   }
 
   // 更新 post
-  const result = await postService.updatePost(projectId, postId, user.sub, body);
+  const result = await postService.updatePost(projectId, postId, user.id, body);
   if (!result.success) {
     switch (result.error.code) {
       case 'NOT_FOUND':
@@ -502,7 +502,7 @@ projectsRoute.delete('/:projectId/posts/:postId', authMiddleware, async (c) => {
   const postId = c.req.param('postId');
   const user = c.get('user');
 
-  const result = await postService.deletePost(projectId, postId, user.sub);
+  const result = await postService.deletePost(projectId, postId, user.id);
   if (!result.success) {
     switch (result.error.code) {
       case 'NOT_FOUND':

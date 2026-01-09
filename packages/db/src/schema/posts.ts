@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { users } from './users';
+import { user } from './auth';
 import { projects } from './projects';
 import { discussions } from './discussions';
 
@@ -17,7 +17,7 @@ export const projectPosts = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     authorId: text('author_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     discussionId: text('discussion_id')
       .references(() => discussions.id, { onDelete: 'set null' }),
     title: text('title', { length: 200 }).notNull(),

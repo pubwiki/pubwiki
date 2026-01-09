@@ -2,7 +2,7 @@
 export * from './enums';
 
 // Export all table schemas
-export * from './users';
+export * from './auth';
 export * from './artifacts';
 export * from './nodes';
 export * from './lineage';

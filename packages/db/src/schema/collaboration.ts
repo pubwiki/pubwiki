@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { artifacts } from './artifacts';
-import { users } from './users';
+import { user } from './auth';
 import type { CollaboratorRole, VisibilityType } from './enums';
 
 // 当前时间戳 (ISO 格式字符串)
@@ -16,7 +16,7 @@ export const artifactCollaborators = sqliteTable(
       .references(() => artifacts.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     role: text('role').$type<CollaboratorRole>().default('VIEWER').notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
   },
@@ -34,7 +34,7 @@ export const collections = sqliteTable(
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     name: text('name', { length: 100 }).notNull(),
     description: text('description'),
     visibility: text('visibility').$type<VisibilityType>().default('PRIVATE').notNull(),

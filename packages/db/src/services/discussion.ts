@@ -1,7 +1,7 @@
 import { eq, and, desc, asc, count, sql } from 'drizzle-orm';
 import type { Database } from '../client';
 import { discussions, discussionReplies, type Discussion, type DiscussionReply, type NewDiscussion, type NewDiscussionReply } from '../schema/discussions';
-import { users, type User } from '../schema/users';
+import { user, type User } from '../schema/auth';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   DiscussionListItem,
@@ -70,13 +70,13 @@ export class DiscussionService {
   private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
     const result = await this.db
       .select({
-        id: users.id,
-        username: users.username,
-        displayName: users.displayName,
-        avatarUrl: users.avatarUrl,
+        id: user.id,
+        username: user.username,
+        displayName: user.name,
+        avatarUrl: user.image,
       })
-      .from(users)
-      .where(eq(users.id, authorId))
+      .from(user)
+      .where(eq(user.id, authorId))
       .limit(1);
 
     return result[0] ?? null;
@@ -186,13 +186,13 @@ export class DiscussionService {
       if (authorIds.length > 0) {
         const authorsResult = await this.db
           .select({
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            avatarUrl: users.avatarUrl,
+            id: user.id,
+            username: user.username,
+            displayName: user.name,
+            avatarUrl: user.image,
           })
-          .from(users)
-          .where(sql`${users.id} IN ${authorIds}`);
+          .from(user)
+          .where(sql`${user.id} IN ${authorIds}`);
 
         for (const author of authorsResult) {
           authorsMap.set(author.id, author);
@@ -531,13 +531,13 @@ export class DiscussionService {
       if (authorIds.length > 0) {
         const authorsResult = await this.db
           .select({
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            avatarUrl: users.avatarUrl,
+            id: user.id,
+            username: user.username,
+            displayName: user.name,
+            avatarUrl: user.image,
           })
-          .from(users)
-          .where(sql`${users.id} IN ${authorIds}`);
+          .from(user)
+          .where(sql`${user.id} IN ${authorIds}`);
 
         for (const author of authorsResult) {
           authorsMap.set(author.id, author);

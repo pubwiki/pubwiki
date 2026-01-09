@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { users } from './users';
+import { user } from './auth';
 import type { NotificationType } from './enums';
 
 // 当前时间戳 (ISO 格式字符串)
@@ -13,7 +13,7 @@ export const notifications = sqliteTable(
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     type: text('type').$type<NotificationType>().notNull(),
     title: text('title', { length: 200 }).notNull(),
     content: text('content'),

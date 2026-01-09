@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { users } from './users';
+import { user } from './auth';
 import type { ArtifactType, VisibilityType } from './enums';
 
 // Stored edge 类型定义
@@ -22,7 +22,7 @@ export const artifacts = sqliteTable(
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
     authorId: text('author_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     type: text('type').$type<ArtifactType>().notNull(), // RECIPE, GAME, ASSET_PACK, PROMPT
     name: text('name', { length: 100 }).notNull(),
     slug: text('slug', { length: 100 }).notNull(),

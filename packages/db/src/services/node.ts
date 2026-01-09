@@ -11,7 +11,7 @@ import {
   type ArtifactNodeVersion,
   type ArtifactNodeFile,
 } from '../schema/nodes';
-import { users } from '../schema/users';
+import { user } from '../schema/auth';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArtifactNodeSummary,
@@ -295,13 +295,13 @@ export class NodeService {
           externalArtifact: artifacts,
           externalNode: artifactNodes,
           author: {
-            id: users.id,
-            username: users.username,
+            id: user.id,
+            username: user.username,
           },
         })
         .from(artifactNodeRefs)
         .innerJoin(artifacts, eq(artifactNodeRefs.externalArtifactId, artifacts.id))
-        .innerJoin(users, eq(artifacts.authorId, users.id))
+        .innerJoin(user, eq(artifacts.authorId, user.id))
         .leftJoin(artifactNodes, eq(artifactNodeRefs.externalNodeId, artifactNodes.id))
         .where(and(
           eq(artifactNodeRefs.artifactVersionId, artifactVersionResult[0].id),

@@ -5,7 +5,7 @@ import { artifacts, tags, artifactTags, artifactVersions, type Artifact, type Ta
 import { artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs, type NewArtifactNode, type NewArtifactNodeVersion, type NewArtifactNodeFile, type NewArtifactNodeRef } from '../schema/nodes';
 import { artifactLineage, type ArtifactLineage } from '../schema/lineage';
 import { artifactStats, type ArtifactStats } from '../schema/stats';
-import { users, type User } from '../schema/users';
+import { user, type User } from '../schema/auth';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArtifactListItem,
@@ -140,13 +140,13 @@ export class ArtifactService {
       // 获取作者信息（batch 前检查）
       const authorResult = await this.db
         .select({
-          id: users.id,
-          username: users.username,
-          displayName: users.displayName,
-          avatarUrl: users.avatarUrl,
+          id: user.id,
+          username: user.username,
+          displayName: user.name,
+          avatarUrl: user.image,
         })
-        .from(users)
-        .where(eq(users.id, authorId))
+        .from(user)
+        .where(eq(user.id, authorId))
         .limit(1);
 
       if (authorResult.length === 0) {
@@ -669,15 +669,15 @@ export class ArtifactService {
         .select({
           artifact: artifacts,
           author: {
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            avatarUrl: users.avatarUrl,
+            id: user.id,
+            username: user.username,
+            displayName: user.name,
+            avatarUrl: user.image,
           },
           stats: artifactStats,
         })
         .from(artifacts)
-        .innerJoin(users, eq(artifacts.authorId, users.id))
+        .innerJoin(user, eq(artifacts.authorId, user.id))
         .leftJoin(artifactStats, eq(artifacts.id, artifactStats.artifactId))
         .where(and(...baseConditions))
         .orderBy(orderClause)
@@ -767,12 +767,12 @@ export class ArtifactService {
         .select({
           artifact: artifacts,
           author: {
-            id: users.id,
-            username: users.username,
+            id: user.id,
+            username: user.username,
           },
         })
         .from(artifacts)
-        .innerJoin(users, eq(artifacts.authorId, users.id))
+        .innerJoin(user, eq(artifacts.authorId, user.id))
         .where(eq(artifacts.id, artifactId))
         .limit(1);
 
@@ -880,15 +880,15 @@ export class ArtifactService {
         lineage: artifactLineage,
         artifact: artifacts,
         author: {
-          id: users.id,
-          username: users.username,
-          displayName: users.displayName,
-          avatarUrl: users.avatarUrl,
+          id: user.id,
+          username: user.username,
+          displayName: user.name,
+          avatarUrl: user.image,
         },
       })
       .from(artifactLineage)
       .innerJoin(artifacts, eq(artifactLineage.parentArtifactId, artifacts.id))
-      .innerJoin(users, eq(artifacts.authorId, users.id))
+      .innerJoin(user, eq(artifacts.authorId, user.id))
       .where(eq(artifactLineage.childArtifactId, artifactId));
 
     const results: ArtifactLineageItem[] = [];
@@ -952,15 +952,15 @@ export class ArtifactService {
         lineage: artifactLineage,
         artifact: artifacts,
         author: {
-          id: users.id,
-          username: users.username,
-          displayName: users.displayName,
-          avatarUrl: users.avatarUrl,
+          id: user.id,
+          username: user.username,
+          displayName: user.name,
+          avatarUrl: user.image,
         },
       })
       .from(artifactLineage)
       .innerJoin(artifacts, eq(artifactLineage.childArtifactId, artifacts.id))
-      .innerJoin(users, eq(artifacts.authorId, users.id))
+      .innerJoin(user, eq(artifacts.authorId, user.id))
       .where(eq(artifactLineage.parentArtifactId, artifactId));
 
     const results: ArtifactLineageItem[] = [];
@@ -1063,15 +1063,15 @@ export class ArtifactService {
         .select({
           artifact: artifacts,
           author: {
-            id: users.id,
-            username: users.username,
-            displayName: users.displayName,
-            avatarUrl: users.avatarUrl,
+            id: user.id,
+            username: user.username,
+            displayName: user.name,
+            avatarUrl: user.image,
           },
           stats: artifactStats,
         })
         .from(artifacts)
-        .innerJoin(users, eq(artifacts.authorId, users.id))
+        .innerJoin(user, eq(artifacts.authorId, user.id))
         .leftJoin(artifactStats, eq(artifacts.id, artifactStats.artifactId))
         .where(and(...baseConditions))
         .orderBy(orderClause)

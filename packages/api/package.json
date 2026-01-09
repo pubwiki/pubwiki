@@ -13,6 +13,7 @@
     "generate": "openapi-typescript openapi.yaml -o src/generated/openapi.ts"
   },
   "dependencies": {
+    "better-auth": "^1.4.10",
     "openapi-fetch": "^0.14.1"
   },
   "devDependencies": {

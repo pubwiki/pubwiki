@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { artifacts, artifactVersions } from './artifacts';
-import { users } from './users';
+import { user } from './auth';
 import type { RunStatus } from './enums';
 
 // 当前时间戳 (ISO 格式字符串)
@@ -18,7 +18,7 @@ export const artifactRuns = sqliteTable(
     versionId: text('version_id')
       .notNull()
       .references(() => artifactVersions.id, { onDelete: 'cascade' }),
-    userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+    userId: text('user_id').references(() => user.id, { onDelete: 'set null' }),
     status: text('status').$type<RunStatus>().default('PENDING').notNull(),
     // JSON 字段存储为文本
     inputParams: text('input_params', { mode: 'json' }).$type<Record<string, unknown>>(),

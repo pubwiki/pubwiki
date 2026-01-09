@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
+import { registerUser } from './helpers';
 
 // 生成随机字符串用于用户名
 function randomSuffix(): string {
@@ -17,6 +18,7 @@ describe('E2E: Users API', () => {
     worker = await unstable_dev('src/index.ts', {
       experimental: { disableExperimentalWarning: true },
       local: true,
+      
       persist: false,
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
@@ -45,16 +47,8 @@ describe('E2E: Users API', () => {
     it('should return artifact list with pagination for existing user', async () => {
       // 先注册一个用户获取其 ID
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `artifactuser_${suffix}`,
-          email: `artifactuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `artifactuser_${suffix}`);
+      const userId = result.userId;
 
       // 获取该用户的 artifacts
       const { data, error, response } = await client.GET('/users/{userId}/artifacts', {
@@ -76,16 +70,8 @@ describe('E2E: Users API', () => {
     it('should accept pagination parameters', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `artifactuser_${suffix}`,
-          email: `artifactuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `artifactuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/artifacts', {
         params: {
@@ -107,16 +93,8 @@ describe('E2E: Users API', () => {
     it('should accept type filter parameters', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `artifactuser_${suffix}`,
-          email: `artifactuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `artifactuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/artifacts', {
         params: {
@@ -135,16 +113,8 @@ describe('E2E: Users API', () => {
     it('should accept sort parameters', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `artifactuser_${suffix}`,
-          email: `artifactuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `artifactuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/artifacts', {
         params: {
@@ -164,16 +134,8 @@ describe('E2E: Users API', () => {
     it('should return 400 for invalid sortBy value', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `artifactuser_${suffix}`,
-          email: `artifactuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `artifactuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/artifacts', {
         params: {
@@ -209,16 +171,8 @@ describe('E2E: Users API', () => {
     it('should return project list with pagination for existing user', async () => {
       // 先注册一个用户获取其 ID
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `projectuser_${suffix}`,
-          email: `projectuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `projectuser_${suffix}`);
+      const userId = result.userId;
 
       // 获取该用户的 projects
       const { data, error, response } = await client.GET('/users/{userId}/projects', {
@@ -240,16 +194,8 @@ describe('E2E: Users API', () => {
     it('should accept pagination parameters', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `projectuser_${suffix}`,
-          email: `projectuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `projectuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/projects', {
         params: {
@@ -271,16 +217,8 @@ describe('E2E: Users API', () => {
     it('should accept role filter parameter', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `projectuser_${suffix}`,
-          email: `projectuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `projectuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/projects', {
         params: {
@@ -299,16 +237,8 @@ describe('E2E: Users API', () => {
     it('should accept sort parameters', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `projectuser_${suffix}`,
-          email: `projectuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `projectuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/projects', {
         params: {
@@ -328,16 +258,8 @@ describe('E2E: Users API', () => {
     it('should return 400 for invalid role value', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `projectuser_${suffix}`,
-          email: `projectuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `projectuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/projects', {
         params: {
@@ -357,16 +279,8 @@ describe('E2E: Users API', () => {
     it('should return 400 for invalid sortBy value', async () => {
       // 注册用户
       const suffix = randomSuffix();
-      const { data: registerData, response: registerResponse } = await client.POST('/auth/register', {
-        body: {
-          username: `projectuser_${suffix}`,
-          email: `projectuser_${suffix}@test.com`,
-          password: 'password123',
-        },
-      });
-
-      expect(registerResponse.status).toBe(201);
-      const userId = registerData!.user.id;
+      const result = await registerUser(baseUrl, `projectuser_${suffix}`);
+      const userId = result.userId;
 
       const { data, error, response } = await client.GET('/users/{userId}/projects', {
         params: {

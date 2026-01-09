@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
-import { users } from './users';
+import { user } from './auth';
 import { artifacts } from './artifacts';
 import type { VisibilityType } from './enums';
 
@@ -14,7 +14,7 @@ export const projects = sqliteTable(
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
     ownerId: text('owner_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     name: text('name', { length: 100 }).notNull(),
     slug: text('slug', { length: 100 }).notNull().unique(),
     topic: text('topic', { length: 100 }).notNull(), // hashtag
@@ -84,7 +84,7 @@ export const projectMaintainers = sqliteTable(
       .references(() => projects.id, { onDelete: 'cascade' }),
     userId: text('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'cascade' }),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
   },
   (table) => [

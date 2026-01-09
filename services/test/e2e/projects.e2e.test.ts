@@ -2,12 +2,13 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
 import type { CreateProjectMetadata, CreateProjectRole, CreateProjectPage } from '@pubwiki/api';
+import { registerUser } from './helpers';
 
 describe('E2E: Projects API', () => {
   let worker: Unstable_DevWorker;
   let client: ReturnType<typeof createApiClient>;
   let baseUrl: string;
-  let authToken: string;
+  let sessionCookie: string;
   let testUserId: string;
 
   beforeAll(async () => {
@@ -15,22 +16,17 @@ describe('E2E: Projects API', () => {
     worker = await unstable_dev('src/index.ts', {
       experimental: { disableExperimentalWarning: true },
       local: true,
+      
       persist: false,
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
     client = createApiClient(baseUrl);
 
-    // 创建测试用户并获取 token
+    // 创建测试用户并获取 session cookie
     const username = `project_test_${Date.now()}`;
-    const { data } = await client.POST('/auth/register', {
-      body: {
-        username,
-        email: `${username}@example.com`,
-        password: 'password123',
-      },
-    });
-    authToken = data!.token;
-    testUserId = data!.user.id;
+    const result = await registerUser(baseUrl, username);
+    sessionCookie = result.sessionCookie;
+    testUserId = result.userId;
   });
 
   afterAll(async () => {
@@ -65,7 +61,7 @@ describe('E2E: Projects API', () => {
     
     const response = await fetch(`${baseUrl}/artifacts`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` },
+      headers: { Cookie: sessionCookie },
       body: formData,
     });
     const data = await response.json() as { artifact: { id: string } };
@@ -89,7 +85,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -120,7 +116,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -150,7 +146,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -199,7 +195,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -245,7 +241,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -290,7 +286,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -317,7 +313,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -363,7 +359,7 @@ describe('E2E: Projects API', () => {
       await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body1),
@@ -382,7 +378,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body2),
@@ -400,7 +396,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -430,7 +426,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -472,7 +468,7 @@ describe('E2E: Projects API', () => {
       const response = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -598,7 +594,7 @@ describe('E2E: Projects API', () => {
       const createResponse = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),
@@ -654,7 +650,7 @@ describe('E2E: Projects API', () => {
       const createResponse = await fetch(`${baseUrl}/projects`, {
         method: 'POST',
         headers: { 
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),

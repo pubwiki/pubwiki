@@ -101,7 +101,7 @@ artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, async (c) => 
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
     }
-    if (user.sub !== artifact.authorId) {
+    if (user.id !== artifact.authorId) {
       return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
     }
   }
@@ -164,7 +164,7 @@ artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, async (c) =>
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
     }
-    if (user.sub !== artifact.authorId) {
+    if (user.id !== artifact.authorId) {
       return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
     }
   }
@@ -395,7 +395,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
 
   // 创建 artifact
   const result = await artifactService.createArtifact({
-    authorId: user.sub,
+    authorId: user.id,
     metadata,
     descriptor,
     nodeFiles,
@@ -490,7 +490,7 @@ artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, async (c) => {
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
     }
-    if (user.sub !== artifact.authorId) {
+    if (user.id !== artifact.authorId) {
       return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
     }
   }
@@ -536,7 +536,7 @@ artifactsRoute.get('/:artifactId/nodes/:nodeId', optionalAuthMiddleware, async (
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
     }
-    if (user.sub !== artifact.authorId) {
+    if (user.id !== artifact.authorId) {
       return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
     }
   }
@@ -582,7 +582,7 @@ artifactsRoute.get('/:artifactId/nodes/:nodeId/content', optionalAuthMiddleware,
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
     }
-    if (user.sub !== artifact.authorId) {
+    if (user.id !== artifact.authorId) {
       return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
     }
   }
@@ -660,7 +660,7 @@ artifactsRoute.get('/:artifactId/nodes/:nodeId/files/:filePath{.+}', optionalAut
     if (!user) {
       return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
     }
-    if (user.sub !== artifact.authorId) {
+    if (user.id !== artifact.authorId) {
       return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
     }
   }

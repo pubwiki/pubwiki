@@ -1,1 +1,0 @@
-ALTER TABLE `project_roles` ADD `is_leaf` integer DEFAULT true NOT NULL;

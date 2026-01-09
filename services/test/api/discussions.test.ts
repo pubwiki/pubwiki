@@ -11,7 +11,7 @@ import {
   clearDatabase,
   sendRequest,
   createTestUser,
-  registerAndLogin,
+  registerUser,
   discussions,
   discussionReplies,
   artifacts,
@@ -209,21 +209,7 @@ describe('Discussions API', () => {
     });
 
     it('should create a discussion', async () => {
-      const token = await registerAndLogin('testuser');
-      const userId = (await db.select().from(discussions).limit(1))[0]?.authorId || 
-                     (await db.select().from(artifacts).limit(1))[0]?.authorId;
-      
-      // 需要先创建 artifact
-      const [user] = await db.select().from(discussions).limit(1);
-      const authorId = user?.authorId;
-      
-      // 使用注册的用户创建 artifact
-      const [registeredUser] = await db.select().from(artifacts).where(eq(artifacts.authorId, 'testuser')).limit(1);
-      
-      // 简单方式：直接获取用户ID
-      const [userRecord] = await db.select().from(artifacts)
-        .innerJoin(discussions, eq(artifacts.id, discussions.targetId))
-        .limit(1);
+      const { sessionCookie } = await registerUser('testuser');
 
       // 创建一个新用户和 artifact 用于测试
       const testUserId = await createTestUser(db, 'creator');
@@ -233,7 +219,7 @@ describe('Discussions API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'New Discussion',
@@ -253,7 +239,7 @@ describe('Discussions API', () => {
     });
 
     it('should return 400 when content is empty', async () => {
-      const token = await registerAndLogin('testuser');
+      const { sessionCookie } = await registerUser('testuser');
       const userId = await createTestUser(db, 'creator');
       const artifactId = await createTestArtifact(userId);
 
@@ -261,7 +247,7 @@ describe('Discussions API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({ content: '' }),
       });
@@ -297,41 +283,17 @@ describe('Discussions API', () => {
 
   describe('PATCH /api/discussions/:discussionId', () => {
     it('should update discussion by author', async () => {
-      const token = await registerAndLogin('author');
-      
-      // 获取注册用户的 ID
-      const [registeredUser] = await db.select().from(discussions)
-        .innerJoin(artifacts, eq(discussions.authorId, artifacts.authorId))
-        .limit(1);
-      
-      // 需要通过 users 表获取
-      const usersResult = await db.select().from(artifacts).limit(10);
-      
-      // 简化：直接用数据库用户创建
-      const dbUserId = await createTestUser(db, 'dbuser');
-      const artifactId = await createTestArtifact(dbUserId);
-      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, dbUserId, 'Original Title');
+      const { sessionCookie, userId: authorId } = await registerUser('author');
 
-      // 但 token 对应的用户不是 dbUserId，所以这会失败
-      // 我们需要用 token 对应的用户创建讨论
-      
-      // 让我们修正：先获取 token 用户的 ID
-      const meRequest = new Request('http://localhost/api/me', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const meResponse = await sendRequest(meRequest);
-      const meData = await meResponse.json<{ user: { id: string } }>();
-      const tokenUserId = meData.user.id;
+      // 用注册用户创建讨论
+      const artifactId = await createTestArtifact(authorId);
+      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, authorId, 'Original');
 
-      // 用 token 用户创建讨论
-      const artifactId2 = await createTestArtifact(tokenUserId);
-      const discussionId2 = await createTestDiscussion('ARTIFACT', artifactId2, tokenUserId, 'Original');
-
-      const request = new Request(`http://localhost/api/discussions/${discussionId2}`, {
+      const request = new Request(`http://localhost/api/discussions/${discussionId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({
           title: 'Updated Title',
@@ -347,7 +309,7 @@ describe('Discussions API', () => {
     });
 
     it('should return 403 when updating others discussion', async () => {
-      const token = await registerAndLogin('user1');
+      const { sessionCookie } = await registerUser('user1');
       const otherUserId = await createTestUser(db, 'otheruser');
       const artifactId = await createTestArtifact(otherUserId);
       const discussionId = await createTestDiscussion('ARTIFACT', artifactId, otherUserId);
@@ -356,7 +318,7 @@ describe('Discussions API', () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({ content: 'Hacked!' }),
       });
@@ -368,22 +330,14 @@ describe('Discussions API', () => {
 
   describe('DELETE /api/discussions/:discussionId', () => {
     it('should delete discussion by author', async () => {
-      const token = await registerAndLogin('author');
-      
-      // 获取 token 用户 ID
-      const meRequest = new Request('http://localhost/api/me', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const meResponse = await sendRequest(meRequest);
-      const meData = await meResponse.json<{ user: { id: string } }>();
-      const tokenUserId = meData.user.id;
+      const { sessionCookie, userId: authorId } = await registerUser('author');
 
-      const artifactId = await createTestArtifact(tokenUserId);
-      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, tokenUserId);
+      const artifactId = await createTestArtifact(authorId);
+      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, authorId);
 
       const request = new Request(`http://localhost/api/discussions/${discussionId}`, {
         method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -434,7 +388,7 @@ describe('Discussions API', () => {
 
   describe('POST /api/discussions/:discussionId/replies', () => {
     it('should create a reply', async () => {
-      const token = await registerAndLogin('replier');
+      const { sessionCookie } = await registerUser('replier');
       const userId = await createTestUser(db, 'owner');
       const artifactId = await createTestArtifact(userId);
       const discussionId = await createTestDiscussion('ARTIFACT', artifactId, userId);
@@ -443,7 +397,7 @@ describe('Discussions API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({ content: 'This is my reply' }),
       });
@@ -455,7 +409,7 @@ describe('Discussions API', () => {
     });
 
     it('should return 403 when discussion is locked', async () => {
-      const token = await registerAndLogin('replier');
+      const { sessionCookie } = await registerUser('replier');
       const userId = await createTestUser(db, 'owner');
       const artifactId = await createTestArtifact(userId);
       const discussionId = await createTestDiscussion('ARTIFACT', artifactId, userId);
@@ -467,7 +421,7 @@ describe('Discussions API', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          Cookie: sessionCookie,
         },
         body: JSON.stringify({ content: 'Trying to reply' }),
       });
@@ -479,25 +433,17 @@ describe('Discussions API', () => {
 
   describe('POST /api/discussions/replies/:replyId/accept', () => {
     it('should accept reply by discussion author', async () => {
-      const token = await registerAndLogin('discussionAuthor');
-      
-      // 获取 token 用户 ID
-      const meRequest = new Request('http://localhost/api/me', {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
-      const meResponse = await sendRequest(meRequest);
-      const meData = await meResponse.json<{ user: { id: string } }>();
-      const tokenUserId = meData.user.id;
+      const { sessionCookie, userId: authorId } = await registerUser('discussionAuthor');
 
-      const artifactId = await createTestArtifact(tokenUserId);
-      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, tokenUserId);
+      const artifactId = await createTestArtifact(authorId);
+      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, authorId);
       
       const replierId = await createTestUser(db, 'replier');
       const replyId = await createTestReply(discussionId, replierId, 'Great answer');
 
       const request = new Request(`http://localhost/api/discussions/replies/${replyId}/accept`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 
@@ -507,7 +453,7 @@ describe('Discussions API', () => {
     });
 
     it('should return 403 when non-author tries to accept', async () => {
-      const token = await registerAndLogin('randomUser');
+      const { sessionCookie } = await registerUser('randomUser');
       const ownerId = await createTestUser(db, 'owner');
       const artifactId = await createTestArtifact(ownerId);
       const discussionId = await createTestDiscussion('ARTIFACT', artifactId, ownerId);
@@ -515,7 +461,7 @@ describe('Discussions API', () => {
 
       const request = new Request(`http://localhost/api/discussions/replies/${replyId}/accept`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Cookie: sessionCookie },
       });
       const response = await sendRequest(request);
 

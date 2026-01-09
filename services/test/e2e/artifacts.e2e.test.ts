@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
+import { registerUser } from './helpers';
 
 describe('E2E: Artifacts API', () => {
   let worker: Unstable_DevWorker;
@@ -12,6 +13,7 @@ describe('E2E: Artifacts API', () => {
     worker = await unstable_dev('src/index.ts', {
       experimental: { disableExperimentalWarning: true },
       local: true,
+      
       persist: false,
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
@@ -275,18 +277,7 @@ describe('E2E: Artifacts API', () => {
   });
 
   describe('POST /artifacts', () => {
-    let authToken: string;
-
-    async function registerAndLogin(username: string): Promise<string> {
-      const registerResponse = await client.POST('/auth/register', {
-        body: {
-          username,
-          email: `${username}@example.com`,
-          password: 'password123',
-        },
-      });
-      return registerResponse.data?.token ?? '';
-    }
+    let sessionCookie: string;
 
     function createFormData(
       metadata: Record<string, unknown>, 
@@ -324,7 +315,8 @@ describe('E2E: Artifacts API', () => {
 
     beforeEach(async () => {
       const username = `e2euser${Date.now()}`;
-      authToken = await registerAndLogin(username);
+      const result = await registerUser(baseUrl, username);
+      sessionCookie = result.sessionCookie;
     });
 
     it('should return 401 when not authenticated', async () => {
@@ -356,7 +348,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -386,7 +378,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -401,7 +393,7 @@ describe('E2E: Artifacts API', () => {
           path: { artifactId: data.artifact.id },
         },
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         } as Record<string, string>,
       });
       expect(graphResponse.response.status).toBe(200);
@@ -428,7 +420,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -449,7 +441,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -470,7 +462,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -494,7 +486,7 @@ describe('E2E: Artifacts API', () => {
       const response1 = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData1,
       });
@@ -511,7 +503,7 @@ describe('E2E: Artifacts API', () => {
       const response2 = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData2,
       });
@@ -541,7 +533,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -580,7 +572,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -615,7 +607,7 @@ describe('E2E: Artifacts API', () => {
         const createResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForCreate,
         });
@@ -637,7 +629,7 @@ describe('E2E: Artifacts API', () => {
         const updateResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForUpdate,
         });
@@ -662,7 +654,7 @@ describe('E2E: Artifacts API', () => {
         const response = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formData,
         });
@@ -687,7 +679,7 @@ describe('E2E: Artifacts API', () => {
         const createResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForCreate,
         });
@@ -698,14 +690,7 @@ describe('E2E: Artifacts API', () => {
 
         // Register a different user
         const differentUser = `differentuser${Date.now()}`;
-        const registerResponse = await client.POST('/auth/register', {
-          body: {
-            username: differentUser,
-            email: `${differentUser}@example.com`,
-            password: 'password123',
-          },
-        });
-        const differentToken = registerResponse.data?.token ?? '';
+        const { sessionCookie: differentCookie } = await registerUser(baseUrl, differentUser);
 
         // Try to update with different user
         const formDataForUpdate = createFormData({
@@ -719,7 +704,7 @@ describe('E2E: Artifacts API', () => {
         const updateResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${differentToken}`,
+            Cookie: differentCookie,
           },
           body: formDataForUpdate,
         });
@@ -745,7 +730,7 @@ describe('E2E: Artifacts API', () => {
         await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForFirst,
         });
@@ -761,7 +746,7 @@ describe('E2E: Artifacts API', () => {
         const createResponse2 = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForSecond,
         });
@@ -780,7 +765,7 @@ describe('E2E: Artifacts API', () => {
         const updateResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForUpdate,
         });
@@ -804,7 +789,7 @@ describe('E2E: Artifacts API', () => {
         const createResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForCreate,
         });
@@ -825,7 +810,7 @@ describe('E2E: Artifacts API', () => {
         const updateResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForUpdate,
         });
@@ -850,7 +835,7 @@ describe('E2E: Artifacts API', () => {
         const createResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForCreate,
         });
@@ -873,7 +858,7 @@ describe('E2E: Artifacts API', () => {
         const updateResponse = await fetch(`${baseUrl}/artifacts`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${authToken}`,
+            Cookie: sessionCookie,
           },
           body: formDataForUpdate,
         });
@@ -887,22 +872,13 @@ describe('E2E: Artifacts API', () => {
   });
 
   describe('GET /artifacts/:artifactId/homepage', () => {
-    let authToken: string;
+    let sessionCookie: string;
 
     beforeEach(async () => {
-      // 先注册并登录获取 token
+      // 先注册并登录获取 session cookie
       const timestamp = Date.now();
-      const registerResponse = await fetch(`${baseUrl}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: `homepageuser${timestamp}`,
-          email: `homepageuser${timestamp}@example.com`,
-          password: 'testpassword123',
-        }),
-      });
-      const registerData = await registerResponse.json() as { token: string };
-      authToken = registerData.token;
+      const result = await registerUser(baseUrl, `homepageuser${timestamp}`);
+      sessionCookie = result.sessionCookie;
     });
 
     async function createArtifactWithHomepage(visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC'): Promise<string> {
@@ -930,7 +906,7 @@ describe('E2E: Artifacts API', () => {
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
         body: formData,
       });
@@ -970,7 +946,7 @@ describe('E2E: Artifacts API', () => {
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`, {
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
       });
       
@@ -992,7 +968,7 @@ describe('E2E: Artifacts API', () => {
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`, {
         headers: {
-          Authorization: `Bearer ${authToken}`,
+          Cookie: sessionCookie,
         },
       });
       
@@ -1006,21 +982,11 @@ describe('E2E: Artifacts API', () => {
       
       // Register a different user
       const timestamp = Date.now();
-      const registerResponse = await fetch(`${baseUrl}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: `differentuser${timestamp}`,
-          email: `differentuser${timestamp}@example.com`,
-          password: 'testpassword123',
-        }),
-      });
-      const registerData = await registerResponse.json() as { token: string };
-      const differentToken = registerData.token;
+      const { sessionCookie: differentCookie } = await registerUser(baseUrl, `differentuser${timestamp}`);
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`, {
         headers: {
-          Authorization: `Bearer ${differentToken}`,
+          Cookie: differentCookie,
         },
       });
       
