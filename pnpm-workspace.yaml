@@ -4,6 +4,7 @@ onlyBuiltDependencies:
 
 catalog:
   svelte: ^5.46.1
+  "@types/node": ^22.19.3
 
 packages:
   - "packages/types"

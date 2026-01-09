@@ -36,7 +36,7 @@
   "author": "PubWiki",
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^22.15.21",
+    "@types/node": "catalog:",
     "isomorphic-git": "^1.29.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15"
