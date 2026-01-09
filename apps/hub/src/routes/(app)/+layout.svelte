@@ -11,8 +11,8 @@
 	// Studio URL - defaults to /studio for local development
 	const studioUrl = PUBLIC_STUDIO_URL || 'http://localhost:5174';
 
-	function handleLogout() {
-		auth.logout();
+	async function handleLogout() {
+		await auth.logout();
 		goto('/');
 	}
 </script>

@@ -50,7 +50,7 @@
 	});
 
 	function getClient() {
-		return createApiClient(API_BASE_URL, auth.token ?? undefined);
+		return createApiClient(API_BASE_URL);
 	}
 
 	async function fetchUserArtifacts() {
@@ -141,9 +141,7 @@
 
 			const response = await fetch(`${API_BASE_URL}/projects`, {
 				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${auth.token}`
-				},
+				credentials: 'include',
 				body: formData
 			});
 

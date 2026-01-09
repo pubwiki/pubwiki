@@ -63,8 +63,8 @@ export class ArtifactStore {
 	// Cache for node details (key: `${artifactId}:${nodeId}`)
 	private nodeDetailCache = new Map<string, ArtifactNodeDetail>();
 
-	private getClient(token?: string) {
-		return createApiClient(API_BASE_URL, token);
+	private getClient() {
+		return createApiClient(API_BASE_URL);
 	}
 
 	async fetchArtifacts(options?: {
@@ -133,9 +133,9 @@ export class ArtifactStore {
 		}
 	}
 
-	async fetchGraph(artifactId: string, token?: string): Promise<ArtifactGraphData | null> {
+	async fetchGraph(artifactId: string): Promise<ArtifactGraphData | null> {
 		try {
-			const client = this.getClient(token);
+			const client = this.getClient();
 			const { data } = await client.GET('/artifacts/{artifactId}/graph', {
 				params: { path: { artifactId }, query: { version: 'latest' } }
 			});
@@ -152,7 +152,7 @@ export class ArtifactStore {
 		}
 	}
 
-	async fetchArtifactDetails(artifactId: string, token?: string): Promise<ArtifactDetails | null> {
+	async fetchArtifactDetails(artifactId: string): Promise<ArtifactDetails | null> {
 		const cached = this.detailsCache.get(artifactId);
 		
 		// If we have full details cached, return them
@@ -173,12 +173,12 @@ export class ArtifactStore {
 			}
 		}
 
-		const client = this.getClient(token);
+		const client = this.getClient();
 		
 		// Fetch homepage, graph and lineage in parallel
 		const [homepageResult, graphResult, lineageResult] = await Promise.all([
 			this.fetchHomepage(artifactId),
-			this.fetchGraph(artifactId, token),
+			this.fetchGraph(artifactId),
 			client.GET('/artifacts/{artifactId}/lineage', {
 				params: { path: { artifactId } }
 			})
@@ -196,7 +196,7 @@ export class ArtifactStore {
 		return details;
 	}
 
-	async fetchNodeContent(artifactId: string, nodeId: string, token?: string): Promise<string | null> {
+	async fetchNodeContent(artifactId: string, nodeId: string): Promise<string | null> {
 		const cacheKey = `${artifactId}:${nodeId}`;
 		
 		// Check cache first
@@ -205,11 +205,9 @@ export class ArtifactStore {
 		}
 		
 		try {
-			const headers: HeadersInit = {};
-			if (token) {
-				headers['Authorization'] = `Bearer ${token}`;
-			}
-			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/nodes/${nodeId}/content`, { headers });
+			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/nodes/${nodeId}/content`, {
+				credentials: 'include'
+			});
 			if (response.ok) {
 				const content = await response.text();
 				// Cache the result
@@ -222,7 +220,7 @@ export class ArtifactStore {
 		}
 	}
 
-	async fetchNodeDetail(artifactId: string, nodeId: string, token?: string): Promise<ArtifactNodeDetail | null> {
+	async fetchNodeDetail(artifactId: string, nodeId: string): Promise<ArtifactNodeDetail | null> {
 		const cacheKey = `${artifactId}:${nodeId}`;
 		
 		// Check cache first
@@ -231,7 +229,7 @@ export class ArtifactStore {
 		}
 		
 		try {
-			const client = this.getClient(token);
+			const client = this.getClient();
 			const { data } = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
 				params: { 
 					path: { artifactId, nodeId },

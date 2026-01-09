@@ -637,19 +637,15 @@
 	 * Check if an artifact exists on the backend
 	 * Returns artifact info if exists, null otherwise
 	 */
-	async function checkArtifactExists(artifactId: string, token?: string | null): Promise<boolean> {
-		console.log('[Studio] checkArtifactExists called:', { artifactId, hasToken: !!token, apiUrl: API_BASE_URL });
+	async function checkArtifactExists(artifactId: string): Promise<boolean> {
+		console.log('[Studio] checkArtifactExists called:', { artifactId, apiUrl: API_BASE_URL });
 		try {
-			const headers: HeadersInit = {};
-			if (token) {
-				headers['Authorization'] = `Bearer ${token}`;
-			}
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 			
 			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/graph?version=latest`, {
 				method: 'GET',
-				headers,
+				credentials: 'include',
 				signal: controller.signal
 			});
 			clearTimeout(timeoutId);
@@ -758,7 +754,7 @@
 					
 					// Check backend status asynchronously (non-blocking)
 					// This only affects the publish button text (Publish vs Update)
-					checkArtifactExists(currentProjectId, auth.token ?? undefined).then(async (existsOnBackend) => {
+					checkArtifactExists(currentProjectId).then(async (existsOnBackend) => {
 						console.log('[Studio] Backend check complete, exists:', existsOnBackend);
 						if (existsOnBackend) {
 							isDraft = false;
@@ -862,7 +858,7 @@
 		nodesToPublish: Node<FlowNodeData>[],
 		edgesToPublish: Edge[]
 	) {
-		const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, auth.token ?? '');
+		const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish);
 		
 		if (!result.success) {
 			throw new Error(result.error || 'Failed to publish');

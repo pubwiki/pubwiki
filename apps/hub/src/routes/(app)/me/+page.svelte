@@ -67,7 +67,7 @@
 	});
 
 	function getClient() {
-		return createApiClient(API_BASE_URL, auth.token ?? undefined);
+		return createApiClient(API_BASE_URL);
 	}
 
 	async function fetchArtifacts(page = 1) {

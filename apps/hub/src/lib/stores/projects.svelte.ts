@@ -11,8 +11,8 @@ export class ProjectStore {
 	loading = $state(false);
 	error = $state<string | null>(null);
 
-	private getClient(token?: string) {
-		return createApiClient(API_BASE_URL, token);
+	private getClient() {
+		return createApiClient(API_BASE_URL);
 	}
 
 	async fetchProjects(options?: {

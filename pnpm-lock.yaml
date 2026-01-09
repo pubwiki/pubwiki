@@ -21,8 +21,8 @@ importers:
         specifier: ^1.7.0
         version: 1.7.0
       '@pubwiki/api':
-        specifier: ^0.0.1
-        version: 0.0.1
+        specifier: workspace:*
+        version: link:../../packages/api
       '@pubwiki/bundler':
         specifier: workspace:*
         version: link:../../packages/bundler
@@ -1891,9 +1891,6 @@ packages:
 
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
-
-  '@pubwiki/api@0.0.1':
-    resolution: {integrity: sha512-XBdchCtxR9Ri1vThapOMZWwnqFL7rKGUk/lhcb1D/MNFTFN4dqVS5txfhYv9z02fHHyTB3VkSLqhi+fzz0fjYg==}
 
   '@rdfjs/types@2.0.1':
     resolution: {integrity: sha512-uyAzpugX7KekAXAHq26m3JlUIZJOC0uSBhpnefGV5i15bevDyyejoB7I+9MKeUrzXD8OOUI3+4FeV1wwQr5ihA==}
@@ -5665,10 +5662,6 @@ snapshots:
 
   '@poppinss/exception@1.2.3': {}
 
-  '@pubwiki/api@0.0.1':
-    dependencies:
-      openapi-fetch: 0.14.1
-
   '@rdfjs/types@2.0.1':
     dependencies:
       '@types/node': 25.0.3
@@ -6584,7 +6577,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vitest: 4.0.16(@types/node@25.0.3)(@vitest/browser-playwright@4.0.16)(@vitest/ui@4.0.16)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
+      vitest: 4.0.16(@types/node@22.19.3)(@vitest/browser-playwright@4.0.16)(@vitest/ui@4.0.16)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
     optional: true
 
   '@vitest/utils@3.2.4':

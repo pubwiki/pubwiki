@@ -48,7 +48,7 @@
 	},
 	"dependencies": {
 		"@monaco-editor/loader": "^1.7.0",
-		"@pubwiki/api": "^0.0.1",
+		"@pubwiki/api": "workspace:*",
 		"@pubwiki/bundler": "workspace:*",
 		"@pubwiki/chat": "workspace:*",
 		"@pubwiki/lua": "workspace:*",

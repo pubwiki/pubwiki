@@ -1,100 +1,25 @@
 import { setContext, getContext } from 'svelte';
-import { getCookie, setCookie, deleteCookie } from '../utils/cookie';
-import { createApiClient } from '@pubwiki/api/client';
+import { createAuthClient, createApiClient } from '@pubwiki/api/client';
 import type { PublicUser, UpdateProfileRequest } from '@pubwiki/api';
 
 const AUTH_KEY = Symbol('auth');
 
-// Cookie configuration - domain is set via VITE_AUTH_DOMAIN in production
-const AUTH_DOMAIN = typeof window !== 'undefined' 
-	? (import.meta.env?.VITE_AUTH_DOMAIN || undefined) 
-	: undefined;
-const TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
-
-/**
- * Try to get value from cookie first, then localStorage as fallback
- */
-function getStoredValue<T>(key: string): T | null {
-	// Try cookie first
-	const cookieValue = getCookie(key);
-	if (cookieValue) {
-		try {
-			return JSON.parse(cookieValue);
-		} catch {
-			return cookieValue as T;
-		}
-	}
-	
-	// Fallback to localStorage (for development without subdomains)
-	if (typeof localStorage !== 'undefined') {
-		const localValue = localStorage.getItem(key);
-		if (localValue) {
-			try {
-				return JSON.parse(localValue);
-			} catch {
-				return localValue as T;
-			}
-		}
-	}
-	
-	return null;
-}
-
-/**
- * Store value in both cookie and localStorage
- */
-function setStoredValue(key: string, value: unknown): void {
-	const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
-	
-	// Set cookie with cross-subdomain support
-	setCookie(key, stringValue, {
-		domain: AUTH_DOMAIN,
-		maxAge: TOKEN_MAX_AGE,
-		secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
-		sameSite: 'Lax'
-	});
-	
-	// Also set in localStorage as fallback
-	if (typeof localStorage !== 'undefined') {
-		localStorage.setItem(key, stringValue);
-	}
-}
-
-/**
- * Remove value from both cookie and localStorage
- */
-function removeStoredValue(key: string): void {
-	deleteCookie(key, AUTH_DOMAIN);
-	if (typeof localStorage !== 'undefined') {
-		localStorage.removeItem(key);
-	}
-}
-
 export class AuthStore {
-	private _token = $state<string | null>(null);
 	private _user = $state<PublicUser | null>(null);
+	private _isAuthenticated = $state(false);
+	private _authClient: ReturnType<typeof createAuthClient>;
 	private _apiBaseUrl: string;
 
 	constructor(apiBaseUrl: string) {
+		// apiBaseUrl 是 '/api' 路径，需要提取 baseURL
+		// 例如: 'http://localhost:8787/api' -> 'http://localhost:8787'
 		this._apiBaseUrl = apiBaseUrl;
+		const baseURL = apiBaseUrl.replace(/\/api$/, '');
+		this._authClient = createAuthClient(baseURL);
 		
-		// Initialize from stored values
+		// 初始化时获取会话状态
 		if (typeof document !== 'undefined') {
-			this._token = getStoredValue<string>('auth_token');
-			this._user = getStoredValue<PublicUser>('auth_user');
-		}
-	}
-
-	get token() {
-		return this._token;
-	}
-
-	set token(value: string | null) {
-		this._token = value;
-		if (value) {
-			setStoredValue('auth_token', value);
-		} else {
-			removeStoredValue('auth_token');
+			this.fetchSession();
 		}
 	}
 
@@ -102,82 +27,131 @@ export class AuthStore {
 		return this._user;
 	}
 
-	set user(value: PublicUser | null) {
-		this._user = value;
-		if (value) {
-			setStoredValue('auth_user', value);
-		} else {
-			removeStoredValue('auth_user');
-		}
-	}
-
 	get isAuthenticated() {
-		return !!this._token;
+		return this._isAuthenticated;
 	}
 
 	get currentUser() {
 		return this._user;
 	}
 
-	private getClient() {
-		return createApiClient(this._apiBaseUrl, this._token ?? undefined);
+	private getApiClient() {
+		return createApiClient(this._apiBaseUrl);
 	}
 
+	/**
+	 * 获取当前会话状态
+	 */
+	async fetchSession() {
+		const { data } = await this._authClient.getSession();
+		if (data?.session) {
+			this._isAuthenticated = true;
+			// 从 API 获取完整用户信息
+			await this.fetchUser();
+		} else {
+			this._isAuthenticated = false;
+			this._user = null;
+		}
+	}
+
+	/**
+	 * 使用邮箱登录
+	 */
 	async login(usernameOrEmail: string, password: string) {
-		const client = this.getClient();
-		const { data, error } = await client.POST('/auth/login', {
-			body: { usernameOrEmail, password }
-		});
+		// 判断是邮箱还是用户名
+		const isEmail = usernameOrEmail.includes('@');
+		
+		try {
+			let result;
+			if (isEmail) {
+				result = await this._authClient.signIn.email({
+					email: usernameOrEmail,
+					password,
+				});
+			} else {
+				result = await this._authClient.signIn.username({
+					username: usernameOrEmail,
+					password,
+				});
+			}
 
-		if (data) {
-			this.token = data.token;
-			this.user = data.user;
+			if (result.error) {
+				return { success: false, error: result.error.message || 'Login failed' };
+			}
+
+			this._isAuthenticated = true;
+			await this.fetchUser();
 			return { success: true };
+		} catch (e) {
+			const errorMessage = e instanceof Error ? e.message : 'Login failed';
+			return { success: false, error: errorMessage };
 		}
-
-		return { success: false, error: error?.error || 'Login failed' };
 	}
 
+	/**
+	 * 用户注册
+	 */
 	async register(username: string, email: string, password: string, displayName?: string) {
-		const client = this.getClient();
-		const { data, error } = await client.POST('/auth/register', {
-			body: { username, email, password, displayName }
-		});
+		try {
+			const result = await this._authClient.signUp.email({
+				email,
+				password,
+				name: displayName || username,
+				username,
+			});
 
-		if (data) {
-			this.token = data.token;
-			this.user = data.user;
+			if (result.error) {
+				return { success: false, error: result.error.message || 'Registration failed' };
+			}
+
+			this._isAuthenticated = true;
+			await this.fetchUser();
 			return { success: true };
+		} catch (e) {
+			const errorMessage = e instanceof Error ? e.message : 'Registration failed';
+			return { success: false, error: errorMessage };
 		}
-
-		return { success: false, error: error?.error || 'Registration failed' };
 	}
 
-	logout() {
-		this.token = null;
-		this.user = null;
+	/**
+	 * 登出
+	 */
+	async logout() {
+		try {
+			await this._authClient.signOut();
+		} catch {
+			// 忽略登出错误
+		}
+		this._isAuthenticated = false;
+		this._user = null;
 	}
 
+	/**
+	 * 更新用户资料
+	 */
 	async updateProfile(profile: UpdateProfileRequest) {
-		const client = this.getClient();
+		const client = this.getApiClient();
 		const { data, error } = await client.PATCH('/me', {
 			body: profile
 		});
 
 		if (data) {
-			this.user = data.user;
+			this._user = data.user;
 			return { success: true, user: data.user };
 		}
 
 		return { success: false, error: error?.error || 'Update failed' };
 	}
 
+	/**
+	 * 获取当前用户信息
+	 */
 	async fetchUser() {
-		if (!this._token) return;
-		const client = this.getClient();
+		if (!this._isAuthenticated) return;
+		const client = this.getApiClient();
 		const { data } = await client.GET('/me');
 		if (data) {
-			this.user = data.user;
+			this._user = data.user;
 		}
 	}
 }

@@ -16,10 +16,11 @@ const app = new Hono<{ Bindings: Env }>();
 // 全局中间件
 app.use('*', logger());
 app.use('*', cors({
-  origin: '*', // 生产环境应该设置具体的域名
+  origin: (origin) => origin || '*', // 动态返回请求的 origin，支持 credentials
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  exposeHeaders: ['Content-Length'],
+  allowHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposeHeaders: ['Content-Length', 'Set-Cookie'],
+  credentials: true, // 允许发送 cookies
   maxAge: 600,
 }));
 

@@ -275,17 +275,14 @@ export interface PublishResult {
  * After layer separation:
  * - Takes FlowNodeData nodes from flow layer
  * - Gets business data from nodeStore
+ * 
+ * Authentication is handled via session cookie (credentials: 'include')
  */
 export async function publishArtifact(
 	metadata: PublishMetadata,
 	flowNodes: Node<FlowNodeData>[],
-	edges: Edge[],
-	token: string | null
+	edges: Edge[]
 ): Promise<PublishResult> {
-	if (!token) {
-		return { success: false, error: 'Authentication required' };
-	}
-
 	// Reconstruct full nodes with business data from nodeStore
 	const nodes: Node<StudioNodeData>[] = flowNodes
 		.map(n => {
@@ -304,9 +301,7 @@ export async function publishArtifact(
 	try {
 		const response = await fetch(`${API_BASE_URL}/artifacts`, {
 			method: 'POST',
-			headers: {
-				'Authorization': `Bearer ${token}`
-			},
+			credentials: 'include',
 			body: formData
 		});
 

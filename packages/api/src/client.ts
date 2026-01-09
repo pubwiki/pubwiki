@@ -90,6 +90,7 @@ export function createAuthClient(baseURL: string) {
 export function createApiClient(baseUrl: string) {
   return createClient<paths>({
     baseUrl,
+    credentials: 'include', // 自动发送 session cookie
   });
 }
 
