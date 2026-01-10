@@ -291,6 +291,7 @@
 	"studio_node_generate_from_input": "Generate from this input",
 	"studio_node_input_placeholder": "Enter your input. Use @tag for prompt references.",
 	"studio_node_regenerate_historical": "Regenerate using historical input",
+	"studio_node_abort_generation": "Abort generation",
 	"studio_node_open_file_browser": "Open file browser",
 	"studio_node_sandbox_preview": "Sandbox Preview",
 	"studio_node_refresh_triples": "Refresh triple count",

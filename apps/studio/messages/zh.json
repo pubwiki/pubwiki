@@ -291,6 +291,7 @@
 	"studio_node_generate_from_input": "从此输入生成",
 	"studio_node_input_placeholder": "输入内容。使用 @标签 引用提示词。",
 	"studio_node_regenerate_historical": "使用历史输入重新生成",
+	"studio_node_abort_generation": "中止生成",
 	"studio_node_open_file_browser": "打开文件浏览器",
 	"studio_node_sandbox_preview": "沙盒预览",
 	"studio_node_refresh_triples": "刷新三元组计数",

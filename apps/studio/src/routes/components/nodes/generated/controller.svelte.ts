@@ -38,6 +38,7 @@ import {
 type StreamingCallback = (streaming: boolean) => void;
 const streamingCallbacks = new Map<string, StreamingCallback>();
 const pendingStreaming = new Set<string>();
+const abortCallbacks = new Map<string, () => void>();
 
 /**
  * Register a callback for streaming state changes.
@@ -64,8 +65,30 @@ export function notifyStreamingChange(nodeId: string, streaming: boolean): void 
 		pendingStreaming.add(nodeId);
 	} else {
 		pendingStreaming.delete(nodeId);
+		abortCallbacks.delete(nodeId);
 	}
 	streamingCallbacks.get(nodeId)?.(streaming);
+}
+
+/**
+ * Register an abort callback for a streaming node.
+ * Called by streamGeneration when streaming starts.
+ */
+export function registerAbortCallback(nodeId: string, abort: () => void): void {
+	abortCallbacks.set(nodeId, abort);
+}
+
+/**
+ * Abort generation for a node.
+ * Returns true if abort was triggered, false if node was not streaming.
+ */
+export function abortGeneration(nodeId: string): boolean {
+	const abort = abortCallbacks.get(nodeId);
+	if (abort) {
+		abort();
+		return true;
+	}
+	return false;
 }
 
 // ============================================================================
@@ -154,6 +177,9 @@ export async function streamGeneration(
 ): Promise<void> {
 	// Create PubChat on-demand if not provided
 	const chat = pubchat ?? createPubChat(config);
+	
+	// Register abort callback
+	registerAbortCallback(nodeId, () => chat.abort());
 
 	try {
 		let historyId: string | undefined;

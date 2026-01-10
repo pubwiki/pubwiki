@@ -18,7 +18,7 @@
 	import { getStudioContext } from '../../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { nodeStore } from '../../../persistence';
-	import { onStreamingChange, regenerate } from './controller.svelte';
+	import { onStreamingChange, regenerate, abortGeneration } from './controller.svelte';
 	import { marked } from 'marked';
 	import BaseNode from '../BaseNode.svelte';
 	import ToolCallDisplay from './ToolCallDisplay.svelte';
@@ -83,6 +83,10 @@
 		await regenerate(config, id, ctx.nodes, ctx.edges, callbacks);
 	}
 
+	function handleAbort() {
+		abortGeneration(id);
+	}
+
 	function handleWheel(e: WheelEvent) {
 		const target = e.currentTarget as HTMLElement;
 		const { scrollTop, scrollHeight, clientHeight } = target;
@@ -128,7 +132,18 @@
 	{/snippet}
 
 	{#snippet headerActions()}
-		{#if !isPreviewing && !isStreaming}
+		{#if isStreaming}
+			<button
+				class="nodrag px-2 py-0.5 text-xs font-medium bg-white/20 hover:bg-white/30 rounded text-white transition-colors flex items-center gap-1"
+				onclick={handleAbort}
+				title={m.studio_node_abort_generation()}
+			>
+				<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+				</svg>
+				{m.common_cancel()}
+			</button>
+		{:else if !isPreviewing}
 			<button
 				class="nodrag px-2 py-0.5 text-xs font-medium bg-white/20 hover:bg-white/30 rounded text-white transition-colors flex items-center gap-1"
 				onclick={handleRegenerate}
