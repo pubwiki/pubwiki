@@ -95,6 +95,7 @@
 			updateNodeData: (nodeId: string, updater: (data: any) => any) => {
 				nodeStore.update(nodeId, updater);
 			},
+			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {
@@ -111,6 +112,7 @@
 			updateNodeData: (nodeId: string, updater: (data: any) => any) => {
 				nodeStore.update(nodeId, updater);
 			},
+			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {

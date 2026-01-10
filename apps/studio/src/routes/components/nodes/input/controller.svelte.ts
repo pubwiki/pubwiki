@@ -297,6 +297,8 @@ export function findConnectedVfsNodes(
 export interface GenerationCallbacks {
 	/** Called to update a specific node's data */
 	updateNodeData: (nodeId: string, updater: (data: StudioNodeData) => StudioNodeData) => void;
+	/** Called to update flow nodes */
+	updateNodes: (updater: (nodes: Node<FlowNodeData>[]) => Node<FlowNodeData>[]) => void;
 	/** Called to update edges */
 	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
 	/** Called when generation completes successfully */
@@ -409,6 +411,9 @@ export async function generate(
 		target: newGeneratedData.id,
 	};
 
+	// Add the node to the flow
+	callbacks.updateNodes(nodes => [...nodes, generatedNode]);
+	
 	// Add the edge
 	callbacks.updateEdges(edges => [...edges, newEdge]);
 

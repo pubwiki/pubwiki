@@ -231,6 +231,7 @@
 	async function handleGenerate() {
 		const callbacks = {
 			updateNodeData: ctx.updateNodeData,
+			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {
