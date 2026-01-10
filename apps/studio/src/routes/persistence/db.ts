@@ -38,42 +38,32 @@ export interface StoredLayout {
 
 /**
  * Stored node business data in IndexedDB
- * Key: composite [projectId, nodeId]
+ * 
+ * Used for both:
+ * - nodeData table: current node state (key: [projectId, nodeId])
+ * - snapshots table: historical versions (key: [nodeId, commit])
+ * 
+ * For snapshots table, projectId is empty string since snapshots are global.
  */
 export interface StoredNodeData {
-  /** Project ID */
+  /** Project ID (empty for snapshots) */
   projectId: string;
   /** Node ID */
   nodeId: string;
   /** Node type: 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'SANDBOX' | 'LOADER' | 'STATE' */
-  type: string;
+  type: NodeType;
   /** User-defined node name */
   name: string;
   /** Current commit hash (content hash) */
   commit: string;
-  /** References to historical snapshots */
-  snapshotRefs: NodeRef[];
   /** Parent nodes that contributed to this node's creation */
   parents: NodeRef[];
   /** Node content (JSON serialized) */
   content: unknown;
   /** Whether this node references external artifact */
   external?: boolean;
-}
-
-/**
- * Stored snapshot in IndexedDB
- * Key: composite [nodeId, commit]
- */
-export interface StoredSnapshot {
-  /** Node ID this snapshot belongs to */
-  nodeId: string;
-  /** Commit hash (content hash) */
-  commit: string;
-  /** Snapshot content (JSON serialized) */
-  content: unknown;
-  /** Timestamp when snapshot was created */
-  timestamp: number;
+  /** Timestamp when this version was created */
+  timestamp?: number;
   /** Incoming edges at time of snapshot */
   incomingEdges?: StoredSnapshotEdge[];
   /** Node position at time of snapshot */
@@ -148,7 +138,7 @@ export interface StoredProject {
  * - Added `nodeData` table for business data
  */
 export class StudioDatabase extends Dexie {
-  snapshots!: EntityTable<StoredSnapshot, 'nodeId'>;
+  snapshots!: EntityTable<StoredNodeData, 'nodeId'>;
   layouts!: EntityTable<StoredLayout, 'nodeId'>;
   nodeData!: EntityTable<StoredNodeData, 'nodeId'>;
   edges!: EntityTable<StoredEdge, 'id'>;
@@ -225,74 +215,6 @@ export function setCurrentProject(projectId: string): void {
 export function clearCurrentProject(): void {
   if (typeof localStorage === 'undefined') return;
   localStorage.removeItem(CURRENT_PROJECT_KEY);
-}
-
-// ============================================================================
-// Snapshot Operations
-// ============================================================================
-
-/**
- * Add a snapshot to the database
- */
-export async function addSnapshot(snapshot: StoredSnapshot): Promise<void> {
-  await db.snapshots.put(snapshot);
-}
-
-/**
- * Get a snapshot by nodeId and commit
- */
-export async function getSnapshot(nodeId: string, commit: string): Promise<StoredSnapshot | undefined> {
-  return db.snapshots.get([nodeId, commit]);
-}
-
-/**
- * Get all snapshots for a node, sorted by timestamp
- */
-export async function getSnapshotsByNodeId(nodeId: string): Promise<StoredSnapshot[]> {
-  return db.snapshots.where('nodeId').equals(nodeId).sortBy('timestamp');
-}
-
-/**
- * Check if a snapshot exists
- */
-export async function hasSnapshot(nodeId: string, commit: string): Promise<boolean> {
-  const count = await db.snapshots.where('[nodeId+commit]').equals([nodeId, commit]).count();
-  return count > 0;
-}
-
-/**
- * Remove a snapshot
- */
-export async function removeSnapshot(nodeId: string, commit: string): Promise<void> {
-  await db.snapshots.where('[nodeId+commit]').equals([nodeId, commit]).delete();
-}
-
-/**
- * Remove all snapshots for a node
- */
-export async function removeSnapshotsByNodeId(nodeId: string): Promise<void> {
-  await db.snapshots.where('nodeId').equals(nodeId).delete();
-}
-
-/**
- * Get all snapshots (for export)
- */
-export async function getAllSnapshots(): Promise<StoredSnapshot[]> {
-  return db.snapshots.toArray();
-}
-
-/**
- * Import snapshots (bulk insert)
- */
-export async function importSnapshots(snapshots: StoredSnapshot[]): Promise<void> {
-  await db.snapshots.bulkPut(snapshots);
-}
-
-/**
- * Clear all snapshots
- */
-export async function clearSnapshots(): Promise<void> {
-  await db.snapshots.clear();
 }
 
 // ============================================================================
@@ -429,15 +351,6 @@ export function liveEdges(projectId: string = DEFAULT_PROJECT_ID): Observable<Ed
   return liveQuery(async () => {
     const stored = await db.edges.where('projectId').equals(projectId).toArray();
     return stored.map(storedToEdge);
-  });
-}
-
-/**
- * Create a live query for snapshots of a specific node
- */
-export function liveSnapshots(nodeId: string): Observable<StoredSnapshot[]> {
-  return liveQuery(async () => {
-    return db.snapshots.where('nodeId').equals(nodeId).sortBy('timestamp');
   });
 }
 

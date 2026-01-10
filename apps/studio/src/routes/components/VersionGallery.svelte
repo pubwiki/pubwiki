@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { NodeRef, NodeSnapshot } from '../version';
-	import { snapshotStore } from '../version';
+	import type { NodeRef } from '../version';
+	import { nodeStore } from '../persistence/node-store.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -22,6 +22,8 @@
 
 	let containerRef: HTMLDivElement | null = $state(null);
 
+	
+
 	// Build version list (snapshots + current)
 	interface VersionItem {
 		commit: string;
@@ -31,25 +33,36 @@
 		ref?: NodeRef;
 	}
 
-	const versions = $derived.by(() => {
+	// Load versions asynchronously
+	let versions = $state<VersionItem[]>([]);
+	let isLoading = $state(true);
+
+	async function loadVersions() {
+		isLoading = true;
 		const items: VersionItem[] = [];
 		
 		// Add historical versions from snapshots (not including current)
 		for (const ref of snapshotRefs) {
-			const snapshot = snapshotStore.get<string>(ref.id, ref.commit);
+			const snapshot = await nodeStore.getVersion(ref.id, ref.commit);
 			if (snapshot) {
 				items.push({
 					commit: snapshot.commit,
-					content: snapshot.content,
-					timestamp: snapshot.timestamp,
+					content: snapshot.content.getText(),
+					timestamp: Date.now(), // Fallback timestamp since StudioNodeData doesn't have it
 					isCurrent: false,
 					ref
 				});
 			}
 		}
 		
-		// Sort by timestamp (newest first for display)
-		return items.sort((a, b) => b.timestamp - a.timestamp);
+		// Sort by commit (since we don't have timestamp in StudioNodeData)
+		versions = items;
+		isLoading = false;
+	}
+
+	// Load versions on mount and when snapshotRefs change
+	$effect(() => {
+		loadVersions();
 	});
 
 	let selectedIndex = $state(0); // Start with current (newest)

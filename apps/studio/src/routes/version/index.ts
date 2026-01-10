@@ -3,6 +3,10 @@
  * 
  * Unified version control system for studio nodes.
  * Provides version tracking, snapshot management, and preview capabilities.
+ * 
+ * After version-store-unification:
+ * - snapshotStore removed, version access through nodeStore
+ * - generateCommitHash moved to node-store.svelte
  */
 
 // Types
@@ -24,12 +28,8 @@ export {
 	getVersionHandler
 } from './types'
 
-// Snapshot Store
-export {
-	snapshotStore,
-	generateCommitHash,
-	initSnapshotStore
-} from './snapshot-store'
+// Re-export generateCommitHash from node-store for backwards compatibility
+export { generateCommitHash } from '../persistence/node-store.svelte'
 
 // Version Service
 export {

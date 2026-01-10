@@ -9,12 +9,35 @@
  * - Decoupled from SvelteFlow rendering (position, selected, dragging)
  * - Auto-saves to IndexedDB with debouncing
  * - Reactive via Svelte 5 $state
+ * 
+ * After version-store-unification:
+ * - Unified version storage (current + historical versions)
+ * - Historical versions accessed via async getVersion(nodeId, commit)
+ * - Snapshots saved via saveSnapshot()
  */
 
-import { db, type StoredNodeData } from './db';
+import { db, type StoredNodeData, type StoredSnapshotEdge, type StoredPosition } from './db';
 import { restoreContent, type NodeType, type NodeContent } from '../types/content';
-import type { NodeRef } from '../version';
+import type { NodeRef, SnapshotEdge, SnapshotPosition } from '../version/types';
 import type { StudioNodeData } from '../types';
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+/**
+ * Generate a content hash for version control using SHA-256
+ * Returns first 16 hex characters of the hash for brevity
+ */
+export async function generateCommitHash(content: unknown): Promise<string> {
+  const str = typeof content === 'string' ? content : JSON.stringify(content);
+  const encoder = new TextEncoder();
+  const data = encoder.encode(str);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex.slice(0, 16);
+}
 
 // ============================================================================
 // Types
@@ -40,12 +63,15 @@ export type { StudioNodeData };
  * Uses Svelte 5 $state for reactivity.
  */
 class NodeStore {
-  // Internal data storage
+  // Internal data storage for current versions
   private data = new Map<string, StudioNodeData>();
   private projectId: string = '';
   private dirty = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private initialized = false;
+  
+  // Historical version cache (key: `${nodeId}:${commit}`)
+  private versionCache = new Map<string, StudioNodeData>();
   
   // Svelte 5 reactive state - version counter for triggering updates
   private _version = $state(0);
@@ -64,6 +90,7 @@ class NodeStore {
     this.projectId = projectId;
     this.data.clear();
     this.dirty.clear();
+    this.versionCache.clear();  // Clear version cache on project change
     
     // Load from IndexedDB
     const storedData = await db.nodeData.where('projectId').equals(projectId).toArray();
@@ -93,14 +120,113 @@ class NodeStore {
   }
   
   /**
-   * Get node data by ID (reactive)
+   * Get node data by ID (reactive, synchronous)
    * 
+   * For current version only. Use getVersion() for historical versions.
    * Components should use $derived(nodeStore.get(id)) to establish reactivity.
    */
   get(nodeId: string): StudioNodeData | undefined {
     // Access version to establish dependency tracking
     this._version;
     return this.data.get(nodeId);
+  }
+  
+  /**
+   * Get node data at a specific version (async)
+   * 
+   * @param nodeId - Node ID
+   * @param commit - Optional commit hash. If not provided, returns current version.
+   * @returns StudioNodeData with content restored as class instance
+   */
+  async getVersion(nodeId: string, commit?: string): Promise<StudioNodeData | undefined> {
+    if (!commit) {
+      // Return current version (synchronous path)
+      this._version;
+      return this.data.get(nodeId);
+    }
+    
+    // Check if current version matches the requested commit
+    const current = this.data.get(nodeId);
+    if (current && current.commit === commit) {
+      return current;
+    }
+    
+    // Check version cache
+    const cacheKey = `${nodeId}:${commit}`;
+    if (this.versionCache.has(cacheKey)) {
+      return this.versionCache.get(cacheKey);
+    }
+    
+    // Load from IndexedDB snapshots table
+    const stored = await db.snapshots.get([nodeId, commit]);
+    if (!stored) return undefined;
+    
+    // Deserialize to StudioNodeData with content restored as class instance
+    const nodeData = this.deserialize(stored);
+    this.versionCache.set(cacheKey, nodeData);
+    return nodeData;
+  }
+  
+  /**
+   * Save a snapshot of node data to the snapshots table
+   * 
+   * @param nodeData - The node data to snapshot
+   * @param options - Optional position and incoming edges to save with snapshot
+   */
+  async saveSnapshot(
+    nodeData: StudioNodeData,
+    options?: {
+      position?: SnapshotPosition;
+      incomingEdges?: SnapshotEdge[];
+    }
+  ): Promise<void> {
+    const stored: StoredNodeData = {
+      projectId: '',  // Snapshots are global, not project-specific
+      nodeId: nodeData.id,
+      commit: nodeData.commit,
+      type: nodeData.type,
+      name: nodeData.name,
+      parents: [],
+      content: nodeData.content.toJSON(),
+      timestamp: Date.now(),
+      incomingEdges: options?.incomingEdges?.map(e => ({
+        source: e.source,
+        sourceHandle: e.sourceHandle,
+        targetHandle: e.targetHandle
+      })),
+      position: options?.position
+    };
+    await db.snapshots.put(stored);
+    
+    // Also update version cache
+    const cacheKey = `${nodeData.id}:${nodeData.commit}`;
+    this.versionCache.set(cacheKey, nodeData);
+  }
+  
+  /**
+   * Check if a snapshot exists
+   */
+  async hasSnapshot(nodeId: string, commit: string): Promise<boolean> {
+    // Check cache first
+    if (this.versionCache.has(`${nodeId}:${commit}`)) {
+      return true;
+    }
+    // Check current version
+    const current = this.data.get(nodeId);
+    if (current && current.commit === commit) {
+      return true;
+    }
+    // Check database
+    const count = await db.snapshots.where('[nodeId+commit]').equals([nodeId, commit]).count();
+    return count > 0;
+  }
+  
+  /**
+   * Get all historical versions for a node, sorted by timestamp
+   */
+  async getHistory(nodeId: string): Promise<StudioNodeData[]> {
+    const snapshots = await db.snapshots.where('nodeId').equals(nodeId).sortBy('timestamp');
+    return snapshots.map(s => this.deserialize(s));
   }
   
   /**
@@ -249,10 +375,10 @@ class NodeStore {
       type: data.type,
       name: data.name,
       commit: data.commit,
-      snapshotRefs: data.snapshotRefs,
       parents: data.parents,
       content: data.content.toJSON(),
-      external: data.external
+      external: data.external,
+      timestamp: Date.now()
     };
   }
   
@@ -268,10 +394,10 @@ class NodeStore {
       type: nodeType,
       name: stored.name,
       commit: stored.commit,
-      snapshotRefs: stored.snapshotRefs,
-      parents: stored.parents,
+      snapshotRefs: [],  // snapshotRefs managed separately, not persisted
+      parents: stored.parents ?? [],
       content: restoreContent(nodeType, stored.content),
-      external: stored.external
+      external: stored.external ?? false
     } as StudioNodeData;
   }
   
@@ -285,6 +411,7 @@ class NodeStore {
     }
     this.data.clear();
     this.dirty.clear();
+    this.versionCache.clear();
     this.projectId = '';
     this.initialized = false;
     this._version++;

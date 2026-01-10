@@ -16,7 +16,7 @@ import type {
 import type { FlowNodeData } from '../../../types/flow';
 import type { GeneratedContent, InputContent } from '../../../types';
 import type { MessageBlock } from '@pubwiki/chat';
-import { snapshotStore, generateCommitHash, registerVersionHandler, type NodeRef } from '../../../version';
+import { generateCommitHash, registerVersionHandler, type NodeRef } from '../../../version';
 import { resolvePromptContentFromRefs } from '../../../graph';
 import { nodeStore } from '../../../persistence';
 import { 
@@ -236,17 +236,18 @@ export async function regenerate(
 	const inputData = nodeStore.get(genContent.inputRef.id) as InputNodeData | undefined;
 	let inputContent: string;
 	
-	// If the input ref points to an old version, get it from snapshotStore
+	// If the input ref points to an old version, get it from nodeStore.getVersion
 	if (inputData && inputData.commit === genContent.inputRef.commit) {
 		// Current version matches the ref - use current content
 		inputContent = inputData.content.text;
 	} else {
-		// Different version - get from snapshot store
-		const snapshot = snapshotStore.get<InputContent>(genContent.inputRef.id, genContent.inputRef.commit);
+		// Different version - get from nodeStore (historical version)
+		const snapshot = await nodeStore.getVersion(genContent.inputRef.id, genContent.inputRef.commit);
 		if (!snapshot) {
 			throw new Error('Cannot find historical input snapshot');
 		}
-		inputContent = snapshot.content.text;
+		// Content is now a class instance with getText() method
+		inputContent = snapshot.content.getText();
 	}
 
 	// Combine all refs for content resolution
@@ -255,10 +256,10 @@ export async function regenerate(
 		...(genContent.indirectPromptRefs || [])
 	];
 
-	// Resolve each direct prompt ref with reftag substitution
+	// Resolve each direct prompt ref with reftag substitution (now async)
 	const resolvedPrompts: string[] = [];
 	for (const promptRef of genContent.promptRefs) {
-		const resolved = resolvePromptContentFromRefs(
+		const resolved = await resolvePromptContentFromRefs(
 			promptRef.id,
 			promptRef.commit,
 			nodes,

@@ -12,7 +12,7 @@ import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, PromptNodeData, InputNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
 import type { PromptContent, InputContent } from '../types/content';
-import { snapshotStore, type NodeRef, type SnapshotEdge } from '../version';
+import type { NodeRef, SnapshotEdge } from '../version';
 import { nodeStore } from '../persistence';
 import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId } from './connection';
 
@@ -384,16 +384,18 @@ export function resolvePromptContent(
  * After layer separation:
  * - Uses FlowNodeData for flow layer
  * - Uses nodeStore for current business data
- * - Uses snapshotStore for historical versions
+ * 
+ * After version-store-unification:
+ * - Now async, uses nodeStore.getVersion() for historical versions
  */
-export function resolvePromptContentFromRefs(
+export async function resolvePromptContentFromRefs(
   nodeId: string,
   nodeCommit: string,
   nodes: Node<FlowNodeData>[],
   edges: Edge[],
   allRefs: NodeRef[],
   visited: Set<string> = new Set()
-): string {
+): Promise<string> {
   if (visited.has(nodeId)) {
     return `[Circular reference]`;
   }
@@ -413,12 +415,13 @@ export function resolvePromptContentFromRefs(
       content = '';
     }
   } else {
-    // Get from snapshot store
-    const snapshot = snapshotStore.get<PromptContent | InputContent>(nodeId, nodeCommit);
+    // Get from nodeStore (historical version)
+    const snapshot = await nodeStore.getVersion(nodeId, nodeCommit);
     if (!snapshot) {
       return `[Missing snapshot: ${nodeId}:${nodeCommit.slice(0, 7)}]`;
     }
-    content = (snapshot.content as PromptContent | InputContent).text ?? '';
+    // Content is now a class instance with getText() method
+    content = snapshot.content.getText();
   }
   
   // Get reftag connections (using current edges since we don't store edge history)
@@ -439,7 +442,7 @@ export function resolvePromptContentFromRefs(
       // Find the ref for this connected node
       const ref = allRefs.find(r => r.id === connectedNodeId);
       if (ref) {
-        const resolvedContent = resolvePromptContentFromRefs(
+        const resolvedContent = await resolvePromptContentFromRefs(
           connectedNodeId,
           ref.commit,
           nodes,

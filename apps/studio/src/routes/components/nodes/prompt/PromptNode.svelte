@@ -50,9 +50,9 @@
 	// Preview state
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	// displayContent: in preview mode use historical content, otherwise use current content.text
+	// displayContent: in preview mode use historical content (already extracted as string), otherwise use current content.text
 	const displayContent = $derived(isPreviewing && previewState?.content 
-		? (typeof previewState.content === 'string' ? previewState.content : (previewState.content as { text?: string }).text ?? '')
+		? previewState.content
 		: content?.text ?? ''
 	);
 	

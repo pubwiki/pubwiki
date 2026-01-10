@@ -36,7 +36,6 @@
 	} from '../types';
 	import {
 		restoreSnapshot,
-		initSnapshotStore,
 		createPreviewController,
 		type NodeRef
 	} from '../version';
@@ -664,10 +663,6 @@
 			console.log('[Studio] Starting initialization...');
 			(async () => {
 				try {
-					// Initialize snapshot store (loads from IndexedDB)
-					await initSnapshotStore();
-					console.log('[Studio] Snapshot store initialized');
-					
 					// Get local project if exists
 					const localProject = await getProject(currentProjectId);
 					console.log('[Studio] Local project:', localProject);

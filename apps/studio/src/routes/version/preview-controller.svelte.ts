@@ -32,6 +32,8 @@ function getVersionRefsFromRegistry(data: StudioNodeData | undefined): NodeRef[]
 	return handler?.getVersionRefs?.(data as StudioNodeData)
 }
 
+
+
 // ============================================================================
 // Preview Controller Factory
 // ============================================================================
@@ -77,11 +79,8 @@ export function createPreviewController() {
 
 		const override = historicalTree.nodeOverrides.get(nodeId)
 		if (override) {
-			// Use getText() for display content (polymorphic call)
-			const content = override.content
-			const displayContent = typeof content === 'object' && content !== null && 'getText' in content
-				? (content as { getText(): string }).getText()
-				: String(content)
+			// Content is always a class instance with getText()
+			const displayContent = override.content.getText()
 			return {
 				content: displayContent,
 				commit: override.commit,
@@ -136,7 +135,7 @@ export function createPreviewController() {
 	 * Update preview state based on selected nodes.
 	 * Call this in a $effect when selectedNodes changes.
 	 */
-	function updateSelection(selectedNodes: Node<FlowNodeData>[]) {
+	async function updateSelection(selectedNodes: Node<FlowNodeData>[]) {
 		const nodes = ctx.nodes
 		const edges = ctx.edges
 
@@ -195,8 +194,8 @@ export function createPreviewController() {
 			hiddenEdges = []
 		}
 
-		// Build historical tree with data getter callback
-		const tree = rebuildHistoricalTree(
+		// Build historical tree with data getter callback (async)
+		const tree = await rebuildHistoricalTree(
 			versionRefs,
 			selected.id,
 			selected.position,

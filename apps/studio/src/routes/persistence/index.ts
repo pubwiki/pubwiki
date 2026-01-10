@@ -15,7 +15,6 @@ export {
   // Database instance and types
   db,
   StudioDatabase,
-  type StoredSnapshot,
   type StoredSnapshotEdge,
   type StoredPosition,
   type StoredLayout,
@@ -27,17 +26,6 @@ export {
   getCurrentProject,
   setCurrentProject,
   clearCurrentProject,
-  
-  // Snapshot operations
-  addSnapshot,
-  getSnapshot,
-  getSnapshotsByNodeId,
-  hasSnapshot,
-  removeSnapshot,
-  removeSnapshotsByNodeId,
-  getAllSnapshots,
-  importSnapshots,
-  clearSnapshots,
   
   // Edge operations
   edgeToStored,
@@ -56,7 +44,6 @@ export {
   
   // Live queries
   liveEdges,
-  liveSnapshots,
   liveProjects
 } from './db';
 

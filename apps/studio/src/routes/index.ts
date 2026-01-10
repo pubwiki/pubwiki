@@ -86,8 +86,6 @@ export type {
 
 // Version module
 export {
-  initSnapshotStore,
-  snapshotStore,
   generateCommitHash,
   syncNode,
   restoreSnapshot,
@@ -142,7 +140,6 @@ export {
   saveEdges,
   getEdges,
   liveEdges,
-  liveSnapshots,
   liveProjects,
   getCurrentProject,
   setCurrentProject,
@@ -155,7 +152,6 @@ export {
 } from './persistence';
 
 export type {
-  StoredSnapshot,
   StoredNodeData,
   StoredEdge,
   StoredProject,

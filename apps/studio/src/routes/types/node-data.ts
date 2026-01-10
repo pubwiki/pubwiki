@@ -71,7 +71,7 @@ export interface BaseNodeData<T extends NodeContent> {
   name: string
   /** Current commit hash (content hash) */
   commit: string
-  /** References to historical snapshots (stored in global snapshotStore) */
+  /** References to historical snapshots */
   snapshotRefs: NodeRef[]
   /** Parent nodes that contributed to this node's creation */
   parents: NodeRef[]
