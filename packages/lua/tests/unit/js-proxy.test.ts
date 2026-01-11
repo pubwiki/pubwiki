@@ -188,6 +188,42 @@ describe('JsProxy - 参数传递', () => {
       expect(result.error).toBeNull()
       expect(result.result).toBe(270)
     })
+
+    it('应该能用 ipairs 迭代数组', async () => {
+      const result = await instance.run(`
+        local result = {}
+        for i, v in ipairs(items) do
+          table.insert(result, i .. ":" .. v)
+        end
+        return table.concat(result, ",")
+      `, { items: ['a', 'b', 'c'] })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('1:a,2:b,3:c')
+    })
+
+    it('应该能迭代空对象', async () => {
+      const result = await instance.run(`
+        local count = 0
+        for k, v in pairs(obj) do
+          count = count + 1
+        end
+        return count
+      `, { obj: {} })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(0)
+    })
+
+    it('应该能迭代空数组', async () => {
+      const result = await instance.run(`
+        local count = 0
+        for i, v in ipairs(arr) do
+          count = count + 1
+        end
+        return count
+      `, { arr: [] })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(0)
+    })
   })
 
   describe('JsProxy 辅助方法', () => {
@@ -242,6 +278,42 @@ describe('JsProxy - 参数传递', () => {
       const parsed = JSON.parse(result.result)
       expect(parsed.a).toBe(1)
       expect(parsed.b).toBe(2)
+    })
+
+    it('应该能使用 isNull 方法检查 JsProxy 是否为 null', async () => {
+      // 注意：直接传递 null 会变成 Lua nil，无法调用方法
+      // 这里测试 JsProxy 对象的 isNull 方法
+      const result = await instance.run(`
+        -- 普通对象不是 null
+        local notNull = obj:isNull()
+        return tostring(notNull)
+      `, { obj: { a: 1 } })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('false')
+    })
+
+    it('应该能使用 isUndefined 方法检查 JsProxy 是否为 undefined', async () => {
+      // 注意：直接传递 undefined 会变成 Lua nil，无法调用方法
+      // 这里测试 JsProxy 对象的 isUndefined 方法
+      const result = await instance.run(`
+        -- 普通对象不是 undefined
+        local notUndef = obj:isUndefined()
+        return tostring(notUndef)
+      `, { obj: { a: 1 } })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('false')
+    })
+
+    it('null/undefined 参数会直接变成 Lua nil', async () => {
+      // 这是预期行为：JS 的 null/undefined 转换为 Lua nil
+      const result = await instance.run(`
+        local results = {}
+        if nullVal == nil then table.insert(results, "null is nil") end
+        if undefVal == nil then table.insert(results, "undefined is nil") end
+        return table.concat(results, ", ")
+      `, { nullVal: null, undefVal: undefined })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('null is nil, undefined is nil')
     })
 
     it('应该能用 is_null 检查属性值是否为 null', async () => {
@@ -367,6 +439,37 @@ describe('JsProxy - 参数传递', () => {
       })
       expect(result.error).toBeNull()
       expect(result.result).toBe('John: $8.25')
+    })
+
+    it('应该能修改 JsProxy 对象属性', async () => {
+      const obj = { name: 'original', count: 0 }
+      const result = await instance.run(`
+        data.name = "modified"
+        data.count = 42
+        data.newField = "added"
+        return data.name .. "," .. tostring(data.count) .. "," .. data.newField
+      `, { data: obj })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('modified,42,added')
+      // 验证原 JS 对象也被修改
+      expect(obj.name).toBe('modified')
+      expect(obj.count).toBe(42)
+      expect((obj as any).newField).toBe('added')
+    })
+
+    it('应该能修改 JsProxy 数组元素', async () => {
+      const arr = [10, 20, 30]
+      const result = await instance.run(`
+        -- 使用 1-based 索引修改
+        arr[1] = 100
+        arr[2] = 200
+        return arr[1] + arr[2] + arr[3]
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(330) // 100 + 200 + 30
+      // 验证原 JS 数组也被修改
+      expect(arr[0]).toBe(100)
+      expect(arr[1]).toBe(200)
     })
 
     it('应该能将 JsProxy 作为参数传递给函数', async () => {

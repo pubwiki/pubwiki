@@ -124,11 +124,6 @@ interface LuaModule {
   _lua_destroy_instance(instanceId: number): number
   _lua_run_on_instance_async(instanceId: number, codePtr: number, argsHandle: number): number
   
-  // Lua 迭代器接口
-  _lua_run_iter_on_instance_async(instanceId: number, codePtr: number): number
-  _lua_iterator_next_async(iteratorId: number, callbackId: number): void
-  _lua_iterator_close(iteratorId: number): void
-  
   // JS 模块注册接口
   _lua_register_js_module(instanceId: number, namePtr: number): void
   
@@ -207,13 +202,6 @@ const luaExecutionCallbacks = new Map<number, {
   resolve: (result: any) => void
   reject: (error: Error) => void
 }>()
-
-// 存储 Lua 迭代器回调
-const luaIteratorCallbacks = new Map<number, {
-  resolve: (result: { value: any; done: boolean }) => void
-  reject: (error: Error) => void
-}>()
-let nextLuaIteratorCallbackId = 1
 
 // 辅助函数：分配 UTF8 字符串到 WASM 内存
 function allocateUTF8(str: string, module: LuaModule): number {
@@ -1203,32 +1191,6 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             }
           }
           
-          // Lua 迭代器回调
-          env.js_lua_iterator_callback = (callbackId: number, resultJsonPtr: number) => {
-            const callbacks = luaIteratorCallbacks.get(callbackId)
-            const module = localModule
-            if (!callbacks || !module) {
-              console.error(`No callback found for iterator callback ${callbackId}`)
-              return
-            }
-            
-            try {
-              // 读取 JSON 结果 {value, done, error}
-              const resultJson = module.UTF8ToString(resultJsonPtr)
-              const result = JSON.parse(resultJson)
-              
-              if (result.error) {
-                callbacks.reject(new Error(result.error))
-              } else {
-                callbacks.resolve({ value: result.value, done: result.done })
-              }
-            } catch (error) {
-              callbacks.reject(error as Error)
-            } finally {
-              luaIteratorCallbacks.delete(callbackId)
-            }
-          }
-          
           imports.env = env
           
           // 手动加载和实例化 WASM
@@ -1425,12 +1387,6 @@ export function resetRunnerState() {
 // ============= 持久 Lua 实例 API =============
 
 /**
- * Lua 迭代器产生的值类型
- * Lua 迭代器可能返回多个值，所以用数组表示
- */
-export type LuaIteratorValue = any[]
-
-/**
  * Lua 实例句柄
  */
 export interface LuaInstance {
@@ -1445,22 +1401,6 @@ export interface LuaInstance {
    *             在 Lua 代码中可以使用 name 变量
    */
   run(code: string, args?: Record<string, unknown>): Promise<LuaExecutionResult>
-  
-  /** 
-   * 运行 Lua 代码并返回 AsyncIterator
-   * 
-   * Lua 代码应该返回一个迭代器（如 pairs(), ipairs(), 或自定义迭代器）
-   * 返回的 AsyncIterator 可以在 JavaScript 中使用 for-await-of 循环迭代
-   * 
-   * @example
-   * ```typescript
-   * const iter = instance.runIter(`return ipairs({1, 2, 3})`)
-   * for await (const [index, value] of iter) {
-   *   console.log(index, value)
-   * }
-   * ```
-   */
-  runIter(code: string): AsyncIterableIterator<LuaIteratorValue>
   
   /** 注册 JavaScript 模块供 Lua 调用 */
   registerJsModule(name: string, module: JsModuleDefinition): void
@@ -1573,102 +1513,6 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
         // 手动 tick 一次，启动执行
         module._lua_executor_tick()
       })
-    },
-    
-    runIter(code: string): AsyncIterableIterator<LuaIteratorValue> {
-      if (destroyed) {
-        throw new Error('Lua instance has been destroyed')
-      }
-      
-      let iteratorId: number | null = null
-      let iteratorClosed = false
-      
-      // 创建 AsyncIterableIterator
-      const iterator: AsyncIterableIterator<LuaIteratorValue> = {
-        [Symbol.asyncIterator]() {
-          return this
-        },
-        
-        async next(): Promise<IteratorResult<LuaIteratorValue>> {
-          // 如果迭代器已关闭，直接返回 done
-          if (iteratorClosed) {
-            return { value: undefined, done: true }
-          }
-          
-          // 如果还没有初始化迭代器，先执行代码获取迭代器
-          if (iteratorId === null) {
-            // 编码 Lua 代码
-            const codeBytes = textEncoder.encode(code)
-            const codePtr = module._malloc(codeBytes.length + 1)
-            if (!heapU8) throw new Error('HEAPU8 not initialized')
-            
-            heapU8.set(codeBytes, codePtr)
-            heapU8[codePtr + codeBytes.length] = 0
-            
-            // 执行代码获取迭代器
-            const executionId = module._lua_run_iter_on_instance_async(instanceId, codePtr)
-            module._free(codePtr)
-            
-            if (executionId === 0) {
-              throw new Error('Failed to start Lua iterator execution')
-            }
-            
-            // 等待迭代器创建完成
-            const result = await new Promise<LuaExecutionResult>((resolve, reject) => {
-              luaExecutionCallbacks.set(executionId, { resolve, reject })
-              module._lua_executor_tick()
-            })
-            
-            // 检查是否返回了迭代器 ID
-            if (result.result && typeof result.result.__lua_iterator_id === 'number') {
-              iteratorId = result.result.__lua_iterator_id
-            } else {
-              throw new Error('Lua code did not return an iterator')
-            }
-          }
-          
-          // 获取下一个值
-          const callbackId = nextLuaIteratorCallbackId++
-          
-          const iterResult = await new Promise<{ value: any; done: boolean }>((resolve, reject) => {
-            luaIteratorCallbacks.set(callbackId, { resolve, reject })
-            module._lua_iterator_next_async(iteratorId!, callbackId)
-            module._lua_executor_tick()
-          })
-          
-          if (iterResult.done) {
-            iteratorClosed = true
-            // 关闭迭代器释放资源
-            if (iteratorId !== null) {
-              module._lua_iterator_close(iteratorId)
-            }
-            return { value: undefined, done: true }
-          }
-          
-          // Lua 迭代器返回的是值数组
-          return { value: iterResult.value as LuaIteratorValue, done: false }
-        },
-        
-        async return(): Promise<IteratorResult<LuaIteratorValue>> {
-          // 提前关闭迭代器
-          if (!iteratorClosed && iteratorId !== null) {
-            module._lua_iterator_close(iteratorId)
-            iteratorClosed = true
-          }
-          return { value: undefined, done: true }
-        },
-        
-        async throw(error?: any): Promise<IteratorResult<LuaIteratorValue>> {
-          // 关闭迭代器并抛出错误
-          if (!iteratorClosed && iteratorId !== null) {
-            module._lua_iterator_close(iteratorId)
-            iteratorClosed = true
-          }
-          throw error
-        }
-      }
-      
-      return iterator
     },
     
     registerJsModule(name: string, moduleDefinition: JsModuleDefinition): void {

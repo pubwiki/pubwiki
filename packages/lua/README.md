@@ -1,12 +1,14 @@
 # pubwiki-lua
 
-A TypeScript library that wraps an Emscripten-compiled Lua 5.4 runtime with async RDF triple store integration and file system support.
+A TypeScript library that wraps an Emscripten-compiled Lua 5.4 runtime with async RDF triple store integration, file system support, and JavaScript interop.
 
 ## Features
 
 - **Lua 5.4 Runtime**: Full-featured Lua VM compiled to WebAssembly
 - **Async RDF State API**: Built-in triple store for semantic data management with full async support
-- **Async File System API**: Pluggable async filesystem for file I/O operations (see [FILESYSTEM_API.md](../FILESYSTEM_API.md))
+- **Async File System API**: Pluggable async filesystem for file I/O operations
+- **JavaScript Interop**: Pass JS objects/functions to Lua via JsProxy, register JS modules
+- **Persistent Instances**: Create long-lived Lua instances that preserve state between runs
 - **Relative Path Require**: Support `./` and `../` relative path imports in Lua modules
 - **Pluggable Storage**: Integrate with any async RDF store (Quadstore, N3.js, custom backends)
 - **Type-Safe**: Full TypeScript support with comprehensive type definitions
@@ -15,7 +17,7 @@ A TypeScript library that wraps an Emscripten-compiled Lua 5.4 runtime with asyn
 ## Installation
 
 ```sh
-npm install @pubwiki/pubwiki-lua
+npm install @pubwiki/lua
 ```
 
 ### WASM File Handling
@@ -27,8 +29,8 @@ The package includes WebAssembly files that need to be accessible at runtime. He
 Vite can handle both the glue JS and WASM files automatically:
 
 ```ts
-import { loadRunner } from '@pubwiki/pubwiki-lua'
-import glueUrl from '@pubwiki/pubwiki-lua/wasm/lua_runner_glue.js?url'
+import { loadRunner } from '@pubwiki/lua'
+import glueUrl from '@pubwiki/lua/wasm/lua_runner_glue.js?url'
 
 await loadRunner(glueUrl)
 ```
@@ -40,8 +42,8 @@ await loadRunner(glueUrl)
 If the WASM file is in a different location, pass it explicitly:
 
 ```ts
-import glueUrl from '@pubwiki/pubwiki-lua/wasm/lua_runner_glue.js?url'
-import wasmUrl from '@pubwiki/pubwiki-lua/wasm/lua_runner_wasm.wasm?url'
+import glueUrl from '@pubwiki/lua/wasm/lua_runner_glue.js?url'
+import wasmUrl from '@pubwiki/lua/wasm/lua_runner_wasm.wasm?url'
 
 await loadRunner(glueUrl, wasmUrl)
 ```
@@ -49,10 +51,10 @@ await loadRunner(glueUrl, wasmUrl)
 #### Option 2: Webpack 5+
 
 ```ts
-import { loadRunner } from '@pubwiki/pubwiki-lua'
+import { loadRunner } from '@pubwiki/lua'
 
-const glueUrl = new URL('@pubwiki/pubwiki-lua/wasm/lua_runner_glue.js', import.meta.url).href
-const wasmUrl = new URL('@pubwiki/pubwiki-lua/wasm/lua_runner_wasm.wasm', import.meta.url).href
+const glueUrl = new URL('@pubwiki/lua/wasm/lua_runner_glue.js', import.meta.url).href
+const wasmUrl = new URL('@pubwiki/lua/wasm/lua_runner_wasm.wasm', import.meta.url).href
 
 await loadRunner(glueUrl, wasmUrl)
 ```
@@ -63,11 +65,11 @@ Copy both WASM files to your public/static directory during build:
 
 ```bash
 # Copy files during build
-cp node_modules/@pubwiki/pubwiki-lua/wasm/* public/wasm/
+cp node_modules/@pubwiki/lua/wasm/* public/wasm/
 ```
 
 ```ts
-import { loadRunner } from '@pubwiki/pubwiki-lua'
+import { loadRunner } from '@pubwiki/lua'
 
 await loadRunner('/wasm/lua_runner_glue.js', '/wasm/lua_runner_wasm.wasm')
 ```
@@ -75,36 +77,39 @@ await loadRunner('/wasm/lua_runner_glue.js', '/wasm/lua_runner_wasm.wasm')
 #### Option 4: CDN
 
 ```ts
-import { loadRunner } from '@pubwiki/pubwiki-lua'
+import { loadRunner } from '@pubwiki/lua'
 
 await loadRunner(
-  'https://unpkg.com/@pubwiki/pubwiki-lua/wasm/lua_runner_glue.js',
-  'https://unpkg.com/@pubwiki/pubwiki-lua/wasm/lua_runner_wasm.wasm'
+  'https://unpkg.com/@pubwiki/lua/wasm/lua_runner_glue.js',
+  'https://unpkg.com/@pubwiki/lua/wasm/lua_runner_wasm.wasm'
 )
 ```
 
 ## Quick Start
 
 ```ts
-import { loadRunner, runLua } from '@pubwiki/pubwiki-lua'
-import glueUrl from '@pubwiki/pubwiki-lua/wasm/lua_runner_glue.js?url'
+import { loadRunner, createLuaInstance } from '@pubwiki/lua'
+import glueUrl from '@pubwiki/lua/wasm/lua_runner_glue.js?url'
 import { QuadstoreRDFStore } from './your-rdf-store'
 
-// Initialize the Lua runtime with explicit WASM path
+// Initialize the Lua runtime
 await loadRunner(glueUrl)
 
 // Create an async RDF store instance
 const store = await QuadstoreRDFStore.create()
 
+// Create a persistent Lua instance
+const lua = createLuaInstance({ rdfStore: store })
+
 // Run Lua code with RDF state access
-const result = await runLua(`
+const result = await lua.run(`
   -- Insert RDF triples (async operations)
-  State.insert('user:alice', 'name', 'Alice')
-  State.insert('user:alice', 'age', 30)
-  State.insert('user:alice', 'city', 'Tokyo')
+  State:insert('user:alice', 'name', 'Alice')
+  State:insert('user:alice', 'age', 30)
+  State:insert('user:alice', 'city', 'Tokyo')
   
   -- Query triples (async)
-  local user_data = State.query({subject = 'user:alice'})
+  local user_data = State:match({subject = 'user:alice'})
   
   print('Alice has ' .. #user_data .. ' properties')
   for i, triple in ipairs(user_data) do
@@ -112,222 +117,424 @@ const result = await runLua(`
   end
   
   return { count = #user_data, status = 'ok' }
-`, store)
+`)
 
 // Access structured result
 console.log(result.result)  // { count: 3, status: 'ok' }
 console.log(result.output)  // "Alice has 3 properties\nname: Alice\n..."
 console.log(result.error)   // null
+
+// Cleanup
+lua.destroy()
 ```
 
 ## API Reference
 
-### runLua(code: string, store: RDFStore): Promise<LuaExecutionResult>
+### createLuaInstance(options): LuaInstance
 
-Execute Lua code with the given RDF store.
-
-**Returns**: `LuaExecutionResult` object containing:
-- `result: any` - Lua return value (parsed to JavaScript)
-- `output: string` - Combined output from `print()` and `io.write()`
-- `error: string | null` - Error message if execution failed
+Create a persistent Lua instance that preserves state between runs.
 
 ```typescript
-const result = await runLua(`
-  print('Processing...')
-  State.insert('book:1984', 'title', '1984')
-  return { success: true }
-`, store)
+interface LuaInstanceOptions {
+  rdfStore?: RDFStore           // RDF storage implementation
+  vfs?: Vfs<VfsProvider>        // Virtual file system
+  workingDirectory?: string     // Working directory for require (default: "/")
+}
 
-console.log(result.result)  // { success: true }
-console.log(result.output)  // "Processing..."
-console.log(result.error)   // null
+interface LuaInstance {
+  readonly id: number
+  run(code: string, args?: Record<string, unknown>): Promise<LuaExecutionResult>
+  registerJsModule(name: string, module: JsModuleDefinition): void
+  destroy(): void
+}
+```
+
+**Example**:
+```typescript
+const lua = createLuaInstance({ rdfStore: store })
+
+// State persists between runs
+await lua.run('counter = 0')
+await lua.run('counter = counter + 1')
+const result = await lua.run('return counter')
+console.log(result.result)  // 2
+
+lua.destroy()
+```
+
+### runLua(code, options): Promise&lt;LuaExecutionResult&gt;
+
+Execute Lua code in a one-shot instance (no state persistence).
+
+```typescript
+interface RunLuaOptions {
+  rdfStore?: RDFStore
+  vfs?: Vfs<VfsProvider>
+  workingDirectory?: string
+}
+
+const result = await runLua(`
+  State:insert('book:1984', 'title', '1984')
+  return { success = true }
+`, { rdfStore: store })
+```
+
+### LuaExecutionResult
+
+```typescript
+interface LuaExecutionResult {
+  result: any           // Lua return value (parsed to JavaScript)
+  output: string        // Combined output from print() and io.write()
+  error: string | null  // Error message if execution failed
+}
+```
+
+## Passing JavaScript Arguments to Lua
+
+You can pass JavaScript values to Lua code via the `args` parameter. These are exposed as **JsProxy** userdata objects in Lua.
+
+### Basic Types
+
+```typescript
+const result = await lua.run(`
+  return name .. " is " .. tostring(age) .. " years old"
+`, { name: 'Alice', age: 25 })
+// result.result = "Alice is 25 years old"
+```
+
+### Objects and Arrays
+
+```typescript
+// Access nested objects
+const result = await lua.run(`
+  return user.address.city
+`, { user: { address: { city: 'Tokyo' } } })
+
+// Iterate arrays (1-based indexing, Lua style)
+const result = await lua.run(`
+  local sum = 0
+  for i = 1, #numbers do
+    sum = sum + numbers[i]
+  end
+  return sum
+`, { numbers: [1, 2, 3, 4, 5] })
+// result.result = 15
+```
+
+### Calling JavaScript Functions
+
+```typescript
+// Sync functions
+const result = await lua.run(`
+  return add(10, 20)
+`, { add: (a: number, b: number) => a + b })
+
+// Async functions (automatically awaited)
+const result = await lua.run(`
+  local data = fetchData()
+  return data.message
+`, { 
+  fetchData: async () => {
+    const res = await fetch('/api/data')
+    return res.json()
+  }
+})
+```
+
+### Modifying JsProxy Objects
+
+Changes to JsProxy objects are reflected in the original JavaScript objects:
+
+```typescript
+const obj = { count: 0 }
+await lua.run(`
+  data.count = 42
+  data.newField = "added"
+`, { data: obj })
+
+console.log(obj.count)     // 42
+console.log(obj.newField)  // "added"
+```
+
+### JsProxy Helper Methods
+
+```lua
+-- Type checking
+local t = obj:typeof()       -- "object", "function", "number", etc.
+local isArr = arr:isArray()  -- true if JS Array
+
+-- Serialization
+local jsonStr = obj:toJSON() -- JSON string
+
+-- null/undefined checks
+local isNull = obj:isNull()
+local isUndef = obj:isUndefined()
+
+-- Iteration (pairs works on objects)
+for k, v in pairs(obj) do
+  print(k, v)
+end
+
+-- ipairs works on arrays (1-based)
+for i, v in ipairs(arr) do
+  print(i, v)
+end
+```
+
+## JavaScript Module Registration
+
+Register JavaScript modules that Lua can `require`:
+
+```typescript
+const lua = createLuaInstance({ rdfStore: store })
+
+// Register a module
+lua.registerJsModule('myAPI', {
+  add: (a: number, b: number) => a + b,
+  fetchUser: async (id: number) => {
+    const res = await fetch(`/api/users/${id}`)
+    return res.json()
+  },
+  // Async generators become Lua iterators
+  streamData: async function* () {
+    yield { name: 'item1' }
+    yield { name: 'item2' }
+  }
+})
+
+// Use in Lua
+const result = await lua.run(`
+  local api = require("myAPI")
+  
+  -- Call sync function
+  local sum = api.add(1, 2)
+  
+  -- Call async function (automatically awaited)
+  local user = api.fetchUser(123)
+  
+  -- Iterate async generator
+  for item in api.streamData() do
+    print(item.name)
+  end
+  
+  return sum
+`)
+```
+
+## Iterating in Lua with Callbacks
+
+Since JavaScript functions can be passed to Lua, you can iterate Lua data using callbacks:
+
+```typescript
+const lua = createLuaInstance({ rdfStore: store })
+
+// Iterate ipairs via callback
+const items: any[] = []
+await lua.run(`
+  for index, value in ipairs({10, 20, 30, 40, 50}) do
+    callback(index, value)
+  end
+`, { callback: (index: number, value: number) => items.push({ index, value }) })
+
+// Iterate pairs via callback
+const pairs: any[] = []
+await lua.run(`
+  for key, value in pairs({ name = "Alice", age = 25 }) do
+    callback(key, value)
+  end
+`, { callback: (key: string, value: any) => pairs.push({ key, value }) })
+
+// Early termination using callback return value
+const limited: number[] = []
+await lua.run(`
+  for i, v in ipairs({1, 2, 3, 4, 5, 6, 7, 8, 9, 10}) do
+    local shouldContinue = callback(v)
+    if not shouldContinue then break end
+  end
+`, { callback: (value: number) => {
+  limited.push(value)
+  return value < 5  -- continue while value < 5
+}})
+// limited = [1, 2, 3, 4, 5]
 ```
 
 ## RDF State API
 
 The Lua `State` object provides methods for working with RDF triples. **All operations are asynchronous** but appear synchronous in Lua code.
 
-### State.insert(subject, predicate, object)
+> **Note**: Use `:` (colon) for method calls, e.g., `State:insert(...)`.
 
-Insert a single triple into the store (async).
+### State:insert(subject, predicate, object)
+
+Insert a single triple into the store.
 
 ```lua
-State.insert('book:1984', 'title', '1984')
-State.insert('book:1984', 'author', 'George Orwell')
-State.insert('book:1984', 'year', 1949)
-State.insert('book:1984', 'genre', 'dystopian')
+State:insert('book:1984', 'title', '1984')
+State:insert('book:1984', 'author', 'George Orwell')
+State:insert('book:1984', 'year', 1949)
 ```
 
-### State.delete(subject, predicate, object?)
+### State:delete(subject, predicate, object?)
 
-Delete triples matching the pattern (async). If `object` is omitted, deletes all triples with matching subject and predicate.
+Delete triples matching the pattern. If `object` is omitted, deletes all triples with matching subject and predicate.
 
 ```lua
 -- Delete a specific triple
-State.delete('book:1984', 'year', 1949)
+State:delete('book:1984', 'year', 1949)
 
 -- Delete all triples with subject + predicate
-State.delete('book:1984', 'genre')
+State:delete('book:1984', 'genre')
 ```
 
-### State.query(pattern)
+### State:match(pattern)
 
-Query triples matching a pattern (async). Omit fields to match any value.
+Query triples matching a pattern. Omit fields to match any value.
 
 ```lua
--- Find all books (any subject with 'title' predicate)
-local books = State.query({predicate = 'title'})
+-- Find all properties of a subject
+local book_data = State:match({subject = 'book:1984'})
 
--- Find all properties of a specific book
-local book_data = State.query({subject = 'book:1984'})
+-- Find all subjects with a predicate
+local books = State:match({predicate = 'title'})
 
--- Find books of a specific genre
-local dystopian = State.query({
+-- Find by predicate and object
+local dystopian = State:match({
   predicate = 'genre',
   object = 'dystopian'
 })
 
--- Get book titles from results
 for i, triple in ipairs(dystopian) do
-  local titles = State.query({
-    subject = triple.subject,
-    predicate = 'title'
-  })
-  if #titles > 0 then
-    print(titles[1].object)
-  end
+  print(triple.subject, triple.predicate, triple.object)
 end
 ```
 
-### State.batchInsert(triples)
+### State:batchInsert(triples)
 
-Insert multiple triples at once for better performance (async).
+Insert multiple triples at once for better performance.
 
 ```lua
-local products = {
+State:batchInsert({
   {subject = 'product:p1', predicate = 'name', object = 'Laptop'},
   {subject = 'product:p1', predicate = 'price', object = 999},
   {subject = 'product:p2', predicate = 'name', object = 'Mouse'},
-  {subject = 'product:p2', predicate = 'price', object = 29},
-}
-
-State.batchInsert(products)
+})
 ```
 
-### State.set(subject, predicate, object)
+### State:set(subject, predicate, object)
 
-Replace all values for a subject+predicate pair (async). Equivalent to delete then insert.
+Replace all values for a subject+predicate pair. Equivalent to delete then insert.
 
 ```lua
--- Initial value
-State.insert('user:alice', 'age', 25)
-
--- Update (deletes old value, inserts new)
-State.set('user:alice', 'age', 26)
+State:insert('user:alice', 'age', 25)
+State:set('user:alice', 'age', 26)  -- Replaces 25 with 26
 ```
 
-### State.get(subject, predicate)
+### State:get(subject, predicate)
 
-Get a single value for a subject+predicate pair (async). Returns the object value or `nil`.
+Get a single value for a subject+predicate pair. Returns `nil` if not found.
 
 ```lua
-local name = State.get('user:alice', 'name')
-if name then
-  print('Name: ' .. name)
+local name = State:get('user:alice', 'name')
+local city = State:get('user:alice', 'city') or 'Unknown'
+```
+
+## JSON Module
+
+Built-in JSON encoding/decoding:
+
+```lua
+-- Encode Lua values to JSON
+local jsonStr = json.encode({name = "Alice", age = 25})
+-- '{"name":"Alice","age":25}'
+
+-- Encode JsProxy objects
+local jsonStr = json.encode(jsObject)
+
+-- Decode JSON to Lua tables
+local data = json.decode('{"items": [1, 2, 3]}')
+print(data.items[1])  -- 1
+```
+
+## File System API
+
+The Lua `fs` object provides file system operations. Requires a VFS instance.
+
+```typescript
+import { createVfs, MemoryVfsProvider } from '@pubwiki/vfs'
+
+const vfs = createVfs(new MemoryVfsProvider())
+const lua = createLuaInstance({ vfs })
+```
+
+### fs.stat(path)
+
+Get file or directory status. Returns `(stat, error)`.
+
+```lua
+local stat, err = fs.stat('/myfile.txt')
+if err then
+  print('Error: ' .. err)
 else
-  print('Name not found')
+  print('Size: ' .. stat.size)
+  print('Is directory: ' .. tostring(stat.isDirectory))
 end
+```
 
--- With default value
-local city = State.get('user:alice', 'city') or 'Unknown'
+### fs.readdir(path)
+
+List directory contents. Returns `(entries, error)`.
+
+```lua
+local entries, err = fs.readdir('/mydir')
+for _, entry in ipairs(entries) do
+  print(entry.name, entry.isDirectory and '[DIR]' or entry.size)
+end
+```
+
+### Working Directory
+
+Relative paths are resolved from the working directory:
+
+```typescript
+const lua = createLuaInstance({ 
+  vfs, 
+  workingDirectory: '/project/src' 
+})
+
+await lua.run(`
+  local stat, err = fs.stat('./config.json')  -- /project/src/config.json
+`)
 ```
 
 ## RDFStore Interface
 
-To use pubwiki-lua, you need to provide an **async RDFStore** implementation.
-
-### Interface
+To use pubwiki-lua with RDF features, provide an RDFStore implementation:
 
 ```typescript
-export interface RDFStore {
+interface RDFStore {
   insert(subject: string, predicate: string, object: any): Promise<void>
   delete(subject: string, predicate: string, object?: any): Promise<void>
   query(pattern: TriplePattern): Promise<Triple[]>
   batchInsert?(triples: Triple[]): Promise<void>
 }
 
-export interface Triple {
+interface Triple {
   subject: string
   predicate: string
   object: any
 }
 
-export interface TriplePattern {
+interface TriplePattern {
   subject?: string | null
   predicate?: string | null
   object?: any | null
 }
 ```
 
-### Example: Quadstore Backend
+### Example: In-Memory Store
 
 ```typescript
-import { Quadstore } from 'quadstore'
-import { BrowserLevel } from 'browser-level'
-import { DataFactory } from 'n3'
-import type { RDFStore, Triple, TriplePattern } from 'pubwiki-lua'
-
-export class QuadstoreRDFStore implements RDFStore {
-  private store: Quadstore
-  
-  static async create(): Promise<QuadstoreRDFStore> {
-    const backend = new BrowserLevel('my-rdf-db')
-    const store = new Quadstore({ backend, dataFactory: DataFactory })
-    await store.open()
-    return new QuadstoreRDFStore(store)
-  }
-  
-  private constructor(store: Quadstore) {
-    this.store = store
-  }
-  
-  async insert(subject: string, predicate: string, object: any): Promise<void> {
-    const quad = this.tripleToQuad({ subject, predicate, object })
-    await this.store.put(quad)
-  }
-  
-  async delete(subject: string, predicate: string, object?: any): Promise<void> {
-    const pattern = this.createPattern(subject, predicate, object)
-    await this.store.deleteMatches(pattern.subject, pattern.predicate, pattern.object, pattern.graph)
-  }
-  
-  async query(pattern: TriplePattern): Promise<Triple[]> {
-    const stream = this.store.match(
-      pattern.subject ? this.toTerm(pattern.subject) : null,
-      pattern.predicate ? this.toTerm(pattern.predicate) : null,
-      pattern.object !== undefined ? this.toTerm(pattern.object) : null
-    )
-    
-    const results: Triple[] = []
-    for await (const quad of stream) {
-      results.push(this.quadToTriple(quad))
-    }
-    return results
-  }
-  
-  async batchInsert(triples: Triple[]): Promise<void> {
-    const quads = triples.map(t => this.tripleToQuad(t))
-    await this.store.multiPut(quads)
-  }
-  
-  // Helper methods...
-}
-```
-
-### Example: In-Memory Store (for testing)
-
-```typescript
-export class MemoryRDFStore implements RDFStore {
+class MemoryRDFStore implements RDFStore {
   private triples: Triple[] = []
 
   async insert(subject: string, predicate: string, object: any): Promise<void> {
@@ -346,7 +553,8 @@ export class MemoryRDFStore implements RDFStore {
     return this.triples.filter(t => {
       if (pattern.subject && t.subject !== pattern.subject) return false
       if (pattern.predicate && t.predicate !== pattern.predicate) return false
-      if (pattern.object !== undefined && JSON.stringify(t.object) !== JSON.stringify(pattern.object)) return false
+      if (pattern.object !== undefined && 
+          JSON.stringify(t.object) !== JSON.stringify(pattern.object)) return false
       return true
     })
   }
@@ -357,354 +565,6 @@ export class MemoryRDFStore implements RDFStore {
 }
 ```
 
-## Module Loading (require)
-
-Load Lua modules from the virtual file system with support for relative paths.
-
-### Relative Path Require
-
-Modules can use relative paths (`./` and `../`) to require other modules relative to the current file's location:
-
-```lua
--- File: /utils/math/calc.lua
--- Load sibling module
-local advanced = require("./advanced")  -- loads /utils/math/advanced.lua
-
--- File: /lib/core.lua
--- Load from parent directory
-local helper = require("../utils/helper")  -- loads /utils/helper.lua
-```
-
-This enables modular project structures:
-
-```
-/project
-├── main.lua              -- require("./utils/helper")
-├── utils/
-│   ├── helper.lua        -- require("./math/calc")
-│   └── math/
-│       ├── calc.lua      -- require("./advanced")
-│       └── advanced.lua
-└── lib/
-    └── core.lua          -- require("../utils/helper")
-```
-
-**Note**: Relative paths are resolved based on the source file's directory. When running code directly (not from a file), the working directory is used as the base.
-
-### File System Modules
-
-Load modules from the virtual file system:
-
-```lua
--- Absolute path (traditional Lua style with dots)
-local mylib = require("utils.helper")  -- loads /utils/helper.lua
-
--- Absolute path with slashes
-local mylib = require("/utils/helper")  -- loads /utils/helper.lua
-```
-
-## Advanced Configuration
-
-### Bundler-Specific Configuration
-
-#### Vite Configuration
-
-Vite handles WASM files automatically with the `?url` suffix. No additional configuration needed:
-
-```ts
-import glueUrl from '@pubwiki/pubwiki-lua/wasm/lua_runner_glue.js?url'
-await loadRunner(glueUrl)
-```
-
-#### Webpack Configuration
-
-For Webpack 5+, use `new URL()` with `import.meta.url`:
-
-```ts
-await loadRunner(
-  new URL('@pubwiki/pubwiki-lua/wasm/lua_runner_glue.js', import.meta.url).href
-)
-```
-
-For older Webpack versions, you may need to configure `file-loader`:
-
-```js
-// webpack.config.js
-module.exports = {
-  module: {
-    rules: [
-      {
-        test: /\.wasm$/,
-        type: 'asset/resource',
-      }
-    ]
-  }
-}
-```
-
-#### Next.js Configuration
-
-```js
-// next.config.js
-module.exports = {
-  webpack: (config) => {
-    config.experiments = {
-      ...config.experiments,
-      asyncWebAssembly: true,
-    }
-    return config
-  }
-}
-```
-
-Then use:
-
-```ts
-await loadRunner('/wasm/lua_runner_glue.js')
-```
-
-And copy WASM files to your `public/wasm/` directory.
-
-### Custom WASM Path
-
-If you need to host WASM files on a CDN or custom location:
-
-```ts
-import { loadRunner } from 'pubwiki-lua'
-
-await loadRunner('/cdn/path/to/lua_runner_glue.js')
-```
-
-### File System Integration
-
-Register a file system implementation for `fs.*` API access in Lua:
-
-```ts
-import { setFileSystem, type FileSystem } from 'pubwiki-lua'
-
-class OPFSFileSystem implements FileSystem {
-  async readFile(path: string): Promise<string> {
-    // Read from OPFS
-  }
-  
-  async writeFile(path: string, content: string): Promise<void> {
-    // Write to OPFS
-  }
-  
-  exists(path: string): boolean {
-    // Sync check
-  }
-  
-  // ... implement other methods
-}
-
-const fs = new OPFSFileSystem()
-await fs.initialize()
-setFileSystem(fs)
-
-// Now Lua can use fs.read(), fs.write(), etc.
-await runLua(`
-  fs.write('/config.json', '{"version": 1}')
-  local data = fs.read('/config.json')
-  print(data)
-`, store)
-```
-
-See [FILESYSTEM_API.md](../FILESYSTEM_API.md) for complete file system API documentation.
-
-## File System API
-
-The Lua `fs` object provides methods for file system operations. **All operations are asynchronous** but appear synchronous in Lua code. A VFS (Virtual File System) instance must be provided via the `vfs` option.
-
-### fs.read(path)
-
-Read file content as a string (async). Returns `(content, error)`.
-
-```lua
-local content, err = fs.read('/config.json')
-if err then
-  print('Error: ' .. err)
-else
-  print(content)
-end
-```
-
-### fs.write(path, content)
-
-Write content to a file (async). Creates parent directories if needed. Returns `(success, error)`.
-
-```lua
-local ok, err = fs.write('/data/config.json', '{"version": 1}')
-if not ok then
-  print('Write failed: ' .. err)
-end
-```
-
-### fs.exists(path)
-
-Check if a file or directory exists (async). Returns `boolean`.
-
-```lua
-if fs.exists('/config.json') then
-  print('Config exists')
-end
-```
-
-### fs.unlink(path)
-
-Delete a file (async). Returns `(success, error)`.
-
-```lua
-local ok, err = fs.unlink('/temp/cache.txt')
-```
-
-### fs.mkdir(path)
-
-Create a directory (async). Returns `(success, error)`.
-
-```lua
-local ok, err = fs.mkdir('/data/cache')
-```
-
-### fs.rmdir(path)
-
-Delete a directory (async). Returns `(success, error)`.
-
-```lua
-local ok, err = fs.rmdir('/data/cache')
-```
-
-### fs.stat(path)
-
-Get file or directory status information (async). Returns `(stat, error)`.
-
-```lua
-local stat, err = fs.stat('/myfile.txt')
-if err then
-  print('Error: ' .. err)
-else
-  print('Size: ' .. stat.size)
-  print('Is directory: ' .. tostring(stat.isDirectory))
-  print('Created: ' .. stat.createdAt)
-  print('Updated: ' .. stat.updatedAt)
-end
-```
-
-The `stat` table contains:
-- `size` - File size in bytes (0 for directories)
-- `isDirectory` - `true` if path is a directory, `false` if file
-- `createdAt` - Creation time (ISO 8601 string)
-- `updatedAt` - Last modification time (ISO 8601 string)
-
-### fs.readdir(path)
-
-List directory contents with stat information (async). Returns `(entries, error)`.
-
-```lua
-local entries, err = fs.readdir('/mydir')
-if err then
-  print('Error: ' .. err)
-else
-  for _, entry in ipairs(entries) do
-    print(entry.name)
-    if entry.isDirectory then
-      print('  [DIR]')
-    else
-      print('  Size: ' .. entry.size)
-    end
-  end
-end
-```
-
-Each entry table contains:
-- `name` - File or directory name
-- `path` - Full path
-- `size` - File size in bytes (0 for directories)
-- `isDirectory` - `true` if directory, `false` if file
-- `createdAt` - Creation time (ISO 8601 string)
-- `updatedAt` - Last modification time (ISO 8601 string)
-
-### Working Directory
-
-Relative paths (starting with `./` or `../`) are resolved from the working directory:
-
-```ts
-const result = await runLua(`
-  -- Relative to /project/src
-  local stat, err = fs.stat('./config.json')  -- resolves to /project/src/config.json
-  local parent, err = fs.readdir('..')        -- resolves to /project
-`, { rdfStore: store, vfs, workingDirectory: '/project/src' })
-```
-
-## Architecture
-
-### Async-First Design
-
-All I/O operations (RDF, file system) are fully asynchronous:
-
-- **No sync adapters**: Direct async RDFStore interface
-- **Event-driven**: Async operations trigger executor automatically via wakers
-- **No polling**: Waker-based async runtime
-- **Promise-based**: JavaScript Promises bridge to Rust async/await
-
-### Execution Flow
-
-```
-JavaScript           WASM Bridge              Rust
-──────────          ────────────             ──────
-
-runLua() ──────▶ _lua_run_async() ──▶ Spawn async task
-                                            │
-                                            ▼
-                                      Lua VM executes
-                                            │
-                    ┌───────────────────────┼──────────────────┐
-                    │                       │                  │
-                    ▼                       ▼                  ▼
-            State.insert()           State.query()       fs.read()
-                    │                       │           fs.stat()
-                    │                       │         fs.readdir()
-                    │                       │                  │
-                    ▼                       ▼                  ▼
-        js_rdf_insert_async()   js_rdf_query_async()  js_fs_*_async()
-                    │                       │                  │
-                    ▼                       ▼                  ▼
-            store.insert()            store.query()      vfs.*()
-                    │                       │                  │
-                    └───────────────────────┴──────────────────┘
-                                            │
-                                            ▼
-                              _lua_*_promise_resolve()
-                                            │
-                                            ▼
-                              _lua_executor_tick() (waker)
-                                            │
-                                            ▼
-                                    Resume Lua execution
-                                            │
-                                            ▼
-                          js_lua_execution_callback()
-                                            │
-runLua() resolves ◀─────────────────────────┘
-with LuaExecutionResult
-```
-
-### Why Async?
-
-1. **Browser Compatibility**: IndexedDB and OPFS are inherently async
-2. **Non-Blocking**: Large operations don't freeze the UI
-3. **Performance**: True async I/O without blocking the event loop
-4. **Consistency**: Same API for all storage backends
-
-Despite being async in JavaScript/Rust, Lua code **looks synchronous**:
-
-```lua
--- This looks synchronous but is async under the hood
-State.insert('user:1', 'name', 'Alice')
-local users = State.query({predicate = 'name'})
-print(users[1].object)  -- "Alice"
-```
-
 ## Building Locally
 
 ```sh
@@ -712,67 +572,6 @@ pnpm install
 pnpm run build
 ```
 
-The build emits ESM JavaScript and type declarations into `dist/`.
-
-## TypeScript API
-
-```ts
-// Core functions
-export function loadRunner(customGluePath?: string, customWasmPath?: string): Promise<void>
-export function runLua(code: string, store: RDFStore): Promise<LuaExecutionResult>
-
-// File system
-export function setFileSystem(fs: FileSystem | null): void
-
-// Module management
-export function uploadFileModule(name: string, content: string): void
-export function clearModuleCache(): void
-
-// Types
-export interface RDFStore {
-  insert(subject: string, predicate: string, object: any): Promise<void>
-  delete(subject: string, predicate: string, object?: any): Promise<void>
-  query(pattern: TriplePattern): Promise<Triple[]>
-  batchInsert?(triples: Triple[]): Promise<void>
-}
-
-export interface LuaExecutionResult {
-  result: any           // Lua return value (parsed to JavaScript)
-  output: string        // Combined output from print() and io.write()
-  error: string | null  // Error message if execution failed
-}
-
-export interface FileSystem {
-  readFile(path: string): Promise<string | Uint8Array>
-  writeFile(path: string, content: string | Uint8Array): Promise<void>
-  deleteFile(path: string): Promise<void>
-  exists(path: string): Promise<boolean>
-  mkdir(path: string): Promise<void>
-  rmdir(path: string): Promise<void>
-  stat(path: string): Promise<{
-    size: number
-    isDirectory: boolean
-    createdAt: Date
-    updatedAt: Date
-  }>
-  readdir(path: string): Promise<string[]>
-}
-```
-
-export interface Triple {
-  subject: string
-  predicate: string
-  object: any
-}
-
-export interface TriplePattern {
-  subject?: string | null
-  predicate?: string | null
-  object?: any | null
-}
-```
-
 ## License
 
 MIT
-

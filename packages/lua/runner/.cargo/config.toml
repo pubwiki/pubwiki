@@ -5,7 +5,7 @@ rustflags = [
   "-C", "link-arg=-sEXPORT_NAME=lua_runner_wasm",
   "-C", "link-arg=--no-entry",
   # 导出的函数：使用统一的 _lua_callback_resolve/_lua_callback_reject 替代分离的回调
-  "-C", "link-arg=-sEXPORTED_FUNCTIONS=['_lua_run_async','_lua_executor_tick','_lua_has_pending_tasks','_lua_create_instance','_lua_destroy_instance','_lua_run_on_instance_async','_lua_register_js_module','_lua_callback_resolve','_lua_callback_reject','_lua_run_iter_on_instance_async','_lua_iterator_next_async','_lua_iterator_close','_malloc','_free']",
+  "-C", "link-arg=-sEXPORTED_FUNCTIONS=['_lua_run_async','_lua_executor_tick','_lua_has_pending_tasks','_lua_create_instance','_lua_destroy_instance','_lua_run_on_instance_async','_lua_register_js_module','_lua_callback_resolve','_lua_callback_reject','_malloc','_free']",
   "-C", "link-arg=-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=['$Emval']",
   "-C", "link-arg=-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPU8','HEAPU32','UTF8ToString','stringToUTF8','lengthBytesUTF8','Emval']",
   "-C", "link-arg=-sENVIRONMENT=",

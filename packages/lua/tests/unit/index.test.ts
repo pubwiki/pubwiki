@@ -587,30 +587,32 @@ describe('JS Module Registration', () => {
     })
   })
 
-  describe('Lua iterator to JS async iterator', () => {
-    it('should iterate ipairs from Lua', async () => {
+  describe('Lua iterator via callback', () => {
+    it('should iterate ipairs via callback', async () => {
       const items: any[] = []
-      const iter = instance.runIter(`return ipairs({10, 20, 30, 40, 50})`)
-      for await (const [index, value] of iter) {
-        items.push({ index, value })
-      }
+      await instance.run(`
+        for index, value in ipairs({10, 20, 30, 40, 50}) do
+          callback(index, value)
+        end
+      `, { callback: (index: number, value: number) => items.push({ index, value }) })
       expect(items).toHaveLength(5)
       expect(items[0]).toEqual({ index: 1, value: 10 })
       expect(items[4]).toEqual({ index: 5, value: 50 })
     })
 
-    it('should iterate pairs from Lua', async () => {
+    it('should iterate pairs via callback', async () => {
       const items: any[] = []
-      const iter = instance.runIter(`return pairs({ name = "Alice", age = 25, city = "Beijing" })`)
-      for await (const [key, value] of iter) {
-        items.push({ key, value })
-      }
+      await instance.run(`
+        for key, value in pairs({ name = "Alice", age = 25, city = "Beijing" }) do
+          callback(key, value)
+        end
+      `, { callback: (key: string, value: any) => items.push({ key, value }) })
       expect(items).toHaveLength(3)
     })
 
-    it('should iterate custom Lua iterator', async () => {
+    it('should iterate custom Lua iterator via callback', async () => {
       const items: number[] = []
-      const iter = instance.runIter(`
+      await instance.run(`
         local function fib_iter(max)
           local a, b = 0, 1
           return function()
@@ -620,21 +622,24 @@ describe('JS Module Registration', () => {
             return current
           end
         end
-        return fib_iter(50)
-      `)
-      for await (const [value] of iter) {
-        items.push(value)
-      }
+        for value in fib_iter(50) do
+          callback(value)
+        end
+      `, { callback: (value: number) => items.push(value) })
       expect(items).toEqual([0, 1, 1, 2, 3, 5, 8, 13, 21, 34])
     })
 
-    it('should support early termination of Lua iterator', async () => {
+    it('should support early termination via callback return value', async () => {
       const items: number[] = []
-      const iter = instance.runIter(`return ipairs({1, 2, 3, 4, 5, 6, 7, 8, 9, 10})`)
-      for await (const [_, value] of iter) {
+      await instance.run(`
+        for index, value in ipairs({1, 2, 3, 4, 5, 6, 7, 8, 9, 10}) do
+          local shouldContinue = callback(value)
+          if not shouldContinue then break end
+        end
+      `, { callback: (value: number) => {
         items.push(value)
-        if (value >= 5) break
-      }
+        return value < 5
+      }})
       expect(items).toEqual([1, 2, 3, 4, 5])
     })
   })
