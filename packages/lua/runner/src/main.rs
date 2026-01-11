@@ -1,3 +1,5 @@
+#![feature(iterator_try_collect)]
+
 // Minimal binary to force Emscripten to generate JS glue alongside the WASM.
 // The exported C ABI functions are defined in lib.rs; they are retained
 // by the -sEXPORTED_FUNCTIONS link flag configured in .cargo/config.toml.
@@ -10,24 +12,11 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use async_executor::LocalExecutor;
 
-use require::*;
-use print::*;
-use fs::*;
-use rdf::*;
-use utf8_string::*;
-use async_table::*;
-use js_module::*;
-use json::*;
+mod bridge;
+mod lua_api;
 
-pub mod callback;
-pub mod require;
-pub mod print;
-pub mod fs;
-pub mod rdf;
-pub mod utf8_string;
-pub mod async_table;
-pub mod js_module;
-pub mod json;
+use bridge::*;
+use lua_api::*;
 
 fn read_c_string(ptr: *const c_char) -> LuaResult<String> {
     if ptr.is_null() {
@@ -40,8 +29,23 @@ fn read_c_string(ptr: *const c_char) -> LuaResult<String> {
 }
 
 /// 将 Lua 值转换为 JSON 字符串（使用 serde_json）
+/// 支持 JsProxy userdata：调用 JSON.stringify 转换
 pub fn lua_value_to_json(_lua: &Lua, value: &LuaValue) -> LuaResult<String> {
-    // 使用 mlua 的序列化功能
+    // 先检查是否是 JsProxy
+    if let LuaValue::UserData(ud) = value {
+        if let Ok(proxy) = ud.borrow::<bridge::JsProxy>() {
+            // 使用 JS 的 JSON.stringify
+            let json = bridge::JsVal::global("JSON");
+            let result = json.call_method("stringify", &[proxy.val()]);
+            if result.is_string() {
+                return Ok(result.as_string());
+            } else {
+                return Err(LuaError::external("Failed to stringify JsProxy to JSON"));
+            }
+        }
+    }
+    
+    // 普通 Lua 值使用 mlua 的序列化功能
     let json_value = value.to_serializable();
     serde_json::to_string(&json_value)
         .map_err(|e| LuaError::external(format!("JSON stringify error: {}", e)))
@@ -231,7 +235,7 @@ impl LuaIteratorManager {
 
 // FFI: JavaScript 回调
 #[link(wasm_import_module = "env")]
-extern "C" {
+unsafe extern "C" {
     // 当 Lua 执行完成时调用（无论成功或失败）
     fn js_lua_execution_callback(execution_id: u32, result_json_ptr: *const c_char);
     
@@ -342,8 +346,13 @@ async fn execute_lua_code_impl(execution_id: u32, code: String, context_id: u32,
     }
 }
 
-/// 在持久 Lua 实例上执行代码的异步函数
-async fn execute_lua_on_instance_impl(execution_id: u32, instance_id: u32, code: String) {
+/// 在持久 Lua 实例上执行代码的异步函数（带参数支持）
+async fn execute_lua_on_instance_with_args_impl(
+    execution_id: u32, 
+    instance_id: u32, 
+    code: String, 
+    args_handle: u32
+) {
     // 先检查实例是否存在
     let instance_exists = INSTANCE_MANAGER.with(|mgr| {
         mgr.borrow().get_instance(instance_id).is_some()
@@ -355,6 +364,27 @@ async fn execute_lua_on_instance_impl(execution_id: u32, instance_id: u32, code:
             error: format!("Lua instance {} not found", instance_id)
         });
         return;
+    }
+    
+    // 如果有参数，设置 __args__ 全局变量
+    if args_handle != 0 {
+        let set_result = INSTANCE_MANAGER.with(|mgr| {
+            let mgr = mgr.borrow();
+            if let Some(instance) = mgr.get_instance(instance_id) {
+                let proxy = JsProxy::from_handle(args_handle as emval_ffi::EM_VAL, instance_id);
+                instance.lua.globals().set("__args__", proxy)
+            } else {
+                Err(LuaError::external("Instance not found"))
+            }
+        });
+        
+        if let Err(e) = set_result {
+            report_execution_result(execution_id, ExecutionResult::Error {
+                output: String::new(),
+                error: format!("Failed to set args: {}", e)
+            });
+            return;
+        }
     }
     
     let chunk = INSTANCE_MANAGER.with(|mgr| {
@@ -701,7 +731,7 @@ fn report_iterator_result(callback_id: u32, result: IteratorResult) {
 }
 
 /// 异步版本的 lua_run，立即返回执行 ID（使用临时 Lua 实例）
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_run_async(code_ptr: *const c_char, context_id: u32, working_dir_ptr: *const c_char) -> u32 {
     // 注册执行任务，获取 ID
     let execution_id = EXECUTION_MANAGER.with(|mgr| {
@@ -736,7 +766,7 @@ pub extern "C" fn lua_run_async(code_ptr: *const c_char, context_id: u32, workin
 }
 
 /// 创建持久的 Lua 实例
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_create_instance(context_id: u32, working_dir_ptr: *const c_char) -> i32 {
     let working_dir = read_c_string(working_dir_ptr).unwrap_or_else(|_| "/".to_string());
     
@@ -749,7 +779,7 @@ pub extern "C" fn lua_create_instance(context_id: u32, working_dir_ptr: *const c
 }
 
 /// 销毁持久的 Lua 实例
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_destroy_instance(instance_id: u32) -> i32 {
     INSTANCE_MANAGER.with(|mgr| {
         if mgr.borrow_mut().destroy_instance(instance_id) {
@@ -761,7 +791,7 @@ pub extern "C" fn lua_destroy_instance(instance_id: u32) -> i32 {
 }
 
 /// 为 Lua 实例注册 JavaScript 模块
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_register_js_module(instance_id: u32, module_name_ptr: *const c_char) {
     let module_name = match read_c_string(module_name_ptr) {
         Ok(s) => s,
@@ -776,9 +806,10 @@ pub extern "C" fn lua_register_js_module(instance_id: u32, module_name_ptr: *con
     });
 }
 
-/// 在持久 Lua 实例上执行代码（异步）
-#[no_mangle]
-pub extern "C" fn lua_run_on_instance_async(instance_id: u32, code_ptr: *const c_char) -> u32 {
+/// 在持久 Lua 实例上执行代码（异步），支持传递 JS 参数
+/// args_handle: EM_VAL handle，0 表示无参数
+#[unsafe(no_mangle)]
+pub extern "C" fn lua_run_on_instance_async(instance_id: u32, code_ptr: *const c_char, args_handle: u32) -> u32 {
     // 注册执行任务，获取 ID
     let execution_id = EXECUTION_MANAGER.with(|mgr| {
         mgr.borrow_mut().register()
@@ -801,7 +832,7 @@ pub extern "C" fn lua_run_on_instance_async(instance_id: u32, code_ptr: *const c
         let exec = executor.borrow();
         
         exec.spawn(async move {
-            execute_lua_on_instance_impl(execution_id, instance_id, code).await;
+            execute_lua_on_instance_with_args_impl(execution_id, instance_id, code, args_handle).await;
         }).detach();
     });
     
@@ -810,7 +841,7 @@ pub extern "C" fn lua_run_on_instance_async(instance_id: u32, code_ptr: *const c
 
 /// 在持久 Lua 实例上执行代码并返回迭代器（异步）
 /// 返回值：>0 为执行 ID，0 表示错误
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_run_iter_on_instance_async(instance_id: u32, code_ptr: *const c_char) -> u32 {
     // 注册执行任务，获取 ID
     let execution_id = EXECUTION_MANAGER.with(|mgr| {
@@ -843,7 +874,7 @@ pub extern "C" fn lua_run_iter_on_instance_async(instance_id: u32, code_ptr: *co
 
 /// 获取 Lua 迭代器的下一个值（异步）
 /// callback_id 用于标识这次异步调用
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_iterator_next_async(iterator_id: u32, callback_id: u32) {
     // 在 executor 中生成异步任务
     EXECUTOR.with(|executor| {
@@ -856,7 +887,7 @@ pub extern "C" fn lua_iterator_next_async(iterator_id: u32, callback_id: u32) {
 }
 
 /// 关闭 Lua 迭代器，释放相关资源
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_iterator_close(iterator_id: u32) {
     // 从管理器中移除迭代器
     let state = LUA_ITERATOR_MANAGER.with(|mgr| {
@@ -877,7 +908,7 @@ pub extern "C" fn lua_iterator_close(iterator_id: u32) {
 }
 
 /// 手动驱动 Executor（JavaScript 需要定期调用或在事件循环中调用）
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_executor_tick() -> i32 {
     EXECUTOR.with(|executor| {
         let exec = executor.borrow();
@@ -890,7 +921,7 @@ pub extern "C" fn lua_executor_tick() -> i32 {
 }
 
 /// 检查是否有待处理的执行任务
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn lua_has_pending_tasks() -> i32 {
     EXECUTION_MANAGER.with(|mgr| {
         if mgr.borrow().has_pending() {

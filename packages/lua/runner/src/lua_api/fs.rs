@@ -1,19 +1,17 @@
 use mlua::prelude::*;
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_uchar};
-use std::slice;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
-use async_channel::Receiver;
+use std::ffi::CString;
+use std::os::raw::c_char;
 
-use crate::callback::{CallbackManager, PromiseResult};
+use crate::bridge::callback::{register_callback, PromiseResult};
+use crate::bridge::emval_ffi::{JsVal, EM_VAL};
+use crate::bridge::js_proxy::JsProxy;
 
 // 从 require 模块导入 WorkingDirectory
-pub use crate::require::WorkingDirectory;
+pub use super::require::WorkingDirectory;
 
 
 #[link(wasm_import_module = "env")]
-extern "C" {
+unsafe extern "C" {
     // 异步接口：返回 Promise ID，callback_id 用于注册回调
     // context_id: VFS 上下文 ID，用于隔离不同的并发执行
     fn js_fs_read_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
@@ -24,45 +22,6 @@ extern "C" {
     fn js_fs_rmdir_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
     fn js_fs_stat_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
     fn js_fs_readdir_async(context_id: u32, path_ptr: *const c_char, callback_id: u32) -> u32;
-}
-
-// 文件系统 Promise 回调管理器
-static FS_CALLBACK_MANAGER: Lazy<Mutex<CallbackManager>> = Lazy::new(|| Mutex::new(CallbackManager::new()));
-
-/// 注册 Promise 回调通道，返回 (callback_id, receiver)
-fn register_promise_callback() -> (u32, Receiver<PromiseResult>) {
-    let mut manager = FS_CALLBACK_MANAGER.lock().unwrap();
-    manager.register()
-}
-
-/// 被 JavaScript 调用，用于传递 Promise 结果
-#[no_mangle]
-pub extern "C" fn lua_fs_promise_resolve(
-    callback_id: u32,
-    data_ptr: *const c_uchar,
-    data_len: u32
-) {
-    let data = if data_ptr.is_null() || data_len == 0 {
-        Vec::new()
-    } else {
-        unsafe { slice::from_raw_parts(data_ptr, data_len as usize) }.to_vec()
-    };
-
-    // try to resolve via manager; ignore if missing
-    let _ = FS_CALLBACK_MANAGER.lock().unwrap().resolve(callback_id, data);
-}
-
-/// 被 JavaScript 调用，用于传递 Promise 错误
-#[no_mangle]
-pub extern "C" fn lua_fs_promise_reject(
-    callback_id: u32,
-    error_ptr: *const c_char
-) {
-    let message = unsafe {
-        CStr::from_ptr(error_ptr).to_string_lossy().into_owned()
-    };
-
-    let _ = FS_CALLBACK_MANAGER.lock().unwrap().reject(callback_id, message);
 }
 
 /// 解析路径：使用基于栈的算法规范化路径
@@ -128,7 +87,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         let resolved_path = resolve_path(&lua, &path);
         
         // 注册回调通道并获取 callback id
-        let (callback_id, rx) = register_promise_callback();
+        let (callback_id, rx) = register_callback();
         
         // 发起异步请求
         let path_c = CString::new(resolved_path)
@@ -144,9 +103,13 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         
         // 等待 Promise 完成（通过回调通知）
         match rx.recv().await {
-            Ok(PromiseResult::Success { data }) => {
-                let content = String::from_utf8(data)
-                    .map_err(|e| LuaError::external(format!("Invalid UTF-8: {}", e)))?;
+            Ok(PromiseResult::Success { handle }) => {
+                // handle 为 0 表示 undefined
+                if handle == 0 {
+                    return Ok((None, Some("File content is undefined".to_string())));
+                }
+                let content_val = JsVal::from_handle(handle as EM_VAL);
+                let content = content_val.as_string();
                 Ok((Some(content), None))
             }
             Ok(PromiseResult::Error { message }) => {
@@ -167,7 +130,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
             let resolved_path = resolve_path(&lua, &path);
             
             // 注册回调通道并获取 callback id
-            let (callback_id, rx) = register_promise_callback();
+            let (callback_id, rx) = register_callback();
             
             let path_c = CString::new(resolved_path)
                 .map_err(|e| LuaError::external(e))?;
@@ -198,7 +161,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         let resolved_path = resolve_path(&lua, &path);
         
         // 注册回调通道并获取 callback id
-        let (callback_id, rx) = register_promise_callback();
+        let (callback_id, rx) = register_callback();
         
         let path_c = CString::new(resolved_path)
             .map_err(|e| LuaError::external(e))?;
@@ -226,7 +189,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         let resolved_path = resolve_path(&lua, &path);
         
         // 注册回调通道并获取 callback id
-        let (callback_id, rx) = register_promise_callback();
+        let (callback_id, rx) = register_callback();
         
         let path_c = CString::new(resolved_path)
             .map_err(|e| LuaError::external(e))?;
@@ -240,9 +203,9 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         }
         
         match rx.recv().await {
-            Ok(PromiseResult::Success { data }) => {
-                // data 为空表示文件存在，非空表示文件不存在（错误）
-                Ok(data.is_empty())
+            Ok(PromiseResult::Success { .. }) => {
+                // 收到 Success 表示文件存在
+                Ok(true)
             }
             Ok(PromiseResult::Error { .. }) => Ok(false),
             Err(_) => Ok(false),
@@ -256,7 +219,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         let resolved_path = resolve_path(&lua, &path);
         
         // 注册回调通道并获取 callback id
-        let (callback_id, rx) = register_promise_callback();
+        let (callback_id, rx) = register_callback();
         
         let path_c = CString::new(resolved_path)
             .map_err(|e| LuaError::external(e))?;
@@ -284,7 +247,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         let resolved_path = resolve_path(&lua, &path);
         
         // 注册回调通道并获取 callback id
-        let (callback_id, rx) = register_promise_callback();
+        let (callback_id, rx) = register_callback();
         
         let path_c = CString::new(resolved_path)
             .map_err(|e| LuaError::external(e))?;
@@ -312,7 +275,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         let resolved_path = resolve_path(&lua, &path);
         
         // 注册回调通道并获取 callback id
-        let (callback_id, rx) = register_promise_callback();
+        let (callback_id, rx) = register_callback();
         
         let path_c = CString::new(resolved_path)
             .map_err(|e| LuaError::external(e))?;
@@ -326,40 +289,14 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         }
         
         match rx.recv().await {
-            Ok(PromiseResult::Success { data }) => {
-                // data 是 JSON 格式的 stat 信息
-                let json_str = String::from_utf8(data)
-                    .map_err(|e| LuaError::external(format!("Invalid UTF-8: {}", e)))?;
-                
-                // 解析 JSON 并转换为 Lua table
-                let stat_table = lua.create_table()?;
-                
-                // 使用 serde_json 解析
-                let stat: serde_json::Value = serde_json::from_str(&json_str)
-                    .map_err(|e| LuaError::external(format!("Invalid JSON: {}", e)))?;
-                
-                if let serde_json::Value::Object(obj) = stat {
-                    for (key, value) in obj {
-                        match value {
-                            serde_json::Value::Number(n) => {
-                                if let Some(i) = n.as_i64() {
-                                    stat_table.set(key.as_str(), i)?;
-                                } else if let Some(f) = n.as_f64() {
-                                    stat_table.set(key.as_str(), f)?;
-                                }
-                            }
-                            serde_json::Value::Bool(b) => {
-                                stat_table.set(key.as_str(), b)?;
-                            }
-                            serde_json::Value::String(s) => {
-                                stat_table.set(key.as_str(), s)?;
-                            }
-                            _ => {}
-                        }
-                    }
+            Ok(PromiseResult::Success { handle }) => {
+                // handle 为 0 表示 undefined
+                if handle == 0 {
+                    return Ok((None, Some("Stat result is undefined".to_string())));
                 }
-                
-                Ok((Some(stat_table), None::<String>))
+                // 直接返回 JsProxy，让 Lua 代码访问属性
+                let proxy = JsProxy::from_handle(handle as EM_VAL, context_id);
+                Ok((Some(lua.create_userdata(proxy)?), None::<String>))
             }
             Ok(PromiseResult::Error { message }) => Ok((None, Some(message))),
             Err(e) => Ok((None, Some(format!("Channel error: {}", e)))),
@@ -374,7 +311,7 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         let resolved_path = resolve_path(&lua, &path);
         
         // 注册回调通道并获取 callback id
-        let (callback_id, rx) = register_promise_callback();
+        let (callback_id, rx) = register_callback();
         
         let path_c = CString::new(resolved_path)
             .map_err(|e| LuaError::external(e))?;
@@ -388,47 +325,14 @@ pub fn install_fs_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         }
         
         match rx.recv().await {
-            Ok(PromiseResult::Success { data }) => {
-                // data 是 JSON 数组，每个元素包含 name 和 stat 信息
-                let json_str = String::from_utf8(data)
-                    .map_err(|e| LuaError::external(format!("Invalid UTF-8: {}", e)))?;
-                
-                let entries: serde_json::Value = serde_json::from_str(&json_str)
-                    .map_err(|e| LuaError::external(format!("Invalid JSON: {}", e)))?;
-                
-                let result_table = lua.create_table()?;
-                
-                if let serde_json::Value::Array(arr) = entries {
-                    for (idx, entry) in arr.into_iter().enumerate() {
-                        if let serde_json::Value::Object(obj) = entry {
-                            let entry_table = lua.create_table()?;
-                            
-                            for (key, value) in obj {
-                                match value {
-                                    serde_json::Value::Number(n) => {
-                                        if let Some(i) = n.as_i64() {
-                                            entry_table.set(key.as_str(), i)?;
-                                        } else if let Some(f) = n.as_f64() {
-                                            entry_table.set(key.as_str(), f)?;
-                                        }
-                                    }
-                                    serde_json::Value::Bool(b) => {
-                                        entry_table.set(key.as_str(), b)?;
-                                    }
-                                    serde_json::Value::String(s) => {
-                                        entry_table.set(key.as_str(), s)?;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            
-                            // Lua 数组从 1 开始
-                            result_table.set(idx + 1, entry_table)?;
-                        }
-                    }
+            Ok(PromiseResult::Success { handle }) => {
+                // handle 为 0 表示 undefined
+                if handle == 0 {
+                    return Ok((None, Some("Readdir result is undefined".to_string())));
                 }
-                
-                Ok((Some(result_table), None::<String>))
+                // 直接返回 JsProxy（JS 数组），让 Lua 代码通过索引和属性访问
+                let proxy = JsProxy::from_handle(handle as EM_VAL, context_id);
+                Ok((Some(lua.create_userdata(proxy)?), None::<String>))
             }
             Ok(PromiseResult::Error { message }) => Ok((None, Some(message))),
             Err(e) => Ok((None, Some(format!("Channel error: {}", e)))),

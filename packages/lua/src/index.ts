@@ -122,7 +122,7 @@ interface LuaModule {
   // 持久实例接口
   _lua_create_instance(contextId: number, workingDirPtr: number): number
   _lua_destroy_instance(instanceId: number): number
-  _lua_run_on_instance_async(instanceId: number, codePtr: number): number
+  _lua_run_on_instance_async(instanceId: number, codePtr: number, argsHandle: number): number
   
   // Lua 迭代器接口
   _lua_run_iter_on_instance_async(instanceId: number, codePtr: number): number
@@ -131,14 +131,11 @@ interface LuaModule {
   
   // JS 模块注册接口
   _lua_register_js_module(instanceId: number, namePtr: number): void
-  _lua_js_module_promise_resolve(callbackId: number, dataPtr: number, dataLen: number): void
-  _lua_js_module_promise_reject(callbackId: number, errorPtr: number): void
   
-  // Promise 回调
-  _lua_fs_promise_resolve(callbackId: number, dataPtr: number, dataLen: number): void
-  _lua_fs_promise_reject(callbackId: number, errorPtr: number): void
-  _lua_rdf_promise_resolve(callbackId: number, dataPtr: number, dataLen: number): void
-  _lua_rdf_promise_reject(callbackId: number, errorPtr: number): void
+  // 统一的 Promise 回调接口
+  // handle: EM_VAL handle，0 表示 undefined/void
+  _lua_callback_resolve(callbackId: number, handle: number): void
+  _lua_callback_reject(callbackId: number, errorPtr: number): void
 }
 
 type LuaModuleFactory = (options: Record<string, unknown>) => LuaModule | Promise<LuaModule>
@@ -306,186 +303,223 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
           // 添加 RDF bridge 函数到 env
           const env = (imports.env as Record<string, any>) || {}
           
-          // 注入 RDF 异步函数
-          env.js_rdf_insert_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectJsonPtr: number, callbackId: number) => {
+          // 辅助函数：通过 callback 返回 EM_VAL handle（直接作为立即数）
+          const resolveWithHandle = (callbackId: number, value: any, module: LuaModule) => {
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
+            
+            const resultHandle = Emval.toHandle(value)
+            module._lua_callback_resolve(callbackId, resultHandle)
+            module._lua_executor_tick()
+          }
+          
+          // 注入 RDF 异步函数（使用 EM_VAL handles）
+          env.js_rdf_insert_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectHandle: number, callbackId: number) => {
             const module = localModule
-            if (!module) return 0
+            if (!module) return
             
             const subject = module.UTF8ToString(subjectPtr)
             const predicate = module.UTF8ToString(predicatePtr)
-            const objectJson = module.UTF8ToString(objectJsonPtr)
+            
+            // 获取 Emval
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
             
             // 获取 RDFStore
             const store = getRDFStore(contextId)
             if (!store) {
               const errorMsg = `RDFStore not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
-            // 解析 object
+            // 从 EM_VAL handle 获取 object 值
             let object: any
             try {
-              object = JSON.parse(objectJson)
+              object = Emval.toValue(objectHandle)
             } catch (error) {
-              const errorMsg = `Invalid JSON for object: ${error}`
+              const errorMsg = `Invalid object handle: ${error}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
             // 异步执行插入操作
             store.insert(subject, predicate, object)
               .then(() => {
-                module._lua_rdf_promise_resolve(callbackId, 0, 0)
+                module._lua_callback_resolve(callbackId, 0)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_rdf_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
-            
-            return 1
           }
           
-          env.js_rdf_delete_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectJsonPtr: number, callbackId: number) => {
+          env.js_rdf_delete_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectHandle: number, callbackId: number) => {
             const module = localModule
-            if (!module) return 0
+            if (!module) return
             
             const subject = module.UTF8ToString(subjectPtr)
             const predicate = module.UTF8ToString(predicatePtr)
-            const objectJson = module.UTF8ToString(objectJsonPtr)
+            
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
             
             const store = getRDFStore(contextId)
             if (!store) {
               const errorMsg = `RDFStore not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
-            // 解析 object（可能为 null/undefined）
+            // 从 EM_VAL handle 获取 object 值（可能为 null/undefined）
             let object: any = undefined
-            if (objectJson && objectJson !== 'null') {
-              try {
-                object = JSON.parse(objectJson)
-              } catch (error) {
-                const errorMsg = `Invalid JSON for object: ${error}`
-                const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_rdf_promise_reject(callbackId, errorPtr)
-                module._free(errorPtr)
-                module._lua_executor_tick()
-                return 0
-              }
+            try {
+              object = Emval.toValue(objectHandle)
+              if (object === null) object = undefined
+            } catch (error) {
+              const errorMsg = `Invalid object handle: ${error}`
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
             }
             
             // 异步执行删除操作
             store.delete(subject, predicate, object)
               .then(() => {
-                module._lua_rdf_promise_resolve(callbackId, 0, 0)
+                module._lua_callback_resolve(callbackId, 0)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_rdf_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
-            
-            return 1
           }
           
-          env.js_rdf_query_async = (contextId: number, patternJsonPtr: number, callbackId: number) => {
+          env.js_rdf_query_async = (contextId: number, patternHandle: number, callbackId: number) => {
             const module = localModule
-            if (!module) return 0
+            if (!module) return
             
-            const patternJson = module.UTF8ToString(patternJsonPtr)
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
             
             const store = getRDFStore(contextId)
             if (!store) {
               const errorMsg = `RDFStore not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
-            // 解析查询模式
+            // 从 EM_VAL handle 获取 pattern
             let pattern: any
             try {
-              pattern = JSON.parse(patternJson)
+              pattern = Emval.toValue(patternHandle)
             } catch (error) {
-              const errorMsg = `Invalid JSON for pattern: ${error}`
+              const errorMsg = `Invalid pattern handle: ${error}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
             // 异步执行查询操作
             store.query(pattern)
               .then((results) => {
-                const resultJson = JSON.stringify(results)
-                const bytes = textEncoder.encode(resultJson)
-                const dataPtr = module._malloc(bytes.length)
-                setHeapViews(module)
-                heapU8!.set(bytes, dataPtr)
-                
-                module._lua_rdf_promise_resolve(callbackId, dataPtr, bytes.length)
-                module._free(dataPtr)
-                module._lua_executor_tick()
+                resolveWithHandle(callbackId, results, module)
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_rdf_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
-            
-            return 1
           }
           
-          env.js_rdf_batch_insert_async = (contextId: number, triplesJsonPtr: number, callbackId: number) => {
+          env.js_rdf_batch_insert_async = (contextId: number, triplesHandle: number, callbackId: number) => {
             const module = localModule
-            if (!module) return 0
+            if (!module) return
             
-            const triplesJson = module.UTF8ToString(triplesJsonPtr)
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
             
             const store = getRDFStore(contextId)
             if (!store) {
               const errorMsg = `RDFStore not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
-            // 解析三元组数组
+            // 从 EM_VAL handle 获取 triples 数组
             let triples: any[]
             try {
-              triples = JSON.parse(triplesJson)
+              triples = Emval.toValue(triplesHandle)
             } catch (error) {
-              const errorMsg = `Invalid JSON for triples: ${error}`
+              const errorMsg = `Invalid triples handle: ${error}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
             // 异步执行批量插入操作
@@ -495,18 +529,16 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             
             insertPromise
               .then(() => {
-                module._lua_rdf_promise_resolve(callbackId, 0, 0)
+                module._lua_callback_resolve(callbackId, 0)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_rdf_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
-            
-            return 1
           }
 
           // SPARQL 流式查询管理
@@ -523,7 +555,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!store) {
               const errorMsg = `RDFStore not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
               return 0
@@ -533,10 +565,10 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!store.sparqlQuery || typeof store.sparqlQuery !== 'function') {
               const errorMsg = 'RDFStore does not support SPARQL queries'
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
             try {
@@ -547,74 +579,53 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               const queryId = nextSparqlQueryId++
               activeSparqlQueries.set(queryId, iterator)
               
-              // 立即返回 query_id
-              const queryIdStr = queryId.toString()
-              const bytes = textEncoder.encode(queryIdStr)
-              const dataPtr = module._malloc(bytes.length)
-              setHeapViews(module)
-              heapU8!.set(bytes, dataPtr)
-              
-              module._lua_rdf_promise_resolve(callbackId, dataPtr, bytes.length)
-              module._free(dataPtr)
-              module._lua_executor_tick()
-              
-              return 1
+              // 返回 query_id 通过 emval
+              resolveWithHandle(callbackId, queryId, module)
             } catch (error) {
               const errorMsg = `Failed to start SPARQL query: ${error}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
             }
           }
 
           env.js_rdf_sparql_query_next = (queryId: number, callbackId: number) => {
             const module = localModule
-            if (!module) return 0
+            if (!module) return
             
             const iterator = activeSparqlQueries.get(queryId)
             if (!iterator) {
               const errorMsg = `SPARQL query ${queryId} not found`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_rdf_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
             // 异步获取下一个结果
             iterator.next()
               .then((result) => {
                 if (result.done) {
-                  // 查询结束，返回空数据表示 done
-                  module._lua_rdf_promise_resolve(callbackId, 0, 0)
+                  // 查询结束，返回 0 表示 done
+                  module._lua_callback_resolve(callbackId, 0)
                   // 自动清理查询
                   activeSparqlQueries.delete(queryId)
                 } else {
-                  // 返回当前结果
-                  const resultJson = JSON.stringify(result.value)
-                  const bytes = textEncoder.encode(resultJson)
-                  const dataPtr = module._malloc(bytes.length)
-                  setHeapViews(module)
-                  heapU8!.set(bytes, dataPtr)
-                  
-                  module._lua_rdf_promise_resolve(callbackId, dataPtr, bytes.length)
-                  module._free(dataPtr)
+                  // 返回当前结果通过 emval
+                  resolveWithHandle(callbackId, { value: result.value, done: false }, module)
                 }
-                module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = `SPARQL query error: ${error}`
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_rdf_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
                 // 清理查询
                 activeSparqlQueries.delete(queryId)
               })
-            
-            return 1
           }
 
           env.js_rdf_sparql_query_close = (queryId: number) => {
@@ -633,20 +644,20 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
             
             vfs.exists(path)
               .then((exists: boolean) => {
-                // 使用空数据表示存在，这样 Rust 端可以通过 data.is_empty() 判断
+                // 使用 0 表示存在（undefined/void）
                 if (exists) {
-                  module._lua_fs_promise_resolve(callbackId, 0, 0)
+                  module._lua_callback_resolve(callbackId, 0)
                 } else {
                   const errorMsg = 'File does not exist'
                   const errorPtr = allocateUTF8(errorMsg, module)
-                  module._lua_fs_promise_reject(callbackId, errorPtr)
+                  module._lua_callback_reject(callbackId, errorPtr)
                   module._free(errorPtr)
                 }
                 module._lua_executor_tick()
@@ -654,7 +665,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
@@ -672,7 +683,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
@@ -681,28 +692,13 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               .then((file) => {
                 // VFS readFile returns a VfsFile object, get its content
                 const content = file.content
-                let bytes: Uint8Array
-                if (typeof content === 'string') {
-                  bytes = textEncoder.encode(content)
-                } else if (content instanceof ArrayBuffer) {
-                  bytes = new Uint8Array(content)
-                } else {
-                  bytes = new Uint8Array(0)
-                }
-                const dataPtr = module._malloc(bytes.length)
-                setHeapViews(module)
-                heapU8!.set(bytes, dataPtr)
-                
-                module._lua_fs_promise_resolve(callbackId, dataPtr, bytes.length)
-                module._free(dataPtr)
-                
-                // 驱动 executor 处理回调
-                module._lua_executor_tick()
+                // 通过 emval 返回文件内容
+                resolveWithHandle(callbackId, content, module)
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 
                 // 驱动 executor 处理回调
@@ -722,7 +718,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
@@ -736,13 +732,13 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
                 } else {
                   await vfs.createFile(path, content)
                 }
-                module._lua_fs_promise_resolve(callbackId, 0, 0)
+                module._lua_callback_resolve(callbackId, 0)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
@@ -759,20 +755,20 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
             
             vfs.deleteFile(path)
               .then(() => {
-                module._lua_fs_promise_resolve(callbackId, 0, 0)
+                module._lua_callback_resolve(callbackId, 0)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
@@ -789,20 +785,20 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
             
             vfs.createFolder(path)
               .then(() => {
-                module._lua_fs_promise_resolve(callbackId, 0, 0)
+                module._lua_callback_resolve(callbackId, 0)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
@@ -819,20 +815,20 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
             
             vfs.deleteFolder(path)
               .then(() => {
-                module._lua_fs_promise_resolve(callbackId, 0, 0)
+                module._lua_callback_resolve(callbackId, 0)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
@@ -849,33 +845,26 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
             
             vfs.stat(path)
               .then((stat) => {
-                // 返回 VfsStat 的 JSON 表示
-                const statJson = JSON.stringify({
+                // 通过 emval 返回 VfsStat 对象
+                const statObj = {
                   size: stat.size,
                   isDirectory: stat.isDirectory,
                   createdAt: stat.createdAt.toISOString(),
                   updatedAt: stat.updatedAt.toISOString()
-                })
-                const bytes = textEncoder.encode(statJson)
-                const dataPtr = module._malloc(bytes.length)
-                setHeapViews(module)
-                heapU8!.set(bytes, dataPtr)
-                
-                module._lua_fs_promise_resolve(callbackId, dataPtr, bytes.length)
-                module._free(dataPtr)
-                module._lua_executor_tick()
+                }
+                resolveWithHandle(callbackId, statObj, module)
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
@@ -892,7 +881,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!vfs) {
               const errorMsg = `VFS not found for context ${contextId}`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_fs_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               return 0
             }
@@ -909,20 +898,13 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
                   updatedAt: item.updatedAt
                 }))
                 
-                const entriesJson = JSON.stringify(entries)
-                const bytes = textEncoder.encode(entriesJson)
-                const dataPtr = module._malloc(bytes.length)
-                setHeapViews(module)
-                heapU8!.set(bytes, dataPtr)
-                
-                module._lua_fs_promise_resolve(callbackId, dataPtr, bytes.length)
-                module._free(dataPtr)
-                module._lua_executor_tick()
+                // 通过 emval 返回 entries 数组
+                resolveWithHandle(callbackId, entries, module)
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_fs_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
@@ -930,66 +912,81 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             return 1
           }
           
-          // JS 模块调用函数
+          // JS 模块调用函数（使用 EM_VAL handles）
           env.js_call_js_module = (
             instanceId: number,
             moduleNamePtr: number,
             functionNamePtr: number,
-            argsJsonPtr: number,
+            argsHandlesPtr: number,
+            argsCount: number,
             callbackId: number
           ) => {
             const module = localModule
-            if (!module) return 0
+            if (!module) return
             
             const moduleName = module.UTF8ToString(moduleNamePtr)
             const functionName = module.UTF8ToString(functionNamePtr)
-            const argsJson = module.UTF8ToString(argsJsonPtr)
+            
+            // 获取 Emval
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
             
             // 获取模块和函数
             const instanceModules = jsModuleRegistry.get(instanceId)
             if (!instanceModules) {
               const errorMsg = `Instance ${instanceId} not found`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_js_module_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
             const moduleDefinition = instanceModules.get(moduleName)
             if (!moduleDefinition) {
               const errorMsg = `Module "${moduleName}" not registered`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_js_module_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
             const func = moduleDefinition[functionName]
             if (!func || typeof func !== 'function') {
               const errorMsg = `Function "${functionName}" not found in module "${moduleName}"`
               const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_js_module_promise_reject(callbackId, errorPtr)
+              module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
               module._lua_executor_tick()
-              return 0
+              return
             }
             
-            // 解析参数
-            let args: any[]
-            try {
-              args = JSON.parse(argsJson)
-              if (!Array.isArray(args)) {
-                throw new Error('Arguments must be an array')
+            // 从内存读取参数 handles 并转换为 JS 值
+            const args: any[] = []
+            setHeapViews(module)
+            for (let i = 0; i < argsCount; i++) {
+              // EM_VAL 是指针类型，在 32 位 WASM 中是 4 字节
+              const handleOffset = argsHandlesPtr + i * 4
+              const handle = heapU32![handleOffset / 4]
+              try {
+                const value = Emval.toValue(handle)
+                args.push(value)
+              } catch (error) {
+                const errorMsg = `Invalid argument handle at index ${i}: ${error}`
+                const errorPtr = allocateUTF8(errorMsg, module)
+                module._lua_callback_reject(callbackId, errorPtr)
+                module._free(errorPtr)
+                module._lua_executor_tick()
+                return
               }
-            } catch (error) {
-              const errorMsg = `Invalid JSON for arguments: ${error}`
-              const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_js_module_promise_reject(callbackId, errorPtr)
-              module._free(errorPtr)
-              module._lua_executor_tick()
-              return 0
             }
             
             // 调用函数（可能是同步或异步）
@@ -1013,72 +1010,157 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
                   actualResult = result
                 }
                 
-                const resultJson = JSON.stringify(actualResult)
-                const bytes = textEncoder.encode(resultJson)
-                const dataPtr = module._malloc(bytes.length)
-                setHeapViews(module)
-                heapU8!.set(bytes, dataPtr)
-                
-                module._lua_js_module_promise_resolve(callbackId, dataPtr, bytes.length)
-                module._free(dataPtr)
+                // 将结果转换为 EM_VAL handle 并直接传递
+                const resultHandle = Emval.toHandle(actualResult)
+                module._lua_callback_resolve(callbackId, resultHandle)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = error.message || String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_js_module_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
-            
-            return 1
           }
           
-          // Async Iterator: 获取下一个值
+          // JsProxy 函数调用（使用 EM_VAL handles）
+          // 直接通过 EM_VAL handles 传递参数，避免 JSON 序列化
+          env.js_jsproxy_call = (
+            funcHandle: number,
+            argsHandlesPtr: number,
+            argsCount: number,
+            callbackId: number
+          ) => {
+            const module = localModule
+            if (!module) return
+            
+            // 从 Emval 获取函数和参数
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
+            
+            let func: Function
+            try {
+              func = Emval.toValue(funcHandle)
+            } catch (error) {
+              const errorMsg = `Invalid function handle: ${error}`
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
+            
+            if (typeof func !== 'function') {
+              const errorMsg = `Handle does not reference a function, got: ${typeof func}`
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
+            
+            // 从内存读取参数 handles 并转换为 JS 值
+            const args: any[] = []
+            setHeapViews(module)
+            for (let i = 0; i < argsCount; i++) {
+              // EM_VAL 是指针类型，在 32 位 WASM 中是 4 字节
+              const handleOffset = argsHandlesPtr + i * 4
+              const handle = heapU32![handleOffset / 4]
+              try {
+                const value = Emval.toValue(handle)
+                args.push(value)
+              } catch (error) {
+                const errorMsg = `Invalid argument handle at index ${i}: ${error}`
+                const errorPtr = allocateUTF8(errorMsg, module)
+                module._lua_callback_reject(callbackId, errorPtr)
+                module._free(errorPtr)
+                module._lua_executor_tick()
+                return
+              }
+            }
+            
+            // 调用函数（可能是同步或异步）
+            // 使用 try-catch 包装以捕获同步异常
+            let resultPromise: Promise<any>
+            try {
+              resultPromise = Promise.resolve(func(...args))
+            } catch (error: any) {
+              // 同步异常
+              const errorMsg = error?.message || String(error)
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
+            
+            resultPromise
+              .then((result) => {
+                // 将结果转换为 EM_VAL handle 并直接传递
+                const resultHandle = Emval.toHandle(result)
+                module._lua_callback_resolve(callbackId, resultHandle)
+                module._lua_executor_tick()
+              })
+              .catch((error: Error) => {
+                const errorMsg = error.message || String(error)
+                const errorPtr = allocateUTF8(errorMsg, module)
+                module._lua_callback_reject(callbackId, errorPtr)
+                module._free(errorPtr)
+                module._lua_executor_tick()
+              })
+          }
+          
+          // Async Iterator: 获取下一个值（使用 EM_VAL handles）
           env.js_async_iterator_next = (iteratorId: number, callbackId: number) => {
             const module = localModule
-            if (!module) return 0
+            if (!module) return
+            
+            const Emval = (module as any).Emval
+            if (!Emval) {
+              const errorMsg = 'Emval not available'
+              const errorPtr = allocateUTF8(errorMsg, module)
+              module._lua_callback_reject(callbackId, errorPtr)
+              module._free(errorPtr)
+              module._lua_executor_tick()
+              return
+            }
             
             const iterator = asyncIteratorRegistry.get(iteratorId)
             if (!iterator) {
               // Iterator 不存在，返回 done: true
-              const result = JSON.stringify({ value: undefined, done: true })
-              const bytes = textEncoder.encode(result)
-              const dataPtr = module._malloc(bytes.length)
-              setHeapViews(module)
-              heapU8!.set(bytes, dataPtr)
-              
-              module._lua_js_module_promise_resolve(callbackId, dataPtr, bytes.length)
-              module._free(dataPtr)
+              const result = { value: undefined, done: true }
+              const resultHandle = Emval.toHandle(result)
+              module._lua_callback_resolve(callbackId, resultHandle)
               module._lua_executor_tick()
-              return 1
+              return
             }
             
             // 调用 iterator.next()
             iterator.next()
               .then((iterResult) => {
-                const result = JSON.stringify({
+                const result = {
                   value: iterResult.value,
                   done: iterResult.done ?? false
-                })
-                const bytes = textEncoder.encode(result)
-                const dataPtr = module._malloc(bytes.length)
-                setHeapViews(module)
-                heapU8!.set(bytes, dataPtr)
-                
-                module._lua_js_module_promise_resolve(callbackId, dataPtr, bytes.length)
-                module._free(dataPtr)
+                }
+                const resultHandle = Emval.toHandle(result)
+                module._lua_callback_resolve(callbackId, resultHandle)
                 module._lua_executor_tick()
               })
               .catch((error: Error) => {
                 const errorMsg = error.message || String(error)
                 const errorPtr = allocateUTF8(errorMsg, module)
-                module._lua_js_module_promise_reject(callbackId, errorPtr)
+                module._lua_callback_reject(callbackId, errorPtr)
                 module._free(errorPtr)
                 module._lua_executor_tick()
               })
-            
-            return 1
           }
           
           // Async Iterator: 关闭迭代器
@@ -1355,8 +1437,14 @@ export interface LuaInstance {
   /** 实例 ID */
   readonly id: number
   
-  /** 运行 Lua 代码 */
-  run(code: string): Promise<LuaExecutionResult>
+  /** 
+   * 运行 Lua 代码
+   * @param code Lua 代码
+   * @param args 可选的参数对象，会通过 JsProxy 传递给 Lua
+   *             在 Lua 中可以直接访问参数，例如 args = {name: "test"} 
+   *             在 Lua 代码中可以使用 name 变量
+   */
+  run(code: string, args?: Record<string, unknown>): Promise<LuaExecutionResult>
   
   /** 
    * 运行 Lua 代码并返回 AsyncIterator
@@ -1441,21 +1529,37 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
   return {
     id: instanceId,
     
-    async run(code: string): Promise<LuaExecutionResult> {
+    async run(code: string, args?: Record<string, unknown>): Promise<LuaExecutionResult> {
       if (destroyed) {
         throw new Error('Lua instance has been destroyed')
       }
       
+      // 如果有 args，生成变量解包代码
+      let finalCode = code
+      if (args && Object.keys(args).length > 0) {
+        const varNames = Object.keys(args)
+        const unpackCode = `local ${varNames.join(', ')} = ${varNames.map(n => `__args__.${n}`).join(', ')}\n`
+        finalCode = unpackCode + code
+      }
+      
       // 编码 Lua 代码
-      const codeBytes = textEncoder.encode(code)
+      const codeBytes = textEncoder.encode(finalCode)
       const codePtr = module._malloc(codeBytes.length + 1)
       if (!heapU8) throw new Error('HEAPU8 not initialized')
       
       heapU8.set(codeBytes, codePtr)
       heapU8[codePtr + codeBytes.length] = 0
       
+      // 获取 args 的 EM_VAL handle（如果有的话）
+      let argsHandle = 0
+      if (args && Object.keys(args).length > 0) {
+        // 使用 Emval API 将 JS 对象转换为 handle
+        // @ts-ignore - Emval is available on the module
+        argsHandle = module.Emval.toHandle(args)
+      }
+      
       // 在实例上执行代码
-      const executionId = module._lua_run_on_instance_async(instanceId, codePtr)
+      const executionId = module._lua_run_on_instance_async(instanceId, codePtr, argsHandle)
       module._free(codePtr)
       
       if (executionId === 0) {

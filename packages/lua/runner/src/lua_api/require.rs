@@ -2,7 +2,7 @@ use mlua::prelude::*;
 use mlua::Table;
 
 // 导入 fs 模块的 resolve_path 函数
-use crate::fs::resolve_path;
+use super::fs::resolve_path;
 
 /// 通用字符串栈，用于追踪各种上下文信息
 #[derive(Clone, Default)]

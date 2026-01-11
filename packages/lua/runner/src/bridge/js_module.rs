@@ -3,80 +3,46 @@
 /// 允许从 JavaScript 注册模块，并在 Lua 中通过 require() 调用
 /// 支持同步和异步函数，使用函数缓存优化性能
 /// 支持 async iterator，在 Lua 中可以像普通迭代器一样使用
+///
+/// 使用 emval handles 直接传递参数，避免 JSON 序列化开销
 
 use mlua::prelude::*;
 use std::ffi::CString;
 use std::os::raw::c_char;
-use std::sync::Mutex;
-use once_cell::sync::Lazy;
 
-use crate::callback::{CallbackManager, PromiseResult};
-use crate::{json_to_lua_value, lua_value_to_json};
+use super::callback::{register_callback, PromiseResult};
+use super::emval_ffi::{JsVal, EM_VAL};
+use super::js_proxy::{lua_to_val, val_to_lua};
 
 // FFI 声明：调用 JavaScript 模块函数
 #[link(wasm_import_module = "env")]
-extern "C" {
+unsafe extern "C" {
+    /// 调用 JS 模块函数（使用 EM_VAL handles）
+    /// - instance_id: Lua 实例 ID
+    /// - module_name_ptr: 模块名 C 字符串
+    /// - function_name_ptr: 函数名 C 字符串
+    /// - args_handles: 参数 EM_VAL handles 数组指针
+    /// - args_count: 参数数量
+    /// - callback_id: 回调 ID
+    /// 返回: 结果的 EM_VAL handle（通过 callback 返回）
     fn js_call_js_module(
         instance_id: u32,
         module_name_ptr: *const c_char,
         function_name_ptr: *const c_char,
-        args_json_ptr: *const c_char,
+        args_handles: *const EM_VAL,
+        args_count: u32,
         callback_id: u32,
-    ) -> u32;
+    );
     
     // Async iterator 支持
     fn js_async_iterator_next(
         iterator_id: u32,
         callback_id: u32,
-    ) -> u32;
+    );
     
     fn js_async_iterator_close(
         iterator_id: u32,
     );
-}
-
-// 全局回调管理器
-static JS_MODULE_CALLBACK_MANAGER: Lazy<Mutex<CallbackManager>> =
-    Lazy::new(|| Mutex::new(CallbackManager::new()));
-
-/// 注册一个 JS 模块回调，返回 (callback_id, receiver)
-pub fn register_js_module_callback() -> (u32, async_channel::Receiver<PromiseResult>) {
-    let mut manager = JS_MODULE_CALLBACK_MANAGER.lock().unwrap();
-    manager.register()
-}
-
-/// 由 JavaScript 调用来解析 Promise
-#[no_mangle]
-pub extern "C" fn lua_js_module_promise_resolve(
-    callback_id: u32,
-    data_ptr: *const u8,
-    data_len: u32,
-) {
-    let data = if data_ptr.is_null() || data_len == 0 {
-        Vec::new()
-    } else {
-        unsafe { std::slice::from_raw_parts(data_ptr, data_len as usize) }.to_vec()
-    };
-
-    let mut manager = JS_MODULE_CALLBACK_MANAGER.lock().unwrap();
-    manager.resolve(callback_id, data);
-}
-
-/// 由 JavaScript 调用来拒绝 Promise
-#[no_mangle]
-pub extern "C" fn lua_js_module_promise_reject(callback_id: u32, error_ptr: *const c_char) {
-    let message = if error_ptr.is_null() {
-        "Unknown error".to_string()
-    } else {
-        unsafe {
-            std::ffi::CStr::from_ptr(error_ptr)
-                .to_string_lossy()
-                .into_owned()
-        }
-    };
-
-    let mut manager = JS_MODULE_CALLBACK_MANAGER.lock().unwrap();
-    manager.reject(callback_id, message);
 }
 
 /// 生成函数缓存的 registry key
@@ -86,11 +52,11 @@ fn make_cache_key(instance_id: u32, module_name: &str, function_name: &str) -> S
 
 /// 创建 async iterator 的迭代器函数
 /// 返回一个 Lua 函数，每次调用时获取下一个值，返回 nil 时表示迭代结束
-fn create_async_iterator_function(lua: &Lua, iterator_id: u32) -> LuaResult<LuaFunction> {
+fn create_async_iterator_function(lua: &Lua, iterator_id: u32, instance_id: u32) -> LuaResult<LuaFunction> {
     lua.create_async_function(move |lua, _: ()| {
         async move {
             // 注册回调
-            let (callback_id, rx) = register_js_module_callback();
+            let (callback_id, rx) = register_callback();
             
             // 调用 JavaScript 的 iterator.next()
             unsafe {
@@ -102,17 +68,21 @@ fn create_async_iterator_function(lua: &Lua, iterator_id: u32) -> LuaResult<LuaF
                 .map_err(|e| LuaError::external(format!("Iterator receive error: {}", e)))?;
             
             match result {
-                PromiseResult::Success { data } => {
-                    let json_str = String::from_utf8(data)
-                        .map_err(|e| LuaError::external(e))?;
+                PromiseResult::Success { handle } => {
+                    // handle 为 0 表示 undefined
+                    if handle == 0 {
+                        // 返回 undefined，表示迭代结束
+                        unsafe {
+                            js_async_iterator_close(iterator_id);
+                        }
+                        return Ok(LuaValue::Nil);
+                    }
                     
-                    // 解析 {value, done} 结构
-                    let parsed: serde_json::Value = serde_json::from_str(&json_str)
-                        .map_err(|e| LuaError::external(format!("JSON parse error: {}", e)))?;
+                    let result_val = JsVal::from_handle(handle as EM_VAL);
                     
-                    let done = parsed.get("done")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
+                    // 获取 done 和 value
+                    let done_val = result_val.get("done");
+                    let done = done_val.is_true();
                     
                     if done {
                         // 迭代结束，关闭 iterator 并返回 nil
@@ -122,13 +92,8 @@ fn create_async_iterator_function(lua: &Lua, iterator_id: u32) -> LuaResult<LuaF
                         Ok(LuaValue::Nil)
                     } else {
                         // 返回 value
-                        if let Some(value) = parsed.get("value") {
-                            let value_json = serde_json::to_string(value)
-                                .map_err(|e| LuaError::external(e))?;
-                            crate::json_to_lua_value(&lua, &value_json)
-                        } else {
-                            Ok(LuaValue::Nil)
-                        }
+                        let value_val = result_val.get("value");
+                        val_to_lua(&lua, value_val, instance_id)
                     }
                 }
                 PromiseResult::Error { message } => {
@@ -156,22 +121,23 @@ fn create_js_function_wrapper(
         let function_name = function_name.clone();
 
         async move {
-            // 将参数转换为 JSON 数组
-            let mut args_array = Vec::new();
+            // 将参数转换为 EM_VAL handles
+            let mut args_handles: Vec<EM_VAL> = Vec::new();
+            let mut args_vals: Vec<JsVal> = Vec::new(); // 保持 JsVal 存活
+            
             for arg in args.iter() {
-                args_array.push(lua_value_to_json(&lua, arg)?);
+                let val = lua_to_val(&lua, arg.clone(), instance_id)?;
+                args_handles.push(val.handle());
+                args_vals.push(val);
             }
-            let args_json = format!("[{}]", args_array.join(","));
 
             // 注册回调
-            let (callback_id, rx) = register_js_module_callback();
+            let (callback_id, rx) = register_callback();
 
             // 准备 C 字符串
             let module_name_c = CString::new(module_name)
                 .map_err(|e| LuaError::external(e))?;
             let function_name_c = CString::new(function_name)
-                .map_err(|e| LuaError::external(e))?;
-            let args_json_c = CString::new(args_json)
                 .map_err(|e| LuaError::external(e))?;
 
             // 调用 JavaScript
@@ -180,7 +146,8 @@ fn create_js_function_wrapper(
                     instance_id,
                     module_name_c.as_ptr(),
                     function_name_c.as_ptr(),
-                    args_json_c.as_ptr(),
+                    args_handles.as_ptr(),
+                    args_handles.len() as u32,
                     callback_id,
                 );
             }
@@ -190,24 +157,25 @@ fn create_js_function_wrapper(
                 .map_err(|e| LuaError::external(format!("Callback receive error: {}", e)))?;
 
             match result {
-                PromiseResult::Success { data } => {
-                    let json_str = String::from_utf8(data)
-                        .map_err(|e| LuaError::external(e))?;
+                PromiseResult::Success { handle } => {
+                    // handle 为 0 表示 undefined
+                    if handle == 0 {
+                        return Ok(LuaValue::Nil);
+                    }
+                    
+                    let result_val = JsVal::from_handle(handle as EM_VAL);
                     
                     // 检查是否是 async iterator 标记
-                    let parsed: serde_json::Value = serde_json::from_str(&json_str)
-                        .map_err(|e| LuaError::external(format!("JSON parse error: {}", e)))?;
-                    
-                    if let Some(iterator_id) = parsed.get("__async_iterator_id")
-                        .and_then(|v| v.as_u64())
-                        .map(|v| v as u32)
-                    {
+                    // JS 端会返回一个对象 { __async_iterator_id: number }
+                    let iterator_id_val = result_val.get("__async_iterator_id");
+                    if !iterator_id_val.is_undefined() && iterator_id_val.is_number() {
+                        let iterator_id = iterator_id_val.as_f64() as u32;
                         // 返回一个迭代器函数
-                        let iter_func = create_async_iterator_function(&lua, iterator_id)?;
+                        let iter_func = create_async_iterator_function(&lua, iterator_id, instance_id)?;
                         Ok(LuaValue::Function(iter_func))
                     } else {
-                        // 普通返回值
-                        json_to_lua_value(&lua, &json_str)
+                        // 普通返回值 - 转换为 Lua 值
+                        val_to_lua(&lua, result_val, instance_id)
                     }
                 }
                 PromiseResult::Error { message } => {
