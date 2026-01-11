@@ -1267,80 +1267,27 @@ export interface LuaRunOptions {
   vfs?: Vfs<VfsProvider>
   /** 工作目录（用于 require 相对路径解析），默认为 "/" */
   workingDirectory?: string
+  /** 
+   * 传递给 Lua 代码的参数对象
+   * 在 Lua 中可以直接访问参数名作为变量
+   */
+  args?: Record<string, unknown>
 }
 
 /**
  * 运行 Lua 代码
  * 
  * @param code Lua 源代码
- * @param options 执行选项（包含 rdfStore、vfs 和 workingDirectory）
+ * @param options 执行选项（包含 rdfStore、vfs、workingDirectory 和 args）
  * @returns Lua 执行结果（包含返回值、输出和错误）
  */
 export async function runLua(code: string, options: LuaRunOptions = {}): Promise<LuaExecutionResult> {
-  const module = ensureModule()
-  const { rdfStore, vfs, workingDirectory = '/' } = options
-
-  // 创建执行上下文 - 使用相同的 contextId 用于 RDF 和 VFS
-  // 注意：这要求 Rust 端的 RDF 和 VFS 使用相同的 context_id
-  // 如果没有提供 rdfStore，创建一个临时的空上下文
-  const contextId = rdfStore ? createRDFStoreContext(rdfStore) : createRDFStoreContext({ 
-    insert: async () => {}, 
-    delete: async () => {}, 
-    query: async () => [] 
-  } as RDFStore)
-  
-  // 如果提供了 VFS，也创建上下文（使用相同的 contextId）
-  if (vfs) {
-    createVfsContextWithId(contextId, vfs)
-  }
-
+  const { args, ...restOptions } = options
+  const instance = createLuaInstance(restOptions)
   try {
-    // 编码 Lua 代码
-    const codeBytes = textEncoder.encode(code)
-    const codePtr = module._malloc(codeBytes.length + 1)
-    if (!heapU8) throw new Error('HEAPU8 not initialized')
-    
-    heapU8.set(codeBytes, codePtr)
-    heapU8[codePtr + codeBytes.length] = 0
-
-    // 编码工作目录
-    const workingDirBytes = textEncoder.encode(workingDirectory)
-    const workingDirPtr = module._malloc(workingDirBytes.length + 1)
-    heapU8.set(workingDirBytes, workingDirPtr)
-    heapU8[workingDirPtr + workingDirBytes.length] = 0
-
-    // 调用异步版本的 lua_run
-    const executionId = module._lua_run_async(codePtr, contextId, workingDirPtr)
-    module._free(codePtr)
-    module._free(workingDirPtr)
-
-    if (executionId === 0) {
-      throw new Error('Failed to start async Lua execution')
-    }
-
-    // 返回 Promise，等待执行完成
-    return new Promise((resolve, reject) => {
-      luaExecutionCallbacks.set(executionId, {
-        resolve: (result) => {
-          clearRDFStoreContext(contextId)
-          if (vfs) clearVfsContext(contextId)
-          resolve(result)
-        },
-        reject: (error) => {
-          clearRDFStoreContext(contextId)
-          if (vfs) clearVfsContext(contextId)
-          reject(error)
-        }
-      })
-      
-      // 手动 tick 一次，启动执行
-      module._lua_executor_tick()
-    })
-  } catch (error) {
-    // 清理上下文（同步错误）
-    clearRDFStoreContext(contextId)
-    if (vfs) clearVfsContext(contextId)
-    throw error
+    return await instance.run(code, args)
+  } finally {
+    instance.destroy()
   }
 }
 
