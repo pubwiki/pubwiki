@@ -16,7 +16,7 @@ import type { StudioNodeData } from '../types'
 import type { FlowNodeData } from '../types/flow'
 import { nodeStore } from '../persistence'
 import { getVersionHandler } from './types'
-import { rebuildHistoricalTree, styleEdgesForVersions } from './version-service'
+import { rebuildHistoricalTree } from './version-service'
 import { getStudioContext } from '../state'
 
 // ============================================================================
@@ -69,6 +69,8 @@ export function createPreviewController() {
 	let historicalTree = $state<HistoricalTreeResult<StudioNodeData> | null>(null)
 	let phantomNodeIds = $state<Set<string>>(new Set())
 	let hiddenEdges = $state<Edge[]>([])
+	// Track the current refHolder node ID to detect selection changes
+	let currentRefHolderId = $state<string | null>(null)
 
 	/**
 	 * Get preview state for a specific node.
@@ -110,8 +112,11 @@ export function createPreviewController() {
 		const nodes = ctx.nodes
 		const edges = ctx.edges
 
-		// Remove phantom nodes
+		// Remove phantom nodes from nodeStore and flow
 		if (phantomNodeIds.size > 0) {
+			for (const phantomId of phantomNodeIds) {
+				nodeStore.delete(phantomId)
+			}
 			ctx.setNodes(nodes.filter(n => !phantomNodeIds.has(n.id)))
 		}
 
@@ -129,6 +134,45 @@ export function createPreviewController() {
 		phantomNodeIds = new Set()
 		hiddenEdges = []
 		historicalTree = null
+		currentRefHolderId = null
+	}
+
+	/**
+	 * Internal cleanup that modifies nodes/edges and resets state
+	 */
+	function performCleanup() {
+		const nodes = ctx.nodes
+		const edges = ctx.edges
+		
+		// Remove phantom nodes from nodeStore
+		if (phantomNodeIds.size > 0) {
+			for (const phantomId of phantomNodeIds) {
+				nodeStore.delete(phantomId)
+			}
+		}
+
+		// Calculate new nodes (remove phantoms)
+		const newNodes = nodes.filter(n => !phantomNodeIds.has(n.id))
+
+		// Calculate restored edges
+		const restoredEdges = [
+			...edges.filter(e =>
+				!phantomNodeIds.has(e.source) &&
+				!phantomNodeIds.has(e.target) &&
+				!e.id.startsWith('historical-')
+			),
+			...hiddenEdges
+		]
+
+		// Apply changes
+		ctx.setNodes(newNodes)
+		ctx.setEdges(restoredEdges)
+
+		// Reset state
+		phantomNodeIds = new Set()
+		hiddenEdges = []
+		historicalTree = null
+		currentRefHolderId = null
 	}
 
 	/**
@@ -136,63 +180,32 @@ export function createPreviewController() {
 	 * Call this in a $effect when selectedNodes changes.
 	 */
 	async function updateSelection(selectedNodes: Node<FlowNodeData>[]) {
-		const nodes = ctx.nodes
-		const edges = ctx.edges
-
-		// Get version refs for single selected node (if any)
-		// Fetch business data from nodeStore
+		// Determine the new refHolder (if any)
 		const selectedNodeData = selectedNodes.length === 1 
 			? nodeStore.get(selectedNodes[0].id)
 			: undefined
 		const versionRefs = selectedNodeData
 			? getVersionRefsFromRegistry(selectedNodeData)
 			: undefined
+		const newRefHolderId = versionRefs ? selectedNodes[0].id : null
 
-		// Non-single selection or selected doesn't have version refs - cleanup and return
-		if (!versionRefs) {
-			if (historicalTree !== null) {
-				// Remove phantom nodes
-				if (phantomNodeIds.size > 0) {
-					ctx.setNodes(nodes.filter(n => !phantomNodeIds.has(n.id)))
-				}
-				// Restore hidden edges
-				const restoredEdges = [
-					...edges.filter(e =>
-						!phantomNodeIds.has(e.source) &&
-						!phantomNodeIds.has(e.target) &&
-						!e.id.startsWith('historical-')
-					),
-					...hiddenEdges
-				]
-				ctx.setEdges(restoredEdges)
-				phantomNodeIds = new Set()
-				hiddenEdges = []
-				historicalTree = null
-			}
+		// If the refHolder changed (including to null), cleanup first
+		if (currentRefHolderId !== null && currentRefHolderId !== newRefHolderId) {
+			performCleanup()
+		}
+
+		// If no new refHolder, we're done
+		if (!newRefHolderId || !versionRefs) {
 			return
 		}
 
 		const selected = selectedNodes[0]
-
-		// First, restore any previously hidden edges before processing new selection
-		let currentEdges = edges
-		if (hiddenEdges.length > 0) {
-			// Remove old phantom nodes if any
-			if (phantomNodeIds.size > 0) {
-				ctx.setNodes(nodes.filter(n => !phantomNodeIds.has(n.id)))
-			}
-			// Restore hidden edges and remove old historical edges
-			currentEdges = [
-				...edges.filter(e =>
-					!phantomNodeIds.has(e.source) &&
-					!phantomNodeIds.has(e.target) &&
-					!e.id.startsWith('historical-')
-				),
-				...hiddenEdges
-			]
-			phantomNodeIds = new Set()
-			hiddenEdges = []
-		}
+		// Read nodes/edges AFTER cleanup has been applied
+		const currentEdges = ctx.edges
+		const nodes = ctx.nodes
+		
+		// Set current refHolder
+		currentRefHolderId = newRefHolderId
 
 		// Build historical tree with data getter callback (async)
 		const tree = await rebuildHistoricalTree(
@@ -230,16 +243,21 @@ export function createPreviewController() {
 		// Add phantom nodes to the graph
 		// Phantom nodes are flow nodes - their business data comes from snapshots
 		if (tree.phantomNodes.length > 0) {
-			const phantomFlowNodes: Node<FlowNodeData>[] = tree.phantomNodes.map(n => ({
-				id: n.id,
-				type: n.type,
-				position: n.position,
-				data: { 
-					id: n.id, 
-					type: n.type || 'PROMPT',  // lowercase for SvelteFlow
-					isPhantom: true 
+			const phantomFlowNodes: Node<FlowNodeData>[] = tree.phantomNodes.map(n => {
+				// Store phantom node's business data in nodeStore transiently (no persistence)
+				nodeStore.setTransient(n.id, n.data as StudioNodeData)
+				
+				return {
+					id: n.id,
+					type: n.type,
+					position: n.position,
+					data: { 
+						id: n.id, 
+						type: n.type,
+						isPhantom: true 
+					}
 				}
-			}))
+			})
 			ctx.setNodes([...nodes, ...phantomFlowNodes])
 			phantomNodeIds = new Set(tree.phantomNodes.map(n => n.id))
 		}
@@ -257,32 +275,6 @@ export function createPreviewController() {
 		ctx.setEdges(newEdges)
 	}
 
-	/**
-	 * Apply version styling to edges.
-	 * Call this in a separate $effect to update edge styles.
-	 */
-	function applyEdgeVersionStyles() {
-		const nodes = ctx.nodes
-		const edges = ctx.edges
-
-		// Check if any node has version refs (using nodeStore for business data)
-		const hasRefHolders = nodes.some(n => {
-			const data = nodeStore.get(n.id)
-			return data ? getVersionRefsFromRegistry(data) !== undefined : false
-		})
-		if (!hasRefHolders) return
-
-		const { edges: styledEdges, changed } = styleEdgesForVersions(
-			edges,
-			nodes,
-			(nodeId) => nodeStore.get(nodeId) as StudioNodeData | undefined,
-			(data) => getVersionRefsFromRegistry(data)
-		)
-		if (changed) {
-			ctx.setEdges(styledEdges)
-		}
-	}
-
 	return {
 		// State accessors
 		get historicalTree() { return historicalTree },
@@ -290,8 +282,7 @@ export function createPreviewController() {
 		// Methods
 		getPreviewState,
 		updateSelection,
-		cleanup,
-		applyEdgeVersionStyles
+		cleanup
 	}
 }
 

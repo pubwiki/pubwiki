@@ -245,6 +245,13 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 	currentEdges: Edge[],
 	getNodeData: (nodeId: string) => TData | undefined
 ): Promise<HistoricalTreeResult<TData>> {
+	console.log('[rebuildHistoricalTree] START', {
+		versionRefs,
+		refHolderNodeId,
+		allNodeIds: allNodes.map(n => n.id),
+		currentEdgeCount: currentEdges.length
+	})
+
 	const nodeOverrides = new Map<string, TData>()
 	const phantomNodes: HistoricalTreeResult<TData>['phantomNodes'] = []
 	const historicalEdges: HistoricalTreeResult<TData>['historicalEdges'] = []
@@ -258,11 +265,16 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 			phantomNodeIds.add(ref.id)
 		}
 	}
+	console.log('[rebuildHistoricalTree] Phantom node IDs:', Array.from(phantomNodeIds))
 
 	// Second pass: process each ref (async to fetch historical versions)
 	for (const ref of versionRefs) {
 		const existingNode = allNodes.find(n => n.id === ref.id)
 		const snapshot = await nodeStore.getVersion(ref.id, ref.commit)
+		console.log(`[rebuildHistoricalTree] Processing ref ${ref.id}@${ref.commit.slice(0,8)}`, {
+			exists: !!existingNode,
+			hasSnapshot: !!snapshot
+		})
 
 		if (existingNode) {
 			// Node exists - mark as used
@@ -271,8 +283,26 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 			// Get business data from nodeStore via callback
 			const nodeData = getNodeData(existingNode.id)
 			
+			// Calculate current content hash to detect unsaved edits
+			// The stored commit might be stale if user edited but didn't regenerate
+			const serialized = nodeData?.content?.serialize()
+			const currentContentHash = serialized 
+				? await generateCommitHash(serialized)
+				: nodeData?.commit
+			
+			console.log(`[rebuildHistoricalTree] Existing node ${ref.id} commit check:`, {
+				storedCommit: nodeData?.commit?.slice(0, 8),
+				currentContentHash: currentContentHash?.slice(0, 8),
+				refCommit: ref.commit.slice(0, 8),
+				needsOverride: currentContentHash !== ref.commit,
+				hasSnapshot: !!snapshot,
+				serializedContent: serialized?.slice(0, 100)
+			})
+			
 			// Check if we need to show historical version
-			if (nodeData && nodeData.commit !== ref.commit && snapshot) {
+			// Compare actual content hash (not stored commit) with ref commit
+			if (nodeData && currentContentHash !== ref.commit && snapshot) {
+				console.log(`[rebuildHistoricalTree] Creating override for ${ref.id}`)
 				// Create override with historical data
 				const historicalData: TData = {
 					...nodeData,
@@ -282,9 +312,28 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 				nodeOverrides.set(ref.id, historicalData)
 			}
 
-			// Note: incomingEdges are stored in db.snapshots but not exposed via StudioNodeData
-			// For phantom node edge reconstruction, we need to query db.snapshots directly
-			// This is a simplification - historical edges from phantom nodes are handled below
+			// For existing nodes, also restore incoming edges from phantom nodes
+			// This handles the case where an edge's source was deleted but target still exists
+			const rawSnapshot = await db.snapshots.get([ref.id, ref.commit])
+			console.log(`[rebuildHistoricalTree] Existing node ${ref.id} rawSnapshot:`, {
+				hasRawSnapshot: !!rawSnapshot,
+				incomingEdges: rawSnapshot?.incomingEdges
+			})
+			if (rawSnapshot?.incomingEdges) {
+				for (const snapshotEdge of rawSnapshot.incomingEdges) {
+					// Add edge if source is a phantom node (deleted)
+					if (phantomNodeIds.has(snapshotEdge.source)) {
+						console.log(`[rebuildHistoricalTree] Adding edge from phantom to existing: ${snapshotEdge.source} -> ${ref.id}`)
+						historicalEdges.push({
+							id: `historical-${snapshotEdge.source}-${ref.id}-${snapshotEdge.targetHandle || 'default'}`,
+							source: snapshotEdge.source,
+							target: ref.id,
+							sourceHandle: snapshotEdge.sourceHandle,
+							targetHandle: snapshotEdge.targetHandle
+						})
+					}
+				}
+			}
 		} else if (snapshot) {
 			// Node was deleted - create phantom node using type from snapshot
 			const nodeType = snapshot.type
@@ -302,6 +351,10 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 			// For phantom nodes, we need to get position from the raw snapshot in db
 			// Since StudioNodeData doesn't include position, query directly
 			const rawSnapshot = await db.snapshots.get([ref.id, ref.commit])
+			console.log(`[rebuildHistoricalTree] Phantom node ${ref.id} rawSnapshot:`, {
+				hasRawSnapshot: !!rawSnapshot,
+				incomingEdges: rawSnapshot?.incomingEdges
+			})
 			
 			// Use saved position from snapshot, or calculate fallback position
 			const phantomNode = {
@@ -316,11 +369,18 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 
 			phantomNodes.push(phantomNode)
 
-			// Add historical edges from snapshot (only from other phantom nodes)
+			// Add historical edges from snapshot
+			// Include edges from any node that is part of the historical tree (phantom or existing)
 			if (rawSnapshot?.incomingEdges) {
 				for (const snapshotEdge of rawSnapshot.incomingEdges) {
-					// Only add edge if source is also a phantom node
-					if (phantomNodeIds.has(snapshotEdge.source)) {
+					// Add edge if source is a phantom node OR an existing node in versionRefs
+					const sourceInVersionRefs = versionRefs.some(r => r.id === snapshotEdge.source)
+					console.log(`[rebuildHistoricalTree] Checking phantom incoming edge: ${snapshotEdge.source} -> ${ref.id}`, {
+						sourceIsPhantom: phantomNodeIds.has(snapshotEdge.source),
+						sourceInVersionRefs
+					})
+					if (phantomNodeIds.has(snapshotEdge.source) || sourceInVersionRefs) {
+						console.log(`[rebuildHistoricalTree] Adding edge to phantom: ${snapshotEdge.source} -> ${ref.id}`)
 						historicalEdges.push({
 							id: `historical-${snapshotEdge.source}-${ref.id}-${snapshotEdge.targetHandle || 'default'}`,
 							source: snapshotEdge.source,
@@ -333,6 +393,51 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 			}
 		}
 	}
+
+	// Third pass: restore refHolder's incoming edges from phantom nodes
+	// This handles edges like: phantom_node → refHolder (e.g., deleted_input → generated)
+	const refHolderData = getNodeData(refHolderNodeId)
+	console.log(`[rebuildHistoricalTree] Third pass - refHolder ${refHolderNodeId}:`, {
+		hasRefHolderData: !!refHolderData,
+		refHolderCommit: refHolderData?.commit?.slice(0, 8),
+		phantomNodeCount: phantomNodeIds.size,
+		phantomNodeIds: Array.from(phantomNodeIds)
+	})
+	
+	if (refHolderData && phantomNodeIds.size > 0) {
+		const refHolderSnapshot = await db.snapshots.get([refHolderNodeId, refHolderData.commit])
+		console.log(`[rebuildHistoricalTree] refHolder snapshot:`, {
+			hasSnapshot: !!refHolderSnapshot,
+			incomingEdges: refHolderSnapshot?.incomingEdges
+		})
+		
+		if (refHolderSnapshot?.incomingEdges) {
+			for (const snapshotEdge of refHolderSnapshot.incomingEdges) {
+				if (phantomNodeIds.has(snapshotEdge.source)) {
+					const edgeExists = historicalEdges.some(
+						e => e.source === snapshotEdge.source && e.target === refHolderNodeId
+					)
+					if (!edgeExists) {
+						console.log(`[rebuildHistoricalTree] Adding edge to refHolder: ${snapshotEdge.source} -> ${refHolderNodeId}`)
+						historicalEdges.push({
+							id: `historical-${snapshotEdge.source}-${refHolderNodeId}-${snapshotEdge.targetHandle || 'default'}`,
+							source: snapshotEdge.source,
+							target: refHolderNodeId,
+							sourceHandle: snapshotEdge.sourceHandle,
+							targetHandle: snapshotEdge.targetHandle
+						})
+					}
+				}
+			}
+		}
+	}
+
+	console.log('[rebuildHistoricalTree] RESULT:', {
+		nodeOverrideCount: nodeOverrides.size,
+		phantomNodeCount: phantomNodes.length,
+		historicalEdgeCount: historicalEdges.length,
+		historicalEdges: historicalEdges.map(e => `${e.source} -> ${e.target}`)
+	})
 
 	return { nodeOverrides, phantomNodes, historicalEdges, usedNodeIds }
 }

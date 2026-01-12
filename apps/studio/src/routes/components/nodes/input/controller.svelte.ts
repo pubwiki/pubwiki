@@ -33,7 +33,7 @@ import {
 	type ConnectionEvent,
 	type EdgeDeleteEvent
 } from '../../../state';
-import { prepareForGeneration } from '../../../version';
+import { prepareForGeneration, syncNode, getIncomingEdges } from '../../../version';
 import { positionNewNodesFromSources } from '../../../graph';
 import { getNodeVfs } from '../../../vfs';
 import { createMountedVfs, getMountedProvider, MountedVfsProvider, Vfs } from '@pubwiki/vfs';
@@ -506,6 +506,15 @@ export async function generate(
 					...data,
 					commit
 				}));
+				
+				// Save snapshot with incoming edge information
+				// The incoming edge is from the input node to this generated node
+				const dataWithCommit = nodeStore.get(nodeId) as GeneratedNodeData;
+				const incomingEdges = getIncomingEdges(nodeId, [newEdge]);
+				await nodeStore.saveSnapshot(dataWithCommit, { 
+					incomingEdges, 
+					position 
+				});
 			}
 			
 			// Clear VFS after generation completes
