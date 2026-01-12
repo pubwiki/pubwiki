@@ -163,9 +163,11 @@
 		
 		edgeSaveTimer = setTimeout(async () => {
 			saving = true;
-			console.log('[Studio] Saving edges to IndexedDB...', { projectId: currentProjectId, edgesCount: edges.length });
+			// Filter out historical edges (temporary edges for version preview)
+			const edgesToSave = untrack(() => edges.filter(e => !e.id.startsWith('historical-')));
+			console.log('[Studio] Saving edges to IndexedDB...', { projectId: currentProjectId, edgesCount: edgesToSave.length });
 			try {
-				await saveEdges(untrack(() => edges), currentProjectId);
+				await saveEdges(edgesToSave, currentProjectId);
 				console.log('[Studio] Edges saved successfully');
 			} catch (err) {
 				console.error('[Studio] Failed to save edges:', err);
@@ -277,14 +279,6 @@
 		untrack(() => previewCtrl?.updateSelection(selected));
 	});
 
-	// Apply edge version styling
-	$effect(() => {
-		// Track nodes and edges to trigger on change
-		nodes;
-		edges;
-		untrack(() => previewCtrl?.applyEdgeVersionStyles());
-	});
-
 	// ============================================================================
 	// Connection Validation
 	// ============================================================================
@@ -388,12 +382,17 @@
 	 * Event type: { targetNode: Node | null; nodes: Node[]; event: MouseEvent | TouchEvent }
 	 */
 	function handleNodeDragStop(event: { targetNode: Node<FlowNodeData> | null; nodes: Node<FlowNodeData>[]; event: MouseEvent | TouchEvent }) {
-		const updates = event.nodes.map(n => ({
-			nodeId: n.id,
-			x: n.position.x,
-			y: n.position.y
-		}));
-		layoutStore.updateMany(updates);
+		// Filter out phantom nodes - they should not be persisted
+		const updates = event.nodes
+			.filter(n => !n.data.isPhantom)
+			.map(n => ({
+				nodeId: n.id,
+				x: n.position.x,
+				y: n.position.y
+			}));
+		if (updates.length > 0) {
+			layoutStore.updateMany(updates);
+		}
 	}
 	
 	/**
@@ -402,14 +401,16 @@
 	 */
 	function handleSelectionDragStop(event: MouseEvent) {
 		// Selection drag stop just receives the MouseEvent
-		// We need to save all selected node positions
-		const selected = nodes.filter(n => n.selected);
+		// We need to save all selected node positions, excluding phantom nodes
+		const selected = nodes.filter(n => n.selected && !n.data.isPhantom);
 		const updates = selected.map(n => ({
 			nodeId: n.id,
 			x: n.position.x,
 			y: n.position.y
 		}));
-		layoutStore.updateMany(updates);
+		if (updates.length > 0) {
+			layoutStore.updateMany(updates);
+		}
 	}
 
 	// ============================================================================

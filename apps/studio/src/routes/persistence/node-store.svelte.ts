@@ -8,14 +8,20 @@
  * - Manages all node business data (content, commit, snapshotRefs, etc.)
  * - Decoupled from SvelteFlow rendering (position, selected, dragging)
  * - Auto-saves to IndexedDB with debouncing
- * - Reactive via Svelte 5 $state
+ * - Reactive via SvelteMap for per-node fine-grained reactivity
  * 
  * After version-store-unification:
  * - Unified version storage (current + historical versions)
  * - Historical versions accessed via async getVersion(nodeId, commit)
  * - Snapshots saved via saveSnapshot()
+ * 
+ * Reactivity Design:
+ * - Uses SvelteMap from svelte/reactivity for per-key fine-grained updates
+ * - map.get(nodeId) only subscribes to that specific node
+ * - Updating one node only triggers re-renders for components that called get(nodeId)
  */
 
+import { SvelteMap } from 'svelte/reactivity';
 import { db, type StoredNodeData, type StoredSnapshotEdge, type StoredPosition } from './db';
 import { restoreContent, type NodeType, type NodeContent } from '../types/content';
 import type { NodeRef, SnapshotEdge, SnapshotPosition } from '../version/types';
@@ -60,11 +66,23 @@ export type { StudioNodeData };
  * Global node data store
  * 
  * Manages all node business data, decoupled from rendering.
- * Uses Svelte 5 $state for reactivity.
+ * 
+ * Reactivity Strategy:
+ * - Uses plain Map for actual data storage (no reactivity overhead)
+ * - Uses SvelteMap<string, number> for per-key version signals
+ * - When get(id) is called, we read versions.get(id) to establish per-key dependency
+ * - When set(id) is called, we increment versions.get(id) to notify only that key's subscribers
+ * - SvelteMap with number values won't trigger global version updates since numbers compare by value
  */
 class NodeStore {
-  // Internal data storage for current versions
+  // Plain Map for data storage (non-reactive)
   private data = new Map<string, StudioNodeData>();
+  
+  // SvelteMap for per-key version signals
+  // Reading versions.get(nodeId) establishes dependency on that specific node
+  // Incrementing versions.set(nodeId, n+1) notifies only subscribers of that node
+  private versions = new SvelteMap<string, number>();
+  
   private projectId: string = '';
   private dirty = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,8 +91,13 @@ class NodeStore {
   // Historical version cache (key: `${nodeId}:${commit}`)
   private versionCache = new Map<string, StudioNodeData>();
   
-  // Svelte 5 reactive state - version counter for triggering updates
-  private _version = $state(0);
+  /**
+   * Notify subscribers of a specific node
+   */
+  private notifyNode(nodeId: string): void {
+    const current = this.versions.get(nodeId) ?? 0;
+    this.versions.set(nodeId, current + 1);
+  }
   
   /**
    * Initialize the store with a project's data
@@ -89,6 +112,7 @@ class NodeStore {
     
     this.projectId = projectId;
     this.data.clear();
+    this.versions.clear();
     this.dirty.clear();
     this.versionCache.clear();  // Clear version cache on project change
     
@@ -99,10 +123,10 @@ class NodeStore {
     for (const stored of storedData) {
       const nodeData = this.deserialize(stored);
       this.data.set(stored.nodeId, nodeData);
+      this.versions.set(stored.nodeId, 0);
     }
     
     this.initialized = true;
-    this._version++;
   }
   
   /**
@@ -120,14 +144,18 @@ class NodeStore {
   }
   
   /**
-   * Get node data by ID (reactive, synchronous)
+   * Get node data by ID (reactive, per-node granularity)
    * 
    * For current version only. Use getVersion() for historical versions.
    * Components should use $derived(nodeStore.get(id)) to establish reactivity.
+   * Only triggers re-render when this specific node changes.
+   * 
+   * Strategy: Read from versions SvelteMap to establish per-key dependency,
+   * then return data from plain Map.
    */
   get(nodeId: string): StudioNodeData | undefined {
-    // Access version to establish dependency tracking
-    this._version;
+    // Read version to establish reactive dependency on this specific node
+    this.versions.get(nodeId);
     return this.data.get(nodeId);
   }
   
@@ -140,24 +168,20 @@ class NodeStore {
    */
   async getVersion(nodeId: string, commit?: string): Promise<StudioNodeData | undefined> {
     if (!commit) {
-      // Return current version (synchronous path)
-      this._version;
+      // Return current version - read version for reactivity
+      this.versions.get(nodeId);
       return this.data.get(nodeId);
     }
     
-    // Check if current version matches the requested commit
-    const current = this.data.get(nodeId);
-    if (current && current.commit === commit) {
-      return current;
-    }
-    
-    // Check version cache
+    // Check version cache first
     const cacheKey = `${nodeId}:${commit}`;
     if (this.versionCache.has(cacheKey)) {
       return this.versionCache.get(cacheKey);
     }
     
-    // Load from IndexedDB snapshots table
+    // Always load from IndexedDB snapshots table for historical versions
+    // Don't use current node data even if commit matches - the current content
+    // might have been edited without updating the commit
     const stored = await db.snapshots.get([nodeId, commit]);
     if (!stored) return undefined;
     
@@ -230,26 +254,35 @@ class NodeStore {
   }
   
   /**
-   * Get all node IDs (reactive)
+   * Get all node IDs (reactive, global granularity)
+   * Triggers re-render when any node is added or removed.
+   * 
+   * Note: Iterating versions.keys() subscribes to structure changes.
    */
   getAllIds(): string[] {
-    this._version;
+    // Iterate versions to establish dependency on structure changes
+    Array.from(this.versions.keys());
     return Array.from(this.data.keys());
   }
-  
+
   /**
-   * Get all nodes (reactive)
+   * Get all nodes (reactive, global granularity)
+   * Triggers re-render when any node is added or removed.
+   * 
+   * Note: Iterating versions subscribes to all changes.
    */
   getAll(): StudioNodeData[] {
-    this._version;
+    // Iterate versions to establish dependency on all changes
+    Array.from(this.versions.values());
     return Array.from(this.data.values());
   }
-  
+
   /**
-   * Check if a node exists
+   * Check if a node exists (reactive, per-node granularity)
    */
   has(nodeId: string): boolean {
-    this._version;
+    // Read version to establish per-key dependency
+    this.versions.get(nodeId);
     return this.data.has(nodeId);
   }
   
@@ -269,7 +302,8 @@ class NodeStore {
     const updated = updater(current);
     this.data.set(nodeId, updated);
     this.dirty.add(nodeId);
-    this._version++;
+    // Notify only this node's subscribers
+    this.notifyNode(nodeId);
     this.scheduleSave();
   }
   
@@ -280,11 +314,25 @@ class NodeStore {
    * @param data - The node data to set
    */
   set(nodeId: string, data: StudioNodeData): void {
-    console.log('[NodeStore] Setting node:', nodeId, data.type);
     this.data.set(nodeId, data);
     this.dirty.add(nodeId);
-    this._version++;
+    // Notify this node's subscribers
+    this.notifyNode(nodeId);
     this.scheduleSave();
+  }
+  
+  /**
+   * Set node data transiently (no persistence)
+   * Use this for phantom/temporary nodes that should not be saved to IndexedDB.
+   * 
+   * @param nodeId - The node ID to set
+   * @param data - The node data to set
+   */
+  setTransient(nodeId: string, data: StudioNodeData): void {
+    this.data.set(nodeId, data);
+    // Notify this node's subscribers
+    this.notifyNode(nodeId);
+    // Note: not added to dirty set, so won't be persisted
   }
   
   /**
@@ -301,7 +349,8 @@ class NodeStore {
     console.log('[NodeStore] Creating node:', data.id, data.type);
     this.data.set(data.id, data);
     this.dirty.add(data.id);
-    this._version++;
+    // Notify this node's subscribers (also triggers global due to new key)
+    this.notifyNode(data.id);
     this.scheduleSave();
   }
   
@@ -319,7 +368,8 @@ class NodeStore {
     console.log('[NodeStore] Deleting node:', nodeId);
     this.data.delete(nodeId);
     this.dirty.delete(nodeId);
-    this._version++;
+    // Remove version entry and notify (triggers global due to key removal)
+    this.versions.delete(nodeId);
     
     // Immediately delete from database
     db.nodeData.where({ projectId: this.projectId, nodeId }).delete().catch(err => {
@@ -410,11 +460,11 @@ class NodeStore {
       this.saveTimer = null;
     }
     this.data.clear();
+    this.versions.clear();
     this.dirty.clear();
     this.versionCache.clear();
     this.projectId = '';
     this.initialized = false;
-    this._version++;
   }
 }
 
