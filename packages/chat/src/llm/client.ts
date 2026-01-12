@@ -35,6 +35,39 @@ export interface LLMClientConfig {
   defaultHeaders?: Record<string, string>
 }
 
+/**
+ * JSON Schema for structured output
+ * @see https://platform.openai.com/docs/guides/structured-outputs
+ */
+export interface ResponseFormatJsonSchema {
+  type: 'json_schema'
+  json_schema: {
+    name: string
+    description?: string
+    schema: Record<string, unknown>  // JSON Schema object
+    strict?: boolean
+  }
+}
+
+/**
+ * JSON object format (basic JSON mode)
+ */
+export interface ResponseFormatJsonObject {
+  type: 'json_object'
+}
+
+/**
+ * Text format (default)
+ */
+export interface ResponseFormatText {
+  type: 'text'
+}
+
+/**
+ * Response format types for structured output
+ */
+export type ResponseFormat = ResponseFormatJsonSchema | ResponseFormatJsonObject | ResponseFormatText
+
 export interface ChatCompletionOptions {
   model: string
   messages: ChatMessage[]
@@ -44,6 +77,11 @@ export interface ChatCompletionOptions {
   tools?: ToolDefinition[]
   tool_choice?: 'none' | 'auto' | 'required'
   signal?: AbortSignal
+  /**
+   * Response format for structured output
+   * @see https://platform.openai.com/docs/guides/structured-outputs
+   */
+  responseFormat?: ResponseFormat
 }
 
 /**
@@ -230,18 +268,37 @@ export class LLMClient {
       strict: null
     }))
 
+    // Build text format for structured output
+    const textFormat = options.responseFormat ? this.buildTextFormat(options.responseFormat) : undefined
+
     const params: ResponseCreateParamsStreaming = {
       model: options.model,
       input,
       temperature: options.temperature ?? null,
       tools: tools,
       tool_choice: options.tool_choice,
-      stream: true
+      stream: true,
+      ...(textFormat && { text: textFormat })
     }
 
-    const stream = await this.client.responses.create(params, {
-      signal: options.signal
-    })
+    let stream: AsyncIterable<ResponseStreamEvent>
+    try {
+      stream = await this.client.responses.create(params, {
+        signal: options.signal
+      })
+    } catch (error: unknown) {
+      // Log detailed error information for debugging
+      if (error && typeof error === 'object') {
+        const err = error as { status?: number; message?: string; error?: unknown; body?: unknown }
+        console.error('[LLMClient] API Error:', {
+          status: err.status,
+          message: err.message,
+          error: err.error,
+          body: err.body
+        })
+      }
+      throw error
+    }
 
     let currentToolCalls: Map<number, ToolCall> = new Map()
     let currentReasoningId = ''
@@ -468,13 +525,17 @@ export class LLMClient {
       strict: null
     }))
 
+    // Build text format for structured output
+    const textFormat = options.responseFormat ? this.buildTextFormat(options.responseFormat) : undefined
+
     const params: ResponseCreateParamsNonStreaming = {
       model: options.model,
       input,
       temperature: options.temperature ?? null,
       tools: tools,
       tool_choice: options.tool_choice,
-      stream: false
+      stream: false,
+      ...(textFormat && { text: textFormat })
     }
 
     const response = await this.client.responses.create(params, {
@@ -548,6 +609,35 @@ export class LLMClient {
         completion_tokens: response.usage.output_tokens,
         total_tokens: response.usage.total_tokens
       } : undefined
+    }
+  }
+
+  /**
+   * Build text format object for OpenAI Responses API
+   */
+  private buildTextFormat(responseFormat: ResponseFormat): OpenAI.Responses.ResponseTextConfig {
+    if (responseFormat.type === 'json_schema') {
+      return {
+        format: {
+          type: 'json_schema' as const,
+          name: responseFormat.json_schema.name,
+          description: responseFormat.json_schema.description,
+          schema: responseFormat.json_schema.schema,
+          strict: responseFormat.json_schema.strict ?? true
+        }
+      }
+    } else if (responseFormat.type === 'json_object') {
+      return {
+        format: {
+          type: 'json_object' as const
+        }
+      }
+    } else {
+      return {
+        format: {
+          type: 'text' as const
+        }
+      }
     }
   }
 }

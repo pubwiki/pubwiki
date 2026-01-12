@@ -1,6 +1,6 @@
 {
   "name": "@pubwiki/chat",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Core chat library with function calling, streaming, and message history support",
   "type": "module",
   "main": "./src/index.ts",
@@ -55,7 +55,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pubwiki/pubchat.git",
+    "url": "https://github.com/pubwiki/pubwiki.git",
     "directory": "packages/chat"
   }
 }

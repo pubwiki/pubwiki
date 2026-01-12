@@ -8,7 +8,7 @@
  * - No postprocessing (handled by consumers)
  */
 
-import { LLMClient } from '../llm/client'
+import { LLMClient, type ResponseFormat } from '../llm/client'
 import { ToolRegistry } from '../llm/tools'
 import type { ChatMessage, ToolCall } from '../types/chat'
 import type { MessageBlock, ToolCallStatus, ReasoningDetail } from '../types/message'
@@ -67,6 +67,12 @@ export interface PipelineConfig {
   
   // Abort signal
   signal?: AbortSignal
+  
+  /**
+   * Response format for structured output
+   * @see https://platform.openai.com/docs/guides/structured-outputs
+   */
+  responseFormat?: ResponseFormat
 }
 
 /**
@@ -112,7 +118,8 @@ export class ChatStreamPipeline {
         temperature: this.config.temperature,
         max_tokens: this.config.maxTokens,
         tools: this.config.tools?.getDefinitions(),
-        signal: this.config.signal
+        signal: this.config.signal,
+        responseFormat: this.config.responseFormat
       })
       
       let segmentContent = ''

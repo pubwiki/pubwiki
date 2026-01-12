@@ -111,7 +111,14 @@ export { MemoryMessageStore } from './stores'
 
 // LLM exports
 export { LLMClient } from './llm/client'
-export type { LLMClientConfig, ChatCompletionOptions } from './llm/client'
+export type { 
+  LLMClientConfig, 
+  ChatCompletionOptions,
+  ResponseFormat,
+  ResponseFormatJsonSchema,
+  ResponseFormatJsonObject,
+  ResponseFormatText
+} from './llm/client'
 export { ToolRegistry } from './llm/tools'
 export type { ToolHandler as ToolRegistryHandler } from './llm/tools'
 

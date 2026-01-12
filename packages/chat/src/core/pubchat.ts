@@ -20,6 +20,7 @@ import type {
   ConversationSnapshot,
 } from '../types/message'
 import { z } from 'zod'
+import type { ResponseFormat } from '../llm/client'
 
 /**
  * PubChat configuration
@@ -57,6 +58,11 @@ export interface LLMConfig {
   temperature?: number
   maxTokens?: number
   organizationId?: string
+  /**
+   * Response format for structured output
+   * @see https://platform.openai.com/docs/guides/structured-outputs
+   */
+  responseFormat?: ResponseFormat
 }
 
 /**
@@ -233,6 +239,7 @@ export class PubChat implements ChatProvider {
         temperature: overrideConfig?.temperature ?? this.config.llm.temperature,
         maxTokens: overrideConfig?.maxTokens ?? this.config.llm.maxTokens,
         organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
+        responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
       }
       
       // Create pipeline
@@ -246,7 +253,8 @@ export class PubChat implements ChatProvider {
         tools: this.config.toolCalling?.enabled ? this.toolRegistry : undefined,
         maxIterations: this.config.toolCalling?.maxIterations ?? 10,
         onIterationLimitReached: this.config.onIterationLimitReached,
-        signal: this.abortController.signal
+        signal: this.abortController.signal,
+        responseFormat: llmConfig.responseFormat
       })
       
       // Collect assistant response

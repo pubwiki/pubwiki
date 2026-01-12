@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { config } from 'dotenv'
 import { PubChat, MemoryMessageStore, createSystemMessage, createVfs } from '../src/index'
-import type { ChatStreamEvent, VfsProvider, VFSStat } from '../src/index'
+import type { ChatStreamEvent, VfsProvider, VfsStat } from '../src/index'
 
 // Load environment variables
 config()
@@ -80,9 +80,9 @@ describeIfApiKey('PubChat Integration Tests', () => {
       expect(doneEvent).toBeDefined()
       expect(doneEvent?.type).toBe('done')
       
-      // Verify content contains the numbers
+      // Verify content contains the numbers (use [\s\S] to match newlines)
       const fullContent = tokens.join('')
-      expect(fullContent).toMatch(/1.*2.*3.*4.*5/)
+      expect(fullContent).toMatch(/1[\s\S]*2[\s\S]*3[\s\S]*4[\s\S]*5/)
     })
 
     it('should handle errors gracefully', async () => {
@@ -90,7 +90,7 @@ describeIfApiKey('PubChat Integration Tests', () => {
         llm: {
           apiKey: 'invalid-key',
           baseUrl: OPENROUTER_BASE_URL,
-          model: 'openai/gpt-4o-mini',
+          model: 'google/gemini-2.5-flash',
         },
         messageStore: new MemoryMessageStore(),
       })
@@ -127,7 +127,7 @@ describeIfApiKey('PubChat Integration Tests', () => {
         llm: {
           apiKey: OPENROUTER_API_KEY!,
           baseUrl: OPENROUTER_BASE_URL,
-          model: 'openai/gpt-4o-mini',
+          model: 'google/gemini-2.5-flash',
           temperature: 0,
         },
         messageStore: new MemoryMessageStore(),
@@ -165,7 +165,7 @@ describeIfApiKey('PubChat with Tool Calling', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
         temperature: 0,
       },
       messageStore,
@@ -212,7 +212,7 @@ describeIfApiKey('PubChat with Tool Calling', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
         temperature: 0,
       },
       messageStore,
@@ -269,7 +269,7 @@ describeIfApiKey('MemoryMessageStore', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
       },
       messageStore: store,
     })
@@ -303,7 +303,7 @@ describeIfApiKey('MemoryMessageStore', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
       },
       messageStore: store,
     })
@@ -388,7 +388,7 @@ describeIfApiKey('PubChat with VFS', () => {
       async exists(path: string): Promise<boolean> {
         return files.has(path) || dirs.has(path)
       },
-      async stat(path: string): Promise<VFSStat> {
+      async stat(path: string): Promise<VfsStat> {
         const now = new Date()
         if (files.has(path)) {
           return { size: files.get(path)!.length, isFile: true, isDirectory: false, createdAt: now, updatedAt: now }
@@ -430,7 +430,7 @@ describeIfApiKey('PubChat with VFS', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
       },
       messageStore: new MemoryMessageStore(),
       toolCalling: {
@@ -473,7 +473,7 @@ describeIfApiKey('PubChat with VFS', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
         temperature: 0,
       },
       messageStore: new MemoryMessageStore(),
@@ -504,7 +504,7 @@ describeIfApiKey('PubChat with VFS', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
         temperature: 0,
       },
       messageStore: new MemoryMessageStore(),
@@ -533,7 +533,7 @@ describeIfApiKey('PubChat with VFS', () => {
       llm: {
         apiKey: OPENROUTER_API_KEY!,
         baseUrl: OPENROUTER_BASE_URL,
-        model: 'openai/gpt-4o-mini',
+        model: 'google/gemini-2.5-flash',
         temperature: 0,
       },
       messageStore: new MemoryMessageStore(),
@@ -564,5 +564,184 @@ describeIfApiKey('PubChat with VFS', () => {
     // Should have done event
     const doneEvent = events.find(e => e.type === 'done')
     expect(doneEvent).toBeDefined()
+  })
+})
+
+describeIfApiKey('PubChat with Structured Output', () => {
+  it('should return structured JSON with json_schema response format', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+        responseFormat: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'PersonInfo',
+            description: 'Information about a person',
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'The person\'s name' },
+                age: { type: 'number', description: 'The person\'s age' },
+                occupation: { type: 'string', description: 'The person\'s job' }
+              },
+              required: ['name', 'age', 'occupation'],
+              additionalProperties: false
+            },
+            strict: true
+          }
+        }
+      },
+      messageStore,
+    })
+    
+    const { message } = await pubchat.chat(
+      'Extract information: John is a 30 year old software engineer.'
+    )
+    
+    expect(message).toBeDefined()
+    expect(message.blocks).toHaveLength(1)
+    
+    // Parse the JSON response
+    const content = message.blocks[0].content
+    const parsed = JSON.parse(content)
+    
+    expect(parsed.name.toLowerCase()).toContain('john')
+    expect(parsed.age).toBe(30)
+    expect(parsed.occupation.toLowerCase()).toContain('software')
+  })
+
+  it('should return valid JSON with json_object response format', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+        responseFormat: {
+          type: 'json_object'
+        }
+      },
+      messageStore,
+    })
+    
+    const { message } = await pubchat.chat(
+      'Return a JSON object with keys "greeting" and "language" for saying hello in French.'
+    )
+    
+    expect(message).toBeDefined()
+    
+    // Should be valid JSON
+    const content = message.blocks[0].content
+    const parsed = JSON.parse(content)
+    
+    expect(parsed).toHaveProperty('greeting')
+    expect(parsed).toHaveProperty('language')
+  })
+
+  it('should stream structured output tokens', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+        responseFormat: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'NumberList',
+            schema: {
+              type: 'object',
+              properties: {
+                numbers: { 
+                  type: 'array', 
+                  items: { type: 'number' },
+                  description: 'List of numbers'
+                },
+                sum: { type: 'number', description: 'Sum of the numbers' }
+              },
+              required: ['numbers', 'sum'],
+              additionalProperties: false
+            },
+            strict: true
+          }
+        }
+      },
+      messageStore,
+    })
+    
+    const tokens: string[] = []
+    let doneEvent: ChatStreamEvent | undefined
+    
+    for await (const event of pubchat.streamChat('List the numbers 1, 2, 3 and their sum.')) {
+      if (event.type === 'token') {
+        tokens.push(event.token)
+      } else if (event.type === 'done') {
+        doneEvent = event
+      }
+    }
+    
+    expect(tokens.length).toBeGreaterThan(0)
+    expect(doneEvent).toBeDefined()
+    
+    // Verify the streamed content is valid JSON
+    const fullContent = tokens.join('')
+    const parsed = JSON.parse(fullContent)
+    
+    expect(parsed.numbers).toEqual([1, 2, 3])
+    expect(parsed.sum).toBe(6)
+  })
+
+  it('should allow overriding responseFormat per request', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    // Create PubChat without responseFormat
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+      },
+      messageStore,
+    })
+    
+    // Override responseFormat in the chat call
+    const { message } = await pubchat.chat(
+      'Extract: Alice is 25 years old.',
+      undefined,
+      {
+        responseFormat: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'PersonAge',
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                age: { type: 'number' }
+              },
+              required: ['name', 'age'],
+              additionalProperties: false
+            },
+            strict: true
+          }
+        }
+      }
+    )
+    
+    const content = message.blocks[0].content
+    const parsed = JSON.parse(content)
+    
+    expect(parsed.name.toLowerCase()).toContain('alice')
+    expect(parsed.age).toBe(25)
   })
 })
