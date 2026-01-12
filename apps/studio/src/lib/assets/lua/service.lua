@@ -208,8 +208,13 @@ function ServiceRegistry.execute(identifier, inputs)
     end
     
     -- 使用 staticData 作为 self，通过冒号语法调用 impl
-    local self_ctx = spec.staticData or {}
-    local status, result = pcall(spec.impl, self_ctx, inputs)
+    local status, result
+    if spec.staticData ~= nil then
+        status, result = pcall(spec.impl, spec.staticData, inputs)
+    else
+        status, result = pcall(spec.impl, inputs)
+    end
+    
     if not status then
         return { _error = tostring(result) }
     end

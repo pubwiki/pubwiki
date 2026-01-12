@@ -586,17 +586,12 @@ export async function callService(
 		return { success: false, error: 'Loader not initialized' };
 	}
 	
-	// Serialize inputs to JSON
-	const inputsJson = JSON.stringify(inputs);
-	
+	console.log("[callService] invoked with inputs", inputs)
 	const result = await runtime.instance.run(`
 		local ServiceRegistry = require("core/service")
-		
-		local inputs = json.decode([[${inputsJson}]])
-		local outputs = ServiceRegistry.call("${identifier}", inputs)
-		
+		local outputs = ServiceRegistry.call(identifier, inputs)
 		return outputs
-	`);
+	`, { identifier, inputs });
 	
 	if (result.error) {
 		return { success: false, error: result.error };
@@ -633,38 +628,28 @@ export async function streamService(
 		throw new Error('Loader not initialized');
 	}
 	
-	// Serialize inputs to JSON
-	const inputsJson = JSON.stringify(inputs);
-	
-	// Run service and get iterator
-	const iter = runtime.instance.runIter(`
+	console.log("[streamService] invoked with inputs", inputs, await runtime.instance.run("return inputs:toJSON()", { inputs }))
+	// Use callback pattern: iterate in Lua and call JS callback for each value
+	const result = await runtime.instance.run(`
 		local ServiceRegistry = require("core/service")
-		local inputs = json.decode([[${inputsJson}]])
-		local iterator = ServiceRegistry.call("${identifier}", inputs)
-		-- If returned value is an iterator function, wrap it for Lua iteration
+		local iterator = ServiceRegistry.call(identifier, inputs)
+		
+		-- If returned value is an iterator/generator, iterate and call callback
 		if type(iterator) == "function" then
-			return function()
-				local value = iterator()
-				return value
+			for value in iterator do
+				if value == nil then break end
+				callback(value)
+			end
+		else
+			-- Single value, call callback once
+			if iterator ~= nil then
+				callback(iterator)
 			end
 		end
-		-- Otherwise wrap as single-value iterator
-		local called = false
-		return function()
-			if called then return nil end
-			called = true
-			return iterator
-		end
-	`);
+	`, { identifier, inputs, callback: on });
 	
-	for await (const values of iter) {
-		// Lua iterator returns array of values, we take the first one
-		const value = Array.isArray(values) && values.length > 0 ? values[0] : values;
-		// Stop iteration if value is null/undefined (end of stream)
-		if (value === null || value === undefined) {
-			break;
-		}
-		await on(value);
+	if (result.error) {
+		throw new Error(result.error);
 	}
 }
 

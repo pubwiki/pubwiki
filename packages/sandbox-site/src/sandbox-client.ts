@@ -12,6 +12,47 @@ import { RpcTarget } from '@pubwiki/sandbox-service'
 import type { ISandboxClient } from '@pubwiki/sandbox-client'
 
 /**
+ * Deep clone an object, converting functions to RpcStub instances
+ * 
+ * This is needed because structuredClone doesn't preserve functions,
+ * but we want users to be able to pass callbacks in inputs.
+ */
+function cloneWithRpcStubs<T>(value: T, seen = new WeakMap()): T {
+  // Primitives: return as-is
+  if (value === null || typeof value !== 'object' && typeof value !== 'function') {
+    return value
+  }
+  
+  // Functions: wrap in RpcStub
+  if (typeof value === 'function') {
+    return new RpcStub(value as (...args: unknown[]) => unknown) as T
+  }
+  
+  // Handle circular references
+  if (typeof value === 'object' && seen.has(value)) {
+    return seen.get(value)
+  }
+  
+  // Arrays
+  if (Array.isArray(value)) {
+    const result: unknown[] = []
+    seen.set(value, result)
+    for (const item of value) {
+      result.push(cloneWithRpcStubs(item, seen))
+    }
+    return result as T
+  }
+  
+  // Plain objects
+  const result: Record<string, unknown> = {}
+  seen.set(value as object, result)
+  for (const key of Object.keys(value as object)) {
+    result[key] = cloneWithRpcStubs((value as Record<string, unknown>)[key], seen)
+  }
+  return result as T
+}
+
+/**
  * Sandbox client implementation
  * 
  * Uses the RPC stub from bootstrap and provides a type-safe interface
@@ -71,12 +112,13 @@ export class SandboxClient implements ISandboxClient {
         },
         
         async stream(inputs, on) {
-          const input = structuredClone(inputs)
+          const input = cloneWithRpcStubs(inputs)
           // RPC call stream, passing the callback as RpcTarget
           // The stream method is guaranteed to exist for streaming services
           // This manual construction is required to avoid some serialization errors caused by
           // different js realms on different windows
           const callback = new RpcStub(on)
+          console.log("[SandboxClient] streaming service with input", input)
           await rpcService.stream!(input, callback)
         },
         
@@ -90,7 +132,7 @@ export class SandboxClient implements ISandboxClient {
         isStreaming: false,
         
         async call(inputs) {
-          const input = structuredClone(inputs)
+          const input = cloneWithRpcStubs(inputs)
           return await rpcService.call(input)
         },
         
