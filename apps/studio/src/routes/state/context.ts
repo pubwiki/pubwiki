@@ -12,7 +12,7 @@
 import { getContext, setContext } from 'svelte';
 import type { Node, Edge } from '@xyflow/svelte';
 import type { FlowNodeData } from '../types/flow';
-import type { StudioNodeData } from '../types';
+import type { StudioNodeData, NodeContent } from '../types';
 import type { NodeRef, SnapshotEdge } from '../version';
 
 // ============================================================================
@@ -24,7 +24,7 @@ import type { NodeRef, SnapshotEdge } from '../version';
  */
 export interface PreviewState {
 	/** Historical content (if different from current) */
-	content?: string;
+	content?: NodeContent;
 	/** Historical commit hash */
 	commit?: string;
 	/** Historical incoming edges (connections TO this node at time of snapshot) */

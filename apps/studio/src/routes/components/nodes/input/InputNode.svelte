@@ -124,10 +124,10 @@
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
 	
-	// displayBlocks: in preview mode use historical content, otherwise use current content.blocks
+	// displayBlocks: in preview mode use historical content.blocks, otherwise use current content.blocks
 	const displayBlocks = $derived<ContentBlock[]>(
-		isPreviewing && previewState?.content 
-			? [{ type: 'text', value: previewState.content }] // Preview content is string, wrap as text block
+		isPreviewing && previewState?.content && 'blocks' in previewState.content
+			? (previewState.content.blocks as ContentBlock[])
 			: nodeData?.content?.blocks ?? []
 	);
 
@@ -209,6 +209,28 @@
 		contentTags;
 		nodeData?.content?.mountpoints;
 		updateNodeInternals(id);
+	});
+
+	// Clean up orphan edges when Tags are deleted
+	$effect(() => {
+		// Get current valid Tag handle IDs (system tag is always valid)
+		const validTagHandleIds = new Set([
+			HandleId.SYSTEM_TAG,
+			...contentTags.map(name => createTagHandleId(name))
+		]);
+		
+		// Find edges targeting this node's Tag handles that no longer exist
+		const orphanEdges = allEdges.current.filter(edge => 
+			edge.target === id &&
+			isTagHandle(edge.targetHandle) &&
+			!validTagHandleIds.has(edge.targetHandle!)
+		);
+		
+		// Delete orphan edges
+		if (orphanEdges.length > 0) {
+			const orphanEdgeIds = new Set(orphanEdges.map(e => e.id));
+			ctx.updateEdges(edges => edges.filter(e => !orphanEdgeIds.has(e.id)));
+		}
 	});
 
 	// ============================================================================

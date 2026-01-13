@@ -161,7 +161,7 @@ export function getVersionHandler(nodeType: string): VersionHandler | undefined 
  */
 export interface PreviewState {
 	/** Historical content (if different from current) */
-	content?: string
+	content?: NodeContent
 	/** Historical commit hash */
 	commit?: string
 	/** Historical incoming edges (connections TO this node at time of snapshot) */

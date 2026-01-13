@@ -81,10 +81,9 @@ export function createPreviewController() {
 
 		const override = historicalTree.nodeOverrides.get(nodeId)
 		if (override) {
-			// Content is always a class instance with getText()
-			const displayContent = override.content.getText()
+			// Return the full content object for type-safe access in node components
 			return {
-				content: displayContent,
+				content: override.content,
 				commit: override.commit,
 				incomingEdges: historicalTree.historicalEdges
 					.filter(e => e.target === nodeId)

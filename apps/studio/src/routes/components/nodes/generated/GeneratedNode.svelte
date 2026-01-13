@@ -63,8 +63,12 @@
 	const blocks = $derived(nodeData?.content?.blocks || []);
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	// For preview, use string content; otherwise render blocks
-	const displayContent = $derived(isPreviewing ? previewState?.content : blocksToContent(blocks));
+	// For preview, use historical content blocks; otherwise render current blocks
+	const displayContent = $derived(
+		isPreviewing && previewState?.content && 'blocks' in previewState.content
+			? blocksToContent(previewState.content.blocks as MessageBlock[])
+			: blocksToContent(blocks)
+	);
 
 	// ============================================================================
 	// Event Handlers

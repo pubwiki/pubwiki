@@ -15,7 +15,7 @@
 	import { PromptContent, type PromptNodeData, type ContentBlock, getRefTagNamesFromBlocks } from '../../../types';
 	import { nodeStore } from '../../../persistence';
 	import { getStudioContext } from '../../../state';
-	import { getRefTagConnectionsFromSnapshotEdges } from '../../../graph';
+	import { getRefTagConnectionsFromSnapshotEdges, isRefTagHandle } from '../../../graph';
 	import { createRefTagHandleId } from '../../../graph';
 	import BaseNode from '../BaseNode.svelte';
 	import { RefTagEditor } from '../../editor';
@@ -51,10 +51,10 @@
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
 	
-	// displayBlocks: in preview mode use historical content, otherwise use current content.blocks
+	// displayBlocks: in preview mode use historical content.blocks, otherwise use current content.blocks
 	const displayBlocks = $derived<ContentBlock[]>(
-		isPreviewing && previewState?.content 
-			? [{ type: 'text', value: previewState.content }] // Preview content is string, wrap as text block
+		isPreviewing && previewState?.content && 'blocks' in previewState.content
+			? (previewState.content as PromptContent).blocks
 			: content?.blocks ?? []
 	);
 	
@@ -112,6 +112,25 @@
 		// Trigger update when reftags change so handles are registered
 		refTagNames;
 		updateNodeInternals(id);
+	});
+
+	// Clean up orphan edges when RefTags are deleted
+	$effect(() => {
+		// Get current valid RefTag handle IDs
+		const validHandleIds = new Set(refTagNames.map(name => createRefTagHandleId(name)));
+		
+		// Find edges targeting this node's RefTag handles that no longer exist
+		const orphanEdges = currentEdges.current.filter(edge => 
+			edge.target === id &&
+			isRefTagHandle(edge.targetHandle) &&
+			!validHandleIds.has(edge.targetHandle!)
+		);
+		
+		// Delete orphan edges
+		if (orphanEdges.length > 0) {
+			const orphanEdgeIds = new Set(orphanEdges.map(e => e.id));
+			ctx.updateEdges(edges => edges.filter(e => !orphanEdgeIds.has(e.id)));
+		}
 	});
 
 	// ============================================================================

@@ -21,6 +21,8 @@
 		$createTextNode as createTextNode,
 		$isTextNode as isTextNode,
 		$isParagraphNode as isParagraphNode,
+		$isLineBreakNode as isLineBreakNode,
+		$isTabNode as isTabNode,
 		type EditorState,
 		type LexicalEditor,
 	} from 'lexical';
@@ -184,6 +186,22 @@
 				for (const node of children) {
 					if (isRefTagNode(node)) {
 						blocks.push({ type: 'reftag', name: node.getRefName() });
+					} else if (isLineBreakNode(node)) {
+						// LineBreakNode represents \n within a paragraph
+						const last = blocks[blocks.length - 1];
+						if (last?.type === 'text') {
+							last.value += '\n';
+						} else {
+							blocks.push({ type: 'text', value: '\n' });
+						}
+					} else if (isTabNode(node)) {
+						// TabNode represents \t
+						const last = blocks[blocks.length - 1];
+						if (last?.type === 'text') {
+							last.value += '\t';
+						} else {
+							blocks.push({ type: 'text', value: '\t' });
+						}
 					} else if (isTextNode(node)) {
 						const text = node.getTextContent();
 						if (text) {
