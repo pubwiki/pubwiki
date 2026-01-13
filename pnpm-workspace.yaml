@@ -1,26 +1,26 @@
+packages:
+  - packages/types
+  - packages/vfs
+  - packages/bundler
+  - packages/chat
+  - packages/svelte-chat
+  - packages/svelte-chat/example
+  - packages/sandbox-host
+  - packages/sandbox-site
+  - packages/sandbox-service
+  - packages/sandbox-client
+  - packages/lua
+  - packages/db
+  - packages/api
+  - packages/ui
+  - apps/hub
+  - apps/studio
+  - services
+
+catalog:
+  '@types/node': ^22.19.5
+  svelte: ^5.46.1
+
 onlyBuiltDependencies:
   - esbuild
   - better-sqlite3
-
-catalog:
-  svelte: ^5.46.1
-  "@types/node": ^22.19.3
-
-packages:
-  - "packages/types"
-  - "packages/vfs"
-  - "packages/bundler"
-  - "packages/chat"
-  - "packages/svelte-chat"
-  - "packages/svelte-chat/example"
-  - "packages/sandbox-host"
-  - "packages/sandbox-site"
-  - "packages/sandbox-service"
-  - "packages/sandbox-client"
-  - "packages/lua"
-  - "packages/db"
-  - "packages/api"
-  - "packages/ui"
-  - "apps/hub"
-  - "apps/studio"
-  - "services"

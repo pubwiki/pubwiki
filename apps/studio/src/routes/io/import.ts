@@ -236,13 +236,8 @@ export async function convertArtifactToStudioGraph(
       }
 
       case 'INPUT': {
-        let parsedContent: InputContent;
-        try {
-          const json = JSON.parse(rawContent);
-          parsedContent = InputContent.fromJSON(json);
-        } catch {
-          parsedContent = new InputContent(rawContent, []);
-        }
+        const json = JSON.parse(rawContent);
+        const parsedContent = InputContent.fromJSON(json);
         const inputData: InputNodeData = {
           id: node.id,
           name: node.name || `Input ${index + 1}`,
@@ -267,7 +262,7 @@ export async function convertArtifactToStudioGraph(
           const json = JSON.parse(rawContent);
           parsedContent = PromptContent.fromJSON(json);
         } catch {
-          parsedContent = new PromptContent(rawContent);
+          parsedContent = PromptContent.fromText(rawContent);
         }
         const promptData: PromptNodeData = {
           id: node.id,

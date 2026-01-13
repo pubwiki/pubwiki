@@ -48,6 +48,10 @@ export {
   restoreContent as restoreContentFromJSON
 } from './content';
 
+// ContentBlock types (for structured reftag storage)
+export type { ContentBlock, TextBlock, RefTagBlock } from './content';
+export { blocksToText, getRefTagNamesFromBlocks } from './content';
+
 // Flow types (for SvelteFlow rendering layer)
 export type { FlowNodeData, FlowNode } from './flow';
 export { createFlowNode, getFlowNodeType } from './flow';

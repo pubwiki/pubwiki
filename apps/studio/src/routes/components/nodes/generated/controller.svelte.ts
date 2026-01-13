@@ -264,8 +264,8 @@ export async function regenerate(
 	
 	// If the input ref points to an old version, get it from nodeStore.getVersion
 	if (inputData && inputData.commit === genContent.inputRef.commit) {
-		// Current version matches the ref - use current content
-		inputContent = inputData.content.text;
+		// Current version matches the ref - use current content (getText handles blocks)
+		inputContent = inputData.content.getText();
 	} else {
 		// Different version - get from nodeStore (historical version)
 		const snapshot = await nodeStore.getVersion(genContent.inputRef.id, genContent.inputRef.commit);

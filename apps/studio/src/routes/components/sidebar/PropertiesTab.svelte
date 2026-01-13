@@ -4,12 +4,12 @@
 	 */
 	import type { Node } from '@xyflow/svelte';
 	import type { FlowNodeData } from '../../types/flow';
-	import type { PromptNodeData, InputNodeData, VFSNodeData } from '../../types';
+	import type { PromptNodeData, InputNodeData, VFSNodeData, ContentBlock } from '../../types';
 	import { nodeStore } from '../../persistence/node-store.svelte';
 	import { getStudioContext } from '../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { marked } from 'marked';
-	import RichTextArea from '../RichTextArea.svelte';
+	import { RefTagEditor } from '../editor';
 	import VFSPropertiesPanel from './VFSPropertiesPanel.svelte';
 	import { generate } from '../nodes/input/controller.svelte';
 	import { regenerate } from '../nodes/generated/controller.svelte';
@@ -63,16 +63,17 @@
 		return colors[color] || colors.gray;
 	}
 
-	// Content change handler for editable nodes
-	function handleContentChange(newValue: string) {
+	// Content block change handler for editable nodes (PROMPT and INPUT)
+	function handleBlocksChange(newBlocks: ContentBlock[]) {
 		if (!selectedNode || !selectedNodeData) return;
 		nodeStore.update(selectedNode.id, (nodeData) => {
+			if (nodeData.type === 'PROMPT') {
+				const promptData = nodeData as PromptNodeData;
+				return { ...promptData, content: promptData.content.withBlocks(newBlocks) };
+			}
 			if (nodeData.type === 'INPUT') {
 				const inputData = nodeData as InputNodeData;
-				return { ...inputData, content: inputData.content.withText(newValue) };
-			} else if (nodeData.type === 'PROMPT') {
-				const promptData = nodeData as PromptNodeData;
-				return { ...promptData, content: promptData.content.withText(newValue) };
+				return { ...inputData, content: inputData.content.withBlocks(newBlocks) };
 			}
 			return nodeData;
 		});
@@ -226,12 +227,22 @@
 
 					<!-- Content editor/viewer -->
 					<div class="rounded-lg border border-gray-200 min-h-48">
-						{#if isEditable}
+						{#if selectedNodeData?.type === 'PROMPT'}
 							<div class="properties-textarea">
-								<RichTextArea
-									value={displayContent}
+								<RefTagEditor
+									value={(selectedNodeData as PromptNodeData).content.blocks}
 									placeholder={m.studio_properties_enter_content()}
-									onchange={handleContentChange}
+									onchange={handleBlocksChange}
+									autoHeight
+								/>
+							</div>
+						{:else if selectedNodeData?.type === 'INPUT'}
+							<div class="properties-textarea">
+								<RefTagEditor
+									value={(selectedNodeData as InputNodeData).content.blocks}
+									placeholder={m.studio_properties_enter_content()}
+									onchange={handleBlocksChange}
+									autoHeight
 								/>
 							</div>
 						{:else if selectedNodeData?.type === 'GENERATED'}

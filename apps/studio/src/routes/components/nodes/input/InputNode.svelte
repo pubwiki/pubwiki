@@ -27,12 +27,13 @@
 		getMountpointId 
 	} from '../../../graph';
 	import { 
-		getInputTags, 
+		getInputTagsFromBlocks, 
 		getInputTagConnectionsFromSnapshotEdges, 
 		getMountpointConnectionsFromSnapshotEdges 
 	} from '../../../graph';
 	import BaseNode from '../BaseNode.svelte';
-	import RichTextArea from '../../RichTextArea.svelte';
+	import { RefTagEditor } from '../../editor';
+	import type { ContentBlock } from '../../editor';
 	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
 	import { 
 		getEditingMountpoint, 
@@ -122,9 +123,15 @@
 
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	const displayContent = $derived(previewState?.content ?? nodeData?.content?.text ?? '');
+	
+	// displayBlocks: in preview mode use historical content, otherwise use current content.blocks
+	const displayBlocks = $derived<ContentBlock[]>(
+		isPreviewing && previewState?.content 
+			? [{ type: 'text', value: previewState.content }] // Preview content is string, wrap as text block
+			: nodeData?.content?.blocks ?? []
+	);
 
-	const contentTags = $derived(getInputTags(nodeData?.content?.text ?? ''));
+	const contentTags = $derived(getInputTagsFromBlocks(nodeData?.content?.blocks ?? []));
 
 	const tagConnections = $derived.by(() => {
 		if (previewState?.incomingEdges) {
@@ -218,12 +225,12 @@
 		}
 	}
 
-	function handleContentChange(newValue: string) {
+	function handleContentChange(newBlocks: ContentBlock[]) {
 		ctx.updateNodeData(id, (data) => {
 			const inputData = data as InputNodeData;
 			return {
 				...inputData,
-				content: inputData.content.withText(newValue)
+				content: inputData.content.withBlocks(newBlocks)
 			};
 		});
 	}
@@ -340,8 +347,8 @@
 	{/snippet}
 
 	{#snippet children()}
-		<RichTextArea
-			value={displayContent}
+		<RefTagEditor
+			value={displayBlocks}
 			readonly={isPreviewing}
 			placeholder={m.studio_node_input_placeholder()}
 			class={isPreviewing ? 'bg-amber-50/30' : ''}

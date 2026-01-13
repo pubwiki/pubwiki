@@ -63,7 +63,11 @@ export {
   resolvePromptContent,
   resolvePromptContentFromRefs,
   resolveInputContent,
-  getInputTags,
+  getInputTagsFromBlocks,
+  // New ContentBlock support
+  getRefTagNamesFromBlocks,
+  resolveContentBlocks,
+  blocksToText,
   type ParsedRefTag,
   type ParsedMountpoint,
   type ResolvedPrompt

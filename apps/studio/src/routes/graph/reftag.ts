@@ -343,7 +343,7 @@ export function resolvePromptContent(
   }
   
   const promptData = node.data as PromptNodeData;
-  let content = promptData.content.text;
+  const blocks = promptData.content.blocks;
   
   // Add this node's ref
   promptRefs.push({ id: nodeId, commit: promptData.commit });
@@ -353,28 +353,28 @@ export function resolvePromptContent(
   
   // No connections - return content as-is
   if (connections.size === 0) {
-    return { content, allPromptRefs: promptRefs };
+    return { content: promptData.content.getText(), allPromptRefs: promptRefs };
   }
   
-  // Parse reftags and replace from end to start to preserve positions
-  const reftags = parseRefTags(content);
-  
-  // Sort by position descending (replace from end first)
-  reftags.sort((a, b) => b.start - a.start);
-  
-  for (const reftag of reftags) {
-    const connectedNodeId = connections.get(reftag.name);
-    
-    if (connectedNodeId) {
-      // Recursively resolve the connected prompt
-      const resolved = resolvePromptContent(connectedNodeId, nodes, edges, visited, promptRefs);
-      // Replace the reftag with resolved content
-      content = content.slice(0, reftag.start) + resolved.content + content.slice(reftag.end);
+  // Resolve blocks by replacing reftags with connected content
+  let resolvedContent = '';
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      resolvedContent += block.value;
+    } else if (block.type === 'reftag') {
+      const connectedNodeId = connections.get(block.name);
+      if (connectedNodeId) {
+        // Recursively resolve the connected prompt
+        const resolved = resolvePromptContent(connectedNodeId, nodes, edges, visited, promptRefs);
+        resolvedContent += resolved.content;
+      } else {
+        // If not connected, keep the @name format
+        resolvedContent += `@${block.name}`;
+      }
     }
-    // If not connected, leave the reftag as-is
   }
   
-  return { content, allPromptRefs: promptRefs };
+  return { content: resolvedContent, allPromptRefs: promptRefs };
 }
 
 /**
@@ -402,17 +402,18 @@ export async function resolvePromptContentFromRefs(
   visited.add(nodeId);
   
   // Find the content for this ref
-  let content: string;
+  let blocks: ContentBlock[] | null = null;
+  let textContent: string = '';
   const nodeData = nodeStore.get(nodeId);
   
   if (nodeData && nodeData.commit === nodeCommit) {
-    // Current version matches - extract text from content
+    // Current version matches - extract blocks/text from content
     if (nodeData.type === 'PROMPT') {
-      content = (nodeData as PromptNodeData).content.text;
+      blocks = (nodeData as PromptNodeData).content.blocks;
     } else if (nodeData.type === 'INPUT') {
-      content = (nodeData as InputNodeData).content.text;
+      blocks = (nodeData as InputNodeData).content.blocks;
     } else {
-      content = '';
+      textContent = '';
     }
   } else {
     // Get from nodeStore (historical version)
@@ -421,18 +422,54 @@ export async function resolvePromptContentFromRefs(
       return `[Missing snapshot: ${nodeId}:${nodeCommit.slice(0, 7)}]`;
     }
     // Content is now a class instance with getText() method
-    content = snapshot.content.getText();
+    textContent = snapshot.content.getText();
   }
   
   // Get reftag connections (using current edges since we don't store edge history)
   const connections = getRefTagConnections(nodeId, edges);
   
+  // If we have blocks (PROMPT node), resolve using blocks
+  if (blocks !== null) {
+    if (connections.size === 0) {
+      return blocksToTextLocal(blocks);
+    }
+    
+    let resolvedContent = '';
+    for (const block of blocks) {
+      if (block.type === 'text') {
+        resolvedContent += block.value;
+      } else if (block.type === 'reftag') {
+        const connectedNodeId = connections.get(block.name);
+        if (connectedNodeId) {
+          const ref = allRefs.find(r => r.id === connectedNodeId);
+          if (ref) {
+            const resolved = await resolvePromptContentFromRefs(
+              connectedNodeId,
+              ref.commit,
+              nodes,
+              edges,
+              allRefs,
+              visited
+            );
+            resolvedContent += resolved;
+          } else {
+            resolvedContent += `@${block.name}`;
+          }
+        } else {
+          resolvedContent += `@${block.name}`;
+        }
+      }
+    }
+    return resolvedContent;
+  }
+  
+  // For non-PROMPT nodes or historical versions, use text-based parsing
   if (connections.size === 0) {
-    return content;
+    return textContent;
   }
   
   // Parse and replace reftags
-  const reftags = parseRefTags(content);
+  const reftags = parseRefTags(textContent);
   reftags.sort((a, b) => b.start - a.start);
   
   for (const reftag of reftags) {
@@ -450,12 +487,19 @@ export async function resolvePromptContentFromRefs(
           allRefs,
           visited
         );
-        content = content.slice(0, reftag.start) + resolvedContent + content.slice(reftag.end);
+        textContent = textContent.slice(0, reftag.start) + resolvedContent + textContent.slice(reftag.end);
       }
     }
   }
   
-  return content;
+  return textContent;
+}
+
+// Helper function for local use
+function blocksToTextLocal(blocks: ContentBlock[]): string {
+  return blocks.map(block => 
+    block.type === 'text' ? block.value : `@${block.name}`
+  ).join('');
 }
 
 // ============================================================================
@@ -485,7 +529,7 @@ export function resolveInputContent(
   }
   
   const inputData = node.data as InputNodeData;
-  let content = inputData.content.text;
+  let content = blocksToText(inputData.content.blocks);
   
   // Get tag connections for this input node
   const tagConnections = getInputTagConnections(nodeId, edges);
@@ -514,11 +558,63 @@ export function resolveInputContent(
   return { content, allPromptRefs: promptRefs };
 }
 
+// ============================================================================
+// ContentBlock Support
+// ============================================================================
+
+import type { ContentBlock } from '../components/editor';
+
 /**
- * Get all tag names from input content (excluding 'system' as it's always present)
+ * Get unique reftag names from ContentBlock array
+ * This is the new preferred method that doesn't rely on regex parsing
+ */
+export function getRefTagNamesFromBlocks(blocks: ContentBlock[]): string[] {
+  const names = blocks
+    .filter((b): b is { type: 'reftag'; name: string } => b.type === 'reftag')
+    .map(b => b.name);
+  return [...new Set(names)];
+}
+
+/**
+ * Get all tag names from input content blocks (excluding 'system' as it's always present)
  * Used by InputNode component to determine which prompt handles to show
  */
-export function getInputTags(content: string): string[] {
-  // Get all unique tags from content, excluding 'system' as it's handled separately
-  return getUniqueRefTagNames(content).filter(name => name !== 'system');
+export function getInputTagsFromBlocks(blocks: ContentBlock[]): string[] {
+  return getRefTagNamesFromBlocks(blocks).filter(name => name !== 'system');
+}
+
+/**
+ * Resolve content blocks by substituting reftags with connected prompt content.
+ * This is the new version that works with structured ContentBlock[] format.
+ */
+export function resolveContentBlocks(
+  blocks: ContentBlock[],
+  connections: Map<string, string>,
+  resolver: (nodeId: string) => string
+): string {
+  return blocks.map(block => {
+    if (block.type === 'text') {
+      return block.value;
+    } else {
+      const connectedNodeId = connections.get(block.name);
+      if (connectedNodeId) {
+        return resolver(connectedNodeId);
+      }
+      // If not connected, preserve original @name format
+      return `@${block.name}`;
+    }
+  }).join('');
+}
+
+/**
+ * Convert ContentBlock[] to plain text
+ */
+export function blocksToText(blocks: ContentBlock[]): string {
+  return blocks.map(block => {
+    if (block.type === 'text') {
+      return block.value;
+    } else {
+      return `@${block.name}`;
+    }
+  }).join('');
 }

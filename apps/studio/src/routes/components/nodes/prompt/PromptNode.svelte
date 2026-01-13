@@ -3,7 +3,7 @@
 	 * PromptNode - Prompt/system prompt node type
 	 * 
 	 * Features:
-	 * - Editable rich text content
+	 * - Editable rich text content with Lexical editor
 	 * - RefTag handles for connecting to other nodes
 	 * - Version history support
 	 * 
@@ -12,13 +12,13 @@
 	import { Handle, Position, useUpdateNodeInternals, useEdges } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { FlowNodeData } from '../../../types/flow';
-	import { PromptContent, type PromptNodeData } from '../../../types';
+	import { PromptContent, type PromptNodeData, type ContentBlock, getRefTagNamesFromBlocks } from '../../../types';
 	import { nodeStore } from '../../../persistence';
 	import { getStudioContext } from '../../../state';
-	import { getUniqueRefTagNames, getRefTagConnectionsFromSnapshotEdges } from '../../../graph';
+	import { getRefTagConnectionsFromSnapshotEdges } from '../../../graph';
 	import { createRefTagHandleId } from '../../../graph';
 	import BaseNode from '../BaseNode.svelte';
-	import RichTextArea from '../../RichTextArea.svelte';
+	import { RefTagEditor } from '../../editor';
 	import TaggedHandlePanel from '../TaggedHandlePanel.svelte';
 	import type { TaggedHandle } from '../TaggedHandlePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -50,14 +50,31 @@
 	// Preview state
 	const previewState = $derived(ctx.getPreviewState(id));
 	const isPreviewing = $derived(!!previewState?.content);
-	// displayContent: in preview mode use historical content (already extracted as string), otherwise use current content.text
-	const displayContent = $derived(isPreviewing && previewState?.content 
-		? previewState.content
-		: content?.text ?? ''
+	
+	// displayBlocks: in preview mode use historical content, otherwise use current content.blocks
+	const displayBlocks = $derived<ContentBlock[]>(
+		isPreviewing && previewState?.content 
+			? [{ type: 'text', value: previewState.content }] // Preview content is string, wrap as text block
+			: content?.blocks ?? []
 	);
 	
-	// RefTag slots - use displayContent for preview mode
-	const refTagNames = $derived(getUniqueRefTagNames(displayContent));
+	// RefTag slots - extract from blocks
+	const refTagNames = $derived(getRefTagNamesFromBlocks(displayBlocks));
+	
+	// Collect all existing reftag names for autocomplete suggestions
+	const allRefTagSuggestions = $derived.by(() => {
+		const names = new Set<string>();
+		for (const node of nodeStore.getAll()) {
+			if (node.type === 'PROMPT' && node.content instanceof PromptContent) {
+				for (const block of node.content.blocks) {
+					if (block.type === 'reftag') {
+						names.add(block.name);
+					}
+				}
+			}
+		}
+		return [...names];
+	});
 	
 	// Get reftag connections
 	const refTagConnections = $derived.by(() => {
@@ -111,12 +128,12 @@
 		}
 	}
 
-	function handleContentChange(newValue: string) {
+	function handleContentChange(newBlocks: ContentBlock[]) {
 		ctx.updateNodeData(id, (data) => {
 			const promptData = data as PromptNodeData;
 			return {
 				...promptData,
-				content: promptData.content.withText(newValue)
+				content: promptData.content.withBlocks(newBlocks)
 			};
 		});
 	}
@@ -137,11 +154,12 @@
 	{/snippet}
 
 	{#snippet children()}
-		<RichTextArea
-			value={displayContent}
+		<RefTagEditor
+			value={displayBlocks}
 			readonly={isPreviewing}
 			placeholder={m.studio_node_enter_prompt()}
 			class={isPreviewing ? 'bg-amber-50/30' : ''}
+			suggestions={allRefTagSuggestions}
 			onchange={handleContentChange}
 			onfocus={handleFocus}
 			onblur={handleBlur}

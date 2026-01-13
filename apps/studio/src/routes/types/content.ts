@@ -54,47 +54,48 @@ export interface NodeContent {
 
 /**
  * Input node content - user input that triggers generation
+ * Uses ContentBlock[] for structured storage (same as PromptContent)
  */
 export class InputContent implements NodeContent {
   constructor(
-    public text: string = '',
+    public blocks: ContentBlock[] = [],
     public mountpoints: Mountpoint[] = []
   ) {}
 
   getText(): string {
-    return this.text
+    return blocksToText(this.blocks)
   }
 
   serialize(): string {
-    return this.text
+    return blocksToText(this.blocks)
   }
 
   clone(): InputContent {
     return new InputContent(
-      this.text,
+      structuredClone(this.blocks),
       this.mountpoints.map(mp => ({ ...mp }))
     )
   }
 
-  /** Create a copy with updated text */
-  withText(text: string): InputContent {
-    return new InputContent(text, this.mountpoints.map(mp => ({ ...mp })))
+  /** Create a copy with updated blocks */
+  withBlocks(blocks: ContentBlock[]): InputContent {
+    return new InputContent(blocks, this.mountpoints.map(mp => ({ ...mp })))
   }
 
   /** Create a copy with updated mountpoints */
   withMountpoints(mountpoints: Mountpoint[]): InputContent {
-    return new InputContent(this.text, mountpoints)
+    return new InputContent(this.blocks, mountpoints)
   }
 
   /** Create a copy with a new mountpoint added */
   addMountpoint(mountpoint: Mountpoint): InputContent {
-    return new InputContent(this.text, [...this.mountpoints, mountpoint])
+    return new InputContent(structuredClone(this.blocks), [...this.mountpoints, mountpoint])
   }
 
   /** Create a copy with a mountpoint removed */
   removeMountpoint(mountpointId: string): InputContent {
     return new InputContent(
-      this.text, 
+      structuredClone(this.blocks), 
       this.mountpoints.filter(mp => mp.id !== mountpointId)
     )
   }
@@ -102,7 +103,7 @@ export class InputContent implements NodeContent {
   /** Create a copy with a mountpoint's path updated */
   updateMountpointPath(mountpointId: string, newPath: string): InputContent {
     return new InputContent(
-      this.text,
+      structuredClone(this.blocks),
       this.mountpoints.map(mp => 
         mp.id === mountpointId ? { ...mp, path: newPath } : mp
       )
@@ -110,43 +111,103 @@ export class InputContent implements NodeContent {
   }
 
   toJSON() {
-    return { text: this.text, mountpoints: this.mountpoints }
+    return { blocks: this.blocks, mountpoints: this.mountpoints }
   }
 
-  static fromJSON(data: { text?: string; mountpoints?: Mountpoint[] }): InputContent {
-    return new InputContent(data.text ?? '', data.mountpoints ?? [])
+  static fromJSON(data: { blocks: ContentBlock[]; mountpoints?: Mountpoint[] }): InputContent {
+    return new InputContent(data.blocks ?? [], data.mountpoints ?? [])
   }
+}
+
+// ============================================================================
+// ContentBlock Types (for structured reftag storage)
+// ============================================================================
+
+/**
+ * A text block containing plain text
+ */
+export interface TextBlock {
+  type: 'text'
+  value: string
+}
+
+/**
+ * A reftag block representing an @reference
+ */
+export interface RefTagBlock {
+  type: 'reftag'
+  name: string
+}
+
+/**
+ * Union type for all content blocks
+ */
+export type ContentBlock = TextBlock | RefTagBlock
+
+/**
+ * Convert ContentBlock array to plain text
+ */
+export function blocksToText(blocks: ContentBlock[]): string {
+  return blocks.map(block => {
+    if (block.type === 'text') {
+      return block.value
+    } else {
+      return `@${block.name}`
+    }
+  }).join('')
+}
+
+/**
+ * Extract unique reftag names from blocks
+ */
+export function getRefTagNamesFromBlocks(blocks: ContentBlock[]): string[] {
+  const names = blocks
+    .filter((b): b is RefTagBlock => b.type === 'reftag')
+    .map(b => b.name)
+  return [...new Set(names)]
 }
 
 /**
  * Prompt node content - user-edited prompts/system prompts
+ * Uses ContentBlock[] for structured storage to avoid @ character conflicts
  */
 export class PromptContent implements NodeContent {
-  constructor(public text: string = '') {}
+  constructor(public blocks: ContentBlock[] = []) {}
 
   getText(): string {
-    return this.text
+    return blocksToText(this.blocks)
   }
 
   serialize(): string {
-    return this.text
+    return blocksToText(this.blocks)
   }
 
   clone(): PromptContent {
-    return new PromptContent(this.text)
+    return new PromptContent(structuredClone(this.blocks))
   }
 
-  /** Create a copy with updated text */
-  withText(text: string): PromptContent {
-    return new PromptContent(text)
+  /** Create a copy with updated blocks */
+  withBlocks(blocks: ContentBlock[]): PromptContent {
+    return new PromptContent(blocks)
   }
 
   toJSON() {
-    return { text: this.text }
+    return { blocks: this.blocks }
   }
 
-  static fromJSON(data: { text?: string }): PromptContent {
-    return new PromptContent(data.text ?? '')
+  static fromJSON(data: { blocks: ContentBlock[] }): PromptContent {
+    return new PromptContent(data.blocks ?? [])
+  }
+
+  /**
+   * Create PromptContent from plain text.
+   * Converts the text to a single text block.
+   */
+  static fromText(text: string): PromptContent {
+    if (!text) {
+      return new PromptContent([])
+    }
+    return new PromptContent([{ type: 'text', value: text }])
   }
 }
 
@@ -361,9 +422,9 @@ export function restoreContent(type: NodeType, data: unknown): NodeContent {
   const json = data as Record<string, unknown>
   switch (type) {
     case 'INPUT':
-      return InputContent.fromJSON(json as { text?: string; mountpoints?: Mountpoint[] })
+      return InputContent.fromJSON(json as { blocks: ContentBlock[]; mountpoints?: Mountpoint[] })
     case 'PROMPT':
-      return PromptContent.fromJSON(json as { text?: string })
+      return PromptContent.fromJSON(json as { blocks: ContentBlock[] })
     case 'GENERATED':
       return GeneratedContent.fromJSON(json as {
         blocks?: MessageBlock[]

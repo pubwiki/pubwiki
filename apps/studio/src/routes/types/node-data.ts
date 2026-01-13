@@ -169,6 +169,8 @@ export async function createInputNodeData(
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash(text)
+  // Convert text to blocks format
+  const blocks = text ? [{ type: 'text' as const, value: text }] : []
   return {
     id,
     name,
@@ -176,7 +178,7 @@ export async function createInputNodeData(
     commit,
     snapshotRefs: [],
     parents,
-    content: new InputContent(text, mountpoints)
+    content: new InputContent(blocks, mountpoints)
   }
 }
 
@@ -197,7 +199,7 @@ export async function createPromptNodeData(
     commit,
     snapshotRefs: [],
     parents,
-    content: new PromptContent(text)
+    content: PromptContent.fromText(text)
   }
 }
 
