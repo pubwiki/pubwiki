@@ -306,31 +306,54 @@ export interface GenerationCallbacks {
 }
 
 /**
+ * Settings required for generation - matches SettingsStore interface
+ */
+export interface GenerationSettings {
+	api: {
+		apiKey: string;
+		selectedModel: string;
+	};
+	effectiveBaseUrl: string;
+}
+
+/**
  * Generate from an input node
  * This handles the full generation flow including:
+ * - Reading node's generationConfig and merging with global settings
  * - Finding connected VFS nodes and setting up mounts
  * - Preparing snapshots and refs
  * - Creating the generated node
  * - Streaming the response
  * 
- * After layer separation:
- * - Uses FlowNodeData for flow layer
- * - Uses nodeStore for business data
- * 
- * @param config - LLM configuration (apiKey, model, baseUrl)
+ * @param inputNodeId - The ID of the input node to generate from
+ * @param nodes - Current flow nodes
+ * @param edges - Current flow edges
+ * @param settings - Global settings (from SettingsStore)
+ * @param callbacks - Callbacks for updating state
  * @returns The new generated node, or null if generation cannot proceed
  */
 export async function generate(
-	config: GenerationConfig,
 	inputNodeId: string,
 	nodes: Node<FlowNodeData>[],
 	edges: Edge[],
+	settings: GenerationSettings,
 	callbacks: GenerationCallbacks
 ): Promise<Node<FlowNodeData> | null> {
-	const inputData = nodeStore.get(inputNodeId);
+	// Get node data from nodeStore
+	const inputData = nodeStore.get(inputNodeId) as InputNodeData | undefined;
 	if (!inputData || inputData.type !== 'INPUT' || !inputData.content) {
 		return null;
 	}
+	
+	// Build config: node-level settings override global settings
+	const nodeConfig = inputData.content.generationConfig;
+	const config: GenerationConfig = {
+		apiKey: settings.api.apiKey,
+		model: nodeConfig?.model || settings.api.selectedModel,
+		baseUrl: settings.effectiveBaseUrl,
+		temperature: nodeConfig?.temperature,
+		schema: nodeConfig?.schema
+	};
 
 	// Create PubChat on-demand so user settings changes take effect immediately
 	const pubchat = createPubChat(config);

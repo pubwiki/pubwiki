@@ -241,12 +241,7 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		const config = {
-			apiKey: settings.api.apiKey,
-			model: settings.api.selectedModel,
-			baseUrl: settings.effectiveBaseUrl
-		};
-		await generate(config, id, ctx.nodes, ctx.edges, callbacks);
+		await generate(id, ctx.nodes, ctx.edges, settings, callbacks);
 	}
 
 	function handleMountpointLabelChange(handleId: string, _oldLabel: string, newLabel: string, handleData?: Record<string, unknown>) {

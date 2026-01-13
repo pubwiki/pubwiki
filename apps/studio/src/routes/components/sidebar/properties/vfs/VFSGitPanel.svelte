@@ -4,8 +4,8 @@
 	 * Shows changed files, commit input, and commit history
 	 */
 	import { onDestroy } from 'svelte';
-	import type { VFSNodeData } from '../../types';
-	import { getNodeVfs, type VersionedVfs } from '../../vfs';
+	import type { VFSNodeData } from '../../../../types';
+	import { getNodeVfs, type VersionedVfs } from '../../../../vfs';
 	import type { VfsCommit } from '@pubwiki/vfs';
 	import * as m from '$lib/paraglide/messages';
 

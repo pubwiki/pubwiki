@@ -1,16 +1,15 @@
 <script lang="ts">
 	/**
 	 * PropertiesTab - Shows details and editor for the selected node
+	 * Delegates to type-specific property components
 	 */
 	import type { Node } from '@xyflow/svelte';
 	import type { FlowNodeData } from '../../types/flow';
-	import type { PromptNodeData, InputNodeData, VFSNodeData, ContentBlock } from '../../types';
+	import type { PromptNodeData, InputNodeData, VFSNodeData, GeneratedNodeData } from '../../types';
 	import { nodeStore } from '../../persistence/node-store.svelte';
 	import { getStudioContext } from '../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
-	import { marked } from 'marked';
-	import { RefTagEditor } from '../editor';
-	import VFSPropertiesPanel from './VFSPropertiesPanel.svelte';
+	import { InputProperties, PromptProperties, GeneratedProperties, DefaultProperties, VFSProperties } from './properties';
 	import { generate } from '../nodes/input/controller.svelte';
 	import { regenerate } from '../nodes/generated/controller.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -63,22 +62,6 @@
 		return colors[color] || colors.gray;
 	}
 
-	// Content block change handler for editable nodes (PROMPT and INPUT)
-	function handleBlocksChange(newBlocks: ContentBlock[]) {
-		if (!selectedNode || !selectedNodeData) return;
-		nodeStore.update(selectedNode.id, (nodeData) => {
-			if (nodeData.type === 'PROMPT') {
-				const promptData = nodeData as PromptNodeData;
-				return { ...promptData, content: promptData.content.withBlocks(newBlocks) };
-			}
-			if (nodeData.type === 'INPUT') {
-				const inputData = nodeData as InputNodeData;
-				return { ...inputData, content: inputData.content.withBlocks(newBlocks) };
-			}
-			return nodeData;
-		});
-	}
-
 	// Name change handler
 	function handleNameChange(e: Event) {
 		if (!selectedNode) return;
@@ -91,7 +74,8 @@
 
 	// Generation handlers
 	async function handleGenerate() {
-		if (!selectedNode) return;
+		if (!selectedNode || !selectedNodeData || selectedNodeData.type !== 'INPUT') return;
+		
 		const callbacks = {
 			updateNodeData: (nodeId: string, updater: (data: any) => any) => {
 				nodeStore.update(nodeId, updater);
@@ -99,12 +83,8 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		const config = {
-			apiKey: settings.api.apiKey,
-			model: settings.api.selectedModel,
-			baseUrl: settings.effectiveBaseUrl
-		};
-		await generate(config, selectedNode.id, ctx.nodes, ctx.edges, callbacks);
+		
+		await generate(selectedNode.id, ctx.nodes, ctx.edges, settings, callbacks);
 	}
 
 	async function handleRegenerate() {
@@ -123,17 +103,6 @@
 		};
 		await regenerate(config, selectedNode.id, ctx.nodes, ctx.edges, callbacks);
 	}
-
-	// Check if node is editable
-	const isEditable = $derived(
-		selectedNodeData && (selectedNodeData.type === 'PROMPT' || selectedNodeData.type === 'INPUT')
-	);
-
-	// Get display content (uses polymorphic getText() method)
-	const displayContent = $derived.by(() => {
-		if (!selectedNodeData) return '';
-		return selectedNodeData.content.getText();
-	});
 </script>
 
 <div class="h-full flex flex-col overflow-hidden">
@@ -188,81 +157,36 @@
 				<p class="text-xs text-gray-400">{info.description}</p>
 			</div>
 
-			<!-- Content area -->
+			<!-- Content area - delegated to type-specific components -->
 			<div class="p-4">
 				{#if selectedNodeData?.type === 'VFS'}
-					<!-- VFS File List -->
-					<VFSPropertiesPanel
+					<VFSProperties
 						nodeId={selectedNode.id}
 						data={selectedNodeData as VFSNodeData}
 						onOpenFile={(nodeId, filePath) => onOpenVfsFile?.(nodeId, filePath)}
 					/>
-				{:else}
-					<div class="flex items-center justify-between mb-2">
-						<span class="text-xs font-medium text-gray-500">{m.studio_properties_content()}</span>
-						
-						<!-- Action buttons based on type -->
-						{#if selectedNodeData?.type === 'INPUT'}
-							<button
-								class="px-2 py-1 text-xs font-medium bg-purple-500 hover:bg-purple-600 text-white rounded transition-colors flex items-center gap-1"
-								onclick={handleGenerate}
-							>
-								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-								</svg>
-								{m.studio_properties_generate()}
-							</button>
-						{:else if selectedNodeData?.type === 'GENERATED'}
-							<button
-								class="px-2 py-1 text-xs font-medium bg-green-500 hover:bg-green-600 text-white rounded transition-colors flex items-center gap-1"
-								onclick={handleRegenerate}
-							>
-								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-								</svg>
-								{m.studio_properties_regenerate()}
-							</button>
-						{/if}
-					</div>
-
-					<!-- Content editor/viewer -->
-					<div class="rounded-lg border border-gray-200 min-h-48">
-						{#if selectedNodeData?.type === 'PROMPT'}
-							<div class="properties-textarea">
-								<RefTagEditor
-									value={(selectedNodeData as PromptNodeData).content.blocks}
-									placeholder={m.studio_properties_enter_content()}
-									onchange={handleBlocksChange}
-									autoHeight
-								/>
-							</div>
-						{:else if selectedNodeData?.type === 'INPUT'}
-							<div class="properties-textarea">
-								<RefTagEditor
-									value={(selectedNodeData as InputNodeData).content.blocks}
-									placeholder={m.studio_properties_enter_content()}
-									onchange={handleBlocksChange}
-									autoHeight
-								/>
-							</div>
-						{:else if selectedNodeData?.type === 'GENERATED'}
-							<!-- Markdown rendered content for generated nodes -->
-							<div class="p-3 bg-green-50/30">
-								<div class="prose prose-sm max-w-none text-left select-text">
-									{@html marked.parse(displayContent || '')}
-								</div>
-							</div>
-						{:else}
-							<!-- Readonly display for other types -->
-							<div class="p-3 bg-gray-50 text-sm text-gray-600">
-								{#if displayContent}
-									<pre class="whitespace-pre-wrap font-mono text-xs">{displayContent}</pre>
-								{:else}
-									<span class="text-gray-400 italic">{m.studio_properties_no_content()}</span>
-								{/if}
-							</div>
-						{/if}
-					</div>
+				{:else if selectedNodeData?.type === 'INPUT'}
+					<InputProperties
+						nodeId={selectedNode.id}
+						data={selectedNodeData as InputNodeData}
+						onGenerate={handleGenerate}
+					/>
+				{:else if selectedNodeData?.type === 'PROMPT'}
+					<PromptProperties
+						nodeId={selectedNode.id}
+						data={selectedNodeData as PromptNodeData}
+					/>
+				{:else if selectedNodeData?.type === 'GENERATED'}
+					<GeneratedProperties
+						nodeId={selectedNode.id}
+						data={selectedNodeData as GeneratedNodeData}
+						onRegenerate={handleRegenerate}
+					/>
+				{:else if selectedNodeData}
+					<DefaultProperties
+						nodeId={selectedNode.id}
+						data={selectedNodeData}
+					/>
 				{/if}
 			</div>
 		</div>
@@ -280,31 +204,3 @@
 		{/if}
 	{/if}
 </div>
-
-<style>
-	.properties-textarea :global(.rich-text-area) {
-		min-height: 12rem;
-		max-height: none;
-		height: auto;
-		overflow: visible;
-	}
-
-	.properties-textarea :global(.backdrop) {
-		position: relative;
-		right: 0;
-		padding-right: 0.75rem;
-		min-height: 12rem;
-	}
-
-	.properties-textarea :global(.input) {
-		position: absolute;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		min-height: 12rem;
-		height: 100%;
-		overflow: hidden;
-		resize: none;
-	}
-</style>

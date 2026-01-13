@@ -3,9 +3,9 @@
 	 * VFSPropertiesPanel - File list and management for VFS nodes in sidebar
 	 */
 	import { onDestroy } from 'svelte';
-	import type { VFSNodeData } from '../../types';
-	import { getNodeVfs, type VersionedVfs } from '../../vfs';
-	import { getStudioContext } from '../../state';
+	import type { VFSNodeData } from '../../../../types';
+	import { getNodeVfs, type VersionedVfs } from '../../../../vfs';
+	import { getStudioContext } from '../../../../state';
 	import { FileTree, type FileItem, type FileOperations } from '@pubwiki/ui/components';
 	import VFSGitPanel from './VFSGitPanel.svelte';
 	import * as m from '$lib/paraglide/messages';

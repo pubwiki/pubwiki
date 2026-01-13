@@ -49,6 +49,23 @@ export interface NodeContent {
 }
 
 // ============================================================================
+// Input Generation Config
+// ============================================================================
+
+/**
+ * Generation configuration for Input nodes
+ * Allows per-node override of global generation settings
+ */
+export interface InputGenerationConfig {
+  /** Model to use for generation (empty = use global setting) */
+  model?: string
+  /** Temperature for generation (0-2) */
+  temperature?: number
+  /** JSON Schema for structured output */
+  schema?: string
+}
+
+// ============================================================================
 // Content Implementations
 // ============================================================================
 
@@ -59,7 +76,8 @@ export interface NodeContent {
 export class InputContent implements NodeContent {
   constructor(
     public blocks: ContentBlock[] = [],
-    public mountpoints: Mountpoint[] = []
+    public mountpoints: Mountpoint[] = [],
+    public generationConfig: InputGenerationConfig = {}
   ) {}
 
   getText(): string {
@@ -73,30 +91,41 @@ export class InputContent implements NodeContent {
   clone(): InputContent {
     return new InputContent(
       structuredClone(this.blocks),
-      this.mountpoints.map(mp => ({ ...mp }))
+      this.mountpoints.map(mp => ({ ...mp })),
+      { ...this.generationConfig }
     )
   }
 
   /** Create a copy with updated blocks */
   withBlocks(blocks: ContentBlock[]): InputContent {
-    return new InputContent(blocks, this.mountpoints.map(mp => ({ ...mp })))
+    return new InputContent(blocks, this.mountpoints.map(mp => ({ ...mp })), { ...this.generationConfig })
   }
 
   /** Create a copy with updated mountpoints */
   withMountpoints(mountpoints: Mountpoint[]): InputContent {
-    return new InputContent(this.blocks, mountpoints)
+    return new InputContent(this.blocks, mountpoints, { ...this.generationConfig })
+  }
+
+  /** Create a copy with updated generation config */
+  withGenerationConfig(config: Partial<InputGenerationConfig>): InputContent {
+    return new InputContent(
+      structuredClone(this.blocks),
+      this.mountpoints.map(mp => ({ ...mp })),
+      { ...this.generationConfig, ...config }
+    )
   }
 
   /** Create a copy with a new mountpoint added */
   addMountpoint(mountpoint: Mountpoint): InputContent {
-    return new InputContent(structuredClone(this.blocks), [...this.mountpoints, mountpoint])
+    return new InputContent(structuredClone(this.blocks), [...this.mountpoints, mountpoint], { ...this.generationConfig })
   }
 
   /** Create a copy with a mountpoint removed */
   removeMountpoint(mountpointId: string): InputContent {
     return new InputContent(
       structuredClone(this.blocks), 
-      this.mountpoints.filter(mp => mp.id !== mountpointId)
+      this.mountpoints.filter(mp => mp.id !== mountpointId),
+      { ...this.generationConfig }
     )
   }
 
@@ -106,16 +135,17 @@ export class InputContent implements NodeContent {
       structuredClone(this.blocks),
       this.mountpoints.map(mp => 
         mp.id === mountpointId ? { ...mp, path: newPath } : mp
-      )
+      ),
+      { ...this.generationConfig }
     )
   }
 
   toJSON() {
-    return { blocks: this.blocks, mountpoints: this.mountpoints }
+    return { blocks: this.blocks, mountpoints: this.mountpoints, generationConfig: this.generationConfig }
   }
 
-  static fromJSON(data: { blocks: ContentBlock[]; mountpoints?: Mountpoint[] }): InputContent {
-    return new InputContent(data.blocks ?? [], data.mountpoints ?? [])
+  static fromJSON(data: { blocks: ContentBlock[]; mountpoints?: Mountpoint[]; generationConfig?: InputGenerationConfig }): InputContent {
+    return new InputContent(data.blocks ?? [], data.mountpoints ?? [], data.generationConfig ?? {})
   }
 }
 

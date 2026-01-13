@@ -99,6 +99,10 @@ export interface GenerationConfig {
 	apiKey: string;
 	model: string;
 	baseUrl: string;
+	/** Temperature for generation (0-2), optional */
+	temperature?: number;
+	/** JSON Schema for structured output, optional */
+	schema?: string;
 }
 
 export interface StreamGenerationCallbacks {
@@ -189,8 +193,40 @@ export async function streamGeneration(
 			historyId = historyIds[historyIds.length - 1];
 		}
 
+		// Build override config for model, temperature and schema
+		const overrideConfig: {
+			model?: string;
+			temperature?: number;
+			responseFormat?: { type: 'json_schema'; json_schema: { name: string; schema: Record<string, unknown>; strict?: boolean } };
+		} = {};
+		
+		// Always pass model to ensure it overrides any default
+		if (config.model) {
+			overrideConfig.model = config.model;
+		}
+		
+		if (config.temperature !== undefined) {
+			overrideConfig.temperature = config.temperature;
+		}
+		
+		if (config.schema) {
+			try {
+				const schemaObj = JSON.parse(config.schema) as Record<string, unknown>;
+				overrideConfig.responseFormat = {
+					type: 'json_schema',
+					json_schema: {
+						name: 'structured_output',
+						schema: schemaObj,
+						strict: true
+					}
+				};
+			} catch (e) {
+				console.warn('Invalid JSON schema, ignoring:', e);
+			}
+		}
+
 		let accumulatedContent = '';
-		for await (const event of chat.streamChat(userContent, historyId)) {
+		for await (const event of chat.streamChat(userContent, historyId, overrideConfig)) {
 			if (event.type === 'token') {
 				accumulatedContent += event.token;
 				callbacks.onToken(nodeId, accumulatedContent);
