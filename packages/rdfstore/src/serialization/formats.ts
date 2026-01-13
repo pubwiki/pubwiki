@@ -1,21 +1,26 @@
 /**
- * Import/Export functionality for RDF triples
+ * Import/Export functionality for RDF quads
  * 
  * Supports multiple compact formats:
- * - JSON Lines (JSONL): One triple per line as JSON
- * - N-Triples: Standard RDF serialization format
+ * - JSON Lines (JSONL): One quad per line as JSON
+ * - N-Quads: Standard RDF serialization format (N-Triples extension)
  * - Compact JSON: Minified JSON array
  */
 
 import { DataFactory } from 'n3'
-import type { Triple, Operation, ObjectNode } from '../types.js'
-import { termKey } from '../utils/term.js'
+import type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph, NamedNode, Literal, BlankNode, DefaultGraph } from '@rdfjs/types'
+import type { Operation } from '../types.js'
+// termKey not currently used after compact json simplification
+// import { termKey, type GraphTerm } from '../utils/term.js'
 
-const { namedNode, literal, blankNode } = DataFactory
+const { namedNode, literal, blankNode, defaultGraph, quad } = DataFactory
+
+/** Serializable term types - subset of RDF.js terms we actually use */
+type SerializableTerm = NamedNode | Literal | BlankNode | DefaultGraph
 
 // ============ Format Types ============
 
-export type SerializationFormat = 'jsonl' | 'ntriples' | 'json' | 'compact-json'
+export type SerializationFormat = 'jsonl' | 'nquads' | 'json' | 'compact-json'
 
 export interface ExportOptions {
   /** Output format */
@@ -36,7 +41,7 @@ export interface ImportOptions {
 export interface ExportMetadata {
   version: string
   format: SerializationFormat
-  tripleCount: number
+  quadCount: number
   exportedAt: string
 }
 
@@ -45,7 +50,7 @@ export interface ExportMetadata {
 /**
  * Serialize a Term to JSON-friendly format
  */
-function termToJson(term: Triple['subject'] | Triple['predicate'] | Triple['object']): unknown {
+function termToJson(term: SerializableTerm): unknown {
   switch (term.termType) {
     case 'NamedNode':
       return { type: 'uri', value: term.value }
@@ -56,15 +61,17 @@ function termToJson(term: Triple['subject'] | Triple['predicate'] | Triple['obje
         return { type: 'literal', value: term.value, language: term.language }
       }
       return { type: 'literal', value: term.value, datatype: term.datatype.value }
+    case 'DefaultGraph':
+      return { type: 'defaultGraph' }
     default:
       return { type: 'unknown', value: String(term) }
   }
 }
 
 /**
- * Parse JSON to Term
+ * Parse JSON to Term (for object position)
  */
-function jsonToTerm(json: unknown): ObjectNode {
+function jsonToObject(json: unknown): Quad_Object {
   if (typeof json === 'object' && json !== null && 'type' in json) {
     const obj = json as { type: string; value: string; language?: string; datatype?: string }
     switch (obj.type) {
@@ -98,32 +105,56 @@ function jsonToTerm(json: unknown): ObjectNode {
   return literal(JSON.stringify(json), namedNode('http://www.w3.org/2001/XMLSchema#json'))
 }
 
+/**
+ * Parse JSON to graph term
+ */
+function jsonToGraph(json: unknown): Quad_Graph {
+  if (json === undefined || json === null) {
+    return defaultGraph()
+  }
+  if (typeof json === 'object' && 'type' in json) {
+    const obj = json as { type: string; value?: string }
+    if (obj.type === 'defaultGraph') return defaultGraph()
+    if (obj.type === 'uri' && obj.value) return namedNode(obj.value)
+    if (obj.type === 'bnode' && obj.value) return blankNode(obj.value)
+  }
+  if (typeof json === 'string') {
+    return namedNode(json)
+  }
+  return defaultGraph()
+}
+
 // ============ JSON Lines Format ============
 
 /**
- * Export triples to JSON Lines format (one JSON object per line)
+ * Export quads to JSON Lines format (one JSON object per line)
  * Very compact and streamable
  */
-export function exportToJsonl(triples: Triple[], includeMetadata = false): string {
+export function exportToJsonl(quads: Quad[], includeMetadata = false): string {
   const lines: string[] = []
   
   if (includeMetadata) {
     const meta: ExportMetadata = {
       version: '1.0',
       format: 'jsonl',
-      tripleCount: triples.length,
+      quadCount: quads.length,
       exportedAt: new Date().toISOString(),
     }
     lines.push(`#meta:${JSON.stringify(meta)}`)
   }
   
-  for (const triple of triples) {
+  for (const q of quads) {
     // Serialize with proper RDF.js type information
-    lines.push(JSON.stringify([
-      termToJson(triple.subject),
-      termToJson(triple.predicate),
-      termToJson(triple.object)
-    ]))
+    // Only include graph if not default graph
+    const arr = [
+      termToJson(q.subject as SerializableTerm),
+      termToJson(q.predicate as SerializableTerm),
+      termToJson(q.object as SerializableTerm)
+    ]
+    if (q.graph.termType !== 'DefaultGraph') {
+      arr.push(termToJson(q.graph as SerializableTerm))
+    }
+    lines.push(JSON.stringify(arr))
   }
   
   return lines.join('\n')
@@ -132,7 +163,7 @@ export function exportToJsonl(triples: Triple[], includeMetadata = false): strin
 /**
  * Parse subject from JSON (must be NamedNode or BlankNode)
  */
-function jsonToSubject(json: unknown): Triple['subject'] {
+function jsonToSubject(json: unknown): Quad_Subject {
   if (typeof json === 'object' && json !== null && 'type' in json) {
     const obj = json as { type: string; value: string }
     if (obj.type === 'uri') return namedNode(obj.value)
@@ -148,7 +179,7 @@ function jsonToSubject(json: unknown): Triple['subject'] {
 /**
  * Parse predicate from JSON (must be NamedNode)
  */
-function jsonToPredicate(json: unknown): Triple['predicate'] {
+function jsonToPredicate(json: unknown): Quad_Predicate {
   if (typeof json === 'object' && json !== null && 'type' in json) {
     const obj = json as { type: string; value: string }
     if (obj.type === 'uri') return namedNode(obj.value)
@@ -161,44 +192,46 @@ function jsonToPredicate(json: unknown): Triple['predicate'] {
 }
 
 /**
- * Import triples from JSON Lines format
+ * Import quads from JSON Lines format
  */
-export function importFromJsonl(data: string, skipInvalid = false): Triple[] {
+export function importFromJsonl(data: string, skipInvalid = false): Quad[] {
   const lines = data.split('\n').filter(line => line.trim() && !line.startsWith('#'))
-  const triples: Triple[] = []
+  const quads: Quad[] = []
   
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line)
       if (Array.isArray(parsed) && parsed.length >= 3) {
-        triples.push({
-          subject: jsonToSubject(parsed[0]),
-          predicate: jsonToPredicate(parsed[1]),
-          object: jsonToTerm(parsed[2]),
-        })
+        quads.push(quad(
+          jsonToSubject(parsed[0]),
+          jsonToPredicate(parsed[1]),
+          jsonToObject(parsed[2]),
+          parsed[3] !== undefined ? jsonToGraph(parsed[3]) : defaultGraph()
+        ))
       } else if (typeof parsed === 'object' && parsed.subject && parsed.predicate) {
-        triples.push({
-          subject: jsonToSubject(parsed.subject),
-          predicate: jsonToPredicate(parsed.predicate),
-          object: jsonToTerm(parsed.object),
-        })
+        quads.push(quad(
+          jsonToSubject(parsed.subject),
+          jsonToPredicate(parsed.predicate),
+          jsonToObject(parsed.object),
+          parsed.graph !== undefined ? jsonToGraph(parsed.graph) : defaultGraph()
+        ))
       } else if (!skipInvalid) {
-        throw new Error(`Invalid triple format: ${line}`)
+        throw new Error(`Invalid quad format: ${line}`)
       }
     } catch (e) {
       if (!skipInvalid) throw e
     }
   }
   
-  return triples
+  return quads
 }
 
-// ============ N-Triples Format ============
+// ============ N-Quads Format ============
 
 /**
- * Escape a string for N-Triples format
+ * Escape a string for N-Quads format
  */
-function escapeNTriples(str: string): string {
+function escapeNQuads(str: string): string {
   return str
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
@@ -208,9 +241,9 @@ function escapeNTriples(str: string): string {
 }
 
 /**
- * Unescape an N-Triples string
+ * Unescape an N-Quads string
  */
-function unescapeNTriples(str: string): string {
+function unescapeNQuads(str: string): string {
   return str
     .replace(/\\t/g, '\t')
     .replace(/\\r/g, '\r')
@@ -220,9 +253,9 @@ function unescapeNTriples(str: string): string {
 }
 
 /**
- * Convert an ObjectNode to N-Triples representation
+ * Convert an object term to N-Quads representation
  */
-function objectToNTriples(obj: ObjectNode): string {
+function objectToNQuads(obj: Quad_Object): string {
   switch (obj.termType) {
     case 'NamedNode':
       return `<${obj.value}>`
@@ -230,124 +263,215 @@ function objectToNTriples(obj: ObjectNode): string {
       return `_:${obj.value}`
     case 'Literal':
       if (obj.language) {
-        return `"${escapeNTriples(obj.value)}"@${obj.language}`
+        return `"${escapeNQuads(obj.value)}"@${obj.language}`
       }
       if (obj.datatype.value !== 'http://www.w3.org/2001/XMLSchema#string') {
-        return `"${escapeNTriples(obj.value)}"^^<${obj.datatype.value}>`
+        return `"${escapeNQuads(obj.value)}"^^<${obj.datatype.value}>`
       }
-      return `"${escapeNTriples(obj.value)}"`
+      return `"${escapeNQuads(obj.value)}"`
   }
+  return `"${escapeNQuads(String(obj))}"`
 }
 
 /**
- * Parse N-Triples object value
+ * Export quads to N-Quads format
  */
-function parseNTriplesObject(str: string): ObjectNode {
-  str = str.trim()
-  
-  // URI
-  if (str.startsWith('<') && str.endsWith('>')) {
-    return namedNode(str.slice(1, -1))
-  }
-  
-  // Blank node
-  if (str.startsWith('_:')) {
-    return blankNode(str.slice(2))
-  }
-  
-  // Typed literal
-  const typedMatch = str.match(/^"(.*)"\^\^<(.*)>$/)
-  if (typedMatch) {
-    const [, value, datatype] = typedMatch
-    return literal(unescapeNTriples(value), namedNode(datatype))
-  }
-  
-  // Language-tagged literal
-  const langMatch = str.match(/^"(.*)"@([a-z-]+)$/i)
-  if (langMatch) {
-    return literal(unescapeNTriples(langMatch[1]), langMatch[2])
-  }
-  
-  // Plain literal
-  const literalMatch = str.match(/^"(.*)"$/)
-  if (literalMatch) {
-    return literal(unescapeNTriples(literalMatch[1]))
-  }
-  
-  // Fallback: treat as literal
-  return literal(str)
-}
-
-/**
- * Export triples to N-Triples format
- */
-export function exportToNTriples(triples: Triple[]): string {
+export function exportToNQuads(quads: Quad[]): string {
   const lines: string[] = []
   
-  for (const triple of triples) {
-    const subject = triple.subject.termType === 'BlankNode' 
-      ? `_:${triple.subject.value}` 
-      : `<${triple.subject.value}>`
-    const predicate = `<${triple.predicate.value}>`
-    const object = objectToNTriples(triple.object)
-    lines.push(`${subject} ${predicate} ${object} .`)
+  for (const q of quads) {
+    const subject = q.subject.termType === 'BlankNode' 
+      ? `_:${q.subject.value}` 
+      : `<${q.subject.value}>`
+    const predicate = `<${q.predicate.value}>`
+    const object = objectToNQuads(q.object)
+    
+    // Include graph if not default graph
+    if (q.graph.termType !== 'DefaultGraph') {
+      const graph = q.graph.termType === 'BlankNode'
+        ? `_:${q.graph.value}`
+        : `<${q.graph.value}>`
+      lines.push(`${subject} ${predicate} ${object} ${graph} .`)
+    } else {
+      lines.push(`${subject} ${predicate} ${object} .`)
+    }
   }
   
   return lines.join('\n')
 }
 
 /**
- * Import triples from N-Triples format
+ * Import quads from N-Quads format (also accepts N-Triples)
  */
-export function importFromNTriples(data: string, skipInvalid = false): Triple[] {
+export function importFromNQuads(data: string, skipInvalid = false): Quad[] {
   const lines = data.split('\n').filter(line => line.trim() && !line.startsWith('#'))
-  const triples: Triple[] = []
-  
-  // N-Triples regex: <subject>|_:bnode <predicate> object .
-  const regex = /^(?:<([^>]+)>|_:(\S+))\s+<([^>]+)>\s+(.+)\s+\.$/
+  const quads: Quad[] = []
   
   for (const line of lines) {
     try {
-      const match = line.trim().match(regex)
-      if (match) {
-        const [, subjectUri, subjectBnode, predicateUri, objectStr] = match
-        triples.push({
-          subject: subjectUri ? namedNode(subjectUri) : blankNode(subjectBnode),
-          predicate: namedNode(predicateUri),
-          object: parseNTriplesObject(objectStr),
-        })
+      const parsed = parseNQuadsLine(line.trim())
+      if (parsed) {
+        quads.push(parsed)
       } else if (!skipInvalid) {
-        throw new Error(`Invalid N-Triples line: ${line}`)
+        throw new Error(`Invalid N-Quads line: ${line}`)
       }
     } catch (e) {
       if (!skipInvalid) throw e
     }
   }
   
-  return triples
+  return quads
+}
+
+/**
+ * Parse a single N-Quads line into a Quad
+ */
+function parseNQuadsLine(line: string): Quad | null {
+  // Must end with .
+  if (!line.endsWith('.')) return null
+  line = line.slice(0, -1).trim()
+  
+  let pos = 0
+  
+  // Parse subject (URI or blank node)
+  const subject = parseNQuadsTerm(line, pos)
+  if (!subject || (subject.term.termType !== 'NamedNode' && subject.term.termType !== 'BlankNode')) {
+    return null
+  }
+  pos = subject.end
+  
+  // Skip whitespace
+  while (pos < line.length && /\s/.test(line[pos])) pos++
+  
+  // Parse predicate (URI only)
+  const predicate = parseNQuadsTerm(line, pos)
+  if (!predicate || predicate.term.termType !== 'NamedNode') {
+    return null
+  }
+  pos = predicate.end
+  
+  // Skip whitespace
+  while (pos < line.length && /\s/.test(line[pos])) pos++
+  
+  // Parse object (URI, blank node, or literal)
+  const object = parseNQuadsTerm(line, pos)
+  if (!object) {
+    return null
+  }
+  pos = object.end
+  
+  // Skip whitespace
+  while (pos < line.length && /\s/.test(line[pos])) pos++
+  
+  // Parse optional graph (URI or blank node)
+  let graph: Quad_Graph = defaultGraph()
+  if (pos < line.length) {
+    const graphTerm = parseNQuadsTerm(line, pos)
+    if (graphTerm && (graphTerm.term.termType === 'NamedNode' || graphTerm.term.termType === 'BlankNode')) {
+      graph = graphTerm.term
+    }
+  }
+  
+  return quad(
+    subject.term as Quad_Subject,
+    predicate.term as Quad_Predicate,
+    object.term as Quad_Object,
+    graph
+  )
+}
+
+/**
+ * Parse a term from an N-Quads string starting at position
+ */
+function parseNQuadsTerm(str: string, start: number): { term: Quad_Subject | Quad_Object | Quad_Graph; end: number } | null {
+  const ch = str[start]
+  
+  // URI: <...>
+  if (ch === '<') {
+    const end = str.indexOf('>', start + 1)
+    if (end === -1) return null
+    return { term: namedNode(str.slice(start + 1, end)), end: end + 1 }
+  }
+  
+  // Blank node: _:...
+  if (str.slice(start, start + 2) === '_:') {
+    let end = start + 2
+    while (end < str.length && /\S/.test(str[end])) end++
+    return { term: blankNode(str.slice(start + 2, end)), end }
+  }
+  
+  // Literal: "..."
+  if (ch === '"') {
+    let end = start + 1
+    // Find closing quote, handling escapes
+    while (end < str.length) {
+      if (str[end] === '\\' && end + 1 < str.length) {
+        end += 2 // Skip escaped char
+      } else if (str[end] === '"') {
+        break
+      } else {
+        end++
+      }
+    }
+    if (end >= str.length) return null
+    
+    const value = unescapeNQuads(str.slice(start + 1, end))
+    end++ // Skip closing quote
+    
+    // Check for datatype ^^<uri>
+    if (str.slice(end, end + 2) === '^^') {
+      end += 2
+      if (str[end] === '<') {
+        const dtEnd = str.indexOf('>', end + 1)
+        if (dtEnd !== -1) {
+          const datatype = str.slice(end + 1, dtEnd)
+          return { term: literal(value, namedNode(datatype)), end: dtEnd + 1 }
+        }
+      }
+    }
+    
+    // Check for language tag @lang
+    if (str[end] === '@') {
+      end++
+      let langEnd = end
+      while (langEnd < str.length && /[a-zA-Z0-9-]/.test(str[langEnd])) langEnd++
+      return { term: literal(value, str.slice(end, langEnd)), end: langEnd }
+    }
+    
+    return { term: literal(value), end }
+  }
+  
+  return null
 }
 
 // ============ Compact JSON Format ============
 
 /**
  * Export to compact JSON format
- * Uses short keys and arrays for maximum compression
+ * Groups quads by subject, then by predicate
+ * Uses URI strings directly as keys for readability
+ * Format: { "subject-uri": { "predicate-uri": value-or-array } }
  */
-export function exportToCompactJson(triples: Triple[], pretty = false): string {
-  // Group by subject for better compression
+export function exportToCompactJson(quads: Quad[], pretty = false): string {
+  // Group by subject
   const bySubject = new Map<string, Map<string, unknown[]>>()
   
-  for (const triple of triples) {
-    const subjectKey = termKey(triple.subject)
+  for (const q of quads) {
+    // Use subject value directly as key
+    const subjectKey = q.subject.termType === 'BlankNode' 
+      ? `_:${q.subject.value}` 
+      : q.subject.value
+    
     if (!bySubject.has(subjectKey)) {
       bySubject.set(subjectKey, new Map())
     }
     const predicates = bySubject.get(subjectKey)!
-    const predicateKey = termKey(triple.predicate)
+    
+    const predicateKey = q.predicate.value
     if (!predicates.has(predicateKey)) {
       predicates.set(predicateKey, [])
     }
-    predicates.get(predicateKey)!.push(termToJson(triple.object))
+    predicates.get(predicateKey)!.push(termToJson(q.object as SerializableTerm))
   }
   
   // Convert to compact structure
@@ -365,90 +489,79 @@ export function exportToCompactJson(triples: Triple[], pretty = false): string {
 
 /**
  * Import from compact JSON format
+ * Supports both legacy termKey format and new URI format
  */
-export function importFromCompactJson(data: string): Triple[] {
+export function importFromCompactJson(data: string): Quad[] {
   const parsed = JSON.parse(data)
-  const triples: Triple[] = []
+  const quads: Quad[] = []
   
   // Check if it's the grouped format
   if (typeof parsed === 'object' && !Array.isArray(parsed)) {
-    for (const [subject, predicates] of Object.entries(parsed)) {
+    for (const [subjectKey, predicates] of Object.entries(parsed)) {
       if (typeof predicates === 'object' && predicates !== null) {
-        for (const [predicate, objects] of Object.entries(predicates as Record<string, unknown>)) {
+        // Parse subject - support both URI strings and blank nodes
+        const subject = subjectKey.startsWith('_:')
+          ? blankNode(subjectKey.slice(2))
+          : namedNode(subjectKey)
+        
+        for (const [predicateKey, objects] of Object.entries(predicates as Record<string, unknown>)) {
+          const predicate = namedNode(predicateKey)
           const objectArray = Array.isArray(objects) ? objects : [objects]
           for (const object of objectArray) {
-            // Parse the termKey-style keys back to nodes
-            triples.push({ 
-              subject: parseTermKey(subject) as Triple['subject'], 
-              predicate: parseTermKey(predicate) as Triple['predicate'], 
-              object: jsonToTerm(object)
-            })
+            quads.push(quad(
+              subject, 
+              predicate, 
+              jsonToObject(object),
+              defaultGraph()
+            ))
           }
         }
       }
     }
   }
   
-  return triples
-}
-
-/**
- * Parse a termKey back to a Term
- */
-function parseTermKey(key: string): ObjectNode {
-  if (key.startsWith('N:')) {
-    return namedNode(key.slice(2))
-  }
-  if (key.startsWith('B:')) {
-    return blankNode(key.slice(2))
-  }
-  if (key.startsWith('L:')) {
-    const rest = key.slice(2)
-    const langMatch = rest.match(/^(.*)@([a-z-]+)$/i)
-    if (langMatch) {
-      return literal(langMatch[1], langMatch[2])
-    }
-    const typeMatch = rest.match(/^(.*)\^\^(.*)$/)
-    if (typeMatch) {
-      return literal(typeMatch[1], namedNode(typeMatch[2]))
-    }
-    return literal(rest)
-  }
-  // Fallback for legacy format
-  return namedNode(key)
+  return quads
 }
 
 // ============ Standard JSON Array Format ============
 
 /**
- * Serialized triple format for JSON export
+ * Serialized quad format for JSON export
  */
-interface SerializedTriple {
+interface SerializedQuad {
   subject: unknown
   predicate: unknown
   object: unknown
+  graph?: unknown
 }
 
 /**
  * Export to standard JSON array format
  */
-export function exportToJson(triples: Triple[], options: { pretty?: boolean; includeMetadata?: boolean } = {}): string {
-  // Serialize triples with proper Term information
-  const serialized: SerializedTriple[] = triples.map(t => ({
-    subject: termToJson(t.subject),
-    predicate: termToJson(t.predicate),
-    object: termToJson(t.object),
-  }))
+export function exportToJson(quads: Quad[], options: { pretty?: boolean; includeMetadata?: boolean } = {}): string {
+  // Serialize quads with proper Term information
+  const serialized: SerializedQuad[] = quads.map(q => {
+    const result: SerializedQuad = {
+      subject: termToJson(q.subject as SerializableTerm),
+      predicate: termToJson(q.predicate as SerializableTerm),
+      object: termToJson(q.object as SerializableTerm),
+    }
+    // Only include graph if not default graph
+    if (q.graph.termType !== 'DefaultGraph') {
+      result.graph = termToJson(q.graph as SerializableTerm)
+    }
+    return result
+  })
   
   if (options.includeMetadata) {
     const data = {
       meta: {
         version: '1.0',
         format: 'json',
-        tripleCount: triples.length,
+        quadCount: quads.length,
         exportedAt: new Date().toISOString(),
       },
-      triples: serialized,
+      quads: serialized,
     }
     return options.pretty ? JSON.stringify(data, null, 2) : JSON.stringify(data)
   }
@@ -459,27 +572,28 @@ export function exportToJson(triples: Triple[], options: { pretty?: boolean; inc
 /**
  * Import from standard JSON format
  */
-export function importFromJson(data: string, skipInvalid = false): Triple[] {
+export function importFromJson(data: string, skipInvalid = false): Quad[] {
   const parsed = JSON.parse(data)
   
   // Check if it's wrapped with metadata
-  const triples = Array.isArray(parsed) ? parsed : parsed.triples
+  const items = Array.isArray(parsed) ? parsed : (parsed.quads || parsed.triples)
   
-  if (!Array.isArray(triples)) {
-    throw new Error('Invalid JSON format: expected array of triples')
+  if (!Array.isArray(items)) {
+    throw new Error('Invalid JSON format: expected array of quads')
   }
   
-  const result: Triple[] = []
-  for (const item of triples) {
+  const result: Quad[] = []
+  for (const item of items) {
     try {
       if (typeof item === 'object' && item.subject && item.predicate) {
-        result.push({
-          subject: jsonToSubject(item.subject),
-          predicate: jsonToPredicate(item.predicate),
-          object: jsonToTerm(item.object),
-        })
+        result.push(quad(
+          jsonToSubject(item.subject),
+          jsonToPredicate(item.predicate),
+          jsonToObject(item.object),
+          item.graph !== undefined ? jsonToGraph(item.graph) : defaultGraph()
+        ))
       } else if (!skipInvalid) {
-        throw new Error(`Invalid triple: ${JSON.stringify(item)}`)
+        throw new Error(`Invalid quad: ${JSON.stringify(item)}`)
       }
     } catch (e) {
       if (!skipInvalid) throw e
@@ -497,9 +611,9 @@ export function importFromJson(data: string, skipInvalid = false): Triple[] {
 export function detectFormat(data: string): SerializationFormat {
   const trimmed = data.trim()
   
-  // N-Triples: lines start with <
+  // N-Quads/N-Triples: lines start with <
   if (trimmed.startsWith('<') && trimmed.includes('> <')) {
-    return 'ntriples'
+    return 'nquads'
   }
   
   // JSON array or object
@@ -513,8 +627,8 @@ export function detectFormat(data: string): SerializationFormat {
         }
         return 'json'
       }
-      // Object: check if it has triples key (json with meta) or is compact format
-      if ('triples' in parsed) {
+      // Object: check if it has quads/triples key (json with meta) or is compact format
+      if ('quads' in parsed || 'triples' in parsed) {
         return 'json'
       }
       return 'compact-json'
@@ -535,34 +649,34 @@ export function detectFormat(data: string): SerializationFormat {
 }
 
 /**
- * Export triples to specified format
+ * Export quads to specified format
  */
-export function exportTriples(triples: Triple[], options: ExportOptions): string {
+export function exportQuads(quads: Quad[], options: ExportOptions): string {
   switch (options.format) {
     case 'jsonl':
-      return exportToJsonl(triples, options.includeMetadata)
-    case 'ntriples':
-      return exportToNTriples(triples)
+      return exportToJsonl(quads, options.includeMetadata)
+    case 'nquads':
+      return exportToNQuads(quads)
     case 'compact-json':
-      return exportToCompactJson(triples, options.pretty)
+      return exportToCompactJson(quads, options.pretty)
     case 'json':
     default:
-      return exportToJson(triples, { pretty: options.pretty, includeMetadata: options.includeMetadata })
+      return exportToJson(quads, { pretty: options.pretty, includeMetadata: options.includeMetadata })
   }
 }
 
 /**
- * Import triples from data with format auto-detection
+ * Import quads from data with format auto-detection
  */
-export function importTriples(data: string, options: ImportOptions = {}): Triple[] {
+export function importQuads(data: string, options: ImportOptions = {}): Quad[] {
   const format = options.format || detectFormat(data)
   const skipInvalid = options.skipInvalid ?? false
   
   switch (format) {
     case 'jsonl':
       return importFromJsonl(data, skipInvalid)
-    case 'ntriples':
-      return importFromNTriples(data, skipInvalid)
+    case 'nquads':
+      return importFromNQuads(data, skipInvalid)
     case 'compact-json':
       return importFromCompactJson(data)
     case 'json':

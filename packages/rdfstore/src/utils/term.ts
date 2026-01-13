@@ -2,18 +2,22 @@
  * RDF Term utilities
  */
 
-import type { NamedNode, Literal, BlankNode } from '@rdfjs/types'
-import type { Triple } from '../types.js'
+import type { NamedNode, Literal, BlankNode, Quad, DefaultGraph } from '@rdfjs/types'
 
+/** RDF term types (excluding DefaultGraph) */
 export type Term = NamedNode | Literal | BlankNode
+
+/** RDF term types including graph terms */
+export type GraphTerm = Term | DefaultGraph
 
 /**
  * Generate unique key for a Term (for set operations)
  */
-export function termKey(term: Term): string {
+export function termKey(term: GraphTerm): string {
   switch (term.termType) {
     case 'NamedNode': return `N:${term.value}`
     case 'BlankNode': return `B:${term.value}`
+    case 'DefaultGraph': return 'D:'
     case 'Literal':
       return term.language 
         ? `L:${term.value}@${term.language}`
@@ -22,17 +26,24 @@ export function termKey(term: Term): string {
 }
 
 /**
- * Generate unique key for a Triple
+ * Generate unique key for a Quad
  */
-export function tripleKey(t: Triple): string {
-  return `${termKey(t.subject)}\0${termKey(t.predicate)}\0${termKey(t.object)}`
+export function quadKey(q: Quad): string {
+  return `${termKey(q.subject as Term)}\0${termKey(q.predicate as Term)}\0${termKey(q.object as Term)}\0${termKey(q.graph as GraphTerm)}`
 }
 
 /**
- * Generate (subject, predicate) key
+ * Generate (subject, predicate) key for grouping
  */
-export function spKey(t: Triple): string {
-  return `${termKey(t.subject)}\0${termKey(t.predicate)}`
+export function spKey(q: Quad): string {
+  return `${termKey(q.subject as Term)}\0${termKey(q.predicate as Term)}`
+}
+
+/**
+ * Generate (subject, predicate, graph) key for grouping
+ */
+export function spgKey(q: Quad): string {
+  return `${termKey(q.subject as Term)}\0${termKey(q.predicate as Term)}\0${termKey(q.graph as GraphTerm)}`
 }
 
 /**

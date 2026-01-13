@@ -1,34 +1,23 @@
 /**
  * @pubwiki/rdfstore - Type Definitions
  * 
- * Core types for the RDF store with WAL-based versioning
+ * Core types for the RDF store with immutable version DAG
+ * Uses standard RDF.js Quad types from @rdfjs/types
  */
 
-import type { NamedNode, Literal, BlankNode } from '@rdfjs/types'
+import type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 
-/**
- * RDF Term type aliases (from RDF.js specification)
- */
-export type SubjectNode = NamedNode | BlankNode
-export type PredicateNode = NamedNode
-export type ObjectNode = NamedNode | Literal | BlankNode
+// Re-export RDF.js types for convenience
+export type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph }
 
 /**
- * RDF Triple - using standard RDF.js types
+ * Quad query pattern - all fields are optional for flexible matching
  */
-export interface Triple {
-  subject: SubjectNode
-  predicate: PredicateNode
-  object: ObjectNode
-}
-
-/**
- * Triple query pattern - all fields are optional for flexible matching
- */
-export interface TriplePattern {
-  subject?: SubjectNode | null
-  predicate?: PredicateNode | null
-  object?: ObjectNode | null
+export interface QuadPattern {
+  subject?: Quad_Subject | null
+  predicate?: Quad_Predicate | null
+  object?: Quad_Object | null
+  graph?: Quad_Graph | null
 }
 
 /**
@@ -46,56 +35,58 @@ export interface PatchHunk {
 }
 
 /**
- * Operation types for the write-ahead log
+ * Operation types
  */
 export type Operation =
-  | { type: 'insert'; triple: Triple }
-  | { type: 'delete'; triple: Triple }
-  | { type: 'batch-insert'; triples: Triple[] }
-  | { type: 'batch-delete'; triples: Triple[] }
-  | { type: 'patch'; subject: SubjectNode; predicate: PredicateNode; patch: TextPatch }
+  | { type: 'insert'; quad: Quad }
+  | { type: 'delete'; quad: Quad }
+  | { type: 'batch-insert'; quads: Quad[] }
+  | { type: 'batch-delete'; quads: Quad[] }
+  | { type: 'patch'; subject: Quad_Subject; predicate: Quad_Predicate; patch: TextPatch }
+
+// ============ Version DAG Types ============
 
 /**
- * Log entry - a single entry in the write-ahead log
+ * Immutable state reference
+ * Each operation creates a new ref
  */
-export interface LogEntry {
-  /** Unique identifier for this log entry */
-  id: string
-  /** Unix timestamp when the operation was recorded */
-  timestamp: number
-  /** The operation that was performed */
+export type Ref = string
+
+/**
+ * Special ref for empty/initial state
+ */
+export const ROOT_REF: Ref = 'root'
+
+/**
+ * A node in the version DAG
+ * Represents a state reached by applying an operation to a parent state
+ */
+export interface RefNode {
+  /** This node's ref */
+  ref: Ref
+  /** Parent state (null for root) */
+  parent: Ref | null
+  /** Operation that transforms parent -> this state */
   operation: Operation
-  /** Reference to the snapshot before this operation */
-  prevRef: SnapshotRef
+  /** When this node was created */
+  timestamp: number
 }
 
 /**
- * Snapshot reference - an opaque handle to a specific snapshot
- * Internally this is a content hash or sequence number
+ * Checkpoint - a saved snapshot of quad data at a specific ref
+ * Used to accelerate checkout operations
  */
-export type SnapshotRef = string
-
-/**
- * Information about a saved snapshot
- */
-export interface SnapshotInfo {
-  /** Reference to this snapshot */
-  ref: SnapshotRef
-  /** Unix timestamp when the snapshot was created */
+export interface Checkpoint {
+  /** The ref this checkpoint is for */
+  ref: Ref
+  /** When the checkpoint was created */
   timestamp: number
-  /** Number of triples in this snapshot */
-  tripleCount: number
-  /** Position in the log where this snapshot was created */
-  logIndex: number
-  /** Optional user-provided label for this snapshot */
-  label?: string
-  /** Whether this was automatically created by the checkpoint system */
-  isAutoCheckpoint: boolean
+  /** Number of quads in this checkpoint */
+  quadCount: number
 }
 
 /**
  * Type for abstract-level instances compatible with the store.
- * Uses a more permissive key type to be compatible with MemoryLevel, BrowserLevel, etc.
  */
 export type LevelInstance = import('abstract-level').AbstractLevel<
   Buffer | Uint8Array | string,
@@ -104,64 +95,26 @@ export type LevelInstance = import('abstract-level').AbstractLevel<
 >
 
 /**
- * Configuration options for the RDF store
+ * Store configuration options
  */
 export interface StoreConfig {
-  /** Number of operations between automatic checkpoints (default: 100) */
-  autoCheckpointInterval: number
-  /** Whether automatic checkpoints are enabled (default: true) */
-  enableAutoCheckpoint: boolean
+  // Reserved for future options
 }
 
 /**
  * Default store configuration
  */
-export const DEFAULT_STORE_CONFIG: StoreConfig = {
-  autoCheckpointInterval: 100,
-  enableAutoCheckpoint: true,
-}
-
-/**
- * Internal log record types
- */
-export type LogRecord =
-  | { type: 'checkpoint'; ref: SnapshotRef; logIndex: number; timestamp: number }
-  | { type: 'operation'; entry: LogEntry }
-
-/**
- * Snapshot metadata stored in the database
- */
-export interface StoredSnapshotMeta {
-  ref: SnapshotRef
-  timestamp: number
-  tripleCount: number
-  logIndex: number
-  label?: string
-  isAutoCheckpoint: boolean
-}
-
-/**
- * Options for querying history
- */
-export interface HistoryOptions {
-  /** Maximum number of entries to return */
-  limit?: number
-  /** Start from this snapshot reference */
-  since?: SnapshotRef
-  /** End at this snapshot reference */
-  until?: SnapshotRef
-}
+export const DEFAULT_STORE_CONFIG: StoreConfig = {}
 
 /**
  * Event types emitted by the store
  */
-export type StoreEventType = 'change' | 'snapshot' | 'rollback'
+export type StoreEventType = 'change' | 'checkout'
 
 /**
  * Event payloads
  */
 export interface StoreEvents {
-  change: LogEntry
-  snapshot: SnapshotInfo
-  rollback: { from: SnapshotRef; to: SnapshotRef }
+  change: { ref: Ref; operation: Operation }
+  checkout: { from: Ref; to: Ref }
 }

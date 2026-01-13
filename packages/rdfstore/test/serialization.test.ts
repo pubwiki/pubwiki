@@ -5,13 +5,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { MemoryLevel } from 'memory-level'
 import {
-  exportTriples,
-  importTriples,
+  exportQuads,
+  importQuads,
   detectFormat,
   exportToJsonl,
   importFromJsonl,
-  exportToNTriples,
-  importFromNTriples,
+  exportToNQuads,
+  importFromNQuads,
   exportToCompactJson,
   importFromCompactJson,
   exportToJson,
@@ -19,20 +19,21 @@ import {
   exportOperations,
   importOperations,
 } from '../src/serialization/index.js'
-import { RDFStore } from '../src/stateful/store.js'
-import type { Triple, Operation, LevelInstance } from '../src/types.js'
-import { triple, namedNode, literal, blankNode } from './helpers.js'
+import { RDFStore } from '../src/store.js'
+import type { Operation, LevelInstance } from '../src/types.js'
+import type { Quad } from '@rdfjs/types'
+import { quad, namedNode, literal, blankNode } from './helpers.js'
 
 describe('JSON Lines Format', () => {
-  const testTriples: Triple[] = [
-    triple('ex:s1', 'ex:p1', 'value1'),
-    triple('ex:s2', 'ex:p2', 42),
-    triple('ex:s3', 'ex:p3', true),
+  const testQuads: Quad[] = [
+    quad('ex:s1', 'ex:p1', 'value1'),
+    quad('ex:s2', 'ex:p2', 42),
+    quad('ex:s3', 'ex:p3', true),
   ]
 
   describe('exportToJsonl', () => {
-    it('should export triples to JSON Lines format', () => {
-      const result = exportToJsonl(testTriples)
+    it('should export quads to JSON Lines format', () => {
+      const result = exportToJsonl(testQuads)
       const lines = result.split('\n')
       
       expect(lines).toHaveLength(3)
@@ -52,13 +53,13 @@ describe('JSON Lines Format', () => {
     })
 
     it('should include metadata when requested', () => {
-      const result = exportToJsonl(testTriples, true)
+      const result = exportToJsonl(testQuads, true)
       const lines = result.split('\n')
       
       expect(lines[0].startsWith('#meta:')).toBe(true)
       const meta = JSON.parse(lines[0].slice(6))
       expect(meta.format).toBe('jsonl')
-      expect(meta.tripleCount).toBe(3)
+      expect(meta.quadCount).toBe(3)
     })
 
     it('should handle empty array', () => {
@@ -112,30 +113,30 @@ describe('JSON Lines Format', () => {
   })
 
   describe('roundtrip', () => {
-    it('should roundtrip triples through JSON Lines', () => {
-      const exported = exportToJsonl(testTriples)
+    it('should roundtrip quads through JSON Lines', () => {
+      const exported = exportToJsonl(testQuads)
       const imported = importFromJsonl(exported)
       
-      expect(imported).toHaveLength(testTriples.length)
-      for (let i = 0; i < testTriples.length; i++) {
-        expect(imported[i].subject.value).toBe(testTriples[i].subject.value)
-        expect(imported[i].predicate.value).toBe(testTriples[i].predicate.value)
-        expect(imported[i].object.value).toBe(testTriples[i].object.value)
+      expect(imported).toHaveLength(testQuads.length)
+      for (let i = 0; i < testQuads.length; i++) {
+        expect(imported[i].subject.value).toBe(testQuads[i].subject.value)
+        expect(imported[i].predicate.value).toBe(testQuads[i].predicate.value)
+        expect(imported[i].object.value).toBe(testQuads[i].object.value)
       }
     })
   })
 })
 
-describe('N-Triples Format', () => {
-  const testTriples: Triple[] = [
-    triple('http://example.org/s1', 'http://example.org/p1', 'value1'),
-    triple('http://example.org/s2', 'http://example.org/count', 42),
-    triple('http://example.org/s3', 'http://example.org/active', true),
+describe('N-Quads Format', () => {
+  const testQuads: Quad[] = [
+    quad('http://example.org/s1', 'http://example.org/p1', 'value1'),
+    quad('http://example.org/s2', 'http://example.org/count', 42),
+    quad('http://example.org/s3', 'http://example.org/active', true),
   ]
 
-  describe('exportToNTriples', () => {
-    it('should export to N-Triples format', () => {
-      const result = exportToNTriples(testTriples)
+  describe('exportToNQuads', () => {
+    it('should export to N-Quads format', () => {
+      const result = exportToNQuads(testQuads)
       const lines = result.split('\n')
       
       expect(lines).toHaveLength(3)
@@ -146,30 +147,30 @@ describe('N-Triples Format', () => {
     })
 
     it('should handle numeric values with datatype', () => {
-      const result = exportToNTriples([triple('ex:s', 'ex:p', 42)])
+      const result = exportToNQuads([quad('ex:s', 'ex:p', 42)])
       expect(result).toContain('XMLSchema#')
     })
 
     it('should handle boolean values with datatype', () => {
-      const result = exportToNTriples([triple('ex:s', 'ex:p', true)])
+      const result = exportToNQuads([quad('ex:s', 'ex:p', true)])
       expect(result).toContain('XMLSchema#boolean')
     })
 
     it('should handle URI objects', () => {
-      const result = exportToNTriples([triple('ex:s', 'ex:p', 'http://example.org/value')])
+      const result = exportToNQuads([quad('ex:s', 'ex:p', 'http://example.org/value')])
       expect(result).toContain('<http://example.org/value>')
     })
 
     it('should escape special characters', () => {
-      const result = exportToNTriples([triple('ex:s', 'ex:p', 'line1\nline2')])
+      const result = exportToNQuads([quad('ex:s', 'ex:p', 'line1\nline2')])
       expect(result).toContain('\\n')
     })
   })
 
-  describe('importFromNTriples', () => {
-    it('should import from N-Triples format', () => {
+  describe('importFromNQuads', () => {
+    it('should import from N-Quads format', () => {
       const data = '<http://example.org/s1> <http://example.org/p1> "value1" .'
-      const result = importFromNTriples(data)
+      const result = importFromNQuads(data)
       
       expect(result).toHaveLength(1)
       expect(result[0].subject.value).toBe('http://example.org/s1')
@@ -179,7 +180,7 @@ describe('N-Triples Format', () => {
 
     it('should parse typed literals', () => {
       const data = '<ex:s> <ex:p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> .'
-      const result = importFromNTriples(data)
+      const result = importFromNQuads(data)
       
       expect(result[0].object.value).toBe('42')
       expect(result[0].object.termType).toBe('Literal')
@@ -187,7 +188,7 @@ describe('N-Triples Format', () => {
 
     it('should parse boolean literals', () => {
       const data = '<ex:s> <ex:p> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .'
-      const result = importFromNTriples(data)
+      const result = importFromNQuads(data)
       
       expect(result[0].object.value).toBe('true')
       expect(result[0].object.termType).toBe('Literal')
@@ -195,67 +196,67 @@ describe('N-Triples Format', () => {
 
     it('should skip comments', () => {
       const data = '# This is a comment\n<ex:s> <ex:p> "value" .'
-      const result = importFromNTriples(data)
+      const result = importFromNQuads(data)
       
       expect(result).toHaveLength(1)
     })
 
     it('should handle multiple lines', () => {
       const data = '<ex:s1> <ex:p1> "v1" .\n<ex:s2> <ex:p2> "v2" .'
-      const result = importFromNTriples(data)
+      const result = importFromNQuads(data)
       
       expect(result).toHaveLength(2)
     })
   })
 
   describe('roundtrip', () => {
-    it('should roundtrip triples through N-Triples', () => {
-      const exported = exportToNTriples(testTriples)
-      const imported = importFromNTriples(exported)
+    it('should roundtrip quads through N-Quads', () => {
+      const exported = exportToNQuads(testQuads)
+      const imported = importFromNQuads(exported)
       
-      expect(imported).toHaveLength(testTriples.length)
-      for (let i = 0; i < testTriples.length; i++) {
-        expect(imported[i].subject.value).toBe(testTriples[i].subject.value)
-        expect(imported[i].predicate.value).toBe(testTriples[i].predicate.value)
-        expect(imported[i].object.value).toBe(testTriples[i].object.value)
+      expect(imported).toHaveLength(testQuads.length)
+      for (let i = 0; i < testQuads.length; i++) {
+        expect(imported[i].subject.value).toBe(testQuads[i].subject.value)
+        expect(imported[i].predicate.value).toBe(testQuads[i].predicate.value)
+        expect(imported[i].object.value).toBe(testQuads[i].object.value)
       }
     })
   })
 })
 
 describe('Compact JSON Format', () => {
-  const testTriples: Triple[] = [
-    triple('ex:s1', 'ex:name', 'Alice'),
-    triple('ex:s1', 'ex:age', 30),
-    triple('ex:s2', 'ex:name', 'Bob'),
+  const testQuads: Quad[] = [
+    quad('ex:s1', 'ex:name', 'Alice'),
+    quad('ex:s1', 'ex:age', 30),
+    quad('ex:s2', 'ex:name', 'Bob'),
   ]
 
   describe('exportToCompactJson', () => {
     it('should group by subject and predicate', () => {
-      const result = exportToCompactJson(testTriples)
+      const result = exportToCompactJson(testQuads)
       const parsed = JSON.parse(result)
       
-      // Keys are termKey format: N: prefix for NamedNodes
-      expect(parsed['N:ex:s1']['N:ex:name'].value).toBe('Alice')
-      expect(parsed['N:ex:s1']['N:ex:age'].value).toBe('30')
-      expect(parsed['N:ex:s2']['N:ex:name'].value).toBe('Bob')
+      // Keys are direct URI strings
+      expect(parsed['ex:s1']['ex:name'].value).toBe('Alice')
+      expect(parsed['ex:s1']['ex:age'].value).toBe('30')
+      expect(parsed['ex:s2']['ex:name'].value).toBe('Bob')
     })
 
     it('should use arrays for multiple objects', () => {
-      const triples: Triple[] = [
-        triple('ex:s1', 'ex:tag', 'a'),
-        triple('ex:s1', 'ex:tag', 'b'),
-        triple('ex:s1', 'ex:tag', 'c'),
+      const quads: Quad[] = [
+        quad('ex:s1', 'ex:tag', 'a'),
+        quad('ex:s1', 'ex:tag', 'b'),
+        quad('ex:s1', 'ex:tag', 'c'),
       ]
-      const result = exportToCompactJson(triples)
+      const result = exportToCompactJson(quads)
       const parsed = JSON.parse(result)
       
-      expect(Array.isArray(parsed['N:ex:s1']['N:ex:tag'])).toBe(true)
-      expect(parsed['N:ex:s1']['N:ex:tag']).toHaveLength(3)
+      expect(Array.isArray(parsed['ex:s1']['ex:tag'])).toBe(true)
+      expect(parsed['ex:s1']['ex:tag']).toHaveLength(3)
     })
 
     it('should support pretty printing', () => {
-      const result = exportToCompactJson(testTriples, true)
+      const result = exportToCompactJson(testQuads, true)
       expect(result).toContain('\n')
     })
   })
@@ -280,13 +281,13 @@ describe('Compact JSON Format', () => {
 
   describe('roundtrip', () => {
     it('should roundtrip through compact JSON', () => {
-      const exported = exportToCompactJson(testTriples)
+      const exported = exportToCompactJson(testQuads)
       const imported = importFromCompactJson(exported)
       
-      expect(imported).toHaveLength(testTriples.length)
+      expect(imported).toHaveLength(testQuads.length)
       
-      // Check all triples are present (order may differ)
-      for (const t of testTriples) {
+      // Check all quads are present (order may differ)
+      for (const t of testQuads) {
         const found = imported.find(
           i => i.subject.value === t.subject.value && 
                i.predicate.value === t.predicate.value &&
@@ -299,14 +300,14 @@ describe('Compact JSON Format', () => {
 })
 
 describe('Standard JSON Format', () => {
-  const testTriples: Triple[] = [
-    triple('ex:s1', 'ex:p1', 'v1'),
-    triple('ex:s2', 'ex:p2', 42),
+  const testQuads: Quad[] = [
+    quad('ex:s1', 'ex:p1', 'v1'),
+    quad('ex:s2', 'ex:p2', 42),
   ]
 
   describe('exportToJson', () => {
     it('should export as JSON array', () => {
-      const result = exportToJson(testTriples)
+      const result = exportToJson(testQuads)
       const parsed = JSON.parse(result)
       
       expect(Array.isArray(parsed)).toBe(true)
@@ -314,31 +315,31 @@ describe('Standard JSON Format', () => {
     })
 
     it('should include metadata when requested', () => {
-      const result = exportToJson(testTriples, { includeMetadata: true })
+      const result = exportToJson(testQuads, { includeMetadata: true })
       const parsed = JSON.parse(result)
       
       expect(parsed.meta).toBeDefined()
-      expect(parsed.triples).toBeDefined()
-      expect(parsed.meta.tripleCount).toBe(2)
+      expect(parsed.quads).toBeDefined()
+      expect(parsed.meta.quadCount).toBe(2)
     })
 
     it('should pretty print when requested', () => {
-      const result = exportToJson(testTriples, { pretty: true })
+      const result = exportToJson(testQuads, { pretty: true })
       expect(result).toContain('\n')
     })
   })
 
   describe('importFromJson', () => {
     it('should import from array format', () => {
-      const data = exportToJson(testTriples)
+      const data = exportToJson(testQuads)
       const result = importFromJson(data)
       
       expect(result).toHaveLength(2)
-      expect(result[0].subject.value).toBe(testTriples[0].subject.value)
+      expect(result[0].subject.value).toBe(testQuads[0].subject.value)
     })
 
     it('should import from format with metadata', () => {
-      const data = exportToJson(testTriples, { includeMetadata: true })
+      const data = exportToJson(testQuads, { includeMetadata: true })
       const result = importFromJson(data)
       
       expect(result).toHaveLength(2)
@@ -362,9 +363,9 @@ describe('Standard JSON Format', () => {
 })
 
 describe('Format Detection', () => {
-  it('should detect N-Triples format', () => {
+  it('should detect N-Quads format', () => {
     const data = '<http://example.org/s> <http://example.org/p> "value" .'
-    expect(detectFormat(data)).toBe('ntriples')
+    expect(detectFormat(data)).toBe('nquads')
   })
 
   it('should detect JSON array format', () => {
@@ -389,23 +390,23 @@ describe('Format Detection', () => {
 })
 
 describe('Unified Export/Import', () => {
-  const testTriples: Triple[] = [
-    triple('ex:s1', 'ex:p1', 'v1'),
-    triple('ex:s2', 'ex:p2', 42),
+  const testQuads: Quad[] = [
+    quad('ex:s1', 'ex:p1', 'v1'),
+    quad('ex:s2', 'ex:p2', 42),
   ]
 
   it('should export and import with auto-detection', () => {
     for (const format of ['jsonl', 'json', 'compact-json'] as const) {
-      const exported = exportTriples(testTriples, { format })
-      const imported = importTriples(exported)
+      const exported = exportQuads(testQuads, { format })
+      const imported = importQuads(exported)
       
-      expect(imported).toHaveLength(testTriples.length)
+      expect(imported).toHaveLength(testQuads.length)
     }
   })
 
   it('should respect explicit format option on import', () => {
-    const data = exportTriples(testTriples, { format: 'jsonl' })
-    const imported = importTriples(data, { format: 'jsonl' })
+    const data = exportQuads(testQuads, { format: 'jsonl' })
+    const imported = importQuads(data, { format: 'jsonl' })
     
     expect(imported).toHaveLength(2)
   })
@@ -413,11 +414,11 @@ describe('Unified Export/Import', () => {
 
 describe('Operations Export/Import', () => {
   const testOps: Operation[] = [
-    { type: 'insert', triple: triple('ex:s1', 'ex:p1', 'v1') },
-    { type: 'delete', triple: triple('ex:s2', 'ex:p2', 'v2') },
-    { type: 'batch-insert', triples: [
-      triple('ex:s3', 'ex:p3', 'v3'),
-      triple('ex:s4', 'ex:p4', 'v4'),
+    { type: 'insert', quad: quad('ex:s1', 'ex:p1', 'v1') },
+    { type: 'delete', quad: quad('ex:s2', 'ex:p2', 'v2') },
+    { type: 'batch-insert', quads: [
+      quad('ex:s3', 'ex:p3', 'v3'),
+      quad('ex:s4', 'ex:p4', 'v4'),
     ]},
   ]
 
@@ -476,9 +477,9 @@ describe('RDFStore Import/Export Integration', () => {
   it('should import data into store', async () => {
     const data = '[{"type":"uri","value":"ex:s1"},{"type":"uri","value":"ex:p1"},{"type":"literal","value":"v1"}]\n[{"type":"uri","value":"ex:s2"},{"type":"uri","value":"ex:p2"},{"type":"literal","value":"42"}]'
     
-    const count = await store.importData(data, { format: 'jsonl' })
+    const ref = await store.importData(data, { format: 'jsonl' })
     
-    expect(count).toBe(2)
+    expect(ref).toBeTruthy()
     const results = await store.query({})
     expect(results).toHaveLength(2)
   })
@@ -487,9 +488,9 @@ describe('RDFStore Import/Export Integration', () => {
     await store.insert(namedNode('ex:old'), namedNode('ex:p'), literal('old-value'))
     
     const data = '[{"type":"uri","value":"ex:new"},{"type":"uri","value":"ex:p"},{"type":"literal","value":"new-value"}]'
-    const count = await store.replaceWithImport(data, { format: 'jsonl' })
+    const ref = await store.replaceWithImport(data, { format: 'jsonl' })
     
-    expect(count).toBe(1)
+    expect(ref).toBeTruthy()
     const results = await store.query({})
     expect(results).toHaveLength(1)
     expect(results[0].subject.value).toBe('ex:new')
@@ -505,8 +506,8 @@ describe('RDFStore Import/Export Integration', () => {
     // JSONL and JSON use the term JSON serialization
     expect(jsonl).toContain('"value":"ex:s1"')
     expect(json).toContain('"subject"')
-    // Compact JSON uses termKey prefixes
-    expect(compact).toContain('N:ex:s1')
+    // Compact JSON uses URI strings as keys
+    expect(compact).toContain('ex:s1')
   })
 
   it('should support pretty printing', async () => {

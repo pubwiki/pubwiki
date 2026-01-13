@@ -1,54 +1,42 @@
 /**
  * @pubwiki/rdfstore
  * 
- * RDF store with WAL-based versioning and snapshot support
+ * RDF store with immutable version DAG
  */
 
 // Types
 export type {
-  Triple,
-  TriplePattern,
+  QuadPattern,
   Operation,
-  LogEntry,
-  SnapshotRef,
-  SnapshotInfo,
+  Ref,
+  RefNode,
+  Checkpoint,
   StoreConfig,
-  LogRecord,
-  StoredSnapshotMeta,
-  HistoryOptions,
   StoreEventType,
   StoreEvents,
   LevelInstance,
 } from './types.js'
 
-export { DEFAULT_STORE_CONFIG } from './types.js'
+export { DEFAULT_STORE_CONFIG, ROOT_REF } from './types.js'
 
-// Stateful API (main entry point)
-export { RDFStore } from './stateful/index.js'
+// Re-export Quad types from @rdfjs/types for convenience
+export type { 
+  Quad, 
+  Quad_Subject, 
+  Quad_Predicate, 
+  Quad_Object, 
+  Quad_Graph 
+} from '@rdfjs/types'
 
-// Functional API
-export {
-  loadSnapshot,
-  applyOperation,
-  applyOperations,
-  createEmptySnapshot,
-  createSnapshot,
-  computeTripleDelta,
-  createSnapshotView,
-  serializeTriples,
-  deserializeTriples,
-} from './functional/index.js'
-export type { SnapshotView } from './functional/index.js'
+// Main Store API
+export { RDFStore } from './store.js'
+export type { SparqlBinding } from './store.js'
 
 // Backend
 export { StoreBackend, createBackend } from './backend/index.js'
 
-// Log management
-export { LogManager, createLogManager, LogPersistence, createLogPersistence } from './log/index.js'
-
-// Checkpoint management
-export { createCheckpointManager, restoreFromCheckpoint } from './checkpoint/index.js'
-export type { CheckpointManager } from './checkpoint/index.js'
+// Version DAG
+export { VersionDAG, createVersionDAG } from './version/index.js'
 
 // Delta computation
 export {
@@ -57,19 +45,19 @@ export {
   invertOperation,
   invertOperations,
   optimizeOperations,
-  triplesEqual,
-  uniqueTriples,
+  quadsEqual,
+  uniqueQuads,
 } from './delta/index.js'
 
 // Serialization (Import/Export)
 export {
-  exportTriples,
-  importTriples,
+  exportQuads,
+  importQuads,
   detectFormat,
   exportToJsonl,
   importFromJsonl,
-  exportToNTriples,
-  importFromNTriples,
+  exportToNQuads,
+  importFromNQuads,
   exportToCompactJson,
   importFromCompactJson,
   exportToJson,

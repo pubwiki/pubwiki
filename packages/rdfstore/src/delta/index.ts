@@ -4,6 +4,6 @@ export {
   invertOperation, 
   invertOperations,
   optimizeOperations,
-  triplesEqual,
-  uniqueTriples,
+  quadsEqual,
+  uniqueQuads,
 } from './diff.js'

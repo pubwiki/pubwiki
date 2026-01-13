@@ -3,22 +3,24 @@
  */
 
 import { DataFactory } from 'n3'
-import type { Triple } from '../src/types.js'
+import type { Quad, Quad_Graph } from '@rdfjs/types'
 
-export const { namedNode, literal, blankNode } = DataFactory
+export const { namedNode, literal, blankNode, defaultGraph, quad: n3Quad } = DataFactory
 
 /**
- * Create a triple with string shortcuts
+ * Create a quad with string shortcuts
  * Subject and predicate are treated as NamedNodes
  * Object is treated based on type:
  *   - string starting with http:/https:/bnode: -> NamedNode/BlankNode
  *   - other strings -> Literal
+ * Graph defaults to DefaultGraph
  */
-export function triple(
+export function quad(
   subject: string,
   predicate: string,
-  object: string | number | boolean
-): Triple {
+  object: string | number | boolean,
+  graph?: string
+): Quad {
   const s = subject.startsWith('_:') 
     ? blankNode(subject.slice(2)) 
     : namedNode(subject)
@@ -42,19 +44,29 @@ export function triple(
     o = literal(String(object))
   }
   
-  return { subject: s, predicate: p, object: o }
+  let g: Quad_Graph = defaultGraph()
+  if (graph) {
+    if (graph.startsWith('_:')) {
+      g = blankNode(graph.slice(2))
+    } else {
+      g = namedNode(graph)
+    }
+  }
+  
+  return n3Quad(s, p, o, g)
 }
 
 /**
- * Create a triple with a Literal object (for text content)
+ * Create a quad with a Literal object (for text content)
  */
-export function tripleWithLiteral(
+export function quadWithLiteral(
   subject: string,
   predicate: string,
   value: string,
   language?: string,
-  datatype?: string
-): Triple {
+  datatype?: string,
+  graph?: string
+): Quad {
   const s = namedNode(subject)
   const p = namedNode(predicate)
   const o = language 
@@ -63,5 +75,14 @@ export function tripleWithLiteral(
       ? literal(value, namedNode(datatype))
       : literal(value)
   
-  return { subject: s, predicate: p, object: o }
+  let g: Quad_Graph = defaultGraph()
+  if (graph) {
+    if (graph.startsWith('_:')) {
+      g = blankNode(graph.slice(2))
+    } else {
+      g = namedNode(graph)
+    }
+  }
+  
+  return n3Quad(s, p, o, g)
 }

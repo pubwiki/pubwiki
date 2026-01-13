@@ -9,70 +9,71 @@ import {
   invertOperation,
   invertOperations,
   optimizeOperations,
-  triplesEqual,
-  uniqueTriples,
+  quadsEqual,
+  uniqueQuads,
 } from '../src/delta/diff.js'
-import type { Triple, Operation } from '../src/types.js'
-import { triple, namedNode, literal } from './helpers.js'
+import type { Quad } from '@rdfjs/types'
+import type { Operation } from '../src/types.js'
+import { quad, namedNode, literal, defaultGraph, n3Quad } from './helpers.js'
 
 describe('computeDelta', () => {
-  it('should return empty array for identical triple sets', () => {
-    const triples: Triple[] = [
-      triple('ex:s1', 'ex:p1', 'v1'),
-      triple('ex:s2', 'ex:p2', 'v2'),
+  it('should return empty array for identical quad sets', () => {
+    const quads: Quad[] = [
+      quad('ex:s1', 'ex:p1', 'v1'),
+      quad('ex:s2', 'ex:p2', 'v2'),
     ]
 
-    const delta = computeDelta(triples, triples)
+    const delta = computeDelta(quads, quads)
     expect(delta).toEqual([])
   })
 
   it('should detect single insertion', () => {
-    const oldTriples: Triple[] = []
-    const newTriples: Triple[] = [
-      triple('ex:s1', 'ex:p1', 'v1'),
+    const oldQuads: Quad[] = []
+    const newQuads: Quad[] = [
+      quad('ex:s1', 'ex:p1', 'v1'),
     ]
 
-    const delta = computeDelta(oldTriples, newTriples)
+    const delta = computeDelta(oldQuads, newQuads)
     expect(delta).toHaveLength(1)
     expect(delta[0].type).toBe('insert')
   })
 
   it('should detect single deletion', () => {
-    const oldTriples: Triple[] = [
-      triple('ex:s1', 'ex:p1', 'v1'),
+    const oldQuads: Quad[] = [
+      quad('ex:s1', 'ex:p1', 'v1'),
     ]
-    const newTriples: Triple[] = []
+    const newQuads: Quad[] = []
 
-    const delta = computeDelta(oldTriples, newTriples)
+    const delta = computeDelta(oldQuads, newQuads)
     expect(delta).toHaveLength(1)
     expect(delta[0].type).toBe('delete')
   })
 
   it('should detect multiple insertions', () => {
-    const oldTriples: Triple[] = []
-    const newTriples: Triple[] = [
-      triple('ex:s1', 'ex:p1', 'v1'),
-      triple('ex:s2', 'ex:p2', 'v2'),
-      triple('ex:s3', 'ex:p3', 'v3'),
+    const oldQuads: Quad[] = []
+    const newQuads: Quad[] = [
+      quad('ex:s1', 'ex:p1', 'v1'),
+      quad('ex:s2', 'ex:p2', 'v2'),
+      quad('ex:s3', 'ex:p3', 'v3'),
     ]
 
-    const delta = computeDelta(oldTriples, newTriples)
-    // Since these have different (s,p) pairs, they will be separate inserts
+    const delta = computeDelta(oldQuads, newQuads)
+    // Since these have different (s,p,g) groups, they will be separate inserts
     expect(delta.length).toBe(3)
     expect(delta.every(op => op.type === 'insert')).toBe(true)
   })
 
   it('should detect mixed insertions and deletions', () => {
-    const oldTriples: Triple[] = [
-      triple('ex:s1', 'ex:p1', 'v1'),
-      triple('ex:s2', 'ex:p2', 'v2'),
+    const oldQuads: Quad[] = [
+      quad('ex:s1', 'ex:p1', 'v1'),
+      quad('ex:s2', 'ex:p2', 'v2'),
     ]
-    const newTriples: Triple[] = [
-      triple('ex:s2', 'ex:p2', 'v2'),
-      triple('ex:s3', 'ex:p3', 'v3'),
+    const newQuads: Quad[] = [
+      quad('ex:s2', 'ex:p2', 'v2'),
+      quad('ex:s3', 'ex:p3', 'v3'),
     ]
 
-    const delta = computeDelta(oldTriples, newTriples)
+    const delta = computeDelta(oldQuads, newQuads)
     // Should have delete for (s1,p1) and insert for (s3,p3)
     expect(delta.length).toBeGreaterThanOrEqual(1)
     
@@ -84,27 +85,27 @@ describe('computeDelta', () => {
   })
 
   it('should handle Literal value changes with patch', () => {
-    const oldTriples: Triple[] = [
-      triple('ex:s1', 'ex:content', 'Hello World'),
+    const oldQuads: Quad[] = [
+      quad('ex:s1', 'ex:content', 'Hello World'),
     ]
-    const newTriples: Triple[] = [
-      triple('ex:s1', 'ex:content', 'Hello Beautiful World'),
+    const newQuads: Quad[] = [
+      quad('ex:s1', 'ex:content', 'Hello Beautiful World'),
     ]
 
-    const delta = computeDelta(oldTriples, newTriples)
+    const delta = computeDelta(oldQuads, newQuads)
     expect(delta.length).toBe(1)
     expect(delta[0].type).toBe('patch')
   })
 
   it('should handle NamedNode object changes with delete+insert', () => {
-    const oldTriples: Triple[] = [
-      triple('ex:s1', 'ex:ref', 'http://example.org/old'),
+    const oldQuads: Quad[] = [
+      quad('ex:s1', 'ex:ref', 'http://example.org/old'),
     ]
-    const newTriples: Triple[] = [
-      triple('ex:s1', 'ex:ref', 'http://example.org/new'),
+    const newQuads: Quad[] = [
+      quad('ex:s1', 'ex:ref', 'http://example.org/new'),
     ]
 
-    const delta = computeDelta(oldTriples, newTriples)
+    const delta = computeDelta(oldQuads, newQuads)
     expect(delta.length).toBe(2)
     expect(delta.some(op => op.type === 'delete')).toBe(true)
     expect(delta.some(op => op.type === 'insert')).toBe(true)
@@ -113,64 +114,64 @@ describe('computeDelta', () => {
 
 describe('applyDelta', () => {
   it('should apply insert operation', () => {
-    const triples: Triple[] = []
-    const newTriple = triple('ex:s1', 'ex:p1', 'v1')
+    const quads: Quad[] = []
+    const newQuad = quad('ex:s1', 'ex:p1', 'v1')
     const delta: Operation[] = [
-      { type: 'insert', triple: newTriple },
+      { type: 'insert', quad: newQuad },
     ]
 
-    const result = applyDelta(triples, delta)
+    const result = applyDelta(quads, delta)
     expect(result).toHaveLength(1)
-    expect(triplesEqual(result[0], newTriple)).toBe(true)
+    expect(quadsEqual(result[0], newQuad)).toBe(true)
   })
 
   it('should apply delete operation', () => {
-    const t = triple('ex:s1', 'ex:p1', 'v1')
-    const triples: Triple[] = [t]
+    const q = quad('ex:s1', 'ex:p1', 'v1')
+    const quads: Quad[] = [q]
     const delta: Operation[] = [
-      { type: 'delete', triple: t },
+      { type: 'delete', quad: q },
     ]
 
-    const result = applyDelta(triples, delta)
+    const result = applyDelta(quads, delta)
     expect(result).toHaveLength(0)
   })
 
   it('should apply batch-insert operation', () => {
-    const triples: Triple[] = []
+    const quads: Quad[] = []
     const delta: Operation[] = [
       { 
         type: 'batch-insert', 
-        triples: [
-          triple('ex:s1', 'ex:p1', 'v1'),
-          triple('ex:s2', 'ex:p2', 'v2'),
+        quads: [
+          quad('ex:s1', 'ex:p1', 'v1'),
+          quad('ex:s2', 'ex:p2', 'v2'),
         ]
       },
     ]
 
-    const result = applyDelta(triples, delta)
+    const result = applyDelta(quads, delta)
     expect(result).toHaveLength(2)
   })
 
   it('should apply batch-delete operation', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s2', 'ex:p2', 'v2')
-    const t3 = triple('ex:s3', 'ex:p3', 'v3')
-    const triples: Triple[] = [t1, t2, t3]
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s2', 'ex:p2', 'v2')
+    const q3 = quad('ex:s3', 'ex:p3', 'v3')
+    const quads: Quad[] = [q1, q2, q3]
     const delta: Operation[] = [
       { 
         type: 'batch-delete', 
-        triples: [t1, t2]
+        quads: [q1, q2]
       },
     ]
 
-    const result = applyDelta(triples, delta)
+    const result = applyDelta(quads, delta)
     expect(result).toHaveLength(1)
-    expect(triplesEqual(result[0], t3)).toBe(true)
+    expect(quadsEqual(result[0], q3)).toBe(true)
   })
 
   it('should apply patch operation', () => {
-    const oldTriple = triple('ex:s1', 'ex:content', 'Hello World')
-    const triples: Triple[] = [oldTriple]
+    const oldQuad = quad('ex:s1', 'ex:content', 'Hello World')
+    const quads: Quad[] = [oldQuad]
     const delta: Operation[] = [
       { 
         type: 'patch',
@@ -180,7 +181,7 @@ describe('applyDelta', () => {
       },
     ]
 
-    const result = applyDelta(triples, delta)
+    const result = applyDelta(quads, delta)
     expect(result).toHaveLength(1)
     expect(result[0].object.termType).toBe('Literal')
     if (result[0].object.termType === 'Literal') {
@@ -189,35 +190,35 @@ describe('applyDelta', () => {
   })
 
   it('should roundtrip: computeDelta then applyDelta', () => {
-    const oldTriples: Triple[] = [
-      triple('ex:s1', 'ex:p1', 'v1'),
-      triple('ex:s2', 'ex:p2', 'v2'),
+    const oldQuads: Quad[] = [
+      quad('ex:s1', 'ex:p1', 'v1'),
+      quad('ex:s2', 'ex:p2', 'v2'),
     ]
-    const newTriples: Triple[] = [
-      triple('ex:s2', 'ex:p2', 'v2'),
-      triple('ex:s3', 'ex:p3', 'v3'),
+    const newQuads: Quad[] = [
+      quad('ex:s2', 'ex:p2', 'v2'),
+      quad('ex:s3', 'ex:p3', 'v3'),
     ]
 
-    const delta = computeDelta(oldTriples, newTriples)
-    const result = applyDelta(oldTriples, delta)
+    const delta = computeDelta(oldQuads, newQuads)
+    const result = applyDelta(oldQuads, delta)
 
-    // Result should match newTriples (order may differ)
-    expect(result).toHaveLength(newTriples.length)
-    for (const t of newTriples) {
-      expect(result.some(r => triplesEqual(r, t))).toBe(true)
+    // Result should match newQuads (order may differ)
+    expect(result).toHaveLength(newQuads.length)
+    for (const q of newQuads) {
+      expect(result.some(r => quadsEqual(r, q))).toBe(true)
     }
   })
 
   it('should roundtrip: computeDelta then applyDelta with patch', () => {
-    const oldTriples: Triple[] = [
-      triple('ex:s1', 'ex:content', 'Hello World'),
+    const oldQuads: Quad[] = [
+      quad('ex:s1', 'ex:content', 'Hello World'),
     ]
-    const newTriples: Triple[] = [
-      triple('ex:s1', 'ex:content', 'Hello Beautiful World'),
+    const newQuads: Quad[] = [
+      quad('ex:s1', 'ex:content', 'Hello Beautiful World'),
     ]
 
-    const delta = computeDelta(oldTriples, newTriples)
-    const result = applyDelta(oldTriples, delta)
+    const delta = computeDelta(oldQuads, newQuads)
+    const result = applyDelta(oldQuads, delta)
 
     expect(result).toHaveLength(1)
     expect(result[0].object.termType).toBe('Literal')
@@ -229,60 +230,60 @@ describe('applyDelta', () => {
 
 describe('invertOperation', () => {
   it('should invert insert to delete', () => {
-    const t = triple('ex:s1', 'ex:p1', 'v1')
-    const op: Operation = { type: 'insert', triple: t }
+    const q = quad('ex:s1', 'ex:p1', 'v1')
+    const op: Operation = { type: 'insert', quad: q }
     const inverted = invertOperation(op)
     expect(inverted.type).toBe('delete')
     if (inverted.type === 'delete') {
-      expect(triplesEqual(inverted.triple, t)).toBe(true)
+      expect(quadsEqual(inverted.quad, q)).toBe(true)
     }
   })
 
   it('should invert delete to insert', () => {
-    const t = triple('ex:s1', 'ex:p1', 'v1')
-    const op: Operation = { type: 'delete', triple: t }
+    const q = quad('ex:s1', 'ex:p1', 'v1')
+    const op: Operation = { type: 'delete', quad: q }
     const inverted = invertOperation(op)
     expect(inverted.type).toBe('insert')
     if (inverted.type === 'insert') {
-      expect(triplesEqual(inverted.triple, t)).toBe(true)
+      expect(quadsEqual(inverted.quad, q)).toBe(true)
     }
   })
 
   it('should invert batch-insert to batch-delete', () => {
-    const triples = [
-      triple('ex:s1', 'ex:p1', 'v1'),
-      triple('ex:s2', 'ex:p2', 'v2'),
+    const quads = [
+      quad('ex:s1', 'ex:p1', 'v1'),
+      quad('ex:s2', 'ex:p2', 'v2'),
     ]
-    const op: Operation = { type: 'batch-insert', triples }
+    const op: Operation = { type: 'batch-insert', quads }
     const inverted = invertOperation(op)
     expect(inverted.type).toBe('batch-delete')
     if (inverted.type === 'batch-delete') {
-      expect(inverted.triples).toHaveLength(2)
+      expect(inverted.quads).toHaveLength(2)
     }
   })
 
   it('should invert batch-delete to batch-insert', () => {
-    const triples = [
-      triple('ex:s1', 'ex:p1', 'v1'),
-      triple('ex:s2', 'ex:p2', 'v2'),
+    const quads = [
+      quad('ex:s1', 'ex:p1', 'v1'),
+      quad('ex:s2', 'ex:p2', 'v2'),
     ]
-    const op: Operation = { type: 'batch-delete', triples }
+    const op: Operation = { type: 'batch-delete', quads }
     const inverted = invertOperation(op)
     expect(inverted.type).toBe('batch-insert')
     if (inverted.type === 'batch-insert') {
-      expect(inverted.triples).toHaveLength(2)
+      expect(inverted.quads).toHaveLength(2)
     }
   })
 
   it('should invert patch operation', () => {
-    const originalTriples = [triple('ex:s1', 'ex:content', 'Hello World')]
+    const originalQuads = [quad('ex:s1', 'ex:content', 'Hello World')]
     const op: Operation = { 
       type: 'patch',
       subject: namedNode('ex:s1'),
       predicate: namedNode('ex:content'),
       patch: { originalLength: 11, hunks: [{ start: 6, deleteCount: 0, insert: 'Beautiful ' }] }
     }
-    const inverted = invertOperation(op, originalTriples)
+    const inverted = invertOperation(op, originalQuads)
     expect(inverted.type).toBe('patch')
     if (inverted.type === 'patch') {
       expect(inverted.patch.originalLength).toBe(21) // 'Hello Beautiful World'.length
@@ -292,11 +293,11 @@ describe('invertOperation', () => {
 
 describe('invertOperations', () => {
   it('should invert and reverse operation sequence', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s2', 'ex:p2', 'v2')
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s2', 'ex:p2', 'v2')
     const ops: Operation[] = [
-      { type: 'insert', triple: t1 },
-      { type: 'insert', triple: t2 },
+      { type: 'insert', quad: q1 },
+      { type: 'insert', quad: q2 },
     ]
     
     const inverted = invertOperations(ops)
@@ -306,10 +307,10 @@ describe('invertOperations', () => {
     expect(inverted[1].type).toBe('delete')
     // Order should be reversed
     if (inverted[0].type === 'delete') {
-      expect(triplesEqual(inverted[0].triple, t2)).toBe(true)
+      expect(quadsEqual(inverted[0].quad, q2)).toBe(true)
     }
     if (inverted[1].type === 'delete') {
-      expect(triplesEqual(inverted[1].triple, t1)).toBe(true)
+      expect(quadsEqual(inverted[1].quad, q1)).toBe(true)
     }
   })
 })
@@ -317,38 +318,38 @@ describe('invertOperations', () => {
 describe('optimizeOperations', () => {
   it('should merge consecutive inserts into batch', () => {
     const ops: Operation[] = [
-      { type: 'insert', triple: triple('ex:s1', 'ex:p1', 'v1') },
-      { type: 'insert', triple: triple('ex:s2', 'ex:p2', 'v2') },
-      { type: 'insert', triple: triple('ex:s3', 'ex:p3', 'v3') },
+      { type: 'insert', quad: quad('ex:s1', 'ex:p1', 'v1') },
+      { type: 'insert', quad: quad('ex:s2', 'ex:p2', 'v2') },
+      { type: 'insert', quad: quad('ex:s3', 'ex:p3', 'v3') },
     ]
 
     const optimized = optimizeOperations(ops)
     expect(optimized).toHaveLength(1)
     expect(optimized[0].type).toBe('batch-insert')
     if (optimized[0].type === 'batch-insert') {
-      expect(optimized[0].triples).toHaveLength(3)
+      expect(optimized[0].quads).toHaveLength(3)
     }
   })
 
   it('should merge consecutive deletes into batch', () => {
     const ops: Operation[] = [
-      { type: 'delete', triple: triple('ex:s1', 'ex:p1', 'v1') },
-      { type: 'delete', triple: triple('ex:s2', 'ex:p2', 'v2') },
+      { type: 'delete', quad: quad('ex:s1', 'ex:p1', 'v1') },
+      { type: 'delete', quad: quad('ex:s2', 'ex:p2', 'v2') },
     ]
 
     const optimized = optimizeOperations(ops)
     expect(optimized).toHaveLength(1)
     expect(optimized[0].type).toBe('batch-delete')
     if (optimized[0].type === 'batch-delete') {
-      expect(optimized[0].triples).toHaveLength(2)
+      expect(optimized[0].quads).toHaveLength(2)
     }
   })
 
   it('should keep separate groups for different operation types', () => {
     const ops: Operation[] = [
-      { type: 'insert', triple: triple('ex:s1', 'ex:p1', 'v1') },
-      { type: 'delete', triple: triple('ex:s2', 'ex:p2', 'v2') },
-      { type: 'insert', triple: triple('ex:s3', 'ex:p3', 'v3') },
+      { type: 'insert', quad: quad('ex:s1', 'ex:p1', 'v1') },
+      { type: 'delete', quad: quad('ex:s2', 'ex:p2', 'v2') },
+      { type: 'insert', quad: quad('ex:s3', 'ex:p3', 'v3') },
     ]
 
     const optimized = optimizeOperations(ops)
@@ -361,9 +362,9 @@ describe('optimizeOperations', () => {
   })
 
   it('should return single operation unchanged', () => {
-    const t = triple('ex:s1', 'ex:p1', 'v1')
+    const q = quad('ex:s1', 'ex:p1', 'v1')
     const ops: Operation[] = [
-      { type: 'insert', triple: t },
+      { type: 'insert', quad: q },
     ]
 
     const optimized = optimizeOperations(ops)
@@ -372,64 +373,65 @@ describe('optimizeOperations', () => {
   })
 })
 
-describe('triplesEqual', () => {
-  it('should return true for identical triples', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s1', 'ex:p1', 'v1')
-    expect(triplesEqual(t1, t2)).toBe(true)
+describe('quadsEqual', () => {
+  it('should return true for identical quads', () => {
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s1', 'ex:p1', 'v1')
+    expect(quadsEqual(q1, q2)).toBe(true)
   })
 
   it('should return false for different subjects', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s2', 'ex:p1', 'v1')
-    expect(triplesEqual(t1, t2)).toBe(false)
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s2', 'ex:p1', 'v1')
+    expect(quadsEqual(q1, q2)).toBe(false)
   })
 
   it('should return false for different predicates', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s1', 'ex:p2', 'v1')
-    expect(triplesEqual(t1, t2)).toBe(false)
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s1', 'ex:p2', 'v1')
+    expect(quadsEqual(q1, q2)).toBe(false)
   })
 
   it('should return false for different objects', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s1', 'ex:p1', 'v2')
-    expect(triplesEqual(t1, t2)).toBe(false)
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s1', 'ex:p1', 'v2')
+    expect(quadsEqual(q1, q2)).toBe(false)
   })
 
   it('should handle URI vs Literal objects', () => {
-    const t1 = triple('ex:s1', 'ex:ref', 'http://example.org/value')
-    const t2: Triple = { 
-      subject: namedNode('ex:s1'),
-      predicate: namedNode('ex:ref'),
-      object: literal('http://example.org/value')
-    }
-    expect(triplesEqual(t1, t2)).toBe(false)
+    const q1 = quad('ex:s1', 'ex:ref', 'http://example.org/value')
+    const q2 = n3Quad(
+      namedNode('ex:s1'),
+      namedNode('ex:ref'),
+      literal('http://example.org/value'),
+      defaultGraph()
+    )
+    expect(quadsEqual(q1, q2)).toBe(false)
   })
 })
 
-describe('uniqueTriples', () => {
-  it('should remove duplicate triples', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s2', 'ex:p2', 'v2')
-    const triples: Triple[] = [t1, t1, t2]
+describe('uniqueQuads', () => {
+  it('should remove duplicate quads', () => {
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s2', 'ex:p2', 'v2')
+    const quads: Quad[] = [q1, q1, q2]
 
-    const unique = uniqueTriples(triples)
+    const unique = uniqueQuads(quads)
     expect(unique).toHaveLength(2)
   })
 
   it('should preserve order (first occurrence)', () => {
-    const t1 = triple('ex:s1', 'ex:p1', 'v1')
-    const t2 = triple('ex:s2', 'ex:p2', 'v2')
-    const triples: Triple[] = [t1, t2, t1]
+    const q1 = quad('ex:s1', 'ex:p1', 'v1')
+    const q2 = quad('ex:s2', 'ex:p2', 'v2')
+    const quads: Quad[] = [q1, q2, q1]
 
-    const unique = uniqueTriples(triples)
-    expect(triplesEqual(unique[0], t1)).toBe(true)
-    expect(triplesEqual(unique[1], t2)).toBe(true)
+    const unique = uniqueQuads(quads)
+    expect(quadsEqual(unique[0], q1)).toBe(true)
+    expect(quadsEqual(unique[1], q2)).toBe(true)
   })
 
   it('should return empty array for empty input', () => {
-    const unique = uniqueTriples([])
+    const unique = uniqueQuads([])
     expect(unique).toEqual([])
   })
 })

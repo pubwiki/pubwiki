@@ -39,10 +39,10 @@
     "abstract-level": "^3.1.1",
     "diff": "^8.0.3",
     "n3": "^1.26.0",
-    "quadstore": "^15.4.1"
+    "quadstore": "^15.4.1",
+    "quadstore-comunica": "^6.3.1"
   },
   "devDependencies": {
-    "@types/diff": "^8.0.0",
     "@types/n3": "^1.26.1",
     "memory-level": "^3.1.0",
     "typescript": "^5.0.0",

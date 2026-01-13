@@ -5,14 +5,14 @@ export {
   type ImportOptions,
   type ExportMetadata,
   // Unified API
-  exportTriples,
-  importTriples,
+  exportQuads,
+  importQuads,
   detectFormat,
   // Format-specific exports
   exportToJsonl,
   importFromJsonl,
-  exportToNTriples,
-  importFromNTriples,
+  exportToNQuads,
+  importFromNQuads,
   exportToCompactJson,
   importFromCompactJson,
   exportToJson,

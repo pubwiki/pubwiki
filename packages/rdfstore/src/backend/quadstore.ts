@@ -8,9 +8,9 @@
 import { Quadstore } from 'quadstore'
 import { DataFactory } from 'n3'
 import type { Quad } from '@rdfjs/types'
-import type { Triple, TriplePattern, LevelInstance } from '../types.js'
+import type { QuadPattern, LevelInstance } from '../types.js'
 
-const { quad, defaultGraph } = DataFactory
+const { defaultGraph } = DataFactory
 
 /** Sublevel name for RDF data */
 export const DATA_SUBLEVEL = 'rdf'
@@ -84,67 +84,43 @@ export class StoreBackend {
   }
 
   /**
-   * Convert a Triple to a quadstore quad
-   * Now directly uses RDF.js types from Triple
+   * Insert a quad into the store
    */
-  private tripleToQuad(triple: Triple): Quad {
-    return quad(triple.subject, triple.predicate, triple.object, defaultGraph())
+  async insert(quad: Quad): Promise<void> {
+    await this.store.put(quad)
   }
 
   /**
-   * Convert a quadstore quad to a Triple
-   * Now directly extracts RDF.js types
+   * Insert multiple quads
    */
-  private quadToTriple(q: Quad): Triple {
-    return {
-      subject: q.subject as Triple['subject'],
-      predicate: q.predicate as Triple['predicate'],
-      object: q.object as Triple['object']
-    }
-  }
-
-  /**
-   * Insert a triple into the store
-   */
-  async insert(triple: Triple): Promise<void> {
-    const q = this.tripleToQuad(triple)
-    await this.store.put(q)
-  }
-
-  /**
-   * Insert multiple triples
-   */
-  async batchInsert(triples: Triple[]): Promise<void> {
-    if (triples.length === 0) return
-    const quads = triples.map(t => this.tripleToQuad(t))
+  async batchInsert(quads: Quad[]): Promise<void> {
+    if (quads.length === 0) return
     await this.store.multiPut(quads)
   }
 
   /**
-   * Delete a triple from the store
+   * Delete a quad from the store
    */
-  async delete(triple: Triple): Promise<void> {
-    const q = this.tripleToQuad(triple)
-    await this.store.del(q)
+  async delete(quad: Quad): Promise<void> {
+    await this.store.del(quad)
   }
 
   /**
-   * Delete multiple triples matching a pattern
+   * Delete multiple quads matching a pattern
    */
-  async batchDelete(pattern: TriplePattern): Promise<Triple[]> {
+  async batchDelete(pattern: QuadPattern): Promise<Quad[]> {
     const matches = await this.query(pattern)
     if (matches.length > 0) {
-      const quads = matches.map(t => this.tripleToQuad(t))
-      await this.store.multiDel(quads)
+      await this.store.multiDel(matches)
     }
     return matches
   }
 
   /**
-   * Query triples matching a pattern
+   * Query quads matching a pattern
    */
-  async query(pattern: TriplePattern): Promise<Triple[]> {
-    const queryPattern: Record<string, unknown> = { graph: defaultGraph() }
+  async query(pattern: QuadPattern): Promise<Quad[]> {
+    const queryPattern: Record<string, unknown> = {}
     
     if (pattern.subject) {
       queryPattern.subject = pattern.subject
@@ -155,20 +131,26 @@ export class StoreBackend {
     if (pattern.object !== undefined && pattern.object !== null) {
       queryPattern.object = pattern.object
     }
+    if (pattern.graph) {
+      queryPattern.graph = pattern.graph
+    } else {
+      // Default to default graph if not specified
+      queryPattern.graph = defaultGraph()
+    }
 
     const result = await this.store.get(queryPattern)
-    return result.items.map(q => this.quadToTriple(q as Quad))
+    return result.items as Quad[]
   }
 
   /**
-   * Get all triples in the store
+   * Get all quads in the store
    */
-  async getAllTriples(): Promise<Triple[]> {
+  async getAllQuads(): Promise<Quad[]> {
     return this.query({})
   }
 
   /**
-   * Count all triples in the store
+   * Count all quads in the store
    */
   async count(): Promise<number> {
     const result = await this.store.get({ graph: defaultGraph() })
@@ -176,13 +158,12 @@ export class StoreBackend {
   }
 
   /**
-   * Clear all triples from the store
+   * Clear all quads from the store
    */
   async clear(): Promise<void> {
-    const allTriples = await this.getAllTriples()
-    if (allTriples.length > 0) {
-      const quads = allTriples.map(t => this.tripleToQuad(t))
-      await this.store.multiDel(quads)
+    const allQuads = await this.getAllQuads()
+    if (allQuads.length > 0) {
+      await this.store.multiDel(allQuads)
     }
   }
 }
@@ -197,4 +178,4 @@ export async function createBackend(level: LevelInstance): Promise<StoreBackend>
 }
 
 // Re-export types for convenience
-export type { Triple, TriplePattern }
+export type { Quad, QuadPattern }
