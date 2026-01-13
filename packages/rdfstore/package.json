@@ -1,0 +1,51 @@
+{
+  "name": "@pubwiki/rdfstore",
+  "version": "1.0.0",
+  "description": "RDF store with WAL-based versioning and snapshot support built on quadstore",
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "rdf",
+    "quadstore",
+    "versioning",
+    "snapshot",
+    "wal"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@rdfjs/types": "^2.0.1",
+    "abstract-level": "^3.1.1",
+    "diff": "^8.0.3",
+    "n3": "^1.26.0",
+    "quadstore": "^15.4.1"
+  },
+  "devDependencies": {
+    "@types/diff": "^8.0.0",
+    "@types/n3": "^1.26.1",
+    "memory-level": "^3.1.0",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  }
+}

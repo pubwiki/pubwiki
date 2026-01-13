@@ -1,0 +1,1 @@
+export { StoreBackend, createBackend } from './quadstore.js'
