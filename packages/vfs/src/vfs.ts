@@ -697,6 +697,23 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
   }
 
   /**
+   * 获取工作区状态（已更改的文件列表）
+   */
+  async getStatus(): Promise<
+    Array<{
+      path: string
+      status: 'added' | 'modified' | 'deleted' | 'untracked'
+      staged: boolean
+    }>
+  > {
+    this.checkDisposed()
+    if (this._provider.status) {
+      return this._provider.status()
+    }
+    return []
+  }
+
+  /**
    * 硬重置到指定提交（丢弃之后的所有提交）
    * 类似于 git reset --hard <ref>
    */

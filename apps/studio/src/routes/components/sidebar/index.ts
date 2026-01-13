@@ -8,3 +8,5 @@ export { default as PropertiesTab } from './PropertiesTab.svelte';
 export { default as ProjectTab } from './ProjectTab.svelte';
 export { default as ProjectMenu } from './ProjectMenu.svelte';
 export { default as ProjectListModal } from './ProjectListModal.svelte';
+export { default as VFSPropertiesPanel } from './VFSPropertiesPanel.svelte';
+export { default as VFSGitPanel } from './VFSGitPanel.svelte';

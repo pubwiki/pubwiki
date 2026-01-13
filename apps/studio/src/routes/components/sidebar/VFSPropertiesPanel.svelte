@@ -7,6 +7,7 @@
 	import { getNodeVfs, type VersionedVfs } from '../../vfs';
 	import { getStudioContext } from '../../state';
 	import { FileTree, type FileItem, type FileOperations } from '@pubwiki/ui/components';
+	import VFSGitPanel from './VFSGitPanel.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
@@ -356,5 +357,10 @@
 	<div class="mt-2 text-xs text-gray-400 flex items-center gap-3">
 		<span>{fileCount} file{fileCount !== 1 ? 's' : ''}</span>
 		<span>{folderCount} folder{folderCount !== 1 ? 's' : ''}</span>
+	</div>
+
+	<!-- Git Version Control -->
+	<div class="mt-4 pt-4 border-t border-gray-200">
+		<VFSGitPanel {nodeId} {data} />
 	</div>
 </div>
