@@ -9,6 +9,7 @@ packages:
   - packages/sandbox-site
   - packages/sandbox-service
   - packages/sandbox-client
+  - packages/rdfstore
   - packages/lua
   - packages/db
   - packages/api

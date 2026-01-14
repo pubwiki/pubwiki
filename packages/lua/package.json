@@ -1,6 +1,6 @@
 {
   "name": "@pubwiki/lua",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "Browser-friendly Lua 5.4 runtime",
   "main": "./src/index.ts",
@@ -44,13 +44,15 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/n3": "^1.26.1",
     "@vitest/ui": "^4.0.5",
+    "memory-level": "^3.1.0",
     "typescript": "^5.6.3",
     "vitest": "^4.0.5"
   },
   "dependencies": {
+    "@pubwiki/rdfstore": "workspace:*",
     "@pubwiki/vfs": "workspace:*",
-    "@types/n3": "^1.26.1",
     "n3": "^1.26.0"
   }
 }

@@ -18,7 +18,7 @@ export function createTextPatch(oldText: string, newText: string): TextPatch {
       hunks.push({ start: pos, deleteCount: c.value.length, insert: '' })
       pos += c.value.length
     } else if (c.added) {
-      const last = hunks.at(-1)
+      const last = hunks.length > 0 ? hunks[hunks.length - 1] : undefined
       if (last && last.start + last.deleteCount === pos) {
         last.insert += c.value
       } else {

@@ -373,6 +373,49 @@ export class RDFStore {
     }
   }
 
+  // ========== Transaction ==========
+
+  /**
+   * Execute a callback within a transaction context.
+   * If the callback throws an error, all changes are rolled back and
+   * the created refs are deleted from the DAG.
+   * If the callback succeeds, changes are committed.
+   * 
+   * @param callback The function to execute within the transaction
+   * @returns The result of the callback
+   * @throws Re-throws any error from the callback after rollback
+   */
+  async transaction<T>(callback: () => T | Promise<T>): Promise<T> {
+    const startRef = this.currentRef
+
+    try {
+      const result = await callback()
+      return result
+    } catch (error) {
+      // Collect all refs created during the transaction
+      const refsToDelete: string[] = []
+      let current = this.currentRef
+      while (current !== startRef && current !== ROOT_REF) {
+        refsToDelete.push(current)
+        const node = await this.versionDAG.getNode(current)
+        if (!node || !node.parent) break
+        current = node.parent
+      }
+
+      // Delete the refs in reverse order (from newest to oldest)
+      for (const ref of refsToDelete) {
+        await this.versionDAG.deleteRef(ref)
+      }
+
+      // Rollback to the state before the transaction
+      if (this.currentRef !== startRef) {
+        await this.checkout(startRef)
+      }
+
+      throw error
+    }
+  }
+
   // ========== Import/Export ==========
 
   /**

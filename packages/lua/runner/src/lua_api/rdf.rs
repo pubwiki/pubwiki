@@ -9,11 +9,17 @@ use crate::bridge::js_proxy::{lua_to_val, val_to_lua};
 
 #[link(wasm_import_module = "env")]
 unsafe extern "C" {
-    // RDF 三元组存储 API（异步接口，使用 EM_VAL handles）
-    fn js_rdf_insert_async(context_id: u32, subject_ptr: *const c_char, predicate_ptr: *const c_char, object_handle: EM_VAL, callback_id: u32);
-    fn js_rdf_delete_async(context_id: u32, subject_ptr: *const c_char, predicate_ptr: *const c_char, object_handle: EM_VAL, callback_id: u32);
+    // RDF 四元组存储 API（异步接口，使用 EM_VAL handles）
+    // 所有变更操作返回 Ref，支持 graph 参数
+    fn js_rdf_insert_async(context_id: u32, subject_ptr: *const c_char, predicate_ptr: *const c_char, object_handle: EM_VAL, graph_ptr: *const c_char, callback_id: u32);
+    fn js_rdf_delete_async(context_id: u32, subject_ptr: *const c_char, predicate_ptr: *const c_char, object_handle: EM_VAL, graph_ptr: *const c_char, callback_id: u32);
     fn js_rdf_query_async(context_id: u32, pattern_handle: EM_VAL, callback_id: u32);
-    fn js_rdf_batch_insert_async(context_id: u32, triples_handle: EM_VAL, callback_id: u32);
+    fn js_rdf_batch_insert_async(context_id: u32, quads_handle: EM_VAL, callback_id: u32);
+    
+    // 版本控制 API
+    fn js_rdf_current_ref(context_id: u32) -> EM_VAL;
+    fn js_rdf_checkout_async(context_id: u32, ref_ptr: *const c_char, callback_id: u32);
+    fn js_rdf_checkpoint_async(context_id: u32, callback_id: u32);
     
     // SPARQL 流式查询 API
     fn js_rdf_sparql_query_start(context_id: u32, sparql_ptr: *const c_char, callback_id: u32);
@@ -22,33 +28,43 @@ unsafe extern "C" {
 }
 
 
-/// 安装 RDF 三元组存储 API 到 Lua 全局环境（异步版本）
+/// 安装 RDF 四元组存储 API 到 Lua 全局环境（异步版本）
 /// context_id: 执行上下文 ID，用于隔离不同的并发执行
+/// 新 API：所有变更操作返回 Ref，支持 graph 参数
 pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
     let state_table = lua.create_table()?;
     
-    // State:insert(subject, predicate, object) - 异步插入三元组
-    let insert_fn = lua.create_async_function(move |lua, (_, subject, predicate, object): (LuaTable, String, String, LuaValue)| async move {
+    // State:insert(subject, predicate, object, graph?) - 异步插入四元组，返回 Ref
+    let insert_fn = lua.create_async_function(move |lua, (_, subject, predicate, object, graph): (LuaTable, String, String, LuaValue, Option<String>)| async move {
         let (callback_id, rx) = register_callback();
         
         let object_val = lua_to_val(&lua, object, context_id)?;
         let subject_c = CString::new(subject).map_err(|e| LuaError::external(e))?;
         let predicate_c = CString::new(predicate).map_err(|e| LuaError::external(e))?;
+        let graph_c = graph.map(|g| CString::new(g)).transpose().map_err(|e| LuaError::external(e))?;
+        let graph_ptr = graph_c.as_ref().map(|c| c.as_ptr()).unwrap_or(std::ptr::null());
         
         unsafe {
-            js_rdf_insert_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), object_val.handle(), callback_id)
+            js_rdf_insert_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), object_val.handle(), graph_ptr, callback_id)
         };
         
         match rx.recv().await {
-            Ok(PromiseResult::Success { .. }) => Ok(()),
+            Ok(PromiseResult::Success { handle }) => {
+                // handle 是 ref 字符串的 EM_VAL
+                if handle == 0 {
+                    return Ok(LuaValue::Nil);
+                }
+                let ref_val = JsVal::from_handle(handle as EM_VAL);
+                val_to_lua(&lua, ref_val, context_id)
+            }
             Ok(PromiseResult::Error { message }) => Err(LuaError::external(message)),
             Err(e) => Err(LuaError::external(format!("Channel error: {}", e))),
         }
     })?;
     state_table.set("insert", insert_fn)?;
     
-    // State:delete(subject, predicate, object?) - 异步删除三元组
-    let delete_fn = lua.create_async_function(move |lua, (_, subject, predicate, object): (LuaTable, String, String, Option<LuaValue>)| async move {
+    // State:delete(subject, predicate, object?, graph?) - 异步删除四元组，返回 Ref
+    let delete_fn = lua.create_async_function(move |lua, (_, subject, predicate, object, graph): (LuaTable, String, String, Option<LuaValue>, Option<String>)| async move {
         let (callback_id, rx) = register_callback();
         
         let object_val = match object {
@@ -58,20 +74,29 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         
         let subject_c = CString::new(subject).map_err(|e| LuaError::external(e))?;
         let predicate_c = CString::new(predicate).map_err(|e| LuaError::external(e))?;
+        let graph_c = graph.map(|g| CString::new(g)).transpose().map_err(|e| LuaError::external(e))?;
+        let graph_ptr = graph_c.as_ref().map(|c| c.as_ptr()).unwrap_or(std::ptr::null());
         
         unsafe {
-            js_rdf_delete_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), object_val.handle(), callback_id)
+            js_rdf_delete_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), object_val.handle(), graph_ptr, callback_id)
         };
         
         match rx.recv().await {
-            Ok(PromiseResult::Success { .. }) => Ok(()),
+            Ok(PromiseResult::Success { handle }) => {
+                // handle 是 ref 字符串的 EM_VAL
+                if handle == 0 {
+                    return Ok(LuaValue::Nil);
+                }
+                let ref_val = JsVal::from_handle(handle as EM_VAL);
+                val_to_lua(&lua, ref_val, context_id)
+            }
             Ok(PromiseResult::Error { message }) => Err(LuaError::external(message)),
             Err(e) => Err(LuaError::external(format!("Channel error: {}", e))),
         }
     })?;
     state_table.set("delete", delete_fn)?;
     
-    // State:match(pattern) - 异步查询三元组
+    // State:match(pattern) - 异步查询四元组，pattern 支持 graph 字段
     let match_fn = lua.create_async_function(move |lua, (_, pattern): (LuaTable, LuaTable)| async move {
         let (callback_id, rx) = register_callback();
         
@@ -89,6 +114,9 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
                 let object_val = lua_to_val(&lua, object, context_id)?;
                 pattern_obj.set("object", &object_val);
             }
+        }
+        if let Ok(graph) = pattern.get::<String>("graph") {
+            pattern_obj.set("graph", &JsVal::from_str(&graph));
         }
         
         unsafe {
@@ -110,34 +138,43 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
     })?;
     state_table.set("match", match_fn)?;
     
-    // State:batchInsert(triples) - 异步批量插入三元组
-    let batch_insert_fn = lua.create_async_function(move |lua, (_, triples): (LuaTable, LuaTable)| async move {
+    // State:batchInsert(quads) - 异步批量插入四元组，返回 Ref
+    let batch_insert_fn = lua.create_async_function(move |lua, (_, quads): (LuaTable, LuaTable)| async move {
         let (callback_id, rx) = register_callback();
         
-        let triples_val = lua_to_val(&lua, LuaValue::Table(triples), context_id)?;
+        let quads_val = lua_to_val(&lua, LuaValue::Table(quads), context_id)?;
         
         unsafe {
-            js_rdf_batch_insert_async(context_id, triples_val.handle(), callback_id)
+            js_rdf_batch_insert_async(context_id, quads_val.handle(), callback_id)
         };
         
         match rx.recv().await {
-            Ok(PromiseResult::Success { .. }) => Ok(()),
+            Ok(PromiseResult::Success { handle }) => {
+                // handle 是 ref 字符串的 EM_VAL
+                if handle == 0 {
+                    return Ok(LuaValue::Nil);
+                }
+                let ref_val = JsVal::from_handle(handle as EM_VAL);
+                val_to_lua(&lua, ref_val, context_id)
+            }
             Ok(PromiseResult::Error { message }) => Err(LuaError::external(message)),
             Err(e) => Err(LuaError::external(format!("Channel error: {}", e))),
         }
     })?;
     state_table.set("batchInsert", batch_insert_fn)?;
     
-    // State:set(subject, predicate, object) - 异步设置三元组（先删除后插入）
-    let set_fn = lua.create_async_function(move |lua, (_, subject, predicate, object): (LuaTable, String, String, LuaValue)| async move {
-        // 1. 先删除所有匹配的三元组
+    // State:set(subject, predicate, object, graph?) - 异步设置四元组（先删除后插入），返回 Ref
+    let set_fn = lua.create_async_function(move |lua, (_, subject, predicate, object, graph): (LuaTable, String, String, LuaValue, Option<String>)| async move {
+        // 1. 先删除所有匹配的四元组
         let (delete_cb_id, delete_rx) = register_callback();
         let subject_c = CString::new(subject.clone()).map_err(|e| LuaError::external(e))?;
         let predicate_c = CString::new(predicate.clone()).map_err(|e| LuaError::external(e))?;
         let null_val = JsVal::null();
+        let graph_c = graph.as_ref().map(|g| CString::new(g.clone())).transpose().map_err(|e| LuaError::external(e))?;
+        let graph_ptr = graph_c.as_ref().map(|c| c.as_ptr()).unwrap_or(std::ptr::null());
         
         unsafe {
-            js_rdf_delete_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), null_val.handle(), delete_cb_id)
+            js_rdf_delete_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), null_val.handle(), graph_ptr, delete_cb_id)
         };
         
         match delete_rx.recv().await {
@@ -146,31 +183,43 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
             Err(e) => return Err(LuaError::external(format!("Channel error: {}", e))),
         }
         
-        // 2. 插入新的三元组
+        // 2. 插入新的四元组
         let (insert_cb_id, insert_rx) = register_callback();
         let object_val = lua_to_val(&lua, object, context_id)?;
         let subject_c = CString::new(subject).map_err(|e| LuaError::external(e))?;
         let predicate_c = CString::new(predicate).map_err(|e| LuaError::external(e))?;
+        let graph_c = graph.map(|g| CString::new(g)).transpose().map_err(|e| LuaError::external(e))?;
+        let graph_ptr = graph_c.as_ref().map(|c| c.as_ptr()).unwrap_or(std::ptr::null());
         
         unsafe {
-            js_rdf_insert_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), object_val.handle(), insert_cb_id)
+            js_rdf_insert_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), object_val.handle(), graph_ptr, insert_cb_id)
         };
         
         match insert_rx.recv().await {
-            Ok(PromiseResult::Success { .. }) => Ok(()),
+            Ok(PromiseResult::Success { handle }) => {
+                // 返回最后一个操作（插入）的 ref
+                if handle == 0 {
+                    return Ok(LuaValue::Nil);
+                }
+                let ref_val = JsVal::from_handle(handle as EM_VAL);
+                val_to_lua(&lua, ref_val, context_id)
+            }
             Ok(PromiseResult::Error { message }) => Err(LuaError::external(message)),
             Err(e) => Err(LuaError::external(format!("Channel error: {}", e))),
         }
     })?;
     state_table.set("set", set_fn)?;
     
-    // State:get(subject, predicate) - 异步获取单个值
-    let get_fn = lua.create_async_function(move |lua, (_, subject, predicate): (LuaTable, String, String)| async move {
+    // State:get(subject, predicate, graph?) - 异步获取单个值
+    let get_fn = lua.create_async_function(move |lua, (_, subject, predicate, graph): (LuaTable, String, String, Option<String>)| async move {
         let (callback_id, rx) = register_callback();
         
         let pattern_obj = JsVal::object();
         pattern_obj.set("subject", &JsVal::from_str(&subject));
         pattern_obj.set("predicate", &JsVal::from_str(&predicate));
+        if let Some(g) = graph {
+            pattern_obj.set("graph", &JsVal::from_str(&g));
+        }
         
         unsafe {
             js_rdf_query_async(context_id, pattern_obj.handle(), callback_id)
@@ -202,6 +251,56 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
         }
     })?;
     state_table.set("get", get_fn)?;
+    
+    // State:currentRef() - 获取当前版本引用（同步）
+    let current_ref_fn = lua.create_function(move |lua, _: LuaTable| {
+        let handle = unsafe { js_rdf_current_ref(context_id) };
+        if handle == 0 as EM_VAL {
+            return Ok(LuaValue::Nil);
+        }
+        let ref_val = JsVal::from_handle(handle);
+        val_to_lua(lua, ref_val, context_id)
+    })?;
+    state_table.set("currentRef", current_ref_fn)?;
+    
+    // State:checkout(ref) - 切换到指定版本（异步）
+    let checkout_fn = lua.create_async_function(move |_lua, (_, ref_str): (LuaTable, String)| async move {
+        let (callback_id, rx) = register_callback();
+        let ref_c = CString::new(ref_str).map_err(|e| LuaError::external(e))?;
+        
+        unsafe {
+            js_rdf_checkout_async(context_id, ref_c.as_ptr(), callback_id)
+        };
+        
+        match rx.recv().await {
+            Ok(PromiseResult::Success { .. }) => Ok(()),
+            Ok(PromiseResult::Error { message }) => Err(LuaError::external(message)),
+            Err(e) => Err(LuaError::external(format!("Channel error: {}", e))),
+        }
+    })?;
+    state_table.set("checkout", checkout_fn)?;
+    
+    // State:checkpoint() - 创建检查点，返回 Ref（异步）
+    let checkpoint_fn = lua.create_async_function(move |lua, _: LuaTable| async move {
+        let (callback_id, rx) = register_callback();
+        
+        unsafe {
+            js_rdf_checkpoint_async(context_id, callback_id)
+        };
+        
+        match rx.recv().await {
+            Ok(PromiseResult::Success { handle }) => {
+                if handle == 0 {
+                    return Ok(LuaValue::Nil);
+                }
+                let ref_val = JsVal::from_handle(handle as EM_VAL);
+                val_to_lua(&lua, ref_val, context_id)
+            }
+            Ok(PromiseResult::Error { message }) => Err(LuaError::external(message)),
+            Err(e) => Err(LuaError::external(format!("Channel error: {}", e))),
+        }
+    })?;
+    state_table.set("checkpoint", checkpoint_fn)?;
     
     // State:query(sparql) - SPARQL 查询，返回迭代器
     let query_fn = lua.create_async_function(move |lua, (_self, sparql): (LuaTable, String)| async move {

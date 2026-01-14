@@ -1,46 +1,41 @@
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import { loadRunner, runLua, createLuaInstance, type LuaInstance } from '../../src/index'
-import type { RDFStore, Triple, TriplePattern } from '../../src/rdf-types'
+import { RDFStore } from '@pubwiki/rdfstore'
+import { MemoryLevel } from 'memory-level'
+import { DataFactory } from 'n3'
 
-// 简单的内存 RDFStore 实现用于测试（异步版本）
-class MemoryRDFStore implements RDFStore {
-  private triples: Triple[] = []
-
-  async insert(subject: string, predicate: string, object: any): Promise<void> {
-    this.triples.push({ subject, predicate, object })
-  }
-
-  async delete(subject: string, predicate: string, object?: any): Promise<void> {
-    this.triples = this.triples.filter(t => {
-      if (t.subject !== subject || t.predicate !== predicate) return true
-      if (object === undefined || object === null) return false
-      return JSON.stringify(t.object) !== JSON.stringify(object)
-    })
-  }
-
-  async query(pattern: TriplePattern): Promise<Triple[]> {
-    return this.triples.filter(t => {
-      if (pattern.subject !== undefined && pattern.subject !== null && t.subject !== pattern.subject) return false
-      if (pattern.predicate !== undefined && pattern.predicate !== null && t.predicate !== pattern.predicate) return false
-      if (pattern.object !== undefined && pattern.object !== null && JSON.stringify(t.object) !== JSON.stringify(pattern.object)) return false
-      return true
-    })
-  }
-
-  async batchInsert(triples: Triple[]): Promise<void> {
-    this.triples.push(...triples)
-  }
-
-  clear(): void {
-    this.triples = []
-  }
-}
+const { namedNode, literal } = DataFactory
 
 // 辅助函数：延迟
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+// 辅助函数：创建一个新的内存 RDFStore
+async function createMemoryStore(): Promise<RDFStore> {
+  const level = new MemoryLevel()
+  return RDFStore.create(level)
+}
+
+// 辅助函数：按字符串查询（用于测试断言）
+async function queryByStrings(
+  store: RDFStore, 
+  pattern: { subject?: string; predicate?: string; object?: string; graph?: string }
+): Promise<{ subject: string; predicate: string; object: string; graph: string }[]> {
+  const quads = await store.query({
+    subject: pattern.subject ? namedNode(pattern.subject) : undefined,
+    predicate: pattern.predicate ? namedNode(pattern.predicate) : undefined,
+    object: pattern.object ? literal(pattern.object) : undefined,
+    graph: pattern.graph ? namedNode(pattern.graph) : undefined,
+  })
+  return quads.map(q => ({
+    subject: q.subject.value,
+    predicate: q.predicate.value,
+    object: q.object.value,
+    graph: q.graph.value,
+  }))
+}
+
 describe('pubwiki-lua', () => {
-  let store: MemoryRDFStore
+  let store: RDFStore
 
   beforeAll(async () => {
     // 加载 WASM 模块
@@ -48,8 +43,14 @@ describe('pubwiki-lua', () => {
     console.log('WASM module loaded successfully')
   })
 
-  beforeEach(() => {
-    store = new MemoryRDFStore()
+  beforeEach(async () => {
+    store = await createMemoryStore()
+  })
+
+  afterEach(async () => {
+    if (store.isOpen) {
+      await store.close()
+    }
   })
 
   describe('Basic Lua execution', () => {
@@ -73,26 +74,41 @@ describe('pubwiki-lua', () => {
   })
 
   describe('State:insert', () => {
-    it('should insert a triple', async () => {
-      await runLua(`
-        State:insert('book:1984', 'title', '1984')
+    it('should insert a quad and return ref', async () => {
+      const result = await runLua(`
+        local ref = State:insert('book:1984', 'title', '1984')
+        return ref
       `, { rdfStore: store })
 
-      const results = await store.query({ predicate: 'title' })
+      expect(typeof result.result).toBe('string')
+      
+      const results = await queryByStrings(store, { predicate: 'title' })
       expect(results).toHaveLength(1)
       expect(results[0].subject).toBe('book:1984')
       expect(results[0].object).toBe('1984')
     })
 
-    it('should insert multiple triples', async () => {
+    it('should insert multiple quads', async () => {
       await runLua(`
         State:insert('book:1984', 'title', '1984')
         State:insert('book:1984', 'author', 'George Orwell')
         State:insert('book:1984', 'year', 1949)
       `, { rdfStore: store })
 
-      const results = await store.query({ subject: 'book:1984' })
+      const results = await queryByStrings(store, { subject: 'book:1984' })
       expect(results).toHaveLength(3)
+    })
+
+    it('should insert with graph parameter', async () => {
+      const result = await runLua(`
+        local ref = State:insert('book:1984', 'title', '1984', 'graph:books')
+        return ref
+      `, { rdfStore: store })
+
+      expect(typeof result.result).toBe('string')
+      
+      const results = await queryByStrings(store, { graph: 'graph:books' })
+      expect(results).toHaveLength(1)
     })
   })
 
@@ -143,54 +159,72 @@ describe('pubwiki-lua', () => {
   })
 
   describe('State:delete', () => {
-    it('should delete a specific triple', async () => {
-      await runLua(`
+    it('should delete a specific quad and return ref', async () => {
+      const result = await runLua(`
         State:insert('user:alice', 'age', 25)
-        State:delete('user:alice', 'age', 25)
+        local ref = State:delete('user:alice', 'age', 25)
+        return ref
       `, { rdfStore: store })
 
-      const results = await store.query({ subject: 'user:alice' })
+      expect(typeof result.result).toBe('string')
+      const results = await queryByStrings(store, { subject: 'user:alice' })
       expect(results).toHaveLength(0)
     })
 
-    it('should delete all triples with subject+predicate', async () => {
+    it('should delete all quads with subject+predicate', async () => {
       await runLua(`
         State:insert('user:alice', 'hobby', 'reading')
         State:insert('user:alice', 'hobby', 'coding')
         State:delete('user:alice', 'hobby')
       `, { rdfStore: store })
 
-      const results = await store.query({ subject: 'user:alice' })
+      const results = await queryByStrings(store, { subject: 'user:alice' })
       expect(results).toHaveLength(0)
     })
   })
 
   describe('State:batchInsert', () => {
-    it('should insert multiple triples at once', async () => {
-      await runLua(`
+    it('should insert multiple quads at once and return ref', async () => {
+      const result = await runLua(`
         local books = {
           {subject = 'book:1', predicate = 'title', object = 'Book 1'},
           {subject = 'book:2', predicate = 'title', object = 'Book 2'},
           {subject = 'book:3', predicate = 'title', object = 'Book 3'},
         }
+        return State:batchInsert(books)
+      `, { rdfStore: store })
+
+      expect(typeof result.result).toBe('string')
+      const results = await queryByStrings(store, { predicate: 'title' })
+      expect(results).toHaveLength(3)
+    })
+
+    it('should support graph in batch insert', async () => {
+      await runLua(`
+        local books = {
+          {subject = 'book:1', predicate = 'title', object = 'Book 1', graph = 'graph:test'},
+          {subject = 'book:2', predicate = 'title', object = 'Book 2', graph = 'graph:test'},
+        }
         State:batchInsert(books)
       `, { rdfStore: store })
 
-      const results = await store.query({ predicate: 'title' })
-      expect(results).toHaveLength(3)
+      const results = await queryByStrings(store, { graph: 'graph:test' })
+      expect(results).toHaveLength(2)
     })
   })
 
   describe('State:set', () => {
-    it('should replace existing value', async () => {
-      await runLua(`
+    it('should replace existing value and return ref', async () => {
+      const result = await runLua(`
         State:insert('user:alice', 'age', 25)
-        State:set('user:alice', 'age', 30)
+        local ref = State:set('user:alice', 'age', 30)
+        return ref
       `, { rdfStore: store })
 
-      const results = await store.query({ subject: 'user:alice', predicate: 'age' })
+      expect(typeof result.result).toBe('string')
+      const results = await queryByStrings(store, { subject: 'user:alice', predicate: 'age' })
       expect(results).toHaveLength(1)
-      expect(results[0].object).toBe(30)
+      expect(results[0].object).toBe('30')
     })
 
     it('should work like insert when no previous value', async () => {
@@ -198,7 +232,7 @@ describe('pubwiki-lua', () => {
         State:set('user:alice', 'city', 'Tokyo')
       `, { rdfStore: store })
 
-      const results = await store.query({ subject: 'user:alice', predicate: 'city' })
+      const results = await queryByStrings(store, { subject: 'user:alice', predicate: 'city' })
       expect(results).toHaveLength(1)
       expect(results[0].object).toBe('Tokyo')
     })
@@ -241,6 +275,44 @@ describe('pubwiki-lua', () => {
     })
   })
 
+  describe('Version Control', () => {
+    it('should return current ref', async () => {
+      await runLua(`
+        State:insert('user:alice', 'name', 'Alice')
+      `, { rdfStore: store })
+
+      const result = await runLua(`
+        return State:currentRef()
+      `, { rdfStore: store })
+
+      expect(typeof result.result).toBe('string')
+      expect(result.result).toBe(store.currentRef)
+    })
+
+    it('should create checkpoint', async () => {
+      await runLua(`
+        State:insert('user:alice', 'name', 'Alice')
+      `, { rdfStore: store })
+
+      const result = await runLua(`
+        return State:checkpoint()
+      `, { rdfStore: store })
+
+      expect(typeof result.result).toBe('string')
+    })
+
+    it('should checkout to specific ref', async () => {
+      const insertResult = await runLua(`
+        local ref1 = State:insert('user:alice', 'name', 'Alice')
+        local ref2 = State:insert('user:bob', 'name', 'Bob')
+        State:checkout(ref1)
+        return ref1
+      `, { rdfStore: store })
+
+      expect(store.currentRef).toBe(insertResult.result)
+    })
+  })
+
   describe('Complex scenarios', () => {
     it('should handle book catalog example', async () => {
       const result = await runLua(`
@@ -278,16 +350,23 @@ describe('pubwiki-lua', () => {
 })
 
 describe('Persistent Lua Instance', () => {
-  let store: MemoryRDFStore
+  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
     await loadRunner()
   })
 
-  beforeEach(() => {
-    store = new MemoryRDFStore()
+  beforeEach(async () => {
+    store = await createMemoryStore()
     instance = createLuaInstance({ rdfStore: store })
+  })
+
+  afterEach(async () => {
+    instance.destroy()
+    if (store.isOpen) {
+      await store.close()
+    }
   })
 
   describe('State persistence between runs', () => {
@@ -358,7 +437,8 @@ describe('Persistent Lua Instance', () => {
 
   describe('Instance cleanup', () => {
     it('should not share state between different instances', async () => {
-      const instance2 = createLuaInstance({ rdfStore: new MemoryRDFStore() })
+      const store2 = await createMemoryStore()
+      const instance2 = createLuaInstance({ rdfStore: store2 })
 
       // Set value in first instance
       await instance.run('shared_value = 42')
@@ -374,6 +454,7 @@ describe('Persistent Lua Instance', () => {
       expect(result.result).toBe('not found')
 
       instance2.destroy()
+      await store2.close()
     })
 
     it('should properly destroy instance', () => {
@@ -384,16 +465,23 @@ describe('Persistent Lua Instance', () => {
 })
 
 describe('JS Module Registration', () => {
-  let store: MemoryRDFStore
+  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
     await loadRunner()
   })
 
-  beforeEach(() => {
-    store = new MemoryRDFStore()
+  beforeEach(async () => {
+    store = await createMemoryStore()
     instance = createLuaInstance({ rdfStore: store })
+  })
+
+  afterEach(async () => {
+    instance.destroy()
+    if (store.isOpen) {
+      await store.close()
+    }
   })
 
   describe('Synchronous functions', () => {
@@ -646,14 +734,20 @@ describe('JS Module Registration', () => {
 })
 
 describe('Error Output Preservation', () => {
-  let store: MemoryRDFStore
+  let store: RDFStore
 
   beforeAll(async () => {
     await loadRunner()
   })
 
-  beforeEach(() => {
-    store = new MemoryRDFStore()
+  beforeEach(async () => {
+    store = await createMemoryStore()
+  })
+
+  afterEach(async () => {
+    if (store.isOpen) {
+      await store.close()
+    }
   })
 
   it('should preserve output before error in runLua', async () => {
@@ -1106,17 +1200,23 @@ class MemoryVfsProvider implements VfsProvider {
 }
 
 describe('VFS File System Operations', () => {
-  let store: MemoryRDFStore
+  let store: RDFStore
   let vfs: Vfs<VfsProvider>
 
   beforeAll(async () => {
     await loadRunner()
   })
 
-  beforeEach(() => {
-    store = new MemoryRDFStore()
+  beforeEach(async () => {
+    store = await createMemoryStore()
     const provider = new MemoryVfsProvider()
     vfs = createVfs(provider)
+  })
+
+  afterEach(async () => {
+    if (store.isOpen) {
+      await store.close()
+    }
   })
 
   describe('fs.stat', () => {

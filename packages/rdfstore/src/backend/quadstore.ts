@@ -10,8 +10,6 @@ import { DataFactory } from 'n3'
 import type { Quad } from '@rdfjs/types'
 import type { QuadPattern, LevelInstance } from '../types.js'
 
-const { defaultGraph } = DataFactory
-
 /** Sublevel name for RDF data */
 export const DATA_SUBLEVEL = 'rdf'
 

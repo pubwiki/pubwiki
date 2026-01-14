@@ -155,6 +155,43 @@ export class VersionDAG {
   }
 
   /**
+   * Remove a child from a ref's children index
+   */
+  private async removeChild(parent: Ref, child: Ref): Promise<void> {
+    const db = this.ensureOpen()
+    const children = await this.getChildren(parent)
+    const index = children.indexOf(child)
+    if (index !== -1) {
+      children.splice(index, 1)
+      await db.put(`${CHILDREN_PREFIX}${parent}`, JSON.stringify(children))
+    }
+  }
+
+  /**
+   * Delete a ref node and remove it from parent's children
+   * Used for transaction rollback
+   */
+  async deleteRef(ref: Ref): Promise<void> {
+    if (ref === ROOT_REF) return
+    
+    const db = this.ensureOpen()
+    const node = await this.getNode(ref)
+    if (!node) return
+
+    // Remove from parent's children
+    if (node.parent) {
+      await this.removeChild(node.parent, ref)
+    }
+
+    // Delete the node
+    try {
+      await db.del(`${NODE_PREFIX}${ref}`)
+    } catch {
+      // Ignore if not found
+    }
+  }
+
+  /**
    * Get the path from a ref to root
    * @returns Array of refs from the given ref to root (inclusive)
    */

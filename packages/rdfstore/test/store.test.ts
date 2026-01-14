@@ -411,6 +411,138 @@ describe('RDFStore', () => {
     })
   })
 
+  describe('Transaction', () => {
+    it('should commit changes on successful transaction', async () => {
+      const startRef = store.currentRef
+
+      const result = await store.transaction(async () => {
+        await store.insert(
+          namedNode('http://example.org/s1'),
+          namedNode('http://example.org/p'),
+          literal('v1')
+        )
+        await store.insert(
+          namedNode('http://example.org/s2'),
+          namedNode('http://example.org/p'),
+          literal('v2')
+        )
+        return 'success'
+      })
+
+      expect(result).toBe('success')
+      expect(store.currentRef).not.toBe(startRef)
+      
+      const quads = await store.getAllQuads()
+      expect(quads).toHaveLength(2)
+    })
+
+    it('should rollback changes on error', async () => {
+      // Insert initial data
+      await store.insert(
+        namedNode('http://example.org/initial'),
+        namedNode('http://example.org/p'),
+        literal('initial')
+      )
+      const startRef = store.currentRef
+
+      // Transaction that throws
+      await expect(
+        store.transaction(async () => {
+          await store.insert(
+            namedNode('http://example.org/s1'),
+            namedNode('http://example.org/p'),
+            literal('v1')
+          )
+          await store.insert(
+            namedNode('http://example.org/s2'),
+            namedNode('http://example.org/p'),
+            literal('v2')
+          )
+          throw new Error('Transaction failed')
+        })
+      ).rejects.toThrow('Transaction failed')
+
+      // Should be rolled back to start state
+      expect(store.currentRef).toBe(startRef)
+      
+      const quads = await store.getAllQuads()
+      expect(quads).toHaveLength(1)
+      expect(quads[0].object.value).toBe('initial')
+
+      // Verify the refs created during transaction are deleted
+      const children = await store.getChildren(startRef)
+      expect(children).toHaveLength(0)
+    })
+
+    it('should handle synchronous callback', async () => {
+      const result = await store.transaction(() => {
+        return 42
+      })
+
+      expect(result).toBe(42)
+    })
+
+    it('should handle nested transactions', async () => {
+      const result = await store.transaction(async () => {
+        await store.insert(
+          namedNode('http://example.org/outer'),
+          namedNode('http://example.org/p'),
+          literal('outer')
+        )
+
+        // Nested transaction
+        await store.transaction(async () => {
+          await store.insert(
+            namedNode('http://example.org/inner'),
+            namedNode('http://example.org/p'),
+            literal('inner')
+          )
+        })
+
+        return 'done'
+      })
+
+      expect(result).toBe('done')
+      const quads = await store.getAllQuads()
+      expect(quads).toHaveLength(2)
+    })
+
+    it('should rollback outer transaction on inner error', async () => {
+      await store.insert(
+        namedNode('http://example.org/before'),
+        namedNode('http://example.org/p'),
+        literal('before')
+      )
+      const startRef = store.currentRef
+
+      await expect(
+        store.transaction(async () => {
+          await store.insert(
+            namedNode('http://example.org/outer'),
+            namedNode('http://example.org/p'),
+            literal('outer')
+          )
+
+          // Nested transaction that fails
+          await store.transaction(async () => {
+            await store.insert(
+              namedNode('http://example.org/inner'),
+              namedNode('http://example.org/p'),
+              literal('inner')
+            )
+            throw new Error('Inner failed')
+          })
+        })
+      ).rejects.toThrow('Inner failed')
+
+      // Outer transaction should also rollback
+      expect(store.currentRef).toBe(startRef)
+      const quads = await store.getAllQuads()
+      expect(quads).toHaveLength(1)
+      expect(quads[0].object.value).toBe('before')
+    })
+  })
+
   describe('Named Graphs (Subgraphs)', () => {
     it('should insert quads into named graphs', async () => {
       // Insert into default graph
