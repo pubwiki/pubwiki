@@ -4,6 +4,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
 	import { PUBLIC_STUDIO_URL } from '$env/static/public';
+	import favicon from '$lib/assets/favicon.svg';
 
 	let { children } = $props();
 	const auth = useAuth();
@@ -23,9 +24,7 @@
 		<div class="mx-auto max-w-[1200px] px-4 flex items-center gap-6">
 			<!-- Logo -->
 			<a href="/" class="flex items-center gap-2 font-bold text-lg text-[#24292f] hover:text-[#0969da] transition">
-				<svg class="h-8 w-8" fill="currentColor" viewBox="0 0 24 24">
-					<path d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z"/>
-				</svg>
+				<img src={favicon} alt="Pub.Wiki" class="h-8 w-8" />
 				<span>Pub.Wiki</span>
 			</a>
 
