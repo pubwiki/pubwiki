@@ -410,4 +410,216 @@ describe('RDFStore', () => {
       expect(results).toHaveLength(2)
     })
   })
+
+  describe('Named Graphs (Subgraphs)', () => {
+    it('should insert quads into named graphs', async () => {
+      // Insert into default graph
+      await store.insert(
+        namedNode('http://example.org/s1'),
+        namedNode('http://example.org/name'),
+        literal('Default Entity')
+      )
+
+      // Insert into named graph "graph1"
+      await store.insert(
+        namedNode('http://example.org/s2'),
+        namedNode('http://example.org/name'),
+        literal('Graph1 Entity'),
+        namedNode('http://example.org/graph1')
+      )
+
+      // Insert into named graph "graph2"
+      await store.insert(
+        namedNode('http://example.org/s3'),
+        namedNode('http://example.org/name'),
+        literal('Graph2 Entity'),
+        namedNode('http://example.org/graph2')
+      )
+
+      const allQuads = await store.getAllQuads()
+      expect(allQuads).toHaveLength(3)
+    })
+
+    it('should query quads by graph', async () => {
+      const graph1 = namedNode('http://example.org/graph1')
+      const graph2 = namedNode('http://example.org/graph2')
+
+      await store.insert(
+        namedNode('http://example.org/alice'),
+        namedNode('http://example.org/name'),
+        literal('Alice'),
+        graph1
+      )
+      await store.insert(
+        namedNode('http://example.org/bob'),
+        namedNode('http://example.org/name'),
+        literal('Bob'),
+        graph1
+      )
+      await store.insert(
+        namedNode('http://example.org/charlie'),
+        namedNode('http://example.org/name'),
+        literal('Charlie'),
+        graph2
+      )
+
+      // Query only graph1
+      const graph1Quads = await store.query({ graph: graph1 })
+      expect(graph1Quads).toHaveLength(2)
+
+      // Query only graph2
+      const graph2Quads = await store.query({ graph: graph2 })
+      expect(graph2Quads).toHaveLength(1)
+    })
+
+    it('should delete quads from specific graph', async () => {
+      const graph1 = namedNode('http://example.org/graph1')
+
+      await store.insert(
+        namedNode('http://example.org/s1'),
+        namedNode('http://example.org/p'),
+        literal('value1'),
+        graph1
+      )
+      await store.insert(
+        namedNode('http://example.org/s1'),
+        namedNode('http://example.org/p'),
+        literal('value1')
+        // default graph
+      )
+
+      // Both quads exist
+      expect(await store.getAllQuads()).toHaveLength(2)
+
+      // Delete only from graph1
+      await store.delete(
+        namedNode('http://example.org/s1'),
+        namedNode('http://example.org/p'),
+        literal('value1'),
+        graph1
+      )
+
+      // Only default graph quad remains
+      const remaining = await store.getAllQuads()
+      expect(remaining).toHaveLength(1)
+      expect(remaining[0].graph.termType).toBe('DefaultGraph')
+    })
+
+    it('should batch insert into multiple graphs', async () => {
+      const quads = [
+        quad('http://example.org/s1', 'http://example.org/p', 'v1', 'http://example.org/graph1'),
+        quad('http://example.org/s2', 'http://example.org/p', 'v2', 'http://example.org/graph1'),
+        quad('http://example.org/s3', 'http://example.org/p', 'v3', 'http://example.org/graph2'),
+        quad('http://example.org/s4', 'http://example.org/p', 'v4'), // default graph
+      ]
+
+      await store.batchInsert(quads)
+
+      const graph1Quads = await store.query({ graph: namedNode('http://example.org/graph1') })
+      expect(graph1Quads).toHaveLength(2)
+
+      const graph2Quads = await store.query({ graph: namedNode('http://example.org/graph2') })
+      expect(graph2Quads).toHaveLength(1)
+
+      const allQuads = await store.getAllQuads()
+      expect(allQuads).toHaveLength(4)
+    })
+
+    it('should support SPARQL GRAPH clause', async () => {
+      // Insert data into different graphs
+      await store.insert(
+        namedNode('http://example.org/alice'),
+        namedNode('http://example.org/knows'),
+        namedNode('http://example.org/bob'),
+        namedNode('http://example.org/social')
+      )
+      await store.insert(
+        namedNode('http://example.org/alice'),
+        namedNode('http://example.org/worksAt'),
+        namedNode('http://example.org/company1'),
+        namedNode('http://example.org/work')
+      )
+      await store.insert(
+        namedNode('http://example.org/bob'),
+        namedNode('http://example.org/worksAt'),
+        namedNode('http://example.org/company2'),
+        namedNode('http://example.org/work')
+      )
+
+      // Query specific graph using GRAPH clause
+      const results: Record<string, unknown>[] = []
+      for await (const binding of store.sparqlQuery(`
+        SELECT ?person ?company WHERE {
+          GRAPH <http://example.org/work> {
+            ?person <http://example.org/worksAt> ?company
+          }
+        }
+      `)) {
+        results.push(binding)
+      }
+
+      expect(results).toHaveLength(2)
+    })
+
+    it('should support SPARQL FROM NAMED clause', async () => {
+      await store.insert(
+        namedNode('http://example.org/s1'),
+        namedNode('http://example.org/type'),
+        namedNode('http://example.org/TypeA'),
+        namedNode('http://example.org/graph1')
+      )
+      await store.insert(
+        namedNode('http://example.org/s2'),
+        namedNode('http://example.org/type'),
+        namedNode('http://example.org/TypeB'),
+        namedNode('http://example.org/graph2')
+      )
+
+      // Query using FROM NAMED to specify which graphs to query
+      const results: Record<string, unknown>[] = []
+      for await (const binding of store.sparqlQuery(`
+        SELECT ?s ?g WHERE {
+          GRAPH ?g {
+            ?s <http://example.org/type> ?type
+          }
+        }
+      `)) {
+        results.push(binding)
+      }
+
+      expect(results).toHaveLength(2)
+      // Should have different graphs
+      const graphs = results.map(r => (r.g as { value: string }).value)
+      expect(graphs).toContain('http://example.org/graph1')
+      expect(graphs).toContain('http://example.org/graph2')
+    })
+
+    it('should maintain graph information across checkout', async () => {
+      const graph1 = namedNode('http://example.org/graph1')
+
+      // Insert into named graph
+      const ref1 = await store.insert(
+        namedNode('http://example.org/s1'),
+        namedNode('http://example.org/p'),
+        literal('v1'),
+        graph1
+      )
+
+      // Insert more data
+      await store.insert(
+        namedNode('http://example.org/s2'),
+        namedNode('http://example.org/p'),
+        literal('v2'),
+        graph1
+      )
+
+      // Checkout to earlier state
+      await store.checkout(ref1)
+
+      // Verify graph info is preserved
+      const quads = await store.query({ graph: graph1 })
+      expect(quads).toHaveLength(1)
+      expect(quads[0].graph.value).toBe('http://example.org/graph1')
+    })
+  })
 })

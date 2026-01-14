@@ -133,10 +133,8 @@ export class StoreBackend {
     }
     if (pattern.graph) {
       queryPattern.graph = pattern.graph
-    } else {
-      // Default to default graph if not specified
-      queryPattern.graph = defaultGraph()
     }
+    // Note: If graph is not specified, query all graphs (no default to defaultGraph)
 
     const result = await this.store.get(queryPattern)
     return result.items as Quad[]
@@ -146,15 +144,17 @@ export class StoreBackend {
    * Get all quads in the store
    */
   async getAllQuads(): Promise<Quad[]> {
-    return this.query({})
+    // Query without graph restriction to get quads from all graphs
+    const result = await this.store.get({})
+    return result.items as Quad[]
   }
 
   /**
    * Count all quads in the store
    */
   async count(): Promise<number> {
-    const result = await this.store.get({ graph: defaultGraph() })
-    return result.items.length
+    const allQuads = await this.getAllQuads()
+    return allQuads.length
   }
 
   /**
