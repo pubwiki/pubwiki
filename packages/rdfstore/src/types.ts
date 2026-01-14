@@ -6,6 +6,7 @@
  */
 
 import type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
+import { AbstractLevel } from 'abstract-level'
 
 // Re-export RDF.js types for convenience
 export type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph }
@@ -88,8 +89,8 @@ export interface Checkpoint {
 /**
  * Type for abstract-level instances compatible with the store.
  */
-export type LevelInstance = import('abstract-level').AbstractLevel<
-  Buffer | Uint8Array | string,
+export type LevelInstance = AbstractLevel<
+  any,
   string,
   string
 >

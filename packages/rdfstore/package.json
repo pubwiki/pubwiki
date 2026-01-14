@@ -1,6 +1,6 @@
 {
   "name": "@pubwiki/rdfstore",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "RDF store with WAL-based versioning and snapshot support built on quadstore",
   "type": "module",
   "main": "./src/index.ts",
