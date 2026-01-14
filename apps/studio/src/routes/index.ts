@@ -167,7 +167,7 @@ export {
   getNodeRDFStore,
   closeNodeRDFStore,
   closeAllRDFStores,
-  QuadstoreRDFStore
+  RDFStore
 } from './rdf';
 
 // Import/Export

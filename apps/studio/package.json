@@ -36,6 +36,7 @@
 		"@pubwiki/bundler": "workspace:*",
 		"@pubwiki/chat": "workspace:*",
 		"@pubwiki/lua": "workspace:*",
+		"@pubwiki/rdfstore": "workspace:*",
 		"@pubwiki/sandbox-host": "workspace:*",
 		"@pubwiki/svelte-chat": "workspace:*",
 		"@pubwiki/ui": "workspace:*",
@@ -54,7 +55,6 @@
 		"marked": "^17.0.1",
 		"monaco-editor": "^0.55.1",
 		"n3": "^1.26.0",
-		"quadstore": "^15.4.1",
 		"svelte-lexical": "^0.6.3"
 	}
 }

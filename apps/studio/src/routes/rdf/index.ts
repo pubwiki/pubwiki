@@ -6,5 +6,5 @@ export {
   getNodeRDFStore,
   closeNodeRDFStore,
   closeAllRDFStores,
-  QuadstoreRDFStore
+  RDFStore
 } from './store';

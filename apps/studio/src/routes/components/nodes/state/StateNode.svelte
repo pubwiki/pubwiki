@@ -3,7 +3,7 @@
 	 * StateNode - RDF Triple Store node for Lua State API
 	 * 
 	 * Features:
-	 * - Provides RDF triple store (quadstore) for Lua scripts
+	 * - Provides RDF triple store (@pubwiki/rdfstore) for Lua scripts
 	 * - Displays store status and triple count
 	 * - Auto-initializes on mount, cleanup on unmount
 	 * - Uses BaseNode for consistent styling
@@ -15,7 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import type { StateNodeData, FlowNodeData } from '../../../types';
 	import { nodeStore } from '../../../persistence';
-	import { getNodeRDFStore, closeNodeRDFStore, type QuadstoreRDFStore } from '../../../rdf';
+	import { getNodeRDFStore, closeNodeRDFStore, type RDFStore } from '../../../rdf';
 	import BaseNode from '../BaseNode.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -35,7 +35,7 @@
 	// Runtime State (local, not persisted)
 	// ============================================================================
 
-	let store = $state<QuadstoreRDFStore | null>(null);
+	let store = $state<RDFStore | null>(null);
 	let isInitializing = $state(false);
 	let isReady = $state(false);
 	let error = $state<string | null>(null);
@@ -81,9 +81,9 @@
 		if (!store) return;
 		
 		try {
-			// Query all triples to get count
-			const triples = await store.query({});
-			tripleCount = triples.length;
+			// Query all quads to get count
+			const quads = await store.getAllQuads();
+			tripleCount = quads.length;
 		} catch (e) {
 			console.error('[StateNode] Failed to get triple count:', e);
 		}
@@ -93,10 +93,13 @@
 		if (!store) return;
 		
 		try {
-			// Get all triples and delete them
-			const triples = await store.query({});
-			for (const triple of triples) {
-				await store.delete(triple.subject, triple.predicate, triple.object);
+			// Get all quads and delete them via batch delete
+			const quads = await store.getAllQuads();
+			if (quads.length > 0) {
+				// Delete each quad
+				for (const quad of quads) {
+					await store.delete(quad.subject, quad.predicate, quad.object, quad.graph);
+				}
 			}
 			tripleCount = 0;
 		} catch (e) {
