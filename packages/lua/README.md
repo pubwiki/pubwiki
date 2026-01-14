@@ -89,26 +89,28 @@ await loadRunner(
 
 ```ts
 import { loadRunner, createLuaInstance } from '@pubwiki/lua'
+import { RDFStore } from '@pubwiki/rdfstore'
+import { MemoryLevel } from 'memory-level'
 import glueUrl from '@pubwiki/lua/wasm/lua_runner_glue.js?url'
-import { QuadstoreRDFStore } from './your-rdf-store'
 
 // Initialize the Lua runtime
 await loadRunner(glueUrl)
 
-// Create an async RDF store instance
-const store = await QuadstoreRDFStore.create()
+// Create an RDF store instance
+const level = new MemoryLevel()
+const store = await RDFStore.create(level)
 
 // Create a persistent Lua instance
 const lua = createLuaInstance({ rdfStore: store })
 
 // Run Lua code with RDF state access
 const result = await lua.run(`
-  -- Insert RDF triples (async operations)
-  State:insert('user:alice', 'name', 'Alice')
-  State:insert('user:alice', 'age', 30)
+  -- Insert RDF triples (returns version refs)
+  local ref1 = State:insert('user:alice', 'name', 'Alice')
+  local ref2 = State:insert('user:alice', 'age', 30)
   State:insert('user:alice', 'city', 'Tokyo')
   
-  -- Query triples (async)
+  -- Query triples
   local user_data = State:match({subject = 'user:alice'})
   
   print('Alice has ' .. #user_data .. ' properties')
@@ -116,16 +118,25 @@ const result = await lua.run(`
     print(triple.predicate .. ': ' .. tostring(triple.object))
   end
   
-  return { count = #user_data, status = 'ok' }
+  -- Version control: checkout to earlier state
+  State:checkout(ref1)
+  local count_after_checkout = #State:match({subject = 'user:alice'})
+  
+  return { 
+    count = #user_data, 
+    count_after_checkout = count_after_checkout,
+    status = 'ok' 
+  }
 `)
 
 // Access structured result
-console.log(result.result)  // { count: 3, status: 'ok' }
+console.log(result.result)  // { count: 3, count_after_checkout: 1, status: 'ok' }
 console.log(result.output)  // "Alice has 3 properties\nname: Alice\n..."
 console.log(result.error)   // null
 
 // Cleanup
 lua.destroy()
+await store.close()
 ```
 
 ## API Reference
@@ -364,26 +375,33 @@ The Lua `State` object provides methods for working with RDF triples. **All oper
 
 > **Note**: Use `:` (colon) for method calls, e.g., `State:insert(...)`.
 
-### State:insert(subject, predicate, object)
+### State:insert(subject, predicate, object, graph?)
 
-Insert a single triple into the store.
+Insert a single triple into the store. Returns a version reference (`Ref`).
 
 ```lua
-State:insert('book:1984', 'title', '1984')
+-- Basic insert
+local ref = State:insert('book:1984', 'title', '1984')
 State:insert('book:1984', 'author', 'George Orwell')
 State:insert('book:1984', 'year', 1949)
+
+-- Insert with named graph
+State:insert('book:1984', 'rating', 5, 'graph:reviews')
 ```
 
-### State:delete(subject, predicate, object?)
+### State:delete(subject, predicate, object?, graph?)
 
-Delete triples matching the pattern. If `object` is omitted, deletes all triples with matching subject and predicate.
+Delete triples matching the pattern. Returns a version reference (`Ref`). If `object` is omitted, deletes all triples with matching subject and predicate.
 
 ```lua
 -- Delete a specific triple
-State:delete('book:1984', 'year', 1949)
+local ref = State:delete('book:1984', 'year', 1949)
 
 -- Delete all triples with subject + predicate
 State:delete('book:1984', 'genre')
+
+-- Delete from specific graph
+State:delete('book:1984', 'rating', nil, 'graph:reviews')
 ```
 
 ### State:match(pattern)
@@ -410,23 +428,25 @@ end
 
 ### State:batchInsert(triples)
 
-Insert multiple triples at once for better performance.
+Insert multiple triples at once for better performance. Returns a version reference (`Ref`). Each triple can optionally include a `graph` field.
 
 ```lua
-State:batchInsert({
+local ref = State:batchInsert({
   {subject = 'product:p1', predicate = 'name', object = 'Laptop'},
   {subject = 'product:p1', predicate = 'price', object = 999},
   {subject = 'product:p2', predicate = 'name', object = 'Mouse'},
+  -- With named graph
+  {subject = 'product:p1', predicate = 'stock', object = 50, graph = 'graph:inventory'},
 })
 ```
 
-### State:set(subject, predicate, object)
+### State:set(subject, predicate, object, graph?)
 
-Replace all values for a subject+predicate pair. Equivalent to delete then insert.
+Replace all values for a subject+predicate pair. Equivalent to delete then insert. Returns a version reference (`Ref`).
 
 ```lua
 State:insert('user:alice', 'age', 25)
-State:set('user:alice', 'age', 26)  -- Replaces 25 with 26
+local ref = State:set('user:alice', 'age', 26)  -- Replaces 25 with 26
 ```
 
 ### State:get(subject, predicate)
@@ -436,6 +456,45 @@ Get a single value for a subject+predicate pair. Returns `nil` if not found.
 ```lua
 local name = State:get('user:alice', 'name')
 local city = State:get('user:alice', 'city') or 'Unknown'
+```
+
+### Version Control
+
+The RDF store maintains an immutable version DAG. Each mutation returns a `Ref` (version reference) that can be used to checkout historical states.
+
+#### State:currentRef()
+
+Get the current version reference.
+
+```lua
+local ref = State:currentRef()
+print('Current version: ' .. ref)
+```
+
+#### State:checkout(ref)
+
+Checkout to a specific version. This rebuilds the store state to match that version.
+
+```lua
+local ref1 = State:insert('user:alice', 'name', 'Alice')
+local ref2 = State:insert('user:bob', 'name', 'Bob')
+
+-- Go back to ref1 (before Bob was added)
+State:checkout(ref1)
+
+-- Now only Alice exists in the store
+local users = State:match({predicate = 'name'})
+print(#users)  -- 1
+```
+
+#### State:checkpoint()
+
+Create a checkpoint at the current state. Returns the current `Ref`.
+
+```lua
+local checkpoint = State:checkpoint()
+-- ... do more operations ...
+State:checkout(checkpoint)  -- Restore to checkpoint
 ```
 
 ## JSON Module
@@ -508,61 +567,97 @@ await lua.run(`
 
 ## RDFStore Interface
 
-To use pubwiki-lua with RDF features, provide an RDFStore implementation:
+To use pubwiki-lua with RDF features, provide an RDFStore implementation. The recommended approach is to use `@pubwiki/rdfstore`:
 
 ```typescript
+import { RDFStore } from '@pubwiki/rdfstore'
+import { MemoryLevel } from 'memory-level'
+
+const level = new MemoryLevel()
+const store = await RDFStore.create(level)
+
+const lua = createLuaInstance({ rdfStore: store })
+```
+
+### RDFStore API
+
+```typescript
+import type { Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
+
+// Version reference - unique identifier for each state
+type Ref = string
+
 interface RDFStore {
-  insert(subject: string, predicate: string, object: any): Promise<void>
-  delete(subject: string, predicate: string, object?: any): Promise<void>
-  query(pattern: TriplePattern): Promise<Triple[]>
-  batchInsert?(triples: Triple[]): Promise<void>
-}
-
-interface Triple {
-  subject: string
-  predicate: string
-  object: any
-}
-
-interface TriplePattern {
-  subject?: string | null
-  predicate?: string | null
-  object?: any | null
+  // Current version reference
+  readonly currentRef: Ref
+  
+  // Insert a quad, returns new Ref
+  insert(
+    subject: Quad_Subject, 
+    predicate: Quad_Predicate, 
+    object: Quad_Object, 
+    graph?: Quad_Graph
+  ): Promise<Ref>
+  
+  // Delete quads matching pattern, returns new Ref
+  delete(
+    subject: Quad_Subject, 
+    predicate: Quad_Predicate, 
+    object?: Quad_Object | null, 
+    graph?: Quad_Graph | null
+  ): Promise<Ref>
+  
+  // Query quads matching pattern
+  query(pattern: QuadPattern): Promise<Quad[]>
+  
+  // Batch insert, returns new Ref
+  batchInsert(quads: Quad[]): Promise<Ref>
+  
+  // Checkout to specific version
+  checkout(targetRef: Ref): Promise<void>
+  
+  // Create checkpoint at current state
+  checkpoint(): Promise<Ref>
 }
 ```
 
-### Example: In-Memory Store
+### Using @pubwiki/rdfstore
+
+`@pubwiki/rdfstore` provides a full-featured RDF store with:
+- Immutable version DAG for time-travel
+- SPARQL query support via quadstore-comunica
+- Multiple serialization formats (N-Quads, JSON-LD, etc.)
+- Pluggable storage backends (memory, IndexedDB, LevelDB)
 
 ```typescript
-class MemoryRDFStore implements RDFStore {
-  private triples: Triple[] = []
+import { RDFStore } from '@pubwiki/rdfstore'
+import { MemoryLevel } from 'memory-level'
 
-  async insert(subject: string, predicate: string, object: any): Promise<void> {
-    this.triples.push({ subject, predicate, object })
-  }
+// Create in-memory store
+const level = new MemoryLevel()
+const store = await RDFStore.create(level)
 
-  async delete(subject: string, predicate: string, object?: any): Promise<void> {
-    this.triples = this.triples.filter(t => {
-      if (t.subject !== subject || t.predicate !== predicate) return true
-      if (object === undefined) return false
-      return JSON.stringify(t.object) !== JSON.stringify(object)
-    })
-  }
+// Use with Lua
+const lua = createLuaInstance({ rdfStore: store })
 
-  async query(pattern: TriplePattern): Promise<Triple[]> {
-    return this.triples.filter(t => {
-      if (pattern.subject && t.subject !== pattern.subject) return false
-      if (pattern.predicate && t.predicate !== pattern.predicate) return false
-      if (pattern.object !== undefined && 
-          JSON.stringify(t.object) !== JSON.stringify(pattern.object)) return false
-      return true
-    })
-  }
+await lua.run(`
+  -- Insert data
+  local ref1 = State:insert('user:alice', 'name', 'Alice')
+  local ref2 = State:insert('user:alice', 'age', 30)
+  
+  -- Query data
+  local results = State:match({subject = 'user:alice'})
+  print('Found ' .. #results .. ' triples')
+  
+  -- Version control
+  State:checkout(ref1)  -- Go back in time
+  results = State:match({subject = 'user:alice'})
+  print('After checkout: ' .. #results .. ' triples')  -- Only 1
+`)
 
-  async batchInsert(triples: Triple[]): Promise<void> {
-    this.triples.push(...triples)
-  }
-}
+// Cleanup
+lua.destroy()
+await store.close()
 ```
 
 ## Building Locally
