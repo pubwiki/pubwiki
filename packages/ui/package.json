@@ -8,7 +8,11 @@
 		"./utils": "./src/utils/index.ts"
 	},
 	"peerDependencies": {
-		"svelte": "catalog:"
+		"svelte": "catalog:",
+		"flowbite-svelte": "catalog:"
+	},
+	"devDependencies": {
+		"flowbite-svelte": "catalog:"
 	},
 	"dependencies": {
 		"@pubwiki/api": "workspace:*"

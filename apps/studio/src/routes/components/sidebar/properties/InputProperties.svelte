@@ -6,6 +6,7 @@
 	import type { InputNodeData, ContentBlock, InputGenerationConfig } from '../../../types';
 	import { nodeStore } from '../../../persistence/node-store.svelte';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
+	import { VirtualizedDropdown } from '@pubwiki/ui/components';
 	import { RefTagEditor } from '../../editor';
 	import * as m from '$lib/paraglide/messages';
 
@@ -23,15 +24,6 @@
 	let models = $state<string[]>([]);
 	let isLoadingModels = $state(false);
 	let modelsError = $state('');
-	let showModelDropdown = $state(false);
-	let modelSearchQuery = $state('');
-
-	// Filtered models based on search
-	let filteredModels = $derived(
-		modelSearchQuery
-			? models.filter((model) => model.toLowerCase().includes(modelSearchQuery.toLowerCase()))
-			: models
-	);
 
 	// Get generation config directly from nodeStore for reactivity
 	let generationConfig = $derived.by(() => {
@@ -72,8 +64,6 @@
 	// Handle model selection
 	function handleModelSelect(model: string) {
 		handleGenerationConfigChange('model', model);
-		showModelDropdown = false;
-		modelSearchQuery = '';
 	}
 
 	// Content block change handler
@@ -97,17 +87,7 @@
 			};
 		});
 	}
-
-	// Close dropdown when clicking outside
-	function handleWindowPointerDown(e: PointerEvent) {
-		const target = e.target as HTMLElement;
-		if (showModelDropdown && !target.closest('.model-dropdown')) {
-			showModelDropdown = false;
-		}
-	}
 </script>
-
-<svelte:window onpointerdown={handleWindowPointerDown} />
 
 <div class="flex items-center justify-between mb-2">
 	<span class="text-xs font-medium text-gray-500">{m.studio_properties_content()}</span>
@@ -164,59 +144,16 @@
 		</div>
 
 		<!-- Model dropdown -->
-		<div class="relative model-dropdown">
-			<button
-				type="button"
-				onclick={() => {
-					if (models.length > 0) showModelDropdown = !showModelDropdown;
-				}}
-				class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-left flex items-center justify-between"
-			>
-				<span class={generationConfig?.model ? 'text-gray-900' : 'text-gray-400'}>
-					{generationConfig?.model || (models.length > 0 ? m.studio_api_select_model() : m.studio_properties_model_placeholder())}
-				</span>
-				<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-				</svg>
-			</button>
-
-			<!-- Dropdown list -->
-			{#if showModelDropdown && models.length > 0}
-				<div class="model-dropdown absolute z-20 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-					<!-- Search input -->
-					<div class="p-2 border-b border-gray-200">
-						<input
-							type="text"
-							bind:value={modelSearchQuery}
-							placeholder={m.studio_api_search_models()}
-							class="w-full px-2 py-1.5 border border-gray-200 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
-							onpointerdown={(e) => e.stopPropagation()}
-							onkeydown={(e) => e.stopPropagation()}
-						/>
-					</div>
-
-					<!-- Model list -->
-					<div class="max-h-40 overflow-y-auto">
-						{#if filteredModels.length > 0}
-							{#each filteredModels as model}
-								<button
-									type="button"
-									class="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0
-										{model === generationConfig?.model ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}"
-									onclick={() => handleModelSelect(model)}
-								>
-									{model}
-								</button>
-							{/each}
-						{:else}
-							<div class="px-3 py-2 text-sm text-gray-500 text-center">
-								{m.studio_api_no_match()}
-							</div>
-						{/if}
-					</div>
-				</div>
-			{/if}
-		</div>
+		<VirtualizedDropdown
+			items={models}
+			value={generationConfig?.model}
+			placeholder={models.length > 0 ? m.studio_api_select_model() : m.studio_properties_model_placeholder()}
+			searchPlaceholder={m.studio_api_search_models()}
+			noMatchText={m.studio_api_no_match()}
+			onchange={handleModelSelect}
+			listHeight={160}
+			size="sm"
+		/>
 
 		{#if modelsError}
 			<p class="text-xs text-red-500">{modelsError}</p>

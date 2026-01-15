@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { VirtualList } from 'flowbite-svelte';
+	import { VirtualizedDropdown } from '@pubwiki/ui/components';
 	import { onMount } from 'svelte';
 	import { type SettingsStore, type ApiProviderKey, API_PROVIDERS } from '@pubwiki/ui/stores';
 	import * as m from '$lib/paraglide/messages';
@@ -28,15 +28,6 @@
 	let models = $state<string[]>([]);
 	let isLoadingModels = $state(false);
 	let modelsError = $state('');
-	let showModelDropdown = $state(false);
-	let modelSearchQuery = $state('');
-
-	// Filtered models based on search
-	let filteredModels = $derived(
-		modelSearchQuery
-			? models.filter((m) => m.toLowerCase().includes(modelSearchQuery.toLowerCase()))
-			: models
-	);
 
 	// Update settings when provider changes
 	function handleProviderChange(newProvider: ApiProviderKey) {
@@ -101,8 +92,6 @@
 	function handleModelSelect(model: string) {
 		selectedModel = model;
 		settings.setSelectedModel(model);
-		showModelDropdown = false;
-		modelSearchQuery = '';
 	}
 
 	// Provider options for dropdown
@@ -216,60 +205,15 @@
 		</div>
 
 		<!-- Model dropdown with virtual list -->
-		<div class="relative">
-			<button
-				type="button"
-				onclick={() => {
-					if (models.length > 0) showModelDropdown = !showModelDropdown;
-				}}
-				disabled={models.length === 0}
-				class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-left flex items-center justify-between disabled:bg-gray-50 disabled:cursor-not-allowed"
-			>
-				<span class={selectedModel ? 'text-gray-900' : 'text-gray-400'}>
-					{selectedModel || (models.length > 0 ? m.studio_api_select_model() : m.studio_api_fetch_first())}
-				</span>
-				<svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-				</svg>
-			</button>
-
-			<!-- Dropdown with virtual list -->
-			{#if showModelDropdown && models.length > 0}
-				<div class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-					<!-- Search input -->
-					<div class="p-2 border-b border-gray-200">
-						<input
-							type="text"
-							bind:value={modelSearchQuery}
-							placeholder={m.studio_api_search_models()}
-							class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-						/>
-					</div>
-
-					<!-- Virtual list for models -->
-					<div class="max-h-60">
-						{#if filteredModels.length > 0}
-							<VirtualList items={filteredModels} minItemHeight={40} height={240}>
-								{#snippet children(item, index)}
-									<button
-										type="button"
-										class="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-b-0
-											{item === selectedModel ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}"
-										onclick={() => handleModelSelect(item as string)}
-									>
-										{item}
-									</button>
-								{/snippet}
-							</VirtualList>
-						{:else}
-							<div class="px-3 py-4 text-sm text-gray-500 text-center">
-								{m.studio_api_no_match()}
-							</div>
-						{/if}
-					</div>
-				</div>
-			{/if}
-		</div>
+		<VirtualizedDropdown
+			items={models}
+			value={selectedModel}
+			placeholder={models.length > 0 ? m.studio_api_select_model() : m.studio_api_fetch_first()}
+			searchPlaceholder={m.studio_api_search_models()}
+			noMatchText={m.studio_api_no_match()}
+			disabled={models.length === 0}
+			onchange={handleModelSelect}
+		/>
 
 		{#if modelsError}
 			<p class="text-xs text-red-500">{modelsError}</p>
@@ -299,13 +243,3 @@
 		</div>
 	</div>
 </div>
-
-<!-- Click outside to close dropdown -->
-<svelte:window
-	onclick={(e) => {
-		const target = e.target as HTMLElement;
-		if (showModelDropdown && !target.closest('.relative')) {
-			showModelDropdown = false;
-		}
-	}}
-/>

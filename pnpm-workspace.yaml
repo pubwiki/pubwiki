@@ -21,6 +21,7 @@ packages:
 catalog:
   '@types/node': ^22.19.5
   svelte: ^5.46.1
+  flowbite-svelte: ^1.31.0
 
 onlyBuiltDependencies:
   - esbuild

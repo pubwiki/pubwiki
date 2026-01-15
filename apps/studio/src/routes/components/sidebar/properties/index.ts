@@ -3,4 +3,5 @@ export { default as InputProperties } from './InputProperties.svelte';
 export { default as PromptProperties } from './PromptProperties.svelte';
 export { default as GeneratedProperties } from './GeneratedProperties.svelte';
 export { default as DefaultProperties } from './DefaultProperties.svelte';
+export { default as StateProperties } from './StateProperties.svelte';
 export { VFSProperties, VFSGitPanel } from './vfs';

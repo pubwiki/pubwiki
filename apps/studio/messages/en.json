@@ -319,6 +319,8 @@
 	"studio_state_desc": "RDF triple store for Lua State API. Connect to Sandbox nodes to provide persistent state.",
 	"studio_state_refresh": "Refresh",
 	"studio_state_clear": "Clear",
+	"studio_state_import": "Import",
+	"studio_state_export": "Export",
 	"studio_version_history": "Version History",
 	"studio_version_no_history": "No version history",
 	"studio_version_previous": "{count} previous version",

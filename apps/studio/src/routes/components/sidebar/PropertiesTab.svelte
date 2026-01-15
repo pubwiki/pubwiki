@@ -5,11 +5,11 @@
 	 */
 	import type { Node } from '@xyflow/svelte';
 	import type { FlowNodeData } from '../../types/flow';
-	import type { PromptNodeData, InputNodeData, VFSNodeData, GeneratedNodeData } from '../../types';
+	import type { PromptNodeData, InputNodeData, VFSNodeData, GeneratedNodeData, StateNodeData } from '../../types';
 	import { nodeStore } from '../../persistence/node-store.svelte';
 	import { getStudioContext } from '../../state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
-	import { InputProperties, PromptProperties, GeneratedProperties, DefaultProperties, VFSProperties } from './properties';
+	import { InputProperties, PromptProperties, GeneratedProperties, DefaultProperties, VFSProperties, StateProperties } from './properties';
 	import { generate } from '../nodes/input/controller.svelte';
 	import { regenerate } from '../nodes/generated/controller.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -45,6 +45,8 @@
 				return { label: m.studio_node_sandbox(), color: 'orange', description: m.studio_properties_sandbox_desc() };
 			case 'LOADER':
 				return { label: m.studio_node_loader(), color: 'purple', description: m.studio_properties_loader_desc() };
+			case 'STATE':
+				return { label: m.studio_node_state(), color: 'teal', description: m.studio_state_desc() };
 			default:
 				return { label: type, color: 'gray', description: m.studio_properties_unknown_desc() };
 		}
@@ -57,6 +59,7 @@
 			green: { bg: 'bg-green-500', text: 'text-green-600', light: 'bg-green-50' },
 			indigo: { bg: 'bg-indigo-500', text: 'text-indigo-600', light: 'bg-indigo-50' },
 			orange: { bg: 'bg-orange-500', text: 'text-orange-600', light: 'bg-orange-50' },
+			teal: { bg: 'bg-teal-500', text: 'text-teal-600', light: 'bg-teal-50' },
 			gray: { bg: 'bg-gray-500', text: 'text-gray-600', light: 'bg-gray-50' }
 		};
 		return colors[color] || colors.gray;
@@ -181,6 +184,11 @@
 						nodeId={selectedNode.id}
 						data={selectedNodeData as GeneratedNodeData}
 						onRegenerate={handleRegenerate}
+					/>
+				{:else if selectedNodeData?.type === 'STATE'}
+					<StateProperties
+						nodeId={selectedNode.id}
+						data={selectedNodeData as StateNodeData}
 					/>
 				{:else if selectedNodeData}
 					<DefaultProperties
