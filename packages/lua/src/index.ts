@@ -50,6 +50,46 @@ const isNode = typeof process !== 'undefined' && process.versions != null && pro
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder('utf-8')
 
+/**
+ * 将 JavaScript 值序列化为 RDF Literal 字符串
+ * 对于对象和数组，序列化为 JSON 字符串
+ * 对于其他原始类型，直接转换为字符串
+ */
+function serializeToLiteral(value: unknown): string {
+  if (value === null || value === undefined) {
+    return ''
+  }
+  if (typeof value === 'object') {
+    // 对象和数组序列化为 JSON
+    return JSON.stringify(value)
+  }
+  // 原始类型直接转换为字符串
+  return String(value)
+}
+
+/**
+ * 尝试将 RDF Literal 字符串反序列化为 JavaScript 值
+ * 如果字符串是有效的 JSON（对象或数组），则解析为对应的值
+ * 否则返回原始字符串
+ */
+function deserializeFromLiteral(value: string): unknown {
+  if (!value) {
+    return value
+  }
+  // 检查是否可能是 JSON 对象或数组
+  const trimmed = value.trim()
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || 
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+    try {
+      return JSON.parse(value)
+    } catch {
+      // 解析失败，返回原始字符串
+      return value
+    }
+  }
+  return value
+}
+
 // JS 模块注册表：instanceId -> moduleName -> module definition
 type JsModuleFunction = (...args: any[]) => any | Promise<any>
 export interface JsModuleDefinition {
@@ -359,7 +399,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             const predicateTerm = DataFactory.namedNode(predicate)
             const objectTerm = typeof objectValue === 'string' && objectValue.startsWith('resource://')
               ? DataFactory.namedNode(objectValue)
-              : DataFactory.literal(String(objectValue))
+              : DataFactory.literal(serializeToLiteral(objectValue))
             const graphTerm = graphStr ? DataFactory.namedNode(graphStr) : DataFactory.defaultGraph()
             
             // 异步执行插入操作 - 返回 Ref
@@ -425,7 +465,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             const objectTerm = objectValue !== undefined
               ? (typeof objectValue === 'string' && objectValue.startsWith('resource://')
                 ? DataFactory.namedNode(objectValue)
-                : DataFactory.literal(String(objectValue)))
+                : DataFactory.literal(serializeToLiteral(objectValue)))
               : null
             const graphTerm = graphStr ? DataFactory.namedNode(graphStr) : null
             
@@ -493,7 +533,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               const obj = patternRaw.object
               pattern.object = typeof obj === 'string' && obj.startsWith('resource://')
                 ? DataFactory.namedNode(obj)
-                : DataFactory.literal(String(obj))
+                : DataFactory.literal(serializeToLiteral(obj))
             }
             if (patternRaw.graph) {
               pattern.graph = DataFactory.namedNode(patternRaw.graph)
@@ -503,10 +543,13 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             store.query(pattern)
               .then((quads) => {
                 // 转换 Quad[] 为 Lua 可用的对象数组
+                // 对于 Literal 类型的 object，尝试反序列化 JSON
                 const results = quads.map(q => ({
                   subject: q.subject.value,
                   predicate: q.predicate.value,
-                  object: q.object.termType === 'Literal' ? q.object.value : q.object.value,
+                  object: q.object.termType === 'Literal' 
+                    ? deserializeFromLiteral(q.object.value) 
+                    : q.object.value,
                   graph: q.graph.termType === 'DefaultGraph' ? null : q.graph.value
                 }))
                 resolveWithHandle(callbackId, results, module)
@@ -563,7 +606,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               const predicate = DataFactory.namedNode(q.predicate)
               const object = typeof q.object === 'string' && q.object.startsWith('resource://')
                 ? DataFactory.namedNode(q.object)
-                : DataFactory.literal(String(q.object))
+                : DataFactory.literal(serializeToLiteral(q.object))
               const graph = q.graph ? DataFactory.namedNode(q.graph) : DataFactory.defaultGraph()
               return DataFactory.quad(subject, predicate, object, graph)
             })

@@ -1,4 +1,4 @@
-#![feature(iterator_try_collect)]
+
 
 // Minimal binary to force Emscripten to generate JS glue alongside the WASM.
 // The exported C ABI functions are defined in lib.rs; they are retained
@@ -28,25 +28,105 @@ fn read_c_string(ptr: *const c_char) -> LuaResult<String> {
         .map_err(|e| LuaError::external(e))
 }
 
-/// 将 Lua 值转换为 JSON 字符串（使用 serde_json）
-/// 支持 JsProxy userdata：调用 JSON.stringify 转换
-pub fn lua_value_to_json(_lua: &Lua, value: &LuaValue) -> LuaResult<String> {
-    // 先检查是否是 JsProxy
-    if let LuaValue::UserData(ud) = value {
-        if let Ok(proxy) = ud.borrow::<bridge::JsProxy>() {
-            // 使用 JS 的 JSON.stringify
-            let json = bridge::JsVal::global("JSON");
-            let result = json.call_method("stringify", &[proxy.val()]);
-            if result.is_string() {
-                return Ok(result.as_string());
+/// 将 Lua 值转换为 serde_json::Value，递归处理包含 JsProxy 的 table
+fn lua_value_to_json_value(lua: &Lua, value: &LuaValue) -> LuaResult<serde_json::Value> {
+    match value {
+        LuaValue::Nil => Ok(serde_json::Value::Null),
+        LuaValue::Boolean(b) => Ok(serde_json::Value::Bool(*b)),
+        LuaValue::Integer(n) => Ok(serde_json::Value::Number((*n).into())),
+        LuaValue::Number(n) => {
+            serde_json::Number::from_f64(*n)
+                .map(serde_json::Value::Number)
+                .ok_or_else(|| LuaError::external("Invalid float value"))
+        }
+        LuaValue::String(s) => Ok(serde_json::Value::String(s.to_str()?.to_string())),
+        LuaValue::Table(t) => {
+            // 检查是否是数组（所有键都是从 1 开始的连续整数）
+            let len = t.raw_len();
+            let is_array = if len == 0 {
+                // 空表检查是否有非整数键
+                let mut has_keys = false;
+                for pair in t.pairs::<LuaValue, LuaValue>() {
+                    let (k, _) = pair?;
+                    has_keys = true;
+                    if !matches!(k, LuaValue::Integer(_)) {
+                        break;
+                    }
+                }
+                !has_keys || {
+                    let mut count = 0;
+                    for pair in t.pairs::<LuaValue, LuaValue>() {
+                        let (k, _) = pair?;
+                        match k {
+                            LuaValue::Integer(i) if i >= 1 => count += 1,
+                            _ => { count = -1; break; }
+                        }
+                    }
+                    count >= 0
+                }
             } else {
-                return Err(LuaError::external("Failed to stringify JsProxy to JSON"));
+                let mut count = 0;
+                for pair in t.pairs::<LuaValue, LuaValue>() {
+                    let (k, _) = pair?;
+                    match k {
+                        LuaValue::Integer(i) if i >= 1 && i <= len as i64 => count += 1,
+                        _ => { count = -1; break; }
+                    }
+                }
+                count == len as i32
+            };
+            
+            if is_array && len > 0 {
+                let mut arr = Vec::with_capacity(len);
+                for i in 1..=len {
+                    let v: LuaValue = t.get(i)?;
+                    arr.push(lua_value_to_json_value(lua, &v)?);
+                }
+                Ok(serde_json::Value::Array(arr))
+            } else {
+                let mut map = serde_json::Map::new();
+                for pair in t.pairs::<LuaValue, LuaValue>() {
+                    let (k, v) = pair?;
+                    let key_str = match k {
+                        LuaValue::String(s) => s.to_str()?.to_string(),
+                        LuaValue::Integer(n) => n.to_string(),
+                        LuaValue::Number(n) => n.to_string(),
+                        _ => continue,
+                    };
+                    map.insert(key_str, lua_value_to_json_value(lua, &v)?);
+                }
+                Ok(serde_json::Value::Object(map))
             }
         }
+        LuaValue::UserData(ud) => {
+            // 如果是 JsProxy，使用 JSON.stringify 然后解析为 serde_json::Value
+            if let Ok(proxy) = ud.borrow::<bridge::JsProxy>() {
+                let json = bridge::JsVal::global("JSON");
+                let result = json.call_method("stringify", &[proxy.val()]);
+                if result.is_string() {
+                    let json_str = result.as_string();
+                    serde_json::from_str(&json_str)
+                        .map_err(|e| LuaError::external(format!("Failed to parse JsProxy JSON: {}", e)))
+                } else {
+                    Err(LuaError::external("Failed to stringify JsProxy to JSON"))
+                }
+            } else {
+                // 其他 UserData 类型，返回 null
+                Ok(serde_json::Value::Null)
+            }
+        }
+        _ => {
+            // 其他类型（函数、线程等）返回 null
+            Ok(serde_json::Value::Null)
+        }
     }
-    
-    // 普通 Lua 值使用 mlua 的序列化功能
-    let json_value = value.to_serializable();
+}
+
+/// 将 Lua 值转换为 JSON 字符串（使用 serde_json）
+/// 支持 JsProxy userdata：调用 JSON.stringify 转换
+/// 支持递归处理包含 JsProxy 的 Lua table
+pub fn lua_value_to_json(lua: &Lua, value: &LuaValue) -> LuaResult<String> {
+    let json_value = lua_value_to_json_value(lua, value)?;
     serde_json::to_string(&json_value)
         .map_err(|e| LuaError::external(format!("JSON stringify error: {}", e)))
 }
