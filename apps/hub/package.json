@@ -47,6 +47,8 @@
 		"wrangler": "^4.54.0"
 	},
 	"dependencies": {
+		"@lexical/rich-text": "^0.33.1",
+		"@lexical/utils": "^0.33.1",
 		"@monaco-editor/loader": "^1.7.0",
 		"@pubwiki/api": "workspace:*",
 		"@pubwiki/bundler": "workspace:*",
@@ -67,9 +69,11 @@
 		"flowbite-svelte": "^1.31.0",
 		"isomorphic-git": "^1.36.1",
 		"jszip": "^3.10.1",
+		"lexical": "^0.33.1",
 		"marked": "^17.0.1",
 		"monaco-editor": "^0.55.1",
 		"n3": "^1.26.0",
-		"quadstore": "^15.4.1"
+		"quadstore": "^15.4.1",
+		"svelte-lexical": "^0.6.3"
 	}
 }
