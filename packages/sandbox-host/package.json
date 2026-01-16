@@ -42,21 +42,21 @@
     "@pubwiki/bundler": "workspace:*",
     "@pubwiki/sandbox-service": "workspace:*",
     "@pubwiki/vfs": "workspace:*",
-    "capnweb": "^0.2.0"
+    "capnweb": "catalog:"
   },
   "peerDependencies": {
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@vitest/browser": "^4.0.15",
-    "@vitest/browser-playwright": "^4.0.15",
-    "@vitest/web-worker": "^4.0.15",
-    "playwright": "^1.57.0",
-    "typescript": "^5.9.3",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.5.0",
-    "vitest": "^4.0.15",
+    "@vitest/browser": "catalog:",
+    "@vitest/browser-playwright": "catalog:",
+    "@vitest/web-worker": "catalog:",
+    "playwright": "catalog:",
+    "typescript": "catalog:",
+    "vite-plugin-top-level-await": "catalog:",
+    "vite-plugin-wasm": "catalog:",
+    "vitest": "catalog:",
     "zod": "^4.0.0"
   }
 }

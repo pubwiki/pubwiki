@@ -46,17 +46,17 @@
   "dependencies": {
     "@pubwiki/vfs": "workspace:*",
     "comlink": "^4.4.1",
-    "esbuild-wasm": "^0.24.2"
+    "esbuild-wasm": "^0.27.2"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@vitest/browser": "^4.0.15",
-    "@vitest/browser-playwright": "^4.0.15",
-    "@vitest/web-worker": "^4.0.15",
-    "playwright": "^1.57.0",
-    "typescript": "^5.9.3",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.5.0",
-    "vitest": "^4.0.15"
+    "@vitest/browser": "catalog:",
+    "@vitest/browser-playwright": "catalog:",
+    "@vitest/web-worker": "catalog:",
+    "playwright": "catalog:",
+    "typescript": "catalog:",
+    "vite-plugin-top-level-await": "catalog:",
+    "vite-plugin-wasm": "catalog:",
+    "vitest": "catalog:"
   }
 }

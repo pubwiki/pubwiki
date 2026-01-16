@@ -36,16 +36,16 @@
   "license": "MIT",
   "dependencies": {
     "@rdfjs/types": "^2.0.1",
-    "abstract-level": "^3.1.1",
+    "abstract-level": "catalog:",
     "diff": "^8.0.3",
-    "n3": "^1.26.0",
-    "quadstore": "^15.4.1",
-    "quadstore-comunica": "^6.3.1"
+    "n3": "catalog:",
+    "quadstore": "catalog:",
+    "quadstore-comunica": "catalog:"
   },
   "devDependencies": {
-    "@types/n3": "^1.26.1",
-    "memory-level": "^3.1.0",
-    "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "@types/n3": "catalog:",
+    "memory-level": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

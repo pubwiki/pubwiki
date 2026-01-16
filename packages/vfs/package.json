@@ -38,8 +38,8 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "isomorphic-git": "^1.29.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.15"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "peerDependencies": {},
   "dependencies": {}

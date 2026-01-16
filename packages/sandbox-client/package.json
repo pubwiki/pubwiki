@@ -22,7 +22,7 @@
     "@pubwiki/sandbox-service": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.6.0"
+    "typescript": "catalog:"
   },
   "files": [
     "dist",

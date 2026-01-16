@@ -23,16 +23,14 @@
     "marked": "^17.0.1"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.10.15",
-    "@cloudflare/workers-types": "^4.20251213.0",
-    "@types/better-sqlite3": "^7.6.13",
+    "@cloudflare/vitest-pool-workers": "^0.12.4",
+    "@cloudflare/workers-types": "catalog:",
     "@types/node": "catalog:",
-    "@vitest/runner": "~3.2.4",
-    "@vitest/snapshot": "~3.2.4",
-    "better-sqlite3": "^12.5.0",
+    "@vitest/runner": "catalog:vitest3",
+    "@vitest/snapshot": "catalog:vitest3",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4",
-    "wrangler": "^4.54.0"
+    "typescript": "catalog:",
+    "vitest": "catalog:vitest3",
+    "wrangler": "catalog:"
   }
 }
