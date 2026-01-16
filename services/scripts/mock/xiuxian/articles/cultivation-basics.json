@@ -1,0 +1,44 @@
+{
+  "id": "article-xiuxian-cultivation-basics",
+  "title": "修仙入门：从练气到筑基",
+  "sandboxNodeSlug": "xiuxian-worldview",
+  "sandboxNodeId": "44444444-4444-4444-4444-444444444001",
+  "visibility": "PUBLIC",
+  "content": [
+    {
+      "type": "text",
+      "id": "intro-1",
+      "text": "# 修仙入门指南\n\n欢迎来到修仙世界！本文将带你了解修仙的基础知识，从最初的练气开始，一步步踏上修仙之路。"
+    },
+    {
+      "type": "text",
+      "id": "section-1",
+      "text": "## 什么是修仙？\n\n修仙，顾名思义，就是修炼成仙。修士通过吸收天地灵气，淬炼肉身与神魂，突破一个个境界，最终达到长生不老、与天地同寿的目标。"
+    },
+    {
+      "type": "game_ref",
+      "textId": "section-1",
+      "ref": "save-cultivation-demo-1"
+    },
+    {
+      "type": "text",
+      "id": "section-2",
+      "text": "## 练气期\n\n练气期是修仙的第一个境界，分为一到九层。在这个阶段，修士需要：\n\n1. 感应天地灵气\n2. 引气入体\n3. 开辟气海\n4. 凝聚真气\n\n练气期修士的寿命约为150年左右。"
+    },
+    {
+      "type": "text",
+      "id": "section-3",
+      "text": "## 筑基期\n\n当练气期修士积累足够的真气，就可以尝试突破筑基。筑基期是修仙路上的第一道大关，需要服用筑基丹辅助，成功率通常只有三成。\n\n筑基成功后，修士将获得：\n- 更长的寿命（约300年）\n- 御剑飞行的能力\n- 更强大的法术威力"
+    },
+    {
+      "type": "game_ref",
+      "textId": "section-3",
+      "ref": "save-foundation-demo-1"
+    },
+    {
+      "type": "text",
+      "id": "conclusion",
+      "text": "## 总结\n\n修仙之路漫漫，练气筑基只是开始。后面还有金丹、元婴、化神等更高境界等待着有缘人去探索。记住：道心稳固，方能走得更远。"
+    }
+  ]
+}

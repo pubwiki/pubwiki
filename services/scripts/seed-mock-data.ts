@@ -99,10 +99,29 @@ interface MockProject {
   communityArtifacts: MockProjectArtifactLink[];
 }
 
+// Mock Article 类型定义
+interface MockArticleContentBlock {
+  type: 'text' | 'game_ref';
+  id?: string;      // for text
+  text?: string;    // for text
+  textId?: string;  // for game_ref
+  ref?: string;     // for game_ref
+}
+
+interface MockArticle {
+  id: string;
+  title: string;
+  sandboxNodeSlug: string;  // 用于查找对应的 artifact
+  sandboxNodeId: string;    // sandbox node 的 ID
+  visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+  content: MockArticleContentBlock[];
+}
+
 // 存储用户 token 和创建的资源
 const userTokens: Record<string, string> = {};
-const createdArtifacts: Map<string, { id: string; slug: string }> = new Map();
+const createdArtifacts: Map<string, { id: string; slug: string; authorUsername: string }> = new Map();
 const createdProjects: Map<string, { id: string; slug: string; roles: Array<{ id: string; name: string }> }> = new Map();
+const createdArticles: Map<string, { id: string; title: string }> = new Map();
 
 // 注册或登录用户
 async function getOrCreateUserToken(user: typeof mockUsers[0]): Promise<string> {
@@ -288,6 +307,7 @@ async function createArtifact(artifact: MockArtifact, token: string): Promise<st
     createdArtifacts.set(artifact.slug, { 
       id: data.artifact.id, 
       slug: data.artifact.slug,
+      authorUsername: artifact.authorUsername,
     });
     console.log(`  ✓ Created artifact: ${artifact.name}`);
     return data.artifact.id;
@@ -306,6 +326,7 @@ async function createArtifact(artifact: MockArtifact, token: string): Promise<st
           createdArtifacts.set(artifact.slug, { 
             id: existingArtifact.id, 
             slug: existingArtifact.slug,
+            authorUsername: artifact.authorUsername,
           });
           return existingArtifact.id;
         }
@@ -711,6 +732,79 @@ async function loadMockProjectsFromDirectory(): Promise<MockProject[]> {
   return projects;
 }
 
+// 从 mock 目录加载 articles
+async function loadMockArticlesFromDirectory(): Promise<{ article: MockArticle; artifactSlug: string }[]> {
+  const mockDir = path.join(process.cwd(), 'scripts', 'mock');
+  const articles: { article: MockArticle; artifactSlug: string }[] = [];
+
+  if (!fs.existsSync(mockDir)) {
+    return articles;
+  }
+
+  const mockDirs = fs.readdirSync(mockDir, { withFileTypes: true })
+    .filter(dirent => dirent.isDirectory())
+    .map(dirent => dirent.name);
+
+  for (const dir of mockDirs) {
+    const articlesDir = path.join(mockDir, dir, 'articles');
+
+    if (!fs.existsSync(articlesDir)) {
+      continue;
+    }
+
+    const articleFiles = fs.readdirSync(articlesDir)
+      .filter(f => f.endsWith('.json'));
+
+    for (const file of articleFiles) {
+      const filePath = path.join(articlesDir, file);
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const config = JSON.parse(content) as MockArticle;
+        articles.push({
+          article: config,
+          artifactSlug: config.sandboxNodeSlug,
+        });
+        console.log(`  ✓ Loaded article config: ${config.title}`);
+      } catch (error) {
+        console.error(`  ❌ Error parsing ${filePath}: ${error}`);
+      }
+    }
+  }
+
+  return articles;
+}
+
+// 创建 article
+async function createArticle(
+  article: MockArticle,
+  token: string
+): Promise<string | null> {
+  const response = await fetch(`${API_BASE_URL}/articles/${article.id}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: article.title,
+      sandboxNodeId: article.sandboxNodeId,
+      content: article.content,
+      visibility: article.visibility,
+    }),
+  });
+
+  if (response.ok) {
+    const data = await response.json() as { id: string; title: string };
+    createdArticles.set(article.id, { id: data.id, title: data.title });
+    console.log(`  ✓ Created article: ${article.title}`);
+    return data.id;
+  } else {
+    const error = await response.json() as { error: string };
+    console.error(`  ❌ Failed to create article ${article.title}: ${error.error}`);
+    return null;
+  }
+}
+
 // Mock 讨论数据
 interface MockDiscussion {
   artifactSlug: string;
@@ -1098,12 +1192,42 @@ async function main() {
   await createMockPosts(projects);
   console.log('');
 
+  // 步骤 9: 从 mock 目录加载并创建 articles
+  console.log('📂 Loading articles from mock directory...');
+  const articleConfigs = await loadMockArticlesFromDirectory();
+  console.log('');
+
+  console.log('📝 Creating articles...');
+  for (const { article, artifactSlug } of articleConfigs) {
+    // 找到对应的 artifact 以获取作者信息
+    const artifactInfo = createdArtifacts.get(artifactSlug);
+    if (!artifactInfo) {
+      console.warn(`  ⚠ Artifact not found for article: ${article.title} (slug: ${artifactSlug})`);
+      continue;
+    }
+
+    const user = mockUsers.find(u => u.username === artifactInfo.authorUsername);
+    if (!user) {
+      console.warn(`  ⚠ User not found: ${artifactInfo.authorUsername}`);
+      continue;
+    }
+
+    try {
+      const token = await getOrCreateUserToken(user);
+      await createArticle(article, token);
+    } catch (error) {
+      console.error(`  ❌ ${error}`);
+    }
+  }
+  console.log('');
+
   console.log('✅ Mock data seeding complete!');
   console.log('');
   console.log('📊 Summary:');
   console.log(`   Users: ${mockUsers.length}`);
   console.log(`   Artifacts: ${createdArtifacts.size}`);
   console.log(`   Projects: ${createdProjects.size}`);
+  console.log(`   Articles: ${createdArticles.size}`);
 }
 
 main().catch(console.error);

@@ -30,7 +30,17 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 用户注册 */
+        /**
+         * 用户注册 (已废弃)
+         * @deprecated
+         * @description **已废弃**: 请使用 better-auth/client 进行注册。
+         *
+         *     ```typescript
+         *     import { createAuthClient } from 'better-auth/client';
+         *     const authClient = createAuthClient({ baseURL: 'https://api.pubwiki.com' });
+         *     await authClient.signUp.email({ email, password, name, username });
+         *     ```
+         */
         post: operations["register"];
         delete?: never;
         options?: never;
@@ -47,7 +57,17 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 用户登录 */
+        /**
+         * 用户登录 (已废弃)
+         * @deprecated
+         * @description **已废弃**: 请使用 better-auth/client 进行登录。
+         *
+         *     ```typescript
+         *     import { createAuthClient } from 'better-auth/client';
+         *     const authClient = createAuthClient({ baseURL: 'https://api.pubwiki.com' });
+         *     await authClient.signIn.email({ email, password });
+         *     ```
+         */
         post: operations["login"];
         delete?: never;
         options?: never;
@@ -62,7 +82,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 获取当前用户信息 */
+        /**
+         * 获取当前用户信息
+         * @description 需要通过 Better-Auth session cookie 认证。使用 better-auth/client 登录后会自动设置 cookie。
+         */
         get: operations["getMe"];
         put?: never;
         post?: never;
@@ -604,6 +627,54 @@ export interface paths {
          * @description 只有讨论作者可以采纳答案。同一讨论只能有一个被采纳的答案。
          */
         post: operations["acceptDiscussionReply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/articles/{articleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取文章详情
+         * @description 获取文章详情，包括内容和元数据。
+         *     返回值中包含 artifactId（通过 sandboxNodeId 获取）。
+         */
+        get: operations["getArticle"];
+        /**
+         * 创建或更新文章
+         * @description 创建或更新文章（upsert 语义）。
+         *     - 如果 articleId 不存在，创建新文章
+         *     - 如果 articleId 存在且 author 是当前用户，更新文章
+         *     - 如果 articleId 存在但 author 不是当前用户，返回 403
+         */
+        put: operations["upsertArticle"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/articles/by-sandbox/{sandboxNodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取与 sandbox 关联的文章列表
+         * @description 获取与指定 sandbox node 关联的所有公开文章，支持分页。
+         */
+        get: operations["listArticlesBySandbox"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1176,6 +1247,72 @@ export interface components {
              * @description 父回复 ID，用于嵌套回复
              */
             parentReplyId?: string;
+        };
+        TextContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "text";
+            /** @description 文本块唯一标识符 */
+            id: string;
+            /** @description 文本内容（支持 markdown heading） */
+            text: string;
+        };
+        GameRef: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "game_ref";
+            /** @description 关联的文本块 ID */
+            textId: string;
+            /** @description 游戏状态引用（存档标识） */
+            ref: string;
+        };
+        ReaderContentBlock: components["schemas"]["TextContent"] | components["schemas"]["GameRef"];
+        ArticleAuthor: {
+            /** Format: uuid */
+            id: string;
+            username: string;
+            displayName?: string | null;
+            /** Format: uri */
+            avatarUrl?: string | null;
+        };
+        ArticleDetail: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            content: components["schemas"]["ReaderContentBlock"][];
+            author: components["schemas"]["ArticleAuthor"];
+            /**
+             * Format: uuid
+             * @description Sandbox 节点 ID
+             */
+            sandboxNodeId: string;
+            /**
+             * Format: uuid
+             * @description Artifact ID（通过 sandboxNodeId 获取）
+             */
+            artifactId: string;
+            visibility: components["schemas"]["VisibilityType"];
+            likes: number;
+            collections: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UpsertArticleRequest: {
+            title: string;
+            /**
+             * Format: uuid
+             * @description Sandbox 节点 ID（用于游戏回放）
+             */
+            sandboxNodeId: string;
+            content: components["schemas"]["ReaderContentBlock"][];
+            /** @default PUBLIC */
+            visibility: components["schemas"]["VisibilityType"];
         };
     };
     responses: never;
@@ -3226,6 +3363,130 @@ export interface operations {
                 };
             };
             /** @description 回复不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getArticle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                articleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 文章详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleDetail"];
+                };
+            };
+            /** @description 文章不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    upsertArticle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                articleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertArticleRequest"];
+            };
+        };
+        responses: {
+            /** @description 文章创建/更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArticleDetail"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listArticlesBySandbox: {
+        parameters: {
+            query?: {
+                /** @description 页码（从1开始） */
+                page?: number;
+                /** @description 每页数量 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Sandbox 节点 ID */
+                sandboxNodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 文章列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        articles: components["schemas"]["ArticleDetail"][];
+                        pagination: components["schemas"]["Pagination"];
+                    };
+                };
+            };
+            /** @description 请求参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Sandbox 节点不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;

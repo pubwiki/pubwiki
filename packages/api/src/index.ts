@@ -2,6 +2,9 @@
 export type * from './generated/openapi';
 export type { paths, components, operations } from './generated/openapi';
 
+// 自定义类型（非自动生成）
+export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from './types/content';
+
 // 便捷类型别名
 import type { components, operations } from './generated/openapi';
 
@@ -58,6 +61,11 @@ export type PostDetail = components['schemas']['PostDetail'];
 export type CreatePostRequest = components['schemas']['CreatePostRequest'];
 export type UpdatePostRequest = components['schemas']['UpdatePostRequest'];
 
+// Article 相关类型
+export type ArticleAuthor = components['schemas']['ArticleAuthor'];
+export type ArticleDetail = components['schemas']['ArticleDetail'];
+export type UpsertArticleRequest = components['schemas']['UpsertArticleRequest'];
+
 // 请求类型
 export type RegisterRequest = operations['register']['requestBody']['content']['application/json'];
 export type LoginRequest = operations['login']['requestBody']['content']['application/json'];
@@ -98,6 +106,11 @@ export type GetProjectPostResponse = operations['getProjectPost']['responses']['
 export type UpdateProjectPostResponse = operations['updateProjectPost']['responses']['200']['content']['application/json'];
 export type DeleteProjectPostResponse = operations['deleteProjectPost']['responses']['200']['content']['application/json'];
 
+// Article 响应类型
+export type GetArticleResponse = operations['getArticle']['responses']['200']['content']['application/json'];
+export type UpsertArticleResponse = operations['upsertArticle']['responses']['200']['content']['application/json'];
+export type ListArticlesBySandboxResponse = operations['listArticlesBySandbox']['responses']['200']['content']['application/json'];
+
 // Schema 类型（用于请求体）
 export type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
 
@@ -109,3 +122,4 @@ export type GetUserProjectsQuery = operations['getUserProjects']['parameters']['
 export type ListDiscussionsQuery = operations['listDiscussions']['parameters']['query'];
 export type ListDiscussionRepliesQuery = operations['listDiscussionReplies']['parameters']['query'];
 export type ListProjectPostsQuery = operations['listProjectPosts']['parameters']['query'];
+export type ListArticlesBySandboxQuery = operations['listArticlesBySandbox']['parameters']['query'];

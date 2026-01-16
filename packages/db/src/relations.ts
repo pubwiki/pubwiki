@@ -10,6 +10,7 @@ import { notifications } from './schema/notifications';
 import { artifactCollaborators, collections, collectionItems } from './schema/collaboration';
 import { projects, projectRoles, projectMaintainers, projectArtifacts, projectPages } from './schema/projects';
 import { projectPosts } from './schema/posts';
+import { articles } from './schema/articles';
 
 // User relations (Better-Auth)
 export const userRelations = relations(user, ({ many }) => ({
@@ -28,6 +29,7 @@ export const userRelations = relations(user, ({ many }) => ({
   collections: many(collections),
   ownedProjects: many(projects),
   maintainedProjects: many(projectMaintainers),
+  articles: many(articles),
 }));
 
 // Session relations (Better-Auth)
@@ -103,6 +105,7 @@ export const artifactNodesRelations = relations(artifactNodes, ({ one, many }) =
     references: [artifacts.id],
   }),
   versions: many(artifactNodeVersions),
+  articles: many(articles),
 }));
 
 // Artifact node versions relations
@@ -365,5 +368,17 @@ export const projectPostsRelations = relations(projectPosts, ({ one }) => ({
   discussion: one(discussions, {
     fields: [projectPosts.discussionId],
     references: [discussions.id],
+  }),
+}));
+
+// Articles relations
+export const articlesRelations = relations(articles, ({ one }) => ({
+  author: one(user, {
+    fields: [articles.authorId],
+    references: [user.id],
+  }),
+  sandboxNode: one(artifactNodes, {
+    fields: [articles.sandboxNodeId],
+    references: [artifactNodes.id],
   }),
 }));

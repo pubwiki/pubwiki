@@ -1360,6 +1360,145 @@ components:
           format: uuid
           description: 父回复 ID，用于嵌套回复
 
+    # ========== Article 相关类型 ==========
+
+    # Content Block 类型
+    TextContent:
+      type: object
+      required:
+        - type
+        - id
+        - text
+      properties:
+        type:
+          type: string
+          enum: [text]
+        id:
+          type: string
+          description: 文本块唯一标识符
+        text:
+          type: string
+          description: 文本内容（支持 markdown heading）
+
+    GameRef:
+      type: object
+      required:
+        - type
+        - textId
+        - ref
+      properties:
+        type:
+          type: string
+          enum: [game_ref]
+        textId:
+          type: string
+          description: 关联的文本块 ID
+        ref:
+          type: string
+          description: 游戏状态引用（存档标识）
+
+    ReaderContentBlock:
+      oneOf:
+        - $ref: '#/components/schemas/TextContent'
+        - $ref: '#/components/schemas/GameRef'
+      discriminator:
+        propertyName: type
+        mapping:
+          text: '#/components/schemas/TextContent'
+          game_ref: '#/components/schemas/GameRef'
+
+    # 文章作者信息
+    ArticleAuthor:
+      type: object
+      required:
+        - id
+        - username
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+
+    # 文章详情
+    ArticleDetail:
+      type: object
+      required:
+        - id
+        - title
+        - content
+        - author
+        - sandboxNodeId
+        - artifactId
+        - visibility
+        - likes
+        - collections
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReaderContentBlock'
+        author:
+          $ref: '#/components/schemas/ArticleAuthor'
+        sandboxNodeId:
+          type: string
+          format: uuid
+          description: Sandbox 节点 ID
+        artifactId:
+          type: string
+          format: uuid
+          description: Artifact ID（通过 sandboxNodeId 获取）
+        visibility:
+          $ref: '#/components/schemas/VisibilityType'
+        likes:
+          type: integer
+        collections:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # 创建/更新文章请求
+    UpsertArticleRequest:
+      type: object
+      required:
+        - title
+        - sandboxNodeId
+        - content
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        sandboxNodeId:
+          type: string
+          format: uuid
+          description: Sandbox 节点 ID（用于游戏回放）
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReaderContentBlock'
+        visibility:
+          $ref: '#/components/schemas/VisibilityType'
+          default: PUBLIC
+
 paths:
   /:
     get:
@@ -3731,6 +3870,140 @@ paths:
                 $ref: '#/components/schemas/ApiError'
         '404':
           description: 回复不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  # Articles API
+  /articles/{articleId}:
+    get:
+      operationId: getArticle
+      summary: 获取文章详情
+      description: |
+        获取文章详情，包括内容和元数据。
+        返回值中包含 artifactId（通过 sandboxNodeId 获取）。
+      tags: [Articles]
+      parameters:
+        - name: articleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: 文章详情
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleDetail'
+        '404':
+          description: 文章不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+    put:
+      operationId: upsertArticle
+      summary: 创建或更新文章
+      description: |
+        创建或更新文章（upsert 语义）。
+        - 如果 articleId 不存在，创建新文章
+        - 如果 articleId 存在且 author 是当前用户，更新文章
+        - 如果 articleId 存在但 author 不是当前用户，返回 403
+      tags: [Articles]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: articleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertArticleRequest'
+      responses:
+        '200':
+          description: 文章创建/更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleDetail'
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: 无权限
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /articles/by-sandbox/{sandboxNodeId}:
+    get:
+      operationId: listArticlesBySandbox
+      summary: 获取与 sandbox 关联的文章列表
+      description: |
+        获取与指定 sandbox node 关联的所有公开文章，支持分页。
+      tags: [Articles]
+      parameters:
+        - name: sandboxNodeId
+          in: path
+          required: true
+          description: Sandbox 节点 ID
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          description: 页码（从1开始）
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: 每页数量
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: 文章列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - articles
+                  - pagination
+                properties:
+                  articles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ArticleDetail'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          description: 请求参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Sandbox 节点不存在
           content:
             application/json:
               schema:

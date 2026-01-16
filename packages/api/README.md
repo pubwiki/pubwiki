@@ -123,6 +123,11 @@ import type {
   CreatePostRequest,
   UpdatePostRequest,
   
+  // Article 相关类型
+  ArticleAuthor,
+  ArticleDetail,
+  UpsertArticleRequest,
+  
   // 请求类型
   RegisterRequest,
   LoginRequest,
@@ -161,6 +166,11 @@ import type {
   UpdateProjectPostResponse,
   DeleteProjectPostResponse,
   
+  // Article 响应类型
+  GetArticleResponse,
+  UpsertArticleResponse,
+  ListArticlesBySandboxResponse,
+  
   // 查询参数类型
   ListArtifactsQuery,
   ListProjectsQuery,
@@ -169,6 +179,7 @@ import type {
   ListDiscussionsQuery,
   ListDiscussionRepliesQuery,
   ListProjectPostsQuery,
+  ListArticlesBySandboxQuery,
 } from '@pubwiki/api';
 ```
 
@@ -816,6 +827,9 @@ if (error) {
 | POST | `/discussions/{discussionId}/replies` | 创建回复 | ✅ |
 | DELETE | `/discussions/replies/{replyId}` | 删除回复 | ✅ |
 | POST | `/discussions/replies/{replyId}/accept` | 采纳回复为答案 | ✅ |
+| GET | `/articles/{articleId}` | 获取文章详情 | ❌ |
+| PUT | `/articles/{articleId}` | 创建或更新文章（upsert） | ✅ |
+| GET | `/articles/by-sandbox/{sandboxNodeId}` | 获取与 sandbox 关联的文章列表（分页） | ❌ |
 
 ### 谱系查询参数
 
@@ -899,6 +913,13 @@ if (error) {
 | `page` | integer | 页码，默认 1 |
 | `limit` | integer | 每页数量，默认 50，最大 100 |
 | `sortOrder` | string | 排序方向：`asc`（默认）, `desc` |
+
+### Articles By Sandbox 查询参数
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `page` | integer | 页码，默认 1 |
+| `limit` | integer | 每页数量，默认 20，最大 100 |
 
 > \* 权限说明：
 > - PUBLIC artifact/project: 所有人可访问

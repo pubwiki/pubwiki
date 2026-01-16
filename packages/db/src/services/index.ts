@@ -4,3 +4,4 @@ export { ProjectService, type ProjectListItem, type ListProjectsParams, type Lis
 export { NodeService, type GetArtifactGraphResult, type GetNodeDetailResult, type CreateNodeInput, type CreateNodeVersionInput, type CreateNodeFileInput, type ArtifactNodeSummary, type ArtifactEdge, type NodeVersionInfo, type NodeFileInfo } from './node';
 export { DiscussionService, type DiscussionTarget, type ListDiscussionsParams, type ListDiscussionsResult, type ListRepliesParams, type ListRepliesResult, type DiscussionListItem, type DiscussionDetail, type DiscussionReplyItem } from './discussion';
 export { PostService, type PostListItem, type PostDetail, type ListPostsParams, type ListPostsResult, type CreatePostParams, type UpdatePostParams } from './post';
+export { ArticleService, type ArticleDetail, type UpsertArticleParams, type ListArticlesBySandboxParams, type ListArticlesBySandboxResult } from './article';

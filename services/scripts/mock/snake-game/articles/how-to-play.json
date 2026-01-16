@@ -1,0 +1,44 @@
+{
+  "id": "article-snake-how-to-play",
+  "title": "Snake Game: Complete Beginner's Guide",
+  "sandboxNodeSlug": "react-snake-game",
+  "sandboxNodeId": "55555555-5555-5555-5555-555555555001",
+  "visibility": "PUBLIC",
+  "content": [
+    {
+      "type": "text",
+      "id": "intro-1",
+      "text": "# How to Play Snake Game\n\nWelcome to the classic Snake game! This guide will teach you everything you need to know to become a snake-controlling master."
+    },
+    {
+      "type": "text",
+      "id": "section-1",
+      "text": "## Basic Controls\n\nThe controls are simple:\n\n- **Arrow Up** - Move up\n- **Arrow Down** - Move down\n- **Arrow Left** - Move left\n- **Arrow Right** - Move right\n\nRemember: You cannot reverse direction instantly. If you're moving right, you need to go up or down first before going left."
+    },
+    {
+      "type": "game_ref",
+      "textId": "section-1",
+      "ref": "save-controls-demo"
+    },
+    {
+      "type": "text",
+      "id": "section-2",
+      "text": "## Objective\n\nYour goal is simple:\n\n1. Eat the food (usually a red dot) to grow longer\n2. Avoid hitting the walls\n3. Avoid running into your own tail\n4. Get the highest score possible!"
+    },
+    {
+      "type": "text",
+      "id": "section-3",
+      "text": "## Tips & Strategies\n\n### For Beginners\n- Start slow and get comfortable with the controls\n- Try to stay in the center of the screen when possible\n- Don't chase food that would put you in a dangerous position\n\n### For Advanced Players\n- Create patterns to efficiently cover the screen\n- Leave yourself escape routes\n- Master the timing of tight turns"
+    },
+    {
+      "type": "game_ref",
+      "textId": "section-3",
+      "ref": "save-advanced-strategy"
+    },
+    {
+      "type": "text",
+      "id": "conclusion",
+      "text": "## Ready to Play?\n\nNow that you know the basics, it's time to start playing! Click the game reference above to try out these strategies yourself. Good luck, and may your snake grow long!"
+    }
+  ]
+}
