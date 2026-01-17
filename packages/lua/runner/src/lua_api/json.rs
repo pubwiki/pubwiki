@@ -1,5 +1,5 @@
 use mlua::prelude::*;
-use crate::{lua_value_to_json, json_to_lua_value};
+use crate::serde::{lua_value_to_json, json_to_lua_value};
 
 /// 安装 json 模块，提供 json.encode 和 json.decode 函数
 pub fn install_json_api(lua: &Lua) -> LuaResult<()> {

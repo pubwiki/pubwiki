@@ -236,6 +236,31 @@ describe('pubwiki-lua', () => {
       expect(results).toHaveLength(1)
       expect(results[0].object).toBe('Tokyo')
     })
+
+    it('should preserve table/object type when set and get', async () => {
+      // 用户反馈：当存储 Lua table 然后再获取时，得到的是 '[object] [Object]' 字符串而非原来的 table
+      const result = await runLua(`
+        local o = {test = 123, v = "456"}
+        local typeBefore = type(o)
+        State:set("a", ":b", o)
+        local r = State:get("a", ":b")
+        local typeAfter = type(r)
+        return {
+          typeBefore = typeBefore,
+          typeAfter = typeAfter,
+          originalValue = o,
+          retrievedValue = r
+        }
+      `, { rdfStore: store })
+
+      expect(result.error).toBeNull()
+      expect(result.result.typeBefore).toBe('table')
+      // 期望: 获取的值也应该是 table 类型，而不是 string
+      expect(result.result.typeAfter).toBe('table')
+      // 期望: 获取的值应该保持原有结构
+      expect(result.result.retrievedValue.test).toBe(123)
+      expect(result.result.retrievedValue.v).toBe('456')
+    })
   })
 
   describe('State:get', () => {

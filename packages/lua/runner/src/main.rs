@@ -14,9 +14,13 @@ use async_executor::LocalExecutor;
 
 mod bridge;
 mod lua_api;
+pub mod serde;
 
 use bridge::*;
 use lua_api::*;
+
+// Re-export serde functions for use by other modules
+pub use serde::{lua_value_to_json, json_to_lua_value};
 
 fn read_c_string(ptr: *const c_char) -> LuaResult<String> {
     if ptr.is_null() {
@@ -26,37 +30,6 @@ fn read_c_string(ptr: *const c_char) -> LuaResult<String> {
         .to_str()
         .map(|s| s.to_string())
         .map_err(|e| LuaError::external(e))
-}
-
-/// 将 Lua 值转换为 JSON 字符串（使用 serde_json）
-/// 支持 JsProxy userdata：调用 JSON.stringify 转换
-pub fn lua_value_to_json(_lua: &Lua, value: &LuaValue) -> LuaResult<String> {
-    // 先检查是否是 JsProxy
-    if let LuaValue::UserData(ud) = value {
-        if let Ok(proxy) = ud.borrow::<bridge::JsProxy>() {
-            // 使用 JS 的 JSON.stringify
-            let json = bridge::JsVal::global("JSON");
-            let result = json.call_method("stringify", &[proxy.val()]);
-            if result.is_string() {
-                return Ok(result.as_string());
-            } else {
-                return Err(LuaError::external("Failed to stringify JsProxy to JSON"));
-            }
-        }
-    }
-    
-    // 普通 Lua 值使用 mlua 的序列化功能
-    let json_value = value.to_serializable();
-    serde_json::to_string(&json_value)
-        .map_err(|e| LuaError::external(format!("JSON stringify error: {}", e)))
-}
-
-/// 将 JSON 字符串转换为 Lua 值（使用 serde_json）
-pub fn json_to_lua_value(lua: &Lua, json: &str) -> LuaResult<LuaValue> {
-    let json_value: serde_json::Value = serde_json::from_str(json)
-        .map_err(|e| LuaError::external(format!("JSON parse error: {}", e)))?;
-    
-    lua.to_value(&json_value)
 }
 
 // ==================== 异步执行器支持 ====================

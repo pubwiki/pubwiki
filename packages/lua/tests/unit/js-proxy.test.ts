@@ -1,56 +1,32 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import { loadRunner, createLuaInstance, type LuaInstance } from '../../src/index'
-import type { RDFStore, Triple, TriplePattern } from '../../src/rdf-types'
+import { RDFStore } from '@pubwiki/rdfstore'
+import { MemoryLevel } from 'memory-level'
 
-// 简单的内存 RDFStore 实现用于测试
-class MemoryRDFStore implements RDFStore {
-  private triples: Triple[] = []
-
-  async insert(subject: string, predicate: string, object: any): Promise<void> {
-    this.triples.push({ subject, predicate, object })
-  }
-
-  async delete(subject: string, predicate: string, object?: any): Promise<void> {
-    this.triples = this.triples.filter(t => {
-      if (t.subject !== subject || t.predicate !== predicate) return true
-      if (object === undefined || object === null) return false
-      return JSON.stringify(t.object) !== JSON.stringify(object)
-    })
-  }
-
-  async query(pattern: TriplePattern): Promise<Triple[]> {
-    return this.triples.filter(t => {
-      if (pattern.subject !== undefined && pattern.subject !== null && t.subject !== pattern.subject) return false
-      if (pattern.predicate !== undefined && pattern.predicate !== null && t.predicate !== pattern.predicate) return false
-      if (pattern.object !== undefined && pattern.object !== null && JSON.stringify(t.object) !== JSON.stringify(pattern.object)) return false
-      return true
-    })
-  }
-
-  async batchInsert(triples: Triple[]): Promise<void> {
-    this.triples.push(...triples)
-  }
-
-  clear(): void {
-    this.triples = []
-  }
+// 辅助函数：创建一个新的内存 RDFStore
+async function createMemoryStore(): Promise<RDFStore> {
+  const level = new MemoryLevel()
+  return RDFStore.create(level)
 }
 
 describe('JsProxy - 参数传递', () => {
-  let store: MemoryRDFStore
+  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
     await loadRunner()
   })
 
-  beforeEach(() => {
-    store = new MemoryRDFStore()
+  beforeEach(async () => {
+    store = await createMemoryStore()
     instance = createLuaInstance({ rdfStore: store })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     instance.destroy()
+    if (store.isOpen) {
+      await store.close()
+    }
   })
 
   describe('基本类型传递', () => {
@@ -564,20 +540,23 @@ describe('JsProxy - 参数传递', () => {
 })
 
 describe('JsProxy - 与 JS 模块集成', () => {
-  let store: MemoryRDFStore
+  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
     await loadRunner()
   })
 
-  beforeEach(() => {
-    store = new MemoryRDFStore()
+  beforeEach(async () => {
+    store = await createMemoryStore()
     instance = createLuaInstance({ rdfStore: store })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
     instance.destroy()
+    if (store.isOpen) {
+      await store.close()
+    }
   })
 
   it('应该能同时使用 JS 模块和参数', async () => {

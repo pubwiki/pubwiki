@@ -21,6 +21,13 @@ import {
   getVfs
 } from './vfs-bridge'
 
+// ============= RDF Datatype 常量 =============
+const XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
+const XSD_INTEGER = "http://www.w3.org/2001/XMLSchema#integer"
+const XSD_DOUBLE = "http://www.w3.org/2001/XMLSchema#double"
+const XSD_BOOLEAN = "http://www.w3.org/2001/XMLSchema#boolean"
+const PUBWIKI_LUAVALUE = "https://pub.wiki/datatype#luavalue"
+
 // ============= 文件系统支持 =============
 // 使用 @pubwiki/vfs 的 Vfs 类作为文件系统接口
 // Vfs 实例通过 runLua 或 createLuaInstance 的 options 参数传递
@@ -309,26 +316,17 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             module._lua_executor_tick()
           }
           
-          // 注入 RDF 异步函数（使用 EM_VAL handles）
-          // 新 API：所有变更操作返回 Ref，支持 graph 参数
-          env.js_rdf_insert_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectHandle: number, graphPtr: number, callbackId: number) => {
+          // 注入 RDF 异步函数
+          // 新 API：接受 object 字符串 + datatype 字符串，返回 Ref
+          env.js_rdf_insert_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectPtr: number, datatypePtr: number, graphPtr: number, callbackId: number) => {
             const module = localModule
             if (!module) return
             
             const subject = module.UTF8ToString(subjectPtr)
             const predicate = module.UTF8ToString(predicatePtr)
+            const objectStr = module.UTF8ToString(objectPtr)
+            const datatypeStr = module.UTF8ToString(datatypePtr)
             const graphStr = graphPtr ? module.UTF8ToString(graphPtr) : null
-            
-            // 获取 Emval
-            const Emval = (module as any).Emval
-            if (!Emval) {
-              const errorMsg = 'Emval not available'
-              const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_callback_reject(callbackId, errorPtr)
-              module._free(errorPtr)
-              module._lua_executor_tick()
-              return
-            }
             
             // 获取 RDFStore
             const store = getRDFStore(contextId)
@@ -341,25 +339,13 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               return
             }
             
-            // 从 EM_VAL handle 获取 object 值并转换为 RDF.js Term
-            let objectValue: any
-            try {
-              objectValue = Emval.toValue(objectHandle)
-            } catch (error) {
-              const errorMsg = `Invalid object handle: ${error}`
-              const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_callback_reject(callbackId, errorPtr)
-              module._free(errorPtr)
-              module._lua_executor_tick()
-              return
-            }
-            
             // 转换为 RDF.js Terms
             const subjectTerm = DataFactory.namedNode(subject)
             const predicateTerm = DataFactory.namedNode(predicate)
-            const objectTerm = typeof objectValue === 'string' && objectValue.startsWith('resource://')
-              ? DataFactory.namedNode(objectValue)
-              : DataFactory.literal(String(objectValue))
+            // 使用 datatype 创建 Literal（或对于 resource:// 前缀使用 NamedNode）
+            const objectTerm = objectStr.startsWith('resource://')
+              ? DataFactory.namedNode(objectStr)
+              : DataFactory.literal(objectStr, DataFactory.namedNode(datatypeStr))
             const graphTerm = graphStr ? DataFactory.namedNode(graphStr) : DataFactory.defaultGraph()
             
             // 异步执行插入操作 - 返回 Ref
@@ -377,23 +363,15 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               })
           }
           
-          env.js_rdf_delete_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectHandle: number, graphPtr: number, callbackId: number) => {
+          env.js_rdf_delete_async = (contextId: number, subjectPtr: number, predicatePtr: number, objectPtr: number, datatypePtr: number, graphPtr: number, callbackId: number) => {
             const module = localModule
             if (!module) return
             
             const subject = module.UTF8ToString(subjectPtr)
             const predicate = module.UTF8ToString(predicatePtr)
+            const objectStr = objectPtr ? module.UTF8ToString(objectPtr) : null
+            const datatypeStr = datatypePtr ? module.UTF8ToString(datatypePtr) : null
             const graphStr = graphPtr ? module.UTF8ToString(graphPtr) : null
-            
-            const Emval = (module as any).Emval
-            if (!Emval) {
-              const errorMsg = 'Emval not available'
-              const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_callback_reject(callbackId, errorPtr)
-              module._free(errorPtr)
-              module._lua_executor_tick()
-              return
-            }
             
             const store = getRDFStore(contextId)
             if (!store) {
@@ -405,27 +383,14 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               return
             }
             
-            // 从 EM_VAL handle 获取 object 值（可能为 null/undefined）
-            let objectValue: any = undefined
-            try {
-              objectValue = Emval.toValue(objectHandle)
-              if (objectValue === null) objectValue = undefined
-            } catch (error) {
-              const errorMsg = `Invalid object handle: ${error}`
-              const errorPtr = allocateUTF8(errorMsg, module)
-              module._lua_callback_reject(callbackId, errorPtr)
-              module._free(errorPtr)
-              module._lua_executor_tick()
-              return
-            }
-            
             // 转换为 RDF.js Terms
             const subjectTerm = DataFactory.namedNode(subject)
             const predicateTerm = DataFactory.namedNode(predicate)
-            const objectTerm = objectValue !== undefined
-              ? (typeof objectValue === 'string' && objectValue.startsWith('resource://')
-                ? DataFactory.namedNode(objectValue)
-                : DataFactory.literal(String(objectValue)))
+            // object 可能为 null（删除所有匹配）
+            const objectTerm = objectStr !== null
+              ? (objectStr.startsWith('resource://')
+                ? DataFactory.namedNode(objectStr)
+                : DataFactory.literal(objectStr, datatypeStr ? DataFactory.namedNode(datatypeStr) : undefined))
               : null
             const graphTerm = graphStr ? DataFactory.namedNode(graphStr) : null
             
@@ -489,24 +454,31 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (patternRaw.predicate) {
               pattern.predicate = DataFactory.namedNode(patternRaw.predicate)
             }
+            // 支持带 datatype 的精确匹配
             if (patternRaw.object !== undefined && patternRaw.object !== null) {
               const obj = patternRaw.object
-              pattern.object = typeof obj === 'string' && obj.startsWith('resource://')
-                ? DataFactory.namedNode(obj)
-                : DataFactory.literal(String(obj))
+              const objDatatype = patternRaw.objectDatatype
+              if (obj.startsWith('resource://')) {
+                pattern.object = DataFactory.namedNode(obj)
+              } else if (objDatatype) {
+                pattern.object = DataFactory.literal(obj, DataFactory.namedNode(objDatatype))
+              } else {
+                pattern.object = DataFactory.literal(obj)
+              }
             }
             if (patternRaw.graph) {
               pattern.graph = DataFactory.namedNode(patternRaw.graph)
             }
             
-            // 异步执行查询操作 - 返回 Quad[]
+            // 异步执行查询操作 - 返回 Quad[]，包含 datatype
             store.query(pattern)
               .then((quads) => {
-                // 转换 Quad[] 为 Lua 可用的对象数组
+                // 转换 Quad[] 为 Lua 可用的对象数组，包含 datatype
                 const results = quads.map(q => ({
                   subject: q.subject.value,
                   predicate: q.predicate.value,
                   object: q.object.termType === 'Literal' ? q.object.value : q.object.value,
+                  datatype: q.object.termType === 'Literal' ? q.object.datatype?.value ?? XSD_STRING : null,
                   graph: q.graph.termType === 'DefaultGraph' ? null : q.graph.value
                 }))
                 resolveWithHandle(callbackId, results, module)
@@ -557,13 +529,13 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               return
             }
             
-            // 转换为 RDF.js Quad[]
+            // 转换为 RDF.js Quad[]，支持 datatype
             const quads = quadsRaw.map(q => {
               const subject = DataFactory.namedNode(q.subject)
               const predicate = DataFactory.namedNode(q.predicate)
-              const object = typeof q.object === 'string' && q.object.startsWith('resource://')
+              const object = q.object.startsWith('resource://')
                 ? DataFactory.namedNode(q.object)
-                : DataFactory.literal(String(q.object))
+                : DataFactory.literal(q.object, q.datatype ? DataFactory.namedNode(q.datatype) : undefined)
               const graph = q.graph ? DataFactory.namedNode(q.graph) : DataFactory.defaultGraph()
               return DataFactory.quad(subject, predicate, object, graph)
             })
