@@ -239,6 +239,7 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
     state_table.set("batchInsert", batch_insert_fn)?;
     
     // State:set(subject, predicate, object, graph?) - 异步设置四元组（先删除后插入），返回 Ref
+    // 当 object 为 nil 时，只执行删除操作（delete 语义）
     // 使用新的字符串+datatype 序列化
     let set_fn = lua.create_async_function(move |lua, (_, subject, predicate, object, graph): (LuaTable, String, String, LuaValue, Option<String>)| async move {
         // 1. 先删除所有匹配的四元组（object 为 null 表示删除所有）
@@ -253,13 +254,23 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
             js_rdf_delete_async(context_id, subject_c.as_ptr(), predicate_c.as_ptr(), std::ptr::null(), std::ptr::null(), graph_ptr, delete_cb_id)
         };
         
-        match delete_rx.recv().await {
-            Ok(PromiseResult::Success { .. }) => {}
+        let delete_result = match delete_rx.recv().await {
+            Ok(PromiseResult::Success { handle }) => handle,
             Ok(PromiseResult::Error { message }) => return Err(LuaError::external(message)),
             Err(e) => return Err(LuaError::external(format!("Channel error: {}", e))),
+        };
+        
+        // 2. 如果 object 是 nil，只执行删除，不插入（delete 语义）
+        if matches!(object, LuaValue::Nil) {
+            // 返回删除操作的 ref
+            if delete_result == 0 {
+                return Ok(LuaValue::Nil);
+            }
+            let ref_val = JsVal::from_handle(delete_result as EM_VAL);
+            return val_to_lua(&lua, ref_val, context_id);
         }
         
-        // 2. 插入新的四元组（使用序列化）
+        // 3. 插入新的四元组（使用序列化）
         let (insert_cb_id, insert_rx) = register_callback();
         let (object_str, datatype) = lua_value_to_rdf(&lua, object)?;
         let subject_c = CString::new(subject).map_err(|e| LuaError::external(e))?;

@@ -261,6 +261,76 @@ describe('pubwiki-lua', () => {
       expect(result.result.retrievedValue.test).toBe(123)
       expect(result.result.retrievedValue.v).toBe('456')
     })
+
+    it('should delete value when object is nil', async () => {
+      // 先插入一个值
+      await runLua(`
+        State:insert('user:bob', 'email', 'bob@example.com')
+      `, { rdfStore: store })
+
+      // 确认值存在
+      const beforeResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
+      expect(beforeResults).toHaveLength(1)
+
+      // 使用 set(subject, predicate, nil) 删除
+      const result = await runLua(`
+        local ref = State:set('user:bob', 'email', nil)
+        return ref
+      `, { rdfStore: store })
+
+      // 应该返回 ref
+      expect(typeof result.result).toBe('string')
+
+      // 确认值已被删除
+      const afterResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
+      expect(afterResults).toHaveLength(0)
+    })
+
+    it('should delete all values for predicate when object is nil', async () => {
+      // 插入多个值
+      await runLua(`
+        State:insert('user:carol', 'tag', 'developer')
+        State:insert('user:carol', 'tag', 'designer')
+        State:insert('user:carol', 'tag', 'manager')
+      `, { rdfStore: store })
+
+      // 确认有三个值
+      const beforeResults = await queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
+      expect(beforeResults).toHaveLength(3)
+
+      // 使用 set(subject, predicate, nil) 删除所有
+      await runLua(`
+        State:set('user:carol', 'tag', nil)
+      `, { rdfStore: store })
+
+      // 确认所有值已被删除
+      const afterResults = await queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
+      expect(afterResults).toHaveLength(0)
+    })
+
+    it('should return nil from get after set with nil', async () => {
+      // 先设置一个值
+      await runLua(`
+        State:set('user:dave', 'status', 'active')
+      `, { rdfStore: store })
+
+      // 确认可以获取
+      const result1 = await runLua(`
+        return State:get('user:dave', 'status')
+      `, { rdfStore: store })
+      expect(result1.result).toBe('active')
+
+      // 使用 nil 删除
+      await runLua(`
+        State:set('user:dave', 'status', nil)
+      `, { rdfStore: store })
+
+      // 确认获取返回 nil
+      const result2 = await runLua(`
+        return State:get('user:dave', 'status')
+      `, { rdfStore: store })
+      expect(result2.result).toBeNull()
+    })
   })
 
   describe('State:get', () => {
