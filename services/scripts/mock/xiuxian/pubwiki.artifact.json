@@ -34,6 +34,12 @@
       "type": "PROMPT",
       "name": "故事写作指南",
       "external": false
+    },
+    {
+      "id": "44444444-4444-4444-4444-444444444100",
+      "type": "SANDBOX",
+      "name": "修仙世界沙盒",
+      "external": false
     }
   ],
   "edges": [],

@@ -30,6 +30,12 @@
         "src/types/index.ts",
         "src/utils/gameLogic.ts"
       ]
+    },
+    {
+      "id": "55555555-5555-5555-5555-555555555100",
+      "type": "SANDBOX",
+      "name": "游戏沙盒",
+      "external": false
     }
   ],
   "edges": [],

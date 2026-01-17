@@ -17,9 +17,16 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { config } from 'dotenv';
+
+// 从 .env 文件加载环境变量
+config();
 
 // API 基础 URL
 const API_BASE_URL = process.env.API_BASE_URL || 'https://api.pub.wiki/api';
+
+// 存储 session cookies
+const userCookies: Record<string, string> = {};
 
 // Mock 用户数据
 const mockUsers = [
@@ -117,61 +124,94 @@ interface MockArticle {
   content: MockArticleContentBlock[];
 }
 
-// 存储用户 token 和创建的资源
-const userTokens: Record<string, string> = {};
+// 存储创建的资源
 const createdArtifacts: Map<string, { id: string; slug: string; authorUsername: string }> = new Map();
 const createdProjects: Map<string, { id: string; slug: string; roles: Array<{ id: string; name: string }> }> = new Map();
 const createdArticles: Map<string, { id: string; title: string }> = new Map();
 
-// 注册或登录用户
-async function getOrCreateUserToken(user: typeof mockUsers[0]): Promise<string> {
-  if (userTokens[user.username]) {
-    return userTokens[user.username];
+// 注册或登录用户，返回 session cookie
+async function getOrCreateUserCookie(user: typeof mockUsers[0]): Promise<string> {
+  if (userCookies[user.username]) {
+    return userCookies[user.username];
   }
 
+  const origin = new URL(API_BASE_URL).origin;
+
   // 尝试登录
-  let response = await fetch(`${API_BASE_URL}/auth/login`, {
+  let response = await fetch(`${API_BASE_URL}/auth/sign-in/email`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Origin': origin,
+    },
     body: JSON.stringify({
-      usernameOrEmail: user.username,
+      email: user.email,
       password: user.password,
     }),
   });
 
   if (response.ok) {
-    const data = await response.json() as { token: string };
-    userTokens[user.username] = data.token;
+    const setCookie = response.headers.get('Set-Cookie') || '';
+    const sessionCookie = setCookie.split(';')[0];
+    userCookies[user.username] = sessionCookie;
     console.log(`  ✓ Logged in as ${user.username}`);
-    return data.token;
+    return sessionCookie;
   }
 
   // 登录失败，尝试注册
-  response = await fetch(`${API_BASE_URL}/auth/register`, {
+  response = await fetch(`${API_BASE_URL}/auth/sign-up/email`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'Origin': origin,
+    },
     body: JSON.stringify({
+      name: user.displayName,
       username: user.username,
       email: user.email,
       password: user.password,
-      displayName: user.displayName,
     }),
   });
 
   if (response.ok) {
-    const data = await response.json() as { token: string };
-    userTokens[user.username] = data.token;
+    const setCookie = response.headers.get('Set-Cookie') || '';
+    const sessionCookie = setCookie.split(';')[0];
+    userCookies[user.username] = sessionCookie;
     console.log(`  ✓ Registered and logged in as ${user.username}`);
-    return data.token;
+    return sessionCookie;
   }
 
-  const error = await response.json() as { error: string };
-  throw new Error(`Failed to authenticate user ${user.username}: ${error.error}`);
+  // 安全地解析错误响应
+  let errorMessage = `HTTP ${response.status}`;
+  try {
+    const text = await response.text();
+    if (text) {
+      const error = JSON.parse(text) as { error?: string; message?: string };
+      errorMessage = error.error || error.message || text;
+    }
+  } catch {
+    // 忽略解析错误
+  }
+  throw new Error(`Failed to authenticate user ${user.username}: ${errorMessage}`);
+}
+
+/**
+ * 创建带认证的 fetch 函数
+ * @param sessionCookie session cookie 字符串
+ * @returns 带 Cookie header 的 fetch 函数
+ */
+function authFetch(sessionCookie: string) {
+  return (url: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    headers.set('Cookie', sessionCookie);
+    return fetch(url, { ...init, headers });
+  };
 }
 
 // 创建 artifact
 // 返回值: artifact ID (成功), null (失败), 'PENDING' (需要稍后重试，因为外部引用未解决)
-async function createArtifact(artifact: MockArtifact, token: string): Promise<string | null | 'PENDING'> {
+async function createArtifact(artifact: MockArtifact, sessionCookie: string): Promise<string | null | 'PENDING'> {
+  const fetchWithAuth = authFetch(sessionCookie);
   const formData = new FormData();
   
   // 生成 artifactId (客户端生成的 UUID)
@@ -292,11 +332,8 @@ async function createArtifact(artifact: MockArtifact, token: string): Promise<st
     formData.append('homepage', homepageBlob, 'homepage.md');
   }
 
-  const response = await fetch(`${API_BASE_URL}/artifacts`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/artifacts`, {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
     body: formData,
   });
 
@@ -316,9 +353,7 @@ async function createArtifact(artifact: MockArtifact, token: string): Promise<st
     if (error.error.includes('slug already exists')) {
       console.log(`  ⚠ Artifact already exists: ${artifact.name}`);
       // 尝试获取已存在的 artifact
-      const getResponse = await fetch(`${API_BASE_URL}/artifacts?slug=${artifact.slug}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const getResponse = await fetchWithAuth(`${API_BASE_URL}/artifacts?slug=${artifact.slug}`, {});
       if (getResponse.ok) {
         const listData = await getResponse.json() as { artifacts: Array<{ id: string; slug: string }> };
         if (listData.artifacts.length > 0) {
@@ -339,7 +374,8 @@ async function createArtifact(artifact: MockArtifact, token: string): Promise<st
 }
 
 // 创建 project
-async function createProject(project: MockProject, token: string): Promise<string | null> {
+async function createProject(project: MockProject, sessionCookie: string): Promise<string | null> {
+  const fetchWithAuth = authFetch(sessionCookie);
   // 构建 artifacts 数组，使用 roleName 引用
   const artifacts = project.officialArtifacts
     .map(a => {
@@ -364,10 +400,9 @@ async function createProject(project: MockProject, token: string): Promise<strin
     artifacts,
   };
 
-  const response = await fetch(`${API_BASE_URL}/projects`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/projects`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),
@@ -395,17 +430,13 @@ async function createProject(project: MockProject, token: string): Promise<strin
     if (error.error.includes('slug already exists') || error.error.includes('already exists')) {
       console.log(`  ⚠ Project already exists: ${project.name}`);
       // 尝试获取已存在的 project 以获取 roles 映射
-      const listResponse = await fetch(`${API_BASE_URL}/projects?topic=${encodeURIComponent(project.topic)}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const listResponse = await fetchWithAuth(`${API_BASE_URL}/projects?topic=${encodeURIComponent(project.topic)}`, {});
       if (listResponse.ok) {
         const listData = await listResponse.json() as { projects: Array<{ id: string; name: string }> };
         const existingProject = listData.projects.find(p => p.name === project.name);
         if (existingProject) {
           // 获取 project 详情以获取 roles
-          const detailResponse = await fetch(`${API_BASE_URL}/projects/${existingProject.id}`, {
-            headers: { 'Authorization': `Bearer ${token}` },
-          });
+          const detailResponse = await fetchWithAuth(`${API_BASE_URL}/projects/${existingProject.id}`, {});
           if (detailResponse.ok) {
             const detailData = await detailResponse.json() as { 
               id: string; 
@@ -434,8 +465,9 @@ async function linkArtifactToProject(
   artifactSlug: string, 
   roleName: string,  // 使用 role 的 name 作为引用
   isOfficial: boolean, 
-  token: string
+  sessionCookie: string
 ): Promise<boolean> {
+  const fetchWithAuth = authFetch(sessionCookie);
   const project = createdProjects.get(projectSlug);
   const artifact = createdArtifacts.get(artifactSlug);
   
@@ -451,10 +483,9 @@ async function linkArtifactToProject(
     return false;
   }
   
-  const response = await fetch(`${API_BASE_URL}/projects/${project.id}/artifacts`, {
+  const response = await fetchWithAuth(`${API_BASE_URL}/projects/${project.id}/artifacts`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -626,10 +657,12 @@ async function loadMockArtifactsFromDirectory(): Promise<MockArtifact[]> {
             });
           }
         } else {
-          // PROMPT/INPUT/GENERATED 节点
+          // PROMPT/INPUT/GENERATED/LOADER/SANDBOX/STATE 节点
+          // 尝试从 prompts 目录读取对应的文件
           const possibleFiles = [
             path.join(promptsDir, `${node.id}.md`),
             path.join(promptsDir, `${node.id}.txt`),
+            path.join(promptsDir, `${node.id}.json`),
           ];
 
           let fileFound = false;
@@ -657,8 +690,30 @@ async function loadMockArtifactsFromDirectory(): Promise<MockArtifact[]> {
             }
           }
 
+          // 对于 SANDBOX/STATE/LOADER 类型，如果没有找到文件，生成默认的空 node.json
           if (!fileFound) {
-            console.warn(`  ⚠ File not found for node ${node.id} in ${dir}`);
+            if (node.type === 'SANDBOX' || node.type === 'STATE' || node.type === 'LOADER') {
+              const defaultContent = JSON.stringify({
+                type: node.type,
+                name: node.name,
+                data: {},
+              }, null, 2);
+              
+              processedNodes.push({
+                id: node.id,
+                type: node.type,
+                name: node.name,
+                external: false,
+                uploadFiles: [{
+                  filename: 'node.json',
+                  filepath: 'node.json',
+                  content: defaultContent,
+                  mimeType: 'application/json',
+                }],
+              });
+            } else {
+              console.warn(`  ⚠ File not found for node ${node.id} in ${dir}`);
+            }
           }
         }
       }
@@ -777,12 +832,12 @@ async function loadMockArticlesFromDirectory(): Promise<{ article: MockArticle; 
 // 创建 article
 async function createArticle(
   article: MockArticle,
-  token: string
+  sessionCookie: string
 ): Promise<string | null> {
-  const response = await fetch(`${API_BASE_URL}/articles/${article.id}`, {
+  const fetchWithAuth = authFetch(sessionCookie);
+  const response = await fetchWithAuth(`${API_BASE_URL}/articles/${article.id}`, {
     method: 'PUT',
     headers: {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -889,12 +944,12 @@ async function createDiscussion(
   targetType: 'ARTIFACT' | 'PROJECT' | 'POST',
   targetId: string,
   discussion: MockDiscussion,
-  token: string
+  sessionCookie: string
 ): Promise<string | null> {
-  const response = await fetch(`${API_BASE_URL}/discussions?targetType=${targetType}&targetId=${targetId}`, {
+  const fetchWithAuth = authFetch(sessionCookie);
+  const response = await fetchWithAuth(`${API_BASE_URL}/discussions?targetType=${targetType}&targetId=${targetId}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -919,12 +974,12 @@ async function createDiscussion(
 async function createDiscussionReply(
   discussionId: string,
   content: string,
-  token: string
+  sessionCookie: string
 ): Promise<boolean> {
-  const response = await fetch(`${API_BASE_URL}/discussions/${discussionId}/replies`, {
+  const fetchWithAuth = authFetch(sessionCookie);
+  const response = await fetchWithAuth(`${API_BASE_URL}/discussions/${discussionId}/replies`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ content }),
@@ -953,8 +1008,8 @@ async function createMockDiscussions(artifacts: MockArtifact[]): Promise<void> {
     if (!author) continue;
 
     try {
-      const token = await getOrCreateUserToken(author);
-      const discussionId = await createDiscussion('ARTIFACT', artifact.id, discussion, token);
+      const cookie = await getOrCreateUserCookie(author);
+      const discussionId = await createDiscussion('ARTIFACT', artifact.id, discussion, cookie);
       
       // 创建回复
       if (discussionId && discussion.replies) {
@@ -962,8 +1017,8 @@ async function createMockDiscussions(artifacts: MockArtifact[]): Promise<void> {
           const replyAuthor = mockUsers.find(u => u.username === reply.authorUsername);
           if (!replyAuthor) continue;
           
-          const replyToken = await getOrCreateUserToken(replyAuthor);
-          await createDiscussionReply(discussionId, reply.content, replyToken);
+          const replyCookie = await getOrCreateUserCookie(replyAuthor);
+          await createDiscussionReply(discussionId, reply.content, replyCookie);
         }
       }
     } catch (error) {
@@ -1014,12 +1069,12 @@ const mockPosts: MockPost[] = [
 async function createPost(
   projectId: string,
   post: MockPost,
-  token: string
+  sessionCookie: string
 ): Promise<string | null> {
-  const response = await fetch(`${API_BASE_URL}/projects/${projectId}/posts`, {
+  const fetchWithAuth = authFetch(sessionCookie);
+  const response = await fetchWithAuth(`${API_BASE_URL}/projects/${projectId}/posts`, {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
@@ -1053,8 +1108,8 @@ async function createMockPosts(projects: MockProject[]): Promise<void> {
     if (!author) continue;
 
     try {
-      const token = await getOrCreateUserToken(author);
-      await createPost(project.id, post, token);
+      const cookie = await getOrCreateUserCookie(author);
+      await createPost(project.id, post, cookie);
     } catch (error) {
       console.error(`  ❌ ${error}`);
     }
@@ -1083,7 +1138,7 @@ async function main() {
   console.log('👤 Setting up users...');
   for (const user of mockUsers) {
     try {
-      await getOrCreateUserToken(user);
+      await getOrCreateUserCookie(user);
     } catch (error) {
       console.error(`  ❌ ${error}`);
       process.exit(1);
@@ -1112,8 +1167,8 @@ async function main() {
     if (!user) continue;
     
     try {
-      const token = await getOrCreateUserToken(user);
-      await createArtifact(artifact, token);
+      const cookie = await getOrCreateUserCookie(user);
+      await createArtifact(artifact, cookie);
     } catch (error) {
       console.error(`  ❌ ${error}`);
     }
@@ -1124,8 +1179,8 @@ async function main() {
     if (!user) continue;
     
     try {
-      const token = await getOrCreateUserToken(user);
-      await createArtifact(artifact, token);
+      const cookie = await getOrCreateUserCookie(user);
+      await createArtifact(artifact, cookie);
     } catch (error) {
       console.error(`  ❌ ${error}`);
     }
@@ -1144,8 +1199,8 @@ async function main() {
     if (!user) continue;
     
     try {
-      const token = await getOrCreateUserToken(user);
-      await createProject(project, token);
+      const cookie = await getOrCreateUserCookie(user);
+      await createProject(project, cookie);
     } catch (error) {
       console.error(`  ❌ ${error}`);
     }
@@ -1165,7 +1220,7 @@ async function main() {
         continue;
       }
       
-      // 使用 artifact 作者的 token 来链接（社区贡献）
+      // 使用 artifact 作者的 cookie 来链接（社区贡献）
       const artifactConfig = artifacts.find(a => a.slug === link.artifactSlug);
       if (!artifactConfig) continue;
       
@@ -1173,8 +1228,8 @@ async function main() {
       if (!user) continue;
       
       try {
-        const token = await getOrCreateUserToken(user);
-        await linkArtifactToProject(project.slug, link.artifactSlug, link.roleName, false, token);
+        const cookie = await getOrCreateUserCookie(user);
+        await linkArtifactToProject(project.slug, link.artifactSlug, link.roleName, false, cookie);
       } catch (error) {
         console.error(`  ❌ ${error}`);
       }
@@ -1213,8 +1268,8 @@ async function main() {
     }
 
     try {
-      const token = await getOrCreateUserToken(user);
-      await createArticle(article, token);
+      const cookie = await getOrCreateUserCookie(user);
+      await createArticle(article, cookie);
     } catch (error) {
       console.error(`  ❌ ${error}`);
     }

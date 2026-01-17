@@ -34,6 +34,9 @@ articlesRoute.get('/by-sandbox/:sandboxNodeId', async (c) => {
     if (result.error.code === 'NOT_FOUND') {
       return c.json<ApiError>({ error: result.error.message }, 404);
     }
+    if (result.error.code === 'BAD_REQUEST') {
+      return c.json<ApiError>({ error: result.error.message }, 400);
+    }
     return c.json<ApiError>({ error: result.error.message }, 500);
   }
 
@@ -134,6 +137,9 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
     }
     if (result.error.code === 'FORBIDDEN') {
       return c.json<ApiError>({ error: result.error.message }, 403);
+    }
+    if (result.error.code === 'BAD_REQUEST') {
+      return c.json<ApiError>({ error: result.error.message }, 400);
     }
     return c.json<ApiError>({ error: result.error.message }, 500);
   }

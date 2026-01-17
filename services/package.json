@@ -28,6 +28,7 @@
     "@types/node": "catalog:",
     "@vitest/runner": "catalog:vitest3",
     "@vitest/snapshot": "catalog:vitest3",
+    "dotenv": "^16.6.1",
     "tsx": "^4.21.0",
     "typescript": "catalog:",
     "vitest": "catalog:vitest3",

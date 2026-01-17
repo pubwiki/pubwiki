@@ -40,6 +40,16 @@ describe('Articles API', () => {
   async function createTestSandboxNode(artifactId: string, name: string = 'Test Node'): Promise<string> {
     const [node] = await db.insert(artifactNodes).values({
       artifactId,
+      type: 'SANDBOX',
+      name,
+    }).returning();
+    return node.id;
+  }
+
+  // Helper: 创建测试非 sandbox node
+  async function createTestNonSandboxNode(artifactId: string, name: string = 'Test Non-Sandbox Node'): Promise<string> {
+    const [node] = await db.insert(artifactNodes).values({
+      artifactId,
       type: 'GENERATED',
       name,
     }).returning();
@@ -320,6 +330,31 @@ describe('Articles API', () => {
       expect(response.status).toBe(404);
     });
 
+    it('should return 400 for non-sandbox node type', async () => {
+      const { sessionCookie, userId } = await registerUser('author');
+      const artifactId = await createTestArtifact(userId);
+      const nonSandboxNodeId = await createTestNonSandboxNode(artifactId);
+      const articleId = crypto.randomUUID();
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: sessionCookie,
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          sandboxNodeId: nonSandboxNodeId,
+          content: createTestContent(),
+        }),
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(400);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Node is not a sandbox node');
+    });
+
     it('should create a new article successfully', async () => {
       const { sessionCookie, userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
@@ -478,6 +513,19 @@ describe('Articles API', () => {
       expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
       expect(data.error).toBe('Sandbox node not found');
+    });
+
+    it('should return 400 for non-sandbox node type', async () => {
+      const { userId } = await registerUser('owner');
+      const artifactId = await createTestArtifact(userId);
+      const nonSandboxNodeId = await createTestNonSandboxNode(artifactId);
+
+      const request = new Request(`http://localhost/api/articles/by-sandbox/${nonSandboxNodeId}`);
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(400);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Node is not a sandbox node');
     });
 
     it('should return empty list for sandbox with no articles', async () => {
