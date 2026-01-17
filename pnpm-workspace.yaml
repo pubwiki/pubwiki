@@ -16,7 +16,8 @@ packages:
   - packages/ui
   - apps/hub
   - apps/studio
-  - services
+  - services/hub
+  - services/gamesave
 
 catalogs:
   vitest3:
