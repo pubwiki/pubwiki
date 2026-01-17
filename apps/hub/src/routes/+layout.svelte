@@ -5,6 +5,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { createAuth, createSettingsStore } from '@pubwiki/ui/stores';
 	import { createArtifactStore } from '$lib/stores/artifacts.svelte';
+	import { createArticleStore } from '$lib/stores/articles.svelte';
 	import { createProjectStore } from '$lib/stores/projects.svelte';
 	import { API_BASE_URL } from '$lib/config';
 	import { onMount } from 'svelte';
@@ -12,6 +13,7 @@
 	let { children } = $props();
 	const auth = createAuth(API_BASE_URL);
 	const artifactStore = createArtifactStore();
+	const articleStore = createArticleStore();
 	const projectStore = createProjectStore();
 	const settings = createSettingsStore();
 

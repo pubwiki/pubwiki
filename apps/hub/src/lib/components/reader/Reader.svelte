@@ -22,18 +22,24 @@
 		type LexicalEditor,
 	} from 'lexical';
 	import { HeadingNode, $createHeadingNode as createHeadingNode } from '@lexical/rich-text';
-	import { GameRefParagraphNode, $createGameRefParagraphNode as createGameRefParagraphNode } from './GameRefParagraphNode';
+	import { GameRefParagraphNode, $createGameRefParagraphNode as createGameRefParagraphNode, setArticleContext } from './GameRefParagraphNode';
 	import { type ReaderContent, type TextContent, getTextWithRefs } from './content';
 
 	interface Props {
 		/** Structured reader content */
 		content: ReaderContent;
+		/** Artifact ID for playback links */
+		artifactId: string;
+		/** Sandbox node ID for playback links */
+		sandboxNodeId: string;
 		/** Additional CSS class */
 		class?: string;
 	}
 
 	let {
 		content = [],
+		artifactId,
+		sandboxNodeId,
 		class: className = '',
 	}: Props = $props();
 
@@ -73,6 +79,9 @@
 			
 			// Ensure editor is read-only
 			editor.setEditable(false);
+
+			// Set article context for playback URLs
+			setArticleContext(artifactId, sandboxNodeId);
 
 			// Initialize content
 			if (Array.isArray(content) && content.length > 0) {

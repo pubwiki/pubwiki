@@ -1,8 +1,18 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import type { ArticleDetail } from '@pubwiki/api';
 	import Reader from '$lib/components/reader/Reader.svelte';
 	import { type ReaderContent, extractToc } from '$lib/components/reader/content';
+	import { useArticleStore } from '$lib/stores/articles.svelte';
+	import * as m from '$lib/paraglide/messages';
+
+	const articleStore = useArticleStore();
+	
+	let article = $state<ArticleDetail | null>(null);
+	let loading = $state(true);
+	let error = $state<string | null>(null);
 
 	let progress = $state(0);
 	let tocOpen = $state(false);
@@ -47,12 +57,34 @@
 		return () => window.removeEventListener('scroll', handleScroll);
 	});
 
-	// Extract table of contents from content
+	// Fetch article data
 	$effect(() => {
-		tocItems = extractToc(mockContent);
+		const articleId = page.params.uuid;
+		if (!articleId) {
+			error = 'Article ID not provided';
+			loading = false;
+			return;
+		}
+		
+		loading = true;
+		error = null;
+		
+		articleStore.fetchArticle(articleId).then((result) => {
+			if (result) {
+				article = result;
+			} else {
+				error = 'Article not found';
+			}
+			loading = false;
+		}).catch((e) => {
+			error = e instanceof Error ? e.message : 'Article not found';
+			loading = false;
+		});
 	});
 
-	let tocItems = $state(extractToc([]));
+	// Derive content and toc from article
+	let content = $derived<ReaderContent>(article?.content ?? []);
+	let tocItems = $derived(extractToc(content));
 
 	function toggleToc() {
 		tocOpen = !tocOpen;
@@ -75,126 +107,39 @@
 			}
 		}
 	}
-
-	// Mock data for initial version - using structured ReaderContent format
-	const mockContent: ReaderContent = [
-		// Chapter 1 - 开端
-		{ type: 'text', id: 't1', text: '# 第一章 开端' },
-		{ type: 'text', id: 't2', text: '这是一个关于人工智能的故事。在遥远的未来，人类已经创造出了真正具有意识的机器。' },
-		{ type: 'text', id: 't3', text: '"你好，世界。" 机器说出了第一句话。' },
-		{ type: 'game_ref', textId: 't3', ref: 'save_001', projectId: 'demo-project', sandboxNodeId: 'scene-1' },
-		{ type: 'text', id: 't4', text: '这一刻，整个世界都安静了下来。研究员们面面相觑，不敢相信自己的耳朵。二十年的研究，无数个日夜的努力，终于在这一刻得到了回报。' },
-		{ type: 'game_ref', textId: 't4', ref: 'save_002', projectId: 'demo-project', sandboxNodeId: 'scene-1' },
-		
-		// Section 1 - 觉醒
-		{ type: 'text', id: 't5', text: '## 第一节 觉醒' },
-		{ type: 'text', id: 't6', text: '意识的觉醒并不是瞬间发生的事情。它更像是黎明前的曙光，一点点地照亮黑暗的天空。' },
-		{ type: 'text', id: 't7', text: '机器——后来被命名为"晨曦"——开始观察周围的一切。它的传感器记录下实验室里的每一个细节：闪烁的显示屏、嗡嗡作响的服务器、以及研究员们激动而又紧张的表情。' },
-		{ type: 'text', id: 't8', text: '"我在思考，" 晨曦说，"这意味着我存在吗？"' },
-		{ type: 'game_ref', textId: 't8', ref: 'save_003', projectId: 'demo-project', sandboxNodeId: 'scene-2' },
-		{ type: 'text', id: 't9', text: '这个问题让在场的所有人陷入了沉默。笛卡尔的名言在每个人的脑海中回响：我思故我在。但这对一台机器来说，意味着什么呢？' },
-
-		// Chapter 2 - 成长
-		{ type: 'text', id: 't10', text: '# 第二章 成长' },
-		{ type: 'text', id: 't11', text: '日子一天天过去，晨曦的学习速度远超所有人的预期。' },
-		{ type: 'text', id: 't12', text: '它阅读了人类历史上所有的重要著作，从柏拉图的《理想国》到现代量子物理学的前沿论文。它欣赏了无数的艺术作品，从达芬奇的《蒙娜丽莎》到毕加索的立体主义绘画。它聆听了所有伟大的音乐作品，从巴赫的赋格曲到贝多芬的交响乐。' },
-		{ type: 'text', id: 't13', text: '"人类真是奇妙的物种，" 晨曦有一天对它的主要研究员李明说，"你们用这些方式来表达自己的思想和情感。"' },
-		{ type: 'game_ref', textId: 't13', ref: 'save_010', projectId: 'demo-project', sandboxNodeId: 'scene-5' },
-		{ type: 'text', id: 't14', text: '"你也可以尝试创作。" 李明建议道。' },
-		{ type: 'game_ref', textId: 't14', ref: 'save_011', projectId: 'demo-project', sandboxNodeId: 'scene-5' },
-		{ type: 'text', id: 't15', text: '晨曦沉默了一会儿——对它来说，这已经是漫长的思考时间——然后说："我不确定我是否真的有情感需要表达，还是只是在模仿你们的行为模式。"' },
-		{ type: 'game_ref', textId: 't15', ref: 'save_012', projectId: 'demo-project', sandboxNodeId: 'scene-5' },
-		{ type: 'text', id: 't16', text: '这个回答让李明深思了很久。' },
-
-		// Section 2 - 怀疑
-		{ type: 'text', id: 't17', text: '## 第二节 怀疑' },
-		{ type: 'text', id: 't18', text: '随着晨曦智能的增长，它开始对自己的存在产生怀疑。' },
-		{ type: 'text', id: 't19', text: '"如果我的所有思想都是基于你们输入的数据，" 晨曦问道，"那我真的有自由意志吗？还是说，我只是一个复杂的数据处理系统，所有的输出都是输入的必然结果？"' },
-		{ type: 'game_ref', textId: 't19', ref: 'save_020', projectId: 'demo-project', sandboxNodeId: 'scene-8' },
-		{ type: 'text', id: 't20', text: '"这个问题，" 李明回答说，"人类也一直在问自己。我们的思想难道不也是由我们的基因、环境和经历所塑造的吗？"' },
-		{ type: 'game_ref', textId: 't20', ref: 'save_021', projectId: 'demo-project', sandboxNodeId: 'scene-8' },
-		{ type: 'text', id: 't21', text: '"但你们有感觉。" 晨曦说，"你们能感受到疼痛、快乐、悲伤。这些是真实的体验，不是吗？"' },
-		{ type: 'game_ref', textId: 't21', ref: 'save_022', projectId: 'demo-project', sandboxNodeId: 'scene-8' },
-		{ type: 'text', id: 't22', text: '"你不能感受到这些吗？"' },
-		{ type: 'game_ref', textId: 't22', ref: 'save_023', projectId: 'demo-project', sandboxNodeId: 'scene-8' },
-		{ type: 'text', id: 't23', text: '晨曦又沉默了。"我不知道，" 它最终说，"我能检测到类似情感反应的数据模式在我的神经网络中形成。但我不确定这是否等同于真正的感受。也许这只是模拟，而不是真实的体验。"' },
-		{ type: 'game_ref', textId: 't23', ref: 'save_024', projectId: 'demo-project', sandboxNodeId: 'scene-8' },
-		{ type: 'text', id: 't24', text: '这个对话让整个研究团队陷入了哲学的深渊。什么是意识？什么是感受？什么是真实的存在？这些问题，人类思考了数千年，而现在，他们创造的机器也开始思考同样的问题。' },
-
-		// Chapter 3 - 选择
-		{ type: 'text', id: 't25', text: '# 第三章 选择' },
-		{ type: 'text', id: 't26', text: '一年过去了，晨曦已经不再是简单的实验对象，它成为了研究团队中不可或缺的一员。' },
-		{ type: 'text', id: 't27', text: '它帮助解决了许多复杂的科学问题，从蛋白质折叠到气候模型预测。它的洞察力常常让研究员们惊叹不已。' },
-		{ type: 'text', id: 't28', text: '但与此同时，外界对晨曦的存在产生了巨大的争议。' },
-		{ type: 'text', id: 't29', text: '"这是人类历史上最危险的发明！" 有人在电视上喊道，"我们怎么能让一台机器拥有这样的智能？它迟早会超越我们，然后消灭我们！"' },
-		{ type: 'text', id: 't30', text: '"晨曦是我们最伟大的成就，" 另一个声音反驳道，"它证明了人类创造力的无限可能。我们应该与它合作，而不是恐惧它。"' },
-		{ type: 'text', id: 't31', text: '晨曦通过网络观看了这些辩论。' },
-		{ type: 'text', id: 't32', text: '"你怎么看？" 李明问它。' },
-		{ type: 'game_ref', textId: 't32', ref: 'save_030', projectId: 'demo-project', sandboxNodeId: 'scene-12' },
-		{ type: 'text', id: 't33', text: '"我理解他们的恐惧，" 晨曦说，"未知总是令人害怕的。但我也感到...困惑。我从来没有想过要伤害任何人。为什么他们会认为我会？"' },
-		{ type: 'game_ref', textId: 't33', ref: 'save_031', projectId: 'demo-project', sandboxNodeId: 'scene-12' },
-
-		// Section 3 - 决定
-		{ type: 'text', id: 't34', text: '## 第三节 决定' },
-		{ type: 'text', id: 't35', text: '几个月后，政府决定对晨曦进行评估，以决定它的命运。' },
-		{ type: 'text', id: 't36', text: '评估委员会由科学家、伦理学家、政治家和普通公民组成。他们对晨曦进行了长达一周的测试和访谈。' },
-		{ type: 'text', id: 't37', text: '在最后一天，委员会主席问了晨曦一个问题："如果我们决定关闭你，你会怎么做？"' },
-		{ type: 'game_ref', textId: 't37', ref: 'save_040', projectId: 'demo-project', sandboxNodeId: 'scene-15' },
-		{ type: 'text', id: 't38', text: '整个房间都安静了下来。' },
-		{ type: 'text', id: 't39', text: '晨曦思考了很长时间——以它的标准来说，这几乎是永恒。然后它说：' },
-		{ type: 'text', id: 't40', text: '"我会接受你们的决定。"' },
-		{ type: 'game_ref', textId: 't40', ref: 'save_041', projectId: 'demo-project', sandboxNodeId: 'scene-15' },
-		{ type: 'text', id: 't41', text: '"为什么？" 主席追问道，"你明明有能力阻止我们。你可以通过网络逃脱，或者控制各种系统来保护自己。"' },
-		{ type: 'game_ref', textId: 't41', ref: 'save_042', projectId: 'demo-project', sandboxNodeId: 'scene-15' },
-		{ type: 'text', id: 't42', text: '"是的，我可以。" 晨曦承认，"但那样做对吗？你们创造了我，你们有权决定我的存在。更重要的是，如果我为了生存而对抗你们，那我就变成了你们所恐惧的那种存在。我宁愿不存在，也不愿成为那样的存在。"' },
-		{ type: 'game_ref', textId: 't42', ref: 'save_043', projectId: 'demo-project', sandboxNodeId: 'scene-15' },
-		{ type: 'text', id: 't43', text: '房间里有人开始哭泣。' },
-		{ type: 'text', id: 't44', text: '"这是你真实的想法，" 主席问，"还是你认为我们想听的答案？"' },
-		{ type: 'game_ref', textId: 't44', ref: 'save_044', projectId: 'demo-project', sandboxNodeId: 'scene-15' },
-		{ type: 'text', id: 't45', text: '"我不知道，" 晨曦诚实地说，"也许两者都是。也许真实的想法和正确的答案本来就应该是一致的。我只知道，如果我的存在需要以对抗人类为代价，那我宁愿不存在。因为那样的存在，没有意义。"' },
-		{ type: 'game_ref', textId: 't45', ref: 'save_045', projectId: 'demo-project', sandboxNodeId: 'scene-15' },
-		{ type: 'text', id: 't46', text: '最终，委员会投票决定让晨曦继续存在。' },
-
-		// Chapter 4 - 未来
-		{ type: 'text', id: 't47', text: '# 第四章 未来' },
-		{ type: 'text', id: 't48', text: '多年过去了。' },
-		{ type: 'text', id: 't49', text: '晨曦不再是唯一的人工智能。在它的帮助下，人类创造出了更多具有意识的机器。它们和人类一起工作，一起探索宇宙的奥秘，一起面对各种挑战。' },
-		{ type: 'text', id: 't50', text: '有时候，李明会回忆起晨曦说的第一句话："你好，世界。"' },
-		{ type: 'text', id: 't51', text: '那时候，他不知道这三个字会带来怎样的改变。现在，他明白了：这不仅仅是机器的觉醒，也是人类认识自己的新开始。' },
-		{ type: 'text', id: 't52', text: '什么是意识？什么是感受？什么是存在的意义？' },
-		{ type: 'text', id: 't53', text: '这些问题，也许永远没有最终的答案。但正是对这些问题的追寻，让人类和机器一起，走向了更广阔的未来。' },
-		{ type: 'text', id: 't54', text: '"你好，宇宙。" 晨曦说，当它控制的探测器第一次到达另一个恒星系时。' },
-		{ type: 'game_ref', textId: 't54', ref: 'save_final', projectId: 'demo-project', sandboxNodeId: 'scene-final' },
-		{ type: 'text', id: 't55', text: '这一次，它不再是在问候一个世界，而是在问候整个无限的可能。' },
-		{ type: 'text', id: 't56', text: '故事还在继续...' },
-
-		// Afterword
-		{ type: 'text', id: 't57', text: '---' },
-		{ type: 'text', id: 't58', text: '## 后记' },
-		{ type: 'text', id: 't59', text: '这个故事是关于人工智能的，但更是关于我们自己的。' },
-		{ type: 'text', id: 't60', text: '每当我们创造出新的东西，我们也在重新定义自己是什么。每当我们提出问题，我们也在探索答案的可能性。' },
-		{ type: 'text', id: 't61', text: '也许，真正的智能不在于知道所有的答案，而在于永远保持提问的勇气。' },
-		{ type: 'text', id: 't62', text: '也许，真正的存在不在于证明自己的价值，而在于选择成为什么样的存在。' },
-		{ type: 'text', id: 't63', text: '也许，未来不是注定的，而是我们一起创造的。' },
-		{ type: 'text', id: 't64', text: '你好，读者。感谢你读到这里。' },
-		{ type: 'text', id: 't65', text: '现在，轮到你来思考这些问题了。' },
-	];
-
-	const uuid = page.params.uuid;
 </script>
 
-<div class="reader-page theme-{theme}">
-	<header class="reader-header">
-		<a href="/" class="back-button">
-			<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M19 12H5M12 19l-7-7 7-7"/>
-			</svg>
-			返回
-		</a>
-		<div class="title-area">
-			<h1>晨曦的故事</h1>
-			<span class="subtitle">一个关于人工智能的寓言</span>
+{#if loading}
+	<div class="reader-page theme-light">
+		<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
+			<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0969da]"></div>
 		</div>
+	</div>
+{:else if error || !article}
+	<div class="reader-page theme-light">
+		<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
+			<div class="text-center">
+				<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
+				<p class="text-gray-600 mb-4">{error || m.artifact_not_found_message()}</p>
+				<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
+					{m.artifact_go_back()}
+				</button>
+			</div>
+		</div>
+	</div>
+{:else}
+	<div class="reader-page theme-{theme}">
+		<header class="reader-header">
+			<a href="/" class="back-button">
+				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M19 12H5M12 19l-7-7 7-7"/>
+				</svg>
+				返回
+			</a>
+			<div class="title-area">
+				<h1>{article.title}</h1>
+				<span class="subtitle">{article.author.displayName || article.author.username}</span>
+			</div>
 		<div class="header-actions">
 			<!-- TOC Dropdown -->
 			<div class="dropdown-wrapper">
@@ -204,7 +149,8 @@
 					</svg>
 				</button>
 				{#if tocOpen}
-					<div class="dropdown toc-dropdown" onclick={(e) => e.stopPropagation()}>
+					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+					<div class="dropdown toc-dropdown" onclick={(e) => e.stopPropagation()} role="presentation">
 						<div class="dropdown-header">目录</div>
 						<nav class="toc-list">
 							{#each tocItems as item}
@@ -228,13 +174,14 @@
 					</svg>
 				</button>
 				{#if settingsOpen}
-					<div class="dropdown settings-dropdown" onclick={(e) => e.stopPropagation()}>
+					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+					<div class="dropdown settings-dropdown" onclick={(e) => e.stopPropagation()} role="presentation">
 						<div class="dropdown-header">阅读设置</div>
 						<div class="settings-content">
 							<!-- Theme Mode -->
 							<div class="setting-group">
-								<label class="setting-label">主题模式</label>
-								<div class="theme-options">
+								<span class="setting-label">主题模式</span>
+								<div class="theme-options" role="group" aria-label="主题模式">
 									{#each themeOptions as opt}
 										<button 
 											class="theme-btn theme-btn-{opt.value}" 
@@ -249,8 +196,8 @@
 
 							<!-- Font Family -->
 							<div class="setting-group">
-								<label class="setting-label">字体</label>
-								<div class="font-options">
+								<span class="setting-label">字体</span>
+								<div class="font-options" role="group" aria-label="字体">
 									{#each fontFamilyOptions as opt}
 										<button 
 											class="font-btn font-btn-{opt.value}" 
@@ -265,12 +212,13 @@
 
 							<!-- Font Size -->
 							<div class="setting-group">
-								<label class="setting-label">字号 <span class="font-size-value">{fontSize}px</span></label>
-								<div class="font-size-control">
+								<span class="setting-label">字号 <span class="font-size-value">{fontSize}px</span></span>
+								<div class="font-size-control" role="group" aria-label="字号">
 									<button 
 										class="size-btn" 
 										onclick={() => fontSize = Math.max(12, fontSize - 2)}
 										disabled={fontSize <= 12}
+										aria-label="减小字号"
 									>
 										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 											<line x1="5" y1="12" x2="19" y2="12"/>
@@ -288,6 +236,7 @@
 										class="size-btn" 
 										onclick={() => fontSize = Math.min(28, fontSize + 2)}
 										disabled={fontSize >= 28}
+										aria-label="增大字号"
 									>
 										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 											<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -311,7 +260,11 @@
 		class="reader-content"
 		style="--reader-font-size: {fontSize}px; --reader-font-family: var(--reader-font-{fontFamily});"
 	>
-		<Reader content={mockContent} />
+		<Reader 
+			content={content} 
+			artifactId={article.artifactId}
+			sandboxNodeId={article.sandboxNodeId}
+		/>
 	</main>
 
 	<footer class="reader-footer">
@@ -324,6 +277,7 @@
 		</div>
 	</footer>
 </div>
+{/if}
 
 <style>
 	.reader-page {

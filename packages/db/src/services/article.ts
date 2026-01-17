@@ -62,15 +62,23 @@ export class ArticleService {
     return result[0] ?? null;
   }
 
-  // 通过 sandboxNodeId 获取 artifactId
-  async getArtifactIdBySandboxNodeId(sandboxNodeId: string): Promise<string | null> {
+  // 通过 sandboxNodeId 获取 artifactId，同时验证 node 类型为 SANDBOX
+  async getArtifactIdBySandboxNodeId(sandboxNodeId: string): Promise<{ artifactId: string } | { error: 'NOT_FOUND' | 'NOT_SANDBOX' }> {
     const result = await this.db
-      .select({ artifactId: artifactNodes.artifactId })
+      .select({ artifactId: artifactNodes.artifactId, type: artifactNodes.type })
       .from(artifactNodes)
       .where(eq(artifactNodes.id, sandboxNodeId))
       .limit(1);
 
-    return result[0]?.artifactId ?? null;
+    if (!result[0]) {
+      return { error: 'NOT_FOUND' };
+    }
+
+    if (result[0].type !== 'SANDBOX') {
+      return { error: 'NOT_SANDBOX' };
+    }
+
+    return { artifactId: result[0].artifactId };
   }
 
   // 转换为 ArticleDetail
@@ -125,8 +133,8 @@ export class ArticleService {
       }
 
       // 获取 artifactId
-      const artifactId = await this.getArtifactIdBySandboxNodeId(article.sandboxNodeId);
-      if (!artifactId) {
+      const sandboxResult = await this.getArtifactIdBySandboxNodeId(article.sandboxNodeId);
+      if ('error' in sandboxResult) {
         return {
           success: false,
           error: { code: 'NOT_FOUND', message: 'Artifact not found' },
@@ -135,7 +143,7 @@ export class ArticleService {
 
       return {
         success: true,
-        data: this.toDetail(article, author, artifactId),
+        data: this.toDetail(article, author, sandboxResult.artifactId),
       };
     } catch (error) {
       console.error('Failed to get article:', error);
@@ -151,14 +159,21 @@ export class ArticleService {
     const { articleId, authorId, data } = params;
 
     try {
-      // 验证 sandboxNodeId 是否存在
-      const artifactId = await this.getArtifactIdBySandboxNodeId(data.sandboxNodeId);
-      if (!artifactId) {
+      // 验证 sandboxNodeId 是否存在且类型为 SANDBOX
+      const sandboxResult = await this.getArtifactIdBySandboxNodeId(data.sandboxNodeId);
+      if ('error' in sandboxResult) {
+        if (sandboxResult.error === 'NOT_FOUND') {
+          return {
+            success: false,
+            error: { code: 'NOT_FOUND', message: 'Sandbox node not found' },
+          };
+        }
         return {
           success: false,
-          error: { code: 'NOT_FOUND', message: 'Sandbox node not found' },
+          error: { code: 'BAD_REQUEST', message: 'Node is not a sandbox node' },
         };
       }
+      const artifactId = sandboxResult.artifactId;
 
       // 检查文章是否存在
       const [existing] = await this.db
@@ -222,14 +237,21 @@ export class ArticleService {
     const offset = (validPage - 1) * validLimit;
 
     try {
-      // 首先验证 sandboxNodeId 存在
-      const artifactId = await this.getArtifactIdBySandboxNodeId(sandboxNodeId);
-      if (!artifactId) {
+      // 首先验证 sandboxNodeId 存在且类型为 SANDBOX
+      const sandboxResult = await this.getArtifactIdBySandboxNodeId(sandboxNodeId);
+      if ('error' in sandboxResult) {
+        if (sandboxResult.error === 'NOT_FOUND') {
+          return {
+            success: false,
+            error: { code: 'NOT_FOUND', message: 'Sandbox node not found' },
+          };
+        }
         return {
           success: false,
-          error: { code: 'NOT_FOUND', message: 'Sandbox node not found' },
+          error: { code: 'BAD_REQUEST', message: 'Node is not a sandbox node' },
         };
       }
+      const artifactId = sandboxResult.artifactId;
 
       // 获取总数
       const [countResult] = await this.db

@@ -15,6 +15,24 @@ import type {
 import { ParagraphNode, $applyNodeReplacement } from 'lexical';
 import { type GameRef, buildPlaybackUrl } from './content';
 
+// Module-level context for article metadata (set by Reader component)
+let _articleContext: { artifactId: string; sandboxNodeId: string } | null = null;
+
+/**
+ * Set the article context (artifactId and sandboxNodeId) for building playback URLs
+ * This should be called by the Reader component before creating GameRefParagraphNodes
+ */
+export function setArticleContext(artifactId: string, sandboxNodeId: string): void {
+    _articleContext = { artifactId, sandboxNodeId };
+}
+
+/**
+ * Get the current article context
+ */
+export function getArticleContext(): { artifactId: string; sandboxNodeId: string } | null {
+    return _articleContext;
+}
+
 export type SerializedGameRefParagraphNode = Spread<
     {
         type: 'game-ref-paragraph';
@@ -30,7 +48,16 @@ export type SerializedGameRefParagraphNode = Spread<
 function createPlayButton(gameRef: GameRef): HTMLAnchorElement {
     const button = document.createElement('a');
     button.className = 'game-ref-button';
-    button.href = buildPlaybackUrl(gameRef);
+    
+    // Use article context for URL building
+    const ctx = _articleContext;
+    if (ctx) {
+        button.href = buildPlaybackUrl(gameRef, ctx.artifactId, ctx.sandboxNodeId);
+    } else {
+        button.href = '#';
+        console.warn('Article context not set for GameRefParagraphNode');
+    }
+    
     button.target = '_blank';
     button.title = '在游戏中查看';
     button.contentEditable = 'false';
@@ -92,7 +119,10 @@ export class GameRefParagraphNode extends ParagraphNode {
         if (prevNode.__gameRef !== this.__gameRef) {
             const button = dom.querySelector('.game-ref-button') as HTMLAnchorElement;
             if (button) {
-                button.href = buildPlaybackUrl(this.__gameRef);
+                const ctx = _articleContext;
+                if (ctx) {
+                    button.href = buildPlaybackUrl(this.__gameRef, ctx.artifactId, ctx.sandboxNodeId);
+                }
             }
         }
         return needsUpdate;

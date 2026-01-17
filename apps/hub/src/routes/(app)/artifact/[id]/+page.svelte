@@ -1,9 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import type { ArticleDetail } from '@pubwiki/api';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { useArtifactStore, type ArtifactDetails } from '$lib/stores/artifacts.svelte';
+	import { useArticleStore } from '$lib/stores/articles.svelte';
 	import ArtifactCard from '$lib/components/ArtifactCard.svelte';
+	import ArticleCard from '$lib/components/ArticleCard.svelte';
 	import LineageGraph from '$lib/components/LineageGraph.svelte';
 	import NodeCard from '$lib/components/NodeCard.svelte';
 	import { PUBLIC_STUDIO_URL } from '$env/static/public';
@@ -12,6 +15,7 @@
 	let { data } = $props<{ data: PageData }>();
 	
 	const artifactStore = useArtifactStore();
+	const articleStore = useArticleStore();
 	
 	// Studio URL - defaults to localhost for development
 	const studioUrl = PUBLIC_STUDIO_URL || 'http://localhost:5174';
@@ -19,6 +23,10 @@
 	let details = $state<ArtifactDetails | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	
+	// Articles state
+	let articles = $state<ArticleDetail[]>([]);
+	let articlesLoading = $state(false);
 
 	/**
 	 * Open artifact in Studio (new project)
@@ -63,15 +71,43 @@
 	let nodes = $derived(details?.graph?.nodes ?? []);
 	let parents = $derived(details?.parents ?? []);
 	let children = $derived(details?.children ?? []);
+	
+	// Get sandbox nodes for articles
+	let sandboxNodes = $derived(nodes.filter(n => n.type === 'SANDBOX'));
 
 	let activeTab = $state('Overview');
-	type TabKey = 'Overview' | 'Nodes' | 'Lineage' | 'Discussion';
-	const tabsConfig: { key: TabKey; labelKey: () => string }[] = [
-		{ key: 'Overview', labelKey: () => m.artifact_overview() },
-		{ key: 'Nodes', labelKey: () => m.artifact_nodes() },
-		{ key: 'Lineage', labelKey: () => m.artifact_lineage() },
-		{ key: 'Discussion', labelKey: () => m.artifact_discussion() }
+	type TabKey = 'Overview' | 'Nodes' | 'Articles' | 'Lineage' | 'Discussion';
+	const tabsConfig: { key: TabKey; label: string }[] = [
+		{ key: 'Overview', label: 'Overview' },
+		{ key: 'Nodes', label: 'Nodes' },
+		{ key: 'Articles', label: 'Articles' },
+		{ key: 'Lineage', label: 'Lineage' },
+		{ key: 'Discussion', label: 'Discussion' }
 	];
+	
+	// Fetch articles when Articles tab is activated and we have sandbox nodes
+	$effect(() => {
+		if (activeTab === 'Articles' && sandboxNodes.length > 0 && articles.length === 0 && !articlesLoading) {
+			articlesLoading = true;
+			// Fetch articles from all sandbox nodes
+			Promise.all(
+				sandboxNodes.map(node => articleStore.fetchArticlesBySandbox(node.id))
+			).then(results => {
+				const allArticles: ArticleDetail[] = [];
+				for (const result of results) {
+					if (result) {
+						allArticles.push(...result.articles);
+					}
+				}
+				// Sort by createdAt desc
+				allArticles.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+				articles = allArticles;
+				articlesLoading = false;
+			}).catch(() => {
+				articlesLoading = false;
+			});
+		}
+	});
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString();
@@ -168,7 +204,7 @@
 										: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
 										whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors"
 								>
-									{tab.labelKey()}
+									{tab.label}
 								</button>
 							{/each}
 						</nav>
@@ -202,6 +238,33 @@
 								{:else}
 									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
 										{m.artifact_no_nodes()}
+									</div>
+								{/if}
+							</div>
+						{:else if activeTab === 'Articles'}
+							<div>
+								<div class="flex items-center justify-between mb-4">
+									<h3 class="font-bold text-gray-700">Articles</h3>
+									<span class="text-xs text-gray-500">{articles.length} articles</span>
+								</div>
+								
+								{#if articlesLoading}
+									<div class="flex items-center justify-center py-12">
+										<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
+									</div>
+								{:else if articles.length > 0}
+									<div class="flex flex-col gap-3">
+										{#each articles as article}
+											<ArticleCard {article} />
+										{/each}
+									</div>
+								{:else if sandboxNodes.length === 0}
+									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
+										This artifact has no sandbox nodes. Articles require sandbox nodes to associate game state.
+									</div>
+								{:else}
+									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
+										No articles available.
 									</div>
 								{/if}
 							</div>

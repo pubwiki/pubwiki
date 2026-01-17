@@ -5,38 +5,9 @@
  * Novels are compiled from galgame-style game history records.
  */
 
-/** Base content block interface */
-export interface ContentBlock {
-    type: string;
-}
-
-/** Plain text content */
-export interface TextContent extends ContentBlock {
-    type: 'text';
-    /** Unique identifier for this text block */
-    id: string;
-    /** The actual text content */
-    text: string;
-}
-
-/** Game reference - links text to a game save state */
-export interface GameRef extends ContentBlock {
-    type: 'game_ref';
-    /** ID of the text block this reference is attached to */
-    textId: string;
-    /** Reference to game state (e.g., save file or state snapshot) */
-    ref: string;
-    /** Project ID in studio */
-    projectId: string;
-    /** Sandbox node ID for playback */
-    sandboxNodeId: string;
-}
-
-/** Union type for all content blocks */
-export type ReaderContentBlock = TextContent | GameRef;
-
-/** Reader content - array of content blocks */
-export type ReaderContent = ReaderContentBlock[];
+// 从 @pubwiki/api 导入类型
+export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from '@pubwiki/api';
+import type { GameRef, ReaderContent, TextContent } from '@pubwiki/api';
 
 /**
  * Helper to find game ref for a text block
@@ -60,9 +31,10 @@ export function getTextWithRefs(content: ReaderContent): Array<{ text: TextConte
 
 /**
  * Build studio playback URL for a game ref
+ * 需要额外传入 artifactId 和 sandboxNodeId（从文章 metadata 获取）
  */
-export function buildPlaybackUrl(gameRef: GameRef): string {
-    return `/${gameRef.projectId}/play/${gameRef.sandboxNodeId}?load=${encodeURIComponent(gameRef.ref)}`;
+export function buildPlaybackUrl(gameRef: GameRef, artifactId: string, sandboxNodeId: string): string {
+    return `/${artifactId}/play/${sandboxNodeId}?load=${encodeURIComponent(gameRef.ref)}`;
 }
 
 /** Table of contents item */
