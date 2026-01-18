@@ -1,0 +1,118 @@
+# Post (动态) related schemas
+
+PostAuthor:
+  type: object
+  required:
+    - id
+    - username
+  properties:
+    id:
+      type: string
+      format: uuid
+    username:
+      type: string
+    displayName:
+      type: string
+      nullable: true
+    avatarUrl:
+      type: string
+      format: uri
+      nullable: true
+
+PostListItem:
+  type: object
+  required:
+    - id
+    - projectId
+    - author
+    - title
+    - content
+    - isPinned
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    projectId:
+      type: string
+      format: uuid
+    author:
+      $ref: './post.yaml#/PostAuthor'
+    discussionId:
+      type: string
+      format: uuid
+      nullable: true
+    title:
+      type: string
+      maxLength: 200
+    content:
+      type: string
+      description: HTML 内容
+    coverUrls:
+      type: array
+      items:
+        type: string
+        format: uri
+      description: 封面图片 URL 数组
+      nullable: true
+    isPinned:
+      type: boolean
+    replyCount:
+      type: integer
+      description: 关联讨论的回复数
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+PostDetail:
+  allOf:
+    - $ref: './post.yaml#/PostListItem'
+    - type: object
+      properties:
+        discussion:
+          $ref: './discussion.yaml#/DiscussionDetail'
+          nullable: true
+
+CreatePostRequest:
+  type: object
+  required:
+    - title
+    - content
+  properties:
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    content:
+      type: string
+      description: HTML 内容
+    coverUrls:
+      type: array
+      items:
+        type: string
+        format: uri
+      description: 封面图片 URL 数组
+
+UpdatePostRequest:
+  type: object
+  properties:
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    content:
+      type: string
+      description: HTML 内容
+    coverUrls:
+      type: array
+      items:
+        type: string
+        format: uri
+      description: 封面图片 URL 数组
+    isPinned:
+      type: boolean
+      description: 是否置顶（仅 owner 和 maintainer 可设置）

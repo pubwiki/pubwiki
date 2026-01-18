@@ -1,0 +1,276 @@
+# Cloud Saves related schemas
+
+CloudSave:
+  type: object
+  required:
+    - id
+    - userId
+    - name
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    userId:
+      type: string
+      format: uuid
+    sandboxNodeId:
+      type: string
+      format: uuid
+      nullable: true
+    name:
+      type: string
+    description:
+      type: string
+      nullable: true
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+    lastSyncedAt:
+      type: string
+      format: date-time
+      nullable: true
+
+CreateSaveRequest:
+  type: object
+  required:
+    - name
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 200
+    description:
+      type: string
+      maxLength: 1000
+    sandboxNodeId:
+      type: string
+      format: uuid
+
+Quad:
+  type: object
+  required:
+    - subject
+    - predicate
+    - object
+  properties:
+    subject:
+      type: string
+      description: N3 格式的 subject (e.g., '<http://example.org/s>')
+    predicate:
+      type: string
+      description: N3 格式的 predicate (e.g., '<http://example.org/p>')
+    object:
+      type: string
+      description: N3 格式的 object value
+    objectDatatype:
+      type: string
+      nullable: true
+      description: Literal 的 datatype URI
+    objectLanguage:
+      type: string
+      nullable: true
+      description: Literal 的语言标签
+    graph:
+      type: string
+      description: 图名称，默认为空字符串
+
+TextPatch:
+  type: object
+  required:
+    - originalLength
+    - hunks
+  properties:
+    originalLength:
+      type: integer
+    hunks:
+      type: array
+      items:
+        type: object
+        required:
+          - start
+          - deleteCount
+          - insert
+        properties:
+          start:
+            type: integer
+          deleteCount:
+            type: integer
+          insert:
+            type: string
+
+Operation:
+  type: object
+  required:
+    - type
+  properties:
+    type:
+      type: string
+      enum: [insert, delete, batch-insert, batch-delete, patch]
+    quad:
+      $ref: './saves.yaml#/Quad'
+    quads:
+      type: array
+      items:
+        $ref: './saves.yaml#/Quad'
+    subject:
+      type: string
+    predicate:
+      type: string
+    patch:
+      $ref: './saves.yaml#/TextPatch'
+
+OperationWithRef:
+  type: object
+  required:
+    - operation
+    - ref
+  properties:
+    operation:
+      $ref: './saves.yaml#/Operation'
+    ref:
+      type: string
+      description: 客户端计算的 ref (链式 hash)
+
+SyncOperationsRequest:
+  type: object
+  required:
+    - baseRef
+    - operations
+  properties:
+    baseRef:
+      type: string
+      description: 操作基于的 ref (parent of first operation)
+    operations:
+      type: array
+      items:
+        $ref: './saves.yaml#/OperationWithRef'
+      description: 操作列表，按顺序执行
+
+SyncErrorType:
+  type: string
+  enum:
+    - UNKNOWN_BASE_REF
+    - REF_MISMATCH
+    - INVALID_OPERATION
+    - INTERNAL_ERROR
+  description: |
+    - UNKNOWN_BASE_REF: baseRef 不存在于服务端历史
+    - REF_MISMATCH: 客户端计算的 ref 与服务端不匹配
+    - INVALID_OPERATION: 操作格式无效
+    - INTERNAL_ERROR: 服务端内部错误
+
+RefMismatchInfo:
+  type: object
+  required:
+    - index
+    - expected
+    - received
+  properties:
+    index:
+      type: integer
+      description: 第一个不匹配的操作索引
+    expected:
+      type: string
+      description: 服务端计算的 ref
+    received:
+      type: string
+      description: 客户端提供的 ref
+
+SyncOperationsResponse:
+  type: object
+  required:
+    - success
+  properties:
+    success:
+      type: boolean
+    finalRef:
+      type: string
+      description: 最终的 ref (成功时返回)
+    error:
+      $ref: './saves.yaml#/SyncErrorType'
+    message:
+      type: string
+      description: 错误消息
+    mismatch:
+      $ref: './saves.yaml#/RefMismatchInfo'
+    affectedCount:
+      type: integer
+      description: 影响的 quad 数量 (成功时返回)
+
+RefNode:
+  type: object
+  required:
+    - ref
+    - timestamp
+  properties:
+    ref:
+      type: string
+    parent:
+      type: string
+      nullable: true
+    operation:
+      $ref: './saves.yaml#/Operation'
+    timestamp:
+      type: integer
+
+VersionHistoryResponse:
+  type: object
+  required:
+    - versions
+  properties:
+    versions:
+      type: array
+      items:
+        $ref: './saves.yaml#/RefNode'
+
+CheckpointInfo:
+  type: object
+  required:
+    - ref
+    - timestamp
+    - quadCount
+  properties:
+    ref:
+      type: string
+    timestamp:
+      type: integer
+    quadCount:
+      type: integer
+    name:
+      type: string
+      nullable: true
+    description:
+      type: string
+      nullable: true
+
+CreateCheckpointRequest:
+  type: object
+  required:
+    - ref
+  properties:
+    ref:
+      type: string
+    name:
+      type: string
+    description:
+      type: string
+
+ExportResult:
+  type: object
+  required:
+    - data
+    - ref
+    - quadCount
+  properties:
+    data:
+      type: string
+      description: JSONL 格式的 quad 数据
+    ref:
+      type: string
+    quadCount:
+      type: integer

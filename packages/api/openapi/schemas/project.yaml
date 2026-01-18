@@ -1,0 +1,460 @@
+# Project-related schemas
+
+ProjectRole:
+  type: object
+  required:
+    - id
+    - name
+    - isLeaf
+    - createdAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    description:
+      type: string
+      nullable: true
+    parentRoleId:
+      type: string
+      format: uuid
+      nullable: true
+      description: 父角色 ID，用于构建角色树
+    isLeaf:
+      type: boolean
+      description: 是否为叶子角色，只有叶子角色可以分配给 artifact
+    createdAt:
+      type: string
+      format: date-time
+
+CreateProjectRole:
+  type: object
+  required:
+    - name
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 50
+      description: 角色名称，在同一 project 内必须唯一，同时作为角色标识符
+    description:
+      type: string
+    parentName:
+      type: string
+      nullable: true
+      description: 父角色的名称
+
+CreateProjectArtifact:
+  type: object
+  required:
+    - artifactId
+    - roleName
+  properties:
+    artifactId:
+      type: string
+      format: uuid
+      description: 要关联的 Artifact ID
+    roleName:
+      type: string
+      description: 角色名称（必须是叶子角色）
+
+CreateProjectPage:
+  type: object
+  required:
+    - name
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 100
+      description: 页面名称
+    icon:
+      type: string
+      maxLength: 50
+      description: 页面图标（emoji 或图标标识符）
+    content:
+      type: string
+      description: 页面 HTML 内容
+
+CreateProjectMetadata:
+  type: object
+  required:
+    - name
+    - slug
+    - topic
+    - roles
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 100
+    slug:
+      type: string
+      minLength: 1
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: URL-friendly 标识符
+    topic:
+      type: string
+      minLength: 1
+      maxLength: 100
+      description: Project 的 hashtag
+    description:
+      type: string
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+      default: PUBLIC
+    license:
+      type: string
+      maxLength: 50
+    coverUrls:
+      type: array
+      items:
+        type: string
+        format: uri
+      description: 封面图片 URL 数组
+    artifacts:
+      type: array
+      items:
+        $ref: './project.yaml#/CreateProjectArtifact'
+      description: 要关联的 artifact 列表（创建时 isOfficial 自动设为 true）
+    roles:
+      type: array
+      items:
+        $ref: './project.yaml#/CreateProjectRole'
+      minItems: 1
+      description: 要创建的角色列表，角色名称必须唯一，支持树状结构，至少需要一个角色
+    pages:
+      type: array
+      items:
+        $ref: './project.yaml#/CreateProjectPage'
+      description: 要创建的页面列表
+    homepageIndex:
+      type: integer
+      minimum: 0
+      description: 首页在 pages 数组中的索引，不提供则不设置首页
+
+ProjectPage:
+  type: object
+  required:
+    - id
+    - name
+    - order
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    icon:
+      type: string
+      nullable: true
+      description: 页面图标（emoji 或图标标识符）
+    order:
+      type: integer
+      description: 显示顺序
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+ProjectPageDetail:
+  type: object
+  required:
+    - id
+    - name
+    - order
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    icon:
+      type: string
+      nullable: true
+      description: 页面图标（emoji 或图标标识符）
+    content:
+      type: string
+      nullable: true
+      description: 页面 HTML 内容
+    order:
+      type: integer
+      description: 显示顺序
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+ProjectListItem:
+  type: object
+  required:
+    - id
+    - name
+    - topic
+    - visibility
+    - createdAt
+    - updatedAt
+    - owner
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    topic:
+      type: string
+      description: Project 的 hashtag
+    description:
+      type: string
+      nullable: true
+    license:
+      type: string
+      nullable: true
+    coverUrls:
+      type: array
+      items:
+        type: string
+        format: uri
+      description: 封面图片 URL 数组
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+    owner:
+      type: object
+      required:
+        - id
+        - username
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    maintainerCount:
+      type: integer
+      description: 管理者数量
+    artifactCount:
+      type: integer
+      description: 关联 artifact 数量
+
+UserProjectRole:
+  type: string
+  enum: [owner, maintainer]
+  description: 用户在 Project 中的角色
+
+UserProjectListItem:
+  type: object
+  required:
+    - id
+    - name
+    - topic
+    - visibility
+    - createdAt
+    - updatedAt
+    - owner
+    - role
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    topic:
+      type: string
+      description: Project 的 hashtag
+    description:
+      type: string
+      nullable: true
+    license:
+      type: string
+      nullable: true
+    coverUrls:
+      type: array
+      items:
+        type: string
+        format: uri
+      description: 封面图片 URL 数组
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+    owner:
+      type: object
+      required:
+        - id
+        - username
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    maintainerCount:
+      type: integer
+      description: 管理者数量
+    artifactCount:
+      type: integer
+      description: 关联 artifact 数量
+    role:
+      $ref: './project.yaml#/UserProjectRole'
+
+ProjectArtifact:
+  type: object
+  required:
+    - artifact
+    - isOfficial
+    - createdAt
+  properties:
+    artifact:
+      $ref: './artifact.yaml#/ArtifactListItem'
+    role:
+      $ref: './project.yaml#/ProjectRole'
+    isOfficial:
+      type: boolean
+      description: 是否为官方添加的 artifact
+    createdAt:
+      type: string
+      format: date-time
+      description: 关联创建时间
+
+ProjectDetail:
+  type: object
+  required:
+    - id
+    - name
+    - slug
+    - topic
+    - visibility
+    - isArchived
+    - createdAt
+    - updatedAt
+    - owner
+    - maintainers
+    - artifacts
+    - roles
+    - pages
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    slug:
+      type: string
+    topic:
+      type: string
+      description: Project 的 hashtag
+    description:
+      type: string
+      nullable: true
+    license:
+      type: string
+      nullable: true
+    coverUrls:
+      type: array
+      items:
+        type: string
+        format: uri
+      description: 封面图片 URL 数组
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    isArchived:
+      type: boolean
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+    owner:
+      type: object
+      required:
+        - id
+        - username
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    maintainers:
+      type: array
+      description: 管理者列表
+      items:
+        type: object
+        required:
+          - id
+          - username
+        properties:
+          id:
+            type: string
+            format: uuid
+          username:
+            type: string
+          displayName:
+            type: string
+            nullable: true
+          avatarUrl:
+            type: string
+            format: uri
+            nullable: true
+    artifacts:
+      type: array
+      description: 关联的 artifact 列表
+      items:
+        $ref: './project.yaml#/ProjectArtifact'
+    roles:
+      type: array
+      description: Project 定义的角色列表
+      items:
+        $ref: './project.yaml#/ProjectRole'
+    pages:
+      type: array
+      description: Project 页面列表（不含内容）
+      items:
+        $ref: './project.yaml#/ProjectPage'
+    homepageId:
+      type: string
+      format: uuid
+      nullable: true
+      description: 主页 ID

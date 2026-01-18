@@ -1,0 +1,134 @@
+# Article paths
+
+/articles/{articleId}:
+  get:
+    operationId: getArticle
+    summary: 获取文章详情
+    description: |
+      获取文章详情，包括内容和元数据。
+      返回值中包含 artifactId（通过 sandboxNodeId 获取）。
+    tags: [Articles]
+    parameters:
+      - name: articleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: 文章详情
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/article.yaml#/ArticleDetail'
+      '404':
+        description: 文章不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  put:
+    operationId: upsertArticle
+    summary: 创建或更新文章
+    description: |
+      创建或更新文章（upsert 语义）。
+      - 如果 articleId 不存在，创建新文章
+      - 如果 articleId 存在且 author 是当前用户，更新文章
+      - 如果 articleId 存在但 author 不是当前用户，返回 403
+    tags: [Articles]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: articleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/article.yaml#/UpsertArticleRequest'
+    responses:
+      '200':
+        description: 文章创建/更新成功
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/article.yaml#/ArticleDetail'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/articles/by-sandbox/{sandboxNodeId}:
+  get:
+    operationId: listArticlesBySandbox
+    summary: 获取与 sandbox 关联的文章列表
+    description: |
+      获取与指定 sandbox node 关联的所有公开文章，支持分页。
+    tags: [Articles]
+    parameters:
+      - name: sandboxNodeId
+        in: path
+        required: true
+        description: Sandbox 节点 ID
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: 页码（从1开始）
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+    responses:
+      '200':
+        description: 文章列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - articles
+                - pagination
+              properties:
+                articles:
+                  type: array
+                  items:
+                    $ref: '../schemas/article.yaml#/ArticleDetail'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Sandbox 节点不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

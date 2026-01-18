@@ -1,0 +1,398 @@
+# Cloud Saves paths
+
+/saves:
+  get:
+    operationId: listSaves
+    summary: 获取用户的所有存档列表
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    responses:
+      '200':
+        description: 存档列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - saves
+              properties:
+                saves:
+                  type: array
+                  items:
+                    $ref: '../schemas/saves.yaml#/CloudSave'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  post:
+    operationId: createSave
+    summary: 创建新存档
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/saves.yaml#/CreateSaveRequest'
+    responses:
+      '201':
+        description: 创建成功
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/saves.yaml#/CloudSave'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/saves/{saveId}:
+  delete:
+    operationId: deleteSave
+    summary: 删除存档
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: saveId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '204':
+        description: 删除成功
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 存档不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/saves/{saveId}/sync:
+  post:
+    operationId: syncSave
+    summary: 可验证的批量同步操作
+    description: |
+      区块链式可验证同步 API。
+      
+      验证流程:
+      1. 检查 baseRef 是否存在于服务端历史
+      2. 对每个操作验证客户端提供的 ref 是否正确
+      3. 应用操作并记录到 version DAG
+      
+      Ref 生成算法: `ref = SHA256(parentRef + canonical(operation))[0:16]`
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: saveId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/saves.yaml#/SyncOperationsRequest'
+    responses:
+      '200':
+        description: 同步结果
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/saves.yaml#/SyncOperationsResponse'
+      '400':
+        description: 请求参数错误或验证失败
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/saves.yaml#/SyncOperationsResponse'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 存档不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/saves/{saveId}/history:
+  get:
+    operationId: getSaveHistory
+    summary: 获取版本历史
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: saveId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          default: 50
+          minimum: 1
+          maximum: 200
+    responses:
+      '200':
+        description: 版本历史
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/saves.yaml#/VersionHistoryResponse'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 存档不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/saves/{saveId}/export/{ref}:
+  get:
+    operationId: exportSaveAtRef
+    summary: 导出任意 ref 处的数据
+    description: 通过 checkpoint 机制高效导出历史版本数据
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: saveId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: ref
+        in: path
+        required: true
+        schema:
+          type: string
+        description: 目标版本的 ref，可以是任意历史版本
+    responses:
+      '200':
+        description: 导出的数据
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/saves.yaml#/ExportResult'
+      '400':
+        description: 无效的 ref
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 存档不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/saves/{saveId}/checkpoints:
+  get:
+    operationId: listSaveCheckpoints
+    summary: 获取所有 checkpoints
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: saveId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: Checkpoint 列表
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                checkpoints:
+                  type: array
+                  items:
+                    $ref: '../schemas/saves.yaml#/CheckpointInfo'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 存档不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+  post:
+    operationId: createSaveCheckpoint
+    summary: 创建 checkpoint
+    description: 在指定 ref 处创建 checkpoint，用于加速历史版本导出
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: saveId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/saves.yaml#/CreateCheckpointRequest'
+    responses:
+      '201':
+        description: Checkpoint 创建成功
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                success:
+                  type: boolean
+      '400':
+        description: 无效的请求
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 存档不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/saves/{saveId}/checkpoints/{ref}:
+  delete:
+    operationId: deleteSaveCheckpoint
+    summary: 删除 checkpoint
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: saveId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: ref
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      '204':
+        description: Checkpoint 已删除
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 存档或 checkpoint 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

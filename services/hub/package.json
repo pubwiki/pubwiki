@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "cf-typegen": "wrangler types",
     "migrate:local": "wrangler d1 migrations apply DB --local",
     "migrate:remote": "wrangler d1 migrations apply DB --remote",
     "prune-db:local": "rm -rf .wrangler/state && pnpm migrate:local",
@@ -18,6 +18,7 @@
   "dependencies": {
     "@pubwiki/api": "workspace:*",
     "@pubwiki/db": "workspace:*",
+    "pubwiki-gamesave": "workspace:*",
     "better-auth": "^1.4.10",
     "hono": "^4.11.1",
     "marked": "^17.0.1"
@@ -25,6 +26,7 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.4",
     "@cloudflare/workers-types": "catalog:",
+    "@pubwiki/rdfsync": "workspace:*",
     "@types/node": "catalog:",
     "@vitest/runner": "catalog:vitest3",
     "@vitest/snapshot": "catalog:vitest3",

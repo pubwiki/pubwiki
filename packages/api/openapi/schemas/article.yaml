@@ -1,0 +1,134 @@
+# Article-related schemas
+
+TextContent:
+  type: object
+  required:
+    - type
+    - id
+    - text
+  properties:
+    type:
+      type: string
+      enum: [text]
+    id:
+      type: string
+      description: 文本块唯一标识符
+    text:
+      type: string
+      description: 文本内容（支持 markdown heading）
+
+GameRef:
+  type: object
+  required:
+    - type
+    - textId
+    - ref
+  properties:
+    type:
+      type: string
+      enum: [game_ref]
+    textId:
+      type: string
+      description: 关联的文本块 ID
+    ref:
+      type: string
+      description: 游戏状态引用（存档标识）
+
+ReaderContentBlock:
+  oneOf:
+    - $ref: './article.yaml#/TextContent'
+    - $ref: './article.yaml#/GameRef'
+  discriminator:
+    propertyName: type
+    mapping:
+      text: './article.yaml#/TextContent'
+      game_ref: './article.yaml#/GameRef'
+
+ArticleAuthor:
+  type: object
+  required:
+    - id
+    - username
+  properties:
+    id:
+      type: string
+      format: uuid
+    username:
+      type: string
+    displayName:
+      type: string
+      nullable: true
+    avatarUrl:
+      type: string
+      format: uri
+      nullable: true
+
+ArticleDetail:
+  type: object
+  required:
+    - id
+    - title
+    - content
+    - author
+    - sandboxNodeId
+    - artifactId
+    - visibility
+    - likes
+    - collections
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    title:
+      type: string
+    content:
+      type: array
+      items:
+        $ref: './article.yaml#/ReaderContentBlock'
+    author:
+      $ref: './article.yaml#/ArticleAuthor'
+    sandboxNodeId:
+      type: string
+      format: uuid
+      description: Sandbox 节点 ID
+    artifactId:
+      type: string
+      format: uuid
+      description: Artifact ID（通过 sandboxNodeId 获取）
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    likes:
+      type: integer
+    collections:
+      type: integer
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+UpsertArticleRequest:
+  type: object
+  required:
+    - title
+    - sandboxNodeId
+    - content
+  properties:
+    title:
+      type: string
+      minLength: 1
+      maxLength: 200
+    sandboxNodeId:
+      type: string
+      format: uuid
+      description: Sandbox 节点 ID（用于游戏回放）
+    content:
+      type: array
+      items:
+        $ref: './article.yaml#/ReaderContentBlock'
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+      default: PUBLIC

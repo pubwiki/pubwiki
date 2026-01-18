@@ -35,6 +35,7 @@
   ],
   "license": "MIT",
   "dependencies": {
+    "@pubwiki/rdfsync": "workspace:*",
     "@rdfjs/types": "^2.0.1",
     "abstract-level": "catalog:",
     "diff": "^8.0.3",

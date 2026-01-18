@@ -1,0 +1,91 @@
+# User-related schemas
+
+PublicUser:
+  type: object
+  required:
+    - id
+    - username
+    - email
+    - isAdmin
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    username:
+      type: string
+      minLength: 3
+      maxLength: 50
+    email:
+      type: string
+      format: email
+    displayName:
+      type: string
+      nullable: true
+    avatarUrl:
+      type: string
+      format: uri
+      nullable: true
+    bio:
+      type: string
+      nullable: true
+    website:
+      type: string
+      format: uri
+      nullable: true
+    location:
+      type: string
+      nullable: true
+    isAdmin:
+      type: boolean
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+UpdateProfileRequest:
+  type: object
+  properties:
+    displayName:
+      type: string
+      maxLength: 100
+    avatarUrl:
+      type: string
+      format: uri
+      maxLength: 500
+    bio:
+      type: string
+    website:
+      type: string
+      format: uri
+      maxLength: 255
+    location:
+      type: string
+      maxLength: 100
+
+JwtPayload:
+  type: object
+  required:
+    - sub
+    - username
+    - email
+    - isAdmin
+  properties:
+    sub:
+      type: string
+      description: 用户 ID
+    username:
+      type: string
+    email:
+      type: string
+    isAdmin:
+      type: boolean
+    iat:
+      type: integer
+      description: 签发时间
+    exp:
+      type: integer
+      description: 过期时间

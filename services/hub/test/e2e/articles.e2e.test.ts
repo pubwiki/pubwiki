@@ -26,38 +26,48 @@ describe('E2E: Articles API', () => {
     sessionCookie = result.sessionCookie;
     testUserId = result.userId;
 
-    // 创建测试 artifact
+    // 生成 ID
+    testArtifactId = crypto.randomUUID();
+    testSandboxNodeId = crypto.randomUUID();
     const artifactSlug = `test-artifact-${Date.now()}`;
+
+    // 创建测试 artifact 和 SANDBOX node
+    const formData = new FormData();
+    formData.append('metadata', JSON.stringify({
+      artifactId: testArtifactId,
+      type: 'GAME',
+      name: 'Test Artifact for Articles',
+      slug: artifactSlug,
+      version: '1.0.0',
+      description: 'Test artifact for article e2e tests',
+      visibility: 'PUBLIC',
+    }));
+    formData.append('descriptor', JSON.stringify({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      nodes: [
+        {
+          id: testSandboxNodeId,
+          type: 'SANDBOX',
+          name: 'Test Sandbox Node',
+        },
+      ],
+      edges: [],
+    }));
+    // 为 SANDBOX node 添加 node.json 文件
+    const nodeJson = JSON.stringify({ type: 'SANDBOX', name: 'Test Sandbox Node' });
+    formData.append(`nodes[${testSandboxNodeId}]`, new Blob([nodeJson], { type: 'application/json' }), 'node.json');
+
     const artifactResponse = await fetch(`${baseUrl}/artifacts`, {
       method: 'POST',
-      headers: {
-        Cookie: sessionCookie,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        name: 'Test Artifact for Articles',
-        slug: artifactSlug,
-        description: 'Test artifact for article e2e tests',
-        visibility: 'PUBLIC',
-      }),
+      headers: { Cookie: sessionCookie },
+      body: formData,
     });
-    const artifactData = await artifactResponse.json() as { artifact: { id: string } };
-    testArtifactId = artifactData.artifact.id;
 
-    // 创建测试 sandbox node
-    const nodeResponse = await fetch(`${baseUrl}/artifacts/${testArtifactId}/nodes`, {
-      method: 'POST',
-      headers: {
-        Cookie: sessionCookie,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        type: 'GENERATED',
-        name: 'Test Sandbox Node',
-      }),
-    });
-    const nodeData = await nodeResponse.json() as { node: { id: string } };
-    testSandboxNodeId = nodeData.node.id;
+    if (!artifactResponse.ok) {
+      const errorData = await artifactResponse.json();
+      throw new Error(`Failed to create test artifact: ${JSON.stringify(errorData)}`);
+    }
   });
 
   afterAll(async () => {

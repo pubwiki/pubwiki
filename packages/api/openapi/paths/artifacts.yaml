@@ -1,0 +1,645 @@
+# Artifact paths
+
+/artifacts:
+  get:
+    summary: 获取公开 Artifact 列表
+    description: 获取所有公开的 Artifact，支持按类型和标签过滤，支持排序
+    operationId: listArtifacts
+    tags:
+      - Artifacts
+    parameters:
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: type.include
+        in: query
+        description: 包含的类型列表
+        schema:
+          type: array
+          items:
+            $ref: '../schemas/artifact.yaml#/ArtifactType'
+        style: form
+        explode: true
+      - name: type.exclude
+        in: query
+        description: 排除的类型列表
+        schema:
+          type: array
+          items:
+            $ref: '../schemas/artifact.yaml#/ArtifactType'
+        style: form
+        explode: true
+      - name: tag.include
+        in: query
+        description: 包含的标签 slug 列表（AND 逻辑）
+        schema:
+          type: array
+          items:
+            type: string
+        style: form
+        explode: true
+      - name: tag.exclude
+        in: query
+        description: 排除的标签 slug 列表
+        schema:
+          type: array
+          items:
+            type: string
+        style: form
+        explode: true
+      - name: sortBy
+        in: query
+        description: 排序字段
+        schema:
+          type: string
+          enum: [createdAt, updatedAt, viewCount, starCount]
+          default: createdAt
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          type: string
+          enum: [asc, desc]
+          default: desc
+    responses:
+      '200':
+        description: 成功获取 Artifact 列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - artifacts
+                - pagination
+              properties:
+                artifacts:
+                  type: array
+                  items:
+                    $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  post:
+    summary: 创建或更新 Artifact
+    description: |
+      创建新的 Artifact 或更新已存在的 Artifact，支持同时上传多个节点文件。
+      
+      **更新模式：** 如果 metadata 中包含 artifactId 字段，则为更新操作：
+      - 验证 artifact 是否存在且 owner 是当前用户
+      - 覆写之前的数据
+      
+      使用 multipart/form-data 格式：
+      - metadata 字段包含 JSON 格式的 artifact 基本信息
+      - descriptor 字段包含 JSON 格式的 pubwiki.artifact.json 内容（节点和边定义）
+      - nodes[{node_id}] 字段包含各节点对应的文件
+    operationId: createArtifact
+    tags:
+      - Artifacts
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required:
+              - metadata
+              - descriptor
+            properties:
+              metadata:
+                type: string
+                description: |
+                  JSON 格式的 artifact 元数据，包含以下字段：
+                  - artifactId: string (可选，如提供则为更新模式)
+                  - type: ArtifactType (必填)
+                  - name: string (必填)
+                  - slug: string (必填)
+                  - description: string (可选)
+                  - visibility: VisibilityType (可选，默认 PUBLIC)
+                  - thumbnailUrl: string (可选)
+                  - license: string (可选)
+                  - repositoryUrl: string (可选)
+                  - version: string (必填，semver 格式如 1.0.0)
+                  - changelog: string (可选)
+                  - isPrerelease: boolean (可选，默认 false)
+                  - tags: string[] (可选，tag slugs 数组)
+              homepage:
+                type: string
+                format: binary
+                description: |
+                  可选的主页 Markdown 文件，将被渲染为 HTML 后存储。
+              descriptor:
+                type: string
+                description: |
+                  JSON 格式的 pubwiki.artifact.json 内容，包含：
+                  - version: number (descriptor 格式版本)
+                  - exportedAt: string (ISO 时间戳)
+                  - nodes: ArtifactNodeDescriptor[] (节点列表)
+                  - edges: ArtifactEdgeDescriptor[] (节点间关系)
+    responses:
+      '201':
+        description: 创建成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - artifact
+              properties:
+                message:
+                  type: string
+                  example: Artifact created successfully
+                artifact:
+                  $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+      '200':
+        description: 更新成功（当 metadata.artifactId 存在时）
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - artifact
+              properties:
+                message:
+                  type: string
+                  example: Artifact updated successfully
+                artifact:
+                  $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限更新该 artifact（不是 owner）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 指定的 artifactId 不存在（更新模式）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '409':
+        description: Slug 已存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/homepage:
+  get:
+    summary: 获取 Artifact 主页 HTML
+    description: |
+      获取指定 Artifact 的只读主页 HTML 内容。
+      HTML 内容存储在 R2 中，存储 key 由 artifactId 派生。
+      - PUBLIC artifact: 所有人可访问
+      - UNLISTED artifact: 仅注册用户可访问
+      - PRIVATE artifact: 仅 owner 可访问
+    operationId: getArtifactHomepage
+    tags:
+      - Artifacts
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        description: Artifact ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: 成功获取主页 HTML
+        content:
+          text/html:
+            schema:
+              type: string
+              description: Artifact 主页的 HTML 内容
+      '401':
+        description: 需要认证（访问 UNLISTED artifact 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问（访问 PRIVATE artifact 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Artifact 不存在或主页未创建
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/lineage:
+  get:
+    summary: 获取 Artifact 的谱系信息
+    description: |
+      获取指定 Artifact 的谱系（依赖和派生关系）。
+      支持递归查询多代父/子关系，可通过 parentDepth 和 childDepth 控制递归深度。
+      返回的每个条目包含 parentId 字段，用于在前端构建树状结构。
+      - PUBLIC artifact: 所有人可访问
+      - UNLISTED artifact: 仅注册用户可访问
+      - PRIVATE artifact: 仅 owner 可访问
+    operationId: getArtifactLineage
+    tags:
+      - Artifacts
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        description: Artifact ID
+        schema:
+          type: string
+          format: uuid
+      - name: parentDepth
+        in: query
+        required: false
+        description: 向上追溯父代的深度（1=直接父代，2=父代+祖父代...）。不指定则无限递归。
+        schema:
+          type: integer
+          minimum: 1
+      - name: childDepth
+        in: query
+        required: false
+        description: 向下追溯子代的深度（1=直接子代，2=子代+孙代...）。不指定则无限递归。
+        schema:
+          type: integer
+          minimum: 1
+    responses:
+      '200':
+        description: 成功获取谱系信息
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - parents
+                - children
+              properties:
+                parents:
+                  type: array
+                  description: 此 Artifact 依赖的父 Artifact
+                  items:
+                    $ref: '../schemas/artifact.yaml#/ArtifactLineageItem'
+                children:
+                  type: array
+                  description: 依赖此 Artifact 的子 Artifact
+                  items:
+                    $ref: '../schemas/artifact.yaml#/ArtifactLineageItem'
+      '401':
+        description: 需要认证（访问 UNLISTED artifact 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问（访问 PRIVATE artifact 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Artifact 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/graph:
+  get:
+    summary: 获取 Artifact 节点图结构
+    description: |
+      获取 artifact 的完整节点和边列表。
+      - PUBLIC artifact: 所有人可访问
+      - UNLISTED artifact: 仅注册用户可访问
+      - PRIVATE artifact: 仅 owner 可访问
+    operationId: getArtifactGraph
+    tags:
+      - Nodes
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version
+        in: query
+        schema:
+          type: string
+          default: latest
+        description: artifact 版本哈希或 "latest"
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nodes
+                - edges
+                - version
+              properties:
+                nodes:
+                  type: array
+                  items:
+                    $ref: '../schemas/artifact.yaml#/ArtifactNodeSummary'
+                edges:
+                  type: array
+                  items:
+                    $ref: '../schemas/artifact.yaml#/ArtifactEdge'
+                version:
+                  type: object
+                  required:
+                    - id
+                    - commitHash
+                    - version
+                    - createdAt
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    commitHash:
+                      type: string
+                    version:
+                      type: string
+                    createdAt:
+                      type: string
+                      format: date-time
+      '401':
+        description: 需要认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Artifact 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/nodes/{nodeId}:
+  get:
+    summary: 获取节点详情
+    description: |
+      获取单个节点的详细信息（不含文件内容）。
+      - PUBLIC artifact: 所有人可访问
+      - UNLISTED artifact: 仅注册用户可访问
+      - PRIVATE artifact: 仅 owner 可访问
+    operationId: getNodeDetail
+    tags:
+      - Nodes
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: nodeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version
+        in: query
+        schema:
+          type: string
+          default: latest
+        description: node 版本哈希或 "latest"
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+                - type
+                - external
+                - version
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                type:
+                  $ref: '../schemas/artifact.yaml#/ArtifactNodeType'
+                name:
+                  type: string
+                  nullable: true
+                external:
+                  type: boolean
+                externalArtifact:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      format: uuid
+                    name:
+                      type: string
+                    slug:
+                      type: string
+                    author:
+                      type: object
+                      required:
+                        - id
+                        - username
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        username:
+                          type: string
+                version:
+                  $ref: '../schemas/artifact.yaml#/NodeVersionInfo'
+                files:
+                  type: array
+                  items:
+                    $ref: '../schemas/artifact.yaml#/NodeFileInfo'
+                  description: VFS 类型时包含文件路径列表
+      '401':
+        description: 需要认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Node 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/nodes/{nodeId}/content:
+  get:
+    summary: 获取节点 JSON 内容
+    description: |
+      便捷接口，用于获取非 VFS 类型节点的 node.json 内容。
+      支持的节点类型：PROMPT, INPUT, GENERATED, LOADER, SANDBOX, STATE
+      - PUBLIC artifact: 所有人可访问
+      - UNLISTED artifact: 仅注册用户可访问
+      - PRIVATE artifact: 仅 owner 可访问
+    operationId: getNodeContent
+    tags:
+      - Nodes
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: nodeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: version
+        in: query
+        schema:
+          type: string
+          default: latest
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/json:
+            schema:
+              type: object
+      '400':
+        description: VFS 类型节点请使用 /files/{path} 接口
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 需要认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Node 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/nodes/{nodeId}/files/{filePath}:
+  get:
+    summary: 获取节点文件内容
+    description: |
+      获取节点关联的文件内容（二进制流）。
+      - PUBLIC artifact: 所有人可访问
+      - UNLISTED artifact: 仅注册用户可访问
+      - PRIVATE artifact: 仅 owner 可访问
+    operationId: getNodeFileContent
+    tags:
+      - Nodes
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: nodeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: filePath
+        in: path
+        required: true
+        schema:
+          type: string
+        description: 文件路径（支持嵌套路径如 subdir/file.txt）
+      - name: version
+        in: query
+        schema:
+          type: string
+          default: latest
+    responses:
+      '200':
+        description: 成功
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      '401':
+        description: 需要认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 文件不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

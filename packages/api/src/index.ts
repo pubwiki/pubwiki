@@ -66,6 +66,21 @@ export type ArticleAuthor = components['schemas']['ArticleAuthor'];
 export type ArticleDetail = components['schemas']['ArticleDetail'];
 export type UpsertArticleRequest = components['schemas']['UpsertArticleRequest'];
 
+// Cloud Saves 相关类型
+export type CloudSave = components['schemas']['CloudSave'];
+export type CreateSaveRequest = components['schemas']['CreateSaveRequest'];
+export type QuadQueryRequest = components['schemas']['QuadQueryRequest'];
+export type QuadQueryResponse = components['schemas']['QuadQueryResponse'];
+export type TextPatch = components['schemas']['TextPatch'];
+export type RefNode = components['schemas']['RefNode'];
+export type VersionHistoryResponse = components['schemas']['VersionHistoryResponse'];
+// Blockchain-style Verifiable Sync 类型
+export type OperationWithRef = components['schemas']['OperationWithRef'];
+export type SyncOperationsRequest = components['schemas']['SyncOperationsRequest'];
+export type SyncErrorType = components['schemas']['SyncErrorType'];
+export type RefMismatchInfo = components['schemas']['RefMismatchInfo'];
+export type SyncOperationsResponse = components['schemas']['SyncOperationsResponse'];
+
 // 请求类型
 export type RegisterRequest = operations['register']['requestBody']['content']['application/json'];
 export type LoginRequest = operations['login']['requestBody']['content']['application/json'];

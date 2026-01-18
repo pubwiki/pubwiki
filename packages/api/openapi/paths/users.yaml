@@ -1,0 +1,252 @@
+# User paths
+
+/me:
+  get:
+    summary: 获取当前用户信息
+    description: 需要通过 Better-Auth session cookie 认证。使用 better-auth/client 登录后会自动设置 cookie。
+    operationId: getMe
+    tags:
+      - User
+    security:
+      - cookieAuth: []
+    responses:
+      '200':
+        description: 成功获取用户信息
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user
+              properties:
+                user:
+                  $ref: '../schemas/user.yaml#/PublicUser'
+      '401':
+        description: 未认证或 token 无效
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  patch:
+    summary: 更新当前用户 Profile
+    operationId: updateProfile
+    tags:
+      - User
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/user.yaml#/UpdateProfileRequest'
+    responses:
+      '200':
+        description: 更新成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - user
+              properties:
+                message:
+                  type: string
+                  example: Profile updated successfully
+                user:
+                  $ref: '../schemas/user.yaml#/PublicUser'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证或 token 无效
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/users/{userId}/artifacts:
+  get:
+    summary: 获取用户的 Artifact 列表
+    description: |
+      获取指定用户拥有的所有 Artifact。
+      - 未认证用户：只能看到 PUBLIC artifact
+      - 已认证用户查看他人：只能看到 PUBLIC 和 UNLISTED artifact
+      - 已认证用户查看自己：可以看到所有 artifact
+    operationId: getUserArtifacts
+    tags:
+      - Users
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        description: 用户 ID
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: type.include
+        in: query
+        description: 包含的类型列表
+        schema:
+          type: array
+          items:
+            $ref: '../schemas/artifact.yaml#/ArtifactType'
+        style: form
+        explode: true
+      - name: type.exclude
+        in: query
+        description: 排除的类型列表
+        schema:
+          type: array
+          items:
+            $ref: '../schemas/artifact.yaml#/ArtifactType'
+        style: form
+        explode: true
+      - name: sortBy
+        in: query
+        description: 排序字段
+        schema:
+          type: string
+          enum: [createdAt, updatedAt, viewCount, starCount]
+          default: createdAt
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          type: string
+          enum: [asc, desc]
+          default: desc
+    responses:
+      '200':
+        description: 成功获取用户 Artifact 列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - artifacts
+                - pagination
+              properties:
+                artifacts:
+                  type: array
+                  items:
+                    $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 用户不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/users/{userId}/projects:
+  get:
+    summary: 获取用户的 Project 列表
+    description: |
+      获取指定用户 own 或 maintain 的所有 Project。
+      返回的每个 project 都包含用户在其中的角色（owner 或 maintainer）。
+      - 未认证用户：只能看到 PUBLIC project
+      - 已认证用户查看他人：只能看到 PUBLIC 和 UNLISTED project
+      - 已认证用户查看自己：可以看到所有 project
+    operationId: getUserProjects
+    tags:
+      - Users
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        description: 用户 ID
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: role
+        in: query
+        description: 按用户角色过滤（owner 或 maintainer）
+        schema:
+          type: string
+          enum: [owner, maintainer]
+      - name: sortBy
+        in: query
+        description: 排序字段
+        schema:
+          type: string
+          enum: [createdAt, updatedAt]
+          default: createdAt
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          type: string
+          enum: [asc, desc]
+          default: desc
+    responses:
+      '200':
+        description: 成功获取用户 Project 列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - projects
+                - pagination
+              properties:
+                projects:
+                  type: array
+                  items:
+                    $ref: '../schemas/project.yaml#/UserProjectListItem'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 用户不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

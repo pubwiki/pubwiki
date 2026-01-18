@@ -1,0 +1,407 @@
+# Artifact-related schemas
+
+ArtifactType:
+  type: string
+  enum: [RECIPE, GAME, ASSET_PACK, PROMPT]
+
+Tag:
+  type: object
+  required:
+    - id
+    - name
+    - slug
+  properties:
+    id:
+      type: string
+      format: uuid
+    name:
+      type: string
+    slug:
+      type: string
+    description:
+      type: string
+      nullable: true
+    color:
+      type: string
+      nullable: true
+      description: "颜色代码 #RRGGBB"
+
+ArtifactNodeType:
+  type: string
+  enum: [PROMPT, INPUT, GENERATED, VFS, LOADER, SANDBOX, STATE]
+
+CreateArtifactMetadata:
+  type: object
+  required:
+    - artifactId
+    - type
+    - name
+    - slug
+    - version
+  properties:
+    artifactId:
+      type: string
+      format: uuid
+      description: |
+        Artifact ID，必须是客户端生成的 UUID（使用 crypto.randomUUID()）。
+        服务端会检查此 ID 是否已存在于数据库中：
+        - 不存在：创建新 artifact
+        - 存在且 owner 是当前用户：更新已有 artifact
+        - 存在但 owner 不是当前用户：返回 403 Forbidden
+    type:
+      $ref: './artifact.yaml#/ArtifactType'
+    name:
+      type: string
+      minLength: 1
+      maxLength: 100
+    slug:
+      type: string
+      minLength: 1
+      maxLength: 100
+      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+      description: URL-friendly 标识符
+    description:
+      type: string
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+      default: PUBLIC
+    thumbnailUrl:
+      type: string
+      format: uri
+      maxLength: 500
+    license:
+      type: string
+      maxLength: 50
+    repositoryUrl:
+      type: string
+      format: uri
+      maxLength: 500
+    version:
+      type: string
+      pattern: '^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$'
+      description: Semver 版本号
+    changelog:
+      type: string
+    isPrerelease:
+      type: boolean
+      default: false
+    tags:
+      type: array
+      items:
+        type: string
+      description: Tag slugs 数组
+
+ArtifactNodeDescriptor:
+  type: object
+  required:
+    - id
+  properties:
+    id:
+      type: string
+      format: uuid
+    external:
+      type: boolean
+      default: false
+    type:
+      $ref: './artifact.yaml#/ArtifactNodeType'
+    name:
+      type: string
+    files:
+      type: array
+      items:
+        type: string
+      description: VFS 类型时的文件路径列表
+
+ArtifactEdgeDescriptor:
+  type: object
+  required:
+    - source
+    - target
+  properties:
+    source:
+      type: string
+      format: uuid
+    target:
+      type: string
+      format: uuid
+    sourceHandle:
+      type: string
+    targetHandle:
+      type: string
+
+ArtifactDescriptor:
+  type: object
+  required:
+    - version
+    - exportedAt
+    - nodes
+    - edges
+  properties:
+    version:
+      type: integer
+    exportedAt:
+      type: string
+      format: date-time
+    nodes:
+      type: array
+      items:
+        $ref: './artifact.yaml#/ArtifactNodeDescriptor'
+    edges:
+      type: array
+      items:
+        $ref: './artifact.yaml#/ArtifactEdgeDescriptor'
+
+ArtifactNodeSummary:
+  type: object
+  required:
+    - id
+    - type
+    - external
+  properties:
+    id:
+      type: string
+      format: uuid
+    type:
+      $ref: './artifact.yaml#/ArtifactNodeType'
+    name:
+      type: string
+      nullable: true
+    external:
+      type: boolean
+    externalArtifactId:
+      type: string
+      format: uuid
+      description: 外部引用时，被引用的 artifact ID
+
+ArtifactEdge:
+  type: object
+  required:
+    - source
+    - target
+  properties:
+    source:
+      type: string
+      format: uuid
+    target:
+      type: string
+      format: uuid
+    sourceHandle:
+      type: string
+    targetHandle:
+      type: string
+
+NodeVersionInfo:
+  type: object
+  required:
+    - id
+    - commitHash
+    - createdAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    commitHash:
+      type: string
+      description: SHA-256 前8位
+    contentHash:
+      type: string
+    message:
+      type: string
+      nullable: true
+    createdAt:
+      type: string
+      format: date-time
+
+NodeFileInfo:
+  type: object
+  required:
+    - filepath
+    - filename
+  properties:
+    filepath:
+      type: string
+    filename:
+      type: string
+    mimeType:
+      type: string
+      nullable: true
+    sizeBytes:
+      type: integer
+      nullable: true
+
+ArtifactVersion:
+  type: object
+  required:
+    - id
+    - version
+    - commitHash
+    - createdAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    version:
+      type: string
+    commitHash:
+      type: string
+      description: SHA-256 前8位
+    changelog:
+      type: string
+      nullable: true
+    isPrerelease:
+      type: boolean
+    publishedAt:
+      type: string
+      format: date-time
+      nullable: true
+    createdAt:
+      type: string
+      format: date-time
+
+LineageType:
+  type: string
+  enum: [DEPENDS_ON, FORKED_FROM, INSPIRED_BY, GENERATED_BY]
+
+ArtifactLineageItem:
+  type: object
+  required:
+    - id
+    - lineageType
+    - createdAt
+    - artifact
+  properties:
+    id:
+      type: string
+      format: uuid
+    lineageType:
+      $ref: './artifact.yaml#/LineageType'
+    description:
+      type: string
+      nullable: true
+    parentId:
+      type: string
+      format: uuid
+      nullable: true
+      description: 在父谱系中表示此节点的父节点ID，在子谱系中表示此节点的子节点来源ID（用于构建树结构）
+    createdAt:
+      type: string
+      format: date-time
+    artifact:
+      type: object
+      required:
+        - id
+        - name
+        - slug
+        - type
+        - visibility
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        type:
+          $ref: './artifact.yaml#/ArtifactType'
+        visibility:
+          $ref: './common.yaml#/VisibilityType'
+        thumbnailUrl:
+          type: string
+          format: uri
+          nullable: true
+        author:
+          type: object
+          required:
+            - id
+            - username
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+            displayName:
+              type: string
+              nullable: true
+            avatarUrl:
+              type: string
+              format: uri
+              nullable: true
+
+ArtifactListItem:
+  type: object
+  required:
+    - id
+    - type
+    - name
+    - slug
+    - visibility
+    - isArchived
+    - createdAt
+    - updatedAt
+    - author
+  properties:
+    id:
+      type: string
+      format: uuid
+    type:
+      $ref: './artifact.yaml#/ArtifactType'
+    name:
+      type: string
+    slug:
+      type: string
+    description:
+      type: string
+      nullable: true
+    visibility:
+      type: string
+      enum: [PUBLIC, PRIVATE, UNLISTED]
+    thumbnailUrl:
+      type: string
+      format: uri
+      nullable: true
+    license:
+      type: string
+      nullable: true
+    isArchived:
+      type: boolean
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+    author:
+      type: object
+      required:
+        - id
+        - username
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        displayName:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          format: uri
+          nullable: true
+    tags:
+      type: array
+      items:
+        $ref: './artifact.yaml#/Tag'
+    stats:
+      type: object
+      properties:
+        viewCount:
+          type: integer
+        starCount:
+          type: integer
+        forkCount:
+          type: integer
+        downloadCount:
+          type: integer

@@ -8,8 +8,8 @@
 import type { Quad } from '@rdfjs/types'
 import type { Ref, RefNode, Checkpoint, Operation, LevelInstance } from '../types.js'
 import { ROOT_REF } from '../types.js'
-import { generateId } from '../utils/hash.js'
 import { exportToJsonl, importFromJsonl } from '../serialization/formats.js'
+import { generateRef } from '@pubwiki/rdfsync'
 
 // Sublevel names
 const VERSION_SUBLEVEL = 'version'
@@ -80,10 +80,15 @@ export class VersionDAG {
 
   /**
    * Record a new operation, creating a new ref
+   * Uses blockchain-style deterministic ref generation:
+   * ref = SHA256(parentRef + canonical(operation))[0:16]
+   * 
    * @returns The new ref
    */
   async recordOperation(operation: Operation): Promise<Ref> {
-    const ref = generateId()
+    // Generate deterministic ref using chain hash
+    const ref = await generateRef(this._currentRef, operation)
+    
     const node: RefNode = {
       ref,
       parent: this._currentRef,

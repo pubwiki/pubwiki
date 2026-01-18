@@ -1,0 +1,25 @@
+# Health check path
+
+/:
+  get:
+    summary: 健康检查
+    operationId: healthCheck
+    tags:
+      - Health
+    responses:
+      '200':
+        description: API 正常运行
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - version
+              properties:
+                message:
+                  type: string
+                  example: PubWiki API is running
+                version:
+                  type: string
+                  example: '1.0.0'

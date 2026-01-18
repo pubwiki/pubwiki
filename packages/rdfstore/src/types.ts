@@ -2,14 +2,22 @@
  * @pubwiki/rdfstore - Type Definitions
  * 
  * Core types for the RDF store with immutable version DAG
- * Uses standard RDF.js Quad types from @rdfjs/types
+ * 基础类型从 @pubwiki/rdfsync 导入
  */
 
-import type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
+import { Operation } from '@pubwiki/rdfsync'
+import type { Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 import { AbstractLevel } from 'abstract-level'
 
-// Re-export RDF.js types for convenience
-export type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph }
+// Re-export from rdfsync
+export type {
+  Quad,
+  TextPatch,
+  PatchHunk,
+  Operation,
+} from '@pubwiki/rdfsync'
+
+export { ROOT_REF } from '@pubwiki/rdfsync'
 
 /**
  * Quad query pattern - all fields are optional for flexible matching
@@ -21,30 +29,6 @@ export interface QuadPattern {
   graph?: Quad_Graph | null
 }
 
-/**
- * Text patch for Literal values
- */
-export interface TextPatch {
-  originalLength: number
-  hunks: PatchHunk[]
-}
-
-export interface PatchHunk {
-  start: number
-  deleteCount: number
-  insert: string
-}
-
-/**
- * Operation types
- */
-export type Operation =
-  | { type: 'insert'; quad: Quad }
-  | { type: 'delete'; quad: Quad }
-  | { type: 'batch-insert'; quads: Quad[] }
-  | { type: 'batch-delete'; quads: Quad[] }
-  | { type: 'patch'; subject: Quad_Subject; predicate: Quad_Predicate; patch: TextPatch }
-
 // ============ Version DAG Types ============
 
 /**
@@ -52,11 +36,6 @@ export type Operation =
  * Each operation creates a new ref
  */
 export type Ref = string
-
-/**
- * Special ref for empty/initial state
- */
-export const ROOT_REF: Ref = 'root'
 
 /**
  * A node in the version DAG

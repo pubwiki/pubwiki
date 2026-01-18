@@ -7,7 +7,6 @@
 // Types
 export type {
   QuadPattern,
-  Operation,
   Ref,
   RefNode,
   Checkpoint,
@@ -17,7 +16,22 @@ export type {
   LevelInstance,
 } from './types.js'
 
-export { DEFAULT_STORE_CONFIG, ROOT_REF } from './types.js'
+export { DEFAULT_STORE_CONFIG } from './types.js'
+
+// Re-export from rdfsync
+export {
+  ROOT_REF,
+  type Operation,
+  type OperationWithRef,
+  type SyncOperationsRequest,
+  type SyncOperationsResponse,
+  type SyncErrorType,
+  type RefMismatchInfo,
+  generateRef,
+  generateRefChain,
+  verifyRefChain,
+  canonicalizeOperation,
+} from '@pubwiki/rdfsync'
 
 // Re-export Quad types from @rdfjs/types for convenience
 export type { 

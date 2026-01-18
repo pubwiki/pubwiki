@@ -29,7 +29,7 @@
 			"binding": "DB",
 			"database_name": "pubwiki-db",
 			"database_id": "64a2c724-fc1f-4219-af77-9cca91deff61",
-			"migrations_dir": "../packages/db/drizzle",
+			"migrations_dir": "../../packages/db/drizzle",
 			"remote": false
 		}
 	],
@@ -37,6 +37,13 @@
 		{
 			"binding": "R2_BUCKET",
 			"bucket_name": "pubwiki-storage"
+		}
+	],
+	// Service Binding 到 gamesave Worker
+	"services": [
+		{
+			"binding": "GAMESAVE",
+			"service": "pubwiki-gamesave"
 		}
 	]
 	// "kv_namespaces": [

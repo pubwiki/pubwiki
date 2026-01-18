@@ -1,0 +1,35 @@
+{
+  "name": "pubwiki-gamesave",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/rpc-types.ts",
+      "import": "./src/rpc-types.ts"
+    }
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "cf-typegen": "wrangler types",
+    "db:generate": "drizzle-kit generate --config=drizzle.do.config.ts",
+    "db:push": "drizzle-kit push --config=drizzle.do.config.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@pubwiki/rdfsync": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.11.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "catalog:",
+    "@types/node": "catalog:",
+    "@vitest/runner": "catalog:vitest3",
+    "@vitest/snapshot": "catalog:vitest3",
+    "@vitest/ui": "catalog:vitest3",
+    "drizzle-kit": "^0.31.8",
+    "typescript": "catalog:",
+    "vitest": "catalog:vitest3",
+    "wrangler": "catalog:"
+  }
+}

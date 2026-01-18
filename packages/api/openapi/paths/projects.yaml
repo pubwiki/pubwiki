@@ -1,0 +1,711 @@
+# Project paths
+
+/projects:
+  get:
+    summary: 获取公开 Project 列表
+    description: 获取所有公开的 Project，支持按 topic 过滤，支持排序
+    operationId: listProjects
+    tags:
+      - Projects
+    parameters:
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: topic
+        in: query
+        description: 按 topic（hashtag）过滤
+        schema:
+          type: string
+      - name: sortBy
+        in: query
+        description: 排序字段
+        schema:
+          type: string
+          enum: [createdAt, updatedAt]
+          default: createdAt
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          type: string
+          enum: [asc, desc]
+          default: desc
+    responses:
+      '200':
+        description: 成功获取 Project 列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - projects
+                - pagination
+              properties:
+                projects:
+                  type: array
+                  items:
+                    $ref: '../schemas/project.yaml#/ProjectListItem'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  post:
+    summary: 创建 Project
+    description: |
+      创建新的 Project，支持同时创建多个页面、关联多个 artifact 和定义角色。
+      metadata 字段中的 pages 数组可以包含多个页面配置，其中可以指定一个页面为主页。
+    operationId: createProject
+    tags:
+      - Projects
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/project.yaml#/CreateProjectMetadata'
+    responses:
+      '201':
+        description: 创建成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - project
+              properties:
+                message:
+                  type: string
+                  example: Project created successfully
+                project:
+                  $ref: '../schemas/project.yaml#/ProjectDetail'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '409':
+        description: Slug 已存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/projects/{projectId}:
+  get:
+    summary: 获取 Project 详情
+    description: |
+      获取指定 Project 的详细信息，包括 owner、maintainers、artifacts、roles 和 pages。
+      - PUBLIC project: 所有人可访问
+      - UNLISTED project: 仅注册用户可访问
+      - PRIVATE project: 仅 owner 和 maintainer 可访问
+    operationId: getProjectDetail
+    tags:
+      - Projects
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: 成功获取 Project 详情
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/project.yaml#/ProjectDetail'
+      '401':
+        description: 需要认证（访问 UNLISTED project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问（访问 PRIVATE project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/projects/{projectId}/pages/{pageId}:
+  get:
+    summary: 获取 Project 页面详情
+    description: |
+      获取指定 Project 的特定页面详情，包括 HTML 内容。
+      - PUBLIC project: 所有人可访问
+      - UNLISTED project: 仅注册用户可访问
+      - PRIVATE project: 仅 owner 和 maintainer 可访问
+    operationId: getProjectPage
+    tags:
+      - Projects
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+      - name: pageId
+        in: path
+        required: true
+        description: Page ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: 成功获取页面详情
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/project.yaml#/ProjectPageDetail'
+      '401':
+        description: 需要认证（访问 UNLISTED project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问（访问 PRIVATE project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 或页面不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/projects/{projectId}/artifacts:
+  get:
+    summary: 获取 Project 的 Artifact 列表
+    description: |
+      获取指定 Project 关联的所有 Artifact，支持分页和过滤。
+      可选过滤条件：
+      - roleId: 按角色过滤，传 null 表示获取无角色的 artifacts
+      - isOfficial: 按是否官方过滤
+    operationId: listProjectArtifacts
+    tags:
+      - Projects
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: roleId
+        in: query
+        description: 按角色 ID 过滤，传 "null" 字符串表示获取无角色的 artifacts
+        schema:
+          type: string
+      - name: isOfficial
+        in: query
+        description: 按是否官方过滤
+        schema:
+          type: boolean
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          type: string
+          enum: [asc, desc]
+          default: desc
+    responses:
+      '200':
+        description: 成功获取 Artifact 列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - artifacts
+                - pagination
+              properties:
+                artifacts:
+                  type: array
+                  items:
+                    $ref: '../schemas/project.yaml#/ProjectArtifact'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '404':
+        description: Project 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  post:
+    summary: 将 Artifact 链接到 Project
+    description: |
+      将一个 Artifact 关联到指定的 Project。
+      - 必须指定角色（只能是叶子角色）
+      - 可选指定是否为官方 artifact（只有 owner 或 maintainer 可以设置为 true）
+    operationId: linkArtifactToProject
+    tags:
+      - Projects
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - artifactId
+              - roleId
+            properties:
+              artifactId:
+                type: string
+                format: uuid
+                description: 要关联的 Artifact ID
+              roleId:
+                type: string
+                format: uuid
+                description: 角色 ID（必须是叶子角色）
+              isOfficial:
+                type: boolean
+                default: false
+                description: 是否为官方 artifact（只有 owner/maintainer 可设置为 true）
+    responses:
+      '201':
+        description: 关联成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - projectArtifact
+              properties:
+                message:
+                  type: string
+                  example: Artifact linked to project successfully
+                projectArtifact:
+                  $ref: '../schemas/project.yaml#/ProjectArtifact'
+      '400':
+        description: 请求参数错误（如角色不是叶子角色）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权设置 isOfficial 为 true
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project、Artifact 或 Role 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '409':
+        description: Artifact 已经关联到此 Project
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/projects/{projectId}/posts:
+  get:
+    summary: 获取 Project 的动态列表
+    description: |
+      获取指定 Project 的所有动态，支持分页。
+      - PUBLIC project: 所有人可访问
+      - UNLISTED project: 仅注册用户可访问
+      - PRIVATE project: 仅 owner 和 maintainer 可访问
+    operationId: listProjectPosts
+    tags:
+      - Projects
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: sortBy
+        in: query
+        description: 排序字段
+        schema:
+          type: string
+          enum: [createdAt, updatedAt]
+          default: createdAt
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          type: string
+          enum: [asc, desc]
+          default: desc
+    responses:
+      '200':
+        description: 成功获取动态列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - posts
+                - pagination
+              properties:
+                posts:
+                  type: array
+                  items:
+                    $ref: '../schemas/post.yaml#/PostListItem'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '401':
+        description: 需要认证（访问 UNLISTED project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问（访问 PRIVATE project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  post:
+    summary: 创建动态
+    description: |
+      在指定 Project 下创建新动态。需要认证。
+      仅 owner 和 maintainer 可以创建动态。
+      创建动态时会同时创建一个关联的讨论。
+    operationId: createProjectPost
+    tags:
+      - Projects
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/post.yaml#/CreatePostRequest'
+    responses:
+      '201':
+        description: 成功创建动态
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - post
+              properties:
+                message:
+                  type: string
+                  example: Post created successfully
+                post:
+                  $ref: '../schemas/post.yaml#/PostDetail'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限（非 owner 或 maintainer）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/projects/{projectId}/posts/{postId}:
+  get:
+    summary: 获取动态详情
+    description: |
+      获取指定动态的详细信息，包括关联的讨论。
+      - PUBLIC project: 所有人可访问
+      - UNLISTED project: 仅注册用户可访问
+      - PRIVATE project: 仅 owner 和 maintainer 可访问
+    operationId: getProjectPost
+    tags:
+      - Projects
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+      - name: postId
+        in: path
+        required: true
+        description: Post ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: 成功获取动态详情
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/post.yaml#/PostDetail'
+      '401':
+        description: 需要认证（访问 UNLISTED project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问（访问 PRIVATE project 时）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 或动态不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  patch:
+    summary: 更新动态
+    description: |
+      更新指定动态的信息。需要认证。
+      - 动态作者可以更新标题、内容、封面图片
+      - owner 和 maintainer 可以额外设置是否置顶
+    operationId: updateProjectPost
+    tags:
+      - Projects
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+      - name: postId
+        in: path
+        required: true
+        description: Post ID
+        schema:
+          type: string
+          format: uuid
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/post.yaml#/UpdatePostRequest'
+    responses:
+      '200':
+        description: 成功更新动态
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - post
+              properties:
+                message:
+                  type: string
+                  example: Post updated successfully
+                post:
+                  $ref: '../schemas/post.yaml#/PostDetail'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 或动态不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  delete:
+    summary: 删除动态
+    description: |
+      删除指定的动态。需要认证。
+      仅动态作者、project owner 或 maintainer 可以删除。
+      删除动态时会同时删除关联的讨论。
+    operationId: deleteProjectPost
+    tags:
+      - Projects
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+      - name: postId
+        in: path
+        required: true
+        description: Post ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: 成功删除动态
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+              properties:
+                message:
+                  type: string
+                  example: Post deleted successfully
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 或动态不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

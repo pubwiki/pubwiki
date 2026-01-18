@@ -1,0 +1,34 @@
+# Common schemas used across multiple domains
+
+ApiError:
+  type: object
+  required:
+    - error
+  properties:
+    error:
+      type: string
+      description: 错误信息
+
+Pagination:
+  type: object
+  required:
+    - page
+    - limit
+    - total
+    - totalPages
+  properties:
+    page:
+      type: integer
+      minimum: 1
+    limit:
+      type: integer
+      minimum: 1
+      maximum: 100
+    total:
+      type: integer
+    totalPages:
+      type: integer
+
+VisibilityType:
+  type: string
+  enum: [PUBLIC, PRIVATE, UNLISTED]

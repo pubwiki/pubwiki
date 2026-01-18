@@ -1,0 +1,151 @@
+# Discussion-related schemas
+
+DiscussionTargetType:
+  type: string
+  enum: [ARTIFACT, PROJECT, POST]
+  description: 讨论可以关联到的目标类型
+
+DiscussionCategory:
+  type: string
+  enum: [QUESTION, FEEDBACK, BUG_REPORT, FEATURE_REQUEST, GENERAL]
+  description: 讨论分类
+
+DiscussionAuthor:
+  type: object
+  required:
+    - id
+    - username
+  properties:
+    id:
+      type: string
+      format: uuid
+    username:
+      type: string
+    displayName:
+      type: string
+    avatarUrl:
+      type: string
+      format: uri
+
+DiscussionListItem:
+  type: object
+  required:
+    - id
+    - targetType
+    - targetId
+    - author
+    - content
+    - category
+    - isPinned
+    - isLocked
+    - replyCount
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    targetType:
+      $ref: './discussion.yaml#/DiscussionTargetType'
+    targetId:
+      type: string
+      format: uuid
+    author:
+      $ref: './discussion.yaml#/DiscussionAuthor'
+    title:
+      type: string
+      maxLength: 200
+    content:
+      type: string
+    category:
+      $ref: './discussion.yaml#/DiscussionCategory'
+    isPinned:
+      type: boolean
+    isLocked:
+      type: boolean
+    replyCount:
+      type: integer
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+DiscussionDetail:
+  allOf:
+    - $ref: './discussion.yaml#/DiscussionListItem'
+
+DiscussionReplyItem:
+  type: object
+  required:
+    - id
+    - discussionId
+    - author
+    - content
+    - isAccepted
+    - createdAt
+    - updatedAt
+  properties:
+    id:
+      type: string
+      format: uuid
+    discussionId:
+      type: string
+      format: uuid
+    author:
+      $ref: './discussion.yaml#/DiscussionAuthor'
+    parentReplyId:
+      type: string
+      format: uuid
+      description: 父回复 ID，用于嵌套回复
+    content:
+      type: string
+    isAccepted:
+      type: boolean
+      description: 是否被采纳为答案
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+CreateDiscussionRequest:
+  type: object
+  required:
+    - content
+  properties:
+    title:
+      type: string
+      maxLength: 200
+    content:
+      type: string
+      minLength: 1
+    category:
+      $ref: './discussion.yaml#/DiscussionCategory'
+
+UpdateDiscussionRequest:
+  type: object
+  properties:
+    title:
+      type: string
+      maxLength: 200
+    content:
+      type: string
+      minLength: 1
+    category:
+      $ref: './discussion.yaml#/DiscussionCategory'
+
+CreateDiscussionReplyRequest:
+  type: object
+  required:
+    - content
+  properties:
+    content:
+      type: string
+      minLength: 1
+    parentReplyId:
+      type: string
+      format: uuid
+      description: 父回复 ID，用于嵌套回复
