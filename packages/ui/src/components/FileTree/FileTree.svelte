@@ -24,6 +24,8 @@
 		expandedFolders?: Set<string>;
 		/** Currently selected file path */
 		selectedPath?: string;
+		/** Set of focused paths for multi-select */
+		focusedPaths?: Set<string>;
 		/** Enable drag-and-drop (requires operations.onMove) */
 		draggable?: boolean;
 		/** Enable context menu (requires operations for rename/delete) */
@@ -40,6 +42,8 @@
 		onExpandedChange?: (folders: Set<string>) => void;
 		/** Called when selection changes */
 		onSelectionChange?: (path: string | undefined) => void;
+		/** Called when focused paths change (multi-select) */
+		onFocusedChange?: (paths: Set<string>) => void;
 		/** Called after any file operation completes (for refreshing tree) */
 		onRefresh?: () => Promise<void>;
 		/** Custom class for the container */
@@ -50,6 +54,7 @@
 		items,
 		expandedFolders = new Set(),
 		selectedPath,
+		focusedPaths = new Set(),
 		draggable = false,
 		contextMenuEnabled = false,
 		showQuickActions = false,
@@ -58,6 +63,7 @@
 		onFolderToggle,
 		onExpandedChange,
 		onSelectionChange,
+		onFocusedChange,
 		onRefresh,
 		class: className = ''
 	}: Props = $props();
@@ -85,8 +91,12 @@
 
 	// Drag and drop
 	let draggedItem = $state<FileItem | null>(null);
+	let draggedItems = $state<FileItem[]>([]);
 	let dragOverItem = $state<FileItem | null>(null);
 	let dragOverRoot = $state(false);
+
+	// Multi-select
+	let lastClickedPath = $state<string | null>(null);
 
 	// File upload input references and dropdown state
 	let fileInput: HTMLInputElement | undefined = $state();
@@ -137,6 +147,62 @@
 	}
 
 	// ============================================================================
+	// Multi-select Helpers
+	// ============================================================================
+
+	/**
+	 * Get all visible items in a flat list (respects expanded folders)
+	 */
+	function getFlatVisibleItems(itemList: FileItem[]): FileItem[] {
+		const result: FileItem[] = [];
+		for (const item of itemList) {
+			result.push(item);
+			if (item.type === 'folder' && expandedFolders.has(item.path) && item.files) {
+				result.push(...getFlatVisibleItems(item.files));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Get all items (including children) for a folder
+	 */
+	function getAllItemsIncludingChildren(item: FileItem): FileItem[] {
+		const result: FileItem[] = [item];
+		if (item.type === 'folder' && item.files) {
+			for (const child of item.files) {
+				result.push(...getAllItemsIncludingChildren(child));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Get items between two paths in the visible tree (inclusive)
+	 */
+	function getItemsBetween(path1: string, path2: string): FileItem[] {
+		const flatItems = getFlatVisibleItems(items);
+		const idx1 = flatItems.findIndex(i => i.path === path1);
+		const idx2 = flatItems.findIndex(i => i.path === path2);
+		
+		if (idx1 === -1 || idx2 === -1) return [];
+		
+		const start = Math.min(idx1, idx2);
+		const end = Math.max(idx1, idx2);
+		
+		const result: FileItem[] = [];
+		for (let i = start; i <= end; i++) {
+			const item = flatItems[i];
+			result.push(item);
+			// If it's an expanded folder, include all its children
+			if (item.type === 'folder' && expandedFolders.has(item.path) && item.files) {
+				// Children are already included in the flat list, so we don't need to add them again
+			}
+		}
+		return result;
+	}
+
+	// ============================================================================
 	// Folder Operations
 	// ============================================================================
 
@@ -154,12 +220,31 @@
 		onExpandedChange?.(newExpanded);
 	}
 
-	function handleItemClick(item: FileItem) {
-		if (item.type === 'folder') {
-			toggleFolder(item.path);
+	function handleItemClick(item: FileItem, e: MouseEvent) {
+		const isShiftClick = e.shiftKey;
+
+		if (isShiftClick && lastClickedPath) {
+			// Shift+click: select range from last clicked to current
+			const itemsBetween = getItemsBetween(lastClickedPath, item.path);
+			const newFocused = new Set(focusedPaths);
+			for (const rangeItem of itemsBetween) {
+				newFocused.add(rangeItem.path);
+			}
+			onFocusedChange?.(newFocused);
 		} else {
-			onSelectionChange?.(item.path);
-			onFileClick?.(item);
+			// Normal click: set focus to this item only
+			const newFocused = new Set<string>();
+			newFocused.add(item.path);
+			onFocusedChange?.(newFocused);
+			lastClickedPath = item.path;
+
+			// Original behavior: toggle folder or open file
+			if (item.type === 'folder') {
+				toggleFolder(item.path);
+			} else {
+				onSelectionChange?.(item.path);
+				onFileClick?.(item);
+			}
 		}
 	}
 
@@ -167,26 +252,77 @@
 	// Drag and Drop
 	// ============================================================================
 
+	/**
+	 * Find FileItem by path in the tree
+	 */
+	function findItemByPath(path: string, itemList: FileItem[] = items): FileItem | null {
+		for (const item of itemList) {
+			if (item.path === path) return item;
+			if (item.type === 'folder' && item.files) {
+				const found = findItemByPath(path, item.files);
+				if (found) return found;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Get all focused items, filtering out children of focused parents
+	 */
+	function getTopLevelFocusedItems(): FileItem[] {
+		const result: FileItem[] = [];
+		const sortedPaths = Array.from(focusedPaths).sort((a, b) => a.length - b.length);
+		
+		for (const path of sortedPaths) {
+			// Skip if any parent is already in result
+			const isChildOfExisting = result.some(item => 
+				path.startsWith(item.path + '/')
+			);
+			if (isChildOfExisting) continue;
+			
+			const item = findItemByPath(path);
+			if (item) result.push(item);
+		}
+		return result;
+	}
+
 	function handleDragStart(e: DragEvent, item: FileItem) {
 		if (!draggable) return;
+		
+		// If the dragged item is in the focused set, drag all focused items
+		// Otherwise, drag only this item
+		if (focusedPaths.has(item.path)) {
+			draggedItems = getTopLevelFocusedItems();
+		} else {
+			draggedItems = [item];
+			// Also update focus to this single item
+			onFocusedChange?.(new Set([item.path]));
+			lastClickedPath = item.path;
+		}
+		
 		draggedItem = item;
 		if (e.dataTransfer) {
 			e.dataTransfer.effectAllowed = 'move';
-			e.dataTransfer.setData('text/plain', item.path);
+			e.dataTransfer.setData('text/plain', draggedItems.map(i => i.path).join('\n'));
 		}
 	}
 
 	function handleDragOver(e: DragEvent, item: FileItem | null) {
-		if (!draggable || !draggedItem) return;
+		if (!draggable || draggedItems.length === 0) return;
 		e.preventDefault();
 		e.stopPropagation();
 
-		// Don't allow dropping on itself or its children
-		if (item && (item.path === draggedItem.path || item.path.startsWith(draggedItem.path + '/'))) {
-			if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
-			dragOverItem = null;
-			dragOverRoot = false;
-			return;
+		// Don't allow dropping on any of the dragged items or their children
+		if (item) {
+			const isDropOnDragged = draggedItems.some(draggedItem =>
+				item.path === draggedItem.path || item.path.startsWith(draggedItem.path + '/')
+			);
+			if (isDropOnDragged) {
+				if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+				dragOverItem = null;
+				dragOverRoot = false;
+				return;
+			}
 		}
 
 		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
@@ -206,21 +342,19 @@
 
 	function handleDragEnd() {
 		draggedItem = null;
+		draggedItems = [];
 		dragOverItem = null;
 		dragOverRoot = false;
 	}
 
 	async function handleDrop(e: DragEvent, targetItem: FileItem | null) {
-		if (!draggable || !draggedItem || !operations?.onMove) {
+		if (!draggable || draggedItems.length === 0 || !operations?.onMove) {
 			handleDragEnd();
 			return;
 		}
 		
 		e.preventDefault();
 		e.stopPropagation();
-
-		const draggedPath = draggedItem.path;
-		const draggedName = draggedItem.name;
 
 		let targetFolder = '/';
 		if (targetItem) {
@@ -232,9 +366,18 @@
 			}
 		}
 
-		const newPath = targetFolder === '/' ? `/${draggedName}` : `${targetFolder}/${draggedName}`;
+		const itemsToMove = [...draggedItems];
+		const newPaths: Map<string, string> = new Map();
 
-		if (newPath === draggedPath) {
+		// Calculate new paths and filter out no-ops
+		for (const item of itemsToMove) {
+			const newPath = targetFolder === '/' ? `/${item.name}` : `${targetFolder}/${item.name}`;
+			if (newPath !== item.path) {
+				newPaths.set(item.path, newPath);
+			}
+		}
+
+		if (newPaths.size === 0) {
 			handleDragEnd();
 			return;
 		}
@@ -242,12 +385,26 @@
 		handleDragEnd();
 
 		try {
-			await operations.onMove(draggedPath, newPath);
+			// Move all items
+			for (const [oldPath, newPath] of newPaths) {
+				await operations.onMove(oldPath, newPath);
+			}
 
 			// Update selection if moved item was selected
-			if (selectedPath === draggedPath) {
-				onSelectionChange?.(newPath);
+			if (selectedPath && newPaths.has(selectedPath)) {
+				onSelectionChange?.(newPaths.get(selectedPath));
 			}
+
+			// Update focused paths
+			const newFocused = new Set<string>();
+			for (const path of focusedPaths) {
+				if (newPaths.has(path)) {
+					newFocused.add(newPaths.get(path)!);
+				} else {
+					newFocused.add(path);
+				}
+			}
+			onFocusedChange?.(newFocused);
 
 			// Expand target folder
 			if (targetFolder !== '/') {
@@ -258,7 +415,7 @@
 
 			await onRefresh?.();
 		} catch (err) {
-			console.error('Failed to move item:', err);
+			console.error('Failed to move items:', err);
 		}
 	}
 
@@ -650,8 +807,9 @@
 		<div
 			class="flex items-center gap-1.5 py-1 px-2 rounded cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors
 				{selectedPath === item.path ? 'bg-indigo-100 text-indigo-700' : ''}
+				{focusedPaths.has(item.path) ? 'bg-indigo-50 ring-1 ring-indigo-300' : ''}
 				{dragOverItem?.path === item.path ? 'bg-indigo-200 ring-2 ring-indigo-400' : ''}
-				{draggedItem?.path === item.path ? 'opacity-50' : ''}"
+				{draggedItems.some(i => i.path === item.path) ? 'opacity-50' : ''}"
 			style="padding-left: {depth * 14 + 8}px"
 			draggable={draggable ? 'true' : 'false'}
 			ondragstart={(e) => handleDragStart(e, item)}
@@ -659,7 +817,7 @@
 			ondragleave={handleDragLeave}
 			ondragend={handleDragEnd}
 			ondrop={(e) => handleDrop(e, item)}
-			onclick={() => handleItemClick(item)}
+			onclick={(e) => handleItemClick(item, e)}
 			oncontextmenu={(e) => handleContextMenu(e, item)}
 		>
 			{#if item.type === 'folder'}

@@ -400,7 +400,7 @@
 				<span class="text-xs font-medium text-gray-500">{m.studio_vfs_git_history()}</span>
 			</div>
 
-			<div class="rounded-lg border border-gray-200 bg-gray-50 max-h-64 overflow-y-auto">
+			<div class="rounded-lg border border-gray-200 bg-gray-50">
 				{#if commits.length > 0}
 					<ul class="divide-y divide-gray-100">
 						{#each commits as commit, index}

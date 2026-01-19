@@ -102,9 +102,7 @@ class VfsControllerImpl implements VfsController {
 
 	release(): void {
 		this._refCount--;
-		console.log(`[VfsController] Released ${this._nodeId}, refCount: ${this._refCount}`);
 		if (this._refCount <= 0) {
-			console.log(`[VfsController] Disposing controller for ${this._nodeId}`);
 			this.dispose();
 			controllerCache.delete(this._nodeId);
 		}
@@ -122,6 +120,13 @@ class VfsControllerImpl implements VfsController {
 // ============================================================================
 
 /**
+ * Cache for pending controller creation promises to prevent race conditions.
+ * When multiple callers request the same controller simultaneously, they all
+ * wait for the same promise instead of creating duplicate controllers.
+ */
+const pendingControllers = new Map<string, Promise<VfsControllerImpl>>();
+
+/**
  * Get or create a VFS controller for a node.
  * The controller is reference-counted and shared between VFSNode and VFSProperties.
  * Call release() when done to allow cleanup.
@@ -135,21 +140,39 @@ export async function getVfsController(
 	
 	if (controller) {
 		controller.addRef();
-		console.log(`[VfsController] Reusing controller for ${nodeId}, refCount: ${controller['_refCount']}`);
 		return controller;
 	}
 
-	// Create new controller
-	console.log(`[VfsController] Creating new controller for ${nodeId}`);
-	const vfs = await getNodeVfs(projectId, nodeId);
-	controller = new VfsControllerImpl(vfs, nodeId);
-	controllerCache.set(nodeId, controller);
-	controller.addRef();
+	// Check if there's already a pending creation
+	let pending = pendingControllers.get(nodeId);
+	if (pending) {
+		const ctrl = await pending;
+		ctrl.addRef();
+		return ctrl;
+	}
+
+	// Create new controller with promise caching to prevent race conditions
+	const createPromise = (async () => {
+		const vfs = await getNodeVfs(projectId, nodeId);
+		const newController = new VfsControllerImpl(vfs, nodeId);
+		controllerCache.set(nodeId, newController);
+		newController.addRef();
+		
+		// Initialize
+		await newController.initialize();
+		
+		return newController;
+	})();
 	
-	// Initialize asynchronously
-	await controller.initialize();
+	pendingControllers.set(nodeId, createPromise);
 	
-	return controller;
+	try {
+		controller = await createPromise;
+		return controller;
+	} finally {
+		// Clean up pending promise
+		pendingControllers.delete(nodeId);
+	}
 }
 
 /**

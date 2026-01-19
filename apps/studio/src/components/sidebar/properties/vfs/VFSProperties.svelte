@@ -35,6 +35,7 @@
 	let error = $state<string | null>(null);
 	let expandedFolders = $state<Set<string>>(new Set());
 	let selectedFilePath = $state<string | undefined>(undefined);
+	let focusedPaths = $state<Set<string>>(new Set());
 
 	// ============================================================================
 	// Derived
@@ -249,6 +250,10 @@
 	function handleSelectionChange(path: string | undefined) {
 		selectedFilePath = path;
 	}
+
+	function handleFocusedChange(paths: Set<string>) {
+		focusedPaths = paths;
+	}
 	
 	async function handleRefresh() {
 		if (controller?.fileTreeService) {
@@ -277,6 +282,7 @@
 			<FileTree
 				items={fileTree}
 				{expandedFolders}
+				{focusedPaths}
 				selectedPath={selectedFilePath}
 				draggable={!uploadState?.isUploading}
 				contextMenuEnabled={!uploadState?.isUploading}
@@ -285,6 +291,7 @@
 				onFileClick={uploadState?.isUploading ? undefined : handleFileClick}
 				onExpandedChange={handleExpandedChange}
 				onSelectionChange={handleSelectionChange}
+				onFocusedChange={handleFocusedChange}
 				onRefresh={uploadState?.isUploading ? undefined : handleRefresh}
 				class="p-1"
 			/>
