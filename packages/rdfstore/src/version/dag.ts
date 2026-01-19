@@ -7,7 +7,7 @@
 
 import type { Quad } from '@rdfjs/types'
 import type { Ref, RefNode, Checkpoint, Operation, LevelInstance } from '../types.js'
-import { ROOT_REF } from '../types.js'
+import { ROOT_REF, toSyncOperation } from '../types.js'
 import { exportToJsonl, importFromJsonl } from '../serialization/formats.js'
 import { generateRef } from '@pubwiki/rdfsync'
 
@@ -87,7 +87,7 @@ export class VersionDAG {
    */
   async recordOperation(operation: Operation): Promise<Ref> {
     // Generate deterministic ref using chain hash
-    const ref = await generateRef(this._currentRef, operation)
+    const ref = await generateRef(this._currentRef, toSyncOperation(operation))
     
     const node: RefNode = {
       ref,

@@ -16,10 +16,10 @@
 		registerInputNodeHandlers,
 		registerGeneratedNodeHandlers,
 		registerLoaderNodeHandlers
-	} from '../components/nodes';
-	import VFSFileEditor from '../components/nodes/vfs/VFSFileEditor.svelte';
-	import FlowController from '../components/FlowController.svelte';
-	import { StudioSidebar } from '../components/sidebar';
+	} from '$components/nodes';
+	import VFSFileEditor from '$components/nodes/vfs/VFSFileEditor.svelte';
+	import FlowController from '$components/FlowController.svelte';
+	import { StudioSidebar } from '$components/sidebar';
 	import { 
 		type StudioNodeData, 
 		type GeneratedNodeData,
@@ -33,28 +33,28 @@
 		createLoaderNodeData,
 		createStateNodeData,
 		createFlowNode
-	} from '../types';
+	} from '$lib/types';
 	import {
 		restoreSnapshot,
 		createPreviewController,
 		type NodeRef
-	} from '../version';
-	import { validateConnection } from '../graph';
-	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '../graph';
-	import { publishArtifact, type PublishMetadata } from '../io';
-	import { setStudioContext, type StudioContext } from '../state';
-	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '../state';
+	} from '$lib/version';
+	import { validateConnection } from '$lib/graph';
+	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
+	import { publishArtifact, type PublishMetadata } from '$lib/io';
+	import { setStudioContext, type StudioContext } from '$lib/state';
+	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '$lib/state';
 	import { 
 		nodeStore, 
 		layoutStore, 
 		saveProject, 
+		saveEdges,
+		getEdges,
 		deleteProject, 
 		setCurrentProject, 
-		getProject,
-		saveEdges,
-		getEdges
-	} from '../persistence';
-	import { getNodeVfs, type VersionedVfs } from '../vfs';
+		getProject
+	} from '$lib/persistence';
+	import { getNodeVfs, type VersionedVfs } from '$lib/vfs';
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { API_BASE_URL } from '$lib/config';
 	import * as m from '$lib/paraglide/messages';
@@ -131,7 +131,7 @@
 		if (!nodeData || nodeData.type !== 'VFS') return;
 		
 		try {
-			const vfsContent = nodeData.content as import('../types').VFSContent;
+			const vfsContent = nodeData.content as import('$lib/types').VFSContent;
 			const vfs = await getNodeVfs(vfsContent.projectId, nodeId);
 			vfsEditorState = { nodeId, filePath, vfs };
 		} catch (err) {
@@ -501,7 +501,7 @@
 	 * 3. Creates minimal flow node for SvelteFlow
 	 */
 	async function addNode(
-		nodeData: import('../types').StudioNodeData,
+		nodeData: import('$lib/types').StudioNodeData,
 		position: { x: number; y: number }
 	) {
 		// 1. Add business data to nodeStore

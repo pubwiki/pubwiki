@@ -10,7 +10,7 @@ import type { Quad, Operation } from './types.js'
 /**
  * 序列化 RDF.js Term 为字符串
  */
-function serializeTerm(term: Term): string {
+export function serializeTerm(term: Term): string {
   switch (term.termType) {
     case 'NamedNode':
       return `<${term.value}>`
@@ -50,22 +50,3 @@ export function fromRdfQuad(rdfQuad: RdfQuad): Quad {
   return result
 }
 
-/**
- * 将 RDF.js Operation 转换为简化版 Operation
- */
-export function fromRdfOperation(rdfOp: {
-  type: 'insert' | 'delete'
-  quad: RdfQuad
-} | {
-  type: 'batch-insert' | 'batch-delete'
-  quads: RdfQuad[]
-}): Operation {
-  switch (rdfOp.type) {
-    case 'insert':
-    case 'delete':
-      return { type: rdfOp.type, quad: fromRdfQuad(rdfOp.quad) }
-    case 'batch-insert':
-    case 'batch-delete':
-      return { type: rdfOp.type, quads: rdfOp.quads.map(fromRdfQuad) }
-  }
-}

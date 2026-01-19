@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { getCurrentProject, setCurrentProject } from './persistence';
+	import { getCurrentProject, setCurrentProject } from '$lib/persistence';
 	import * as m from '$lib/paraglide/messages';
 
 	// On mount, check for current project and redirect accordingly

@@ -5,19 +5,45 @@
  * 基础类型从 @pubwiki/rdfsync 导入
  */
 
-import { Operation } from '@pubwiki/rdfsync'
+import type { TextPatch, Operation as SyncOperation } from '@pubwiki/rdfsync'
+import { fromRdfQuad, serializeTerm } from '@pubwiki/rdfsync'
 import type { Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 import { AbstractLevel } from 'abstract-level'
+import type { Quad } from '@rdfjs/types'
 
 // Re-export from rdfsync
 export type {
   Quad,
   TextPatch,
   PatchHunk,
-  Operation,
+  Operation as SyncOperation,
 } from '@pubwiki/rdfsync'
 
 export { ROOT_REF } from '@pubwiki/rdfsync'
+
+export type Operation =
+  | { type: 'insert'; quad: Quad }
+  | { type: 'delete'; quad: Quad }
+  | { type: 'batch-insert'; quads: Quad[] }
+  | { type: 'batch-delete'; quads: Quad[] }
+  | { type: 'patch'; subject: Quad_Subject; predicate: Quad_Predicate; patch: TextPatch }
+
+
+/**
+ * 将 RDF.js Operation 转换为简化版 Operation
+ */
+export function toSyncOperation(op: Operation): SyncOperation {
+  switch (op.type) {
+    case 'insert':
+    case 'delete':
+      return { type: op.type, quad: fromRdfQuad(op.quad) }
+    case 'batch-insert':
+    case 'batch-delete':
+      return { type: op.type, quads: op.quads.map(fromRdfQuad) }
+    case 'patch':
+      return { type: op.type, subject: serializeTerm(op.subject), predicate: serializeTerm(op.predicate), patch: op.patch }
+  }
+}
 
 /**
  * Quad query pattern - all fields are optional for flexible matching

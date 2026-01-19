@@ -28,4 +28,4 @@ export {
 export { canonicalizeOperation } from './canonical.js'
 
 // RDF.js 转换工具
-export { fromRdfQuad, fromRdfOperation } from './convert.js'
+export { fromRdfQuad, serializeTerm } from './convert.js'

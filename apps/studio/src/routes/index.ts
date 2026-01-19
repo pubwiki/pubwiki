@@ -17,7 +17,7 @@ export type {
   StateNodeData,
   Mountpoint,
   NodeContent
-} from './types';
+} from '$lib/types';
 
 export {
   createPromptNodeData,
@@ -35,7 +35,7 @@ export {
   LoaderContent,
   StateContent,
   restoreContent
-} from './types';
+} from '$lib/types';
 
 // Re-export MessageBlock types from @pubwiki/chat
 export type {
@@ -74,7 +74,7 @@ export {
   DEFAULT_NODE_HEIGHT,
   HORIZONTAL_GAP,
   VERTICAL_GAP
-} from './graph';
+} from '$lib/graph';
 
 export type {
   HandleSpec,
@@ -82,7 +82,7 @@ export type {
   ParsedRefTag,
   ParsedMountpoint,
   ResolvedPrompt
-} from './graph';
+} from '$lib/graph';
 
 // Version module
 export {
@@ -99,7 +99,7 @@ export {
   versionHandlerRegistry,
   registerVersionHandler,
   getVersionHandler
-} from './version';
+} from '$lib/version';
 
 export type {
   NodeRef,
@@ -111,11 +111,11 @@ export type {
   PreviewController,
   VersionHandler,
   PreviewState as VersionPreviewState
-} from './version';
+} from '$lib/version';
 
 // State management
-export type { StudioContext, PreviewState } from './state';
-export { setStudioContext, getStudioContext } from './state';
+export type { StudioContext, PreviewState } from '$lib/state';
+export { setStudioContext, getStudioContext } from '$lib/state';
 export {
   dispatchConnection,
   dispatchEdgeDeletes,
@@ -124,7 +124,7 @@ export {
   onEdgeDelete,
   onNodeDelete,
   clearAllHandlers
-} from './state';
+} from '$lib/state';
 export type {
   ConnectionEvent,
   EdgeDeleteEvent,
@@ -132,7 +132,7 @@ export type {
   ConnectionHandler,
   EdgeDeleteHandler,
   NodeDeleteHandler
-} from './state';
+} from '$lib/state';
 
 // Persistence
 export {
@@ -149,18 +149,18 @@ export {
   deleteProject,
   nodeStore,
   layoutStore
-} from './persistence';
+} from '$lib/persistence';
 
 export type {
   StoredNodeData,
   StoredEdge,
   StoredProject,
   NodeLayout
-} from './persistence';
+} from '$lib/persistence';
 
 // VFS
-export { getNodeVfs, getVfsFactory } from './vfs';
-export type { VersionedVfs } from './vfs';
+export { getNodeVfs, getVfsFactory } from '$lib/vfs';
+export type { VersionedVfs } from '$lib/vfs';
 
 // RDF Store (for State nodes)
 export {
@@ -168,13 +168,13 @@ export {
   closeNodeRDFStore,
   closeAllRDFStores,
   RDFStore
-} from './rdf';
+} from '$lib/rdf';
 
 // Import/Export
-export type { ContentFetcher, PublishMetadata } from './io';
+export type { ContentFetcher, PublishMetadata } from '$lib/io';
 export {
   convertArtifactToStudioGraph,
   importArtifactToNewProject,
   addArtifactToProject,
   publishArtifact
-} from './io';
+} from '$lib/io';
