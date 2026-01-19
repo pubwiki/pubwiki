@@ -91,7 +91,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const file = await this.buildFileObject(normalizedPath, content)
 
     // 发射事件
-    await this.events.emit({
+    this.events.emit({
       type: 'file:created',
       file,
       path: normalizedPath,
@@ -132,7 +132,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const file = await this.buildFileObject(normalizedPath, content)
 
     // 发射事件
-    await this.events.emit({
+    this.events.emit({
       type: 'file:updated',
       file,
       path: normalizedPath,
@@ -157,7 +157,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     await this._provider.unlink(normalizedPath)
 
     // 发射事件
-    await this.events.emit({
+    this.events.emit({
       type: 'file:deleted',
       fileId,
       path: normalizedPath,
@@ -169,6 +169,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
   /**
    * 创建文件夹
+   * Note: If the folder already exists, returns it without emitting events
    */
   async createFolder(
     path: string,
@@ -177,6 +178,14 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
     const normalizedPath = normalizePath(path)
 
+    // Check if folder already exists
+    const existsResult = await this.exists(normalizedPath)
+    
+    if (existsResult) {
+      // Folder exists, just return its info without emitting events
+      return await this.buildFolderObject(normalizedPath)
+    }
+
     // 创建目录
     await this._provider.mkdir(normalizedPath, { recursive: true })
 
@@ -184,7 +193,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     const folder = await this.buildFolderObject(normalizedPath)
 
     // 发射事件
-    await this.events.emit({
+    this.events.emit({
       type: 'folder:created',
       folder,
       path: normalizedPath,
@@ -202,23 +211,26 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
     const vp = VfsPath.parse(path)
     const normalizedPath = vp.toString()
+
     const entries = await this._provider.readdir(normalizedPath)
-    const items: Array<VfsFile | VfsFolder> = []
 
-    for (const entry of entries) {
-      // 跳过隐藏文件
-      if (entry.startsWith('.')) continue
+    // Parallel stat all entries
+    const entryPaths = entries.map(entry => vp.append(entry).toString())
+    const stats = await Promise.all(
+      entryPaths.map(entryPath => this._provider.stat(entryPath))
+    )
 
-      const entryPath = vp.append(entry).toString()
-
-      const stat = await this._provider.stat(entryPath)
-
-      if (stat.isDirectory) {
-        items.push(await this.buildFolderObject(entryPath))
-      } else {
-        items.push(await this.buildFileObject(entryPath))
-      }
-    }
+    // Parallel build all objects, reusing stat results
+    const items = await Promise.all(
+      entryPaths.map((entryPath, index) => {
+        const stat = stats[index]
+        if (stat.isDirectory) {
+          return this.buildFolderObjectWithStat(entryPath, stat)
+        } else {
+          return this.buildFileObjectWithStat(entryPath, stat)
+        }
+      })
+    )
 
     return items
   }
@@ -243,7 +255,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     await this._provider.rmdir(normalizedPath, { recursive })
 
     // 发射文件夹删除事件
-    await this.events.emit({
+    this.events.emit({
       type: 'folder:deleted',
       folderId: folder.id,
       path: normalizedPath,
@@ -269,7 +281,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
         // 发射子文件夹删除事件
         const folderId = await this._provider.id(entryPath)
-        await this.events.emit({
+        this.events.emit({
           type: 'folder:deleted',
           folderId,
           path: entryPath,
@@ -279,7 +291,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       } else {
         // 发射文件删除事件
         const fileId = await this._provider.id(entryPath)
-        await this.events.emit({
+        this.events.emit({
           type: 'file:deleted',
           fileId,
           path: entryPath,
@@ -319,7 +331,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
       // 最后发射文件夹移动事件
       const folderId = await this._provider.id(normalizedTo)
-      await this.events.emit({
+      this.events.emit({
         type: 'folder:moved',
         folderId,
         fromPath: normalizedFrom,
@@ -329,7 +341,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     } else {
       const itemId = await this._provider.id(normalizedTo)
       const file = await this.buildFileObject(normalizedTo)
-      await this.events.emit({
+      this.events.emit({
         type: 'file:moved',
         fileId: itemId,
         fromPath: normalizedFrom,
@@ -385,7 +397,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
       if (item.isDirectory) {
         const folderId = await this._provider.id(newPath)
-        await this.events.emit({
+        this.events.emit({
           type: 'folder:moved',
           folderId,
           fromPath: item.path,
@@ -395,7 +407,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       } else {
         const fileId = await this._provider.id(newPath)
         const file = await this.buildFileObject(newPath)
-        await this.events.emit({
+        this.events.emit({
           type: 'file:moved',
           fileId,
           fromPath: item.path,
@@ -420,7 +432,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
 
     // 发射创建事件
     const file = await this.buildFileObject(normalizedTo)
-    await this.events.emit({
+    this.events.emit({
       type: 'file:created',
       file,
       path: normalizedTo,
@@ -466,15 +478,59 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
     content?: ArrayBuffer | string | Uint8Array,
   ): Promise<VfsFile> {
     const stat = await this._provider.stat(path)
-    const id = await this._provider.id(path)
+    return this.buildFileObjectWithStat(path, stat, content)
+  }
+
+  protected async buildFolderObject(
+    path: string,
+  ): Promise<VfsFolder> {
+    const stat = await this._provider.stat(path)
+    return this.buildFolderObjectWithStat(path, stat)
+  }
+
+  /**
+   * Build folder object with pre-fetched stat (optimization)
+   */
+  protected async buildFolderObjectWithStat(
+    path: string,
+    stat: VfsStat,
+  ): Promise<VfsFolder> {
     const parentPath = getParentPath(path)
-    const folderId = await this._provider.id(parentPath)
+    // Parallel fetch both IDs
+    const [id, parentFolderId] = await Promise.all([
+      this._provider.id(path),
+      this._provider.id(parentPath)
+    ])
+
+    return {
+      id,
+      path,
+      name: getFileName(path),
+      parentFolderId,
+      createdAt: stat.createdAt.toISOString(),
+      updatedAt: stat.updatedAt.toISOString(),
+    }
+  }
+
+  /**
+   * Build file object with pre-fetched stat (optimization)
+   */
+  protected async buildFileObjectWithStat(
+    path: string,
+    stat: VfsStat,
+    content?: ArrayBuffer | string | Uint8Array,
+  ): Promise<VfsFile> {
+    const parentPath = getParentPath(path)
+    // Parallel fetch both IDs
+    const [id, folderId] = await Promise.all([
+      this._provider.id(path),
+      this._provider.id(parentPath)
+    ])
 
     // 处理内容
     let fileContent: ArrayBuffer | string | undefined
     if (content !== undefined) {
       if (content instanceof Uint8Array) {
-        // Create a new ArrayBuffer copy to avoid SharedArrayBuffer issues
         const newBuffer = new ArrayBuffer(content.byteLength)
         new Uint8Array(newBuffer).set(content)
         fileContent = newBuffer
@@ -491,24 +547,6 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       size: stat.size,
       folderId,
       content: fileContent,
-      createdAt: stat.createdAt.toISOString(),
-      updatedAt: stat.updatedAt.toISOString(),
-    }
-  }
-
-  protected async buildFolderObject(
-    path: string,
-  ): Promise<VfsFolder> {
-    const stat = await this._provider.stat(path)
-    const id = await this._provider.id(path)
-    const parentPath = getParentPath(path)
-    const parentFolderId = await this._provider.id(parentPath)
-
-    return {
-      id,
-      path,
-      name: getFileName(path),
-      parentFolderId,
       createdAt: stat.createdAt.toISOString(),
       updatedAt: stat.updatedAt.toISOString(),
     }
@@ -536,7 +574,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     const commit = await this._provider.commit(message, options)
 
     // 发射事件
-    await this.events.emit({
+    this.events.emit({
       type: 'version:commit',
       commit,
       timestamp: Date.now(),
@@ -581,7 +619,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     await this.emitCheckoutChangeEvents(diffs)
 
     // 发射 checkout 事件
-    await this.events.emit({
+    this.events.emit({
       type: 'version:checkout',
       ref,
       timestamp: Date.now(),
@@ -613,7 +651,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
         switch (diff.type) {
           case 'added': {
             const folder = await this.buildFolderObject(normalizedPath)
-            await this.events.emit({
+            this.events.emit({
               type: 'folder:created',
               folder,
               path: normalizedPath,
@@ -623,7 +661,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
           }
           case 'deleted': {
             const folderId = await this._provider.id(normalizedPath).catch(() => normalizedPath)
-            await this.events.emit({
+            this.events.emit({
               type: 'folder:deleted',
               folderId: typeof folderId === 'string' ? folderId : normalizedPath,
               path: normalizedPath,
@@ -639,7 +677,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
         switch (diff.type) {
           case 'added': {
             const file = await this.buildFileObject(normalizedPath)
-            await this.events.emit({
+            this.events.emit({
               type: 'file:created',
               file,
               path: normalizedPath,
@@ -649,7 +687,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
           }
           case 'deleted': {
             const fileId = await this._provider.id(normalizedPath).catch(() => normalizedPath)
-            await this.events.emit({
+            this.events.emit({
               type: 'file:deleted',
               fileId: typeof fileId === 'string' ? fileId : normalizedPath,
               path: normalizedPath,
@@ -659,7 +697,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
           }
           case 'modified': {
             const file = await this.buildFileObject(normalizedPath)
-            await this.events.emit({
+            this.events.emit({
               type: 'file:updated',
               file,
               path: normalizedPath,
@@ -731,7 +769,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
     await this.emitCheckoutChangeEvents(diffs)
 
     // 发射 revert 事件
-    await this.events.emit({
+    this.events.emit({
       type: 'version:revert',
       ref,
       timestamp: Date.now(),

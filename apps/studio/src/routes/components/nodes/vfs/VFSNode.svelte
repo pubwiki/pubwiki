@@ -6,28 +6,19 @@
 	 * - Compact file tree preview in node card
 	 * - File editing via sidebar properties panel
 	 * - Uses BaseNode for consistent styling
-	 * - Persists UI state (expanded folders, selected file)
-	 * - Reactive updates via VFS event system
+	 * - Shares VfsController with VFSProperties for single event subscription
 	 */
 	import { Handle, Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import type { VFSNodeData, FlowNodeData } from '../../../types';
-	import { getNodeVfs, type VersionedVfs } from '../../../vfs';
+	import { countFiles, countFolders } from '../../../vfs';
 	import { getStudioContext } from '../../../state';
 	import { nodeStore } from '../../../persistence';
+	import { getVfsController, releaseVfsController, type VfsController } from './controller.svelte';
+	import UploadOverlay from './UploadOverlay.svelte';
 	import BaseNode from '../BaseNode.svelte';
+	import type { FileItem } from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
-
-	// ============================================================================
-	// Types
-	// ============================================================================
-
-	interface FileItem {
-		type: 'file' | 'folder';
-		name: string;
-		path: string;
-		files?: FileItem[];
-	}
 
 	// ============================================================================
 	// Props & Context
@@ -43,61 +34,30 @@
 	const nodeData = $derived(nodeStore.get(id) as VFSNodeData | undefined);
 
 	// ============================================================================
-	// State (shared with expanded view)
+	// State
 	// ============================================================================
 
-	let vfs: VersionedVfs | null = $state(null);
-	let fileTree = $state<FileItem[]>([]);
+	let controller: VfsController | null = $state<VfsController | null>(null);
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
 	
-	// Event unsubscribe functions
-	let eventUnsubscribers: (() => void)[] = [];
-	
-	// UI state - initialized in onMount from persisted data
+	// UI state - local only, not persisted
 	let expandedFolders = $state<Set<string>>(new Set());
 
 	// ============================================================================
 	// Derived
 	// ============================================================================
 
+	const fileTree = $derived(controller?.fileTree ?? []);
 	const fileCount = $derived(countFiles(fileTree));
 	const folderCount = $derived(countFolders(fileTree));
-
-	function countFiles(items: FileItem[]): number {
-		let count = 0;
-		for (const item of items) {
-			if (item.type === 'file') count++;
-			if (item.files) count += countFiles(item.files);
-		}
-		return count;
-	}
-
-	function countFolders(items: FileItem[]): number {
-		let count = 0;
-		for (const item of items) {
-			if (item.type === 'folder') {
-				count++;
-				if (item.files) count += countFolders(item.files);
-			}
-		}
-		return count;
-	}
-
-	// ============================================================================
-	// UI State Helpers
-	// ============================================================================
-
-	// Note: UI state (expandedFolders) is now local only, not persisted
+	const uploadState = $derived(controller?.uploadState);
 
 	// ============================================================================
 	// Initialization
 	// ============================================================================
 
 	onMount(async () => {
-		// Note: expandedFolders is now local state only, not persisted
-		// It resets when the page reloads
-		
 		if (!nodeData?.content?.projectId) {
 			error = 'Missing project ID';
 			isLoading = false;
@@ -105,13 +65,9 @@
 		}
 		
 		try {
-			vfs = await getNodeVfs(nodeData.content.projectId, id);
-			await refreshFileTree();
-			
-			// Subscribe to VFS events for reactive updates
-			setupVfsEventListeners();
-			
-			isLoading = false;
+			controller = await getVfsController(nodeData.content.projectId, id);
+			isLoading = controller.isLoading;
+			error = controller.error;
 		} catch (err) {
 			console.error('Failed to initialize VFS node:', err);
 			error = err instanceof Error ? err.message : 'Failed to initialize';
@@ -120,88 +76,13 @@
 	});
 	
 	onDestroy(() => {
-		// Unsubscribe from all VFS events
-		for (const unsubscribe of eventUnsubscribers) {
-			unsubscribe();
-		}
-		eventUnsubscribers = [];
+		releaseVfsController(id);
+		controller = null;
 	});
-	
-	/**
-	 * Set up listeners for VFS events to refresh the file tree
-	 */
-	function setupVfsEventListeners() {
-		if (!vfs) return;
-		
-		const events = vfs.events;
-		
-		// Listen for file/folder changes
-		eventUnsubscribers.push(
-			events.on('file:created', () => refreshFileTree()),
-			events.on('file:updated', () => refreshFileTree()),
-			events.on('file:deleted', () => refreshFileTree()),
-			events.on('file:moved', () => refreshFileTree()),
-			events.on('folder:created', () => refreshFileTree()),
-			events.on('folder:deleted', () => refreshFileTree()),
-			events.on('folder:moved', () => refreshFileTree()),
-			events.on('version:checkout', () => refreshFileTree())
-		);
-	}
 
 	// ============================================================================
-	// File Tree Operations
+	// UI Actions
 	// ============================================================================
-
-	async function refreshFileTree() {
-		if (!vfs) return;
-		try {
-			const items = await loadFolderContents('/');
-			fileTree = items;
-		} catch (err) {
-			console.error('Failed to load file tree:', err);
-		}
-	}
-
-	/**
-	 * Check if a VFS item is a folder
-	 */
-	function isVfsFolder(item: { folderId?: string; parentFolderId?: string }): boolean {
-		return 'parentFolderId' in item && !('size' in item);
-	}
-
-	async function loadFolderContents(folderPath: string): Promise<FileItem[]> {
-		if (!vfs) return [];
-
-		const items: FileItem[] = [];
-		const entries = await vfs.listFolder(folderPath);
-
-		for (const entry of entries) {
-			if (isVfsFolder(entry)) {
-				// It's a folder - recursively load its contents
-				const children = await loadFolderContents(entry.path);
-				items.push({ 
-					type: 'folder', 
-					name: entry.name, 
-					path: entry.path, 
-					files: children 
-				});
-			} else {
-				// It's a file
-				items.push({ 
-					type: 'file', 
-					name: entry.name, 
-					path: entry.path 
-				});
-			}
-		}
-
-		items.sort((a, b) => {
-			if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-			return a.name.localeCompare(b.name);
-		});
-
-		return items;
-	}
 
 	function toggleFolder(path: string) {
 		const newExpanded = new Set(expandedFolders);
@@ -211,7 +92,6 @@
 			newExpanded.add(path);
 		}
 		expandedFolders = newExpanded;
-		// Note: expandedFolders is local state only, not persisted
 	}
 
 	// Action to capture wheel events and prevent canvas zoom/pan
@@ -256,7 +136,12 @@
 
 	{#snippet children()}
 		<!-- Compact File Tree -->
-		<div class="max-h-48 overflow-y-auto bg-gray-50 text-sm nodrag nowheel" use:captureWheel>
+		<div class="max-h-48 overflow-y-auto bg-gray-50 text-sm nodrag nowheel relative" class:min-h-32={uploadState?.isUploading} use:captureWheel>
+			<!-- Upload overlay -->
+			{#if uploadState?.isUploading && uploadState.progress}
+				<UploadOverlay progress={uploadState.progress} />
+			{/if}
+			
 			{#if isLoading}
 				<div class="flex items-center justify-center py-8 text-gray-400 text-xs">
 					{m.studio_vfs_loading()}

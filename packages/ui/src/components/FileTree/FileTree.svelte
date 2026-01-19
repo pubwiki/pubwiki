@@ -93,6 +93,33 @@
 	let folderInput: HTMLInputElement | undefined = $state();
 	let showUploadMenu = $state(false);
 	let uploadButtonRef: HTMLButtonElement | undefined = $state();
+	let uploadMenuPosition = $state({ x: 0, y: 0 });
+
+	// Computed upload menu position based on button ref
+	function updateUploadMenuPosition() {
+		if (uploadButtonRef) {
+			const rect = uploadButtonRef.getBoundingClientRect();
+			const menuHeight = 76; // Approximate menu height (2 items * ~38px)
+			const menuWidth = 112; // min-w-28 = 7rem = 112px
+			
+			// Position above the button, aligned to right edge
+			let x = rect.right - menuWidth;
+			let y = rect.top - menuHeight - 4; // 4px gap
+			
+			// Ensure menu doesn't go above viewport
+			if (y < 8) {
+				// Show below the button instead
+				y = rect.bottom + 4;
+			}
+			
+			// Ensure menu doesn't go off left edge
+			if (x < 8) {
+				x = 8;
+			}
+			
+			uploadMenuPosition = { x, y };
+		}
+	}
 
 	// ============================================================================
 	// Upload Handler
@@ -270,6 +297,7 @@
 
 	function handleWindowClick() {
 		if (contextMenu.visible) closeContextMenu();
+		if (showUploadMenu) showUploadMenu = false;
 	}
 
 	function handleRename() {
@@ -448,44 +476,16 @@
 	{#if showQuickActions && operations?.onCreateFile && operations?.onCreateFolder}
 		<div class="border-t border-gray-200 px-2 py-1 flex justify-end gap-1">
 			{#if operations?.onUpload}
-				<div class="relative">
-					<button
-						bind:this={uploadButtonRef}
-						class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
-						onclick={() => showUploadMenu = !showUploadMenu}
-						title="Upload"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-						</svg>
-					</button>
-					{#if showUploadMenu}
-						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<div
-							class="absolute bottom-full right-0 mb-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-28 z-50"
-							onmouseleave={() => showUploadMenu = false}
-						>
-							<button
-								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-								onclick={() => { fileInput?.click(); showUploadMenu = false; }}
-							>
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-								</svg>
-								Files
-							</button>
-							<button
-								class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-								onclick={() => { folderInput?.click(); showUploadMenu = false; }}
-							>
-								<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-								</svg>
-								Folder
-							</button>
-						</div>
-					{/if}
-				</div>
+				<button
+					bind:this={uploadButtonRef}
+					class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
+					onclick={(e) => { e.stopPropagation(); updateUploadMenuPosition(); showUploadMenu = !showUploadMenu; }}
+					title="Upload"
+				>
+					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+					</svg>
+				</button>
 				<input
 					bind:this={fileInput}
 					type="file"
@@ -586,6 +586,36 @@
 				Delete
 			</button>
 		{/if}
+	</div>
+{/if}
+
+<!-- Upload Menu -->
+{#if showUploadMenu}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div
+		class="fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-28 z-10000"
+		style="left: {uploadMenuPosition.x}px; top: {uploadMenuPosition.y}px;"
+		onclick={(e) => e.stopPropagation()}
+	>
+		<button
+			class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+			onclick={() => { fileInput?.click(); showUploadMenu = false; }}
+		>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+			</svg>
+			Files
+		</button>
+		<button
+			class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+			onclick={() => { folderInput?.click(); showUploadMenu = false; }}
+		>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+			</svg>
+			Folder
+		</button>
 	</div>
 {/if}
 

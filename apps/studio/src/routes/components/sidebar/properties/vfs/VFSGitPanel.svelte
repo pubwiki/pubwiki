@@ -2,10 +2,12 @@
 	/**
 	 * VFSGitPanel - Git version control panel for VFS nodes
 	 * Shows changed files, commit input, and commit history
+	 * Uses shared VfsController to check upload status
 	 */
 	import { onDestroy } from 'svelte';
 	import type { VFSNodeData } from '../../../../types';
 	import { getNodeVfs, type VersionedVfs } from '../../../../vfs';
+	import { getVfsController, releaseVfsController, type VfsController } from '../../../nodes/vfs/controller.svelte';
 	import type { VfsCommit } from '@pubwiki/vfs';
 	import * as m from '$lib/paraglide/messages';
 
@@ -24,7 +26,8 @@
 	// State
 	// ============================================================================
 
-	let vfs: VersionedVfs | null = $state(null);
+	let controller = $state<VfsController | null>(null);
+	let vfs = $state<VersionedVfs | null>(null);
 	let changedFiles = $state<Array<{
 		path: string;
 		status: 'added' | 'modified' | 'deleted' | 'untracked';
@@ -43,6 +46,13 @@
 
 	// Event unsubscribe functions
 	let eventUnsubscribers: (() => void)[] = [];
+	
+	// Debounce timer for status refresh
+	let statusRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let pendingStatusRefresh = false;
+	
+	// Store nodeId for cleanup (props may be unavailable in onDestroy)
+	let currentNodeId: string | null = null;
 
 	// ============================================================================
 	// Derived
@@ -50,6 +60,7 @@
 
 	const hasChanges = $derived(changedFiles.length > 0);
 	const canCommit = $derived(hasChanges && commitMessage.trim().length > 0 && !isCommitting);
+	const uploadState = $derived(controller?.uploadState);
 
 	// ============================================================================
 	// Initialization
@@ -70,7 +81,10 @@
 		commitMessage = '';
 
 		try {
-			vfs = await getNodeVfs(data.content.projectId, nodeId);
+			// Get shared controller to check upload status
+			controller = await getVfsController(data.content.projectId, nodeId);
+			currentNodeId = nodeId; // Save for cleanup
+			vfs = controller.vfs;
 			await refreshStatus();
 			await refreshHistory();
 			setupVfsEventListeners();
@@ -93,31 +107,78 @@
 			unsubscribe();
 		}
 		eventUnsubscribers = [];
+		
+		// Release the controller reference
+		if (controller && currentNodeId) {
+			releaseVfsController(currentNodeId);
+			controller = null;
+			currentNodeId = null;
+		}
+		
+		// Clear any pending timer
+		if (statusRefreshTimer) {
+			clearTimeout(statusRefreshTimer);
+			statusRefreshTimer = null;
+		}
 	});
+
+	/**
+	 * Debounced status refresh - collects multiple events into a single refresh
+	 * Skips refresh if upload is in progress
+	 */
+	function scheduleStatusRefresh() {
+		// Skip if uploading
+		if (uploadState?.isUploading) {
+			pendingStatusRefresh = true;
+			return;
+		}
+		
+		// Clear existing timer
+		if (statusRefreshTimer) {
+			clearTimeout(statusRefreshTimer);
+		}
+		
+		// Schedule new refresh with 300ms debounce
+		statusRefreshTimer = setTimeout(async () => {
+			statusRefreshTimer = null;
+			if (!uploadState?.isUploading) {
+				await refreshStatus();
+			}
+		}, 300);
+	}
 
 	function setupVfsEventListeners() {
 		if (!vfs) return;
 
 		const events = vfs.events;
-		// Refresh status on any file change
+		
+		// Refresh status on any file change (debounced)
 		eventUnsubscribers.push(
-			events.on('file:created', () => refreshStatus()),
-			events.on('file:updated', () => refreshStatus()),
-			events.on('file:deleted', () => refreshStatus()),
-			events.on('file:moved', () => refreshStatus()),
-			events.on('folder:created', () => refreshStatus()),
-			events.on('folder:deleted', () => refreshStatus()),
-			events.on('folder:moved', () => refreshStatus()),
+			events.on('file:created', () => scheduleStatusRefresh()),
+			events.on('file:updated', () => scheduleStatusRefresh()),
+			events.on('file:deleted', () => scheduleStatusRefresh()),
+			events.on('file:moved', () => scheduleStatusRefresh()),
+			events.on('folder:created', () => scheduleStatusRefresh()),
+			events.on('folder:deleted', () => scheduleStatusRefresh()),
+			events.on('folder:moved', () => scheduleStatusRefresh()),
 			events.on('version:commit', () => {
-				refreshStatus();
+				scheduleStatusRefresh();
 				refreshHistory();
 			}),
 			events.on('version:checkout', () => {
-				refreshStatus();
+				scheduleStatusRefresh();
 				refreshHistory();
 			})
 		);
 	}
+	
+	// When upload finishes, refresh status if there were pending refreshes
+	$effect(() => {
+		if (!uploadState?.isUploading && pendingStatusRefresh && vfs) {
+			pendingStatusRefresh = false;
+			refreshStatus();
+		}
+	});
 
 	// ============================================================================
 	// Data Fetching

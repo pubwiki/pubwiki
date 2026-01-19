@@ -65,6 +65,9 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   private basePath: string;
   private initialized = false;
   private author = { name: 'Anonymous', email: 'anonymous@pubwiki.local' };
+  
+  // ID cache: path -> id (inode-based, invalidated on file changes)
+  private idCache = new Map<string, string>();
 
   constructor(
     private projectId: string,
@@ -129,17 +132,36 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   }
 
   async dispose(): Promise<void> {
-    // Nothing to dispose for ZenFS
+    // Clear cache and reset state
+    this.idCache.clear();
     this.initialized = false;
   }
 
   // ========== ID Generation ==========
 
   async id(path: string): Promise<string> {
-    // Get the inode number from ZenFS stat
     const absPath = this.toAbsolutePath(path);
+    
+    // Check cache first
+    const cached = this.idCache.get(absPath);
+    if (cached !== undefined) {
+      return cached;
+    }
+    
+    // Get the inode number from ZenFS stat
     const stats = await zenfs.promises.stat(absPath);
-    return stats.ino.toString(16).padStart(8, '0');
+    const id = stats.ino.toString(16).padStart(8, '0');
+    
+    // Cache the result
+    this.idCache.set(absPath, id);
+    
+    return id;
+  }
+  
+  // Invalidate cache for a path (call after write/delete/move operations)
+  private invalidateIdCache(path: string): void {
+    const absPath = this.toAbsolutePath(path);
+    this.idCache.delete(absPath);
   }
 
   // ========== File Operations ==========
@@ -166,11 +188,14 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     }
 
     await zenfs.promises.writeFile(absPath, content);
+    
+    this.invalidateIdCache(path);
   }
 
   async unlink(path: string): Promise<void> {
     const absPath = this.toAbsolutePath(path);
     await zenfs.promises.unlink(absPath);
+    this.invalidateIdCache(path);
   }
 
   // ========== Directory Operations ==========
@@ -179,6 +204,7 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     const absPath = this.toAbsolutePath(path);
     try {
       await zenfs.promises.mkdir(absPath, { recursive: options?.recursive });
+      this.invalidateIdCache(path);
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
         throw e;
@@ -189,16 +215,22 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   async readdir(path: string): Promise<string[]> {
     const absPath = this.toAbsolutePath(path);
     const entries = await zenfs.promises.readdir(absPath);
-    // Filter out .git directory from listings
-    return entries.filter((entry) => entry !== '.git');
+    return entries;
   }
 
   async rmdir(path: string, options?: { recursive?: boolean }): Promise<void> {
     const absPath = this.toAbsolutePath(path);
     if (options?.recursive) {
       await zenfs.promises.rm(absPath, { recursive: true });
+      // Clear all cached ids under this path
+      for (const key of this.idCache.keys()) {
+        if (key.startsWith(absPath)) {
+          this.idCache.delete(key);
+        }
+      }
     } else {
       await zenfs.promises.rmdir(absPath);
+      this.invalidateIdCache(path);
     }
   }
 
@@ -245,6 +277,9 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     }
 
     await zenfs.promises.rename(absFrom, absTo);
+    // Invalidate cache for both old and new paths
+    this.invalidateIdCache(from);
+    this.invalidateIdCache(to);
   }
 
   async copyFile(from: string, to: string): Promise<void> {

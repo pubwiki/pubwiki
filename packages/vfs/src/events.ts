@@ -204,13 +204,13 @@ export class VfsEventBus {
   }
 
   /**
-   * 发射事件
+   * 发射事件 (fire-and-forget，不阻塞等待监听器)
    * @param event 事件对象
    */
-  async emit<T extends VfsEventType>(event: VfsEventData<T>): Promise<void> {
+  emit<T extends VfsEventType>(event: VfsEventData<T>): void {
     const handlers = this.listeners.get(event.type)
     if (handlers && handlers.size > 0) {
-      const promises = Array.from(handlers).map((handler) =>
+      for (const handler of handlers) {
         Promise.resolve()
           .then(() => handler(event))
           .catch((err) => {
@@ -219,8 +219,7 @@ export class VfsEventBus {
               err
             )
           })
-      )
-      await Promise.all(promises)
+      }
     }
   }
 

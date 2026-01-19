@@ -11,3 +11,12 @@ export {
   type VersionedVfsProvider,
   type VfsProvider
 } from './store';
+
+export {
+  VfsFileTreeService,
+  isVfsFolder,
+  countFiles,
+  countFolders,
+  getParentPath,
+  getFileName
+} from './file-tree-service';

@@ -1,10 +1,12 @@
 <script lang="ts">
 	/**
 	 * VFSPropertiesPanel - File list and management for VFS nodes in sidebar
+	 * Uses shared VfsController with VFSNode for single event subscription
 	 */
-	import { onDestroy } from 'svelte';
 	import type { VFSNodeData } from '../../../../types';
-	import { getNodeVfs, type VersionedVfs } from '../../../../vfs';
+	import { countFiles, countFolders } from '../../../../vfs';
+	import { getVfsController, releaseVfsController, type VfsController } from '../../../nodes/vfs/controller.svelte';
+	import UploadOverlay from '../../../nodes/vfs/UploadOverlay.svelte';
 	import { getStudioContext } from '../../../../state';
 	import { FileTree, type FileItem, type FileOperations } from '@pubwiki/ui/components';
 	import VFSGitPanel from './VFSGitPanel.svelte';
@@ -28,42 +30,21 @@
 	// State
 	// ============================================================================
 
-	let vfs: VersionedVfs | null = $state(null);
-	let fileTree = $state<FileItem[]>([]);
+	let controller: VfsController | null = $state<VfsController | null>(null);
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
 	let expandedFolders = $state<Set<string>>(new Set());
 	let selectedFilePath = $state<string | undefined>(undefined);
-	
-	// Event unsubscribe functions
-	let eventUnsubscribers: (() => void)[] = [];
 
 	// ============================================================================
 	// Derived
 	// ============================================================================
 
+	const fileTree = $derived(controller?.fileTree ?? []);
 	const fileCount = $derived(countFiles(fileTree));
 	const folderCount = $derived(countFolders(fileTree));
-
-	function countFiles(items: FileItem[]): number {
-		let count = 0;
-		for (const item of items) {
-			if (item.type === 'file') count++;
-			if (item.files) count += countFiles(item.files);
-		}
-		return count;
-	}
-
-	function countFolders(items: FileItem[]): number {
-		let count = 0;
-		for (const item of items) {
-			if (item.type === 'folder') {
-				count++;
-				if (item.files) count += countFolders(item.files);
-			}
-		}
-		return count;
-	}
+	const vfs = $derived(controller?.vfs ?? null);
+	const uploadState = $derived(controller?.uploadState);
 
 	// ============================================================================
 	// File Operations (for FileTree)
@@ -108,29 +89,61 @@
 			}
 		},
 		onUpload: async (files: FileList) => {
-			if (!vfs) return;
+			if (!vfs || !controller) return;
 			
-			for (const file of files) {
-				// Use webkitRelativePath for folder uploads, otherwise just the file name
-				const relativePath = (file as any).webkitRelativePath || file.name;
-				const targetPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
-				
-				// Create parent directories if needed
-				const parentDir = targetPath.slice(0, targetPath.lastIndexOf('/'));
-				if (parentDir && parentDir !== '/') {
-					await ensureFolderExists(parentDir);
+			const totalFiles = files.length;
+			
+			// Set uploading flag to pause git status monitoring
+			controller.setUploading(true, { current: 0, total: totalFiles });
+			
+			// Track created directories to avoid redundant createFolder calls
+			const createdDirs = new Set<string>();
+			let filesProcessed = 0;
+			
+			try {
+				for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+					const file = files[fileIndex];
+					
+					// Use webkitRelativePath for folder uploads, otherwise just the file name
+					const relativePath = (file as any).webkitRelativePath || file.name;
+					const targetPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+					
+					// Create parent directory if needed (only once per unique directory)
+					const parentDir = targetPath.slice(0, targetPath.lastIndexOf('/'));
+					if (parentDir && parentDir !== '/' && !createdDirs.has(parentDir)) {
+						try {
+							await vfs.createFolder(parentDir);
+						} catch {
+							// Directory might already exist
+						}
+						createdDirs.add(parentDir);
+						// Also mark all parent directories as created
+						let dir = parentDir;
+						while (dir.includes('/')) {
+							dir = dir.slice(0, dir.lastIndexOf('/'));
+							if (dir) createdDirs.add(dir);
+						}
+					}
+					
+					// Read file content
+					const content = await file.arrayBuffer();
+					
+					// Create or update the file
+					try {
+						await vfs.createFile(targetPath, content);
+					} catch {
+						// File might already exist, try to update it
+						await vfs.updateFile(targetPath, content);
+					}
+					
+					filesProcessed++;
+					
+					// Update progress
+					controller.setUploading(true, { current: filesProcessed, total: totalFiles });
 				}
-				
-				// Read file content
-				const content = await file.arrayBuffer();
-				
-				// Create or update the file
-				try {
-					await vfs.createFile(targetPath, content);
-				} catch {
-					// File might already exist, try to update it
-					await vfs.updateFile(targetPath, content);
-				}
+			} finally {
+				// Always clear uploading flag when done
+				controller.setUploading(false);
 			}
 		},
 		onDownload: async () => {
@@ -174,132 +187,51 @@
 		}
 	};
 
-	// Helper function to ensure folder exists
-	async function ensureFolderExists(folderPath: string) {
-		if (!vfs) return;
-		
-		const parts = folderPath.split('/').filter(Boolean);
-		let currentPath = '';
-		
-		for (const part of parts) {
-			currentPath += '/' + part;
-			try {
-				await vfs.createFolder(currentPath);
-			} catch {
-				// Folder might already exist, ignore error
-			}
-		}
-	}
-
 	// ============================================================================
-	// Initialization
+	// Initialization - $effect handles lifecycle automatically
 	// ============================================================================
 
-	async function initializeVfs() {
-		// Clean up previous event listeners
-		for (const unsubscribe of eventUnsubscribers) {
-			unsubscribe();
-		}
-		eventUnsubscribers = [];
+	$effect(() => {
+		// Track dependencies
+		const currentNodeId = nodeId;
+		const currentProjectId = data.content.projectId;
 		
-		// Reset state
+		// State for this effect instance
+		let cancelled = false;
+		
+		// Reset UI state
 		isLoading = true;
 		error = null;
-		fileTree = [];
 		expandedFolders = new Set();
 		selectedFilePath = undefined;
 		
-		try {
-			vfs = await getNodeVfs(data.content.projectId, nodeId);
-			await refreshFileTree();
-			setupVfsEventListeners();
-			isLoading = false;
-		} catch (err) {
-			console.error('Failed to initialize VFS:', err);
-			error = err instanceof Error ? err.message : 'Failed to initialize';
-			isLoading = false;
-		}
-	}
-
-	// Re-initialize when nodeId changes
-	$effect(() => {
-		// Track nodeId dependency
-		const currentNodeId = nodeId;
-		initializeVfs();
-	});
-
-	onDestroy(() => {
-		for (const unsubscribe of eventUnsubscribers) {
-			unsubscribe();
-		}
-		eventUnsubscribers = [];
-	});
-
-	function setupVfsEventListeners() {
-		if (!vfs) return;
-		
-		const events = vfs.events;
-		eventUnsubscribers.push(
-			events.on('file:created', () => refreshFileTree()),
-			events.on('file:updated', () => refreshFileTree()),
-			events.on('file:deleted', () => refreshFileTree()),
-			events.on('file:moved', () => refreshFileTree()),
-			events.on('folder:created', () => refreshFileTree()),
-			events.on('folder:deleted', () => refreshFileTree()),
-			events.on('folder:moved', () => refreshFileTree()),
-			events.on('version:checkout', () => refreshFileTree())
-		);
-	}
-
-	// ============================================================================
-	// File Tree Operations
-	// ============================================================================
-
-	async function refreshFileTree() {
-		if (!vfs) return;
-		try {
-			const items = await loadFolderContents('/');
-			fileTree = items;
-		} catch (err) {
-			console.error('Failed to load file tree:', err);
-		}
-	}
-
-	function isVfsFolder(item: { folderId?: string; parentFolderId?: string }): boolean {
-		return 'parentFolderId' in item && !('size' in item);
-	}
-
-	async function loadFolderContents(folderPath: string): Promise<FileItem[]> {
-		if (!vfs) return [];
-
-		const items: FileItem[] = [];
-		const entries = await vfs.listFolder(folderPath);
-
-		for (const entry of entries) {
-			if (isVfsFolder(entry)) {
-				const children = await loadFolderContents(entry.path);
-				items.push({ 
-					type: 'folder', 
-					name: entry.name, 
-					path: entry.path, 
-					files: children 
-				});
-			} else {
-				items.push({ 
-					type: 'file', 
-					name: entry.name, 
-					path: entry.path 
-				});
+		// Async initialization
+		(async () => {
+			try {
+				const ctrl = await getVfsController(currentProjectId, currentNodeId);
+				if (cancelled) {
+					releaseVfsController(currentNodeId);
+					return;
+				}
+				
+				controller = ctrl;
+				isLoading = ctrl.isLoading;
+				error = ctrl.error;
+			} catch (err) {
+				if (cancelled) return;
+				console.error('Failed to initialize VFS:', err);
+				error = err instanceof Error ? err.message : 'Failed to initialize';
+				isLoading = false;
 			}
-		}
-
-		items.sort((a, b) => {
-			if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-			return a.name.localeCompare(b.name);
-		});
-
-		return items;
-	}
+		})();
+		
+		// Cleanup when effect re-runs or component unmounts
+		return () => {
+			cancelled = true;
+			releaseVfsController(currentNodeId);
+			controller = null;
+		};
+	});
 
 	// ============================================================================
 	// UI Actions
@@ -317,6 +249,12 @@
 	function handleSelectionChange(path: string | undefined) {
 		selectedFilePath = path;
 	}
+	
+	async function handleRefresh() {
+		if (controller?.fileTreeService) {
+			await controller.fileTreeService.loadFullTree();
+		}
+	}
 </script>
 
 <div class="flex flex-col">
@@ -326,7 +264,7 @@
 	</div>
 
 	<!-- File Tree -->
-	<div class="rounded-lg border border-gray-200 bg-gray-50 max-h-80 overflow-y-auto">
+	<div class="rounded-lg border border-gray-200 bg-gray-50 relative" class:min-h-32={uploadState?.isUploading}>
 		{#if isLoading}
 			<div class="flex items-center justify-center py-8 text-gray-400 text-xs">
 				{m.studio_vfs_loading()}
@@ -340,16 +278,21 @@
 				items={fileTree}
 				{expandedFolders}
 				selectedPath={selectedFilePath}
-				draggable={true}
-				contextMenuEnabled={true}
-				showQuickActions={true}
-				operations={fileOperations}
-				onFileClick={handleFileClick}
+				draggable={!uploadState?.isUploading}
+				contextMenuEnabled={!uploadState?.isUploading}
+				showQuickActions={!uploadState?.isUploading}
+				operations={uploadState?.isUploading ? undefined : fileOperations}
+				onFileClick={uploadState?.isUploading ? undefined : handleFileClick}
 				onExpandedChange={handleExpandedChange}
 				onSelectionChange={handleSelectionChange}
-				onRefresh={refreshFileTree}
+				onRefresh={uploadState?.isUploading ? undefined : handleRefresh}
 				class="p-1"
 			/>
+			
+			<!-- Upload overlay -->
+			{#if uploadState?.isUploading && uploadState.progress}
+				<UploadOverlay progress={uploadState.progress} />
+			{/if}
 		{/if}
 	</div>
 
