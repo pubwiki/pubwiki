@@ -42,6 +42,7 @@
 		onLoaderReload,
 		getLoaderBackendType
 	} from './controller.svelte';
+	import { createPubWikiContext } from '$lib/modules/pubwiki';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
 	// ============================================================================
@@ -395,13 +396,21 @@
 				baseUrl: settings.effectiveBaseUrl
 			} : undefined;
 			
+			// Create PubWiki context for publish/article upload functionality
+			const pubwikiContext = createPubWikiContext(
+				backendVfsContent.projectId,
+				() => ctx.nodes,
+				() => ctx.edges
+			);
+			
 			// Initialize loader and get result
 			const result = await initializeLoader(
 				id,
 				backendVfs,
 				assetMounts,
 				rdfStore,
-				llmConfig
+				llmConfig,
+				pubwikiContext
 			);
 			
 			// Update local state with result

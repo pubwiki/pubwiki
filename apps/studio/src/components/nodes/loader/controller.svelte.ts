@@ -51,6 +51,9 @@ import {
 	type JsModuleDefinition
 } from '$lib/loader';
 
+// Import PubWiki module factory
+import { createPubWikiModule, type PubWikiModuleContext } from '$lib/modules/pubwiki';
+
 // Re-exports for consumers
 export type { ServiceDefinition, LLMConfig, ServiceCallResult };
 
@@ -286,6 +289,7 @@ export function updateMountpointPath(
  * @param assetMounts - Map of mount paths to VFS instances
  * @param rdfStore - Optional RDF store for State API
  * @param llmConfig - LLM configuration from user settings (apiKey, model, baseUrl)
+ * @param pubwikiContext - Optional context for PubWiki module (publish/article upload)
  * @returns LoaderInitResult with success, services, and error
  */
 export async function initializeLoader(
@@ -293,7 +297,8 @@ export async function initializeLoader(
 	backendVfs: Vfs<VfsProvider>,
 	assetMounts: Map<string, Vfs<VfsProvider>>,
 	rdfStore: unknown | undefined,
-	llmConfig: LLMConfig | undefined
+	llmConfig: LLMConfig | undefined,
+	pubwikiContext?: PubWikiModuleContext
 ): Promise<LoaderInitResult> {
 	try {
 		// Clean up existing runtime if any
@@ -321,6 +326,11 @@ export async function initializeLoader(
 				toolCalling: { enabled: false }
 			});
 			jsModules.set('LLM', createLLMModule(pubchat));
+		}
+		
+		// Register PubWiki module if context is provided
+		if (pubwikiContext) {
+			jsModules.set('pubwiki', createPubWikiModule(pubwikiContext));
 		}
 		
 		// Build backend config
