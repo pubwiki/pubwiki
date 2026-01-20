@@ -599,3 +599,345 @@ describe('JsProxy - 与 JS 模块集成', () => {
     expect(result2.result).toBe(3)
   })
 })
+
+describe('JsProxy - table.insert 和 table.remove 支持', () => {
+  let store: RDFStore
+  let instance: LuaInstance
+
+  beforeAll(async () => {
+    await loadRunner()
+  })
+
+  beforeEach(async () => {
+    store = await createMemoryStore()
+    instance = createLuaInstance({ rdfStore: store })
+  })
+
+  afterEach(async () => {
+    instance.destroy()
+    if (store.isOpen) {
+      await store.close()
+    }
+  })
+
+  describe('table.insert 基本操作', () => {
+    it('应该能在 JS 数组末尾插入元素', async () => {
+      const arr = [1, 2, 3]
+      const result = await instance.run(`
+        table.insert(arr, 4)
+        return #arr
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(4)
+      expect(arr).toEqual([1, 2, 3, 4])
+    })
+
+    it('应该能在 JS 数组指定位置插入元素', async () => {
+      const arr = [1, 2, 3]
+      const result = await instance.run(`
+        table.insert(arr, 2, 10)
+        return arr[2]
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(10)
+      expect(arr).toEqual([1, 10, 2, 3])
+    })
+
+    it('应该能在 JS 数组开头插入元素', async () => {
+      const arr = ['b', 'c']
+      const result = await instance.run(`
+        table.insert(arr, 1, "a")
+        return arr[1]
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('a')
+      expect(arr).toEqual(['a', 'b', 'c'])
+    })
+  })
+
+  describe('table.remove 基本操作', () => {
+    // table.remove 在 JsProxy 上操作时，会使用 JS 的 splice 方法来真正删除元素
+    // 这样可以保持与 Lua 语义一致：删除后数组长度会减少
+
+    it('应该能从 JS 数组末尾移除元素并返回被移除的值', async () => {
+      const arr = [1, 2, 3]
+      const result = await instance.run(`
+        local removed = table.remove(arr)
+        return removed
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(3)
+      // 使用 splice 真正删除元素，数组长度减少
+      expect(arr).toEqual([1, 2])
+    })
+
+    it('应该能从 JS 数组指定位置移除元素并移动后续元素', async () => {
+      const arr = ['a', 'b', 'c']
+      const result = await instance.run(`
+        local removed = table.remove(arr, 2)
+        return removed
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('b')
+      // 使用 splice 真正删除元素
+      expect(arr).toEqual(['a', 'c'])
+    })
+
+    it('应该能从 JS 数组开头移除元素并移动所有后续元素', async () => {
+      const arr = [10, 20, 30]
+      const result = await instance.run(`
+        local removed = table.remove(arr, 1)
+        return removed
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(10)
+      // 使用 splice 真正删除元素
+      expect(arr).toEqual([20, 30])
+    })
+  })
+
+  describe('带有自定义 setter 的对象', () => {
+    it('应该能通过 table.insert 触发自定义 setter', async () => {
+      // 创建一个带有自定义 setter 的对象
+      const logs: string[] = []
+      const arr = new Proxy([1, 2, 3] as (number | undefined)[], {
+        set(target, prop, value) {
+          logs.push(`set ${String(prop)} = ${value}`)
+          target[prop as unknown as number] = value
+          return true
+        },
+        get(target, prop) {
+          if (prop === 'length') {
+            return target.length
+          }
+          return target[prop as unknown as number]
+        }
+      })
+
+      const result = await instance.run(`
+        table.insert(arr, 4)
+        return #arr
+      `, { arr })
+
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(4)
+      // 验证 setter 被调用
+      expect(logs.length).toBeGreaterThan(0)
+      expect(logs.some(log => log.includes('= 4'))).toBe(true)
+    })
+
+    it('应该能通过 table.insert 在指定位置插入并触发多次 setter', async () => {
+      // 创建一个带有自定义 setter 的对象，记录所有写入操作
+      const logs: string[] = []
+      const arr = new Proxy([1, 2, 3] as (number | undefined)[], {
+        set(target, prop, value) {
+          logs.push(`set [${String(prop)}] = ${value}`)
+          target[prop as unknown as number] = value
+          return true
+        },
+        get(target, prop) {
+          if (prop === 'length') {
+            return target.length
+          }
+          return target[prop as unknown as number]
+        }
+      })
+
+      const result = await instance.run(`
+        -- 在位置 2 插入 10，应该触发元素移动
+        table.insert(arr, 2, 10)
+        return arr[2]
+      `, { arr })
+
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(10)
+      // 验证 setter 被多次调用（移动元素 + 插入新值）
+      expect(logs.length).toBeGreaterThanOrEqual(2)
+      // 检查是否有设置新值的记录
+      expect(logs.some(log => log.includes('= 10'))).toBe(true)
+    })
+
+    it('应该能通过 table.remove 使用 splice 删除元素并触发 Proxy 拦截', async () => {
+      // table.remove 在 JsProxy 上使用 splice 方法
+      // Proxy 的 set trap 会捕获 splice 内部的元素移动操作
+      const logs: string[] = []
+      const arr = new Proxy(['a', 'b', 'c'] as (string | undefined)[], {
+        set(target, prop, value) {
+          logs.push(`set [${String(prop)}] = ${value}`)
+          target[prop as unknown as number] = value
+          return true
+        },
+        get(target, prop) {
+          if (prop === 'length') {
+            return target.length
+          }
+          if (prop === 'splice') {
+            // 返回原始 splice 方法
+            return Array.prototype.splice.bind(target)
+          }
+          return target[prop as unknown as number]
+        }
+      })
+
+      const result = await instance.run(`
+        local removed = table.remove(arr, 1)
+        return removed
+      `, { arr })
+
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('a')
+      // 使用 splice 后，数组长度会正确减少
+      expect(arr.length).toBe(2)
+      expect(arr).toEqual(['b', 'c'])
+    })
+
+    it('应该能使用带有 getter 验证的 Proxy 对象', async () => {
+      // 创建一个同时有 getter 和 setter 的 Proxy
+      let accessCount = 0
+      let writeCount = 0
+      const arr = new Proxy([10, 20, 30] as number[], {
+        get(target, prop) {
+          if (prop === 'length') {
+            return target.length
+          }
+          accessCount++
+          return target[prop as unknown as number]
+        },
+        set(target, prop, value) {
+          writeCount++
+          target[prop as unknown as number] = value
+          return true
+        }
+      })
+
+      const result = await instance.run(`
+        -- 插入一个元素
+        table.insert(arr, 2, 15)
+        -- 返回新插入位置的值
+        return arr[2]
+      `, { arr })
+
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(15)
+      // 验证 getter 和 setter 都被调用
+      expect(accessCount).toBeGreaterThan(0)
+      expect(writeCount).toBeGreaterThan(0)
+    })
+
+    it('应该能正确处理带有副作用的 setter', async () => {
+      // 创建一个 setter 有副作用的对象（例如：自动更新时间戳）
+      const metadata = {
+        lastModified: 0,
+        modificationCount: 0
+      }
+      const arr = new Proxy([1, 2, 3] as (number | undefined)[], {
+        set(target, prop, value) {
+          target[prop as unknown as number] = value
+          metadata.lastModified = Date.now()
+          metadata.modificationCount++
+          return true
+        },
+        get(target, prop) {
+          if (prop === 'length') {
+            return target.length
+          }
+          return target[prop as unknown as number]
+        }
+      })
+
+      const initialCount = metadata.modificationCount
+
+      const result = await instance.run(`
+        table.insert(arr, 100)
+        table.insert(arr, 1, 0)
+        table.remove(arr)
+        return #arr
+      `, { arr })
+
+      expect(result.error).toBeNull()
+      // 验证 setter 的副作用被触发
+      expect(metadata.modificationCount).toBeGreaterThan(initialCount)
+      expect(metadata.lastModified).toBeGreaterThan(0)
+    })
+  })
+
+  describe('边界情况', () => {
+    it('应该能处理空 JS 数组的 table.insert', async () => {
+      const arr: number[] = []
+      const result = await instance.run(`
+        table.insert(arr, 1)
+        return #arr
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(1)
+      expect(arr).toEqual([1])
+    })
+
+    it('应该能处理空 JS 数组的 table.remove', async () => {
+      const arr: number[] = []
+      const result = await instance.run(`
+        local removed = table.remove(arr)
+        if removed == nil then
+          return "nil"
+        else
+          return removed
+        end
+      `, { arr })
+      expect(result.error).toBeNull()
+      expect(result.result).toBe('nil')
+    })
+
+    it('应该拒绝无效的插入位置', async () => {
+      const arr = [1, 2, 3]
+      const result = await instance.run(`
+        table.insert(arr, 10, "invalid")
+        return "should not reach"
+      `, { arr })
+      expect(result.error).not.toBeNull()
+      expect(result.error).toContain('position out of bounds')
+    })
+
+    it('应该拒绝无效的移除位置', async () => {
+      const arr = [1, 2, 3]
+      const result = await instance.run(`
+        table.remove(arr, 10)
+        return "should not reach"
+      `, { arr })
+      expect(result.error).not.toBeNull()
+      expect(result.error).toContain('position out of bounds')
+    })
+
+    it('应该拒绝非数组的 JS 对象使用 table.insert', async () => {
+      // 非数组对象应该被拒绝
+      const obj = { name: 'test', value: 42 }
+      const result = await instance.run(`
+        table.insert(obj, "inserted")
+        return "should not reach"
+      `, { obj })
+      expect(result.error).not.toBeNull()
+      expect(result.error).toContain('table or array expected')
+    })
+
+    it('应该拒绝非数组的 JS 对象使用 table.remove', async () => {
+      // 非数组对象应该被拒绝
+      const obj = { name: 'test', value: 42 }
+      const result = await instance.run(`
+        table.remove(obj)
+        return "should not reach"
+      `, { obj })
+      expect(result.error).not.toBeNull()
+      expect(result.error).toContain('table or array expected')
+    })
+
+    it('应该拒绝类数组对象（array-like object）使用 table 操作', async () => {
+      // 类数组对象虽然有 length 属性，但不是真正的数组，应该被拒绝
+      const arrayLike = { 0: 'a', 1: 'b', 2: 'c', length: 3 }
+      const result = await instance.run(`
+        table.remove(arrayLike)
+        return "should not reach"
+      `, { arrayLike })
+      expect(result.error).not.toBeNull()
+      expect(result.error).toContain('table or array expected')
+    })
+  })
+})

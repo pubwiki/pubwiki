@@ -1,6 +1,6 @@
 {
   "name": "@pubwiki/lua",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "description": "Browser-friendly Lua 5.4 runtime",
   "main": "./src/index.ts",
