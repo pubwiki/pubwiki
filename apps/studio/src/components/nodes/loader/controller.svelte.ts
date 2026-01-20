@@ -2,19 +2,19 @@
  * LoaderNode Controller
  * 
  * Handles LoaderNode-specific logic:
- * - Lua VM initialization and lifecycle management
+ * - Backend lifecycle management (via LoaderBackend abstraction)
  * - Backend VFS connection handling
  * - Mountpoint management for asset VFS
  * - Service registration and calling
+ * 
+ * Backend selection is automatic based on VFS content:
+ * - init.lua present -> LuaBackend
  */
 
 import { tick } from 'svelte';
 import { type Node, type Edge } from '@xyflow/svelte';
 import type { 
-	StudioNodeData, 
 	LoaderNodeData, 
-	VFSNodeData,
-	StateNodeData,
 	Mountpoint
 } from '$lib/types';
 import type { FlowNodeData } from '$lib/types/flow';
@@ -33,242 +33,33 @@ import {
 	type EdgeDeleteEvent
 } from '$lib/state';
 import { getNodeVfs } from '$lib/vfs';
-import { 
-	createMountedVfs, 
-	getMountedProvider, 
-	createVfs,
-	type Vfs, 
-	type MountedVfsProvider,
-	type VfsProvider,
-	type VfsStat
-} from '@pubwiki/vfs';
-import { 
-	loadRunner, 
-	createLuaInstance, 
-	type LuaInstance,
-	type RDFStore,
-	type JsModuleDefinition
-} from '@pubwiki/lua';
+import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import { 
 	PubChat, 
 	MemoryMessageStore,
-	type LLMConfig,
-	type ChatStreamEvent
+	type LLMConfig
 } from '@pubwiki/chat';
 import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
 
-// Core Lua code (embedded)
-import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
-import typesLuaCode from '$lib/assets/lua/types.lua?raw';
+// Import loader backend abstraction
+import {
+	createBackendFromVfs,
+	type LoaderBackend,
+	type BackendConfig,
+	type ServiceCallResult,
+	type JsModuleRegistry,
+	type JsModuleDefinition
+} from '$lib/loader';
 
-// ============================================================================
-// MemoryVfsProvider - Simple in-memory VFS implementation
-// ============================================================================
-
-class MemoryVfsProvider implements VfsProvider {
-	private files = new Map<string, Uint8Array>();
-	private directories = new Set<string>(['/']);
-	private encoder = new TextEncoder();
-
-	private normalizePath(path: string): string {
-		if (!path.startsWith('/')) path = '/' + path;
-		if (path !== '/' && path.endsWith('/')) path = path.slice(0, -1);
-		return path;
-	}
-
-	private getParentPath(path: string): string {
-		const normalized = this.normalizePath(path);
-		const lastSlash = normalized.lastIndexOf('/');
-		if (lastSlash <= 0) return '/';
-		return normalized.substring(0, lastSlash);
-	}
-
-	async id(path: string): Promise<string> {
-		return this.normalizePath(path);
-	}
-
-	async readFile(path: string): Promise<Uint8Array> {
-		const normalized = this.normalizePath(path);
-		const content = this.files.get(normalized);
-		if (!content) {
-			throw new Error(`ENOENT: no such file: ${normalized}`);
-		}
-		return content;
-	}
-
-	async writeFile(path: string, content: Uint8Array): Promise<void> {
-		const normalized = this.normalizePath(path);
-		const parent = this.getParentPath(normalized);
-		if (parent !== '/' && !this.directories.has(parent)) {
-			await this.mkdir(parent, { recursive: true });
-		}
-		this.files.set(normalized, content);
-	}
-
-	async unlink(path: string): Promise<void> {
-		const normalized = this.normalizePath(path);
-		if (!this.files.has(normalized)) {
-			throw new Error(`ENOENT: no such file: ${normalized}`);
-		}
-		this.files.delete(normalized);
-	}
-
-	async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
-		const normalized = this.normalizePath(path);
-		if (options?.recursive) {
-			const parts = normalized.split('/').filter(Boolean);
-			let current = '';
-			for (const part of parts) {
-				current += '/' + part;
-				this.directories.add(current);
-			}
-		} else {
-			this.directories.add(normalized);
-		}
-	}
-
-	async readdir(path: string): Promise<string[]> {
-		const normalized = this.normalizePath(path);
-		const prefix = normalized === '/' ? '/' : normalized + '/';
-		const entries = new Set<string>();
-
-		for (const filePath of this.files.keys()) {
-			if (filePath.startsWith(prefix)) {
-				const relative = filePath.substring(prefix.length);
-				const firstPart = relative.split('/')[0];
-				if (firstPart) entries.add(firstPart);
-			}
-		}
-
-		for (const dirPath of this.directories) {
-			if (dirPath.startsWith(prefix) && dirPath !== normalized) {
-				const relative = dirPath.substring(prefix.length);
-				const firstPart = relative.split('/')[0];
-				if (firstPart) entries.add(firstPart);
-			}
-		}
-
-		return Array.from(entries).sort();
-	}
-
-	async rmdir(path: string): Promise<void> {
-		const normalized = this.normalizePath(path);
-		this.directories.delete(normalized);
-	}
-
-	async stat(path: string): Promise<VfsStat> {
-		const normalized = this.normalizePath(path);
-		const now = new Date();
-		if (this.files.has(normalized)) {
-			const content = this.files.get(normalized)!;
-			return {
-				isFile: true,
-				isDirectory: false,
-				size: content.length,
-				createdAt: now,
-				updatedAt: now
-			};
-		}
-		if (this.directories.has(normalized)) {
-			return {
-				isFile: false,
-				isDirectory: true,
-				size: 0,
-				createdAt: now,
-				updatedAt: now
-			};
-		}
-		throw new Error(`ENOENT: no such file or directory: ${normalized}`);
-	}
-
-	async exists(path: string): Promise<boolean> {
-		const normalized = this.normalizePath(path);
-		return this.files.has(normalized) || this.directories.has(normalized);
-	}
-
-	async rename(from: string, to: string): Promise<void> {
-		const normalizedFrom = this.normalizePath(from);
-		const normalizedTo = this.normalizePath(to);
-		const content = this.files.get(normalizedFrom);
-		if (content) {
-			this.files.delete(normalizedFrom);
-			this.files.set(normalizedTo, content);
-		} else if (this.directories.has(normalizedFrom)) {
-			this.directories.delete(normalizedFrom);
-			this.directories.add(normalizedTo);
-		} else {
-			throw new Error(`ENOENT: no such file or directory: ${normalizedFrom}`);
-		}
-	}
-
-	async copyFile(from: string, to: string): Promise<void> {
-		const normalizedFrom = this.normalizePath(from);
-		const normalizedTo = this.normalizePath(to);
-		const content = this.files.get(normalizedFrom);
-		if (!content) {
-			throw new Error(`ENOENT: no such file: ${normalizedFrom}`);
-		}
-		await this.writeFile(normalizedTo, new Uint8Array(content));
-	}
-
-	// Helper to create a file with string content
-	async createFile(path: string, content: string): Promise<void> {
-		await this.writeFile(path, this.encoder.encode(content));
-	}
-}
-
-/** Create a new in-memory VFS */
-function createMemoryVfs(): Vfs<VfsProvider> {
-	return createVfs(new MemoryVfsProvider());
-}
-
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Loader Node runtime state (stored in memory, not persisted)
- */
-interface LoaderRuntime {
-	/** Lua VM instance */
-	instance: LuaInstance;
-	/** Mounted VFS */
-	mountedVfs: Vfs<MountedVfsProvider>;
-	/** PubChat instance for LLM access */
-	pubchat?: PubChat;
-}
-
-/**
- * Initialize Loader result
- */
-export interface LoaderInitResult {
-	success: boolean;
-	services: string[];
-	error: string | null;
-}
-
-/**
- * Service call result
- */
-export interface ServiceCallResult {
-	success: boolean;
-	outputs?: Record<string, unknown>;
-	error?: string;
-}
-
-// Note: ServiceDefinition is imported from @pubwiki/sandbox-host
-// The Lua ServiceRegistry.export() returns this format with JSON Schema for inputs/outputs
-export type { ServiceDefinition };
-
-// Re-export LLMConfig for LoaderNode to use
-export type { LLMConfig };
+// Re-exports for consumers
+export type { ServiceDefinition, LLMConfig, ServiceCallResult };
 
 // ============================================================================
 // LLM Module Factory
 // ============================================================================
 
 /**
- * Create a JS module definition for LLM access in Lua
+ * Create a JS module definition for LLM access
  * 
  * The module exposes:
  * - LLM.chat(prompt: string, historyId?: string, overrideConfig?: table) -> {content: string, historyId: string}
@@ -281,12 +72,9 @@ function createLLMModule(pubchat: PubChat): JsModuleDefinition {
 	return {
 		/**
 		 * Non-streaming chat
-		 * @param prompt User prompt
-		 * @param historyId Optional history ID for conversation continuity
-		 * @param overrideConfig Optional config overrides {model?, apiKey?, baseUrl?, temperature?, maxTokens?}
-		 * @returns {content: string, historyId: string}
 		 */
-		async chat(prompt: string, historyId?: string, overrideConfig?: Partial<LLMConfig>) {
+		async chat(...args: unknown[]) {
+			const [prompt, historyId, overrideConfig] = args as [string, string?, Partial<LLMConfig>?];
 			const result = await pubchat.chat(prompt, historyId, overrideConfig);
 			// Extract text content from message blocks
 			const content = result.message.blocks
@@ -301,13 +89,9 @@ function createLLMModule(pubchat: PubChat): JsModuleDefinition {
 		
 		/**
 		 * Streaming chat - returns an async iterator
-		 * @param prompt User prompt
-		 * @param historyId Optional history ID for conversation continuity
-		 * @param overrideConfig Optional config overrides
-		 * @returns Async iterator yielding {type: string, ...data}
 		 */
-		stream(prompt: string, historyId?: string, overrideConfig?: Partial<LLMConfig>) {
-			// Return an async iterator that Lua can consume
+		stream(...args: unknown[]) {
+			const [prompt, historyId, overrideConfig] = args as [string, string?, Partial<LLMConfig>?];
 			return pubchat.streamChat(prompt, historyId, overrideConfig);
 		},
 		
@@ -318,6 +102,29 @@ function createLLMModule(pubchat: PubChat): JsModuleDefinition {
 			pubchat.abort();
 		}
 	};
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * Loader Node runtime state (stored in memory, not persisted)
+ */
+interface LoaderRuntime {
+	/** Backend instance */
+	backend: LoaderBackend;
+	/** PubChat instance for LLM access */
+	pubchat?: PubChat;
+}
+
+/**
+ * Initialize Loader result
+ */
+export interface LoaderInitResult {
+	success: boolean;
+	services: string[];
+	error: string | null;
 }
 
 // ============================================================================
@@ -413,14 +220,14 @@ export function updateMountpointPath(
 }
 
 // ============================================================================
-// Public API - Lua VM Management
+// Public API - Backend Management
 // ============================================================================
 
 /**
- * Initialize Loader Node's Lua VM
+ * Initialize Loader Node's backend
  * 
- * Returns the result instead of updating node data - the component should
- * store the result in local state.
+ * Auto-detects backend type based on VFS contents:
+ * - init.lua present -> LuaBackend
  * 
  * @param nodeId - The node ID
  * @param backendVfs - Backend VFS instance
@@ -433,50 +240,27 @@ export async function initializeLoader(
 	nodeId: string,
 	backendVfs: Vfs<VfsProvider>,
 	assetMounts: Map<string, Vfs<VfsProvider>>,
-	rdfStore: RDFStore | undefined,
+	rdfStore: unknown | undefined,
 	llmConfig: LLMConfig | undefined
 ): Promise<LoaderInitResult> {
 	try {
 		// Clean up existing runtime if any
-		const existingRuntime = loaderRuntimes.get(nodeId);
-		if (existingRuntime) {
-			existingRuntime.instance.destroy();
-			loaderRuntimes.delete(nodeId);
+		await destroyLoader(nodeId);
+		
+		// Auto-detect and create backend
+		const backend = await createBackendFromVfs(backendVfs);
+		if (!backend) {
+			return {
+				success: false,
+				services: [],
+				error: 'No supported backend found. Ensure init.lua exists in the VFS.'
+			};
 		}
 		
-		// Ensure Lua runtime is loaded
-		await loadRunner();
+		// Build JS modules registry
+		const jsModules: JsModuleRegistry = new Map();
 		
-		// Create mounted VFS
-		const mountedVfs = createMountedVfs();
-		const provider = getMountedProvider(mountedVfs);
-		
-		if (!provider) {
-			throw new Error('Failed to get MountedVfsProvider');
-		}
-		
-		// Create memory VFS for core libraries
-		const coreVfs = createMemoryVfs();
-		await coreVfs.createFile('/service.lua', serviceLuaCode);
-		await coreVfs.createFile('/types.lua', typesLuaCode);
-		provider.mount('/core', coreVfs);
-		
-		// Mount backend VFS
-		provider.mount('/user/backend', backendVfs);
-		
-		// Mount asset VFS
-		for (const [path, vfs] of assetMounts) {
-			provider.mount(`/user/assets${path}`, vfs);
-		}
-		
-		// Create Lua instance with RDF store if provided
-		const instance = createLuaInstance({
-			vfs: mountedVfs,
-			workingDirectory: '/',
-			rdfStore: rdfStore
-		});
-		
-		// Create PubChat instance and register LLM module if config is provided
+		// Create PubChat and LLM module if config is provided
 		let pubchat: PubChat | undefined;
 		if (llmConfig && llmConfig.apiKey && llmConfig.model) {
 			pubchat = new PubChat({
@@ -484,43 +268,29 @@ export async function initializeLoader(
 				messageStore: new MemoryMessageStore(),
 				toolCalling: { enabled: false }
 			});
-			instance.registerJsModule('LLM', createLLMModule(pubchat));
+			jsModules.set('LLM', createLLMModule(pubchat));
 		}
 		
-		// Execute init.lua
-		const initResult = await instance.run(`
-			-- Load init.lua
-			local init = require("user/backend/init")
-			
-			-- Return registered services list
-			local ServiceRegistry = require("core/service")
-			return ServiceRegistry.listServices()
-		`);
+		// Build backend config
+		const config: BackendConfig = {
+			backendVfs,
+			assetMounts,
+			rdfStore: rdfStore as BackendConfig['rdfStore'],
+			llmConfig,
+			jsModules
+		};
 		
-		if (initResult.error) {
-			throw new Error(initResult.error);
+		// Initialize backend
+		const result = await backend.initialize(config);
+		
+		if (!result.success) {
+			return result;
 		}
 		
 		// Store runtime state
-		loaderRuntimes.set(nodeId, { instance, mountedVfs, pubchat });
+		loaderRuntimes.set(nodeId, { backend, pubchat });
 		
-		// Extract services list
-		// Lua tables with numeric keys are converted to objects like {1: "a", 2: "b"}, not arrays
-		let services: string[];
-		if (Array.isArray(initResult.result)) {
-			services = initResult.result;
-		} else if (initResult.result && typeof initResult.result === 'object') {
-			// Convert Lua table (object with numeric keys) to array
-			services = Object.values(initResult.result as Record<string, string>);
-		} else {
-			services = [];
-		}
-		
-		return {
-			success: true,
-			services,
-			error: null
-		};
+		return result;
 	} catch (error) {
 		return {
 			success: false,
@@ -531,14 +301,12 @@ export async function initializeLoader(
 }
 
 /**
- * Destroy Loader Node's Lua VM
- * 
- * The component should reset its local state after calling this.
+ * Destroy Loader Node's backend
  */
 export async function destroyLoader(nodeId: string): Promise<void> {
 	const runtime = loaderRuntimes.get(nodeId);
 	if (runtime) {
-		runtime.instance.destroy();
+		await runtime.backend.destroy();
 		loaderRuntimes.delete(nodeId);
 	}
 }
@@ -547,7 +315,16 @@ export async function destroyLoader(nodeId: string): Promise<void> {
  * Check if Loader Node is ready
  */
 export function isLoaderReady(nodeId: string): boolean {
-	return loaderRuntimes.has(nodeId);
+	const runtime = loaderRuntimes.get(nodeId);
+	return runtime?.backend.isReady() ?? false;
+}
+
+/**
+ * Get the backend type for a Loader Node
+ */
+export function getLoaderBackendType(nodeId: string): string | null {
+	const runtime = loaderRuntimes.get(nodeId);
+	return runtime?.backend.type ?? null;
 }
 
 /**
@@ -559,18 +336,7 @@ export async function listServices(nodeId: string): Promise<ServiceDefinition[]>
 		throw new Error('Loader not initialized');
 	}
 	
-	const result = await runtime.instance.run(`
-		local ServiceRegistry = require("core/service")
-		return ServiceRegistry.export()
-	`);
-	
-	if (result.error) {
-		throw new Error(result.error);
-	}
-	
-	// Convert to array format
-	const servicesMap = result.result as Record<string, ServiceDefinition>;
-	return Object.values(servicesMap);
+	return runtime.backend.listServices();
 }
 
 /**
@@ -586,36 +352,11 @@ export async function callService(
 		return { success: false, error: 'Loader not initialized' };
 	}
 	
-	console.log("[callService] invoked with inputs", inputs)
-	const result = await runtime.instance.run(`
-		local ServiceRegistry = require("core/service")
-		local outputs = ServiceRegistry.call(identifier, inputs)
-		return outputs
-	`, { identifier, inputs });
-	
-	if (result.error) {
-		return { success: false, error: result.error };
-	}
-	
-	const outputs = result.result as Record<string, unknown>;
-	if (outputs && outputs._error) {
-		return { success: false, error: outputs._error as string };
-	}
-	
-	return { success: true, outputs };
+	return runtime.backend.callService(identifier, inputs);
 }
 
 /**
  * Call a streaming service on Loader Node
- * 
- * For services that return an iterator, this function iterates over all values
- * and invokes the callback for each yielded value.
- * 
- * @param nodeId - The Loader node ID
- * @param identifier - Service identifier (namespace:name)
- * @param inputs - Input parameters for the service
- * @param on - Callback invoked for each yielded value
- * @returns ServiceCallResult indicating success/failure
  */
 export async function streamService(
 	nodeId: string,
@@ -628,29 +369,7 @@ export async function streamService(
 		throw new Error('Loader not initialized');
 	}
 	
-	console.log("[streamService] invoked with inputs", inputs, await runtime.instance.run("return inputs:toJSON()", { inputs }))
-	// Use callback pattern: iterate in Lua and call JS callback for each value
-	const result = await runtime.instance.run(`
-		local ServiceRegistry = require("core/service")
-		local iterator = ServiceRegistry.call(identifier, inputs)
-		
-		-- If returned value is an iterator/generator, iterate and call callback
-		if type(iterator) == "function" then
-			for value in iterator do
-				if value == nil then break end
-				callback(value)
-			end
-		else
-			-- Single value, call callback once
-			if iterator ~= nil then
-				callback(iterator)
-			end
-		end
-	`, { identifier, inputs, callback: on });
-	
-	if (result.error) {
-		throw new Error(result.error);
-	}
+	return runtime.backend.streamService(identifier, inputs, on);
 }
 
 // ============================================================================
@@ -849,6 +568,8 @@ function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
 export interface LoaderInterface {
 	/** Check if Loader is ready */
 	isReady(): boolean;
+	/** Get backend type */
+	getBackendType(): string | null;
 	/** Get registered services list */
 	listServices(): Promise<ServiceDefinition[]>;
 	/** Call a service (non-streaming) */
@@ -869,6 +590,7 @@ export interface LoaderInterface {
 export function createLoaderInterface(nodeId: string): LoaderInterface {
 	return {
 		isReady: () => isLoaderReady(nodeId),
+		getBackendType: () => getLoaderBackendType(nodeId),
 		listServices: () => listServices(nodeId),
 		callService: (id, inputs) => callService(nodeId, id, inputs),
 		streamService: (id, inputs, on) => streamService(nodeId, id, inputs, on),
