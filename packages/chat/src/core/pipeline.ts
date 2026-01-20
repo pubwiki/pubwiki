@@ -45,6 +45,19 @@ export interface CompletionSummary {
 }
 
 /**
+ * Reasoning effort level for reasoning models
+ */
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
+/**
+ * Reasoning configuration for reasoning models
+ */
+export interface ReasoningConfig {
+  effort?: ReasoningEffort
+  summary?: 'auto' | 'concise' | 'detailed'
+}
+
+/**
  * Pipeline configuration
  */
 export interface PipelineConfig {
@@ -73,6 +86,12 @@ export interface PipelineConfig {
    * @see https://platform.openai.com/docs/guides/structured-outputs
    */
   responseFormat?: ResponseFormat
+  
+  /**
+   * Reasoning configuration for reasoning models
+   * @see https://platform.openai.com/docs/guides/reasoning
+   */
+  reasoning?: ReasoningConfig
 }
 
 /**
@@ -126,7 +145,8 @@ export class ChatStreamPipeline {
       max_tokens: this.config.maxTokens,
       tools: this.config.tools?.getDefinitions(),
       signal: this.config.signal,
-      responseFormat: this.config.responseFormat
+      responseFormat: this.config.responseFormat,
+      reasoning: this.config.reasoning
     }
   }
 

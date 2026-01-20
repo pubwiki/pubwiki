@@ -68,6 +68,19 @@ export interface ResponseFormatText {
  */
 export type ResponseFormat = ResponseFormatJsonSchema | ResponseFormatJsonObject | ResponseFormatText
 
+/**
+ * Reasoning effort level for reasoning models
+ */
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
+/**
+ * Reasoning configuration for reasoning models
+ */
+export interface ReasoningConfig {
+  effort?: ReasoningEffort
+  summary?: 'auto' | 'concise' | 'detailed'
+}
+
 export interface ChatCompletionOptions {
   model: string
   messages: ChatMessage[]
@@ -82,6 +95,11 @@ export interface ChatCompletionOptions {
    * @see https://platform.openai.com/docs/guides/structured-outputs
    */
   responseFormat?: ResponseFormat
+  /**
+   * Reasoning configuration for reasoning models
+   * @see https://platform.openai.com/docs/guides/reasoning
+   */
+  reasoning?: ReasoningConfig
 }
 
 /**
@@ -271,6 +289,12 @@ export class LLMClient {
     // Build text format for structured output
     const textFormat = options.responseFormat ? this.buildTextFormat(options.responseFormat) : undefined
 
+    // Build reasoning config
+    const reasoning = options.reasoning ? {
+      effort: options.reasoning.effort ?? null,
+      summary: options.reasoning.summary ?? null
+    } : undefined
+
     const params: ResponseCreateParamsStreaming = {
       model: options.model,
       input,
@@ -278,7 +302,8 @@ export class LLMClient {
       tools: tools,
       tool_choice: options.tool_choice,
       stream: true,
-      ...(textFormat && { text: textFormat })
+      ...(textFormat && { text: textFormat }),
+      ...(reasoning && { reasoning })
     }
 
     let stream: AsyncIterable<ResponseStreamEvent>
@@ -528,6 +553,12 @@ export class LLMClient {
     // Build text format for structured output
     const textFormat = options.responseFormat ? this.buildTextFormat(options.responseFormat) : undefined
 
+    // Build reasoning config
+    const reasoning = options.reasoning ? {
+      effort: options.reasoning.effort ?? null,
+      summary: options.reasoning.summary ?? null
+    } : undefined
+
     const params: ResponseCreateParamsNonStreaming = {
       model: options.model,
       input,
@@ -535,7 +566,8 @@ export class LLMClient {
       tools: tools,
       tool_choice: options.tool_choice,
       stream: false,
-      ...(textFormat && { text: textFormat })
+      ...(textFormat && { text: textFormat }),
+      ...(reasoning && { reasoning })
     }
 
     const response = await this.client.responses.create(params, {

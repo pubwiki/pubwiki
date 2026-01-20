@@ -745,3 +745,166 @@ describeIfApiKey('PubChat with Structured Output', () => {
     expect(parsed.age).toBe(25)
   })
 })
+
+describeIfApiKey('PubChat with Reasoning', () => {
+  it('should support reasoning configuration in config', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+        reasoning: {
+          effort: 'low',
+          summary: 'auto'
+        }
+      },
+      messageStore,
+    })
+    
+    const { message } = await pubchat.chat('What is 2 + 2?')
+    
+    expect(message).toBeDefined()
+    expect(message.blocks[0].content).toMatch(/4/)
+  })
+
+  it('should allow overriding reasoning config per request', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    // Create PubChat without reasoning config
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+      },
+      messageStore,
+    })
+    
+    // Override reasoning in the chat call
+    const { message } = await pubchat.chat(
+      'What is 15 * 17?',
+      undefined,
+      {
+        reasoning: {
+          effort: 'medium'
+        }
+      }
+    )
+    
+    expect(message).toBeDefined()
+    expect(message.blocks[0].content).toMatch(/255/)
+  })
+
+  it('should stream with reasoning tokens when enabled', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+        reasoning: {
+          effort: 'low',
+          summary: 'detailed'
+        }
+      },
+      messageStore,
+    })
+    
+    const tokens: string[] = []
+    const reasoningTokens: string[] = []
+    let doneEvent: ChatStreamEvent | undefined
+    
+    for await (const event of pubchat.streamChat('What is the square root of 144?')) {
+      if (event.type === 'token') {
+        tokens.push(event.token)
+      } else if (event.type === 'reasoning') {
+        reasoningTokens.push(event.token)
+      } else if (event.type === 'done') {
+        doneEvent = event
+      }
+    }
+    
+    expect(tokens.length).toBeGreaterThan(0)
+    expect(doneEvent).toBeDefined()
+    
+    // The response should contain 12
+    const fullContent = tokens.join('')
+    expect(fullContent).toMatch(/12/)
+  })
+
+  it('should disable reasoning with effort: none', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+        reasoning: {
+          effort: 'none'
+        }
+      },
+      messageStore,
+    })
+    
+    const tokens: string[] = []
+    const reasoningTokens: string[] = []
+    let doneEvent: ChatStreamEvent | undefined
+    
+    for await (const event of pubchat.streamChat('Say hello')) {
+      if (event.type === 'token') {
+        tokens.push(event.token)
+      } else if (event.type === 'reasoning') {
+        reasoningTokens.push(event.token)
+      } else if (event.type === 'done') {
+        doneEvent = event
+      }
+    }
+    
+    // Stream should complete successfully
+    expect(doneEvent).toBeDefined()
+    expect(tokens.length).toBeGreaterThan(0)
+    
+    // With effort: none, there should be no reasoning tokens
+    expect(reasoningTokens.length).toBe(0)
+  })
+
+  it('should override base reasoning config with per-request config', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    // Create with high reasoning effort
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        model: 'google/gemini-2.5-flash',
+        temperature: 0,
+        reasoning: {
+          effort: 'high'
+        }
+      },
+      messageStore,
+    })
+    
+    // Override to none for this specific request
+    const { message } = await pubchat.chat(
+      'Just say OK',
+      undefined,
+      {
+        reasoning: {
+          effort: 'none'
+        }
+      }
+    )
+    
+    expect(message).toBeDefined()
+    expect(message.blocks.length).toBeGreaterThan(0)
+  })
+})

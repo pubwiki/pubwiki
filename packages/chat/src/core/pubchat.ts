@@ -49,6 +49,31 @@ export interface PubChatConfig {
 }
 
 /**
+ * Reasoning effort level for reasoning models
+ */
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+
+/**
+ * Reasoning configuration for reasoning models
+ */
+export interface ReasoningConfig {
+  /**
+   * Constrains effort on reasoning for reasoning models.
+   * - 'none': No reasoning (gpt-5.1 default)
+   * - 'minimal', 'low', 'medium', 'high': Increasing reasoning effort
+   * - 'xhigh': Only for gpt-5.1-codex-max
+   */
+  effort?: ReasoningEffort
+  /**
+   * Summary of reasoning process.
+   * - 'auto': Let the model decide
+   * - 'concise': Short summary
+   * - 'detailed': Detailed summary
+   */
+  summary?: 'auto' | 'concise' | 'detailed'
+}
+
+/**
  * LLM configuration override options
  */
 export interface LLMConfig {
@@ -63,6 +88,11 @@ export interface LLMConfig {
    * @see https://platform.openai.com/docs/guides/structured-outputs
    */
   responseFormat?: ResponseFormat
+  /**
+   * Reasoning configuration for reasoning models (gpt-5, o-series)
+   * @see https://platform.openai.com/docs/guides/reasoning
+   */
+  reasoning?: ReasoningConfig
 }
 
 /**
@@ -240,6 +270,7 @@ export class PubChat implements ChatProvider {
         maxTokens: overrideConfig?.maxTokens ?? this.config.llm.maxTokens,
         organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
+        reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
       }
       
       // Create pipeline
@@ -254,7 +285,8 @@ export class PubChat implements ChatProvider {
         maxIterations: this.config.toolCalling?.maxIterations ?? 10,
         onIterationLimitReached: this.config.onIterationLimitReached,
         signal: this.abortController.signal,
-        responseFormat: llmConfig.responseFormat
+        responseFormat: llmConfig.responseFormat,
+        reasoning: llmConfig.reasoning
       })
       
       // Collect assistant response
@@ -416,6 +448,7 @@ export class PubChat implements ChatProvider {
         maxTokens: overrideConfig?.maxTokens ?? this.config.llm.maxTokens,
         organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
+        reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
       }
       
       // Create pipeline
@@ -430,7 +463,8 @@ export class PubChat implements ChatProvider {
         maxIterations: this.config.toolCalling?.maxIterations ?? 10,
         onIterationLimitReached: this.config.onIterationLimitReached,
         signal: this.abortController.signal,
-        responseFormat: llmConfig.responseFormat
+        responseFormat: llmConfig.responseFormat,
+        reasoning: llmConfig.reasoning
       })
       
       // Run non-streaming pipeline

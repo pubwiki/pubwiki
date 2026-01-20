@@ -36,7 +36,7 @@
 
 // Core exports
 export { PubChat } from './core/pubchat'
-export type { PubChatConfig, ChatStreamEvent, LLMConfig } from './core/pubchat'
+export type { PubChatConfig, ChatStreamEvent, LLMConfig, ReasoningConfig, ReasoningEffort } from './core/pubchat'
 export type { ChatProvider, ChatResult, ToolRegistrationParams } from './core/chat-provider'
 export { ChatStreamPipeline } from './core/pipeline'
 export type { StreamEvent, CompletionSummary, PipelineConfig } from './core/pipeline'
