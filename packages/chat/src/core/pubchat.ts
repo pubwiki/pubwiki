@@ -384,24 +384,85 @@ export class PubChat implements ChatProvider {
     historyId?: string,
     overrideConfig?: Partial<LLMConfig>
   ): Promise<ChatResult> {
-    let result: ChatResult | undefined
+    // Create abort controller
+    this.abortController = new AbortController()
     
-    for await (const event of this.streamChat(prompt, historyId, overrideConfig)) {
-      if (event.type === 'done') {
-        result = {
-          message: event.message,
-          historyId: event.historyId
-        }
-      } else if (event.type === 'error') {
-        throw event.error
+    try {
+      // Get conversation history
+      const conversationMessages: MessageNode[] = []
+      let parentId: string | null = null
+      
+      if (historyId) {
+        const path = await this.config.messageStore.getPath(historyId)
+        conversationMessages.push(...path)
+        parentId = historyId
       }
+      
+      // Create user message
+      const userMessage = createUserMessage(prompt, parentId)
+      await this.config.messageStore.save(userMessage)
+      conversationMessages.push(userMessage)
+      parentId = userMessage.id
+      
+      // Convert to ChatMessage format
+      const chatMessages = messagesToChatMessages(conversationMessages)
+      
+      // Merge config with overrides
+      const llmConfig = {
+        model: overrideConfig?.model ?? this.config.llm.model,
+        apiKey: overrideConfig?.apiKey ?? this.config.llm.apiKey,
+        baseUrl: overrideConfig?.baseUrl ?? this.config.llm.baseUrl,
+        temperature: overrideConfig?.temperature ?? this.config.llm.temperature,
+        maxTokens: overrideConfig?.maxTokens ?? this.config.llm.maxTokens,
+        organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
+        responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
+      }
+      
+      // Create pipeline
+      const pipeline = new ChatStreamPipeline({
+        model: llmConfig.model,
+        apiKey: llmConfig.apiKey,
+        baseUrl: llmConfig.baseUrl,
+        temperature: llmConfig.temperature,
+        maxTokens: llmConfig.maxTokens,
+        organizationId: this.config.llm.organizationId,
+        tools: this.config.toolCalling?.enabled ? this.toolRegistry : undefined,
+        maxIterations: this.config.toolCalling?.maxIterations ?? 10,
+        onIterationLimitReached: this.config.onIterationLimitReached,
+        signal: this.abortController.signal,
+        responseFormat: llmConfig.responseFormat
+      })
+      
+      // Run non-streaming pipeline
+      const { blocks, summary } = await pipeline.run(chatMessages)
+      
+      // Create assistant message
+      const assistantMessage: MessageNode = {
+        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+        parentId,
+        role: 'assistant',
+        blocks: blocks.length > 0 ? blocks : [{
+          id: `block-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
+          type: 'markdown',
+          content: ''
+        }],
+        timestamp: Date.now(),
+        model: llmConfig.model,
+        metadata: summary?.reasoning_details ? {
+          reasoning_details: summary.reasoning_details
+        } : undefined
+      }
+      
+      // Save assistant message
+      await this.config.messageStore.save(assistantMessage)
+      
+      return {
+        message: assistantMessage,
+        historyId: assistantMessage.id
+      }
+    } finally {
+      this.abortController = null
     }
-    
-    if (!result) {
-      throw new Error('Chat completed without result')
-    }
-    
-    return result
   }
   
   /**

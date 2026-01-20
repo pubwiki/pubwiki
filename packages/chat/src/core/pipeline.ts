@@ -76,6 +76,26 @@ export interface PipelineConfig {
 }
 
 /**
+ * Tool execution result
+ */
+interface ToolExecutionResult {
+  toolCallBlock: MessageBlock
+  resultBlock: MessageBlock
+  status: ToolCallStatus
+  toolMessage: ChatMessage
+}
+
+/**
+ * Segment result from LLM response
+ */
+interface SegmentResult {
+  content: string
+  reasoning: string
+  reasoningDetails: ReasoningDetail[]
+  toolCalls: ToolCall[]
+}
+
+/**
  * Chat Stream Pipeline
  * 
  * Core features:
@@ -95,6 +115,189 @@ export class ChatStreamPipeline {
       organization: config.organizationId
     })
   }
+
+  /**
+   * Build LLM request options
+   */
+  private buildRequestOptions() {
+    return {
+      model: this.config.model,
+      temperature: this.config.temperature,
+      max_tokens: this.config.maxTokens,
+      tools: this.config.tools?.getDefinitions(),
+      signal: this.config.signal,
+      responseFormat: this.config.responseFormat
+    }
+  }
+
+  /**
+   * Process reasoning details and accumulate
+   */
+  private processReasoningDetails(
+    details: ReasoningDetail[],
+    accumulated: ReasoningDetail[]
+  ): { reasoning: string; accumulated: ReasoningDetail[] } {
+    let reasoning = ''
+    const newAccumulated = [...accumulated]
+    
+    for (const detail of details) {
+      if (detail.type === 'reasoning.text' && detail.text) {
+        reasoning += detail.text
+      } else if (detail.type === 'reasoning.summary' && detail.summary) {
+        reasoning += detail.summary
+      }
+      
+      if (detail.type === 'reasoning.encrypted' && detail.data) {
+        const exists = newAccumulated.some(
+          d => d.id === detail.id && d.type === detail.type
+        )
+        if (!exists) {
+          newAccumulated.push(detail)
+        }
+      }
+    }
+    
+    return { reasoning, accumulated: newAccumulated }
+  }
+
+  /**
+   * Create content block from segment content
+   */
+  private createContentBlock(content: string): MessageBlock {
+    return {
+      id: generateBlockId(),
+      type: 'markdown',
+      content
+    }
+  }
+
+  /**
+   * Create assistant message for tool calling context
+   */
+  private createAssistantMessage(segment: SegmentResult): ChatMessage {
+    return {
+      role: 'assistant',
+      content: segment.content,
+      tool_calls: segment.toolCalls,
+      reasoning: segment.reasoning || undefined,
+      reasoning_details: segment.reasoningDetails.length > 0 ? segment.reasoningDetails : undefined
+    }
+  }
+
+  /**
+   * Execute a single tool call
+   */
+  private async executeToolCall(toolCall: ToolCall): Promise<ToolExecutionResult> {
+    const { id, function: func } = toolCall
+    const name = func.name
+    let args: unknown
+    
+    try {
+      args = JSON.parse(func.arguments || '{}')
+    } catch {
+      args = {}
+    }
+    
+    const toolCallBlock: MessageBlock = {
+      id: generateBlockId(),
+      type: 'tool_call',
+      content: '',
+      toolCallId: id,
+      toolName: name,
+      toolArgs: args,
+      toolStatus: 'running'
+    }
+    
+    try {
+      const result = await this.config.tools!.execute(name, args)
+      const resultContent = typeof result === 'string' ? result : JSON.stringify(result)
+      
+      toolCallBlock.toolStatus = 'completed'
+      
+      return {
+        toolCallBlock,
+        resultBlock: {
+          id: generateBlockId(),
+          type: 'tool_result',
+          content: resultContent,
+          toolCallId: id
+        },
+        status: 'completed',
+        toolMessage: {
+          role: 'tool',
+          content: resultContent,
+          tool_call_id: id
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const errorContent = `Error: ${errorMessage}`
+      
+      toolCallBlock.toolStatus = 'error'
+      
+      return {
+        toolCallBlock,
+        resultBlock: {
+          id: generateBlockId(),
+          type: 'tool_result',
+          content: errorContent,
+          toolCallId: id
+        },
+        status: 'error',
+        toolMessage: {
+          role: 'tool',
+          content: errorContent,
+          tool_call_id: id
+        }
+      }
+    }
+  }
+
+  /**
+   * Check and handle iteration limit
+   * @returns new maxIterations value, or null to stop
+   */
+  private async checkIterationLimit(
+    iteration: number,
+    maxIterations: number
+  ): Promise<number | null> {
+    if (iteration + 1 < maxIterations) {
+      return maxIterations
+    }
+    
+    if (!this.config.onIterationLimitReached) {
+      return null
+    }
+    
+    try {
+      const shouldContinue = await this.config.onIterationLimitReached(
+        iteration + 1,
+        maxIterations
+      )
+      return shouldContinue ? Number.MAX_SAFE_INTEGER : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Build completion summary
+   */
+  private buildSummary(
+    iterationCount: number,
+    blockCount: number,
+    toolCallCount: number,
+    reasoning: string,
+    reasoningDetails: ReasoningDetail[]
+  ): CompletionSummary {
+    return {
+      totalSegments: iterationCount,
+      totalBlocks: blockCount,
+      totalToolCalls: toolCallCount,
+      reasoning: reasoning || undefined,
+      reasoning_details: reasoningDetails.length > 0 ? reasoningDetails : undefined
+    }
+  }
   
   /**
    * Execute streaming chat
@@ -106,20 +309,12 @@ export class ChatStreamPipeline {
     let currentMessages = [...messages]
     let accumulatedReasoning = ''
     let accumulatedReasoningDetails: ReasoningDetail[] = []
-    
-    // Tool calling loop
     let maxIterations = this.config.maxIterations ?? 10
     
     for (let iteration = 0; iteration < maxIterations; iteration++) {
-      // Stage 1: Get LLM stream
       const llmStream = this.client.streamChat({
-        model: this.config.model,
-        messages: currentMessages,
-        temperature: this.config.temperature,
-        max_tokens: this.config.maxTokens,
-        tools: this.config.tools?.getDefinitions(),
-        signal: this.config.signal,
-        responseFormat: this.config.responseFormat
+        ...this.buildRequestOptions(),
+        messages: currentMessages
       })
       
       let segmentContent = ''
@@ -127,24 +322,15 @@ export class ChatStreamPipeline {
       let toolCalls: ToolCall[] = []
       let segmentReasoningDetails: ReasoningDetail[] = []
       
-      // Accumulate raw text for MessageBlock generation
-      let pendingContent = ''
-      let currentMessageBlockId: string | null = null
-      
-      // Stage 2: Process tokens
+      // Process tokens
       for await (const chunk of llmStream) {
         if (this.config.signal?.aborted) break
         
-        // Process text tokens
         if (chunk.content) {
           segmentContent += chunk.content
-          pendingContent += chunk.content
-          
-          // Yield token event immediately
           yield { type: 'token', token: chunk.content, tokenType: 'text' }
         }
         
-        // Process reasoning_details
         if (chunk.reasoning_details && chunk.reasoning_details.length > 0) {
           for (const detail of chunk.reasoning_details) {
             if (detail.type === 'reasoning.text' && detail.text) {
@@ -157,200 +343,191 @@ export class ChatStreamPipeline {
               yield { type: 'token', token: detail.summary, tokenType: 'reasoning' }
             }
             
-            // Accumulate reasoning details for later use
             if (detail.type === 'reasoning.encrypted' && detail.data) {
-              const existingIndex = segmentReasoningDetails.findIndex(
+              const exists = segmentReasoningDetails.some(
                 d => d.id === detail.id && d.type === detail.type
               )
-              if (existingIndex === -1) {
+              if (!exists) {
                 segmentReasoningDetails.push(detail)
               }
             }
           }
         }
         
-        // Accumulate tool calls
         if (chunk.tool_calls) {
           toolCalls = this.mergeToolCalls(toolCalls, chunk.tool_calls)
         }
         
-        // Check end
         if (chunk.finish_reason === 'stop' || chunk.finish_reason === 'tool_calls') {
           break
         }
       }
       
-      // Stage 3: Segment completion cleanup
-      
-      // Generate MessageBlock if we have content
-      if (pendingContent) {
-        const messageBlock: MessageBlock = {
-          id: generateBlockId(),
-          type: 'markdown',
-          content: pendingContent
-        }
-        currentMessageBlockId = messageBlock.id
+      // Generate content block
+      if (segmentContent) {
+        const messageBlock = this.createContentBlock(segmentContent)
         blockCount++
         yield { type: 'block', block: messageBlock }
-        pendingContent = ''
       }
       
-      // Yield segment complete event
       yield { type: 'segment_complete' }
       
       // Merge reasoning details
       if (segmentReasoningDetails.length > 0) {
-        accumulatedReasoningDetails = [
-          ...accumulatedReasoningDetails,
-          ...segmentReasoningDetails
-        ]
+        accumulatedReasoningDetails = [...accumulatedReasoningDetails, ...segmentReasoningDetails]
       }
       
-      // Stage 4: Handle tool calls
+      // No tool calls, done
       if (toolCalls.length === 0) break
       
       if (!this.config.tools) {
         throw new Error('Tool calls received but no tool registry configured')
       }
       
-      // Add assistant message to currentMessages (for next LLM call)
-      currentMessages.push({
-        role: 'assistant',
+      // Add assistant message
+      currentMessages.push(this.createAssistantMessage({
         content: segmentContent,
-        tool_calls: toolCalls,
-        reasoning: segmentReasoning || undefined,
-        reasoning_details: segmentReasoningDetails.length > 0 ? segmentReasoningDetails : undefined
-      })
+        reasoning: segmentReasoning,
+        reasoningDetails: segmentReasoningDetails,
+        toolCalls
+      }))
       
       // Execute tools
       for (const toolCall of toolCalls) {
-        const { id, function: func } = toolCall
-        const name = func.name
-        let args: unknown
+        const result = await this.executeToolCall(toolCall)
+        toolCallCount++
         
-        try {
-          args = JSON.parse(func.arguments || '{}')
-        } catch {
-          args = {}
+        yield { type: 'tool_call_start', block: result.toolCallBlock }
+        yield {
+          type: 'tool_call_complete',
+          toolCallId: result.toolCallBlock.id,
+          status: result.status,
+          resultBlock: result.resultBlock
         }
         
-        // Create tool_call block and yield
-        const toolCallBlock: MessageBlock = {
-          id: generateBlockId(),
-          type: 'tool_call',
-          content: '',
-          toolCallId: id,
-          toolName: name,
-          toolArgs: args,
-          toolStatus: 'running'
-        }
-        
-        yield { type: 'tool_call_start', block: toolCallBlock }
-        
-        try {
-          const result = await this.config.tools.execute(name, args)
-          toolCallCount++
-          
-          // Add tool result to currentMessages
-          currentMessages.push({
-            role: 'tool',
-            content: typeof result === 'string' ? result : JSON.stringify(result),
-            tool_call_id: id
-          })
-          
-          // Create tool_result block and yield complete event
-          const resultBlock: MessageBlock = {
-            id: generateBlockId(),
-            type: 'tool_result',
-            content: typeof result === 'string' ? result : JSON.stringify(result),
-            toolCallId: id
-          }
-          
-          yield {
-            type: 'tool_call_complete',
-            toolCallId: toolCallBlock.id,
-            status: 'completed',
-            resultBlock
-          }
-        } catch (error: unknown) {
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-          
-          // Add error message to currentMessages
-          currentMessages.push({
-            role: 'tool',
-            content: `Error: ${errorMessage}`,
-            tool_call_id: id
-          })
-          
-          // Create error result block
-          const errorBlock: MessageBlock = {
-            id: generateBlockId(),
-            type: 'tool_result',
-            content: `Error: ${errorMessage}`,
-            toolCallId: id
-          }
-          
-          yield {
-            type: 'tool_call_complete',
-            toolCallId: toolCallBlock.id,
-            status: 'error',
-            resultBlock: errorBlock
-          }
-        }
+        currentMessages.push(result.toolMessage)
       }
       
-      // Next iteration
       iterationCount++
       
       // Check iteration limit
-      if (iteration + 1 >= maxIterations && toolCalls.length > 0) {
-        yield {
-          type: 'iteration_limit_reached',
-          currentIteration: iteration + 1,
-          maxIterations: maxIterations
-        }
-        
-        // If callback provided, ask whether to continue
-        if (this.config.onIterationLimitReached) {
-          try {
-            const shouldContinue = await this.config.onIterationLimitReached(
-              iteration + 1,
-              maxIterations
-            )
-            
-            if (shouldContinue) {
-              // Continue without limit
-              maxIterations = Number.MAX_SAFE_INTEGER
-            } else {
-              // Stop
-              break
-            }
-          } catch {
-            // On error, stop
-            break
+      if (toolCalls.length > 0) {
+        const newMax = await this.checkIterationLimit(iteration, maxIterations)
+        if (newMax === null) {
+          yield {
+            type: 'iteration_limit_reached',
+            currentIteration: iteration + 1,
+            maxIterations: maxIterations
           }
-        } else {
-          // No callback, stop
           break
         }
+        maxIterations = newMax
       }
     }
     
-    // Stage 5: Complete
     yield {
       type: 'complete',
-      summary: {
-        totalSegments: iterationCount,
-        totalBlocks: blockCount,
-        totalToolCalls: toolCallCount,
-        reasoning: accumulatedReasoning || undefined,
-        reasoning_details: accumulatedReasoningDetails.length > 0 ? accumulatedReasoningDetails : undefined
-      }
+      summary: this.buildSummary(
+        iterationCount,
+        blockCount,
+        toolCallCount,
+        accumulatedReasoning,
+        accumulatedReasoningDetails
+      )
     }
   }
   
   /**
-   * Merge tool calls
+   * Execute non-streaming chat
+   */
+  async run(messages: ChatMessage[]): Promise<{
+    blocks: MessageBlock[]
+    summary: CompletionSummary
+  }> {
+    let iterationCount = 0
+    let blockCount = 0
+    let toolCallCount = 0
+    let currentMessages = [...messages]
+    let accumulatedReasoning = ''
+    let accumulatedReasoningDetails: ReasoningDetail[] = []
+    const allBlocks: MessageBlock[] = []
+    let maxIterations = this.config.maxIterations ?? 10
+    
+    for (let iteration = 0; iteration < maxIterations; iteration++) {
+      const response = await this.client.chat({
+        ...this.buildRequestOptions(),
+        messages: currentMessages
+      })
+      
+      if (this.config.signal?.aborted) break
+      
+      const segmentContent = response.content || ''
+      const toolCalls = response.tool_calls || []
+      const segmentReasoningDetails = response.reasoning_details || []
+      
+      // Process reasoning
+      const { reasoning: segmentReasoning, accumulated } = this.processReasoningDetails(
+        segmentReasoningDetails,
+        accumulatedReasoningDetails
+      )
+      accumulatedReasoning += segmentReasoning
+      accumulatedReasoningDetails = accumulated
+      
+      // Generate content block
+      if (segmentContent) {
+        allBlocks.push(this.createContentBlock(segmentContent))
+        blockCount++
+      }
+      
+      // No tool calls, done
+      if (toolCalls.length === 0) break
+      
+      if (!this.config.tools) {
+        throw new Error('Tool calls received but no tool registry configured')
+      }
+      
+      // Add assistant message
+      currentMessages.push(this.createAssistantMessage({
+        content: segmentContent,
+        reasoning: segmentReasoning,
+        reasoningDetails: segmentReasoningDetails,
+        toolCalls
+      }))
+      
+      // Execute tools
+      for (const toolCall of toolCalls) {
+        const result = await this.executeToolCall(toolCall)
+        toolCallCount++
+        
+        allBlocks.push(result.toolCallBlock)
+        allBlocks.push(result.resultBlock)
+        currentMessages.push(result.toolMessage)
+      }
+      
+      iterationCount++
+      
+      // Check iteration limit
+      if (toolCalls.length > 0) {
+        const newMax = await this.checkIterationLimit(iteration, maxIterations)
+        if (newMax === null) break
+        maxIterations = newMax
+      }
+    }
+    
+    return {
+      blocks: allBlocks,
+      summary: this.buildSummary(
+        iterationCount,
+        blockCount,
+        toolCallCount,
+        accumulatedReasoning,
+        accumulatedReasoningDetails
+      )
+    }
+  }
+  
+  /**
+   * Merge tool calls (for streaming)
    */
   private mergeToolCalls(existing: ToolCall[], incoming: ToolCall[]): ToolCall[] {
     const merged = [...existing]
