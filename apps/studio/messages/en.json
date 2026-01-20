@@ -291,6 +291,8 @@
 	
 	"studio_node_close": "Close",
 	"studio_node_reload": "Reload",
+	"studio_node_fullscreen": "Fullscreen",
+	"studio_node_exit_fullscreen": "Exit fullscreen (Shift+Tab)",
 	"studio_node_name_placeholder": "Node name",
 	"studio_node_viewing_historical": "Viewing historical version",
 	"studio_node_view_history": "View version history",

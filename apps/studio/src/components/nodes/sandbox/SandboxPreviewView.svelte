@@ -56,6 +56,7 @@
 	let sandboxConnection = $state<SandboxConnection | null>(null);
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
+	let isFullscreen = $state(false);
 
 	// ============================================================================
 	// Derived
@@ -324,25 +325,41 @@
 		stopSandbox();
 		onClose();
 	}
+
+	function toggleFullscreen() {
+		isFullscreen = !isFullscreen;
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.shiftKey && event.key === 'Tab' && isFullscreen) {
+			event.preventDefault();
+			isFullscreen = false;
+		}
+	}
 </script>
 
 <!-- Floating Preview Panel -->
+<svelte:window onkeydown={handleKeydown} />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
 	use:portal
 	class="fixed inset-0 bg-black/40 z-9999 flex items-center justify-center"
 	transition:fade={{ duration: 150 }}
-	onclick={handleClose}
+	onclick={isFullscreen ? undefined : handleClose}
 >
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
-		class="bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden"
-		style="width: 900px; height: 600px;"
+		class="bg-white shadow-2xl flex flex-col overflow-hidden transition-all duration-200"
+		class:rounded-xl={!isFullscreen}
+		class:inset-0={isFullscreen}
+		class:fixed={isFullscreen}
+		style={isFullscreen ? '' : 'width: 900px; height: 600px;'}
 		onclick={(e) => e.stopPropagation()}
 	>
-		<!-- Header -->
+		<!-- Header (hidden in fullscreen) -->
+		{#if !isFullscreen}
 		<div class="flex items-center justify-between px-4 py-3 bg-orange-500 text-white">
 			<div class="flex items-center gap-3">
 				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -354,6 +371,16 @@
 				{/if}
 			</div>
 			<div class="flex items-center gap-2">
+				<!-- Fullscreen button -->
+				<button
+					class="p-1.5 hover:bg-white/20 rounded transition-colors"
+					onclick={toggleFullscreen}
+					title={m.studio_node_fullscreen()}
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+					</svg>
+				</button>
 				<!-- Reload button -->
 				<button
 					class="p-1.5 hover:bg-white/20 rounded transition-colors disabled:opacity-50"
@@ -377,6 +404,7 @@
 				</button>
 			</div>
 		</div>
+		{/if}
 
 		<!-- Content -->
 		<div class="flex-1 relative bg-gray-100">
@@ -417,10 +445,12 @@
 			></iframe>
 		</div>
 
-		<!-- Footer -->
+		<!-- Footer (hidden in fullscreen) -->
+		{#if !isFullscreen}
 		<div class="px-4 py-2 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center justify-between">
 			<span>{m.studio_node_entry({ entryFile })}</span>
 			<span>{m.studio_node_origin({ origin: sandboxOrigin })}</span>
 		</div>
+		{/if}
 	</div>
 </div>
