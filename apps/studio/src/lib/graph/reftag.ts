@@ -576,11 +576,11 @@ export function getRefTagNamesFromBlocks(blocks: ContentBlock[]): string[] {
 }
 
 /**
- * Get all tag names from input content blocks (excluding 'system' as it's always present)
+ * Get all tag names from input content blocks
  * Used by InputNode component to determine which prompt handles to show
  */
 export function getInputTagsFromBlocks(blocks: ContentBlock[]): string[] {
-  return getRefTagNamesFromBlocks(blocks).filter(name => name !== 'system');
+  return getRefTagNamesFromBlocks(blocks);
 }
 
 /**

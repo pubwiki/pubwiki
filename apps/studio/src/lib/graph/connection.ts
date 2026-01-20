@@ -57,16 +57,14 @@ export const HandleId = {
   VFS_INPUT: 'vfs-input',
   /** Service input on Sandbox node */
   SERVICE_INPUT: 'service-input',
-  /** Prompt input on Input node (DEPRECATED - use SYSTEM_TAG instead) */
-  PROMPT_INPUT: 'prompt-input',
   /** RefTag handle prefix for dynamic handles (for prompts) */
   REFTAG_PREFIX: 'reftag-',
-  /** System tag for Input node's prompt connection (always present) */
-  SYSTEM_TAG: 'tag-system',
-  /** Mountpoint tag prefix for VFS mounting (e.g., tag-mount-/dir1) */
-  MOUNTPOINT_PREFIX: 'tag-mount-',
+  /** System prompt input on Input node (always present, independent ID to avoid conflict with user @system tag) */
+  SYSTEM_TAG: 'system-prompt',
   /** Tag handle prefix for generic tagged handles */
   TAG_PREFIX: 'tag-',
+  /** Mountpoint prefix for VFS mounting (e.g., mount-abc123) */
+  MOUNTPOINT_PREFIX: 'mount-',
   /** Add mount handle - when VFS connects here, a new mountpoint is created */
   ADD_MOUNT: 'add-mount',
   /** Loader Node: Backend VFS input (single) */
@@ -169,6 +167,13 @@ export const NodeRegistry: Record<string, NodeSpec> = {
     type: 'INPUT',
     label: 'Input',
     inputs: [
+      {
+        id: HandleId.SYSTEM_TAG,
+        label: 'System Prompt',
+        dataType: DataType.STRING,
+        cardinality: Cardinality.OPTIONAL,
+        colorClass: 'bg-amber-400',
+      },
       {
         id: HandleId.TAG_PREFIX,
         label: 'Tag',
@@ -371,7 +376,6 @@ export function getHandleSpec(
 
   // Dynamic handle match (e.g., reftag-xxx matches reftag- prefix)
   // Find the longest matching prefix to ensure more specific prefixes are matched first
-  // e.g., 'tag-mount-/path' should match 'tag-mount-' not 'tag-'
   let bestMatch: HandleSpec | undefined;
   let bestMatchLength = 0;
   
@@ -424,7 +428,7 @@ export function isTagHandle(handleId: string | null | undefined): boolean {
 }
 
 /**
- * Extract tag name from handle ID (e.g., 'tag-system' -> 'system')
+ * Extract tag name from handle ID (e.g., 'tag-context' -> 'context')
  */
 export function getTagName(handleId: string): string {
   return handleId.slice(HandleId.TAG_PREFIX.length);
@@ -449,7 +453,7 @@ export function isMountpointHandle(handleId: string | null | undefined): boolean
 }
 
 /**
- * Extract mountpoint ID from handle ID (e.g., 'tag-mount-abc123' -> 'abc123')
+ * Extract mountpoint ID from handle ID (e.g., 'mount-abc123' -> 'abc123')
  */
 export function getMountpointId(handleId: string): string {
   return handleId.slice(HandleId.MOUNTPOINT_PREFIX.length);

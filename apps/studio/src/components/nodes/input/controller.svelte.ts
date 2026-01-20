@@ -206,12 +206,14 @@ function handleAddMountConnection(event: ConnectionEvent): boolean {
 	// Wait for the node to re-render with the new handle before adding the edge
 	// Need multiple ticks: one for Svelte to update DOM, one for SvelteFlow to register handles
 	// Using requestAnimationFrame ensures the browser has completed layout/paint
-	tick().then(() => {
+	tick().then(() => tick()).then(() => tick()).then(() => {
 		requestAnimationFrame(() => {
-			event.updateEdges(edges => [
-				...edges.filter(e => e.targetHandle !== HandleId.ADD_MOUNT),
-				newEdge
-			]);
+			requestAnimationFrame(() => {
+				event.updateEdges(edges => [
+					...edges.filter(e => e.targetHandle !== HandleId.ADD_MOUNT),
+					newEdge
+				]);
+			});
 		});
 	});
 

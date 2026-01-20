@@ -24,3 +24,12 @@ export {
   type EdgeDeleteHandler,
   type NodeDeleteHandler
 } from './flow-events';
+
+export {
+  getPendingConfirmation,
+  requestConfirmation,
+  respondConfirmation,
+  type ConfirmationType,
+  type FormComponentProps,
+  type PendingConfirmation
+} from './pubwiki-confirm.svelte';

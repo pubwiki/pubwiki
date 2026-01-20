@@ -133,6 +133,15 @@
 
 	const contentTags = $derived(getInputTagsFromBlocks(nodeData?.content?.blocks ?? []));
 
+	const systemConnection = $derived.by(() => {
+		if (previewState?.incomingEdges) {
+			const edge = previewState.incomingEdges.find(e => e.targetHandle === HandleId.SYSTEM_TAG);
+			return edge?.source ?? null;
+		}
+		const edge = allEdges.current.find(e => e.target === id && e.targetHandle === HandleId.SYSTEM_TAG);
+		return edge?.source ?? null;
+	});
+
 	const tagConnections = $derived.by(() => {
 		if (previewState?.incomingEdges) {
 			return getInputTagConnectionsFromSnapshotEdges(previewState.incomingEdges);
@@ -159,7 +168,7 @@
 	const systemHandle = $derived<TaggedHandle>({
 		id: HandleId.SYSTEM_TAG,
 		label: '@system',
-		isConnected: tagConnections.has('system'),
+		isConnected: systemConnection !== null,
 		connectedColor: SYSTEM_TAG_CONNECTED,
 		disconnectedColor: SYSTEM_TAG_DISCONNECTED
 	});
@@ -213,17 +222,17 @@
 
 	// Clean up orphan edges when Tags are deleted
 	$effect(() => {
-		// Get current valid Tag handle IDs (system tag is always valid)
-		const validTagHandleIds = new Set([
-			HandleId.SYSTEM_TAG,
-			...contentTags.map(name => createTagHandleId(name))
-		]);
+		// Get current valid user Tag handle IDs
+		const validUserTagHandleIds = new Set(
+			contentTags.map(name => createTagHandleId(name))
+		);
 		
-		// Find edges targeting this node's Tag handles that no longer exist
+		// Find edges targeting this node's user Tag handles that no longer exist
+		// Note: system-prompt handle is always valid (not a user tag), so we only check isTagHandle
 		const orphanEdges = allEdges.current.filter(edge => 
 			edge.target === id &&
 			isTagHandle(edge.targetHandle) &&
-			!validTagHandleIds.has(edge.targetHandle!)
+			!validUserTagHandleIds.has(edge.targetHandle!)
 		);
 		
 		// Delete orphan edges

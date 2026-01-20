@@ -43,6 +43,8 @@
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
 	import { publishArtifact, type PublishMetadata } from '$lib/io';
 	import { setStudioContext, type StudioContext } from '$lib/state';
+	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
+	import { PubWikiConfirmDialog } from '$lib/components/pubwiki';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '$lib/state';
 	import { 
 		nodeStore, 
@@ -108,6 +110,12 @@
 	
 	// Current project ID (from URL params)
 	let currentProjectId = $derived(data.projectId);
+
+	// ============================================================================
+	// PubWiki Confirmation Dialog State
+	// ============================================================================
+	
+	const pendingConfirmation = $derived(getPendingConfirmation());
 
 	// ============================================================================
 	// VFS File Editor State
@@ -332,7 +340,7 @@
 	 * Dispatches to registered node handlers via flow-events.
 	 */
 	function handleConnect(connection: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }) {
-		const handled = dispatchConnection({
+		dispatchConnection({
 			type: 'connection',
 			source: connection.source,
 			target: connection.target,
@@ -1086,6 +1094,17 @@
 				</button>
 			{/if}
 		</div>
+	{/if}
+	
+	<!-- PubWiki Confirmation Dialog (global, Portal rendered) -->
+	{#if pendingConfirmation}
+		<PubWikiConfirmDialog
+			type={pendingConfirmation.type}
+			FormComponent={pendingConfirmation.formComponent}
+			initialValues={pendingConfirmation.initialValues}
+			onConfirm={(editedValues) => respondConfirmation(editedValues)}
+			onCancel={() => respondConfirmation(null)}
+		/>
 	{/if}
 </div>
 
