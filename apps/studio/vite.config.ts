@@ -15,6 +15,13 @@ export default defineConfig({
 		port: 5174
 	},
 
+	optimizeDeps: {
+		exclude: [
+			'quickjs-emscripten-core',
+			'@jitl/quickjs-wasmfile-release-asyncify'
+		]
+	},
+
 	ssr: {
 		noExternal: ['@xyflow/svelte', '@pubwiki/chat', '@pubwiki/svelte-chat']
 	}

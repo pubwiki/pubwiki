@@ -38,7 +38,9 @@
 		destroyLoader,
 		findBackendVfsNode,
 		findMountedVfsNodes,
-		findStateNode
+		findStateNode,
+		onLoaderReload,
+		getLoaderBackendType
 	} from './controller.svelte';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
@@ -67,6 +69,12 @@
 	
 	/** Registered services after successful initialization */
 	let registeredServices = $state<string[]>([]);
+	
+	/** Last reload/load timestamp for "reloaded xxx ago" display */
+	let lastReloadTime = $state<number | null>(null);
+	
+	/** Formatted relative time string, updated every second */
+	let relativeTimeStr = $state<string>('');
 
 	// ============================================================================
 	// Color Schemes
@@ -229,6 +237,47 @@
 		}
 	});
 
+	// Update relative time string every second
+	$effect(() => {
+		if (!lastReloadTime) {
+			relativeTimeStr = '';
+			return;
+		}
+		
+		function updateRelativeTime() {
+			if (!lastReloadTime) return;
+			const minutes = Math.floor((Date.now() - lastReloadTime) / 60000);
+			if (minutes < 1) {
+				relativeTimeStr = 'less than a minute ago';
+			} else if (minutes < 60) {
+				relativeTimeStr = `${minutes}m ago`;
+			} else {
+				relativeTimeStr = `${Math.floor(minutes / 60)}h ago`;
+			}
+		}
+		
+		updateRelativeTime();
+		const interval = setInterval(updateRelativeTime, 60000);
+		return () => clearInterval(interval);
+	});
+
+	// Subscribe to hot reload events
+	$effect(() => {
+		// Only subscribe when we have successfully loaded
+		if (!hasLoaded) return;
+		
+		const unsubscribe = onLoaderReload(id, (result) => {
+			console.log(`[LoaderNode] Hot reload complete for ${id}:`, result);
+			error = result.error;
+			registeredServices = result.services;
+			if (result.success) {
+				lastReloadTime = Date.now();
+			}
+		});
+		
+		return unsubscribe;
+	});
+
 	// Reload when VFS or State connections change
 	$effect(() => {
 		// Build a string of all connected node IDs (VFS + State)
@@ -358,6 +407,9 @@
 			// Update local state with result
 			error = result.error;
 			registeredServices = result.services;
+			if (result.success) {
+				lastReloadTime = Date.now();
+			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 			registeredServices = [];
@@ -421,51 +473,65 @@
 
 	{#snippet headerActions()}
 		{#if isReady}
-			<span class="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-700">
-				✓ Ready
-			</span>
-		{:else if hasError}
-			<span class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700">
-				✕ Error
-			</span>
-		{:else if !backendConnected}
-			<span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-				⏸ Idle
+			<span class="text-xs text-white/90 font-medium uppercase">
+				{getLoaderBackendType(id) ?? 'unknown'}
 			</span>
 		{/if}
 	{/snippet}
 
 	{#snippet children()}
-		<div class="p-3 bg-gray-50 space-y-3 min-w-50 min-h-24 flex flex-col {!backendConnected ? 'justify-center items-center' : ''}">
-			<!-- Status Display -->
-			<div class="flex items-center">
-				{#if isReady}
-					<div class="flex items-center gap-1.5 text-green-600">
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-						</svg>
-						<span class="text-sm font-medium">{registeredServices.length} services</span>
-					</div>
-				{:else if hasError}
-					<div class="text-sm text-red-500">Load failed</div>
-				{:else if !backendConnected}
-					<div class="text-sm text-gray-500">Connect backend VFS</div>
-				{/if}
-			</div>
-
-			<!-- Registered Services List -->
-			{#if isReady && registeredServices.length > 0}
-				<div class="border-t border-gray-200 pt-2">
-					<div class="text-xs font-medium text-gray-500 mb-1.5">Registered Services</div>
-					<div class="space-y-1 max-h-32 overflow-y-auto">
-						{#each registeredServices as service}
-							<div class="flex items-center gap-1.5 text-xs">
-								<span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
-								<span class="font-mono text-gray-700">{service}</span>
-							</div>
-						{/each}
-					</div>
+		<div class="p-3 bg-gray-50 space-y-3 min-w-50 min-h-24 flex flex-col {!backendConnected && !isLoading ? 'justify-center items-center' : ''}">
+			<!-- Loading State -->
+			{#if isLoading && !isReloading}
+				<div class="flex flex-col items-center justify-center gap-2 py-4">
+					<svg class="w-6 h-6 text-purple-500 animate-spin" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+					</svg>
+					<span class="text-xs text-gray-500">Loading backend...</span>
 				</div>
+			{:else}
+				<!-- Status Display -->
+				<div class="flex items-center">
+					{#if isReady}
+						<div class="flex items-center gap-1.5 text-green-600">
+							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+							</svg>
+							<span class="text-sm font-medium">{registeredServices.length} services</span>
+							{#if isReloading}
+								<svg class="w-3 h-3 text-purple-500 animate-spin ml-1" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+								</svg>
+							{/if}
+						</div>
+					{:else if hasError}
+						<div class="text-sm text-red-500">Load failed</div>
+					{:else if !backendConnected}
+						<div class="text-sm text-gray-500">Connect backend VFS</div>
+					{/if}
+				</div>
+
+				<!-- Registered Services List -->
+				{#if isReady && registeredServices.length > 0}
+					<div class="border-t border-gray-200 pt-2">
+						<div class="flex items-center justify-between mb-1.5">
+							<span class="text-xs font-medium text-gray-500">Registered Services</span>
+							{#if relativeTimeStr}
+								<span class="text-xs text-gray-400">reloaded {relativeTimeStr}</span>
+							{/if}
+						</div>
+						<div class="space-y-1 max-h-32 overflow-y-auto">
+							{#each registeredServices as service}
+								<div class="flex items-center gap-1.5 text-xs">
+									<span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
+									<span class="font-mono text-gray-700">{service}</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
 			{/if}
 
 			<!-- Error Display -->

@@ -27,8 +27,10 @@ export {
 	createBackendFromVfs
 } from './types';
 
-// Register Lua backend (side effect: registers factory)
+// Register backends (side effect: registers factories)
 import './backends/lua';
+import './backends/ts';
 
-// Export Lua backend for direct access if needed
+// Export backends for direct access if needed
 export { LuaBackend, createLuaBackend } from './backends/lua';
+export { TsBackend, createTsBackend } from './backends/ts';

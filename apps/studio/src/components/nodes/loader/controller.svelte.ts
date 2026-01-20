@@ -116,6 +116,8 @@ interface LoaderRuntime {
 	backend: LoaderBackend;
 	/** PubChat instance for LLM access */
 	pubchat?: PubChat;
+	/** VFS event unsubscribe function for hot reload */
+	unsubscribeVfs?: () => void;
 }
 
 /**
@@ -134,8 +136,58 @@ export interface LoaderInitResult {
 /** Runtime state storage (nodeId -> runtime) */
 const loaderRuntimes = new Map<string, LoaderRuntime>();
 
+/** Reload callback registry (nodeId -> callbacks) */
+const reloadCallbacks = new Map<string, Set<(result: LoaderInitResult) => void>>();
+
 /** Currently editing mountpoint (node-local state, exposed for UI) */
 let editingMountpoint: { nodeId: string; mountpointId: string } | null = $state(null);
+
+// ============================================================================
+// Reload Event Subscription
+// ============================================================================
+
+/**
+ * Subscribe to reload events for a specific loader node
+ * 
+ * @param nodeId - The node ID to subscribe to
+ * @param callback - Callback invoked when reload completes
+ * @returns Unsubscribe function
+ */
+export function onLoaderReload(
+	nodeId: string,
+	callback: (result: LoaderInitResult) => void
+): () => void {
+	if (!reloadCallbacks.has(nodeId)) {
+		reloadCallbacks.set(nodeId, new Set());
+	}
+	reloadCallbacks.get(nodeId)!.add(callback);
+	
+	return () => {
+		const callbacks = reloadCallbacks.get(nodeId);
+		if (callbacks) {
+			callbacks.delete(callback);
+			if (callbacks.size === 0) {
+				reloadCallbacks.delete(nodeId);
+			}
+		}
+	};
+}
+
+/**
+ * Notify all subscribers of a reload result
+ */
+function notifyReloadCallbacks(nodeId: string, result: LoaderInitResult): void {
+	const callbacks = reloadCallbacks.get(nodeId);
+	if (callbacks) {
+		for (const callback of callbacks) {
+			try {
+				callback(result);
+			} catch (e) {
+				console.error('[LoaderController] Error in reload callback:', e);
+			}
+		}
+	}
+}
 
 // ============================================================================
 // Mountpoint Helpers
@@ -287,8 +339,38 @@ export async function initializeLoader(
 			return result;
 		}
 		
-		// Store runtime state
-		loaderRuntimes.set(nodeId, { backend, pubchat });
+		// Set up VFS hot reload listener
+		// Debounce reload to avoid rapid consecutive reloads
+		let reloadTimeout: ReturnType<typeof setTimeout> | null = null;
+		const unsubscribeVfs = backendVfs.events.onAny((event) => {
+			// Only react to file changes (not folder events)
+			if (!event.type.startsWith('file:')) return;
+			
+			console.log(`[LoaderController] VFS change detected: ${event.type}`, event);
+			
+			// Debounce: wait 300ms before reloading
+			if (reloadTimeout) {
+				clearTimeout(reloadTimeout);
+			}
+			reloadTimeout = setTimeout(async () => {
+				reloadTimeout = null;
+				const runtime = loaderRuntimes.get(nodeId);
+				if (runtime?.backend) {
+					console.log(`[LoaderController] Hot reloading backend for node ${nodeId}...`);
+					const reloadResult = await runtime.backend.reload();
+					if (reloadResult.success) {
+						console.log(`[LoaderController] Reload successful. Services: ${reloadResult.services.join(', ')}`);
+					} else {
+						console.error(`[LoaderController] Reload failed: ${reloadResult.error}`);
+					}
+					// Notify UI subscribers
+					notifyReloadCallbacks(nodeId, reloadResult);
+				}
+			}, 300);
+		});
+		
+		// Store runtime state with unsubscribe function
+		loaderRuntimes.set(nodeId, { backend, pubchat, unsubscribeVfs });
 		
 		return result;
 	} catch (error) {
@@ -306,6 +388,10 @@ export async function initializeLoader(
 export async function destroyLoader(nodeId: string): Promise<void> {
 	const runtime = loaderRuntimes.get(nodeId);
 	if (runtime) {
+		// Unsubscribe from VFS events
+		if (runtime.unsubscribeVfs) {
+			runtime.unsubscribeVfs();
+		}
 		await runtime.backend.destroy();
 		loaderRuntimes.delete(nodeId);
 	}
@@ -325,6 +411,29 @@ export function isLoaderReady(nodeId: string): boolean {
 export function getLoaderBackendType(nodeId: string): string | null {
 	const runtime = loaderRuntimes.get(nodeId);
 	return runtime?.backend.type ?? null;
+}
+
+/**
+ * Reload Loader Node's backend (hot reload)
+ * 
+ * Manually trigger a reload of the backend. This is also called automatically
+ * when files in the backend VFS change.
+ * 
+ * @param nodeId - The node ID
+ * @returns LoaderInitResult with success, services, and error
+ */
+export async function reloadLoader(nodeId: string): Promise<LoaderInitResult> {
+	const runtime = loaderRuntimes.get(nodeId);
+	if (!runtime) {
+		return {
+			success: false,
+			services: [],
+			error: 'Loader not initialized'
+		};
+	}
+	
+	console.log(`[LoaderController] Manual reload for node ${nodeId}...`);
+	return runtime.backend.reload();
 }
 
 /**

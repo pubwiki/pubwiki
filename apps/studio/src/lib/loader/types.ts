@@ -90,6 +90,16 @@ export interface LoaderBackend {
 	initialize(config: BackendConfig): Promise<BackendInitResult>;
 
 	/**
+	 * Reload the backend (hot reload)
+	 * 
+	 * Called when files in the backend VFS change. The backend should
+	 * re-read sources and reinitialize while preserving registered JS modules.
+	 * 
+	 * @returns Reload result with updated service list or error
+	 */
+	reload(): Promise<BackendInitResult>;
+
+	/**
 	 * Destroy the backend and release resources
 	 */
 	destroy(): Promise<void>;
@@ -141,22 +151,27 @@ export interface LoaderBackend {
 /**
  * Backend type enum
  */
-export type BackendType = 'lua' | 'unknown';
+export type BackendType = 'lua' | 'ts' | 'unknown';
 
 /**
  * Detect backend type based on files in VFS
  * @param vfs VFS to check for entry point files
  * @returns Detected backend type
+ * 
+ * Detection order:
+ * 1. index.ts -> TypeScript backend (QuickJS)
+ * 2. init.lua -> Lua backend
  */
 export async function detectBackendType(vfs: Vfs<VfsProvider>): Promise<BackendType> {
+	// Check for TypeScript backend (index.ts) - takes priority
+	if (await vfs.exists('/index.ts')) {
+		return 'ts';
+	}
+	
 	// Check for Lua backend (init.lua)
 	if (await vfs.exists('/init.lua')) {
 		return 'lua';
 	}
-	
-	// Future: Check for other backends
-	// if (await vfs.exists('/init.wasm')) return 'wasm';
-	// if (await vfs.exists('/init.js')) return 'js';
 	
 	return 'unknown';
 }

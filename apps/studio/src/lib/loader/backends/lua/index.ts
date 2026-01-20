@@ -208,6 +208,9 @@ export class LuaBackend implements LoaderBackend {
 	private instance: LuaInstance | null = null;
 	private mountedVfs: Vfs<MountedVfsProvider> | null = null;
 	private ready = false;
+	
+	/** Stored config for reload */
+	private currentConfig: BackendConfig | null = null;
 
 	// ========================================================================
 	// LoaderBackend Interface
@@ -217,6 +220,9 @@ export class LuaBackend implements LoaderBackend {
 		try {
 			// Clean up any existing instance
 			await this.destroy();
+			
+			// Store config for reload
+			this.currentConfig = config;
 
 			// Ensure Lua runtime is loaded
 			await loadRunner();
@@ -300,6 +306,19 @@ export class LuaBackend implements LoaderBackend {
 		}
 	}
 
+	async reload(): Promise<BackendInitResult> {
+		if (!this.currentConfig) {
+			return {
+				success: false,
+				services: [],
+				error: 'Cannot reload: backend was never initialized'
+			};
+		}
+		
+		console.log('[LuaBackend] Reloading...');
+		return this.initialize(this.currentConfig);
+	}
+
 	async destroy(): Promise<void> {
 		if (this.instance) {
 			this.instance.destroy();
@@ -307,6 +326,7 @@ export class LuaBackend implements LoaderBackend {
 		}
 		this.mountedVfs = null;
 		this.ready = false;
+		// Don't clear currentConfig - needed for reload after destroy
 	}
 
 	isReady(): boolean {
