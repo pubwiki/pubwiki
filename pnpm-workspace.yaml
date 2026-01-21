@@ -6,7 +6,6 @@ packages:
   - packages/svelte-chat
   - packages/svelte-chat/example
   - packages/sandbox-host
-  - packages/sandbox-site
   - packages/sandbox-service
   - packages/sandbox-client
   - packages/rdfstore
@@ -17,6 +16,7 @@ packages:
   - packages/ui
   - apps/hub
   - apps/studio
+  - apps/sandbox
   - services/hub
   - services/gamesave
 
