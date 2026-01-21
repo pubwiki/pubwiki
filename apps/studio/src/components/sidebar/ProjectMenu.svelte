@@ -5,8 +5,8 @@
 	 * Features:
 	 * - New Project
 	 * - Project List (opens modal)
-	 * - Export (placeholder)
-	 * - Import (placeholder)
+	 * - Export to local file
+	 * - Import from local file
 	 * - Settings
 	 */
 	import { onMount, onDestroy } from 'svelte';
@@ -16,9 +16,11 @@
 		onNewProject: () => void;
 		onOpenProjectList: () => void;
 		onOpenSettings: () => void;
+		onExport: () => void;
+		onImport: () => void;
 	}
 
-	let { onNewProject, onOpenProjectList, onOpenSettings }: Props = $props();
+	let { onNewProject, onOpenProjectList, onOpenSettings, onExport, onImport }: Props = $props();
 
 	let isOpen = $state(false);
 	let menuRef: HTMLDivElement | undefined = $state();
@@ -49,14 +51,12 @@
 	}
 
 	function handleExport() {
-		// Placeholder - show toast or notification
-		alert(m.studio_export_coming_soon());
+		onExport();
 		close();
 	}
 
 	function handleImport() {
-		// Placeholder - show toast or notification
-		alert(m.studio_import_coming_soon());
+		onImport();
 		close();
 	}
 
@@ -119,23 +119,23 @@
 
 			<div class="border-t border-gray-200 my-1"></div>
 
-			<!-- Export (placeholder) -->
+			<!-- Export -->
 			<button
-				class="w-full px-4 py-2 text-left text-sm text-gray-400 hover:bg-gray-100 flex items-center gap-3"
+				class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
 				onclick={handleExport}
 			>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
 				</svg>
 				{m.studio_menu_export()}
 			</button>
 
-			<!-- Import (placeholder) -->
+			<!-- Import -->
 			<button
-				class="w-full px-4 py-2 text-left text-sm text-gray-400 hover:bg-gray-100 flex items-center gap-3"
+				class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
 				onclick={handleImport}
 			>
-				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
 				</svg>
 				{m.studio_menu_import()}

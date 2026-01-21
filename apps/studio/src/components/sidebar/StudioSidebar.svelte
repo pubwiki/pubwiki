@@ -32,6 +32,8 @@
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
 		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 		onNewProject: () => void;
+		onExport: () => void;
+		onImport: () => Promise<void>;
 	}
 
 	let { 
@@ -45,7 +47,9 @@
 		onFocusNode,
 		onPublish,
 		onOpenVfsFile,
-		onNewProject
+		onNewProject,
+		onExport,
+		onImport
 	}: Props = $props();
 
 	// Sidebar state
@@ -197,6 +201,8 @@
 					onNewProject={onNewProject}
 					onOpenProjectList={openProjectList}
 					onOpenSettings={openSettings}
+					onExport={onExport}
+					onImport={onImport}
 				/>
 				<!-- Collapse button -->
 				<button

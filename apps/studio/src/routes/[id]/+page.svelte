@@ -41,7 +41,7 @@
 	} from '$lib/version';
 	import { validateConnection } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
-	import { publishArtifact, type PublishMetadata } from '$lib/io';
+	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip } from '$lib/io';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$components/pubwiki';
@@ -939,6 +939,28 @@
 		window.open(`/${newId}`, '_blank');
 	}
 
+	async function handleExport() {
+		try {
+			await exportProjectToZip(currentProjectId);
+		} catch (err) {
+			console.error('[Studio] Export failed:', err);
+			alert(err instanceof Error ? err.message : 'Export failed');
+		}
+	}
+
+	async function handleImport() {
+		try {
+			const result = await importProjectFromZip();
+			if (result) {
+				// Navigate to the imported project with invalidation to force reload
+				goto(`/${result.projectId}`, { invalidateAll: true });
+			}
+		} catch (err) {
+			console.error('[Studio] Import failed:', err);
+			alert(err instanceof Error ? err.message : 'Import failed');
+		}
+	}
+
 	async function handlePublish(
 		metadata: PublishMetadata,
 		nodesToPublish: Node<FlowNodeData>[],
@@ -1033,6 +1055,8 @@
 		onPublish={handlePublish}
 		onOpenVfsFile={handleOpenVfsFile}
 		onNewProject={handleNewProject}
+		onExport={handleExport}
+		onImport={handleImport}
 	/>
 
 	<!-- VFS File Editor (Right side floating panel) -->

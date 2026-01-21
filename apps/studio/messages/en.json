@@ -410,8 +410,6 @@
 	"studio_projects_delete_confirm": "Are you sure you want to delete this project? This action cannot be undone.",
 	"studio_projects_last_updated": "Last updated: {date}",
 	"studio_projects_created": "Created: {date}",
-	"studio_export_coming_soon": "Export feature coming soon",
-	"studio_import_coming_soon": "Import feature coming soon",
 	
 	"artifact_not_found": "Not Found",
 	"artifact_not_found_message": "Artifact not found",
