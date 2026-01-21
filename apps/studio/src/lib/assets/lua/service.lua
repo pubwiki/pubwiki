@@ -65,6 +65,11 @@ local function createBuilder(registry, kind)
         return self
     end
     
+    function builder:usage(usageText)
+        self._usage = usageText
+        return self
+    end
+
     function builder:impl(fn)
         self._impl = fn
         -- impl 是最后一步，自动注册
@@ -91,6 +96,7 @@ local function createBuilder(registry, kind)
             kind = self._kind,
             description = self._description,
             inputs = inputs,
+            usage = self._usage,
             outputs = outputs,
             staticData = self._staticData,
             impl = self._impl,
@@ -280,6 +286,81 @@ function ServiceRegistry.exportDetailed()
         byKind = ServiceRegistry.exportByKind(),
         byNamespace = ServiceRegistry.exportByNamespace(),
     }
+end
+
+-- 导出指定命名空间的服务文档（人类可读）
+-- 返回: Array<{ name: string, doc: string }>
+function ServiceRegistry.exportDocByNamespace(namespace)
+    local services = {}
+    for identifier, spec in pairs(ServiceRegistry._services) do
+        if spec.namespace == namespace then
+            table.insert(services, spec)
+        end
+    end
+    
+    if #services == 0 then
+        return {}
+    end
+    
+    -- 按名称排序
+    table.sort(services, function(a, b)
+        return a.name < b.name
+    end)
+    
+    local result = {}
+    
+    for _, spec in ipairs(services) do
+        local lines = {}
+        
+        table.insert(lines, "## " .. spec.identifier)
+        table.insert(lines, "")
+        
+        -- 服务类型
+        table.insert(lines, "**Type**: " .. spec.kind)
+        table.insert(lines, "")
+        
+        -- 描述
+        if spec.description then
+            table.insert(lines, "**Description**: " .. spec.description)
+            table.insert(lines, "")
+        end
+        
+        -- 使用方式
+        if spec.usage then
+            table.insert(lines, "**Usage**:")
+            table.insert(lines, "```lua")
+            table.insert(lines, spec.usage)
+            table.insert(lines, "```")
+            table.insert(lines, "")
+        end
+        
+        -- 输入参数
+        table.insert(lines, "**Inputs**:")
+        table.insert(lines, "```")
+        table.insert(lines, Type.format(spec.inputs, 0, true))
+        table.insert(lines, "```")
+        table.insert(lines, "")
+        
+        -- 输出参数
+        table.insert(lines, "**Outputs**:")
+        table.insert(lines, "```")
+        table.insert(lines, Type.format(spec.outputs, 0, true))
+        table.insert(lines, "```")
+        table.insert(lines, "")
+        
+        -- 静态数据（如果有）
+        if spec.staticData and next(spec.staticData) ~= nil then
+            table.insert(lines, "**Static Data**: Available")
+            table.insert(lines, "")
+        end
+        
+        table.insert(result, {
+            name = spec.identifier,
+            doc = table.concat(lines, "\n")
+        })
+    end
+    
+    return result
 end
 
 ----------------------------------------------------------------
