@@ -10,15 +10,8 @@
  */
 
 import type { FileItem } from '@pubwiki/ui/components';
-import type { VfsFile, VfsFolder } from '@pubwiki/vfs';
+import { isVfsFolder } from '@pubwiki/vfs';
 import type { VersionedVfs } from './store';
-
-/**
- * Check if a VFS item is a folder
- */
-export function isVfsFolder(item: VfsFile | VfsFolder): item is VfsFolder {
-  return 'parentFolderId' in item && !('size' in item);
-}
 
 /**
  * Count files in a tree
@@ -90,8 +83,13 @@ export class VfsFileTreeService {
    * Initialize the service - load initial tree and setup event listeners
    */
   async initialize(): Promise<void> {
+    console.log('[VFS:FileTreeService] Initializing...');
+    const startTime = performance.now();
+    
     await this.loadFullTree();
     this.setupEventListeners();
+    
+    console.log(`[VFS:FileTreeService] Initialization complete in ${(performance.now() - startTime).toFixed(2)}ms`);
   }
   
   /**
@@ -248,9 +246,10 @@ export class VfsFileTreeService {
   
   async loadFullTree(): Promise<void> {
     try {
-      console.log('[VfsFileTreeService] Loading full tree...');
+      console.log('[VFS:FileTreeService] Loading full tree...');
+      const startTime = performance.now();
       const items = await this.loadFolderContents('/', 0);
-      console.log('[VfsFileTreeService] Loaded items:', items.length, items);
+      console.log(`[VFS:FileTreeService] Loaded ${items.length} items in ${(performance.now() - startTime).toFixed(2)}ms`, items);
       this.tree = items;
       this.onTreeChange(items);
     } catch (err) {

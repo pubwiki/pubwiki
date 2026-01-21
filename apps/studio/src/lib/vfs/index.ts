@@ -7,6 +7,7 @@ export {
   getVfsFactory,
   ScopedVfsProvider,
   NodeVfsFactory,
+  preInitializeZenFS,
   type VersionedVfs,
   type VersionedVfsProvider,
   type VfsProvider
@@ -14,7 +15,6 @@ export {
 
 export {
   VfsFileTreeService,
-  isVfsFolder,
   countFiles,
   countFolders,
   getParentPath,

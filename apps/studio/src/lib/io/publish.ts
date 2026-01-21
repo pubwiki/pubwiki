@@ -85,8 +85,8 @@ async function collectVfsFilePaths(
 	async function collectRecursive(path: string): Promise<void> {
 		const items = await vfs.listFolder(path);
 		for (const item of items) {
-			if ('folderId' in item) {
-				// It's a file (VfsFile has folderId, VfsFolder has parentFolderId)
+			if ('folderPath' in item) {
+				// It's a file (VfsFile has folderPath, VfsFolder has parentPath)
 				filePaths.push(item.path);
 			} else {
 				// It's a folder, recurse into it
@@ -125,7 +125,7 @@ async function collectVfsFiles(
 	async function collectRecursive(path: string): Promise<void> {
 		const items = await vfs.listFolder(path);
 		for (const item of items) {
-			if ('folderId' in item) {
+			if ('folderPath' in item) {
 				// It's a file - read its content
 				const file = await vfs.readFile(item.path);
 				if (file.content) {

@@ -58,20 +58,22 @@
 	// ============================================================================
 
 	onMount(async () => {
+		const mountTime = performance.now();
+		console.log(`[VFSNode] onMount triggered for ${id} at ${mountTime.toFixed(2)}ms`);
+		
 		if (!nodeData?.content?.projectId) {
 			error = 'Missing project ID';
 			isLoading = false;
+			console.log(`[VFSNode] ${id} missing projectId, aborting`);
 			return;
 		}
 		
 		try {
-			console.log('[VFSNode] Initializing:', {
-				nodeId: id,
-				projectId: nodeData.content.projectId
-			});
+			console.log(`[VFSNode] ${id} starting getVfsController...`);
+			const startTime = performance.now();
 			controller = await getVfsController(nodeData.content.projectId, id);
-			console.log('[VFSNode] Controller initialized:', {
-				nodeId: id,
+			const endTime = performance.now();
+			console.log(`[VFSNode] ${id} getVfsController completed in ${(endTime - startTime).toFixed(2)}ms`, {
 				fileTreeLength: controller?.fileTree?.length,
 				isLoading: controller?.isLoading,
 				error: controller?.error

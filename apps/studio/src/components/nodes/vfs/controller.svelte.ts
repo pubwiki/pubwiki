@@ -61,9 +61,12 @@ class VfsControllerImpl implements VfsController {
 	}
 
 	async initialize(): Promise<void> {
+		console.log(`[VFS:Controller] ${this._nodeId} initializing...`);
+		const startTime = performance.now();
 		try {
 			await this._fileTreeService.initialize();
 			this._isLoading = false;
+			console.log(`[VFS:Controller] ${this._nodeId} initialized in ${(performance.now() - startTime).toFixed(2)}ms`);
 		} catch (err) {
 			console.error('[VfsController] Failed to initialize:', err);
 			this._error = err instanceof Error ? err.message : 'Failed to initialize';
@@ -135,10 +138,14 @@ export async function getVfsController(
 	projectId: string,
 	nodeId: string
 ): Promise<VfsControllerImpl> {
+	console.log(`[VFS:Controller] getVfsController called for ${nodeId}`);
+	const totalStart = performance.now();
+	
 	// Check cache first
 	let controller = controllerCache.get(nodeId);
 	
 	if (controller) {
+		console.log(`[VFS:Controller] ${nodeId} found in cache`);
 		controller.addRef();
 		return controller;
 	}
@@ -146,20 +153,29 @@ export async function getVfsController(
 	// Check if there's already a pending creation
 	let pending = pendingControllers.get(nodeId);
 	if (pending) {
+		console.log(`[VFS:Controller] ${nodeId} creation already pending, waiting...`);
 		const ctrl = await pending;
 		ctrl.addRef();
+		console.log(`[VFS:Controller] ${nodeId} pending resolved in ${(performance.now() - totalStart).toFixed(2)}ms`);
 		return ctrl;
 	}
 
+	console.log(`[VFS:Controller] ${nodeId} creating new controller...`);
+	
 	// Create new controller with promise caching to prevent race conditions
 	const createPromise = (async () => {
+		const vfsStart = performance.now();
 		const vfs = await getNodeVfs(projectId, nodeId);
+		console.log(`[VFS:Controller] ${nodeId} getNodeVfs took ${(performance.now() - vfsStart).toFixed(2)}ms`);
+		
 		const newController = new VfsControllerImpl(vfs, nodeId);
 		controllerCache.set(nodeId, newController);
 		newController.addRef();
 		
 		// Initialize
+		const initStart = performance.now();
 		await newController.initialize();
+		console.log(`[VFS:Controller] ${nodeId} controller.initialize took ${(performance.now() - initStart).toFixed(2)}ms`);
 		
 		return newController;
 	})();
@@ -168,6 +184,7 @@ export async function getVfsController(
 	
 	try {
 		controller = await createPromise;
+		console.log(`[VFS:Controller] ${nodeId} TOTAL getVfsController: ${(performance.now() - totalStart).toFixed(2)}ms`);
 		return controller;
 	} finally {
 		// Clean up pending promise

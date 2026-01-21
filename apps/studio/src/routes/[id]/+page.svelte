@@ -45,6 +45,7 @@
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$lib/components/pubwiki';
+	import VfsDeleteConfirmDialog from '$components/dialogs/VfsDeleteConfirmDialog.svelte';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '$lib/state';
 	import { 
 		nodeStore, 
@@ -56,10 +57,22 @@
 		setCurrentProject, 
 		getProject
 	} from '$lib/persistence';
-	import { getNodeVfs, type VersionedVfs } from '$lib/vfs';
+	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type VersionedVfs } from '$lib/vfs';
+	import { requestVfsDeleteConfirmation } from '$lib/state/vfs-delete-confirm.svelte';
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { API_BASE_URL } from '$lib/config';
 	import * as m from '$lib/paraglide/messages';
+	import { browser } from '$app/environment';
+
+	// ============================================================================
+	// Pre-initialize ZenFS as early as possible (non-blocking, browser only)
+	// ============================================================================
+	
+	// Start ZenFS initialization immediately when this module loads in browser
+	// This runs before any component mounts, reducing perceived load time
+	if (browser) {
+		preInitializeZenFS();
+	}
 
 	// ============================================================================
 	// Node Types
@@ -361,10 +374,49 @@
 	// ============================================================================
 
 	/**
+	 * Handle before delete - shows confirmation for VFS nodes.
+	 * Returns false to cancel deletion, true to proceed.
+	 */
+	async function handleBeforeDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }): Promise<boolean> {
+		// Separate VFS nodes from other nodes
+		const vfsNodes = deletedNodes.filter(n => n.data.type === 'VFS' && !n.data.external);
+		const otherNodes = deletedNodes.filter(n => n.data.type !== 'VFS' || n.data.external);
+		
+		// If there are VFS nodes being deleted, request confirmation
+		if (vfsNodes.length > 0) {
+			const confirmed = await requestVfsDeleteConfirmation(vfsNodes, otherNodes);
+			if (!confirmed) {
+				// User cancelled - don't delete anything
+				return false;
+			}
+		}
+		
+		// Allow deletion to proceed
+		return true;
+	}
+
+	/**
 	 * Handle deletion of nodes and edges.
 	 * Dispatches to registered node handlers via flow-events.
+	 * Called after onbeforedelete returns true.
 	 */
-	function handleDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) {
+	async function handleDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) {
+		// Delete VFS data from OPFS for VFS nodes
+		const vfsNodes = deletedNodes.filter(n => n.data.type === 'VFS' && !n.data.external);
+		if (vfsNodes.length > 0) {
+			const factory = getVfsFactory();
+			for (const node of vfsNodes) {
+				try {
+					// First dispose any active VFS instance
+					await factory.disposeVfs(data.projectId, node.id);
+					// Then delete the underlying OPFS data
+					await factory.deleteVfsData(data.projectId, node.id);
+				} catch (e) {
+					console.error(`[VFS] Failed to delete VFS data for node ${node.id}:`, e);
+				}
+			}
+		}
+		
 		// Dispatch edge delete events
 		dispatchEdgeDeletes(
 			deletedEdges,
@@ -836,12 +888,42 @@
 		closeContextMenu();
 	}
 
-	function handleDeleteFromContextMenu() {
-		if (contextMenu?.nodeId) {
-			deleteNodes([contextMenu.nodeId]);
+	async function handleDeleteFromContextMenu() {
+		let nodesToDelete: Node<FlowNodeData>[] = [];
+		let edgesToDelete: Edge[] = [];
+		
+		const contextNodeId = contextMenu?.nodeId;
+		if (contextNodeId) {
+			const node = nodes.find(n => n.id === contextNodeId);
+			if (node) nodesToDelete = [node];
 		} else if (selectedNodes.length > 0) {
-			deleteNodes(selectedNodes.map(n => n.id));
+			nodesToDelete = selectedNodes;
 		}
+		
+		if (nodesToDelete.length === 0) {
+			closeContextMenu();
+			return;
+		}
+		
+		// Find connected edges to delete
+		const nodeIds = nodesToDelete.map(n => n.id);
+		edgesToDelete = edges.filter(e => nodeIds.includes(e.source) || nodeIds.includes(e.target));
+		
+		// Use the same confirmation flow as keyboard delete
+		const shouldDelete = await handleBeforeDelete({ nodes: nodesToDelete, edges: edgesToDelete });
+		if (!shouldDelete) {
+			closeContextMenu();
+			return;
+		}
+		
+		// Perform the actual deletion
+		handleDelete({ nodes: nodesToDelete, edges: edgesToDelete });
+		
+		// Update flow state
+		nodes = nodes.filter(n => !nodeIds.includes(n.id));
+		edges = edges.filter(e => !nodeIds.includes(e.source) && !nodeIds.includes(e.target));
+		selectedNodes = selectedNodes.filter(n => !nodeIds.includes(n.id));
+		closeContextMenu();
 	}
 
 	function handleFocusNode(node: Node<FlowNodeData>) {
@@ -927,6 +1009,7 @@
 			onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
 			onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
 			onconnect={(connection) => handleConnect(connection)}
+			onbeforedelete={handleBeforeDelete}
 			ondelete={handleDelete}
 			onnodedragstop={handleNodeDragStop}
 			onselectiondragstop={handleSelectionDragStop}
@@ -1106,6 +1189,9 @@
 			onCancel={() => respondConfirmation(null)}
 		/>
 	{/if}
+	
+	<!-- VFS Delete Confirmation Dialog -->
+	<VfsDeleteConfirmDialog />
 </div>
 
 <style>

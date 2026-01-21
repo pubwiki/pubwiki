@@ -27,14 +27,12 @@ export interface FileUpdatedEvent extends VfsEventBase {
 /** 文件删除事件 */
 export interface FileDeletedEvent extends VfsEventBase {
   type: 'file:deleted'
-  fileId: string
   path: string
 }
 
 /** 文件移动事件 */
 export interface FileMovedEvent extends VfsEventBase {
   type: 'file:moved'
-  fileId: string
   fromPath: string
   toPath: string
   file: VfsFile
@@ -50,7 +48,6 @@ export interface FolderCreatedEvent extends VfsEventBase {
 /** 文件夹更新事件 */
 export interface FolderUpdatedEvent extends VfsEventBase {
   type: 'folder:updated'
-  folderId: string
   path: string
   updates: Partial<VfsFolder>
 }
@@ -58,7 +55,6 @@ export interface FolderUpdatedEvent extends VfsEventBase {
 /** 文件夹删除事件 */
 export interface FolderDeletedEvent extends VfsEventBase {
   type: 'folder:deleted'
-  folderId: string
   path: string
   recursive: boolean
 }
@@ -66,7 +62,6 @@ export interface FolderDeletedEvent extends VfsEventBase {
 /** 文件夹移动事件 */
 export interface FolderMovedEvent extends VfsEventBase {
   type: 'folder:moved'
-  folderId: string
   fromPath: string
   toPath: string
 }

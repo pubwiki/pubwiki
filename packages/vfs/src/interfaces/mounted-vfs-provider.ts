@@ -106,21 +106,6 @@ export class MountedVfsProvider implements VfsProvider {
     return [vfs, relativeStr, bestMatch]
   }
 
-  // ========== ID 生成 ==========
-
-  async id(filePath: string): Promise<string> {
-    if (filePath === '/') {
-      return "/"
-    }
-    const resolved = this.resolvePath(filePath)
-    if (!resolved) {
-      throw new Error(`Path not mounted: ${filePath}`)
-    }
-    const [vfs, relativePath, mountPath] = resolved
-    const subId = await vfs.getProvider().id(relativePath)
-    return `${mountPath}:${subId}`
-  }
-
   // ========== 文件操作 ==========
 
   async readFile(filePath: string): Promise<Uint8Array> {

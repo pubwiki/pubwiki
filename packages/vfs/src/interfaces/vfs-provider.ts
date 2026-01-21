@@ -7,15 +7,6 @@ import type { VfsStat as VfsStat } from '../types'
  * 由具体的存储后端实现（如 ZenFS、Node.js fs、内存等）。
  */
 export interface VfsProvider {
-  // ========== ID 生成 ==========
-
-  /**
-   * 为路径生成稳定 ID
-   * @param path 文件/目录路径
-   * @returns 稳定的唯一标识符
-   */
-  id(path: string): Promise<string>
-
   // ========== 文件操作 ==========
 
   /**

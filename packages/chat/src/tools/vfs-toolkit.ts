@@ -7,7 +7,7 @@
 
 import { z } from 'zod'
 import type { ToolRegistry } from '../llm/tools'
-import type { Vfs, VfsItem } from '@pubwiki/vfs'
+import { isVfsFolder, type Vfs, type VfsItem } from '@pubwiki/vfs'
 
 /**
  * Register VFS tools to a tool registry
@@ -106,7 +106,7 @@ export function registerVFSTools(registry: ToolRegistry, vfs: Vfs): void {
         const items = await vfs.listFolder(path)
         const entries = items.map((item: VfsItem) => ({
           name: item.name,
-          isDirectory: 'parentFolderId' in item && !('size' in item)
+          isDirectory: isVfsFolder(item)
         }))
         return { success: true, entries }
       } catch (error) {

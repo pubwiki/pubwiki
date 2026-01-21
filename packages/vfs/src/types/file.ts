@@ -2,8 +2,6 @@
  * VFS 文件对象
  */
 export interface VfsFile {
-  /** 文件唯一标识（由 Provider 生成） */
-  id: string
   /** 文件完整路径 */
   path: string
   /** 文件名 */
@@ -16,8 +14,8 @@ export interface VfsFile {
   createdAt: string
   /** 更新时间（ISO 8601） */
   updatedAt: string
-  /** 父文件夹 ID */
-  folderId: string
+  /** 父文件夹路径 */
+  folderPath: string
   /** 文件内容（可选，按需加载） */
   content?: ArrayBuffer | string
 }
@@ -26,14 +24,12 @@ export interface VfsFile {
  * VFS 文件夹对象
  */
 export interface VfsFolder {
-  /** 文件夹唯一标识（由 Provider 生成） */
-  id: string
   /** 文件夹完整路径 */
   path: string
   /** 文件夹名称 */
   name: string
-  /** 父文件夹 ID */
-  parentFolderId: string
+  /** 父文件夹路径 */
+  parentPath: string
   /** 创建时间（ISO 8601） */
   createdAt: string
   /** 更新时间（ISO 8601） */
@@ -51,12 +47,12 @@ export type VfsItem = VfsFile | VfsFolder
  * 判断是否为文件
  */
 export function isVfsFile(item: VfsItem): item is VfsFile {
-  return 'folderId' in item && 'size' in item
+  return 'folderPath' in item && 'size' in item
 }
 
 /**
  * 判断是否为文件夹
  */
 export function isVfsFolder(item: VfsItem): item is VfsFolder {
-  return 'parentFolderId' in item && !('size' in item)
+  return 'parentPath' in item && !('size' in item)
 }

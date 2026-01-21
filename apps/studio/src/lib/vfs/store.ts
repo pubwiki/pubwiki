@@ -14,7 +14,7 @@ if (typeof globalThis.Buffer === 'undefined') {
 }
 
 import { configure, fs as zenfs } from '@zenfs/core';
-import { IndexedDB } from '@zenfs/dom';
+import { WebAccess } from '@zenfs/dom';
 import * as git from 'isomorphic-git';
 import {
   type VfsProvider,
@@ -35,22 +35,52 @@ let zenfsConfigured = false;
 let configurePromise: Promise<void> | null = null;
 
 /**
- * Configure ZenFS with IndexedDB backend
+ * Configure ZenFS with OPFS backend
  */
 async function ensureZenFSConfigured(): Promise<void> {
-  if (zenfsConfigured) return;
-  if (configurePromise) return configurePromise;
+  if (zenfsConfigured) {
+    console.log('[VFS:ZenFS] Already configured, skipping');
+    return;
+  }
+  if (configurePromise) {
+    console.log('[VFS:ZenFS] Configuration in progress, waiting...');
+    const waitStart = performance.now();
+    await configurePromise;
+    console.log(`[VFS:ZenFS] Wait for existing config took ${(performance.now() - waitStart).toFixed(2)}ms`);
+    return;
+  }
 
+  console.log('[VFS:ZenFS] Starting configuration...');
+  
   configurePromise = (async () => {
+    const configureStart = performance.now();
+    console.log('[VFS:ZenFS] Calling configure() with OPFS backend...');
+    
+    // Get OPFS root directory handle
+    const opfsRoot = await navigator.storage.getDirectory();
+    
     await configure({
       mounts: {
-        '/': IndexedDB,
+        '/': { backend: WebAccess, handle: opfsRoot },
       },
     });
+    console.log(`[VFS:ZenFS] configure() returned in ${(performance.now() - configureStart).toFixed(2)}ms`);
     zenfsConfigured = true;
   })();
 
-  return configurePromise;
+  const awaitStart = performance.now();
+  await configurePromise;
+  console.log(`[VFS:ZenFS] First await took ${(performance.now() - awaitStart).toFixed(2)}ms`);
+}
+
+/**
+ * Pre-initialize ZenFS to avoid delay on first VFS access.
+ * Call this early in app startup (e.g., in layout or page load).
+ * Returns immediately if already initialized or in progress.
+ */
+export function preInitializeZenFS(): Promise<void> {
+  console.log('[VFS:ZenFS] preInitializeZenFS called');
+  return ensureZenFSConfigured();
 }
 
 // ============================================================================
@@ -65,9 +95,6 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   private basePath: string;
   private initialized = false;
   private author = { name: 'Anonymous', email: 'anonymous@pubwiki.local' };
-  
-  // ID cache: path -> id (inode-based, invalidated on file changes)
-  private idCache = new Map<string, string>();
 
   constructor(
     private projectId: string,
@@ -98,12 +125,21 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   // ========== Lifecycle ==========
 
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    if (this.initialized) {
+      console.log(`[VFS:Provider] ${this.basePath} already initialized, skipping`);
+      return;
+    }
 
+    console.log(`[VFS:Provider] Initializing ${this.basePath}...`);
+    const totalStart = performance.now();
+    
+    const zenfsStart = performance.now();
     await ensureZenFSConfigured();
+    console.log(`[VFS:Provider] ${this.basePath} ZenFS ready in ${(performance.now() - zenfsStart).toFixed(2)}ms`);
 
     // Ensure base directory exists
     const absPath = this.basePath;
+    const mkdirStart = performance.now();
     try {
       await zenfs.promises.mkdir(absPath, { recursive: true });
     } catch (e: unknown) {
@@ -112,56 +148,33 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
         throw e;
       }
     }
+    console.log(`[VFS:Provider] ${this.basePath} mkdir in ${(performance.now() - mkdirStart).toFixed(2)}ms`);
 
     // Initialize git repository if not already initialized
+    const gitStart = performance.now();
     try {
       await git.init({
         fs: zenfs,
         dir: absPath,
         defaultBranch: 'main',
       });
+      console.log(`[VFS:Provider] ${this.basePath} git init (new) in ${(performance.now() - gitStart).toFixed(2)}ms`);
     } catch (e: unknown) {
       // Repository might already exist
       const err = e as Error;
       if (!err.message?.includes('already exists')) {
         console.warn('Git init warning:', err.message);
       }
+      console.log(`[VFS:Provider] ${this.basePath} git init (existing) in ${(performance.now() - gitStart).toFixed(2)}ms`);
     }
 
     this.initialized = true;
+    console.log(`[VFS:Provider] ${this.basePath} TOTAL initialization: ${(performance.now() - totalStart).toFixed(2)}ms`);
   }
 
   async dispose(): Promise<void> {
-    // Clear cache and reset state
-    this.idCache.clear();
+    // Reset state
     this.initialized = false;
-  }
-
-  // ========== ID Generation ==========
-
-  async id(path: string): Promise<string> {
-    const absPath = this.toAbsolutePath(path);
-    
-    // Check cache first
-    const cached = this.idCache.get(absPath);
-    if (cached !== undefined) {
-      return cached;
-    }
-    
-    // Get the inode number from ZenFS stat
-    const stats = await zenfs.promises.stat(absPath);
-    const id = stats.ino.toString(16).padStart(8, '0');
-    
-    // Cache the result
-    this.idCache.set(absPath, id);
-    
-    return id;
-  }
-  
-  // Invalidate cache for a path (call after write/delete/move operations)
-  private invalidateIdCache(path: string): void {
-    const absPath = this.toAbsolutePath(path);
-    this.idCache.delete(absPath);
   }
 
   // ========== File Operations ==========
@@ -188,14 +201,11 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     }
 
     await zenfs.promises.writeFile(absPath, content);
-    
-    this.invalidateIdCache(path);
   }
 
   async unlink(path: string): Promise<void> {
     const absPath = this.toAbsolutePath(path);
     await zenfs.promises.unlink(absPath);
-    this.invalidateIdCache(path);
   }
 
   // ========== Directory Operations ==========
@@ -204,7 +214,6 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     const absPath = this.toAbsolutePath(path);
     try {
       await zenfs.promises.mkdir(absPath, { recursive: options?.recursive });
-      this.invalidateIdCache(path);
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
         throw e;
@@ -222,15 +231,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     const absPath = this.toAbsolutePath(path);
     if (options?.recursive) {
       await zenfs.promises.rm(absPath, { recursive: true });
-      // Clear all cached ids under this path
-      for (const key of this.idCache.keys()) {
-        if (key.startsWith(absPath)) {
-          this.idCache.delete(key);
-        }
-      }
     } else {
       await zenfs.promises.rmdir(absPath);
-      this.invalidateIdCache(path);
     }
   }
 
@@ -277,9 +279,6 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     }
 
     await zenfs.promises.rename(absFrom, absTo);
-    // Invalidate cache for both old and new paths
-    this.invalidateIdCache(from);
-    this.invalidateIdCache(to);
   }
 
   async copyFile(from: string, to: string): Promise<void> {
@@ -692,6 +691,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 export class NodeVfsFactory {
   private vfsInstances = new Map<string, VersionedVfs>();
   private providers = new Map<string, ScopedVfsProvider>();
+  /** Promise cache to prevent duplicate concurrent creations */
+  private pendingCreations = new Map<string, Promise<VersionedVfs>>();
 
   /**
    * Get or create a VersionedVfs instance for a node
@@ -699,20 +700,52 @@ export class NodeVfsFactory {
   async getVfs(projectId: string, nodeId: string): Promise<VersionedVfs> {
     const key = `${projectId}/${nodeId}`;
 
+    // Check if already cached
     let vfs = this.vfsInstances.get(key);
-    if (!vfs) {
+    if (vfs) {
+      console.log(`[VFS:Factory] ${key} already cached, returning existing instance`);
+      return vfs;
+    }
+    
+    // Check if creation is already in progress (prevent race condition)
+    let pending = this.pendingCreations.get(key);
+    if (pending) {
+      console.log(`[VFS:Factory] ${key} creation already pending, waiting...`);
+      return pending;
+    }
+
+    console.log(`[VFS:Factory] Creating new VFS for ${key}...`);
+    const totalStart = performance.now();
+    
+    // Create promise and cache it immediately to prevent duplicate creations
+    const createPromise = (async (): Promise<VersionedVfs> => {
       // Create and initialize the provider
+      const providerStart = performance.now();
       const provider = new ScopedVfsProvider(projectId, nodeId);
       await provider.initialize();
       this.providers.set(key, provider);
+      console.log(`[VFS:Factory] ${key} provider ready in ${(performance.now() - providerStart).toFixed(2)}ms`);
       
       // Create VersionedVfs wrapper
-      vfs = createVfs(provider) as VersionedVfs;
-      await vfs.initialize();
-      this.vfsInstances.set(key, vfs);
+      const vfsStart = performance.now();
+      const newVfs = createVfs(provider) as VersionedVfs;
+      await newVfs.initialize();
+      this.vfsInstances.set(key, newVfs);
+      console.log(`[VFS:Factory] ${key} VFS wrapper ready in ${(performance.now() - vfsStart).toFixed(2)}ms`);
+      
+      console.log(`[VFS:Factory] ${key} TOTAL creation: ${(performance.now() - totalStart).toFixed(2)}ms`);
+      
+      return newVfs;
+    })();
+    
+    this.pendingCreations.set(key, createPromise);
+    
+    try {
+      vfs = await createPromise;
+      return vfs;
+    } finally {
+      this.pendingCreations.delete(key);
     }
-
-    return vfs;
   }
 
   /**
@@ -737,6 +770,32 @@ export class NodeVfsFactory {
     
     // Provider is disposed via VFS dispose
     this.providers.delete(key);
+  }
+
+  /**
+   * Delete all VFS data for a node from OPFS storage.
+   * This permanently removes all files in the /<projectId>/<nodeId>/ directory.
+   * Should be called after disposeVfs or when the VFS node is deleted.
+   */
+  async deleteVfsData(projectId: string, nodeId: string): Promise<void> {
+    await ensureZenFSConfigured();
+    
+    const vfsPath = `/${projectId}/${nodeId}`;
+    
+    try {
+      // Check if the directory exists before attempting to delete
+      await zenfs.promises.stat(vfsPath);
+      // Recursively delete the entire VFS directory
+      await zenfs.promises.rm(vfsPath, { recursive: true });
+      console.log(`[VFS:NodeVfsFactory] Deleted VFS data at ${vfsPath}`);
+    } catch (e) {
+      // Directory doesn't exist, nothing to delete
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+        console.log(`[VFS:NodeVfsFactory] No VFS data to delete at ${vfsPath}`);
+        return;
+      }
+      throw e;
+    }
   }
 
   /**
@@ -774,6 +833,8 @@ export async function getNodeVfs(
   projectId: string,
   nodeId: string
 ): Promise<VersionedVfs> {
+  console.log(`[VFS:getNodeVfs] Called for ${projectId}/${nodeId}`);
+  console.log('[VFS:getNodeVfs] Call stack:', new Error().stack);
   const factory = getVfsFactory();
   return factory.getVfs(projectId, nodeId);
 }

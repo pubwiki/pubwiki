@@ -5,6 +5,7 @@
 	 */
 	import type { VFSNodeData } from '$lib/types';
 	import { countFiles, countFolders } from '$lib/vfs';
+	import { isVfsFolder } from '@pubwiki/vfs';
 	import { getVfsController, releaseVfsController, type VfsController } from '../../../nodes/vfs/controller.svelte';
 	import UploadOverlay from '../../../nodes/vfs/UploadOverlay.svelte';
 	import { getStudioContext } from '$lib/state';
@@ -158,7 +159,7 @@
 				const entries = await vfs!.listFolder(folderPath);
 				
 				for (const entry of entries) {
-					if ('parentFolderId' in entry && !('size' in entry)) {
+					if (isVfsFolder(entry)) {
 						// It's a folder
 						await addFilesToZip(entry.path);
 					} else {

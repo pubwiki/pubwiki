@@ -13,7 +13,7 @@ import { messagesToChatMessages, createUserMessage, createSystemMessage, createA
 import { ToolRegistry } from '../llm/tools'
 import type { ChatProvider, ChatResult, ToolRegistrationParams } from './chat-provider'
 import type { MessageStoreProvider } from '../providers/types'
-import type { Vfs, VfsItem } from '@pubwiki/vfs'
+import { isVfsFolder, type Vfs, type VfsItem } from '@pubwiki/vfs'
 import type { 
   MessageNode, 
   MessageBlock, 
@@ -192,7 +192,7 @@ export class PubChat implements ChatProvider {
         const items = await vfs.listFolder(path)
         return items.map((item: VfsItem) => ({
           name: item.name,
-          isDirectory: 'parentFolderId' in item && !('size' in item)
+          isDirectory: isVfsFolder(item)
         }))
       }
     )
