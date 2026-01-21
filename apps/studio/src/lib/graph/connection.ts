@@ -77,6 +77,8 @@ export const HandleId = {
   LOADER_STATE: 'loader-state',
   /** Loader Node: Service output */
   LOADER_OUTPUT: 'loader-output',
+  /** Generated Node: VFS output (for file creation/modification) */
+  VFS_OUTPUT: 'vfs-output',
 } as const;
 
 // ============================================================================
@@ -224,6 +226,14 @@ export const NodeRegistry: Record<string, NodeSpec> = {
         dataType: DataType.STRING,
         cardinality: Cardinality.MANY,
         colorClass: 'bg-green-400',
+      },
+      // VFS Output Handle - for file creation/modification scenarios
+      {
+        id: HandleId.VFS_OUTPUT,
+        label: 'Files',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.OPTIONAL,
+        colorClass: 'bg-indigo-400',
       },
     ],
     manualInput: false, // Input is automatic

@@ -16,6 +16,7 @@ import {
 import { 
   resolvePromptContent, 
   getInputTagConnections,
+  getSystemPromptConnection,
   getMountpointConnections,
   resolveInputContent,
   getRefTagConnections
@@ -78,7 +79,15 @@ export async function prepareForGeneration(
 
   // Get tag connections for the input node (prompts connected via @tag)
   const tagConnections = getInputTagConnections(inputNodeId, edges);
-  const parentPromptIds = Array.from(tagConnections.values());
+  const tagPromptIds = Array.from(tagConnections.values());
+  
+  // Get system prompt connection (prompt connected via SYSTEM_TAG handle)
+  const systemPromptNodeId = getSystemPromptConnection(inputNodeId, edges);
+  
+  // Combine: system prompt node (if any) + tag connected prompts
+  const parentPromptIds = systemPromptNodeId 
+    ? [systemPromptNodeId, ...tagPromptIds]
+    : tagPromptIds;
   
   // Get mountpoint connections (VFS nodes connected via @/path)
   const mountpoints = getMountpointConnections(inputNodeId, edges);
@@ -147,23 +156,27 @@ export async function prepareForGeneration(
   
   const parentRefs: NodeRef[] = [inputRef, ...promptRefs];
 
-  // Step 3: Resolve reftags in prompt nodes and collect indirect refs
+  // Step 3: Resolve system prompt from SYSTEM_TAG connected prompt (if any)
+  // Only the prompt connected to SYSTEM_TAG becomes the system prompt
+  let resolvedSystemPrompt = '';
   const allPromptRefs: NodeRef[] = [];
-  const resolvedPrompts: string[] = [];
   
-  for (const promptNode of freshPromptNodes) {
-    const resolved = resolvePromptContent(
-      promptNode.id, 
-      updatedNodes, 
-      edges, 
-      new Set(), 
-      []
-    );
-    resolvedPrompts.push(resolved.content);
-    allPromptRefs.push(...resolved.allPromptRefs);
+  if (systemPromptNodeId) {
+    const systemPromptNode = freshPromptNodes.find(n => n.id === systemPromptNodeId);
+    if (systemPromptNode) {
+      const resolved = resolvePromptContent(
+        systemPromptNode.id, 
+        updatedNodes, 
+        edges, 
+        new Set(), 
+        []
+      );
+      resolvedSystemPrompt = resolved.content;
+      allPromptRefs.push(...resolved.allPromptRefs);
+    }
   }
 
-  // Step 4: Resolve tags in input content
+  // Step 4: Resolve tags in input content (replaces @tagname with connected prompt content)
   const inputResolved = resolveInputContent(
     inputNodeId,
     updatedNodes,
@@ -172,6 +185,9 @@ export async function prepareForGeneration(
     allPromptRefs
   );
   const resolvedUserInput = inputResolved.content;
+  
+  // Collect refs from tag-connected prompts (they were resolved in resolveInputContent)
+  allPromptRefs.push(...inputResolved.allPromptRefs);
 
   // Separate direct vs indirect refs
   const directPromptIdSet = new Set(promptRefs.map(r => r.id));
@@ -187,9 +203,6 @@ export async function prepareForGeneration(
     seenIndirect.add(key);
     return true;
   });
-
-  // Build resolved system prompt
-  const resolvedSystemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
 
   return {
     nodes: updatedNodes,

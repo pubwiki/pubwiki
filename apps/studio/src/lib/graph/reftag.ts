@@ -14,7 +14,7 @@ import type { FlowNodeData } from '../types/flow';
 import type { PromptContent, InputContent } from '../types/content';
 import type { NodeRef, SnapshotEdge } from '../version';
 import { nodeStore } from '../persistence';
-import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId } from './connection';
+import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId, HandleId } from './connection';
 
 // ============================================================================
 // Types
@@ -177,6 +177,7 @@ export function getRefTagConnections(
 
 /**
  * Check if an edge is a tag edge (for Input node)
+ * Only matches regular tag handles (tag-*), not system-prompt
  */
 export function isInputTagEdge(edge: Edge | SnapshotEdge): boolean {
   return isTagHandle(edge.targetHandle);
@@ -193,6 +194,7 @@ export function getInputTagNameFromEdge(edge: Edge | SnapshotEdge): string | nul
 /**
  * Get tag connections for an Input node
  * Returns a map of tag name -> connected source node ID
+ * Does NOT include SYSTEM_TAG - use getSystemPromptConnection for that
  */
 export function getInputTagConnections(
   nodeId: string,
@@ -210,6 +212,22 @@ export function getInputTagConnections(
   }
   
   return connections;
+}
+
+/**
+ * Get the system prompt connection for an Input node
+ * Returns the source node ID connected to SYSTEM_TAG handle, or null if not connected
+ */
+export function getSystemPromptConnection(
+  nodeId: string,
+  edges: Edge[]
+): string | null {
+  for (const edge of edges) {
+    if (edge.target === nodeId && edge.targetHandle === HandleId.SYSTEM_TAG) {
+      return edge.source;
+    }
+  }
+  return null;
 }
 
 /**

@@ -65,7 +65,17 @@
 		}
 		
 		try {
+			console.log('[VFSNode] Initializing:', {
+				nodeId: id,
+				projectId: nodeData.content.projectId
+			});
 			controller = await getVfsController(nodeData.content.projectId, id);
+			console.log('[VFSNode] Controller initialized:', {
+				nodeId: id,
+				fileTreeLength: controller?.fileTree?.length,
+				isLoading: controller?.isLoading,
+				error: controller?.error
+			});
 			isLoading = controller.isLoading;
 			error = controller.error;
 		} catch (err) {

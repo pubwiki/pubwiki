@@ -56,6 +56,7 @@ export {
   getInputTagNameFromEdge,
   getInputTagConnections,
   getInputTagConnectionsFromSnapshotEdges,
+  getSystemPromptConnection,
   isMountpointEdge,
   getMountpointIdFromEdge,
   getMountpointConnections,

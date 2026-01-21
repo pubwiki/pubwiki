@@ -14,7 +14,8 @@ export type {
   StateNodeData,
   StudioNodeData,
   Mountpoint,
-  NodeContent
+  NodeContent,
+  VfsRef
 } from './node-data';
 
 export {

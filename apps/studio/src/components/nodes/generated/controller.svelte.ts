@@ -5,20 +5,23 @@
  * - Regeneration using historical snapshots
  * - Streaming generation state management
  * - Version control handler registration
+ * - VFS cleanup/branching on regenerate
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { 
 	StudioNodeData, 
 	GeneratedNodeData,
-	InputNodeData
+	InputNodeData,
+	VFSNodeData
 } from '$lib/types';
 import type { FlowNodeData } from '$lib/types/flow';
 import type { GeneratedContent, InputContent } from '$lib/types';
 import type { MessageBlock } from '@pubwiki/chat';
 import { generateCommitHash, registerVersionHandler, type NodeRef } from '$lib/version';
 import { resolvePromptContentFromRefs } from '$lib/graph';
-import { nodeStore } from '$lib/persistence';
+import { nodeStore, layoutStore } from '$lib/persistence';
+import { getVfsController } from '../vfs/controller.svelte';
 import { 
 	PubChat, 
 	MemoryMessageStore, 
@@ -258,6 +261,8 @@ export async function streamGeneration(
 export interface RegenerationCallbacks {
 	/** Called to update a specific node's data */
 	updateNodeData: (nodeId: string, updater: (data: StudioNodeData) => StudioNodeData) => void;
+	/** Called to update flow nodes */
+	updateNodes: (updater: (nodes: Node<FlowNodeData>[]) => Node<FlowNodeData>[]) => void;
 	/** Called to update edges */
 	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
 	/** Called when regeneration completes successfully */
@@ -269,6 +274,10 @@ export interface RegenerationCallbacks {
  * This uses the original inputRef, promptRefs, and indirectPromptRefs to 
  * reconstruct the exact context that was used for the original generation,
  * including reftag-substituted content.
+ * 
+ * For VFS scenarios:
+ * - File creation (no inputVfsRef): Deletes the associated output VFS and re-creates on demand
+ * - File modification (has inputVfsRef): Creates a new branch based on the base commit
  * 
  * After layer separation:
  * - Uses FlowNodeData for flow layer
@@ -333,6 +342,52 @@ export async function regenerate(
 	}
 
 	const systemPrompt = resolvedPrompts.filter(Boolean).join('\n\n---\n\n');
+
+	// Handle VFS cleanup/branching for regeneration
+	// Scenario 1: File creation (no inputVfsRef) - delete the output VFS
+	// Scenario 2: File modification (has inputVfsRef) - create new branch from base commit
+	if (!genContent.inputVfsRef && genContent.outputVfsId) {
+		// File creation scenario: delete the associated VFS node
+		const vfsNodeId = genContent.outputVfsId;
+		
+		// Remove VFS node and its edges from flow
+		callbacks.updateNodes(nodes => nodes.filter(n => n.id !== vfsNodeId));
+		callbacks.updateEdges(edges => edges.filter(e => e.source !== vfsNodeId && e.target !== vfsNodeId));
+		
+		// Remove from stores
+		nodeStore.delete(vfsNodeId);
+		layoutStore.delete(vfsNodeId);
+		
+		// Clear outputVfsId in the generated node
+		nodeStore.update(generatedNodeId, (data) => {
+			const gen = data as GeneratedNodeData;
+			return {
+				...gen,
+				content: gen.content.withOutputVfs(null)
+			};
+		});
+		
+		console.log('[Regenerate] Deleted output VFS for file creation scenario:', vfsNodeId);
+	} else if (genContent.inputVfsRef && genContent.outputVfsId) {
+		// File modification scenario: create new branch from base commit
+		const { nodeId: vfsNodeId, commit: baseCommit } = genContent.inputVfsRef;
+		const vfsData = nodeStore.get(vfsNodeId) as VFSNodeData | undefined;
+		
+		if (vfsData) {
+			try {
+				const vfsController = await getVfsController(vfsData.content.projectId, vfsNodeId);
+				
+				// Create a new branch for this regeneration
+				const branchName = `gen-${generatedNodeId}-${Date.now()}`;
+				await vfsController.vfs.createBranch(branchName, baseCommit);
+				await vfsController.vfs.checkout(branchName);
+				
+				console.log('[Regenerate] Created new branch for file modification:', branchName);
+			} catch (e) {
+				console.warn('[Regenerate] Failed to create branch for VFS:', e);
+			}
+		}
+	}
 
 	// Notify streaming start and clear blocks via nodeStore
 	notifyStreamingChange(generatedNodeId, true);

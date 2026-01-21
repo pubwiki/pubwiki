@@ -32,11 +32,12 @@ import {
   StateContent,
   restoreContent,
   type Mountpoint,
-  type NodeContent
+  type NodeContent,
+  type VfsRef
 } from './content'
 
 // Re-export content types and classes for external use
-export type { Mountpoint, NodeContent }
+export type { Mountpoint, NodeContent, VfsRef }
 export {
   InputContent,
   PromptContent,
@@ -212,10 +213,12 @@ export async function createGeneratedNodeData(
   promptRefs: NodeRef[],
   indirectPromptRefs: NodeRef[] = [],
   parents: NodeRef[] = [],
-  name: string = ''
+  name: string = '',
+  inputVfsRef: import('./content').VfsRef | null = null,
+  outputVfsId: string | null = null
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
-  const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs)
+  const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs, inputVfsRef, outputVfsId)
   const commit = await generateCommitHash(content.serialize())
   return {
     id,

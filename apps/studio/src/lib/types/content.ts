@@ -241,6 +241,21 @@ export class PromptContent implements NodeContent {
   }
 }
 
+// ============================================================================
+// VFS Reference Types
+// ============================================================================
+
+/**
+ * VFS version reference - records the VFS state at a specific point in time.
+ * Used to track the base state before file modifications.
+ */
+export interface VfsRef {
+  /** VFS Node ID */
+  nodeId: string
+  /** Git commit hash - records the VFS state at generation time */
+  commit: string
+}
+
 /**
  * Generated node content - AI-generated content with references
  */
@@ -249,7 +264,11 @@ export class GeneratedContent implements NodeContent {
     public blocks: MessageBlock[] = [],
     public inputRef: NodeRef,
     public promptRefs: NodeRef[] = [],
-    public indirectPromptRefs: NodeRef[] = []
+    public indirectPromptRefs: NodeRef[] = [],
+    /** Input VFS version reference - for file modification scenarios */
+    public inputVfsRef: VfsRef | null = null,
+    /** Output VFS node ID - for file creation scenarios or modification output */
+    public outputVfsId: string | null = null
   ) {}
 
   getText(): string {
@@ -265,7 +284,9 @@ export class GeneratedContent implements NodeContent {
       structuredClone(this.blocks),
       { ...this.inputRef },
       this.promptRefs.map(ref => ({ ...ref })),
-      this.indirectPromptRefs.map(ref => ({ ...ref }))
+      this.indirectPromptRefs.map(ref => ({ ...ref })),
+      this.inputVfsRef ? { ...this.inputVfsRef } : null,
+      this.outputVfsId
     )
   }
 
@@ -275,7 +296,33 @@ export class GeneratedContent implements NodeContent {
       blocks,
       { ...this.inputRef },
       this.promptRefs.map(ref => ({ ...ref })),
-      this.indirectPromptRefs.map(ref => ({ ...ref }))
+      this.indirectPromptRefs.map(ref => ({ ...ref })),
+      this.inputVfsRef ? { ...this.inputVfsRef } : null,
+      this.outputVfsId
+    )
+  }
+
+  /** Create a copy with updated inputVfsRef */
+  withInputVfsRef(ref: VfsRef | null): GeneratedContent {
+    return new GeneratedContent(
+      structuredClone(this.blocks),
+      { ...this.inputRef },
+      this.promptRefs.map(ref => ({ ...ref })),
+      this.indirectPromptRefs.map(ref => ({ ...ref })),
+      ref,
+      this.outputVfsId
+    )
+  }
+
+  /** Create a copy with updated outputVfsId */
+  withOutputVfs(vfsId: string | null): GeneratedContent {
+    return new GeneratedContent(
+      structuredClone(this.blocks),
+      { ...this.inputRef },
+      this.promptRefs.map(ref => ({ ...ref })),
+      this.indirectPromptRefs.map(ref => ({ ...ref })),
+      this.inputVfsRef ? { ...this.inputVfsRef } : null,
+      vfsId
     )
   }
 
@@ -284,7 +331,9 @@ export class GeneratedContent implements NodeContent {
       blocks: this.blocks,
       inputRef: this.inputRef,
       promptRefs: this.promptRefs,
-      indirectPromptRefs: this.indirectPromptRefs
+      indirectPromptRefs: this.indirectPromptRefs,
+      inputVfsRef: this.inputVfsRef,
+      outputVfsId: this.outputVfsId
     }
   }
 
@@ -293,12 +342,16 @@ export class GeneratedContent implements NodeContent {
     inputRef: NodeRef
     promptRefs?: NodeRef[]
     indirectPromptRefs?: NodeRef[]
+    inputVfsRef?: VfsRef | null
+    outputVfsId?: string | null
   }): GeneratedContent {
     return new GeneratedContent(
       data.blocks ?? [],
       data.inputRef,
       data.promptRefs ?? [],
-      data.indirectPromptRefs ?? []
+      data.indirectPromptRefs ?? [],
+      data.inputVfsRef ?? null,
+      data.outputVfsId ?? null
     )
   }
 }
@@ -461,6 +514,8 @@ export function restoreContent(type: NodeType, data: unknown): NodeContent {
         inputRef: NodeRef
         promptRefs?: NodeRef[]
         indirectPromptRefs?: NodeRef[]
+        inputVfsRef?: VfsRef | null
+        outputVfsId?: string | null
       })
     case 'VFS':
       return VFSContent.fromJSON(json as { projectId: string })

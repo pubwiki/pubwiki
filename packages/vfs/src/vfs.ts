@@ -775,6 +775,44 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
       timestamp: Date.now(),
     })
   }
+
+  /**
+   * 创建新分支
+   * @param name 分支名称
+   * @param ref 可选的起始点（commit hash），默认为 HEAD
+   */
+  async createBranch(name: string, ref?: string): Promise<void> {
+    this.checkDisposed()
+    if (this._provider.createBranch) {
+      await this._provider.createBranch(name, ref)
+    } else {
+      throw new Error('createBranch is not supported by this provider')
+    }
+  }
+
+  /**
+   * 删除分支
+   * @param name 分支名称
+   */
+  async deleteBranch(name: string): Promise<void> {
+    this.checkDisposed()
+    if (this._provider.deleteBranch) {
+      await this._provider.deleteBranch(name)
+    } else {
+      throw new Error('deleteBranch is not supported by this provider')
+    }
+  }
+
+  /**
+   * 列出所有分支
+   */
+  async listBranches(): Promise<string[]> {
+    this.checkDisposed()
+    if (this._provider.listBranches) {
+      return this._provider.listBranches()
+    }
+    return []
+  }
 }
 
 // ========== 工厂函数 ==========

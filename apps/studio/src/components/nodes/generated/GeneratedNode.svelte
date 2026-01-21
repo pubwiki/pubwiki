@@ -7,17 +7,20 @@
 	 * - Streaming indicator during generation
 	 * - Tool call display during streaming (inline with content)
 	 * - Regenerate button
+	 * - VFS Output Handle for file creation scenarios
 	 * 
 	 * Runtime state (isStreaming) is component-local, managed via event callbacks.
 	 */
 	import { onMount } from 'svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
+	import { Handle, Position } from '@xyflow/svelte';
 	import type { GeneratedNodeData, FlowNodeData } from '$lib/types';
 	import type { MessageBlock } from '@pubwiki/chat';
 	import { blocksToContent } from '@pubwiki/chat';
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { nodeStore } from '$lib/persistence';
+	import { HandleId } from '$lib/graph';
 	import { onStreamingChange, regenerate, abortGeneration } from './controller.svelte';
 	import { marked } from 'marked';
 	import BaseNode from '../BaseNode.svelte';
@@ -69,6 +72,9 @@
 			? blocksToContent(previewState.content.blocks as MessageBlock[])
 			: blocksToContent(blocks)
 	);
+	
+	// VFS Output state - check if this generated node has an associated output VFS
+	const hasOutputVfs = $derived(!!nodeData?.content?.outputVfsId);
 
 	// ============================================================================
 	// Event Handlers
@@ -77,6 +83,7 @@
 	async function handleRegenerate() {
 		const callbacks = {
 			updateNodeData: ctx.updateNodeData,
+			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
 		const config = {
@@ -191,8 +198,30 @@
 				{/if}
 			{/if}
 		</div>
+		
+		<!-- VFS Output indicator footer -->
+		{#if hasOutputVfs}
+			<div class="px-3 py-1.5 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center gap-2">
+				<svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+				</svg>
+				<span>Files attached</span>
+			</div>
+		{/if}
 	{/snippet}
 </BaseNode>
+
+<!-- VFS Output Handle - positioned at bottom center -->
+{#if hasOutputVfs}
+	<Handle 
+		type="source" 
+		id={HandleId.VFS_OUTPUT}
+		position={Position.Bottom} 
+		{isConnectable}
+		class="w-3! h-3! bg-indigo-400! border-2! border-white!"
+		style="left: 50%; bottom: -6px;"
+	/>
+{/if}
 
 <style>
 	/* Generated content - enable text selection and wrap code blocks */

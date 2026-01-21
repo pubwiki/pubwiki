@@ -326,14 +326,14 @@
 	{#if leftHandles}
 		{@render leftHandles()}
 	{:else if showLeftHandle}
-		<Handle type="target" position={Position.Left} {isConnectable} class="w-3! h-3! {handleBgClass} border-2! border-white!" />
+		<Handle id="default" type="target" position={Position.Left} {isConnectable} class="w-3! h-3! {handleBgClass} border-2! border-white!" />
 	{/if}
 	
 	<!-- Default Right Handle -->
 	{#if rightHandles}
 		{@render rightHandles()}
 	{:else if showRightHandle}
-		<Handle type="source" position={Position.Right} {isConnectable} class="w-3! h-3! {handleBgClass} border-2! border-white!" />
+		<Handle id="default" type="source" position={Position.Right} {isConnectable} class="w-3! h-3! {handleBgClass} border-2! border-white!" />
 	{/if}
 
 	<!-- Version Gallery -->

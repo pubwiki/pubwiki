@@ -248,7 +248,9 @@ export class VfsFileTreeService {
   
   async loadFullTree(): Promise<void> {
     try {
+      console.log('[VfsFileTreeService] Loading full tree...');
       const items = await this.loadFolderContents('/', 0);
+      console.log('[VfsFileTreeService] Loaded items:', items.length, items);
       this.tree = items;
       this.onTreeChange(items);
     } catch (err) {
