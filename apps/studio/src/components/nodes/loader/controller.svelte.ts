@@ -286,8 +286,8 @@ export async function initializeLoader(
 			jsModules.set('pubwiki', createPubWikiModule(pubwikiContext));
 		}
 		
-		// Register partial_json module (always available)
-		jsModules.set('partial_json', createPartialJsonModule());
+		// Register partial-json module (always available)
+		jsModules.set('partial-json', createPartialJsonModule());
 		
 		// Build backend config
 		const config: BackendConfig = {

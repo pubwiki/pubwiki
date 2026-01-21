@@ -259,6 +259,7 @@ export class LuaBackend implements LoaderBackend {
 			// Register JS modules from config
 			if (config.jsModules) {
 				for (const [name, module] of config.jsModules) {
+					console.log(`[LuaBackend] Registering JS module: ${name}`);
 					this.instance.registerJsModule(name, module);
 				}
 			}
