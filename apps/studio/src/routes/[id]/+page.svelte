@@ -44,7 +44,7 @@
 	import { publishArtifact, type PublishMetadata } from '$lib/io';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
-	import { PubWikiConfirmDialog } from '$lib/components/pubwiki';
+	import { PubWikiConfirmDialog } from '$components/pubwiki';
 	import VfsDeleteConfirmDialog from '$components/dialogs/VfsDeleteConfirmDialog.svelte';
 	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '$lib/state';
 	import { 
