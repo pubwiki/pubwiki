@@ -34,3 +34,15 @@ import './backends/ts';
 // Export backends for direct access if needed
 export { LuaBackend, createLuaBackend } from './backends/lua';
 export { TsBackend, createTsBackend } from './backends/ts';
+
+// Export modules
+export {
+	createLLMModule,
+	createPubChat,
+	RDFMessageStore,
+	CHAT_HISTORY_GRAPH_URI,
+	createPubWikiModule,
+	createPubWikiContext,
+	type LLMModuleConfig,
+	type PubWikiModuleContext
+} from './modules';

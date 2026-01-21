@@ -14,7 +14,7 @@ import type { FlowNodeData } from '$lib/types/flow';
 import type { JsModuleDefinition } from '$lib/loader';
 import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
-import { requestConfirmation, type ConfirmationType } from '$lib/state/pubwiki-confirm.svelte';
+import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 import PublishForm from '$components/pubwiki/PublishForm.svelte';
 import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
 

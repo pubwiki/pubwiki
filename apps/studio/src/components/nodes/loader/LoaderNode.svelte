@@ -42,7 +42,7 @@
 		onLoaderReload,
 		getLoaderBackendType
 	} from './controller.svelte';
-	import { createPubWikiContext } from '$lib/modules/pubwiki';
+	import { createPubWikiContext } from '$lib/loader/modules';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
 	// ============================================================================

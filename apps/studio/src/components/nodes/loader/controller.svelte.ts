@@ -34,11 +34,7 @@ import {
 } from '$lib/state';
 import { getNodeVfs } from '$lib/vfs';
 import type { Vfs, VfsProvider } from '@pubwiki/vfs';
-import { 
-	PubChat, 
-	MemoryMessageStore,
-	type LLMConfig
-} from '@pubwiki/chat';
+import type { LLMConfig, PubChat } from '@pubwiki/chat';
 import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
 
 // Import loader backend abstraction
@@ -51,61 +47,16 @@ import {
 	type JsModuleDefinition
 } from '$lib/loader';
 
-// Import PubWiki module factory
-import { createPubWikiModule, type PubWikiModuleContext } from '$lib/modules/pubwiki';
+// Import module factories
+import { 
+	createLLMModule, 
+	createPubChat, 
+	createPubWikiModule, 
+	type PubWikiModuleContext 
+} from '$lib/loader/modules';
 
 // Re-exports for consumers
 export type { ServiceDefinition, LLMConfig, ServiceCallResult };
-
-// ============================================================================
-// LLM Module Factory
-// ============================================================================
-
-/**
- * Create a JS module definition for LLM access
- * 
- * The module exposes:
- * - LLM.chat(prompt: string, historyId?: string, overrideConfig?: table) -> {content: string, historyId: string}
- * - LLM.stream(prompt: string, historyId?: string, overrideConfig?: table) -> iterator of events
- * 
- * @param pubchat PubChat instance to wrap
- * @returns JsModuleDefinition for registerJsModule
- */
-function createLLMModule(pubchat: PubChat): JsModuleDefinition {
-	return {
-		/**
-		 * Non-streaming chat
-		 */
-		async chat(...args: unknown[]) {
-			const [prompt, historyId, overrideConfig] = args as [string, string?, Partial<LLMConfig>?];
-			const result = await pubchat.chat(prompt, historyId, overrideConfig);
-			// Extract text content from message blocks
-			const content = result.message.blocks
-				.filter(b => b.type === 'markdown' || b.type === 'text')
-				.map(b => b.content)
-				.join('');
-			return {
-				content,
-				historyId: result.historyId
-			};
-		},
-		
-		/**
-		 * Streaming chat - returns an async iterator
-		 */
-		stream(...args: unknown[]) {
-			const [prompt, historyId, overrideConfig] = args as [string, string?, Partial<LLMConfig>?];
-			return pubchat.streamChat(prompt, historyId, overrideConfig);
-		},
-		
-		/**
-		 * Abort current generation
-		 */
-		abort() {
-			pubchat.abort();
-		}
-	};
-}
 
 // ============================================================================
 // Types
@@ -318,14 +269,15 @@ export async function initializeLoader(
 		const jsModules: JsModuleRegistry = new Map();
 		
 		// Create PubChat and LLM module if config is provided
+		// Uses RDFMessageStore when rdfStore is available, otherwise MemoryMessageStore
 		let pubchat: PubChat | undefined;
 		if (llmConfig && llmConfig.apiKey && llmConfig.model) {
-			pubchat = new PubChat({
-				llm: llmConfig,
-				messageStore: new MemoryMessageStore(),
-				toolCalling: { enabled: false }
+			const { pubchat: pc, messageStore } = createPubChat({ 
+				llmConfig, 
+				rdfStore: rdfStore as BackendConfig['rdfStore']
 			});
-			jsModules.set('LLM', createLLMModule(pubchat));
+			pubchat = pc;
+			jsModules.set('LLM', createLLMModule(pubchat, messageStore));
 		}
 		
 		// Register PubWiki module if context is provided
