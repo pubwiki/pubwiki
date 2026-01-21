@@ -23,6 +23,4 @@ export {
 // Partial JSON Module
 export {
   createPartialJsonModule,
-  PartialJSON,
-  MalformedJSON
 } from './partial-json'

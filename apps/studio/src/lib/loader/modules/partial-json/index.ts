@@ -5,11 +5,9 @@
  * Uses openai-partial-json-parser for robust handling of incomplete JSON.
  */
 
-import { partialParse, PartialJSON, MalformedJSON } from 'openai-partial-json-parser'
+import { jsonrepair } from 'jsonrepair'
 import type { JsModuleDefinition } from '../../types'
 
-// Re-export error classes for type checking
-export { PartialJSON, MalformedJSON }
 
 // ============================================================================
 // Module Factory
@@ -29,7 +27,7 @@ export function createPartialJsonModule(): JsModuleDefinition {
 		 * @throws MalformedJSON if the JSON is malformed
 		 */
 		parse(jsonString: string) {
-			return partialParse(jsonString)
+			return JSON.parse(jsonrepair(jsonString))
 		}
 	}
 }
