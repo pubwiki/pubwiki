@@ -952,8 +952,8 @@
 		try {
 			const result = await importProjectFromZip();
 			if (result) {
-				// Navigate to the imported project with invalidation to force reload
-				goto(`/${result.projectId}`, { invalidateAll: true });
+				// Use hard navigation to ensure full page reload (same as ProjectListModal)
+				window.location.href = `/${result.projectId}`;
 			}
 		} catch (err) {
 			console.error('[Studio] Import failed:', err);
