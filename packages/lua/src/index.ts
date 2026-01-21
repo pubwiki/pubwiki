@@ -113,8 +113,6 @@ const DEFAULT_WASM_PATH = (() => {
 let gluePath = DEFAULT_GLUE_PATH
 let moduleInstance: LuaModule | null = null
 let modulePromise: Promise<void> | null = null
-let heapU8: Uint8Array | null = null
-let heapU32: Uint32Array | null = null
 
 interface LuaModule {
   HEAPU8: Uint8Array
@@ -148,16 +146,6 @@ function ensureModule(): LuaModule {
     throw new Error('Lua runner has not been loaded. Call loadRunner() first.')
   }
   return moduleInstance
-}
-
-function setHeapViews(module: LuaModule) {
-  if (heapU8 !== module.HEAPU8) {
-    heapU8 = module.HEAPU8
-    heapU32 = new Uint32Array(heapU8.buffer)
-  }
-  if (!heapU8) {
-    throw new Error('Lua runtime did not expose HEAPU8')
-  }
 }
 
 // 辅助函数：分配字节到 WASM 内存
@@ -215,9 +203,7 @@ const luaExecutionCallbacks = new Map<number, {
 function allocateUTF8(str: string, module: LuaModule): number {
   const encoded = textEncoder.encode(str + '\0')
   const ptr = module._malloc(encoded.length)
-  if (heapU8) {
-    heapU8.set(encoded, ptr)
-  }
+  module.HEAPU8.set(encoded, ptr)
   return ptr
 }
 
@@ -1064,11 +1050,11 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             
             // 从内存读取参数 handles 并转换为 JS 值
             const args: any[] = []
-            setHeapViews(module)
+            const heapU32 = new Uint32Array(module.HEAPU8.buffer)
             for (let i = 0; i < argsCount; i++) {
               // EM_VAL 是指针类型，在 32 位 WASM 中是 4 字节
               const handleOffset = argsHandlesPtr + i * 4
-              const handle = heapU32![handleOffset / 4]
+              const handle = heapU32[handleOffset / 4]
               try {
                 const value = Emval.toValue(handle)
                 args.push(value)
@@ -1162,11 +1148,11 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             
             // 从内存读取参数 handles 并转换为 JS 值
             const args: any[] = []
-            setHeapViews(module)
+            const heapU32 = new Uint32Array(module.HEAPU8.buffer)
             for (let i = 0; i < argsCount; i++) {
               // EM_VAL 是指针类型，在 32 位 WASM 中是 4 字节
               const handleOffset = argsHandlesPtr + i * 4
-              const handle = heapU32![handleOffset / 4]
+              const handle = heapU32[handleOffset / 4]
               try {
                 const value = Emval.toValue(handle)
                 args.push(value)
@@ -1352,7 +1338,6 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
       
       localModule = module
       moduleInstance = module
-      setHeapViews(module)
     } catch (error) {
       modulePromise = null
       throw error
@@ -1433,7 +1418,6 @@ export function isRunnerLoaded() {
 export function resetRunnerState() {
   moduleInstance = null
   modulePromise = null
-  heapU8 = null
 }
 
 // ============= 持久 Lua 实例 API =============
@@ -1502,10 +1486,9 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
   // 编码工作目录
   const workingDirBytes = textEncoder.encode(workingDirectory)
   const workingDirPtr = module._malloc(workingDirBytes.length + 1)
-  if (!heapU8) throw new Error('HEAPU8 not initialized')
   
-  heapU8.set(workingDirBytes, workingDirPtr)
-  heapU8[workingDirPtr + workingDirBytes.length] = 0
+  module.HEAPU8.set(workingDirBytes, workingDirPtr)
+  module.HEAPU8[workingDirPtr + workingDirBytes.length] = 0
   
   // 创建实例
   const instanceId = module._lua_create_instance(contextId, workingDirPtr)
@@ -1541,10 +1524,9 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
       // 编码 Lua 代码
       const codeBytes = textEncoder.encode(finalCode)
       const codePtr = module._malloc(codeBytes.length + 1)
-      if (!heapU8) throw new Error('HEAPU8 not initialized')
       
-      heapU8.set(codeBytes, codePtr)
-      heapU8[codePtr + codeBytes.length] = 0
+      module.HEAPU8.set(codeBytes, codePtr)
+      module.HEAPU8[codePtr + codeBytes.length] = 0
       
       // 获取 args 的 EM_VAL handle（如果有的话）
       let argsHandle = 0
@@ -1583,10 +1565,9 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
       // 通知 Rust 层注册模块名
       const nameBytes = textEncoder.encode(name)
       const namePtr = module._malloc(nameBytes.length + 1)
-      if (!heapU8) throw new Error('HEAPU8 not initialized')
       
-      heapU8.set(nameBytes, namePtr)
-      heapU8[namePtr + nameBytes.length] = 0
+      module.HEAPU8.set(nameBytes, namePtr)
+      module.HEAPU8[namePtr + nameBytes.length] = 0
       
       module._lua_register_js_module(instanceId, namePtr)
       module._free(namePtr)
