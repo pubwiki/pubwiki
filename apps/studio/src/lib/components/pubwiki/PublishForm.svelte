@@ -4,13 +4,23 @@
 	 */
 	import * as m from '$lib/paraglide/messages';
 	import { untrack } from 'svelte';
+	import { Dropdown } from '@pubwiki/ui/components';
 
 	interface Props {
 		initialValues: Record<string, unknown>;
 		onValuesChange: (values: Record<string, unknown>) => void;
 	}
 
+	type VisibilityOption = { value: string; label: string };
+
 	let { initialValues, onValuesChange }: Props = $props();
+
+	// Visibility options for dropdown - must be defined before use
+	const visibilityOptions: VisibilityOption[] = [
+		{ value: 'PUBLIC', label: m.studio_pubwiki_visibility_public() },
+		{ value: 'PRIVATE', label: m.studio_pubwiki_visibility_private() },
+		{ value: 'UNLISTED', label: m.studio_pubwiki_visibility_unlisted() }
+	];
 
 	// Capture initial values once (intentionally not reactive to props changes)
 	const initName = untrack(() => (initialValues.name as string) ?? '');
@@ -24,7 +34,9 @@
 	let slug = $state(initSlug);
 	let description = $state(initDescription);
 	let version = $state(initVersion);
-	let visibility = $state(initVisibility);
+	let visibility = $state<VisibilityOption>(
+		visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0]
+	);
 	let homepage = $state(initHomepage);
 
 	// Notify parent when any value changes
@@ -34,7 +46,7 @@
 			slug,
 			description,
 			version,
-			visibility,
+			visibility: visibility.value,
 			homepage
 		});
 	});
@@ -120,14 +132,13 @@
 			<label class="block text-sm font-medium text-gray-700 mb-1">
 				{m.studio_pubwiki_field_visibility()}
 			</label>
-			<select
-				class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+			<Dropdown
+				items={visibilityOptions}
 				bind:value={visibility}
-			>
-				<option value="PUBLIC">{m.studio_pubwiki_visibility_public()}</option>
-				<option value="PRIVATE">{m.studio_pubwiki_visibility_private()}</option>
-				<option value="UNLISTED">{m.studio_pubwiki_visibility_unlisted()}</option>
-			</select>
+				getLabel={(item: VisibilityOption) => item.label}
+				getKey={(item: VisibilityOption) => item.value}
+				size="md"
+			/>
 		</div>
 	</div>
 
