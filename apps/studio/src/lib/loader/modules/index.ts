@@ -19,3 +19,10 @@ export {
   createPubWikiContext,
   type PubWikiModuleContext
 } from './pubwiki'
+
+// Partial JSON Module
+export {
+  createPartialJsonModule,
+  PartialJSON,
+  MalformedJSON
+} from './partial-json'

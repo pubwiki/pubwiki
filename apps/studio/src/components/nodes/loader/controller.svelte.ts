@@ -51,7 +51,8 @@ import {
 import { 
 	createLLMModule, 
 	createPubChat, 
-	createPubWikiModule, 
+	createPubWikiModule,
+	createPartialJsonModule,
 	type PubWikiModuleContext 
 } from '$lib/loader/modules';
 
@@ -284,6 +285,9 @@ export async function initializeLoader(
 		if (pubwikiContext) {
 			jsModules.set('pubwiki', createPubWikiModule(pubwikiContext));
 		}
+		
+		// Register partial_json module (always available)
+		jsModules.set('partial_json', createPartialJsonModule());
 		
 		// Build backend config
 		const config: BackendConfig = {

@@ -407,6 +407,9 @@ importers:
       n3:
         specifier: 'catalog:'
         version: 2.0.1
+      openai-partial-json-parser:
+        specifier: ^1.1.1
+        version: 1.1.1
       quickjs-emscripten:
         specifier: ^0.31.0
         version: 0.31.0
@@ -4118,6 +4121,10 @@ packages:
   once@1.4.0:
     resolution: {integrity: sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w==}
 
+  openai-partial-json-parser@1.1.1:
+    resolution: {integrity: sha512-q01ELgmL3QjdbHBhIm7SJfZxk3FOx7hoW1QC6A4TwlQYtuVUALTdS3zAbDFKbQs56i6neOJVhAbOC/9J/CKvOg==}
+    engines: {node: '>=18'}
+
   openai@6.10.0:
     resolution: {integrity: sha512-ITxOGo7rO3XRMiKA5l7tQ43iNNu+iXGFAcf2t+aWVzzqRaS0i7m1K2BhxNdaveB+5eENhO0VY1FkiZzhBk4v3A==}
     hasBin: true
@@ -6716,7 +6723,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vitest: 4.0.17(@types/node@22.19.5)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
+      vitest: 4.0.17(@types/node@25.0.3)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
 
   '@vitest/utils@3.2.4':
     dependencies:
@@ -8050,6 +8057,8 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
+
+  openai-partial-json-parser@1.1.1: {}
 
   openai@6.10.0(ws@8.18.3)(zod@4.2.0):
     optionalDependencies:
