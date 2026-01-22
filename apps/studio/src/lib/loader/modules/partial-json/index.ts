@@ -22,12 +22,14 @@ export function createPartialJsonModule(): JsModuleDefinition {
 		 * Parse a partial JSON string
 		 * Uses default settings that allow all partial types except numbers
 		 * @param jsonString - The potentially incomplete JSON string
-		 * @returns Parsed JSON value
-		 * @throws PartialJSON if the JSON is incomplete
-		 * @throws MalformedJSON if the JSON is malformed
+		 * @returns Parsed JSON value or error object(which has _error property) if parsing fails
 		 */
 		parse(jsonString: string) {
-			return JSON.parse(jsonrepair(jsonString))
+			try {
+				return JSON.parse(jsonrepair(jsonString))
+			}catch (err) {
+				return {_error: 'Failed to parse JSON', details: err}
+			}
 		}
 	}
 }
