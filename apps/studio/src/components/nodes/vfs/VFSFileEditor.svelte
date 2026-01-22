@@ -37,6 +37,9 @@
 	let currentVersionId = $state(0);
 	let isDirty = $derived(currentVersionId !== lastSavedVersionId);
 
+	// Track external file changes when we have unsaved changes
+	let hasExternalChanges = $state(false);
+
 	// Monaco editor state
 	let editorContainer = $state<HTMLDivElement | null>(null);
 	let monaco: typeof Monaco | null = $state(null);
@@ -50,15 +53,36 @@
 	// Initialization
 	// ============================================================================
 
+	let eventUnsubscribe: (() => void) | null = null;
+
 	onMount(async () => {
 		console.log('[VFSFileEditor] onMount, filePath:', filePath);
 		monaco = await loader.init();
 		console.log('[VFSFileEditor] Monaco loaded');
 		await loadFileContent();
+
+		// Subscribe to file change events to auto-reload when file is modified externally
+		eventUnsubscribe = vfs.events.on('file:updated', async (event) => {
+			// Only reload if the updated file is the one we're currently editing
+			if (event.path === filePath) {
+				console.log('[VFSFileEditor] File updated externally, reloading:', event.path);
+				// Only reload if we don't have unsaved changes
+				if (!isDirty) {
+					await loadFileContent();
+				} else {
+					console.log('[VFSFileEditor] External change detected but have unsaved changes');
+					hasExternalChanges = true;
+				}
+			}
+		});
 	});
 
 	onDestroy(() => {
 		console.log('[VFSFileEditor] onDestroy');
+		if (eventUnsubscribe) {
+			eventUnsubscribe();
+			eventUnsubscribe = null;
+		}
 		if (editor) {
 			editor.dispose();
 			editor = null;
@@ -209,9 +233,15 @@
 		try {
 			await vfs.updateFile(filePath, fileContent);
 			lastSavedVersionId = editor?.getModel()?.getAlternativeVersionId() ?? 0;
+			hasExternalChanges = false; // Clear external changes flag after saving
 		} catch (err) {
 			console.error('Failed to save file:', err);
 		}
+	}
+
+	async function reloadFromDisk() {
+		await loadFileContent();
+		hasExternalChanges = false;
 	}
 
 	function handleClose() {
@@ -264,6 +294,22 @@
 				{error}
 			</div>
 		{:else}
+			<!-- External changes warning -->
+			{#if hasExternalChanges}
+				<div class="px-3 py-2 bg-amber-50 border-b border-amber-200 flex items-center gap-2 text-xs text-amber-800">
+					<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+					</svg>
+					<span class="flex-1">This file has been modified externally.</span>
+					<button
+						class="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors"
+						onclick={reloadFromDisk}
+					>
+						Reload
+					</button>
+				</div>
+			{/if}
+
 			<!-- File tab bar -->
 			<div class="px-3 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 shrink-0">
 				<svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

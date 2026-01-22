@@ -20,3 +20,10 @@ export {
   getParentPath,
   getFileName
 } from './file-tree-service';
+
+export {
+  createVSCodeLink,
+  type VSCodeLink,
+  type VSCodeLinkStatus,
+  type VSCodeLinkState
+} from './vscode-link.svelte';

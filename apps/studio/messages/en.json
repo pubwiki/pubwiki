@@ -502,5 +502,10 @@
 	"studio_pubwiki_field_title": "Title",
 	"studio_pubwiki_field_title_placeholder": "Article title",
 	"studio_pubwiki_field_sandbox_node": "Sandbox Node ID",
-	"studio_pubwiki_field_sandbox_node_help": "The sandbox node associated with this article"
+	"studio_pubwiki_field_sandbox_node_help": "The sandbox node associated with this article",
+	"studio_vfs_link_vscode": "Link to VSCode",
+	"studio_vfs_linked_vscode": "Linked to VSCode",
+	"studio_vfs_link_vscode_placeholder": "Enter callback URL from VSCode",
+	"studio_vfs_link_vscode_button": "Link",
+	"studio_vfs_link_vscode_disconnect": "Disconnect"
 }

@@ -365,6 +365,9 @@ importers:
       '@pubwiki/vfs':
         specifier: workspace:*
         version: link:../../packages/vfs
+      '@vfs/browser-client':
+        specifier: file:../../../pubchat-code/vfs-browser-client
+        version: '@pubwiki/vfs-browser-client@file:../pubchat-code/vfs-browser-client'
       '@xyflow/svelte':
         specifier: 'catalog:'
         version: 1.5.0(svelte@5.46.1)
@@ -1987,6 +1990,9 @@ packages:
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
 
+  '@pubwiki/vfs-browser-client@file:../pubchat-code/vfs-browser-client':
+    resolution: {directory: ../pubchat-code/vfs-browser-client, type: directory}
+
   '@rdfjs/types@1.1.2':
     resolution: {integrity: sha512-wqpOJK1QCbmsGNtyzYnojPU8gRDPid2JO0Q0kMtb4j65xhCK880cnKAfEOwC+dX85VJcCByQx5zOwyyfCjDJsg==}
 
@@ -3023,6 +3029,9 @@ packages:
   canonicalize@2.1.0:
     resolution: {integrity: sha512-F705O3xrsUtgt98j7leetNhTWPe+5S72rlL5O4jA1pKqBVQ/dT1O1D6PFxmSXvc0SUOinWS57DKx0I3CHrXJHQ==}
     hasBin: true
+
+  capnweb@0.2.0:
+    resolution: {integrity: sha512-fQSW5h6HIefRM4rHZMyAsWcu/qE/6Qr2OC8B99whifjDJatI5KLFcODSykKmpyCCKF50N3HvZ5lB26YBdh0fRg==}
 
   capnweb@0.4.0:
     resolution: {integrity: sha512-OgqPQcxnrAIqjrkAuwI4N9MP/mzseM5w9oLWb/oU63KveBJl1c8p41etLSVQUlYFiAYZu+h6/LJxKaDJd93xFw==}
@@ -5898,6 +5907,11 @@ snapshots:
 
   '@poppinss/exception@1.2.3': {}
 
+  '@pubwiki/vfs-browser-client@file:../pubchat-code/vfs-browser-client':
+    dependencies:
+      '@pubwiki/vfs': link:../../pubwiki/packages/vfs
+      capnweb: 0.2.0
+
   '@rdfjs/types@1.1.2':
     dependencies:
       '@types/node': 25.0.3
@@ -7016,6 +7030,8 @@ snapshots:
   caniuse-lite@1.0.30001760: {}
 
   canonicalize@2.1.0: {}
+
+  capnweb@0.2.0: {}
 
   capnweb@0.4.0: {}
 

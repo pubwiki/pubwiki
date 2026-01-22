@@ -5,9 +5,10 @@
  * - VFS instance lifecycle
  * - File tree service (shared between VFSNode and VFSProperties)
  * - Reactive file tree state
+ * - VSCode link for remote editing
  */
 
-import { getNodeVfs, VfsFileTreeService, type VersionedVfs } from '$lib/vfs';
+import { getNodeVfs, VfsFileTreeService, createVSCodeLink, type VersionedVfs, type VSCodeLink } from '$lib/vfs';
 import type { FileItem } from '@pubwiki/ui/components';
 
 // ============================================================================
@@ -27,6 +28,8 @@ export interface VfsController {
 	readonly error: string | null;
 	/** Shared reactive upload state - access .isUploading and .progress directly */
 	readonly uploadState: UploadState;
+	/** VSCode link for remote editing */
+	readonly vscodeLink: VSCodeLink;
 	setUploading(uploading: boolean, progress?: { current: number; total: number }): void;
 	dispose(): void;
 }
@@ -40,6 +43,7 @@ const controllerCache = new Map<string, VfsControllerImpl>();
 class VfsControllerImpl implements VfsController {
 	private _vfs: VersionedVfs;
 	private _fileTreeService: VfsFileTreeService;
+	private _vscodeLink: VSCodeLink;
 	private _fileTree = $state<FileItem[]>([]);
 	private _isLoading = $state(true);
 	private _error = $state<string | null>(null);
@@ -58,6 +62,7 @@ class VfsControllerImpl implements VfsController {
 				this._fileTree = newTree;
 			}
 		});
+		this._vscodeLink = createVSCodeLink(vfs);
 	}
 
 	async initialize(): Promise<void> {
@@ -94,6 +99,10 @@ class VfsControllerImpl implements VfsController {
 		return this._error;
 	}
 
+	get vscodeLink(): VSCodeLink {
+		return this._vscodeLink;
+	}
+
 	setUploading(uploading: boolean, progress?: { current: number; total: number }): void {
 		this.uploadState.isUploading = uploading;
 		this.uploadState.progress = progress ?? null;
@@ -114,6 +123,7 @@ class VfsControllerImpl implements VfsController {
 	dispose(): void {
 		if (this._disposed) return;
 		this._disposed = true;
+		this._vscodeLink.disconnect();
 		this._fileTreeService.dispose();
 	}
 }

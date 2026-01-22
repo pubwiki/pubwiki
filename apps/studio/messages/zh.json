@@ -502,5 +502,10 @@
 	"studio_pubwiki_field_title": "标题",
 	"studio_pubwiki_field_title_placeholder": "文章标题",
 	"studio_pubwiki_field_sandbox_node": "Sandbox 节点 ID",
-	"studio_pubwiki_field_sandbox_node_help": "与此文章关联的 Sandbox 节点"
+	"studio_pubwiki_field_sandbox_node_help": "与此文章关联的 Sandbox 节点",
+	"studio_vfs_link_vscode": "连接到 VSCode",
+	"studio_vfs_linked_vscode": "已连接到 VSCode",
+	"studio_vfs_link_vscode_placeholder": "输入 VSCode 回调 URL",
+	"studio_vfs_link_vscode_button": "连接",
+	"studio_vfs_link_vscode_disconnect": "断开连接"
 }

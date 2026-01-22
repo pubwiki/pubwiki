@@ -4,7 +4,7 @@
 	 * Uses shared VfsController with VFSNode for single event subscription
 	 */
 	import type { VFSNodeData } from '$lib/types';
-	import { countFiles, countFolders } from '$lib/vfs';
+	import { countFiles, countFolders, type VSCodeLinkStatus } from '$lib/vfs';
 	import { isVfsFolder } from '@pubwiki/vfs';
 	import { getVfsController, releaseVfsController, type VfsController } from '../../../nodes/vfs/controller.svelte';
 	import UploadOverlay from '../../../nodes/vfs/UploadOverlay.svelte';
@@ -38,6 +38,13 @@
 	let selectedFilePath = $state<string | undefined>(undefined);
 	let focusedPaths = $state<Set<string>>(new Set());
 
+	// VSCode Link State
+	let showVSCodeLinkInput = $state(false);
+	let vscodeLinkUrl = $state('');
+	let vscodeLinkError = $state<string | null>(null);
+	let isConnecting = $state(false);
+	let showDisconnectConfirm = $state(false);
+
 	// ============================================================================
 	// Derived
 	// ============================================================================
@@ -47,6 +54,8 @@
 	const folderCount = $derived(countFolders(fileTree));
 	const vfs = $derived(controller?.vfs ?? null);
 	const uploadState = $derived(controller?.uploadState);
+	const vscodeLink = $derived(controller?.vscodeLink);
+	const vscodeLinkStatus = $derived<VSCodeLinkStatus>(vscodeLink?.state.status ?? 'disconnected');
 
 	// ============================================================================
 	// File Operations (for FileTree)
@@ -261,12 +270,148 @@
 			await controller.fileTreeService.loadFullTree();
 		}
 	}
+
+	// ============================================================================
+	// VSCode Link Actions
+	// ============================================================================
+
+	function toggleVSCodeLinkInput() {
+		showVSCodeLinkInput = !showVSCodeLinkInput;
+		vscodeLinkError = null;
+		vscodeLinkUrl = '';
+	}
+
+	async function handleVSCodeLink() {
+		if (!vscodeLink || !vscodeLinkUrl.trim()) return;
+		
+		isConnecting = true;
+		vscodeLinkError = null;
+
+		try {
+			await vscodeLink.connect(vscodeLinkUrl.trim());
+			// Success - hide input
+			showVSCodeLinkInput = false;
+			vscodeLinkUrl = '';
+		} catch (err) {
+			vscodeLinkError = err instanceof Error ? err.message : 'Connection failed';
+		} finally {
+			isConnecting = false;
+		}
+	}
+
+	function handleVSCodeDisconnect() {
+		if (!vscodeLink) return;
+		vscodeLink.disconnect();
+		showDisconnectConfirm = false;
+	}
+
+	function toggleDisconnectConfirm() {
+		showDisconnectConfirm = !showDisconnectConfirm;
+	}
 </script>
 
 <div class="flex flex-col">
 	<!-- File List Header -->
 	<div class="flex items-center justify-between mb-2">
 		<span class="text-xs font-medium text-gray-500">{m.studio_overview_files()}</span>
+		
+		<!-- VSCode Link Button -->
+		<div class="relative">
+			{#if vscodeLinkStatus === 'connected'}
+				{#if showDisconnectConfirm}
+					<div class="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-700 rounded-md flex items-center gap-2">
+						<span>Disconnect?</span>
+						<button
+							type="button"
+							class="flex items-center justify-center hover:bg-amber-200 rounded p-0.5 transition-colors"
+							onclick={toggleDisconnectConfirm}
+							title="Cancel"
+						>
+							<svg class="w-3 h-3 text-red-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="12" cy="12" r="10"/>
+								<path d="M15 9l-6 6m0-6l6 6"/>
+							</svg>
+						</button>
+						<button
+							type="button"
+							class="flex items-center justify-center hover:bg-amber-200 rounded p-0.5 transition-colors"
+							onclick={handleVSCodeDisconnect}
+							title="Confirm disconnect"
+						>
+							<svg class="w-3 h-3 text-green-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="12" cy="12" r="10"/>
+								<path d="M9 12l2 2 4-4"/>
+							</svg>
+						</button>
+					</div>
+				{:else}
+					<button
+						type="button"
+						class="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-md flex items-center gap-1 hover:bg-green-200 transition-colors"
+						onclick={toggleDisconnectConfirm}
+						title={m.studio_vfs_link_vscode_disconnect()}
+					>
+						<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="10"/>
+							<path d="M9 12l2 2 4-4"/>
+						</svg>
+						{m.studio_vfs_linked_vscode()}
+					</button>
+				{/if}
+			{:else}
+				<button
+					type="button"
+					class="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-md flex items-center gap-1 hover:bg-blue-200 transition-colors"
+					class:bg-blue-200={showVSCodeLinkInput}
+					onclick={toggleVSCodeLinkInput}
+				>
+					<!-- VSCode Icon -->
+					<svg class="w-3 h-3" viewBox="0 0 100 100" fill="currentColor">
+						<path d="M95.514 23.027L75.998 4.013c-1.5-1.5-3.5-2-5.5-2-1.5 0-3 .5-4.5 1.5L8.997 52.007c-2 1.5-3.5 4-3.5 7v2c0 3 1.5 5.5 3.5 7l57.001 48.494c1.5 1 3 1.5 4.5 1.5 2 0 4-1 5.5-2.5l19.516-19.514c2-2 3-4.5 3-7.5v-57.99c0-3-1-5.5-3-7.47zM70.498 77.494L26.997 52.007l43.501-25.487v50.974z"/>
+					</svg>
+					{m.studio_vfs_link_vscode()}
+				</button>
+			{/if}
+			
+			<!-- VSCode Link Popup -->
+			{#if showVSCodeLinkInput && vscodeLinkStatus !== 'connected'}
+				<!-- Backdrop for click-outside-to-close -->
+				<button
+					type="button"
+					class="fixed inset-0 z-10 cursor-default"
+					onclick={toggleVSCodeLinkInput}
+					aria-label="Close popup"
+				></button>
+				<div class="absolute right-0 top-full mt-1 z-20 w-72 p-2 bg-white border border-gray-200 rounded-lg shadow-lg">
+					<div class="flex gap-2">
+						<input
+							type="text"
+							bind:value={vscodeLinkUrl}
+							placeholder={m.studio_vfs_link_vscode_placeholder()}
+							disabled={isConnecting}
+							class="flex-1 px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+						/>
+						<button
+							type="button"
+							onclick={handleVSCodeLink}
+							disabled={isConnecting || !vscodeLinkUrl.trim()}
+							class="px-3 py-1.5 text-xs font-medium bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+						>
+							{#if isConnecting}
+								<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+								</svg>
+							{/if}
+							{m.studio_vfs_link_vscode_button()}
+						</button>
+					</div>
+					{#if vscodeLinkError}
+						<p class="mt-1 text-xs text-red-500">{vscodeLinkError}</p>
+					{/if}
+				</div>
+			{/if}
+		</div>
 	</div>
 
 	<!-- File Tree -->
