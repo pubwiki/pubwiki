@@ -77,7 +77,7 @@
 	 * 
 	 * For streaming services (iterator-based), use the stream() method with callback.
 	 */
-	class LuaServiceBridge extends RpcTarget implements ICustomService {
+	class LoaderServiceBridge extends RpcTarget implements ICustomService {
 		private loaderInterface: LoaderInterface;
 		private serviceIdentifier: string;
 		private serviceDef: ServiceDefinition | null = null;
@@ -214,7 +214,7 @@
 				const serviceIdentifier = serviceDef.identifier;
 				// Create factory that returns a LuaServiceBridge
 				services.set(serviceIdentifier, () => {
-					const bridge = new LuaServiceBridge(loaderInterface, serviceIdentifier);
+					const bridge = new LoaderServiceBridge(loaderInterface, serviceIdentifier);
 					// Initialize asynchronously (service definition loading)
 					bridge.init().catch(err => {
 						console.error(`[LuaServiceBridge] Failed to init ${serviceIdentifier}:`, err);
