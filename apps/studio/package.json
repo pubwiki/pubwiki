@@ -52,12 +52,12 @@
 		"dexie": "^4.2.1",
 		"flowbite-svelte": "catalog:",
 		"isomorphic-git": "^1.36.1",
+		"jsonrepair": "^3.13.2",
 		"jszip": "^3.10.1",
 		"lexical": "catalog:",
 		"marked": "^17.0.1",
 		"monaco-editor": "^0.55.1",
 		"n3": "catalog:",
-		"openai-partial-json-parser": "^1.1.1",
 		"quickjs-emscripten": "^0.31.0",
 		"quickjs-emscripten-core": "^0.31.0",
 		"svelte-lexical": "catalog:"
