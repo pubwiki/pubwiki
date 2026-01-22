@@ -77,8 +77,8 @@ export interface ReasoningConfig {
  * LLM configuration override options
  */
 export interface LLMConfig {
-  model: string
-  apiKey: string
+  model?: string
+  apiKey?: string
   baseUrl?: string
   temperature?: number
   maxTokens?: number
@@ -272,6 +272,10 @@ export class PubChat implements ChatProvider {
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
         reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
       }
+
+      if (!llmConfig.model || !llmConfig.apiKey || !llmConfig.baseUrl) {
+        throw Error("Model, apiKey or baseUrl not provided")
+      }
       
       // Create pipeline
       const pipeline = new ChatStreamPipeline({
@@ -449,6 +453,10 @@ export class PubChat implements ChatProvider {
         organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
         reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
+      }
+
+       if (!llmConfig.model || !llmConfig.apiKey || !llmConfig.baseUrl) {
+        throw Error("Model, apiKey or baseUrl not provided")
       }
       
       // Create pipeline

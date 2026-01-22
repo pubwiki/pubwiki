@@ -272,14 +272,12 @@ export async function initializeLoader(
 		// Create PubChat and LLM module if config is provided
 		// Uses RDFMessageStore when rdfStore is available, otherwise MemoryMessageStore
 		let pubchat: PubChat | undefined;
-		if (llmConfig && llmConfig.apiKey && llmConfig.model) {
-			const { pubchat: pc, messageStore } = createPubChat({ 
-				llmConfig, 
-				rdfStore: rdfStore as BackendConfig['rdfStore']
-			});
-			pubchat = pc;
-			jsModules.set('LLM', createLLMModule(pubchat, messageStore));
-		}
+		const { pubchat: pc, messageStore } = createPubChat({ 
+			llmConfig: llmConfig ?? {}, 
+			rdfStore: rdfStore as BackendConfig['rdfStore']
+		});
+		pubchat = pc;
+		jsModules.set('LLM', createLLMModule(pubchat, messageStore));
 		
 		// Register PubWiki module if context is provided
 		if (pubwikiContext) {
