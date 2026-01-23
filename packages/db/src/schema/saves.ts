@@ -20,8 +20,8 @@ export const cloudSaves = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    // 关联的 sandbox node ID (可选，用于定位)
-    sandboxNodeId: text('sandbox_node_id'),
+    // 关联的 state node ID (可选，用于定位)
+    stateNodeId: text('state_node_id'),
     // 存档名称
     name: text('name').notNull(),
     // 存档描述
@@ -35,7 +35,7 @@ export const cloudSaves = sqliteTable(
   },
   (table) => [
     index('idx_cloud_saves_user').on(table.userId),
-    index('idx_cloud_saves_sandbox').on(table.sandboxNodeId),
+    index('idx_cloud_saves_state').on(table.stateNodeId),
   ]
 );
 

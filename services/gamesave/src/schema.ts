@@ -60,6 +60,8 @@ export const checkpoints = sqliteTable('checkpoints', {
   name: text('name'),
   // 可选的描述
   description: text('description'),
+  // 可见性：PRIVATE (仅 owner), UNLISTED (知道链接可访问), PUBLIC (公开可列举)
+  visibility: text('visibility').notNull().default('PRIVATE'),
 });
 
 /**

@@ -31,6 +31,7 @@ import type {
   SyncOperationsResponse,
   CheckpointMetadata,
   CheckpointInfo,
+  CheckpointVisibility,
   NearestCheckpointResult,
 } from './types';
 import { ROOT_REF, generateRef, quadsToJsonl, normalizeQuad, quadKey } from './serialization';
@@ -64,14 +65,14 @@ export class CloudSaveObject extends DurableObject<Env> {
    * 初始化存档 (关联用户和 sandbox node)
    * cachedRef 记录 quads 表当前缓存的是哪个 ref 的状态
    */
-  async initialize(userId: string, sandboxNodeId: string): Promise<void> {
+  async initialize(userId: string, stateNodeId: string): Promise<void> {
     const now = Date.now();
     
     // 使用事务插入初始元数据
     // cachedRef: quads 表当前缓存的状态对应的 ref（初始为 ROOT_REF = 空状态）
     await this.db.insert(metadata).values([
       { key: 'userId', value: userId },
-      { key: 'sandboxNodeId', value: sandboxNodeId },
+      { key: 'stateNodeId', value: stateNodeId },
       { key: 'cachedRef', value: ROOT_REF },
       { key: 'createdAt', value: String(now) },
       { key: 'updatedAt', value: String(now) },
@@ -92,7 +93,8 @@ export class CloudSaveObject extends DurableObject<Env> {
     
     return {
       userId: data['userId'] || '',
-      sandboxNodeId: data['sandboxNodeId'] || '',
+      // 兼容旧数据：优先读取 stateNodeId，如果不存在则读取旧的 sandboxNodeId
+      stateNodeId: data['stateNodeId'] || data['sandboxNodeId'] || '',
       createdAt: parseInt(data['createdAt'] || '0', 10),
       updatedAt: parseInt(data['updatedAt'] || '0', 10),
     };
@@ -754,6 +756,7 @@ export class CloudSaveObject extends DurableObject<Env> {
         quadCount: quadsArray.length,
         name: meta?.name ?? null,
         description: meta?.description ?? null,
+        visibility: meta?.visibility ?? 'PRIVATE',
       });
 
       // 批量插入 checkpoint quads
@@ -776,11 +779,16 @@ export class CloudSaveObject extends DurableObject<Env> {
   }
 
   /**
-   * 获取所有 checkpoint 信息
+   * 获取 checkpoint 信息
+   * @param accessLevel - 'owner' 返回所有 checkpoint，'public' 仅返回 PUBLIC 的
    */
-  async listCheckpoints(): Promise<CheckpointInfo[]> {
-    const rows = await this.db.select().from(checkpoints)
-      .orderBy(desc(checkpoints.timestamp));
+  async listCheckpoints(accessLevel: 'owner' | 'public' = 'owner'): Promise<CheckpointInfo[]> {
+    const rows = accessLevel === 'public'
+      ? await this.db.select().from(checkpoints)
+          .where(eq(checkpoints.visibility, 'PUBLIC'))
+          .orderBy(desc(checkpoints.timestamp))
+      : await this.db.select().from(checkpoints)
+          .orderBy(desc(checkpoints.timestamp));
     
     return rows.map(row => ({
       ref: row.ref,
@@ -788,7 +796,41 @@ export class CloudSaveObject extends DurableObject<Env> {
       quadCount: row.quadCount,
       name: row.name ?? undefined,
       description: row.description ?? undefined,
+      visibility: row.visibility as CheckpointVisibility,
     }));
+  }
+
+  /**
+   * 获取单个 checkpoint 信息
+   */
+  async getCheckpoint(ref: string): Promise<CheckpointInfo | null> {
+    const [row] = await this.db.select()
+      .from(checkpoints)
+      .where(eq(checkpoints.ref, ref))
+      .limit(1);
+    
+    if (!row) return null;
+    
+    return {
+      ref: row.ref,
+      timestamp: row.timestamp,
+      quadCount: row.quadCount,
+      name: row.name ?? undefined,
+      description: row.description ?? undefined,
+      visibility: row.visibility as CheckpointVisibility,
+    };
+  }
+
+  /**
+   * 更新 checkpoint 的可见性
+   */
+  async updateCheckpointVisibility(ref: string, visibility: CheckpointVisibility): Promise<boolean> {
+    const result = await this.db.update(checkpoints)
+      .set({ visibility })
+      .where(eq(checkpoints.ref, ref))
+      .returning();
+    
+    return result.length > 0;
   }
 
   /**

@@ -15,7 +15,7 @@ CloudSave:
     userId:
       type: string
       format: uuid
-    sandboxNodeId:
+    stateNodeId:
       type: string
       format: uuid
       nullable: true
@@ -47,7 +47,7 @@ CreateSaveRequest:
     description:
       type: string
       maxLength: 1000
-    sandboxNodeId:
+    stateNodeId:
       type: string
       format: uuid
 

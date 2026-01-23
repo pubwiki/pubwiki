@@ -169,7 +169,19 @@ import type {
   // Article 响应类型
   GetArticleResponse,
   UpsertArticleResponse,
-  ListArticlesBySandboxResponse,
+  ListArticlesByStateResponse,
+  
+  // Cloud Save 相关类型
+  CloudSave,
+  CreateSaveRequest,
+  Quad,
+  Operation,
+  OperationWithRef,
+  SyncOperationsRequest,
+  SyncOperationsResponse,
+  CheckpointInfo,
+  CreateCheckpointRequest,
+  ExportResult,
   
   // 查询参数类型
   ListArtifactsQuery,
@@ -179,7 +191,7 @@ import type {
   ListDiscussionsQuery,
   ListDiscussionRepliesQuery,
   ListProjectPostsQuery,
-  ListArticlesBySandboxQuery,
+  ListArticlesByStateQuery,
 } from '@pubwiki/api';
 ```
 
@@ -829,7 +841,16 @@ if (error) {
 | POST | `/discussions/replies/{replyId}/accept` | 采纳回复为答案 | ✅ |
 | GET | `/articles/{articleId}` | 获取文章详情 | ❌ |
 | PUT | `/articles/{articleId}` | 创建或更新文章（upsert） | ✅ |
-| GET | `/articles/by-sandbox/{sandboxNodeId}` | 获取与 sandbox 关联的文章列表（分页） | ❌ |
+| GET | `/articles/by-state/{stateNodeId}` | 获取与 state 节点关联的文章列表（分页） | ❌ |
+| GET | `/saves` | 获取用户的所有云存档列表 | ✅ |
+| POST | `/saves` | 创建新云存档 | ✅ |
+| DELETE | `/saves/{saveId}` | 删除云存档 | ✅ |
+| POST | `/saves/{saveId}/sync` | 同步操作到云存档 | ✅ |
+| GET | `/saves/{saveId}/history` | 获取版本历史 | ✅ |
+| GET | `/saves/{saveId}/export/{ref}` | 导出指定版本的数据 | 🔒* |
+| GET | `/saves/{saveId}/checkpoints` | 获取检查点列表 | 🔒* |
+| POST | `/saves/{saveId}/checkpoints` | 创建检查点 | ✅ |
+| DELETE | `/saves/{saveId}/checkpoints/{ref}` | 删除检查点 | ✅ |
 
 ### 谱系查询参数
 
@@ -914,12 +935,18 @@ if (error) {
 | `limit` | integer | 每页数量，默认 50，最大 100 |
 | `sortOrder` | string | 排序方向：`asc`（默认）, `desc` |
 
-### Articles By Sandbox 查询参数
+### Articles By State 查询参数
 
 | 参数 | 类型 | 描述 |
 |------|------|------|
 | `page` | integer | 页码，默认 1 |
 | `limit` | integer | 每页数量，默认 20，最大 100 |
+
+### Cloud Saves 检查点查询参数
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| 无参数 | - | Owner 可查看所有检查点；非 Owner 只能查看 PUBLIC 检查点 |
 
 > \* 权限说明：
 > - PUBLIC artifact/project: 所有人可访问
@@ -931,6 +958,10 @@ if (error) {
 > - 未认证用户：只能看到 PUBLIC 资源
 > - 已认证用户查看他人：可以看到 PUBLIC 和 UNLISTED 资源
 > - 已认证用户查看自己：可以看到所有资源（包括 PRIVATE）
+>
+> Cloud Saves 端点权限：
+> - `/saves/{saveId}/export/{ref}`：Owner 可导出任意版本；非 Owner 只能导出 PUBLIC 检查点版本
+> - `/saves/{saveId}/checkpoints`：Owner 可查看所有检查点；非 Owner 只能查看 PUBLIC 检查点
 
 ## 类型定义
 
@@ -1063,6 +1094,10 @@ interface ArtifactNodeDescriptor {
   type?: ArtifactNodeType;       // 节点类型（内部节点必填）
   name?: string;                 // 节点名称
   files?: string[];              // VFS 类型时的文件路径列表
+  originalRef?: {                // Fork-on-Write 时的原始节点引用
+    nodeId: string;              // 原始节点 ID
+    commit: string;              // 原始节点版本 commit hash
+  };
 }
 ```
 
@@ -1616,6 +1651,88 @@ interface JwtPayload {
   isAdmin: boolean;
   iat?: number;     // 签发时间
   exp?: number;     // 过期时间
+}
+```
+
+### CloudSave
+
+云存档信息：
+
+```typescript
+interface CloudSave {
+  id: string;                  // UUID
+  userId: string;              // 所属用户 ID
+  stateNodeId?: string | null; // 关联的 STATE 节点 ID
+  name: string;                // 存档名称
+  description?: string | null; // 描述
+  createdAt: string;           // 创建时间
+  updatedAt: string;           // 更新时间
+  lastSyncedAt?: string | null; // 最后同步时间
+}
+```
+
+### CheckpointInfo
+
+检查点信息：
+
+```typescript
+interface CheckpointInfo {
+  ref: string;                  // 检查点引用（版本 hash）
+  timestamp: number;            // 创建时间戳
+  quadCount: number;            // RDF quad 数量
+  name?: string | null;         // 检查点名称
+  description?: string | null;  // 描述
+  visibility: 'PRIVATE' | 'UNLISTED' | 'PUBLIC'; // 可见性
+}
+```
+
+### CheckpointVisibility
+
+检查点可见性枚举：
+
+```typescript
+type CheckpointVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
+```
+
+**可见性说明**：
+- `PRIVATE`：仅存档所有者可见
+- `UNLISTED`：知道链接的注册用户可访问
+- `PUBLIC`：所有人可见（Artifact 发布时会自动提升为 PUBLIC）
+
+### CreateSaveRequest
+
+创建云存档请求：
+
+```typescript
+interface CreateSaveRequest {
+  name: string;                 // 1-200 字符
+  description?: string;         // 最大 1000 字符
+  stateNodeId?: string;         // 可选，关联的 STATE 节点 ID
+}
+```
+
+### SyncOperationsRequest
+
+同步操作请求：
+
+```typescript
+interface SyncOperationsRequest {
+  baseRef: string;              // 操作基于的 ref (parent of first operation)
+  operations: OperationWithRef[]; // 操作列表
+}
+
+interface OperationWithRef {
+  operation: Operation;
+  ref: string;                  // 客户端计算的 ref (链式 hash)
+}
+
+interface Operation {
+  type: 'insert' | 'delete' | 'batch-insert' | 'batch-delete' | 'patch';
+  quad?: Quad;                  // 单个 quad 操作
+  quads?: Quad[];               // 批量 quad 操作
+  subject?: string;             // patch 操作的 subject
+  predicate?: string;           // patch 操作的 predicate
+  patch?: TextPatch;            // 文本 patch
 }
 ```
 

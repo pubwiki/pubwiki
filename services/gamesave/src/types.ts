@@ -23,6 +23,7 @@ export type {
   ExportResult,
   CheckpointMetadata,
   CheckpointInfo,
+  CheckpointVisibility,
   GameSaveRPC,
 } from './rpc-types';
 

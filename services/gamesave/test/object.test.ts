@@ -86,16 +86,16 @@ describe('CloudSaveObject', () => {
   }
 
   describe('initialize', () => {
-    it('should initialize save with user and sandbox node', async () => {
+    it('should initialize save with user and state node', async () => {
       const stub = getSaveObject('init-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-123', 'sandbox-456');
+        await instance.initialize('user-123', 'state-456');
         
         const meta = await instance.getMetadata();
         expect(meta).not.toBeNull();
         expect(meta!.userId).toBe('user-123');
-        expect(meta!.sandboxNodeId).toBe('sandbox-456');
+        expect(meta!.stateNodeId).toBe('state-456');
         expect(meta!.createdAt).toBeGreaterThan(0);
         expect(meta!.updatedAt).toBeGreaterThan(0);
         
@@ -109,16 +109,16 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('init-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         const meta1 = await instance.getMetadata();
         
         // 再次初始化
-        await instance.initialize('user-2', 'sandbox-2');
+        await instance.initialize('user-2', 'state-2');
         const meta2 = await instance.getMetadata();
         
         // 应该保持原来的值
         expect(meta2!.userId).toBe('user-1');
-        expect(meta2!.sandboxNodeId).toBe('sandbox-1');
+        expect(meta2!.stateNodeId).toBe('state-1');
       });
     });
   });
@@ -128,7 +128,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('op-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const result = await applyOperation(instance, {
           type: 'insert',
@@ -154,7 +154,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('op-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         // 先插入
         await applyOperation(instance, {
@@ -192,7 +192,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('op-test-3');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const quad = {
           subject: '<http://example.org/s>',
@@ -215,7 +215,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('batch-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const result = await applyOperations(instance, [{
           type: 'batch-insert',
@@ -238,7 +238,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('batch-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         // 批量插入
         await applyOperations(instance, [{
@@ -267,7 +267,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('batch-test-3');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const result = await applyOperations(instance, []);
         expect(result.success).toBe(true);
@@ -282,7 +282,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('version-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         // 执行多个操作
         const result1 = await applyOperation(instance, {
@@ -313,7 +313,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('version-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const ref1 = await instance.getCachedRef();
         expect(ref1).toBe('root');
@@ -335,7 +335,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('export-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const result = await applyOperations(instance, [{
           type: 'batch-insert',
@@ -367,7 +367,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('count-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         expect(await instance.getQuadCount()).toBe(0);
         
@@ -388,7 +388,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('count-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         expect(await instance.getVersionCount()).toBe(0);
         
@@ -412,7 +412,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('clear-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         await applyOperations(instance, [{
           type: 'batch-insert',
@@ -436,7 +436,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('clear-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-123', 'sandbox-456');
+        await instance.initialize('user-123', 'state-456');
         
         await applyOperation(instance, {
           type: 'insert',
@@ -449,7 +449,7 @@ describe('CloudSaveObject', () => {
         const meta = await instance.getMetadata();
         expect(meta).not.toBeNull();
         expect(meta!.userId).toBe('user-123');
-        expect(meta!.sandboxNodeId).toBe('sandbox-456');
+        expect(meta!.stateNodeId).toBe('state-456');
       });
     });
   });
@@ -459,7 +459,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('literal-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         await applyOperation(instance, {
           type: 'insert',
@@ -483,7 +483,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('literal-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         await applyOperation(instance, {
           type: 'insert',
@@ -526,7 +526,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('graph-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         await applyOperations(instance, [
           {
@@ -570,7 +570,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('refexists-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const exists = await instance.refExists('root');
         expect(exists).toBe(true);
@@ -581,7 +581,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('refexists-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const result = await applyOperation(instance, {
           type: 'insert',
@@ -597,7 +597,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('refexists-test-3');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const exists = await instance.refExists('nonexistent123456');
         expect(exists).toBe(false);
@@ -610,7 +610,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op1: Operation = {
           type: 'insert',
@@ -648,7 +648,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op: Operation = {
           type: 'insert',
@@ -676,7 +676,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-3');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op: Operation = {
           type: 'insert',
@@ -706,7 +706,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-4');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op1: Operation = {
           type: 'insert',
@@ -743,7 +743,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-5');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const result = await instance.syncOperations('root', []);
 
@@ -759,7 +759,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-6');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         // 先执行一个操作
         const op1: Operation = {
@@ -798,7 +798,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-fork-checkout');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         // 1. 从 root 执行第一个操作，添加 quad A
         const opA: Operation = {
@@ -863,7 +863,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-multi-fork');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         // 1. 从 root 添加 quad X
         const opX: Operation = {
@@ -918,7 +918,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('sync-test-cachedref');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         // 初始 cachedRef 应该是 root
         let cachedRef = await instance.getCachedRef();
@@ -968,7 +968,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('deterministic-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op: Operation = {
           type: 'insert',
@@ -987,7 +987,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('deterministic-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op: Operation = {
           type: 'insert',
@@ -1009,7 +1009,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('deterministic-test-3');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op1: Operation = {
           type: 'insert',
@@ -1046,7 +1046,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('atomic-test-1');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const op1: Operation = {
           type: 'insert',
@@ -1084,7 +1084,7 @@ describe('CloudSaveObject', () => {
       const stub = getSaveObject('atomic-test-2');
       
       await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-        await instance.initialize('user-1', 'sandbox-1');
+        await instance.initialize('user-1', 'state-1');
         
         const ops: Operation[] = [
           { type: 'insert', quad: { subject: '<http://s1>', predicate: '<http://p>', object: 'v1', graph: '' } },
@@ -1126,7 +1126,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-input-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const result = await instance.syncOperations('', []);
           
@@ -1141,7 +1141,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-input-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const op: Operation = {
             type: 'insert',
@@ -1164,7 +1164,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-input-3');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const badOps = [{
             operation: { type: 'invalid-type', quad: {} },
@@ -1184,7 +1184,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-input-4');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const result = await instance.syncOperations('root', {} as unknown as OperationWithRef[]);
           
@@ -1201,7 +1201,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-export-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           await expect(instance.exportAtRef('nonexistent123')).rejects.toThrow(
             "Ref 'nonexistent123' does not exist"
@@ -1213,7 +1213,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-export-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const result = await instance.exportAtRef('root');
           
@@ -1227,7 +1227,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-export-3');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           // 插入数据
           const result = await applyOperation(instance, {
@@ -1251,7 +1251,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-checkpoint-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const result = await applyOperation(instance, {
             type: 'insert',
@@ -1272,7 +1272,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-checkpoint-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const deleted = await instance.deleteCheckpoint('nonexistent123');
           expect(deleted).toBe(false);
@@ -1283,7 +1283,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-checkpoint-3');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           // 创建多个操作和 checkpoints
           const ref1 = (await applyOperation(instance, {
@@ -1291,6 +1291,9 @@ describe('CloudSaveObject', () => {
             quad: { subject: '<http://s1>', predicate: '<http://p>', object: 'v1', graph: '' },
           })).ref;
           await instance.createCheckpoint(ref1, { name: 'first' });
+          
+          // 添加小延迟确保时间戳不同
+          await new Promise(resolve => setTimeout(resolve, 10));
           
           const ref2 = (await applyOperation(instance, {
             type: 'insert',
@@ -1305,6 +1308,127 @@ describe('CloudSaveObject', () => {
           expect(checkpoints[1].name).toBe('first');
         });
       });
+
+      it('should create checkpoint with visibility', async () => {
+        const stub = getSaveObject('edge-checkpoint-visibility-1');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          // 创建 PUBLIC visibility 的 checkpoint
+          await instance.createCheckpoint(result.ref, { name: 'public-cp', visibility: 'PUBLIC' });
+          
+          const checkpoints = await instance.listCheckpoints();
+          expect(checkpoints).toHaveLength(1);
+          expect(checkpoints[0].visibility).toBe('PUBLIC');
+        });
+      });
+
+      it('should default to PRIVATE visibility', async () => {
+        const stub = getSaveObject('edge-checkpoint-visibility-2');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          await instance.createCheckpoint(result.ref, { name: 'private-cp' });
+          
+          const checkpoints = await instance.listCheckpoints();
+          expect(checkpoints).toHaveLength(1);
+          expect(checkpoints[0].visibility).toBe('PRIVATE');
+        });
+      });
+
+      it('should filter checkpoints by access level', async () => {
+        const stub = getSaveObject('edge-checkpoint-visibility-3');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          // 创建多个不同 visibility 的 checkpoints
+          const ref1 = (await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s1>', predicate: '<http://p>', object: 'v1', graph: '' },
+          })).ref;
+          await instance.createCheckpoint(ref1, { name: 'private', visibility: 'PRIVATE' });
+          
+          const ref2 = (await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s2>', predicate: '<http://p>', object: 'v2', graph: '' },
+          })).ref;
+          await instance.createCheckpoint(ref2, { name: 'public', visibility: 'PUBLIC' });
+          
+          // owner 能看到所有
+          const ownerCheckpoints = await instance.listCheckpoints('owner');
+          expect(ownerCheckpoints).toHaveLength(2);
+          
+          // public 只能看到 PUBLIC 的
+          const publicCheckpoints = await instance.listCheckpoints('public');
+          expect(publicCheckpoints).toHaveLength(1);
+          expect(publicCheckpoints[0].name).toBe('public');
+        });
+      });
+
+      it('should get single checkpoint by ref', async () => {
+        const stub = getSaveObject('edge-checkpoint-visibility-4');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          await instance.createCheckpoint(result.ref, { name: 'my-cp', description: 'test desc', visibility: 'PUBLIC' });
+          
+          const checkpoint = await instance.getCheckpoint(result.ref);
+          expect(checkpoint).not.toBeNull();
+          expect(checkpoint!.ref).toBe(result.ref);
+          expect(checkpoint!.name).toBe('my-cp');
+          expect(checkpoint!.description).toBe('test desc');
+          expect(checkpoint!.visibility).toBe('PUBLIC');
+          
+          // Non-existent ref returns null
+          const nonExistent = await instance.getCheckpoint('nonexistent-ref');
+          expect(nonExistent).toBeNull();
+        });
+      });
+
+      it('should update checkpoint visibility', async () => {
+        const stub = getSaveObject('edge-checkpoint-visibility-5');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          await instance.createCheckpoint(result.ref, { visibility: 'PRIVATE' });
+          
+          // Update to PUBLIC
+          const updated = await instance.updateCheckpointVisibility(result.ref, 'PUBLIC');
+          expect(updated).toBe(true);
+          
+          const checkpoint = await instance.getCheckpoint(result.ref);
+          expect(checkpoint!.visibility).toBe('PUBLIC');
+          
+          // Update non-existent returns false
+          const notUpdated = await instance.updateCheckpointVisibility('nonexistent', 'PUBLIC');
+          expect(notUpdated).toBe(false);
+        });
+      });
     });
 
     describe('delete operation edge cases', () => {
@@ -1312,7 +1436,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-delete-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           // 删除不存在的 quad
           const result = await applyOperation(instance, {
@@ -1328,7 +1452,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-delete-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           await applyOperations(instance, [
             { type: 'insert', quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v1', graph: '' } },
@@ -1356,7 +1480,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-batch-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const result = await applyOperation(instance, {
             type: 'batch-insert',
@@ -1373,7 +1497,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-batch-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const sameQuad = { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' };
           
@@ -1391,7 +1515,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-batch-3');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           await applyOperation(instance, {
             type: 'insert',
@@ -1415,7 +1539,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-history-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           // 创建 5 个操作
           for (let i = 0; i < 5; i++) {
@@ -1437,7 +1561,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-history-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const ref1 = (await applyOperation(instance, {
             type: 'insert',
@@ -1462,7 +1586,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-clear-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           // 添加数据
           const result = await applyOperation(instance, {
@@ -1495,7 +1619,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-clear-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           await applyOperation(instance, {
             type: 'insert',
@@ -1525,7 +1649,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-ref-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const exists = await instance.refExists('root');
           expect(exists).toBe(true);
@@ -1536,7 +1660,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-ref-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           const exists = await instance.refExists('random1234567890');
           expect(exists).toBe(false);
@@ -1549,7 +1673,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-fork-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           // 创建 A -> B -> C -> D 链
           const refA = (await applyOperation(instance, {
@@ -1602,7 +1726,7 @@ describe('CloudSaveObject', () => {
         const stub = getSaveObject('edge-fork-2');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
-          await instance.initialize('user-1', 'sandbox-1');
+          await instance.initialize('user-1', 'state-1');
           
           // 创建 A -> B
           const refA = (await applyOperation(instance, {

@@ -67,7 +67,7 @@ export interface RPCSyncOperationsResponse {
  */
 export interface SaveMetadata {
   userId: string;
-  sandboxNodeId: string;
+  stateNodeId: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -97,7 +97,13 @@ export interface ExportResult {
 export interface CheckpointMetadata {
   name?: string;
   description?: string;
+  visibility?: CheckpointVisibility;
 }
+
+/**
+ * Checkpoint 可见性
+ */
+export type CheckpointVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
 
 /**
  * Checkpoint 信息
@@ -108,6 +114,7 @@ export interface CheckpointInfo {
   quadCount: number;
   name?: string;
   description?: string;
+  visibility: CheckpointVisibility;
 }
 
 /**
@@ -115,7 +122,7 @@ export interface CheckpointInfo {
  * 用于 Service Binding 调用
  */
 export interface GameSaveRPC {
-  initializeSave(saveId: string, userId: string, sandboxNodeId: string): Promise<void>;
+  initializeSave(saveId: string, userId: string, stateNodeId: string): Promise<void>;
   getMetadata(saveId: string): Promise<SaveMetadata | null>;
   // ============ Blockchain-style Verifiable Sync ============
   syncOperations(
@@ -133,6 +140,8 @@ export interface GameSaveRPC {
   exportAtRef(saveId: string, ref: string): Promise<ExportResult>;
   // ============ Checkpoint API ============
   createCheckpoint(saveId: string, ref: string, metadata?: CheckpointMetadata): Promise<void>;
-  listCheckpoints(saveId: string): Promise<CheckpointInfo[]>;
+  listCheckpoints(saveId: string, accessLevel?: 'owner' | 'public'): Promise<CheckpointInfo[]>;
+  getCheckpoint(saveId: string, ref: string): Promise<CheckpointInfo | null>;
+  updateCheckpointVisibility(saveId: string, ref: string, visibility: CheckpointVisibility): Promise<boolean>;
   deleteCheckpoint(saveId: string, ref: string): Promise<boolean>;
 }

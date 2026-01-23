@@ -716,23 +716,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/saves/{saveId}/query": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** 查询存档中的 quads */
-        post: operations["querySaveQuads"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/saves/{saveId}/sync": {
         parameters: {
             query?: never;
@@ -942,6 +925,16 @@ export interface components {
             name?: string;
             /** @description VFS 类型时的文件路径列表 */
             files?: string[];
+            /** @description Fork 来源信息（当节点是从外部节点 Fork 而来时） */
+            originalRef?: {
+                /**
+                 * Format: uuid
+                 * @description 原始节点 ID
+                 */
+                nodeId?: string;
+                /** @description 原始节点的 commit hash */
+                commit?: string;
+            };
         };
         ArtifactEdgeDescriptor: {
             /** Format: uuid */
@@ -1474,7 +1467,7 @@ export interface components {
             /** Format: uuid */
             userId: string;
             /** Format: uuid */
-            sandboxNodeId?: string | null;
+            stateNodeId?: string | null;
             name: string;
             description?: string | null;
             /** Format: date-time */
@@ -1488,7 +1481,7 @@ export interface components {
             name: string;
             description?: string;
             /** Format: uuid */
-            sandboxNodeId?: string;
+            stateNodeId?: string;
         };
         Quad: {
             /** @description N3 格式的 subject (e.g., '<http://example.org/s>') */
@@ -1503,15 +1496,6 @@ export interface components {
             objectLanguage?: string | null;
             /** @description 图名称，默认为空字符串 */
             graph?: string;
-        };
-        QuadQueryRequest: {
-            subject?: string;
-            predicate?: string;
-            object?: string;
-            graph?: string;
-        };
-        QuadQueryResponse: {
-            quads: components["schemas"]["Quad"][];
         };
         TextPatch: {
             originalLength: number;
@@ -3868,59 +3852,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 存档不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    querySaveQuads: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                saveId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QuadQueryRequest"];
-            };
-        };
-        responses: {
-            /** @description 查询结果 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QuadQueryResponse"];
-                };
             };
             /** @description 未认证 */
             401: {

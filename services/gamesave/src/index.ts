@@ -23,6 +23,7 @@ import type {
   SyncOperationsResponse,
   CheckpointMetadata,
   CheckpointInfo,
+  CheckpointVisibility,
   GameSaveRPC,
 } from './types';
 import { CloudSaveObject } from './object';
@@ -49,9 +50,9 @@ export default class GameSaveWorker extends WorkerEntrypoint<Env> implements Gam
   /**
    * 初始化存档
    */
-  async initializeSave(saveId: string, userId: string, sandboxNodeId: string): Promise<void> {
+  async initializeSave(saveId: string, userId: string, stateNodeId: string): Promise<void> {
     const stub = this.getSaveStub(saveId);
-    await stub.initialize(userId, sandboxNodeId);
+    await stub.initialize(userId, stateNodeId);
   }
 
   /**
@@ -145,11 +146,28 @@ export default class GameSaveWorker extends WorkerEntrypoint<Env> implements Gam
   }
 
   /**
-   * 获取所有 checkpoint 信息
+   * 获取 checkpoint 信息
+   * @param accessLevel - 'owner' 返回所有 checkpoint，'public' 仅返回 PUBLIC 的
    */
-  async listCheckpoints(saveId: string): Promise<CheckpointInfo[]> {
+  async listCheckpoints(saveId: string, accessLevel: 'owner' | 'public' = 'owner'): Promise<CheckpointInfo[]> {
     const stub = this.getSaveStub(saveId);
-    return stub.listCheckpoints();
+    return stub.listCheckpoints(accessLevel);
+  }
+
+  /**
+   * 获取单个 checkpoint 信息
+   */
+  async getCheckpoint(saveId: string, ref: string): Promise<CheckpointInfo | null> {
+    const stub = this.getSaveStub(saveId);
+    return stub.getCheckpoint(ref);
+  }
+
+  /**
+   * 更新 checkpoint 的可见性
+   */
+  async updateCheckpointVisibility(saveId: string, ref: string, visibility: CheckpointVisibility): Promise<boolean> {
+    const stub = this.getSaveStub(saveId);
+    return stub.updateCheckpointVisibility(ref, visibility);
   }
 
   /**

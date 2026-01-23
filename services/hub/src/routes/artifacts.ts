@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, ArtifactService, NodeService, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNodeFileInput } from '@pubwiki/db';
+import { createDb, ArtifactService, NodeService, cloudSaves, eq, and, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNodeFileInput } from '@pubwiki/db';
 import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, ArtifactType, CreateArtifactMetadata, CreateArtifactResponse, ArtifactDescriptor, GetArtifactGraphResponse, GetNodeDetailResponse } from '@pubwiki/api';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { marked } from 'marked';
@@ -369,6 +369,8 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   // 处理文件为 CreateArtifactNodeFileInput 格式并计算 hash
   const nodeFiles = new Map<string, CreateArtifactNodeFileInput[]>();
   const nodeFileBuffers = new Map<string, Map<string, ArrayBuffer>>();
+  // 存储解析后的 node.json 内容用于验证
+  const nodeContents = new Map<string, Record<string, unknown>>();
 
   for (const [nodeId, files] of uploadedFiles) {
     nodeFiles.set(nodeId, []);
@@ -390,6 +392,65 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
 
       nodeFiles.get(nodeId)!.push(fileInput);
       nodeFileBuffers.get(nodeId)!.set(file.name, arrayBuffer);
+
+      // 解析 node.json 用于后续验证
+      if (file.name === 'node.json') {
+        try {
+          const textDecoder = new TextDecoder();
+          const content = JSON.parse(textDecoder.decode(arrayBuffer));
+          nodeContents.set(nodeId, content);
+        } catch {
+          // 忽略解析错误，后续验证会处理
+        }
+      }
+    }
+  }
+
+  // 验证 STATE 节点必须指定有效的 saveId 和 checkpointRef
+  for (const node of descriptor.nodes) {
+    if (node.type === 'STATE' && !node.external) {
+      const nodeContent = nodeContents.get(node.id);
+      
+      if (!nodeContent?.saveId || !nodeContent?.checkpointRef) {
+        return c.json<ApiError>({ 
+          error: `STATE node ${node.id} must specify saveId and checkpointRef in node.json` 
+        }, 400);
+      }
+
+      const saveId = nodeContent.saveId as string;
+      const checkpointRef = nodeContent.checkpointRef as string;
+
+      // 验证 save 存在且属于当前用户
+      const [save] = await db.select().from(cloudSaves)
+        .where(and(
+          eq(cloudSaves.id, saveId),
+          eq(cloudSaves.userId, user.id)
+        ))
+        .limit(1);
+
+      if (!save) {
+        return c.json<ApiError>({ 
+          error: `Save ${saveId} not found or access denied for STATE node ${node.id}` 
+        }, 400);
+      }
+
+      // 验证 checkpoint 存在
+      const checkpoint = await c.env.GAMESAVE.getCheckpoint(saveId, checkpointRef);
+      if (!checkpoint) {
+        return c.json<ApiError>({ 
+          error: `Checkpoint ${checkpointRef} not found in save ${saveId} for STATE node ${node.id}` 
+        }, 400);
+      }
+
+      // 发布时将 checkpoint visibility 设置为 max(checkpoint_visibility, artifact_visibility)
+      const visibilityOrder = { 'PRIVATE': 0, 'UNLISTED': 1, 'PUBLIC': 2 } as const;
+      const artifactVisibility = metadata.visibility || 'PUBLIC'; // 默认 PUBLIC
+      const checkpointVisLevel = visibilityOrder[checkpoint.visibility];
+      const artifactVisLevel = visibilityOrder[artifactVisibility as keyof typeof visibilityOrder] ?? 2;
+      
+      if (checkpointVisLevel < artifactVisLevel) {
+        await c.env.GAMESAVE.updateCheckpointVisibility(saveId, checkpointRef, artifactVisibility as 'PRIVATE' | 'UNLISTED' | 'PUBLIC');
+      }
     }
   }
 

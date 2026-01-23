@@ -22,6 +22,20 @@
       "when": 1768644006012,
       "tag": "0002_outstanding_ted_forrester",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1737641600000,
+      "tag": "0003_rename_sandbox_to_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1737641601000,
+      "tag": "0004_add_original_ref",
+      "breakpoints": true
     }
   ]
 }

@@ -111,6 +111,17 @@ ArtifactNodeDescriptor:
       items:
         type: string
       description: VFS 类型时的文件路径列表
+    originalRef:
+      type: object
+      description: Fork 来源信息（当节点是从外部节点 Fork 而来时）
+      properties:
+        nodeId:
+          type: string
+          format: uuid
+          description: 原始节点 ID
+        commit:
+          type: string
+          description: 原始节点的 commit hash
 
 ArtifactEdgeDescriptor:
   type: object
