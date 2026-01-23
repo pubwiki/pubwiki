@@ -29,7 +29,6 @@ import {
   getMimeType,
   normalizePath,
   isEntryFile,
-  createBuildErrorPage,
   createSimpleErrorPage
 } from '../utils'
 
@@ -208,6 +207,24 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
         },
         onRebuild: (result) => {
           console.log(`[VfsServiceImpl] Rebuild completed, success: ${result.success}`)
+          
+          if (!result.success) {
+            // Build failed: send error event via HMR
+            const allErrors = Array.from(result.outputs.values())
+              .flatMap(output => output.errors)
+            
+            console.log(`[VfsServiceImpl] Build failed, sending ${allErrors.length} error(s) via HMR:`, allErrors)
+            
+            this.config.hmrService.notifyUpdate({
+              type: 'error',
+              path: '__build__',
+              timestamp: Date.now(),
+              error: `Build failed with ${allErrors.length} error(s)`,
+              errors: allErrors
+            })
+            
+            console.log('[VfsServiceImpl] HMR error event sent')
+          }
         }
       })
       
@@ -232,22 +249,26 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
       })
     }
 
-    // Build failed - return error page
+    // Build failed - send error via HMR and throw
     if (!result.success) {
       console.error('[VfsServiceImpl] Build failed for:', actualPath)
 
-      // Collect all errors
+      // Collect all errors and send via HMR
       const allErrors = Array.from(result.outputs.values()).flatMap(output => output.errors)
-
-      const html = createBuildErrorPage(actualPath, allErrors)
-      const content = new TextEncoder().encode(html)
-
-      return {
+      
+      console.log(`[VfsServiceImpl] Initial build failed, sending ${allErrors.length} error(s) via HMR:`, allErrors)
+      
+      this.config.hmrService.notifyUpdate({
+        type: 'error',
         path: actualPath,
-        content,
-        mimeType: 'text/html',
-        size: content.byteLength
-      }
+        timestamp: Date.now(),
+        error: `Build failed with ${allErrors.length} error(s)`,
+        errors: allErrors
+      })
+      
+      console.log('[VfsServiceImpl] HMR error event sent for initial build failure')
+
+      throw new Error(`Build failed: ${allErrors.map(e => e.message).join('; ')}`)
     }
 
     // Find corresponding output from result

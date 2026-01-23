@@ -81,7 +81,10 @@ export type {
 } from './types'
 
 // Re-export service types from @pubwiki/sandbox-service (via types.ts)
-export type { ICustomService, ServiceDefinition, JsonSchema } from './types'
+export type { ICustomService, ServiceDefinition, JsonSchema, ConsoleLogEntry } from './types'
+
+// Re-export callback types
+export type { OnLogCallback } from './types'
 
 // Re-export utility function from @pubwiki/sandbox-service
 export { isStreamingService } from '@pubwiki/sandbox-service'

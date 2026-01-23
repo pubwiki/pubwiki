@@ -13,6 +13,7 @@
 console.log('[SandboxBootstrap] Module loaded')
 
 import { SandboxMainService, newMessagePortRpcSession, RpcStub } from '@pubwiki/sandbox-service'
+import type { ConsoleLogLevel } from '@pubwiki/sandbox-service'
 import { SANDBOX_CLIENT_KEY, type ISandboxClient } from '@pubwiki/sandbox-client'
 import { SandboxClient } from './sandbox-client'
 import type { SandboxContext } from './sandbox-types'
@@ -58,6 +59,91 @@ function showError(message: string): void {
   }
   if (iframe) iframe.style.display = 'none'
 }
+
+// ============================================================================
+// Build Error Overlay
+// ============================================================================
+
+/**
+ * Escape HTML special characters
+ */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+interface BuildError {
+  file: string
+  line: number
+  column: number
+  message: string
+  snippet?: string
+}
+
+/**
+ * Show build error overlay
+ */
+function showBuildError(errors: BuildError[]): void {
+  console.log('[SandboxBootstrap] showBuildError called with', errors.length, 'errors:', errors)
+  
+  const overlay = document.getElementById('build-error-overlay')
+  const summary = document.getElementById('build-error-summary')
+  const content = document.getElementById('build-error-content')
+  
+  if (!overlay || !content || !summary) {
+    console.error('[SandboxBootstrap] Error overlay elements not found!')
+    return
+  }
+  
+  summary.textContent = `${errors.length} error${errors.length > 1 ? 's' : ''} found`
+  
+  content.innerHTML = errors.map(e => `
+    <div class="error-item">
+      <div class="error-location">${escapeHtml(e.file)}:${e.line}:${e.column}</div>
+      <div class="error-message">${escapeHtml(e.message)}</div>
+      ${e.snippet ? `<div class="error-snippet">${escapeHtml(e.snippet)}</div>` : ''}
+    </div>
+  `).join('')
+  
+  overlay.classList.add('show')
+}
+
+/**
+ * Hide build error overlay
+ */
+function hideBuildError(): void {
+  console.log('[SandboxBootstrap] hideBuildError called')
+  const overlay = document.getElementById('build-error-overlay')
+  if (overlay) {
+    overlay.classList.remove('show')
+    console.log('[SandboxBootstrap] Error overlay hidden')
+  }
+}
+
+/**
+ * Setup error overlay event listeners
+ */
+function setupErrorOverlayListeners(): void {
+  // Close button
+  const closeBtn = document.getElementById('close-error-btn')
+  if (closeBtn) {
+    closeBtn.addEventListener('click', hideBuildError)
+  }
+  
+  // Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      hideBuildError()
+    }
+  })
+}
+
+// Setup listeners on load
+setupErrorOverlayListeners()
 
 function initSandboxMainService(port: MessagePort): RpcStub<SandboxMainService> {
   console.log('[MainRpcClient] Initializing with port...')
@@ -145,6 +231,112 @@ function requestVfsPortFromMainSite(): void {
     { type: 'REQUEST_VFS_PORT' },
     mainOrigin
   )
+}
+
+// ============================================================================
+// Console Interceptor
+// ============================================================================
+
+/**
+ * Serialize console arguments to a string
+ */
+function serializeArgs(args: unknown[]): string {
+  return args.map(arg => {
+    if (arg === null) return 'null'
+    if (arg === undefined) return 'undefined'
+    if (typeof arg === 'string') return arg
+    if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg)
+    if (arg instanceof Error) return `${arg.name}: ${arg.message}`
+    try {
+      return JSON.stringify(arg, null, 2)
+    } catch {
+      return String(arg)
+    }
+  }).join(' ')
+}
+
+/**
+ * Report a console log entry to the host
+ */
+function reportLog(level: ConsoleLogLevel, args: unknown[], stack?: string): void {
+  if (!mainRpcClient) return
+  
+  const entry = {
+    level,
+    timestamp: Date.now(),
+    message: serializeArgs(args),
+    stack
+  }
+  
+  // Fire and forget - don't await
+  mainRpcClient.hmr.reportLog(entry).catch(err => {
+    // Silently ignore errors to avoid infinite loops
+    console.warn('[SandboxBootstrap] Failed to report log:', err)
+  })
+}
+
+/**
+ * Inject console interceptor into user iframe
+ * This patches console methods to capture logs from user code
+ */
+function injectConsoleInterceptor(): void {
+  if (!userIframe?.contentWindow) {
+    console.warn('[SandboxBootstrap] Cannot inject console interceptor: no contentWindow')
+    return
+  }
+  
+  const iframeWindow = userIframe.contentWindow as Window & typeof globalThis
+  const iframeConsole = iframeWindow.console
+  
+  // Store original methods
+  const originalLog = iframeConsole.log.bind(iframeConsole)
+  const originalInfo = iframeConsole.info.bind(iframeConsole)
+  const originalWarn = iframeConsole.warn.bind(iframeConsole)
+  const originalError = iframeConsole.error.bind(iframeConsole)
+  const originalDebug = iframeConsole.debug.bind(iframeConsole)
+  
+  // Patch console methods
+  iframeConsole.log = (...args: unknown[]) => {
+    originalLog(...args)
+    reportLog('log', args)
+  }
+  
+  iframeConsole.info = (...args: unknown[]) => {
+    originalInfo(...args)
+    reportLog('info', args)
+  }
+  
+  iframeConsole.warn = (...args: unknown[]) => {
+    originalWarn(...args)
+    reportLog('warn', args)
+  }
+  
+  iframeConsole.error = (...args: unknown[]) => {
+    originalError(...args)
+    // Capture stack trace for errors
+    const stack = new Error().stack
+    reportLog('error', args, stack)
+  }
+  
+  iframeConsole.debug = (...args: unknown[]) => {
+    originalDebug(...args)
+    reportLog('debug', args)
+  }
+  
+  // Also capture unhandled errors
+  iframeWindow.addEventListener('error', (event) => {
+    reportLog('error', [event.message], event.error?.stack)
+  })
+  
+  // Capture unhandled promise rejections
+  iframeWindow.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason
+    const message = reason instanceof Error ? reason.message : String(reason)
+    const stack = reason instanceof Error ? reason.stack : undefined
+    reportLog('error', [`Unhandled Promise Rejection: ${message}`], stack)
+  })
+  
+  console.log('[SandboxBootstrap] Console interceptor injected')
 }
 
 /**
@@ -257,6 +449,10 @@ async function loadUserIframe(entryFile: string): Promise<void> {
   })
   
   console.log('[SandboxBootstrap] User iframe content loaded')
+  
+  // Inject console interceptor into user iframe
+  injectConsoleInterceptor()
+  
   // Context will be provided on-demand when user iframe calls initSandboxClient()
 }
 
@@ -324,11 +520,36 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
     await mainRpcClient.hmr.subscribe((update) => {
       console.log('[SandboxBootstrap] HMR update received:', update)
       
-      if (update.path === '__manual_reload__') {
-        console.log('[SandboxBootstrap] Manual reload triggered')
-        reloadUserIframe()
+      if (update.type === 'error') {
+        // Build error: show overlay
+        console.log('[SandboxBootstrap] Received HMR error event:', update)
+        console.log('[SandboxBootstrap] Error message:', update.error)
+        console.log('[SandboxBootstrap] Errors array:', update.errors)
+        
+        if (update.errors && update.errors.length > 0) {
+          console.log('[SandboxBootstrap] Showing overlay with structured errors')
+          showBuildError(update.errors)
+        } else if (update.error) {
+          // Fallback to simple error message
+          console.log('[SandboxBootstrap] Showing overlay with fallback error')
+          showBuildError([{
+            file: update.path,
+            line: 0,
+            column: 0,
+            message: update.error
+          }])
+        } else {
+          console.warn('[SandboxBootstrap] Error event received but no error details!')
+        }
       } else {
-        console.log('[SandboxBootstrap] File changed, reloading user iframe')
+        // Normal update: hide error overlay and reload
+        hideBuildError()
+        
+        if (update.path === '__manual_reload__') {
+          console.log('[SandboxBootstrap] Manual reload triggered')
+        } else {
+          console.log('[SandboxBootstrap] File changed, reloading user iframe')
+        }
         reloadUserIframe()
       }
     })

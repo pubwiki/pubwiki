@@ -58,7 +58,8 @@ export function createSandboxConnection(
     targetOrigin,
     entryFile,
     customServices,
-    vfs
+    vfs,
+    onLog
   } = config
 
   const id = `sandbox-conn-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -69,6 +70,9 @@ export function createSandboxConnection(
   // RPC hosts
   let vfsRpcHost: VfsRpcHost | null = null
   let mainRpcHost: MainRpcHost | null = null
+
+  // Pending onLog callback (set before mainRpcHost is ready)
+  let pendingOnLogCallback = onLog ?? null
 
   // Additional VFS hosts for SW reconnection
   const additionalVfsHosts: VfsRpcHost[] = []
@@ -137,6 +141,11 @@ export function createSandboxConnection(
       const hmrService = mainRpcHost.getHmrService?.()
       if (!hmrService) {
         throw new Error('[SandboxConnection] Failed to get HMR service')
+      }
+
+      // Set up onLog callback if provided
+      if (pendingOnLogCallback) {
+        hmrService.setOnLogCallback(pendingOnLogCallback)
       }
 
       // 2. Create VFS RPC channel with HMR service
@@ -242,6 +251,22 @@ export function createSandboxConnection(
       
       mainRpcHost.registerService(id, service)
       console.log(`[SandboxConnection:${id}] Added custom service: ${id}`)
+    },
+
+    getLogs() {
+      const hmrService = mainRpcHost?.getHmrService()
+      return hmrService?.getLogs() ?? []
+    },
+
+    clearLogs() {
+      const hmrService = mainRpcHost?.getHmrService()
+      hmrService?.clearLogs()
+    },
+
+    setOnLogCallback(callback) {
+      pendingOnLogCallback = callback
+      const hmrService = mainRpcHost?.getHmrService()
+      hmrService?.setOnLogCallback(callback)
     },
 
     disconnect(): void {

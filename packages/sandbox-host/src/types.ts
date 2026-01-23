@@ -4,7 +4,7 @@
  * Re-exports types from @pubwiki/bundler and defines sandbox-specific interfaces.
  */
 
-import type { ICustomService } from '@pubwiki/sandbox-service'
+import type { ICustomService, ConsoleLogEntry } from '@pubwiki/sandbox-service'
 
 // Re-export types from @pubwiki/bundler
 export type {
@@ -20,9 +20,14 @@ export type {
 export { Vfs } from '@pubwiki/vfs'
 
 // Re-export service types from @pubwiki/sandbox-service
-export type { ICustomService, ServiceDefinition, JsonSchema } from '@pubwiki/sandbox-service'
+export type { ICustomService, ServiceDefinition, JsonSchema, ConsoleLogEntry } from '@pubwiki/sandbox-service'
 
 import type { ProjectConfig } from '@pubwiki/bundler'
+
+/**
+ * Callback type for console log events from sandbox
+ */
+export type OnLogCallback = (entry: ConsoleLogEntry) => void
 
 /**
  * Custom service factory for extending sandbox functionality
@@ -96,6 +101,8 @@ export interface SandboxConnectionConfig {
   entryFile: string
   /** Custom services to register (optional) */
   customServices?: Map<string, CustomServiceFactory<MainRpcHostConfig>>
+  /** Callback for console log events from sandbox (optional) */
+  onLog?: OnLogCallback
 }
 
 /**
@@ -125,6 +132,21 @@ export interface SandboxConnection {
    * @param service - ICustomService implementation
    */
   addCustomService(id: string, service: ICustomService): void
+
+  /**
+   * Get all stored console logs
+   */
+  getLogs(): ConsoleLogEntry[]
+
+  /**
+   * Clear all stored console logs
+   */
+  clearLogs(): void
+
+  /**
+   * Set callback for new log events
+   */
+  setOnLogCallback(callback: OnLogCallback | null): void
 
   /**
    * Disconnect and cleanup all resources

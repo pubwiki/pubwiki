@@ -42,11 +42,85 @@
       font-family: monospace;
       white-space: pre-wrap;
     }
+    /* Build Error Overlay */
+    #build-error-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 99999;
+      background: rgba(0, 0, 0, 0.92);
+      color: #f5f5f5;
+      font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+      font-size: 13px;
+      overflow: auto;
+      padding: 24px;
+    }
+    #build-error-overlay.show { display: block; }
+    #build-error-overlay h1 { 
+      color: #ff6b6b; 
+      margin: 0 0 8px 0;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #build-error-overlay .error-summary {
+      color: #aaa;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+    #build-error-overlay .error-item { 
+      background: #1e1e1e; 
+      padding: 16px; 
+      margin-bottom: 12px; 
+      border-radius: 8px;
+      border-left: 4px solid #ff6b6b;
+    }
+    #build-error-overlay .error-location { 
+      color: #4fc3f7; 
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    #build-error-overlay .error-message { 
+      color: #ffab91; 
+      line-height: 1.5;
+    }
+    #build-error-overlay .error-snippet { 
+      color: #888; 
+      margin-top: 12px; 
+      white-space: pre-wrap;
+      background: #0d0d0d;
+      padding: 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    #build-error-overlay .close-btn {
+      position: fixed;
+      top: 20px;
+      right: 24px;
+      background: #333;
+      color: #fff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    #build-error-overlay .close-btn:hover {
+      background: #444;
+    }
   </style>
 </head>
 <body>
   <div id="loading">⏳ Loading...</div>
   <div id="error"></div>
+  <div id="build-error-overlay">
+    <button class="close-btn" id="close-error-btn">✕ Close (Esc)</button>
+    <h1>⚠️ Build Failed</h1>
+    <div class="error-summary" id="build-error-summary"></div>
+    <div id="build-error-content"></div>
+  </div>
   <iframe id="user-iframe" sandbox="allow-scripts allow-same-origin allow-modals allow-forms allow-popups"></iframe>
   <script type="module" src="/src/sandbox-bootstrap.ts"></script>
 </body>

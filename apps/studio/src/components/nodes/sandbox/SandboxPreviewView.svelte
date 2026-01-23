@@ -7,7 +7,7 @@
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig, ICustomService, ServiceDefinition, JsonSchema } from '@pubwiki/sandbox-host';
+	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig, ICustomService, ServiceDefinition, JsonSchema, ConsoleLogEntry } from '@pubwiki/sandbox-host';
 	import { createSandboxConnection, RpcTarget, RpcStub, isStreamingService } from '@pubwiki/sandbox-host';
 	import type { VersionedVfs } from '$lib/vfs';
 	import type { LoaderNodeData } from '$lib/types';
@@ -57,10 +57,18 @@
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
 	let isFullscreen = $state(false);
+	
+	// Console log state
+	let showConsole = $state(false);
+	let consoleLogs = $state<ConsoleLogEntry[]>([]);
+	let hasNewErrors = $state(false);
 
 	// ============================================================================
 	// Derived
 	// ============================================================================
+	
+	const errorCount = $derived(consoleLogs.filter(l => l.level === 'error').length);
+	const warnCount = $derived(consoleLogs.filter(l => l.level === 'warn').length);
 
 	const sandboxUrl = $derived(`${sandboxOrigin}/__sandbox.html`);
 
@@ -259,6 +267,51 @@
 	});
 
 	// ============================================================================
+	// Console Log Handling
+	// ============================================================================
+	
+	function handleLog(entry: ConsoleLogEntry) {
+		consoleLogs = [...consoleLogs, entry];
+		// Show indicator for new errors
+		if (entry.level === 'error' && !showConsole) {
+			hasNewErrors = true;
+		}
+	}
+	
+	function toggleConsole() {
+		showConsole = !showConsole;
+		if (showConsole) {
+			hasNewErrors = false;
+		}
+	}
+	
+	function clearConsoleLogs() {
+		consoleLogs = [];
+		sandboxConnection?.clearLogs();
+		hasNewErrors = false;
+	}
+	
+	function getLogLevelColor(level: ConsoleLogEntry['level']): string {
+		switch (level) {
+			case 'error': return 'text-red-400';
+			case 'warn': return 'text-yellow-400';
+			case 'info': return 'text-blue-400';
+			case 'debug': return 'text-gray-400';
+			default: return 'text-gray-200';
+		}
+	}
+	
+	function getLogLevelIcon(level: ConsoleLogEntry['level']): string {
+		switch (level) {
+			case 'error': return '✕';
+			case 'warn': return '⚠';
+			case 'info': return 'ℹ';
+			case 'debug': return '🐛';
+			default: return '›';
+		}
+	}
+
+	// ============================================================================
 	// Sandbox Lifecycle
 	// ============================================================================
 
@@ -284,7 +337,8 @@
 				targetOrigin: sandboxOrigin,
 				entryFile,
 				vfs,
-				customServices
+				customServices,
+				onLog: handleLog
 			});
 
 			// Wait for sandbox to be ready and initialized
@@ -293,6 +347,9 @@
 			if (!success) {
 				throw new Error('Failed to initialize sandbox connection');
 			}
+			
+			// Load any existing logs
+			consoleLogs = sandboxConnection.getLogs();
 
 			console.log('[SandboxPreviewView] Sandbox started successfully');
 
@@ -392,6 +449,27 @@
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
 					</svg>
 				</button>
+				<!-- Console button -->
+				<button
+					class="p-1.5 hover:bg-white/20 rounded transition-colors relative"
+					onclick={toggleConsole}
+					title="Console"
+				>
+					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+					</svg>
+					{#if errorCount > 0}
+						<span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+							{errorCount > 9 ? '9+' : errorCount}
+						</span>
+					{:else if warnCount > 0}
+						<span class="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+							{warnCount > 9 ? '9+' : warnCount}
+						</span>
+					{:else if hasNewErrors}
+						<span class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+					{/if}
+				</button>
 				<!-- Close button -->
 				<button
 					class="p-1.5 hover:bg-white/20 rounded transition-colors"
@@ -444,6 +522,69 @@
 				title={m.studio_node_sandbox_preview()}
 			></iframe>
 		</div>
+
+		<!-- Console Panel -->
+		{#if showConsole}
+		<div class="border-t border-gray-200 bg-gray-900 text-white flex flex-col" style="height: 200px; max-height: 50%;">
+			<!-- Console Header -->
+			<div class="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700">
+				<div class="flex items-center gap-3 text-xs">
+					<span class="font-medium">Console</span>
+					{#if errorCount > 0}
+						<span class="text-red-400">{errorCount} error{errorCount > 1 ? 's' : ''}</span>
+					{/if}
+					{#if warnCount > 0}
+						<span class="text-yellow-400">{warnCount} warning{warnCount > 1 ? 's' : ''}</span>
+					{/if}
+				</div>
+				<div class="flex items-center gap-1">
+					<button
+						class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+						onclick={clearConsoleLogs}
+						title="Clear console"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+						</svg>
+					</button>
+					<button
+						class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
+						onclick={toggleConsole}
+						title="Close console"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				</div>
+			</div>
+			<!-- Console Content -->
+			<div class="flex-1 overflow-auto font-mono text-xs">
+				{#if consoleLogs.length === 0}
+					<div class="flex items-center justify-center h-full text-gray-500">
+						No console output
+					</div>
+				{:else}
+					{#each consoleLogs as entry, i (i)}
+						<div class="px-3 py-1 border-b border-gray-800 hover:bg-gray-800/50 {getLogLevelColor(entry.level)}">
+							<div class="flex items-start gap-2">
+								<span class="flex-shrink-0 mt-0.5">{@html getLogLevelIcon(entry.level)}</span>
+								<div class="flex-1 min-w-0">
+									<pre class="whitespace-pre-wrap break-words">{entry.message}</pre>
+									{#if entry.stack}
+										<pre class="text-gray-500 text-[10px] mt-1 whitespace-pre-wrap break-words">{entry.stack}</pre>
+									{/if}
+								</div>
+								<span class="flex-shrink-0 text-gray-600 text-[10px]">
+									{new Date(entry.timestamp).toLocaleTimeString()}
+								</span>
+							</div>
+						</div>
+					{/each}
+				{/if}
+			</div>
+		</div>
+		{/if}
 
 		<!-- Footer (hidden in fullscreen) -->
 		{#if !isFullscreen}

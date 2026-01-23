@@ -6,7 +6,8 @@
  */
 
 import { RpcTarget } from '@pubwiki/sandbox-service'
-import type { IHmrService, HmrUpdateCallback, HmrUpdate, HmrSubscription, RpcStub } from '@pubwiki/sandbox-service'
+import type { IHmrService, HmrUpdateCallback, HmrUpdate, HmrSubscription, RpcStub, ConsoleLogEntry } from '@pubwiki/sandbox-service'
+import type { OnLogCallback } from '../types'
 
 /**
  * HMR Service Implementation
@@ -16,10 +17,27 @@ import type { IHmrService, HmrUpdateCallback, HmrUpdate, HmrSubscription, RpcStu
 export class HmrServiceImpl extends RpcTarget implements IHmrService {
   private callback: RpcStub<HmrUpdateCallback> | null = null
   private subscriptionId: string | null = null
+  private logs: ConsoleLogEntry[] = []
+  private onLogCallback: OnLogCallback | null = null
+  private readonly maxLogs = 500 // Limit stored logs
 
   constructor() {
     super()
     console.log(`[HmrServiceImpl] Created`)
+  }
+
+  /**
+   * Set callback for log events (called by host)
+   */
+  setOnLogCallback(callback: OnLogCallback | null): void {
+    this.onLogCallback = callback
+  }
+
+  /**
+   * Get all stored logs
+   */
+  getLogs(): ConsoleLogEntry[] {
+    return [...this.logs]
   }
 
   /**
@@ -68,11 +86,41 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
   }
 
   /**
+   * Report a console log entry from sandbox (RPC method)
+   */
+  async reportLog(entry: ConsoleLogEntry): Promise<void> {
+    console.log(`[HmrServiceImpl] Log received: [${entry.level}] ${entry.message.substring(0, 100)}`)
+    
+    // Store log
+    this.logs.push(entry)
+    
+    // Trim if exceeds max
+    if (this.logs.length > this.maxLogs) {
+      this.logs = this.logs.slice(-this.maxLogs)
+    }
+    
+    // Notify callback
+    if (this.onLogCallback) {
+      this.onLogCallback(entry)
+    }
+  }
+
+  /**
+   * Clear all stored logs (RPC method)
+   */
+  async clearLogs(): Promise<void> {
+    console.log(`[HmrServiceImpl] Clearing ${this.logs.length} logs`)
+    this.logs = []
+  }
+
+  /**
    * Cleanup resources
    */
   dispose(): void {
     this.callback = null
     this.subscriptionId = null
+    this.logs = []
+    this.onLogCallback = null
     console.log(`[HmrServiceImpl] Disposed`)
   }
 }

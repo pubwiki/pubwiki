@@ -11,7 +11,7 @@
  * create a stub that calls back over RPC when invoked.
  */
 
-import type { HmrUpdate, HmrSubscription } from '../types/hmr'
+import type { HmrUpdate, HmrSubscription, ConsoleLogEntry } from '../types/hmr'
 
 /**
  * Callback function type for HMR updates
@@ -57,5 +57,16 @@ export interface IHmrService {
    * @param subscriptionId - ID returned from subscribe()
    */
   unsubscribe(subscriptionId: string): Promise<void>
+
+  /**
+   * Report a console log entry from the sandbox
+   * @param entry - The console log entry to report
+   */
+  reportLog(entry: ConsoleLogEntry): Promise<void>
+
+  /**
+   * Clear all stored console logs
+   */
+  clearLogs(): Promise<void>
 }
 
