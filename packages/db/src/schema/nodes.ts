@@ -16,6 +16,9 @@ export const artifactNodes = sqliteTable(
       .references(() => artifacts.id, { onDelete: 'cascade' }),
     type: text('type').$type<ArtifactNodeType>().notNull(), // PROMPT, INPUT, GENERATED, VFS
     name: text('name'),
+    // Node position in the graph
+    positionX: integer('position_x'),
+    positionY: integer('position_y'),
     // Fork 来源：原始节点 ID（当此节点是从外部节点 fork 而来时）
     originalNodeId: text('original_node_id'),
     // Fork 来源：原始节点的 commit hash

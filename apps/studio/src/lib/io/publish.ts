@@ -63,6 +63,7 @@ interface ArtifactNodeDescriptor {
 	external?: boolean;
 	type: ApiNodeType;
 	name?: string;
+	position: { x: number, y: number }
 	files?: string[];
 	/** Reference to the original external node (for Fork-on-Write) */
 	originalRef?: OriginalRefDescriptor;
@@ -218,6 +219,7 @@ async function prepareNodesForPublish(
 				external: false, // Forked node is now internal
 				type: node.data.type as ApiNodeType,
 				name: node.data.name || undefined,
+				position: { x: node.position.x, y: node.position.y },
 				// Preserve original reference for lineage tracking
 				originalRef: node.data.originalRef
 			};
@@ -241,7 +243,8 @@ async function prepareNodesForPublish(
 				id: node.data.id,
 				external: true,
 				type: node.data.type as ApiNodeType,
-				name: node.data.name || undefined
+				name: node.data.name || undefined,
+				position: { x: node.position.x, y: node.position.y }
 			});
 			// External nodes don't need content uploaded
 		} else {
@@ -250,7 +253,8 @@ async function prepareNodesForPublish(
 				id: node.data.id,
 				external: false,
 				type: node.data.type as ApiNodeType,
-				name: node.data.name || undefined
+				name: node.data.name || undefined,
+				position: { x: node.position.x, y: node.position.y }
 			};
 
 			// For VFS nodes, include file list
@@ -382,13 +386,13 @@ export interface PublishResult {
 
 /**
  * Validate STATE nodes have required checkpoint before publish
- * STATE nodes must have a saveId and checkpointRef to be published
+ * STATE nodes must have a saveId and checkpointId to be published
  */
 function validateStateNodes(nodes: Node<StudioNodeData>[]): { valid: boolean; error?: string } {
 	for (const node of nodes) {
 		if (node.data.type === 'STATE' && !node.data.external) {
 			const stateContent = node.data.content as import('../types').StateContent;
-			if (!stateContent.saveId || !stateContent.checkpointRef) {
+			if (!stateContent.saveId || !stateContent.checkpointId) {
 				return {
 					valid: false,
 					error: `STATE node "${node.data.name || node.data.id}" must have a saved checkpoint before publish. Use "Save to Cloud" to create a checkpoint first.`

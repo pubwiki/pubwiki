@@ -183,6 +183,10 @@ CREATE TABLE `artifact_nodes` (
 	`artifact_id` text NOT NULL,
 	`type` text NOT NULL,
 	`name` text,
+	`position_x` integer,
+	`position_y` integer,
+	`original_node_id` text,
+	`original_commit` text,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL,
 	`updated_at` text DEFAULT (datetime('now')) NOT NULL,
 	FOREIGN KEY (`artifact_id`) REFERENCES `artifacts`(`id`) ON UPDATE no action ON DELETE cascade
@@ -458,4 +462,38 @@ CREATE INDEX `idx_project_posts_project` ON `project_posts` (`project_id`);--> s
 CREATE INDEX `idx_project_posts_author` ON `project_posts` (`author_id`);--> statement-breakpoint
 CREATE INDEX `idx_project_posts_discussion` ON `project_posts` (`discussion_id`);--> statement-breakpoint
 CREATE INDEX `idx_project_posts_pinned` ON `project_posts` (`project_id`,`is_pinned`);--> statement-breakpoint
-CREATE INDEX `idx_project_posts_created` ON `project_posts` (`project_id`,`created_at`);
+CREATE INDEX `idx_project_posts_created` ON `project_posts` (`project_id`,`created_at`);--> statement-breakpoint
+CREATE TABLE `articles` (
+	`id` text PRIMARY KEY NOT NULL,
+	`author_id` text NOT NULL,
+	`sandbox_node_id` text NOT NULL,
+	`title` text(200) NOT NULL,
+	`content` text NOT NULL,
+	`visibility` text DEFAULT 'PUBLIC' NOT NULL,
+	`likes` integer DEFAULT 0 NOT NULL,
+	`collections` integer DEFAULT 0 NOT NULL,
+	`created_at` text DEFAULT (datetime('now')) NOT NULL,
+	`updated_at` text DEFAULT (datetime('now')) NOT NULL,
+	FOREIGN KEY (`author_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`sandbox_node_id`) REFERENCES `artifact_nodes`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `idx_articles_author` ON `articles` (`author_id`);--> statement-breakpoint
+CREATE INDEX `idx_articles_sandbox` ON `articles` (`sandbox_node_id`);--> statement-breakpoint
+CREATE INDEX `idx_articles_visibility` ON `articles` (`visibility`);--> statement-breakpoint
+CREATE INDEX `idx_articles_created` ON `articles` (`created_at`);--> statement-breakpoint
+CREATE TABLE `cloud_saves` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`state_node_id` text NOT NULL,
+	`name` text NOT NULL,
+	`description` text,
+	`created_at` text DEFAULT (datetime('now')) NOT NULL,
+	`updated_at` text DEFAULT (datetime('now')) NOT NULL,
+	`last_synced_at` text,
+	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `idx_cloud_saves_user` ON `cloud_saves` (`user_id`);--> statement-breakpoint
+CREATE INDEX `idx_cloud_saves_state` ON `cloud_saves` (`state_node_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_cloud_saves_user_state` ON `cloud_saves` (`user_id`,`state_node_id`);

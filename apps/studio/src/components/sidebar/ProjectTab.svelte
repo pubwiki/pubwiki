@@ -80,13 +80,14 @@
 		return false;
 	}
 
-	// Get nodes that will be published
+	// Get nodes that will be published (including external nodes for references)
 	let nodesToPublish = $derived.by(() => {
 		const getNodeData = (id: string) => nodeStore.get(id);
 		return nodes.filter((node) => {
 			const nodeData = getNodeData(node.id);
 			if (!nodeData) return false;
-			if (nodeData.external) return false;
+			// Include external nodes - they will be published as references
+			if (nodeData.external) return true;
 			if (nodeData.type === 'GENERATED') {
 				if (referencesHistoricalVersions(nodeData as GeneratedNodeData, getNodeData)) {
 					return false;
@@ -95,6 +96,8 @@
 			return true;
 		});
 	});
+	
+
 
 	// Group nodes by type
 	let nodesByType = $derived.by(() => {

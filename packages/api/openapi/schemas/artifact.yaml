@@ -106,6 +106,14 @@ ArtifactNodeDescriptor:
       $ref: './artifact.yaml#/ArtifactNodeType'
     name:
       type: string
+    position:
+      type: object
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
+
     files:
       type: array
       items:
@@ -177,6 +185,13 @@ ArtifactNodeSummary:
     name:
       type: string
       nullable: true
+    position:
+      type: object
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
     external:
       type: boolean
     externalArtifactId:

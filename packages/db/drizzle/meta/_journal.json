@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1767874770656,
-      "tag": "0000_nasty_virginia_dare",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1768540035834,
-      "tag": "0001_loving_cannonball",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1768644006012,
-      "tag": "0002_outstanding_ted_forrester",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1737641600000,
-      "tag": "0003_rename_sandbox_to_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1737641601000,
-      "tag": "0004_add_original_ref",
+      "when": 1769329779954,
+      "tag": "0000_open_microchip",
       "breakpoints": true
     }
   ]

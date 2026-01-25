@@ -943,6 +943,10 @@ export interface components {
             external: boolean;
             type?: components["schemas"]["ArtifactNodeType"];
             name?: string;
+            position?: {
+                x?: number;
+                y?: number;
+            };
             /** @description VFS 类型时的文件路径列表 */
             files?: string[];
             /** @description Fork 来源信息（当节点是从外部节点 Fork 而来时） */
@@ -976,6 +980,10 @@ export interface components {
             id: string;
             type: components["schemas"]["ArtifactNodeType"];
             name?: string | null;
+            position?: {
+                x?: number;
+                y?: number;
+            };
             external: boolean;
             /**
              * Format: uuid
