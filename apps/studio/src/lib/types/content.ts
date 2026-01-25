@@ -499,7 +499,9 @@ export class StateContent implements NodeContent {
   constructor(
     /** GameSave service save ID */
     public saveId: string | null = null,
-    /** Currently selected checkpoint ref */
+    /** Currently selected checkpoint ID */
+    public checkpointId: string | null = null,
+    /** Currently selected checkpoint ref (hash) */
     public checkpointRef: string | null = null,
     /** List of user's checkpoints (local cache) */
     public checkpoints: CheckpointInfo[] = []
@@ -510,12 +512,13 @@ export class StateContent implements NodeContent {
   }
 
   serialize(): string {
-    return JSON.stringify({ saveId: this.saveId, checkpointRef: this.checkpointRef })
+    return JSON.stringify({ saveId: this.saveId, checkpointId: this.checkpointId, checkpointRef: this.checkpointRef })
   }
 
   clone(): StateContent {
     return new StateContent(
       this.saveId,
+      this.checkpointId,
       this.checkpointRef,
       structuredClone(this.checkpoints)
     )
@@ -523,23 +526,24 @@ export class StateContent implements NodeContent {
 
   /** Create a copy with updated saveId */
   withSaveId(saveId: string | null): StateContent {
-    return new StateContent(saveId, this.checkpointRef, structuredClone(this.checkpoints))
+    return new StateContent(saveId, this.checkpointId, this.checkpointRef, structuredClone(this.checkpoints))
   }
 
-  /** Create a copy with updated checkpointRef */
-  withCheckpointRef(checkpointRef: string | null): StateContent {
-    return new StateContent(this.saveId, checkpointRef, structuredClone(this.checkpoints))
+  /** Create a copy with updated checkpoint (both id and ref) */
+  withCheckpoint(checkpointId: string | null, checkpointRef: string | null): StateContent {
+    return new StateContent(this.saveId, checkpointId, checkpointRef, structuredClone(this.checkpoints))
   }
 
   /** Create a copy with updated checkpoints list */
   withCheckpoints(checkpoints: CheckpointInfo[]): StateContent {
-    return new StateContent(this.saveId, this.checkpointRef, structuredClone(checkpoints))
+    return new StateContent(this.saveId, this.checkpointId, this.checkpointRef, structuredClone(checkpoints))
   }
 
   /** Add a checkpoint to the list */
   addCheckpoint(checkpoint: CheckpointInfo): StateContent {
     return new StateContent(
       this.saveId,
+      this.checkpointId,
       this.checkpointRef,
       [...this.checkpoints, checkpoint]
     )
@@ -547,11 +551,13 @@ export class StateContent implements NodeContent {
 
   /** Remove a checkpoint from the list by ID */
   removeCheckpoint(id: string): StateContent {
-    const checkpoint = this.checkpoints.find(c => c.id === id)
+    const isSelected = this.checkpointId === id
     return new StateContent(
       this.saveId,
-      // Clear checkpointRef if it matches the removed checkpoint's ref
-      checkpoint && this.checkpointRef === checkpoint.ref ? null : this.checkpointRef,
+      // Clear checkpointId if it matches the removed checkpoint
+      isSelected ? null : this.checkpointId,
+      // Clear checkpointRef if it matches the removed checkpoint
+      isSelected ? null : this.checkpointRef,
       this.checkpoints.filter(c => c.id !== id)
     )
   }
@@ -559,6 +565,7 @@ export class StateContent implements NodeContent {
   toJSON() {
     return {
       saveId: this.saveId,
+      checkpointId: this.checkpointId,
       checkpointRef: this.checkpointRef,
       checkpoints: this.checkpoints
     }
@@ -566,11 +573,13 @@ export class StateContent implements NodeContent {
 
   static fromJSON(data: {
     saveId?: string | null
+    checkpointId?: string | null
     checkpointRef?: string | null
     checkpoints?: CheckpointInfo[]
   }): StateContent {
     return new StateContent(
       data.saveId ?? null,
+      data.checkpointId ?? null,
       data.checkpointRef ?? null,
       data.checkpoints ?? []
     )
@@ -612,6 +621,7 @@ export function restoreContent(type: NodeType, data: unknown): NodeContent {
     case 'STATE':
       return StateContent.fromJSON(json as {
         saveId?: string | null
+        checkpointId?: string | null
         checkpointRef?: string | null
         checkpoints?: CheckpointInfo[]
       })

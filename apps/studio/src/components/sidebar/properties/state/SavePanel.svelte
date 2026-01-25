@@ -241,6 +241,15 @@
 				description: newCheckpointDescription.trim() || undefined
 			});
 
+			// Update node with checkpoint pointing to the new checkpoint
+			nodeStore.update(nodeId, (nodeData) => {
+				const stateData = nodeData as StateNodeData;
+				return {
+					...stateData,
+					content: stateData.content.withCheckpoint(checkpointId, currentRef)
+				} as StateNodeData;
+			});
+
 			// Reset form
 			newCheckpointTitle = '';
 			newCheckpointDescription = '';
@@ -278,7 +287,7 @@
 				const stateData = nodeData as StateNodeData;
 				return {
 					...stateData,
-					content: stateData.content.withCheckpointRef(checkpoint.ref)
+					content: stateData.content.withCheckpoint(checkpoint.id, checkpoint.ref)
 				} as StateNodeData;
 			});
 
