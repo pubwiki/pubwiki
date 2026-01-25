@@ -12,6 +12,7 @@ import {
   type ArtifactNodeFile,
 } from '../schema/nodes';
 import { user } from '../schema/auth';
+import { chunkArray } from '../utils';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArtifactNodeSummary,
@@ -148,6 +149,9 @@ export class NodeService {
           type: n.type as ArtifactNodeType,
           name: n.name,
           external: false,
+          position: n.positionX != null && n.positionY != null 
+            ? { x: n.positionX, y: n.positionY } 
+            : undefined,
         })),
         // 外部节点引用
         ...refsResult.map((r) => ({
@@ -156,6 +160,9 @@ export class NodeService {
           name: r.externalNode?.name ?? null,
           external: true,
           externalArtifactId: r.ref.externalArtifactId,
+          position: r.externalNode?.positionX != null && r.externalNode?.positionY != null
+            ? { x: r.externalNode.positionX, y: r.externalNode.positionY }
+            : undefined,
         })),
       ];
 
@@ -569,7 +576,7 @@ export class NodeService {
       
       batchOperations.push(this.db.insert(artifactNodeVersions).values(newVersion));
 
-      // 创建文件记录
+      // 创建文件记录（分批插入以遵守 SQLite 参数限制）
       if (input.files.length > 0) {
         const fileRecords = input.files.map((f) => ({
           id: crypto.randomUUID(),
@@ -581,7 +588,11 @@ export class NodeService {
           checksum: f.checksum ?? null,
         }));
 
-        batchOperations.push(this.db.insert(artifactNodeFiles).values(fileRecords));
+        // 每行 7 个字段，分批插入
+        const chunks = chunkArray(fileRecords, 7);
+        for (const chunk of chunks) {
+          batchOperations.push(this.db.insert(artifactNodeFiles).values(chunk));
+        }
       }
 
       // 使用 batch 执行所有操作（D1 的 batch 是事务性的）

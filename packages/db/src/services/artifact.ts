@@ -6,6 +6,7 @@ import { artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRef
 import { artifactLineage, type ArtifactLineage } from '../schema/lineage';
 import { artifactStats, type ArtifactStats } from '../schema/stats';
 import { user, type User } from '../schema/auth';
+import { chunkArray } from '../utils';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArtifactListItem,
@@ -390,12 +391,14 @@ export class ArtifactService {
           // 内部节点 - 直接使用用户传入的 ID
           const nodeId = nodeDesc.id;
 
-          // 创建节点
+          // 创建节点（包含 position 信息）
           const newNode: NewArtifactNode = {
             id: nodeId,
             artifactId,
             type: nodeDesc.type!,
             name: nodeDesc.name ?? null,
+            positionX: nodeDesc.position?.x ?? null,
+            positionY: nodeDesc.position?.y ?? null,
           };
           batchOperations.push(this.db.insert(artifactNodes).values(newNode));
 
@@ -417,7 +420,7 @@ export class ArtifactService {
           };
           batchOperations.push(this.db.insert(artifactNodeVersions).values(newNodeVersion));
 
-          // 创建文件记录
+          // 创建文件记录（分批插入以遵守 SQLite 参数限制）
           if (files.length > 0) {
             const fileRecords: NewArtifactNodeFile[] = files.map((f) => ({
               id: crypto.randomUUID(),
@@ -428,7 +431,11 @@ export class ArtifactService {
               sizeBytes: f.sizeBytes ?? null,
               checksum: f.checksum ?? null,
             }));
-            batchOperations.push(this.db.insert(artifactNodeFiles).values(fileRecords));
+            // 每行 7 个字段，分批插入
+            const chunks = chunkArray(fileRecords, 7);
+            for (const chunk of chunks) {
+              batchOperations.push(this.db.insert(artifactNodeFiles).values(chunk));
+            }
           }
         }
       }
