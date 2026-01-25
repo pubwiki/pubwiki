@@ -45,6 +45,48 @@ export interface ContentFetcher {
   fetchNodeDetail(artifactId: string, nodeId: string): Promise<ArtifactNodeDetail | null>;
 }
 
+/**
+ * ID mapping from old (artifact) node IDs to new (studio) node IDs
+ */
+type IdMap = Map<string, string>;
+
+// ============================================================================
+// Internal Helpers
+// ============================================================================
+
+/**
+ * Generate new IDs for all nodes and create a mapping
+ */
+function createIdMapping(nodes: ArtifactNodeSummary[]): IdMap {
+  const idMap = new Map<string, string>();
+  for (const node of nodes) {
+    idMap.set(node.id, crypto.randomUUID());
+  }
+  return idMap;
+}
+
+/**
+ * Remap node ID references in GeneratedContent
+ */
+function remapGeneratedContent(content: GeneratedContent, idMap: IdMap): GeneratedContent {
+  const remapNodeRef = (ref: { id: string; commit: string }) => ({
+    id: idMap.get(ref.id) ?? ref.id,
+    commit: ref.commit
+  });
+
+  return new GeneratedContent(
+    structuredClone(content.blocks),
+    remapNodeRef(content.inputRef),
+    content.promptRefs.map(remapNodeRef),
+    content.indirectPromptRefs.map(remapNodeRef),
+    content.inputVfsRef ? {
+      nodeId: idMap.get(content.inputVfsRef.nodeId) ?? content.inputVfsRef.nodeId,
+      commit: content.inputVfsRef.commit
+    } : null,
+    content.outputVfsId ? (idMap.get(content.outputVfsId) ?? content.outputVfsId) : null
+  );
+}
+
 // ============================================================================
 // Internal Helpers
 // ============================================================================
@@ -79,6 +121,9 @@ async function fetchVfsFileContent(
  * Convert artifact graph data to studio nodes and edges format.
  * Fetches content for each node from the API.
  * For VFS nodes, also fetches all files and writes them to the VFS storage.
+ * 
+ * All nodes are assigned new UUIDs to avoid ID conflicts with existing nodes.
+ * References within node content (e.g., GeneratedContent refs) are remapped accordingly.
  */
 export async function convertArtifactToStudioGraph(
   graphData: ArtifactGraphData,
@@ -86,6 +131,9 @@ export async function convertArtifactToStudioGraph(
   targetProjectId: string,
   contentFetcher: ContentFetcher
 ): Promise<{ nodes: Node<StudioNodeData>[]; edges: Edge[] }> {
+  // Create ID mapping for all nodes (old ID -> new UUID)
+  const idMap = createIdMapping(graphData.nodes);
+
   // Fetch content for all non-VFS nodes in parallel
   const contentPromises = graphData.nodes.map(async (node: ArtifactNodeSummary) => {
     // Skip VFS nodes and external nodes
@@ -99,14 +147,15 @@ export async function convertArtifactToStudioGraph(
   const contentResults = await Promise.all(contentPromises);
   const contentMap = new Map<string, string>(contentResults.map((r: { nodeId: string; content: string }) => [r.nodeId, r.content]));
 
-  // Process VFS nodes: fetch details and files
+  // Process VFS nodes: fetch details and files (use NEW node IDs for VFS storage)
   const vfsNodes = graphData.nodes.filter((n: ArtifactNodeSummary) => n.type === 'VFS' && !n.external);
   for (const vfsNode of vfsNodes) {
     // Fetch node detail to get file list
     const nodeDetail = await contentFetcher.fetchNodeDetail(artifactId, vfsNode.id);
     if (nodeDetail?.files && nodeDetail.files.length > 0) {
-      // Get VFS instance for this node
-      const vfs = await getNodeVfs(targetProjectId, vfsNode.id);
+      // Get VFS instance for this node using the NEW ID
+      const newNodeId = idMap.get(vfsNode.id)!;
+      const vfs = await getNodeVfs(targetProjectId, newNodeId);
       
       // Fetch and write all files in parallel
       const filePromises = nodeDetail.files.map(async (fileInfo: NodeFileInfo) => {
@@ -123,12 +172,15 @@ export async function convertArtifactToStudioGraph(
   }
 
   const nodes: Node<StudioNodeData>[] = await Promise.all(graphData.nodes.map(async (node: ArtifactNodeSummary, index: number) => {
-    // Calculate a default position (arranged in a grid)
-    const posX = (index % 3) * 300 + 100;
-    const posY = Math.floor(index / 3) * 200 + 100;
+    // Get the new ID for this node
+    const newNodeId = idMap.get(node.id)!;
+    
+    // Use saved position if available, otherwise calculate a default position (arranged in a grid)
+    const posX = node.position?.x ?? ((index % 3) * 300 + 100);
+    const posY = node.position?.y ?? (Math.floor(index / 3) * 200 + 100);
 
     const nodeType = node.type;
-    const commit = await generateCommitHash(node.id);
+    const commit = await generateCommitHash(newNodeId);
 
     // Get content from map (may be JSON or plain text depending on backend)
     const rawContent = contentMap.get(node.id) ?? '';
@@ -137,7 +189,7 @@ export async function convertArtifactToStudioGraph(
     switch (nodeType) {
       case 'VFS': {
         const vfsData: VFSNodeData = {
-          id: node.id,
+          id: newNodeId,
           name: node.name || `Files ${index + 1}`,
           type: nodeType,
           commit,
@@ -151,7 +203,7 @@ export async function convertArtifactToStudioGraph(
           originalRef: { nodeId: node.id, commit }
         };
         return {
-          id: node.id,
+          id: newNodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: vfsData
@@ -167,7 +219,7 @@ export async function convertArtifactToStudioGraph(
           parsedContent = new SandboxContent();
         }
         const sandboxData: SandboxNodeData = {
-          id: node.id,
+          id: newNodeId,
           name: node.name || `Sandbox ${index + 1}`,
           type: nodeType,
           commit,
@@ -180,7 +232,7 @@ export async function convertArtifactToStudioGraph(
           error: null
         };
         return {
-          id: node.id,
+          id: newNodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: sandboxData
@@ -196,7 +248,7 @@ export async function convertArtifactToStudioGraph(
           parsedContent = new LoaderContent();
         }
         const loaderData: LoaderNodeData = {
-          id: node.id,
+          id: newNodeId,
           name: node.name || `Loader ${index + 1}`,
           type: nodeType,
           commit,
@@ -209,7 +261,7 @@ export async function convertArtifactToStudioGraph(
           registeredServices: []
         };
         return {
-          id: node.id,
+          id: newNodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: loaderData
@@ -218,7 +270,7 @@ export async function convertArtifactToStudioGraph(
 
       case 'STATE': {
         const stateData: StateNodeData = {
-          id: node.id,
+          id: newNodeId,
           name: node.name || `State ${index + 1}`,
           type: nodeType,
           commit,
@@ -232,7 +284,7 @@ export async function convertArtifactToStudioGraph(
           tripleCount: 0
         };
         return {
-          id: node.id,
+          id: newNodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: stateData
@@ -243,7 +295,7 @@ export async function convertArtifactToStudioGraph(
         const json = JSON.parse(rawContent);
         const parsedContent = InputContent.fromJSON(json);
         const inputData: InputNodeData = {
-          id: node.id,
+          id: newNodeId,
           name: node.name || `Input ${index + 1}`,
           type: nodeType,
           commit,
@@ -254,7 +306,7 @@ export async function convertArtifactToStudioGraph(
           originalRef: { nodeId: node.id, commit }
         };
         return {
-          id: node.id,
+          id: newNodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: inputData
@@ -270,7 +322,7 @@ export async function convertArtifactToStudioGraph(
           parsedContent = PromptContent.fromText(rawContent);
         }
         const promptData: PromptNodeData = {
-          id: node.id,
+          id: newNodeId,
           name: node.name || `Prompt ${index + 1}`,
           type: nodeType,
           commit,
@@ -282,7 +334,7 @@ export async function convertArtifactToStudioGraph(
           isEditing: false
         };
         return {
-          id: node.id,
+          id: newNodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: promptData
@@ -295,11 +347,13 @@ export async function convertArtifactToStudioGraph(
         try {
           const json = JSON.parse(rawContent);
           parsedContent = GeneratedContent.fromJSON(json);
+          // Remap node ID references in GeneratedContent
+          parsedContent = remapGeneratedContent(parsedContent, idMap);
         } catch {
           parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
         }
         const generatedData: GeneratedNodeData = {
-          id: node.id,
+          id: newNodeId,
           name: node.name || `Generated ${index + 1}`,
           type: nodeType,
           commit,
@@ -311,7 +365,7 @@ export async function convertArtifactToStudioGraph(
           isStreaming: false
         };
         return {
-          id: node.id,
+          id: newNodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: generatedData
@@ -320,13 +374,18 @@ export async function convertArtifactToStudioGraph(
     }
   }));
 
-  const edges: Edge[] = graphData.edges.map((edge: ArtifactEdge) => ({
-    id: `e-${edge.source}-${edge.target}`,
-    source: edge.source,
-    target: edge.target,
-    sourceHandle: edge.sourceHandle ?? null,
-    targetHandle: edge.targetHandle ?? null
-  }));
+  // Remap edge source/target to new node IDs
+  const edges: Edge[] = graphData.edges.map((edge: ArtifactEdge) => {
+    const newSource = idMap.get(edge.source) ?? edge.source;
+    const newTarget = idMap.get(edge.target) ?? edge.target;
+    return {
+      id: `e-${newSource}-${newTarget}`,
+      source: newSource,
+      target: newTarget,
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null
+    };
+  });
 
   return { nodes, edges };
 }

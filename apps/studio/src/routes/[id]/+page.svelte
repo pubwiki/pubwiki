@@ -41,7 +41,7 @@
 	} from '$lib/version';
 	import { validateConnection } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
-	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip } from '$lib/io';
+	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject, type ContentFetcher } from '$lib/io';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$components/pubwiki';
@@ -128,6 +128,9 @@
 	
 	// Current project ID (from URL params)
 	let currentProjectId = $derived(data.projectId);
+	
+	// Import artifact ID (from URL params, e.g., ?import=artifactId)
+	let importArtifactId = $derived(data.importArtifactId);
 
 	// ============================================================================
 	// PubWiki Confirmation Dialog State
@@ -725,6 +728,107 @@
 		}
 	}
 	
+	/**
+	 * Handle artifact import from URL parameter
+	 * Fetches artifact graph and adds nodes to the current project
+	 */
+	async function handleArtifactImport(artifactId: string) {
+		console.log('[Studio] handleArtifactImport starting:', artifactId);
+		
+		try {
+			// Fetch artifact graph
+			console.log('[Studio] Fetching artifact graph...');
+			const { data: graphData, error } = await apiClient.GET('/artifacts/{artifactId}/graph', {
+				params: {
+					path: { artifactId },
+					query: { version: 'latest' }
+				}
+			});
+			
+			console.log('[Studio] Artifact graph response:', { graphData, error });
+			
+			if (error || !graphData) {
+				console.error('[Studio] Failed to fetch artifact graph:', error);
+				return;
+			}
+			
+			console.log('[Studio] Artifact graph nodes:', graphData.nodes?.length ?? 0);
+			console.log('[Studio] Artifact graph edges:', graphData.edges?.length ?? 0);
+			
+			if (!graphData.nodes || graphData.nodes.length === 0) {
+				console.warn('[Studio] Artifact has no nodes to import');
+				return;
+			}
+			
+			// Create content fetcher
+			const contentFetcher: ContentFetcher = {
+				async fetchNodeContent(artId: string, nodeId: string) {
+					console.log('[Studio] Fetching node content:', { artId, nodeId });
+					try {
+						const response = await fetch(`${API_BASE_URL}/artifacts/${artId}/nodes/${nodeId}/content`);
+						if (response.ok) {
+							const text = await response.text();
+							console.log('[Studio] Node content fetched, length:', text.length);
+							return text;
+						}
+						console.log('[Studio] Node content fetch failed:', response.status);
+						return null;
+					} catch (e) {
+						console.error('[Studio] Node content fetch error:', e);
+						return null;
+					}
+				},
+				async fetchNodeDetail(artId: string, nodeId: string) {
+					console.log('[Studio] Fetching node detail:', { artId, nodeId });
+					try {
+						const { data } = await apiClient.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
+							params: {
+								path: { artifactId: artId, nodeId },
+								query: { version: 'latest' }
+							}
+						});
+						console.log('[Studio] Node detail fetched:', data);
+						return data ?? null;
+					} catch (e) {
+						console.error('[Studio] Node detail fetch error:', e);
+						return null;
+					}
+				}
+			};
+			
+			// Import artifact nodes to current project
+			console.log('[Studio] Adding artifact to project...');
+			await addArtifactToProject(
+				{ nodes: graphData.nodes, edges: graphData.edges, version: graphData.version },
+				artifactId,
+				currentProjectId,
+				contentFetcher
+			);
+			
+			console.log('[Studio] Artifact import complete, refreshing view...');
+			
+			// Refresh nodes and edges from stores
+			const layouts = layoutStore.getAll();
+			nodes = nodeStore.getAllIds().map(nodeId => {
+				const nodeData = nodeStore.get(nodeId)!;
+				const layout = layouts.get(nodeId) ?? { x: 0, y: 0 };
+				return {
+					id: nodeId,
+					type: nodeData.type,
+					position: layout,
+					data: { id: nodeId, type: nodeData.type },
+					sourcePosition: Position.Right,
+					targetPosition: Position.Left,
+				};
+			});
+			edges = await getEdges(currentProjectId);
+			
+			console.log('[Studio] View refreshed, nodes:', nodes.length, 'edges:', edges.length);
+		} catch (err) {
+			console.error('[Studio] Failed to import artifact:', err);
+		}
+	}
+	
 	$effect(() => {
 		console.log('[Studio] Init $effect running, initialized:', initialized, 'loaded:', loaded);
 		if (!initialized) {
@@ -815,6 +919,12 @@
 					
 					loaded = true;
 					console.log('[Studio] Graph loading complete, loaded set to:', loaded);
+					
+					// Handle import if artifactId is provided in URL
+					if (importArtifactId) {
+						console.log('[Studio] Import artifact requested:', importArtifactId);
+						await handleArtifactImport(importArtifactId);
+					}
 					
 					// Sync STATE nodes' cloud save info asynchronously (non-blocking)
 					// This fetches latest checkpoints from the cloud and updates local state
