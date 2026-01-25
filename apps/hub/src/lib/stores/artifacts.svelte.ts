@@ -123,9 +123,13 @@ export class ArtifactStore {
 
 	async fetchHomepage(artifactId: string): Promise<string | null> {
 		try {
-			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/homepage`);
-			if (response.ok) {
-				return await response.text();
+			const client = this.getClient();
+			const { data, error } = await client.GET('/artifacts/{artifactId}/homepage', {
+				params: { path: { artifactId } },
+				parseAs: 'text'
+			});
+			if (!error && data) {
+				return data;
 			}
 			return null;
 		} catch {
@@ -205,11 +209,15 @@ export class ArtifactStore {
 		}
 		
 		try {
-			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/nodes/${nodeId}/content`, {
-				credentials: 'include'
+			const client = this.getClient();
+			const { data, error } = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}/content', {
+				params: { 
+					path: { artifactId, nodeId },
+					query: { version: 'latest' }
+				}
 			});
-			if (response.ok) {
-				const content = await response.text();
+			if (!error && data) {
+				const content = JSON.stringify(data);
 				// Cache the result
 				this.nodeContentCache.set(cacheKey, content);
 				return content;

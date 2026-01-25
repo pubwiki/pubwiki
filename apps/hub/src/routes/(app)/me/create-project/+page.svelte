@@ -119,9 +119,8 @@
 		isSubmitting = true;
 
 		try {
-			const formData = new FormData();
-
-			// Build metadata
+			// Build metadata - homepage is currently not supported by the API
+			// TODO: Add homepage support to the API if needed
 			const metadata = {
 				name: name.trim(),
 				slug: slug.trim(),
@@ -129,28 +128,19 @@
 				description: description.trim() || undefined,
 				visibility,
 				license: license.trim() || undefined,
-				artifactIds: selectedArtifactIds.length > 0 ? selectedArtifactIds : undefined
+				artifactIds: selectedArtifactIds.length > 0 ? selectedArtifactIds : undefined,
+				roles: [] // Required by the API schema
 			};
 
-			formData.append('metadata', JSON.stringify(metadata));
-
-			// Add homepage if provided
-			if (homepage.trim()) {
-				formData.append('homepage', new Blob([homepage], { type: 'text/markdown' }), 'homepage.md');
-			}
-
-			const response = await fetch(`${API_BASE_URL}/projects`, {
-				method: 'POST',
-				credentials: 'include',
-				body: formData
+			const client = getClient();
+			const { data, error: apiError } = await client.POST('/projects', {
+				body: metadata
 			});
 
-			if (response.ok) {
-				const data = await response.json();
+			if (data && !apiError) {
 				goto(`/project/${data.project.id}`);
 			} else {
-				const errorData = await response.json();
-				error = errorData.error || 'Failed to create project';
+				error = apiError?.error || 'Failed to create project';
 			}
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Unknown error occurred';
