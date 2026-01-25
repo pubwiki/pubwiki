@@ -62,6 +62,8 @@ export interface StoredNodeData {
   content: unknown;
   /** Whether this node references external artifact */
   external?: boolean;
+  /** Reference to the original external node (for Fork-on-Write tracking) */
+  originalRef?: { nodeId: string; commit: string };
   /** Timestamp when this version was created */
   timestamp?: number;
   /** Incoming edges at time of snapshot */

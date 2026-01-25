@@ -54,6 +54,16 @@ export {
 // ============================================================================
 
 /**
+ * Reference to the original external node that was forked
+ */
+export interface OriginalRef {
+  /** Original node ID in the external artifact */
+  nodeId: string
+  /** Commit hash of the original node when it was imported */
+  commit: string
+}
+
+/**
  * Base node data interface with version control
  * 
  * Contains ONLY persistent data that should be:
@@ -80,6 +90,8 @@ export interface BaseNodeData<T extends NodeContent> {
   content: T
   /** Whether this node references external artifact (not included in export) */
   external?: boolean
+  /** Reference to the original external node (for Fork-on-Write tracking) */
+  originalRef?: OriginalRef
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }

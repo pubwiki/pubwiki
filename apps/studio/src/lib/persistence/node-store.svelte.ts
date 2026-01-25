@@ -428,6 +428,7 @@ class NodeStore {
       parents: data.parents,
       content: data.content.toJSON(),
       external: data.external,
+      originalRef: data.originalRef,
       timestamp: Date.now()
     };
   }
@@ -436,6 +437,7 @@ class NodeStore {
    * Deserialize storage format to node data
    * Note: Type assertion is needed because restoreContent returns NodeContent base type,
    * but the specific content type is determined by nodeType. TypeScript can't narrow this automatically.
+   * Use 'as unknown as StudioNodeData' because restoreContent returns the correct runtime type.
    */
   private deserialize(stored: StoredNodeData): StudioNodeData {
     const nodeType = stored.type as NodeType;
@@ -447,8 +449,9 @@ class NodeStore {
       snapshotRefs: [],  // snapshotRefs managed separately, not persisted
       parents: stored.parents ?? [],
       content: restoreContent(nodeType, stored.content),
-      external: stored.external ?? false
-    } as StudioNodeData;
+      external: stored.external ?? false,
+      originalRef: stored.originalRef
+    } as unknown as StudioNodeData;
   }
   
   /**

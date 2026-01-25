@@ -17,9 +17,13 @@ import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, VFSNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
 import type { ArtifactType, VisibilityType } from '$lib/types';
+import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 import { getNodeVfs } from '../vfs';
 import { nodeStore } from '../persistence';
+
+// Create a singleton API client
+const apiClient = createApiClient(API_BASE_URL);
 
 /**
  * Metadata for publishing an artifact
@@ -44,6 +48,14 @@ export interface PublishMetadata {
 type ApiNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'LOADER' | 'SANDBOX' | 'STATE';
 
 /**
+ * Reference to the original external node that was forked
+ */
+interface OriginalRefDescriptor {
+	nodeId: string;
+	commit: string;
+}
+
+/**
  * Artifact descriptor for API
  */
 interface ArtifactNodeDescriptor {
@@ -52,6 +64,8 @@ interface ArtifactNodeDescriptor {
 	type: ApiNodeType;
 	name?: string;
 	files?: string[];
+	/** Reference to the original external node (for Fork-on-Write) */
+	originalRef?: OriginalRefDescriptor;
 }
 
 interface ArtifactEdgeDescriptor {
@@ -155,47 +169,132 @@ async function collectVfsFiles(
 // ============================================================================
 
 /**
- * Prepare artifact descriptor from nodes and edges
- * All nodes are published (external nodes are marked as such)
- * VFS nodes include their file list
+ * Check if an external node has been modified since import
+ * A node is considered modified if its current commit differs from the original commit
  */
-async function createDescriptor(
-	nodes: Node<StudioNodeData>[],
-	edges: Edge[]
-): Promise<ArtifactDescriptor> {
-	const nodeDescriptors: ArtifactNodeDescriptor[] = await Promise.all(
-		nodes.map(async (node) => {
+function isExternalNodeModified(node: StudioNodeData): boolean {
+	if (!node.external) return false;
+	if (!node.originalRef) return false;
+	// Compare current commit with original commit
+	return node.commit !== node.originalRef.commit;
+}
+
+/**
+ * Result of preparing nodes for publish with Fork-on-Write applied
+ */
+interface PreparedNodes {
+	/** Node descriptors for the API */
+	descriptors: ArtifactNodeDescriptor[];
+	/** Map from original node ID to forked node ID (for edge remapping) */
+	idMapping: Map<string, string>;
+	/** Nodes that need content uploaded (includes forked external nodes) */
+	nodesToUpload: Node<StudioNodeData>[];
+}
+
+/**
+ * Prepare nodes for publish, applying Fork-on-Write for modified external nodes
+ * 
+ * Fork-on-Write: When an external node has been modified (commit != originalRef.commit),
+ * it is "forked" into a new internal node with a new ID, preserving the originalRef
+ * to maintain lineage tracking.
+ */
+async function prepareNodesForPublish(
+	nodes: Node<StudioNodeData>[]
+): Promise<PreparedNodes> {
+	const descriptors: ArtifactNodeDescriptor[] = [];
+	const idMapping = new Map<string, string>();
+	const nodesToUpload: Node<StudioNodeData>[] = [];
+
+	for (const node of nodes) {
+		const isModifiedExternal = isExternalNodeModified(node.data);
+
+		if (isModifiedExternal) {
+			// Fork-on-Write: Create a new internal node
+			const newId = crypto.randomUUID();
+			idMapping.set(node.data.id, newId);
+
 			const descriptor: ArtifactNodeDescriptor = {
-				id: node.data.id,
-				external: node.data.external ?? false,
+				id: newId,
+				external: false, // Forked node is now internal
 				type: node.data.type as ApiNodeType,
-				name: node.data.name || undefined
+				name: node.data.name || undefined,
+				// Preserve original reference for lineage tracking
+				originalRef: node.data.originalRef
 			};
 
 			// For VFS nodes, include file list
-			if (node.data.type === 'VFS' && !node.data.external) {
+			if (node.data.type === 'VFS') {
 				const vfsData = node.data as VFSNodeData;
 				const filePaths = await collectVfsFilePaths(vfsData.content.projectId, node.data.id);
 				descriptor.files = filePaths;
 			}
 
-			return descriptor;
-		})
-	);
+			descriptors.push(descriptor);
+			// Forked nodes need content uploaded
+			nodesToUpload.push({
+				...node,
+				data: { ...node.data, id: newId } as StudioNodeData
+			});
+		} else if (node.data.external) {
+			// Unmodified external node - just reference it
+			descriptors.push({
+				id: node.data.id,
+				external: true,
+				type: node.data.type as ApiNodeType,
+				name: node.data.name || undefined
+			});
+			// External nodes don't need content uploaded
+		} else {
+			// Regular internal node
+			const descriptor: ArtifactNodeDescriptor = {
+				id: node.data.id,
+				external: false,
+				type: node.data.type as ApiNodeType,
+				name: node.data.name || undefined
+			};
 
+			// For VFS nodes, include file list
+			if (node.data.type === 'VFS') {
+				const vfsData = node.data as VFSNodeData;
+				const filePaths = await collectVfsFilePaths(vfsData.content.projectId, node.data.id);
+				descriptor.files = filePaths;
+			}
+
+			descriptors.push(descriptor);
+			nodesToUpload.push(node);
+		}
+	}
+
+	return { descriptors, idMapping, nodesToUpload };
+}
+
+/**
+ * Prepare artifact descriptor from nodes and edges
+ * Applies Fork-on-Write for modified external nodes
+ * VFS nodes include their file list
+ */
+async function createDescriptor(
+	nodes: Node<StudioNodeData>[],
+	edges: Edge[]
+): Promise<{ descriptor: ArtifactDescriptor; nodesToUpload: Node<StudioNodeData>[] }> {
+	const { descriptors, idMapping, nodesToUpload } = await prepareNodesForPublish(nodes);
+
+	// Remap edge source/target IDs for forked nodes
 	const edgeDescriptors: ArtifactEdgeDescriptor[] = edges.map((edge) => ({
-		source: edge.source,
-		target: edge.target,
+		source: idMapping.get(edge.source) ?? edge.source,
+		target: idMapping.get(edge.target) ?? edge.target,
 		sourceHandle: edge.sourceHandle,
 		targetHandle: edge.targetHandle
 	}));
 
-	return {
+	const descriptor: ArtifactDescriptor = {
 		version: 1,
 		exportedAt: new Date().toISOString(),
-		nodes: nodeDescriptors,
+		nodes: descriptors,
 		edges: edgeDescriptors
 	};
+
+	return { descriptor, nodesToUpload };
 }
 
 /**
@@ -204,15 +303,22 @@ async function createDescriptor(
  * After content-type refactoring:
  * - All node content is uploaded as JSON (node.json)
  * - This preserves structured data like MessageBlocks, mountpoints, etc.
- * - External nodes are skipped (they don't have content to upload)
+ * - Only nodesToUpload are processed (external nodes already filtered out)
  * - VFS nodes upload all their files
+ * 
+ * @param nodesToUpload - Pre-filtered nodes that need content uploaded (includes forked external nodes)
+ * @param originalNodes - Original nodes for VFS file access (needed for forked VFS nodes)
  */
 async function createFormData(
 	metadata: PublishMetadata,
 	descriptor: ArtifactDescriptor,
-	nodes: Node<StudioNodeData>[]
+	nodesToUpload: Node<StudioNodeData>[],
+	originalNodes: Node<StudioNodeData>[]
 ): Promise<FormData> {
 	const formData = new FormData();
+
+	// Build a map from node ID to original node for VFS file access
+	const originalNodeMap = new Map(originalNodes.map(n => [n.data.id, n]));
 
 	// Add metadata as JSON string
 	const metadataJson = JSON.stringify({
@@ -231,19 +337,24 @@ async function createFormData(
 	formData.append('descriptor', JSON.stringify(descriptor));
 
 	// Add node content files
-	for (const node of nodes) {
-		// Skip external nodes (they don't have content to upload)
-		if (node.data.external) continue;
-
+	for (const node of nodesToUpload) {
 		if (node.data.type === 'VFS') {
 			// For VFS nodes, upload all files
+			// For forked VFS nodes, we need to get files from the original node's VFS
 			const vfsData = node.data as VFSNodeData;
-			const files = await collectVfsFiles(vfsData.content.projectId, node.data.id);
+			
+			// Find original node to get the correct VFS projectId
+			// For forked nodes, node.data.id is the new ID, but we need original ID for VFS access
+			const originalNode = originalNodeMap.get(node.id) ?? node;
+			const originalVfsData = originalNode.data as VFSNodeData;
+			
+			const files = await collectVfsFiles(originalVfsData.content.projectId, originalNode.data.id);
 			
 			for (const file of files) {
 				// Remove leading slash from path for the filename
 				const filename = file.path.startsWith('/') ? file.path.slice(1) : file.path;
 				const blob = new Blob([file.content.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+				// Use the (potentially new) node ID for the upload key
 				formData.append(`nodes[${node.data.id}]`, blob, filename);
 			}
 		} else {
@@ -270,11 +381,34 @@ export interface PublishResult {
 }
 
 /**
+ * Validate STATE nodes have required checkpoint before publish
+ * STATE nodes must have a saveId and checkpointRef to be published
+ */
+function validateStateNodes(nodes: Node<StudioNodeData>[]): { valid: boolean; error?: string } {
+	for (const node of nodes) {
+		if (node.data.type === 'STATE' && !node.data.external) {
+			const stateContent = node.data.content as import('../types').StateContent;
+			if (!stateContent.saveId || !stateContent.checkpointRef) {
+				return {
+					valid: false,
+					error: `STATE node "${node.data.name || node.data.id}" must have a saved checkpoint before publish. Use "Save to Cloud" to create a checkpoint first.`
+				};
+			}
+		}
+	}
+	return { valid: true };
+}
+
+/**
  * Publish nodes as an artifact to the backend
  * 
  * After layer separation:
  * - Takes FlowNodeData nodes from flow layer
  * - Gets business data from nodeStore
+ * 
+ * Implements Fork-on-Write:
+ * - Modified external nodes are forked into new internal nodes
+ * - Original reference is preserved for lineage tracking
  * 
  * Authentication is handled via session cookie (credentials: 'include')
  */
@@ -295,28 +429,37 @@ export async function publishArtifact(
 		})
 		.filter((n): n is Node<StudioNodeData> => n !== null);
 
-	const descriptor = await createDescriptor(nodes, edges);
-	const formData = await createFormData(metadata, descriptor, nodes);
+	// Validate STATE nodes have checkpoints
+	const stateValidation = validateStateNodes(nodes);
+	if (!stateValidation.valid) {
+		return {
+			success: false,
+			error: stateValidation.error
+		};
+	}
+
+	// Create descriptor with Fork-on-Write applied
+	const { descriptor, nodesToUpload } = await createDescriptor(nodes, edges);
+	const formData = await createFormData(metadata, descriptor, nodesToUpload, nodes);
 
 	try {
-		const response = await fetch(`${API_BASE_URL}/artifacts`, {
-			method: 'POST',
-			credentials: 'include',
-			body: formData
+		// Use openapi-fetch with custom bodySerializer for FormData
+		const { data, error, response } = await apiClient.POST('/artifacts', {
+			// @ts-expect-error FormData body requires special handling for multipart uploads
+			body: formData,
+			bodySerializer: (body) => body
 		});
 
-		if (!response.ok) {
-			const errorData = await response.json().catch(() => ({}));
+		if (error) {
 			return {
 				success: false,
-				error: errorData.error || `HTTP ${response.status}: ${response.statusText}`
+				error: error.error || `HTTP ${response.status}: ${response.statusText}`
 			};
 		}
 
-		const data = await response.json();
 		return {
 			success: true,
-			artifactId: data.artifact?.id
+			artifactId: data?.artifact?.id
 		};
 	} catch (err) {
 		return {

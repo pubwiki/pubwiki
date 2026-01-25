@@ -5,6 +5,7 @@
 // Node data types
 export type {
   BaseNodeData,
+  OriginalRef,
   InputNodeData,
   PromptNodeData,
   GeneratedNodeData,
@@ -50,7 +51,7 @@ export {
 } from './content';
 
 // ContentBlock types (for structured reftag storage)
-export type { ContentBlock, TextBlock, RefTagBlock, InputGenerationConfig } from './content';
+export type { ContentBlock, TextBlock, RefTagBlock, InputGenerationConfig, CheckpointInfo, CheckpointVisibility } from './content';
 export { blocksToText, getRefTagNamesFromBlocks } from './content';
 
 // Flow types (for SvelteFlow rendering layer)

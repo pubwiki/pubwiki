@@ -147,7 +147,8 @@ export async function convertArtifactToStudioGraph(
           expandedFolders: [],
           selectedFilePath: undefined,
           isExpandedViewOpen: false,
-          external: true
+          external: true,
+          originalRef: { nodeId: node.id, commit }
         };
         return {
           id: node.id,
@@ -174,6 +175,7 @@ export async function convertArtifactToStudioGraph(
           parents: [],
           content: parsedContent,
           external: true,
+          originalRef: { nodeId: node.id, commit },
           isRunning: false,
           error: null
         };
@@ -202,6 +204,7 @@ export async function convertArtifactToStudioGraph(
           parents: [],
           content: parsedContent,
           external: true,
+          originalRef: { nodeId: node.id, commit },
           error: null,
           registeredServices: []
         };
@@ -223,6 +226,7 @@ export async function convertArtifactToStudioGraph(
           parents: [],
           content: new StateContent(),
           external: true,
+          originalRef: { nodeId: node.id, commit },
           isReady: false,
           error: null,
           tripleCount: 0
@@ -246,7 +250,8 @@ export async function convertArtifactToStudioGraph(
           snapshotRefs: [],
           parents: [],
           content: parsedContent,
-          external: true
+          external: true,
+          originalRef: { nodeId: node.id, commit }
         };
         return {
           id: node.id,
@@ -273,6 +278,7 @@ export async function convertArtifactToStudioGraph(
           parents: [],
           content: parsedContent,
           external: true,
+          originalRef: { nodeId: node.id, commit },
           isEditing: false
         };
         return {
@@ -301,6 +307,7 @@ export async function convertArtifactToStudioGraph(
           parents: [],
           content: parsedContent,
           external: true,
+          originalRef: { nodeId: node.id, commit },
           isStreaming: false
         };
         return {

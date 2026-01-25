@@ -74,8 +74,9 @@ async function saveCurrentVersion(
 		const snapshotContentData = nodeData.content.clone()
 		
 		// Create a StudioNodeData for saving
-		// Note: Use 'as unknown as StudioNodeData' because clone() returns NodeContent
-		// but the actual runtime type matches the specific content class
+		// Type assertion needed: Versionable.content is NodeContent interface,
+		// so clone() returns NodeContent even though it uses 'this' return type.
+		// The discriminated union (StudioNodeData) requires exact type/content pairs.
 		const snapshotData: StudioNodeData = {
 			id: nodeData.id,
 			type: nodeData.type,
@@ -160,8 +161,9 @@ export async function restoreSnapshot<T extends Versionable>(
 	// Store current version as snapshot before restoring using clone()
 	const currentSnapshotContent = nodeData.content.clone()
 	
-	// Note: Use 'as unknown as StudioNodeData' because clone() returns NodeContent
-	// but the actual runtime type matches the specific content class
+	// Type assertion needed: Versionable.content is NodeContent interface,
+	// so clone() returns NodeContent even though it uses 'this' return type.
+	// The discriminated union (StudioNodeData) requires exact type/content pairs.
 	const currentSnapshotData: StudioNodeData = {
 		id: nodeData.id,
 		type: nodeData.type,
