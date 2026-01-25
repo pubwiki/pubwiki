@@ -69,8 +69,9 @@ export type UpsertArticleRequest = components['schemas']['UpsertArticleRequest']
 // Cloud Saves 相关类型
 export type CloudSave = components['schemas']['CloudSave'];
 export type CreateSaveRequest = components['schemas']['CreateSaveRequest'];
-export type QuadQueryRequest = components['schemas']['QuadQueryRequest'];
-export type QuadQueryResponse = components['schemas']['QuadQueryResponse'];
+export type CheckpointInfo = components['schemas']['CheckpointInfo'];
+export type CreateCheckpointRequest = components['schemas']['CreateCheckpointRequest'];
+export type CreateCheckpointResponse = components['schemas']['CreateCheckpointResponse'];
 export type TextPatch = components['schemas']['TextPatch'];
 export type RefNode = components['schemas']['RefNode'];
 export type VersionHistoryResponse = components['schemas']['VersionHistoryResponse'];

@@ -1,14 +1,14 @@
 <script lang="ts">
 	/**
 	 * StateProperties - Properties panel for State nodes
-	 * Displays RDF quads in a virtualized table with manual refresh
-	 * Supports import/export of RDF data
+	 * Displays RDF quads and save panel with local/cloud checkpoints
 	 */
 	import { VirtualList } from 'flowbite-svelte';
 	import { Dropdown } from '@pubwiki/ui/components';
 	import type { StateNodeData } from '$lib/types';
 	import { getNodeRDFStore, type RDFStore } from '$lib/rdf';
 	import type { Quad, SerializationFormat } from '@pubwiki/rdfstore';
+	import SavePanel from './SavePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -143,11 +143,19 @@
 	}
 </script>
 
-<div class="space-y-3">
-	<!-- Hidden file input for import -->
-	<input
-		type="file"
-		accept=".jsonl,.nq,.json,.txt"
+<div class="space-y-6">
+	<!-- Save Panel -->
+	<SavePanel {nodeId} {data} />
+
+	<!-- Divider -->
+	<div class="border-t border-gray-200"></div>
+
+	<!-- RDF Quads Section -->
+	<div class="space-y-3">
+		<!-- Hidden file input for import -->
+		<input
+			type="file"
+			accept=".jsonl,.nq,.json,.txt"
 		class="hidden"
 		bind:this={fileInput}
 		onchange={importQuads}
@@ -300,4 +308,5 @@
 			Click refresh to load quads from store
 		{/if}
 	</p>
+	</div>
 </div>

@@ -12,6 +12,29 @@
 
 这是一个**独立的底层库**，不依赖任何其他 pubwiki 内部包。
 
+## 存储架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      User Application                        │
+├─────────────────────────────────────────────────────────────┤
+│                       RDFStore API                           │
+│   (insert/delete/query/checkout/checkpoint/sparqlQuery)      │
+├─────────────────────────────────────────────────────────────┤
+│   VersionDAG (Dexie)   │         SPARQL Engine               │
+│   ├── refNodes         │    (quadstore-comunica)             │
+│   ├── checkpoints      │                                     │
+│   └── meta             │                                     │
+├─────────────────────────────────────────────────────────────┤
+│                   Quadstore Backend                          │
+│               (quadstore + abstract-level)                   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+该库使用**混合存储架构**：
+- **Quadstore (RDF 数据)**: 使用 abstract-level (browser-level/memory-level)
+- **VersionDAG (版本元数据)**: 使用 Dexie.js (IndexedDB)
+
 ## 核心概念
 
 ### Ref (引用)
@@ -59,30 +82,20 @@ interface Checkpoint {
 }
 ```
 
-## 架构设计
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      User Application                        │
-├─────────────────────────────────────────────────────────────┤
-│                       RDFStore API                           │
-│   (insert/delete/query/checkout/checkpoint/sparqlQuery)      │
-├─────────────────────────────────────────────────────────────┤
-│   Version DAG          │         SPARQL Engine               │
-│   (immutable refs)     │    (quadstore-comunica)             │
-├─────────────────────────────────────────────────────────────┤
-│                     Quadstore Backend                        │
-├─────────────────────────────────────────────────────────────┤
-│                 quadstore + abstract-level                   │
-└─────────────────────────────────────────────────────────────┘
-```
-
 ## API
 
 ### 类型定义
 
 ```typescript
 import type { Quad } from '@rdfjs/types'
+
+// 存储配置
+interface StorageConfig {
+  /** abstract-level 实例用于 Quadstore (RDF 数据) */
+  quadstoreLevel: LevelInstance
+  /** Dexie 数据库名称用于 VersionDAG (版本元数据) */
+  versionDbName: string
+}
 
 // 查询模式
 interface QuadPattern {
@@ -108,7 +121,7 @@ type SparqlBinding = Record<string, unknown>
 ```typescript
 class RDFStore {
   // === 创建/关闭 ===
-  static async create(level: LevelInstance, config?: Partial<StoreConfig>): Promise<RDFStore>
+  static async create(storage: StorageConfig, config?: Partial<StoreConfig>): Promise<RDFStore>
   async close(): Promise<void>
   
   // === 状态 ===
@@ -130,7 +143,7 @@ class RDFStore {
   
   // === 版本控制 ===
   async checkout(ref: Ref): Promise<void>
-  async checkpoint(): Promise<Ref>
+  async checkpoint(options: CheckpointOptions): Promise<Ref>
   async log(limit?: number): Promise<RefNode[]>
   async listCheckpoints(): Promise<Checkpoint[]>
   async getChildren(ref: Ref): Promise<Ref[]>
@@ -157,7 +170,12 @@ import { DataFactory } from 'rdf-data-factory'
 
 const df = new DataFactory()
 const level = new MemoryLevel()
-const store = await RDFStore.create(level)
+
+// 创建 store，指定 quadstore 和 version 的存储
+const store = await RDFStore.create({
+  quadstoreLevel: level,
+  versionDbName: 'my-rdf-store-version'
+})
 
 // 插入四元组，返回新 Ref
 const ref1 = await store.insert(
@@ -180,6 +198,20 @@ console.log(results.length) // 2
 
 // 关闭
 await store.close()
+```
+
+### 浏览器使用 (IndexedDB)
+
+```typescript
+import { BrowserLevel } from 'browser-level'
+import { RDFStore } from '@pubwiki/rdfstore'
+
+// Quadstore 使用 BrowserLevel (IndexedDB)
+// VersionDAG 自动使用 Dexie.js (IndexedDB)
+const store = await RDFStore.create({
+  quadstoreLevel: new BrowserLevel('my-rdf-quads'),
+  versionDbName: 'my-rdf-version'
+})
 ```
 
 ### 版本控制
@@ -228,7 +260,10 @@ for (let i = 0; i < 1000; i++) {
 }
 
 // 创建检查点加速后续 checkout
-const checkpointRef = await store.checkpoint()
+const checkpointRef = await store.checkpoint({
+  title: '批量插入完成',
+  description: '可选的描述信息'
+})
 
 // 更多操作...
 
@@ -308,12 +343,13 @@ packages/rdfstore/
 │   ├── index.ts              # 统一导出
 │   ├── types.ts              # 类型定义
 │   ├── store.ts              # RDFStore 主类
-│   ├── backend/              # quadstore 适配
+│   ├── backend/              # quadstore 适配 (abstract-level)
 │   │   ├── index.ts
 │   │   └── quadstore.ts
-│   ├── version/              # 版本 DAG
+│   ├── version/              # 版本 DAG (Dexie.js)
 │   │   ├── index.ts
-│   │   └── dag.ts            # VersionDAG 类
+│   │   ├── dag.ts            # VersionDAG 类
+│   │   └── store.ts          # VersionStore (Dexie schema)
 │   ├── delta/                # 增量计算
 │   │   └── index.ts
 │   ├── serialization/        # 序列化

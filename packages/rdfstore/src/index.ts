@@ -2,6 +2,10 @@
  * @pubwiki/rdfstore
  * 
  * RDF store with immutable version DAG
+ * 
+ * Storage architecture:
+ * - Quadstore (RDF data): Uses abstract-level (browser-level/memory-level)
+ * - VersionDAG (version metadata): Uses Dexie.js (IndexedDB)
  */
 
 // Types
@@ -10,13 +14,14 @@ export type {
   Ref,
   RefNode,
   Checkpoint,
+  CheckpointOptions,
   StoreConfig,
   StoreEventType,
   StoreEvents,
   LevelInstance,
 } from './types.js'
 
-export { DEFAULT_STORE_CONFIG } from './types.js'
+export { DEFAULT_STORE_CONFIG, toSyncOperation } from './types.js'
 
 // Re-export from rdfsync
 export {
@@ -44,13 +49,28 @@ export type {
 
 // Main Store API
 export { RDFStore } from './store.js'
-export type { SparqlBinding } from './store.js'
+export type { SparqlBinding, StorageConfig } from './store.js'
 
 // Backend
 export { StoreBackend, createBackend } from './backend/index.js'
 
-// Version DAG
-export { VersionDAG, createVersionDAG } from './version/index.js'
+// Version DAG (Dexie-based)
+export { 
+  VersionDAG, 
+  createVersionDAG,
+  createVersionDAGWithStore,
+  createVersionDAGWithDatabase,
+  VersionStore,
+  VersionDatabase,
+} from './version/index.js'
+
+export type {
+  RefNodeRecord,
+  ChildrenRecord,
+  CheckpointRecord,
+  CheckpointDataRecord,
+  MetaRecord,
+} from './version/index.js'
 
 // Delta computation
 export {

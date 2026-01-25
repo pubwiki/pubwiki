@@ -48,10 +48,13 @@ export const quads = sqliteTable(
 /**
  * Checkpoint 元数据表
  * 存储 checkpoint 信息，用于加速历史版本恢复
+ * 一个 ref 可以有多个 checkpoint，quad 数据按 ref 存储
  */
 export const checkpoints = sqliteTable('checkpoints', {
+  // Checkpoint 唯一标识
+  id: text('id').primaryKey(),
   // 对应的版本 ref
-  ref: text('ref').primaryKey(),
+  ref: text('ref').notNull(),
   // 创建时间戳
   timestamp: integer('timestamp').notNull(),
   // checkpoint 时刻的 quad 数量
@@ -62,7 +65,10 @@ export const checkpoints = sqliteTable('checkpoints', {
   description: text('description'),
   // 可见性：PRIVATE (仅 owner), UNLISTED (知道链接可访问), PUBLIC (公开可列举)
   visibility: text('visibility').notNull().default('PRIVATE'),
-});
+}, (table) => [
+  // ref 索引用于查询和引用计数
+  index('idx_checkpoints_ref').on(table.ref),
+]);
 
 /**
  * Checkpoint Quads 表

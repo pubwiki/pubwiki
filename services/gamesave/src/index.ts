@@ -139,14 +139,15 @@ export default class GameSaveWorker extends WorkerEntrypoint<Env> implements Gam
 
   /**
    * 在指定 ref 处创建 checkpoint
+   * @returns checkpoint ID
    */
-  async createCheckpoint(saveId: string, ref: string, metadata?: CheckpointMetadata): Promise<void> {
+  async createCheckpoint(saveId: string, ref: string, metadata?: CheckpointMetadata): Promise<string> {
     const stub = this.getSaveStub(saveId);
     return stub.createCheckpoint(ref, metadata);
   }
 
   /**
-   * 获取 checkpoint 信息
+   * 获取 checkpoint 列表
    * @param accessLevel - 'owner' 返回所有 checkpoint，'public' 仅返回 PUBLIC 的
    */
   async listCheckpoints(saveId: string, accessLevel: 'owner' | 'public' = 'owner'): Promise<CheckpointInfo[]> {
@@ -155,27 +156,35 @@ export default class GameSaveWorker extends WorkerEntrypoint<Env> implements Gam
   }
 
   /**
-   * 获取单个 checkpoint 信息
+   * 按 ID 获取单个 checkpoint 信息
    */
-  async getCheckpoint(saveId: string, ref: string): Promise<CheckpointInfo | null> {
+  async getCheckpoint(saveId: string, checkpointId: string): Promise<CheckpointInfo | null> {
     const stub = this.getSaveStub(saveId);
-    return stub.getCheckpoint(ref);
+    return stub.getCheckpoint(checkpointId);
   }
 
   /**
-   * 更新 checkpoint 的可见性
+   * 按 ID 更新 checkpoint 的可见性
    */
-  async updateCheckpointVisibility(saveId: string, ref: string, visibility: CheckpointVisibility): Promise<boolean> {
+  async updateCheckpointVisibility(saveId: string, checkpointId: string, visibility: CheckpointVisibility): Promise<boolean> {
     const stub = this.getSaveStub(saveId);
-    return stub.updateCheckpointVisibility(ref, visibility);
+    return stub.updateCheckpointVisibility(checkpointId, visibility);
   }
 
   /**
-   * 删除指定的 checkpoint
+   * 按 ID 删除指定的 checkpoint
    */
-  async deleteCheckpoint(saveId: string, ref: string): Promise<boolean> {
+  async deleteCheckpoint(saveId: string, checkpointId: string): Promise<boolean> {
     const stub = this.getSaveStub(saveId);
-    return stub.deleteCheckpoint(ref);
+    return stub.deleteCheckpoint(checkpointId);
+  }
+
+  /**
+   * 检查指定 ref 是否有非 PRIVATE 的 checkpoint（可公开访问）
+   */
+  async isRefPubliclyAccessible(saveId: string, ref: string): Promise<boolean> {
+    const stub = this.getSaveStub(saveId);
+    return stub.isRefPubliclyAccessible(ref);
   }
 
   /**

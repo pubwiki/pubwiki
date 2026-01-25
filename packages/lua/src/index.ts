@@ -592,7 +592,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               })
           }
           
-          env.js_rdf_checkpoint_async = (contextId: number, callbackId: number) => {
+          env.js_rdf_checkpoint_async = (contextId: number, titlePtr: number, descPtr: number, callbackId: number) => {
             const module = localModule
             if (!module) return
             
@@ -606,10 +606,14 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               return
             }
             
-            // 异步执行 checkpoint - 返回 Ref
-            store.checkpoint()
-              .then((ref: string) => {
-                resolveWithHandle(callbackId, ref, module)
+            // 解析可选参数
+            const title = titlePtr ? module.UTF8ToString(titlePtr) : 'Auto checkpoint'
+            const description = descPtr ? module.UTF8ToString(descPtr) : undefined
+            
+            // 异步执行 checkpoint - 返回 { id, ref }
+            store.checkpoint({ title, description })
+              .then((checkpoint) => {
+                resolveWithHandle(callbackId, { id: checkpoint.id, ref: checkpoint.ref }, module)
               })
               .catch((error: Error) => {
                 const errorMsg = String(error)

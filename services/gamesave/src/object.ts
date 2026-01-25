@@ -36,9 +36,42 @@ import type {
 } from './types';
 import { ROOT_REF, generateRef, quadsToJsonl, normalizeQuad, quadKey } from './serialization';
 import migrations from './drizzle/migrations';
+import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 
 /** 自动创建 checkpoint 的操作间隔 */
 const CHECKPOINT_INTERVAL = 100;
+
+/** Cloudflare SQLite 每个查询最多绑定参数数量 */
+const MAX_BIND_PARAMS = 100;
+
+/**
+ * 分批插入数据以遵守 Cloudflare SQLite 的参数限制
+ * @param tx - Drizzle 事务实例
+ * @param table - 目标表
+ * @param values - 要插入的值数组
+ * @param fieldsPerRow - 每行的字段数量
+ * @param onConflictDoNothing - 是否忽略冲突
+ */
+async function batchInsert<T extends Record<string, unknown>>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: { insert: (table: SQLiteTable) => any },
+  table: SQLiteTable,
+  values: T[],
+  fieldsPerRow: number,
+  onConflictDoNothing: boolean = false
+): Promise<void> {
+  if (values.length === 0) return;
+  
+  const batchSize = Math.floor(MAX_BIND_PARAMS / fieldsPerRow);
+  for (let i = 0; i < values.length; i += batchSize) {
+    const batch = values.slice(i, i + batchSize);
+    if (onConflictDoNothing) {
+      await tx.insert(table).values(batch).onConflictDoNothing();
+    } else {
+      await tx.insert(table).values(batch);
+    }
+  }
+}
 
 
 export class CloudSaveObject extends DurableObject<Env> {
@@ -164,7 +197,7 @@ export class CloudSaveObject extends DurableObject<Env> {
           graph: normalized.graph,
         };
       });
-      await tx.insert(quads).values(values).onConflictDoNothing();
+      await batchInsert(tx, quads, values, 6, true);
     }
 
     // 更新 cachedRef
@@ -303,6 +336,18 @@ export class CloudSaveObject extends DurableObject<Env> {
         let txCurrentRef = baseRef;
 
         for (const { operation, ref } of operations) {
+          // 检查 ref 是否已存在（幂等性检查）
+          const existing = await tx.select({ ref: versionDag.ref })
+            .from(versionDag)
+            .where(eq(versionDag.ref, ref))
+            .limit(1);
+
+          if (existing.length > 0) {
+            // 已存在，跳过此操作（幂等）
+            txCurrentRef = ref;
+            continue;
+          }
+
           // 应用操作
           const affected = await this.applyOperationInTx(tx, operation);
           totalAffected += affected;
@@ -408,7 +453,7 @@ export class CloudSaveObject extends DurableObject<Env> {
           };
         });
         if (values.length === 0) return 0;
-        await tx.insert(quads).values(values).onConflictDoNothing();
+        await batchInsert(tx, quads, values, 6, true);
         return values.length;
       }
 
@@ -723,34 +768,49 @@ export class CloudSaveObject extends DurableObject<Env> {
 
   /**
    * 在指定 ref 处创建 checkpoint
-   * 这需要先构建出该 ref 的完整数据，然后保存
+   * 返回 checkpoint ID
    */
-  async createCheckpoint(ref: string, meta?: CheckpointMetadata): Promise<void> {
-    // 检查 checkpoint 是否已存在
-    const existing = await this.db.select().from(checkpoints)
-      .where(eq(checkpoints.ref, ref))
-      .limit(1);
-    
-    if (existing.length > 0) {
-      throw new Error(`Checkpoint at ref '${ref}' already exists`);
+  async createCheckpoint(ref: string, meta?: CheckpointMetadata): Promise<string> {
+    // 检查 ref 是否存在（ROOT_REF 始终存在）
+    if (ref !== ROOT_REF) {
+      const exists = await this.refExists(ref);
+      if (!exists) {
+        throw new Error(`Ref '${ref}' does not exist`);
+      }
     }
 
-    await this.createCheckpointInternal(ref, meta);
-  }
+    // 使用用户传入的 ID 或自动生成
+    const checkpointId = meta?.id ?? crypto.randomUUID();
 
-  /**
-   * 内部方法：创建 checkpoint
-   */
-  private async createCheckpointInternal(ref: string, meta?: CheckpointMetadata): Promise<void> {
-    // 直接获取该 ref 的 Quad 数组
+    // 检查 checkpoint ID 是否已存在
+    const existingCheckpoint = await this.db.select()
+      .from(checkpoints)
+      .where(eq(checkpoints.id, checkpointId))
+      .limit(1);
+
+    if (existingCheckpoint.length > 0) {
+      throw new Error(`Checkpoint with id '${checkpointId}' already exists`);
+    }
+
+    // 检查是否需要保存 quad 数据（如果该 ref 还没有数据）
+    const existingQuads = await this.db.select()
+      .from(checkpointQuads)
+      .where(eq(checkpointQuads.checkpointRef, ref))
+      .limit(1);
+
+    const needsSaveQuads = existingQuads.length === 0;
+
+    // 获取该 ref 的 Quad 数组
     const quadsArray = await this.buildQuadsAtRef(ref);
-
     const now = Date.now();
+
+    console.log(`[createCheckpoint] ref=${ref}, quadsCount=${quadsArray.length}, needsSaveQuads=${needsSaveQuads}`);
 
     // 在事务中保存 checkpoint
     await this.db.transaction(async (tx) => {
       // 插入 checkpoint 元数据
       await tx.insert(checkpoints).values({
+        id: checkpointId,
         ref,
         timestamp: now,
         quadCount: quadsArray.length,
@@ -759,8 +819,9 @@ export class CloudSaveObject extends DurableObject<Env> {
         visibility: meta?.visibility ?? 'PRIVATE',
       });
 
-      // 批量插入 checkpoint quads
-      if (quadsArray.length > 0) {
+      // 如果该 ref 还没有 quad 数据，保存
+      if (needsSaveQuads && quadsArray.length > 0) {
+        console.log(`[createCheckpoint] Inserting ${quadsArray.length} quads into checkpointQuads table`);
         const values = quadsArray.map(q => {
           const normalized = normalizeQuad(q);
           return {
@@ -773,13 +834,22 @@ export class CloudSaveObject extends DurableObject<Env> {
             graph: normalized.graph,
           };
         });
-        await tx.insert(checkpointQuads).values(values);
+        await batchInsert(tx, checkpointQuads, values, 7);
       }
     });
+
+    return checkpointId;
   }
 
   /**
-   * 获取 checkpoint 信息
+   * 内部方法：创建 checkpoint（用于自动 checkpoint）
+   */
+  private async createCheckpointInternal(ref: string, meta?: CheckpointMetadata): Promise<string> {
+    return this.createCheckpoint(ref, meta);
+  }
+
+  /**
+   * 获取 checkpoint 列表
    * @param accessLevel - 'owner' 返回所有 checkpoint，'public' 仅返回 PUBLIC 的
    */
   async listCheckpoints(accessLevel: 'owner' | 'public' = 'owner'): Promise<CheckpointInfo[]> {
@@ -791,6 +861,7 @@ export class CloudSaveObject extends DurableObject<Env> {
           .orderBy(desc(checkpoints.timestamp));
     
     return rows.map(row => ({
+      id: row.id,
       ref: row.ref,
       timestamp: row.timestamp,
       quadCount: row.quadCount,
@@ -801,17 +872,18 @@ export class CloudSaveObject extends DurableObject<Env> {
   }
 
   /**
-   * 获取单个 checkpoint 信息
+   * 按 ID 获取单个 checkpoint 信息
    */
-  async getCheckpoint(ref: string): Promise<CheckpointInfo | null> {
+  async getCheckpoint(checkpointId: string): Promise<CheckpointInfo | null> {
     const [row] = await this.db.select()
       .from(checkpoints)
-      .where(eq(checkpoints.ref, ref))
+      .where(eq(checkpoints.id, checkpointId))
       .limit(1);
     
     if (!row) return null;
     
     return {
+      id: row.id,
       ref: row.ref,
       timestamp: row.timestamp,
       quadCount: row.quadCount,
@@ -822,31 +894,62 @@ export class CloudSaveObject extends DurableObject<Env> {
   }
 
   /**
-   * 更新 checkpoint 的可见性
+   * 按 ID 更新 checkpoint 的可见性
    */
-  async updateCheckpointVisibility(ref: string, visibility: CheckpointVisibility): Promise<boolean> {
+  async updateCheckpointVisibility(checkpointId: string, visibility: CheckpointVisibility): Promise<boolean> {
     const result = await this.db.update(checkpoints)
       .set({ visibility })
-      .where(eq(checkpoints.ref, ref))
+      .where(eq(checkpoints.id, checkpointId))
       .returning();
     
     return result.length > 0;
   }
 
   /**
-   * 删除指定的 checkpoint
+   * 按 ID 删除指定的 checkpoint
+   * 如果该 ref 没有其他 checkpoint 引用，同时删除 quad 数据
    */
-  async deleteCheckpoint(ref: string): Promise<boolean> {
-    const deleted = await this.db.delete(checkpoints)
-      .where(eq(checkpoints.ref, ref))
-      .returning();
-    
-    if (deleted.length > 0) {
-      await this.db.delete(checkpointQuads)
-        .where(eq(checkpointQuads.checkpointRef, ref));
+  async deleteCheckpoint(checkpointId: string): Promise<boolean> {
+    return await this.db.transaction(async (tx) => {
+      // 先获取 checkpoint 信息
+      const [checkpoint] = await tx.select()
+        .from(checkpoints)
+        .where(eq(checkpoints.id, checkpointId));
+
+      if (!checkpoint) return false;
+
+      // 删除 checkpoint 元数据
+      await tx.delete(checkpoints)
+        .where(eq(checkpoints.id, checkpointId));
+
+      // 检查是否有其他 checkpoint 引用同一 ref
+      const [{ count: refCount }] = await tx.select({ count: sql<number>`count(*)` })
+        .from(checkpoints)
+        .where(eq(checkpoints.ref, checkpoint.ref));
+
+      // 如果没有其他引用，删除 quad 数据
+      if (refCount === 0) {
+        await tx.delete(checkpointQuads)
+          .where(eq(checkpointQuads.checkpointRef, checkpoint.ref));
+      }
+
       return true;
-    }
-    return false;
+    });
+  }
+
+  /**
+   * 检查指定 ref 是否有非 PRIVATE 的 checkpoint（可公开访问）
+   * 用于 export 接口的访问控制
+   */
+  async isRefPubliclyAccessible(ref: string): Promise<boolean> {
+    const [result] = await this.db.select({ count: sql<number>`count(*)` })
+      .from(checkpoints)
+      .where(and(
+        eq(checkpoints.ref, ref),
+        sql`${checkpoints.visibility} != 'PRIVATE'`
+      ));
+    
+    return result.count > 0;
   }
 }
 

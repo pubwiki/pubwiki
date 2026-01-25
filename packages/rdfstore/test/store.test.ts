@@ -8,13 +8,20 @@ import type { Quad } from '@rdfjs/types'
 import { RDFStore, ROOT_REF } from '../src/index.js'
 import { quad, namedNode, literal } from './helpers.js'
 
+// Counter for unique database names
+let dbCounter = 0
+
 describe('RDFStore', () => {
   let level: MemoryLevel<string, string>
   let store: RDFStore
 
   beforeEach(async () => {
     level = new MemoryLevel()
-    store = await RDFStore.create(level)
+    dbCounter++
+    store = await RDFStore.create({
+      quadstoreLevel: level,
+      versionDbName: `test-version-db-${dbCounter}-${Date.now()}`
+    })
   })
 
   afterEach(async () => {
@@ -173,7 +180,7 @@ describe('RDFStore', () => {
   describe('Checkpoint', () => {
     it('should create checkpoint and return ref', async () => {
       await store.insert(namedNode('ex:s'), namedNode('ex:p'), literal('v'))
-      const ref = await store.checkpoint()
+      const ref = await store.checkpoint({ title: 'Test checkpoint' })
 
       expect(ref).toBe(store.currentRef)
 
@@ -193,7 +200,7 @@ describe('RDFStore', () => {
       }
 
       // Create checkpoint
-      const checkpointRef = await store.checkpoint()
+      const checkpointRef = await store.checkpoint({ title: 'Checkpoint at 10' })
 
       // Add more operations
       for (let i = 10; i < 15; i++) {
@@ -276,7 +283,11 @@ describe('RDFStore', () => {
 
       // Create new store and import
       const level2 = new MemoryLevel<string, string>()
-      const store2 = await RDFStore.create(level2)
+      dbCounter++
+      const store2 = await RDFStore.create({
+        quadstoreLevel: level2,
+        versionDbName: `test-import-export-db-${dbCounter}-${Date.now()}`
+      })
 
       await store2.importData(exported)
 

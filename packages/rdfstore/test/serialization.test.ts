@@ -452,10 +452,15 @@ describe('Operations Export/Import', () => {
 
 describe('RDFStore Import/Export Integration', () => {
   let store: RDFStore
+  let dbCounter = 0
 
   beforeEach(async () => {
     const level: LevelInstance = new MemoryLevel({ valueEncoding: 'utf8' })
-    store = await RDFStore.create(level)
+    dbCounter++
+    store = await RDFStore.create({
+      quadstoreLevel: level,
+      versionDbName: `test-serialization-db-${dbCounter}-${Date.now()}`
+    })
   })
 
   afterEach(async () => {

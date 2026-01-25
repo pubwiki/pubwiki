@@ -59,10 +59,15 @@
 	} from '$lib/persistence';
 	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type VersionedVfs } from '$lib/vfs';
 	import { requestVfsDeleteConfirmation } from '$lib/state/vfs-delete-confirm.svelte';
+	import { syncStateNodesFromCloud } from '$lib/gamesave/state-sync';
 	import { useAuth } from '@pubwiki/ui/stores';
+	import { createApiClient } from '@pubwiki/api/client';
 	import { API_BASE_URL } from '$lib/config';
 	import * as m from '$lib/paraglide/messages';
 	import { browser } from '$app/environment';
+
+	// Create a singleton API client
+	const apiClient = createApiClient(API_BASE_URL);
 
 	// ============================================================================
 	// Pre-initialize ZenFS as early as possible (non-blocking, browser only)
@@ -703,14 +708,17 @@
 			const controller = new AbortController();
 			const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
 			
-			const response = await fetch(`${API_BASE_URL}/artifacts/${artifactId}/graph?version=latest`, {
-				method: 'GET',
-				credentials: 'include',
+			const { error } = await apiClient.GET('/artifacts/{artifactId}/graph', {
+				params: { 
+					path: { artifactId },
+					query: { version: 'latest' }
+				},
 				signal: controller.signal
 			});
 			clearTimeout(timeoutId);
-			console.log('[Studio] checkArtifactExists response:', response.ok);
-			return response.ok;
+			const exists = !error;
+			console.log('[Studio] checkArtifactExists response:', exists);
+			return exists;
 		} catch (err) {
 			console.log('[Studio] checkArtifactExists error:', err);
 			return false;
@@ -807,6 +815,16 @@
 					
 					loaded = true;
 					console.log('[Studio] Graph loading complete, loaded set to:', loaded);
+					
+					// Sync STATE nodes' cloud save info asynchronously (non-blocking)
+					// This fetches latest checkpoints from the cloud and updates local state
+					syncStateNodesFromCloud().then((syncResult) => {
+						if (syncResult.totalNodes > 0) {
+							console.log('[Studio] STATE nodes sync complete:', syncResult);
+						}
+					}).catch((err) => {
+						console.warn('[Studio] Failed to sync STATE nodes:', err);
+					});
 					
 					// Check backend status asynchronously (non-blocking)
 					// This only affects the publish button text (Publish vs Update)

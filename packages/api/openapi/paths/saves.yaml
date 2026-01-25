@@ -60,6 +60,48 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
+/saves/by-state/{stateNodeId}:
+  get:
+    operationId: getSaveByStateNode
+    summary: 通过 stateNodeId 获取存档
+    description: 根据关联的 state node ID 查找存档，用于恢复本地未保存的 saveId
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: stateNodeId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: State node ID
+    responses:
+      '200':
+        description: 存档信息
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  description: 存档 ID
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 未找到关联的存档
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
 /saves/{saveId}:
   delete:
     operationId: deleteSave
@@ -327,10 +369,7 @@
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                success:
-                  type: boolean
+              $ref: '../schemas/saves.yaml#/CreateCheckpointResponse'
       '400':
         description: 无效的请求
         content:
@@ -356,7 +395,7 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
-/saves/{saveId}/checkpoints/{ref}:
+/saves/{saveId}/checkpoints/{checkpointId}:
   delete:
     operationId: deleteSaveCheckpoint
     summary: 删除 checkpoint
@@ -370,7 +409,7 @@
         schema:
           type: string
           format: uuid
-      - name: ref
+      - name: checkpointId
         in: path
         required: true
         schema:

@@ -406,19 +406,19 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
-  // 验证 STATE 节点必须指定有效的 saveId 和 checkpointRef
+  // 验证 STATE 节点必须指定有效的 saveId 和 checkpointId
   for (const node of descriptor.nodes) {
     if (node.type === 'STATE' && !node.external) {
       const nodeContent = nodeContents.get(node.id);
       
-      if (!nodeContent?.saveId || !nodeContent?.checkpointRef) {
+      if (!nodeContent?.saveId || !nodeContent?.checkpointId) {
         return c.json<ApiError>({ 
-          error: `STATE node ${node.id} must specify saveId and checkpointRef in node.json` 
+          error: `STATE node ${node.id} must specify saveId and checkpointId in node.json` 
         }, 400);
       }
 
       const saveId = nodeContent.saveId as string;
-      const checkpointRef = nodeContent.checkpointRef as string;
+      const checkpointId = nodeContent.checkpointId as string;
 
       // 验证 save 存在且属于当前用户
       const [save] = await db.select().from(cloudSaves)
@@ -435,10 +435,10 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
       }
 
       // 验证 checkpoint 存在
-      const checkpoint = await c.env.GAMESAVE.getCheckpoint(saveId, checkpointRef);
+      const checkpoint = await c.env.GAMESAVE.getCheckpoint(saveId, checkpointId);
       if (!checkpoint) {
         return c.json<ApiError>({ 
-          error: `Checkpoint ${checkpointRef} not found in save ${saveId} for STATE node ${node.id}` 
+          error: `Checkpoint ${checkpointId} not found in save ${saveId} for STATE node ${node.id}` 
         }, 400);
       }
 
@@ -449,7 +449,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
       const artifactVisLevel = visibilityOrder[artifactVisibility as keyof typeof visibilityOrder] ?? 2;
       
       if (checkpointVisLevel < artifactVisLevel) {
-        await c.env.GAMESAVE.updateCheckpointVisibility(saveId, checkpointRef, artifactVisibility as 'PRIVATE' | 'UNLISTED' | 'PUBLIC');
+        await c.env.GAMESAVE.updateCheckpointVisibility(saveId, checkpointId, artifactVisibility as 'PRIVATE' | 'UNLISTED' | 'PUBLIC');
       }
     }
   }

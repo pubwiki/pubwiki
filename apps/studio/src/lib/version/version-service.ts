@@ -74,6 +74,8 @@ async function saveCurrentVersion(
 		const snapshotContentData = nodeData.content.clone()
 		
 		// Create a StudioNodeData for saving
+		// Note: Use 'as unknown as StudioNodeData' because clone() returns NodeContent
+		// but the actual runtime type matches the specific content class
 		const snapshotData: StudioNodeData = {
 			id: nodeData.id,
 			type: nodeData.type,
@@ -82,7 +84,7 @@ async function saveCurrentVersion(
 			snapshotRefs: [],
 			parents: [],
 			content: snapshotContentData
-		} as StudioNodeData
+		} as unknown as StudioNodeData
 		
 		await nodeStore.saveSnapshot(snapshotData, { incomingEdges, position })
 	}
@@ -158,6 +160,8 @@ export async function restoreSnapshot<T extends Versionable>(
 	// Store current version as snapshot before restoring using clone()
 	const currentSnapshotContent = nodeData.content.clone()
 	
+	// Note: Use 'as unknown as StudioNodeData' because clone() returns NodeContent
+	// but the actual runtime type matches the specific content class
 	const currentSnapshotData: StudioNodeData = {
 		id: nodeData.id,
 		type: nodeData.type,
@@ -166,7 +170,7 @@ export async function restoreSnapshot<T extends Versionable>(
 		snapshotRefs: [],
 		parents: [],
 		content: currentSnapshotContent
-	} as StudioNodeData
+	} as unknown as StudioNodeData
 	
 	await nodeStore.saveSnapshot(currentSnapshotData)
 

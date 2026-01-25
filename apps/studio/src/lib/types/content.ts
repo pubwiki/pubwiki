@@ -467,27 +467,113 @@ export class LoaderContent implements NodeContent {
 }
 
 /**
- * State node content - RDF triple store (empty, state managed externally)
+ * Checkpoint visibility type
+ */
+export type CheckpointVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC'
+
+/**
+ * Checkpoint information
+ */
+export interface CheckpointInfo {
+  /** Checkpoint unique ID */
+  id: string
+  /** Version ref (hash) */
+  ref: string
+  /** User-defined checkpoint name */
+  name: string
+  /** Optional description */
+  description?: string
+  /** Creation timestamp */
+  createdAt: number
+  /** Visibility level */
+  visibility: CheckpointVisibility
+}
+
+/**
+ * State node content - RDF triple store with GameSave integration
+ * 
+ * The actual RDF data is stored in GameSave service (Durable Object).
+ * This content stores the reference to the save and selected checkpoint.
  */
 export class StateContent implements NodeContent {
+  constructor(
+    /** GameSave service save ID */
+    public saveId: string | null = null,
+    /** Currently selected checkpoint ref */
+    public checkpointRef: string | null = null,
+    /** List of user's checkpoints (local cache) */
+    public checkpoints: CheckpointInfo[] = []
+  ) {}
+
   getText(): string {
     return ''
   }
 
   serialize(): string {
-    return ''
+    return JSON.stringify({ saveId: this.saveId, checkpointRef: this.checkpointRef })
   }
 
   clone(): StateContent {
-    return new StateContent()
+    return new StateContent(
+      this.saveId,
+      this.checkpointRef,
+      structuredClone(this.checkpoints)
+    )
+  }
+
+  /** Create a copy with updated saveId */
+  withSaveId(saveId: string | null): StateContent {
+    return new StateContent(saveId, this.checkpointRef, structuredClone(this.checkpoints))
+  }
+
+  /** Create a copy with updated checkpointRef */
+  withCheckpointRef(checkpointRef: string | null): StateContent {
+    return new StateContent(this.saveId, checkpointRef, structuredClone(this.checkpoints))
+  }
+
+  /** Create a copy with updated checkpoints list */
+  withCheckpoints(checkpoints: CheckpointInfo[]): StateContent {
+    return new StateContent(this.saveId, this.checkpointRef, structuredClone(checkpoints))
+  }
+
+  /** Add a checkpoint to the list */
+  addCheckpoint(checkpoint: CheckpointInfo): StateContent {
+    return new StateContent(
+      this.saveId,
+      this.checkpointRef,
+      [...this.checkpoints, checkpoint]
+    )
+  }
+
+  /** Remove a checkpoint from the list by ID */
+  removeCheckpoint(id: string): StateContent {
+    const checkpoint = this.checkpoints.find(c => c.id === id)
+    return new StateContent(
+      this.saveId,
+      // Clear checkpointRef if it matches the removed checkpoint's ref
+      checkpoint && this.checkpointRef === checkpoint.ref ? null : this.checkpointRef,
+      this.checkpoints.filter(c => c.id !== id)
+    )
   }
 
   toJSON() {
-    return {}
+    return {
+      saveId: this.saveId,
+      checkpointRef: this.checkpointRef,
+      checkpoints: this.checkpoints
+    }
   }
 
-  static fromJSON(_data: Record<string, never>): StateContent {
-    return new StateContent()
+  static fromJSON(data: {
+    saveId?: string | null
+    checkpointRef?: string | null
+    checkpoints?: CheckpointInfo[]
+  }): StateContent {
+    return new StateContent(
+      data.saveId ?? null,
+      data.checkpointRef ?? null,
+      data.checkpoints ?? []
+    )
   }
 }
 
@@ -524,6 +610,10 @@ export function restoreContent(type: NodeType, data: unknown): NodeContent {
     case 'LOADER':
       return LoaderContent.fromJSON(json as { mountpoints?: Mountpoint[] })
     case 'STATE':
-      return StateContent.fromJSON({})
+      return StateContent.fromJSON(json as {
+        saveId?: string | null
+        checkpointRef?: string | null
+        checkpoints?: CheckpointInfo[]
+      })
   }
 }

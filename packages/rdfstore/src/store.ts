@@ -4,6 +4,10 @@
  * High-level API for RDF storage with immutable state versioning.
  * Each operation creates a new ref, enabling checkout to any historical state
  * and implicit branching.
+ * 
+ * Storage architecture:
+ * - Quadstore (RDF data): Uses abstract-level (browser-level/memory-level)
+ * - VersionDAG (version metadata): Uses Dexie.js (IndexedDB)
  */
 
 import { DataFactory } from 'n3'
@@ -14,14 +18,14 @@ import type {
   Ref,
   RefNode,
   Checkpoint,
+  CheckpointOptions,
   StoreConfig,
   StoreEvents,
   LevelInstance,
 } from './types.js'
 import { ROOT_REF } from './types.js'
 import { StoreBackend, createBackend } from './backend/quadstore.js'
-import { VersionDAG, createVersionDAG } from './version/dag.js'
-// import { invertOperation } from './delta/diff.js'
+import { VersionDAG, createVersionDAG } from './version/index.js'
 import { EventEmitter } from './utils/events.js'
 import {
   exportQuads,
@@ -37,6 +41,16 @@ const { defaultGraph, quad } = DataFactory
  * SPARQL binding result - variable name to RDF term value
  */
 export type SparqlBinding = Record<string, unknown>
+
+/**
+ * Storage configuration for RDFStore
+ */
+export interface StorageConfig {
+  /** abstract-level instance for Quadstore (RDF data) */
+  quadstoreLevel: LevelInstance
+  /** Dexie database name for VersionDAG (version metadata) */
+  versionDbName: string
+}
 
 /**
  * RDF Store with immutable version DAG
@@ -61,23 +75,25 @@ export class RDFStore {
   }
 
   /**
-   * Create a new RDF store
+   * Create a new RDF store with separate storage backends
+   * @param storage Storage configuration with quadstore level and version db name
+   * @param config Optional store configuration
    */
   static async create(
-    level: LevelInstance,
+    storage: StorageConfig,
     _config: Partial<StoreConfig> = {}
   ): Promise<RDFStore> {
     const fullConfig: StoreConfig = {}
 
     // Ensure level is open
-    if (level.status !== 'open') {
-      await level.open()
+    if (storage.quadstoreLevel.status !== 'open') {
+      await storage.quadstoreLevel.open()
     }
 
-    const backend = await createBackend(level)
-    const versionDAG = await createVersionDAG(level)
+    const backend = await createBackend(storage.quadstoreLevel)
+    const versionDAG = await createVersionDAG(storage.versionDbName)
 
-    const store = new RDFStore(level, backend, versionDAG, fullConfig)
+    const store = new RDFStore(storage.quadstoreLevel, backend, versionDAG, fullConfig)
     store._isOpen = true
     
     // Initialize SPARQL engine
@@ -90,10 +106,10 @@ export class RDFStore {
    * Open an existing RDF store (alias for create)
    */
   static async open(
-    level: LevelInstance,
+    storage: StorageConfig,
     config: Partial<StoreConfig> = {}
   ): Promise<RDFStore> {
-    return RDFStore.create(level, config)
+    return RDFStore.create(storage, config)
   }
 
   /**
@@ -118,10 +134,17 @@ export class RDFStore {
   }
 
   /**
-   * Get the underlying level instance
+   * Get the underlying level instance (quadstore storage)
    */
   getLevel(): LevelInstance {
     return this.level
+  }
+
+  /**
+   * Get the underlying VersionDAG
+   */
+  getVersionDAG(): VersionDAG {
+    return this.versionDAG
   }
 
   /**
@@ -307,11 +330,12 @@ export class RDFStore {
   /**
    * Create a checkpoint at the current ref
    * Saves the complete quad data for faster future checkouts
-   * @returns The current ref
+   * @param options Checkpoint options including title and description
+   * @returns The created checkpoint
    */
-  async checkpoint(): Promise<Ref> {
+  async checkpoint(options: CheckpointOptions): Promise<Checkpoint> {
     const quads = await this.backend.getAllQuads()
-    return this.versionDAG.createCheckpoint(quads)
+    return this.versionDAG.createCheckpoint(quads, options)
   }
 
   /**
@@ -323,10 +347,36 @@ export class RDFStore {
   }
 
   /**
+   * Get operations from baseRef to targetRef (exclusive baseRef, inclusive targetRef)
+   * Returns nodes in chronological order (oldest first)
+   * Used for syncing operations to cloud
+   */
+  async getOperationsBetween(baseRef: Ref, targetRef: Ref): Promise<RefNode[]> {
+    return this.versionDAG.getOperationsBetween(baseRef, targetRef)
+  }
+
+  /**
    * List all checkpoints
    */
   async listCheckpoints(): Promise<Checkpoint[]> {
     return this.versionDAG.listCheckpoints()
+  }
+
+  /**
+   * Delete a checkpoint by id
+   * Note: This only deletes the checkpoint metadata and data, not the underlying operations
+   * @param id - The checkpoint id
+   * @param ref - The ref to delete checkpoint data for (optional)
+   */
+  async deleteCheckpoint(id: string, ref?: Ref): Promise<void> {
+    return this.versionDAG.deleteCheckpoint(id, ref)
+  }
+
+  /**
+   * Check if a ref exists in the version history
+   */
+  async hasRef(ref: Ref): Promise<boolean> {
+    return this.versionDAG.hasRef(ref)
   }
 
   /**

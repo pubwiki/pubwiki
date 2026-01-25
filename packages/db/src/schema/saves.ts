@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
 
@@ -20,8 +20,8 @@ export const cloudSaves = sqliteTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    // 关联的 state node ID (可选，用于定位)
-    stateNodeId: text('state_node_id'),
+    // 关联的 state node ID (必须，用于定位)
+    stateNodeId: text('state_node_id').notNull(),
     // 存档名称
     name: text('name').notNull(),
     // 存档描述
@@ -36,6 +36,8 @@ export const cloudSaves = sqliteTable(
   (table) => [
     index('idx_cloud_saves_user').on(table.userId),
     index('idx_cloud_saves_state').on(table.stateNodeId),
+    // userId + stateNodeId 唯一约束
+    uniqueIndex('idx_cloud_saves_user_state').on(table.userId, table.stateNodeId),
   ]
 );
 

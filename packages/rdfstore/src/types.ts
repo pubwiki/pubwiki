@@ -6,7 +6,7 @@
  */
 
 import type { TextPatch, Operation as SyncOperation } from '@pubwiki/rdfsync'
-import { fromRdfQuad, serializeTerm } from '@pubwiki/rdfsync'
+import { fromRdfQuad, toRdfQuad, serializeTerm, deserializeSubject, deserializePredicate } from '@pubwiki/rdfsync'
 import type { Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 import { AbstractLevel } from 'abstract-level'
 import type { Quad } from '@rdfjs/types'
@@ -46,6 +46,37 @@ export function toSyncOperation(op: Operation): SyncOperation {
 }
 
 /**
+ * 将简化版 SyncOperation 转换为 RDF.js Operation
+ * @throws Error if the operation data is invalid or corrupted
+ */
+export function fromSyncOperation(op: SyncOperation): Operation {
+  switch (op.type) {
+    case 'insert':
+    case 'delete':
+      if (!op.quad || typeof op.quad.subject !== 'string') {
+        throw new Error(`Invalid ${op.type} operation: missing or invalid quad data`)
+      }
+      return { type: op.type, quad: toRdfQuad(op.quad) }
+    case 'batch-insert':
+    case 'batch-delete':
+      if (!Array.isArray(op.quads)) {
+        throw new Error(`Invalid ${op.type} operation: quads is not an array`)
+      }
+      return { type: op.type, quads: op.quads.map(toRdfQuad) }
+    case 'patch':
+      if (typeof op.subject !== 'string' || typeof op.predicate !== 'string') {
+        throw new Error(`Invalid patch operation: missing subject or predicate`)
+      }
+      return { 
+        type: op.type, 
+        subject: deserializeSubject(op.subject), 
+        predicate: deserializePredicate(op.predicate), 
+        patch: op.patch 
+      }
+  }
+}
+
+/**
  * Quad query pattern - all fields are optional for flexible matching
  */
 export interface QuadPattern {
@@ -80,15 +111,33 @@ export interface RefNode {
 
 /**
  * Checkpoint - a saved snapshot of quad data at a specific ref
- * Used to accelerate checkout operations
+ * Used to accelerate checkout operations and for manual saves
  */
 export interface Checkpoint {
+  /** Unique checkpoint ID */
+  id: string
   /** The ref this checkpoint is for */
   ref: Ref
+  /** User-provided title for the checkpoint */
+  title: string
+  /** Optional description */
+  description?: string
   /** When the checkpoint was created */
   timestamp: number
   /** Number of quads in this checkpoint */
   quadCount: number
+}
+
+/**
+ * Options for creating a checkpoint
+ */
+export interface CheckpointOptions {
+  /** Optional custom ID (defaults to crypto.randomUUID()) */
+  id?: string
+  /** User-provided title for the checkpoint */
+  title: string
+  /** Optional description */
+  description?: string
 }
 
 /**

@@ -1247,7 +1247,7 @@ describe('CloudSaveObject', () => {
     });
 
     describe('checkpoint edge cases', () => {
-      it('should throw when creating duplicate checkpoint', async () => {
+      it('should allow multiple checkpoints for the same ref', async () => {
         const stub = getSaveObject('edge-checkpoint-1');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
@@ -1259,11 +1259,37 @@ describe('CloudSaveObject', () => {
           });
           
           // 创建第一个 checkpoint
-          await instance.createCheckpoint(result.ref, { name: 'test' });
+          const id1 = await instance.createCheckpoint(result.ref, { name: 'first' });
+          expect(id1).toBeDefined();
           
-          // 尝试创建重复的 checkpoint
-          await expect(instance.createCheckpoint(result.ref)).rejects.toThrow(
-            `Checkpoint at ref '${result.ref}' already exists`
+          // 创建第二个 checkpoint for same ref - 现在应该成功
+          const id2 = await instance.createCheckpoint(result.ref, { name: 'second' });
+          expect(id2).toBeDefined();
+          expect(id2).not.toBe(id1);
+          
+          // 两个 checkpoint 应该都存在
+          const checkpoints = await instance.listCheckpoints();
+          expect(checkpoints).toHaveLength(2);
+        });
+      });
+
+      it('should throw when creating checkpoint with duplicate ID', async () => {
+        const stub = getSaveObject('edge-checkpoint-1b');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          // 创建第一个 checkpoint with custom ID
+          await instance.createCheckpoint(result.ref, { id: 'my-custom-id', name: 'test' });
+          
+          // 尝试创建相同 ID 的 checkpoint
+          await expect(instance.createCheckpoint(result.ref, { id: 'my-custom-id' })).rejects.toThrow(
+            `Checkpoint with id 'my-custom-id' already exists`
           );
         });
       });
@@ -1290,7 +1316,7 @@ describe('CloudSaveObject', () => {
             type: 'insert',
             quad: { subject: '<http://s1>', predicate: '<http://p>', object: 'v1', graph: '' },
           })).ref;
-          await instance.createCheckpoint(ref1, { name: 'first' });
+          const id1 = await instance.createCheckpoint(ref1, { name: 'first' });
           
           // 添加小延迟确保时间戳不同
           await new Promise(resolve => setTimeout(resolve, 10));
@@ -1299,13 +1325,15 @@ describe('CloudSaveObject', () => {
             type: 'insert',
             quad: { subject: '<http://s2>', predicate: '<http://p>', object: 'v2', graph: '' },
           })).ref;
-          await instance.createCheckpoint(ref2, { name: 'second' });
+          const id2 = await instance.createCheckpoint(ref2, { name: 'second' });
           
           const checkpoints = await instance.listCheckpoints();
           
           expect(checkpoints).toHaveLength(2);
           expect(checkpoints[0].name).toBe('second'); // 最新的在前
+          expect(checkpoints[0].id).toBe(id2);
           expect(checkpoints[1].name).toBe('first');
+          expect(checkpoints[1].id).toBe(id1);
         });
       });
 
@@ -1378,7 +1406,7 @@ describe('CloudSaveObject', () => {
         });
       });
 
-      it('should get single checkpoint by ref', async () => {
+      it('should get single checkpoint by ID', async () => {
         const stub = getSaveObject('edge-checkpoint-visibility-4');
         
         await runInDurableObject(stub, async (instance: CloudSaveObject) => {
@@ -1389,17 +1417,18 @@ describe('CloudSaveObject', () => {
             quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
           });
           
-          await instance.createCheckpoint(result.ref, { name: 'my-cp', description: 'test desc', visibility: 'PUBLIC' });
+          const checkpointId = await instance.createCheckpoint(result.ref, { name: 'my-cp', description: 'test desc', visibility: 'PUBLIC' });
           
-          const checkpoint = await instance.getCheckpoint(result.ref);
+          const checkpoint = await instance.getCheckpoint(checkpointId);
           expect(checkpoint).not.toBeNull();
+          expect(checkpoint!.id).toBe(checkpointId);
           expect(checkpoint!.ref).toBe(result.ref);
           expect(checkpoint!.name).toBe('my-cp');
           expect(checkpoint!.description).toBe('test desc');
           expect(checkpoint!.visibility).toBe('PUBLIC');
           
-          // Non-existent ref returns null
-          const nonExistent = await instance.getCheckpoint('nonexistent-ref');
+          // Non-existent ID returns null
+          const nonExistent = await instance.getCheckpoint('nonexistent-id');
           expect(nonExistent).toBeNull();
         });
       });
@@ -1415,18 +1444,105 @@ describe('CloudSaveObject', () => {
             quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
           });
           
-          await instance.createCheckpoint(result.ref, { visibility: 'PRIVATE' });
+          const checkpointId = await instance.createCheckpoint(result.ref, { visibility: 'PRIVATE' });
           
           // Update to PUBLIC
-          const updated = await instance.updateCheckpointVisibility(result.ref, 'PUBLIC');
+          const updated = await instance.updateCheckpointVisibility(checkpointId, 'PUBLIC');
           expect(updated).toBe(true);
           
-          const checkpoint = await instance.getCheckpoint(result.ref);
+          const checkpoint = await instance.getCheckpoint(checkpointId);
           expect(checkpoint!.visibility).toBe('PUBLIC');
           
           // Update non-existent returns false
-          const notUpdated = await instance.updateCheckpointVisibility('nonexistent', 'PUBLIC');
+          const notUpdated = await instance.updateCheckpointVisibility('nonexistent-id', 'PUBLIC');
           expect(notUpdated).toBe(false);
+        });
+      });
+
+      it('should check if ref is publicly accessible', async () => {
+        const stub = getSaveObject('edge-checkpoint-public-access-1');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          // No checkpoint yet - not publicly accessible
+          const beforeCheckpoint = await instance.isRefPubliclyAccessible(result.ref);
+          expect(beforeCheckpoint).toBe(false);
+          
+          // Create PRIVATE checkpoint - still not publicly accessible
+          await instance.createCheckpoint(result.ref, { name: 'private', visibility: 'PRIVATE' });
+          const afterPrivate = await instance.isRefPubliclyAccessible(result.ref);
+          expect(afterPrivate).toBe(false);
+          
+          // Create UNLISTED checkpoint - now publicly accessible
+          await instance.createCheckpoint(result.ref, { name: 'unlisted', visibility: 'UNLISTED' });
+          const afterUnlisted = await instance.isRefPubliclyAccessible(result.ref);
+          expect(afterUnlisted).toBe(true);
+        });
+      });
+
+      it('should share quad data between checkpoints for same ref', async () => {
+        const stub = getSaveObject('edge-checkpoint-data-sharing');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          // Create two checkpoints for same ref
+          const id1 = await instance.createCheckpoint(result.ref, { name: 'first' });
+          const id2 = await instance.createCheckpoint(result.ref, { name: 'second' });
+          
+          // Both should be able to export
+          const export1 = await instance.exportAtRef(result.ref);
+          expect(export1.quadCount).toBe(1);
+          
+          // Delete first checkpoint - second should still work
+          await instance.deleteCheckpoint(id1);
+          const export2 = await instance.exportAtRef(result.ref);
+          expect(export2.quadCount).toBe(1);
+          
+          // Delete second checkpoint - data should be cleaned up
+          await instance.deleteCheckpoint(id2);
+          // Now there's no checkpoint referencing this ref's quad data
+          // but the export should still work because the data is in version history
+          const export3 = await instance.exportAtRef(result.ref);
+          expect(export3.quadCount).toBe(1);
+        });
+      });
+
+      it('should delete checkpoint by ID', async () => {
+        const stub = getSaveObject('edge-checkpoint-delete-by-id');
+        
+        await runInDurableObject(stub, async (instance: CloudSaveObject) => {
+          await instance.initialize('user-1', 'state-1');
+          
+          const result = await applyOperation(instance, {
+            type: 'insert',
+            quad: { subject: '<http://s>', predicate: '<http://p>', object: 'v', graph: '' },
+          });
+          
+          const checkpointId = await instance.createCheckpoint(result.ref, { name: 'to-delete' });
+          
+          // Verify it exists
+          let checkpoints = await instance.listCheckpoints();
+          expect(checkpoints).toHaveLength(1);
+          
+          // Delete by ID
+          const deleted = await instance.deleteCheckpoint(checkpointId);
+          expect(deleted).toBe(true);
+          
+          // Verify it's gone
+          checkpoints = await instance.listCheckpoints();
+          expect(checkpoints).toHaveLength(0);
         });
       });
     });

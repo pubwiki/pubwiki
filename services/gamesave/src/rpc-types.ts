@@ -95,6 +95,8 @@ export interface ExportResult {
  * Checkpoint 元数据
  */
 export interface CheckpointMetadata {
+  /** 用户自定义 ID，不传则自动生成 */
+  id?: string;
   name?: string;
   description?: string;
   visibility?: CheckpointVisibility;
@@ -109,6 +111,9 @@ export type CheckpointVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
  * Checkpoint 信息
  */
 export interface CheckpointInfo {
+  /** Checkpoint 唯一 ID */
+  id: string;
+  /** 对应的版本 ref */
   ref: string;
   timestamp: number;
   quadCount: number;
@@ -139,9 +144,14 @@ export interface GameSaveRPC {
   // ============ 历史版本导出 ============
   exportAtRef(saveId: string, ref: string): Promise<ExportResult>;
   // ============ Checkpoint API ============
-  createCheckpoint(saveId: string, ref: string, metadata?: CheckpointMetadata): Promise<void>;
+  /** 创建 checkpoint，返回 checkpoint ID */
+  createCheckpoint(saveId: string, ref: string, metadata?: CheckpointMetadata): Promise<string>;
   listCheckpoints(saveId: string, accessLevel?: 'owner' | 'public'): Promise<CheckpointInfo[]>;
-  getCheckpoint(saveId: string, ref: string): Promise<CheckpointInfo | null>;
-  updateCheckpointVisibility(saveId: string, ref: string, visibility: CheckpointVisibility): Promise<boolean>;
-  deleteCheckpoint(saveId: string, ref: string): Promise<boolean>;
+  /** 按 ID 获取 checkpoint */
+  getCheckpoint(saveId: string, checkpointId: string): Promise<CheckpointInfo | null>;
+  updateCheckpointVisibility(saveId: string, checkpointId: string, visibility: CheckpointVisibility): Promise<boolean>;
+  /** 按 ID 删除 checkpoint */
+  deleteCheckpoint(saveId: string, checkpointId: string): Promise<boolean>;
+  /** 检查指定 ref 是否有非 PRIVATE 的 checkpoint（可公开访问） */
+  isRefPubliclyAccessible(saveId: string, ref: string): Promise<boolean>;
 }

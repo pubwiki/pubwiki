@@ -1,7 +1,10 @@
 /**
  * RDFStore Wrapper for Studio
  *
- * Uses @pubwiki/rdfstore with BrowserLevel for IndexedDB persistence.
+ * Uses @pubwiki/rdfstore with:
+ * - BrowserLevel for Quadstore (RDF data) - IndexedDB persistence
+ * - Dexie.js for VersionDAG (version metadata) - IndexedDB persistence
+ * 
  * This allows State nodes to persist RDF triples with full version control.
  */
 
@@ -23,10 +26,13 @@ export async function getNodeRDFStore(nodeId: string): Promise<RDFStore> {
   let store = storeRegistry.get(nodeId);
   if (!store || !store.isOpen) {
     const dbName = `pubwiki-state-${nodeId}`;
-    const level = new BrowserLevel<string, string>(dbName);
-    store = await RDFStore.create(level);
+    const quadstoreLevel = new BrowserLevel<string, string>(`${dbName}-quads`);
+    store = await RDFStore.create({
+      quadstoreLevel,
+      versionDbName: `${dbName}-version`
+    });
     storeRegistry.set(nodeId, store);
-    levelRegistry.set(nodeId, level);
+    levelRegistry.set(nodeId, quadstoreLevel);
   }
   return store;
 }

@@ -9,10 +9,17 @@ const { namedNode, literal } = DataFactory
 // 辅助函数：延迟
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+// 计数器用于生成唯一的数据库名称
+let dbCounter = 0
+
 // 辅助函数：创建一个新的内存 RDFStore
 async function createMemoryStore(): Promise<RDFStore> {
   const level = new MemoryLevel()
-  return RDFStore.create(level)
+  const versionDbName = `test-version-db-${Date.now()}-${dbCounter++}`
+  return RDFStore.create({
+    quadstoreLevel: level,
+    versionDbName
+  })
 }
 
 // 辅助函数：按字符串查询（用于测试断言）
@@ -393,7 +400,9 @@ describe('pubwiki-lua', () => {
         return State:checkpoint()
       `, { rdfStore: store })
 
-      expect(typeof result.result).toBe('string')
+      expect(typeof result.result).toBe('object')
+      expect(typeof result.result.id).toBe('string')
+      expect(typeof result.result.ref).toBe('string')
     })
 
     it('should checkout to specific ref', async () => {

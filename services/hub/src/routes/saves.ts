@@ -69,6 +69,31 @@ savesRoute.get('/', authMiddleware, async (c) => {
   return c.json({ saves: result });
 });
 
+// GET /saves/by-state/:stateNodeId - 根据 stateNodeId 获取 saveId
+savesRoute.get('/by-state/:stateNodeId', authMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const user = c.get('user');
+  const stateNodeId = c.req.param('stateNodeId');
+
+  if (!UUID_REGEX.test(stateNodeId)) {
+    return c.json<ApiError>({ error: 'Invalid stateNodeId format' }, 400);
+  }
+
+  const [save] = await db.select()
+    .from(cloudSaves)
+    .where(and(
+      eq(cloudSaves.userId, user.id),
+      eq(cloudSaves.stateNodeId, stateNodeId)
+    ))
+    .limit(1);
+
+  if (!save) {
+    return c.json<ApiError>({ error: 'Save not found' }, 404);
+  }
+
+  return c.json({ id: save.id });
+});
+
 // POST /saves - 创建新存档
 savesRoute.post('/', authMiddleware, async (c) => {
   const db = createDb(c.env.DB);
@@ -89,8 +114,11 @@ savesRoute.post('/', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'name must be between 1 and 200 characters' }, 400);
   }
 
-  // 验证 stateNodeId 格式（如果提供）
-  if (body.stateNodeId && !UUID_REGEX.test(body.stateNodeId)) {
+  // 验证 stateNodeId（必需）
+  if (!body.stateNodeId || typeof body.stateNodeId !== 'string') {
+    return c.json<ApiError>({ error: 'stateNodeId is required' }, 400);
+  }
+  if (!UUID_REGEX.test(body.stateNodeId)) {
     return c.json<ApiError>({ error: 'Invalid stateNodeId format' }, 400);
   }
 
@@ -98,40 +126,48 @@ savesRoute.post('/', authMiddleware, async (c) => {
   const saveId = crypto.randomUUID();
 
   // 在 D1 中创建索引记录
-  const [newSave] = await db.insert(cloudSaves).values({
-    id: saveId,
-    userId: user.id,
-    stateNodeId: body.stateNodeId ?? null,
-    name: body.name,
-    description: body.description ?? null,
-  }).returning();
-
-  // 初始化 Durable Object
   try {
-    await c.env.GAMESAVE.initializeSave(
-      saveId,
-      user.id,
-      body.stateNodeId ?? ''
-    );
-  } catch (error) {
-    // 如果 DO 初始化失败，删除索引记录
-    await db.delete(cloudSaves).where(eq(cloudSaves.id, saveId));
-    console.error('Failed to initialize save DO:', error);
-    return c.json<ApiError>({ error: 'Failed to create save' }, 500);
+    const [newSave] = await db.insert(cloudSaves).values({
+      id: saveId,
+      userId: user.id,
+      stateNodeId: body.stateNodeId,
+      name: body.name,
+      description: body.description ?? null,
+    }).returning();
+
+    // 初始化 Durable Object
+    try {
+      await c.env.GAMESAVE.initializeSave(
+        saveId,
+        user.id,
+        body.stateNodeId
+      );
+    } catch (error) {
+      // 如果 DO 初始化失败，删除索引记录
+      await db.delete(cloudSaves).where(eq(cloudSaves.id, saveId));
+      console.error('Failed to initialize save DO:', error);
+      return c.json<ApiError>({ error: 'Failed to create save' }, 500);
+    }
+
+    const result: CloudSave = {
+      id: newSave.id,
+      userId: newSave.userId,
+      stateNodeId: newSave.stateNodeId,
+      name: newSave.name,
+      description: newSave.description,
+      createdAt: newSave.createdAt,
+      updatedAt: newSave.updatedAt,
+      lastSyncedAt: newSave.lastSyncedAt,
+    };
+
+    return c.json(result, 201);
+  } catch (error: unknown) {
+    // 处理唯一约束冲突
+    if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+      return c.json<ApiError>({ error: 'Save already exists for this stateNodeId' }, 409);
+    }
+    throw error;
   }
-
-  const result: CloudSave = {
-    id: newSave.id,
-    userId: newSave.userId,
-    stateNodeId: newSave.stateNodeId,
-    name: newSave.name,
-    description: newSave.description,
-    createdAt: newSave.createdAt,
-    updatedAt: newSave.updatedAt,
-    lastSyncedAt: newSave.lastSyncedAt,
-  };
-
-  return c.json(result, 201);
 });
 
 // ============ 单个存档操作 ============
@@ -271,7 +307,7 @@ savesRoute.get('/:saveId/history', authMiddleware, async (c) => {
 // ============ 导出历史版本 ============
 
 // GET /saves/:saveId/export/:ref - 导出任意 ref 处的数据
-// 支持非 owner 访问：需要 ref 有对应的 checkpoint 且 visibility 非 PRIVATE
+// 支持非 owner 访问：需要 ref 有对应的非 PRIVATE checkpoint
 savesRoute.get('/:saveId/export/:ref', optionalAuthMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const user = c.get('user');
@@ -292,10 +328,10 @@ savesRoute.get('/:saveId/export/:ref', optionalAuthMiddleware, async (c) => {
 
   const isOwner = user?.id === save.userId;
 
-  // 非 owner 需要验证：ref 必须有 checkpoint 且 visibility 非 PRIVATE
+  // 非 owner 需要验证：ref 必须有非 PRIVATE 的 checkpoint
   if (!isOwner) {
-    const checkpoint = await c.env.GAMESAVE.getCheckpoint(saveId, ref);
-    if (!checkpoint || checkpoint.visibility === 'PRIVATE') {
+    const isPubliclyAccessible = await c.env.GAMESAVE.isRefPubliclyAccessible(saveId, ref);
+    if (!isPubliclyAccessible) {
       return c.json<ApiError>({ error: 'Access denied' }, 403);
     }
   }
@@ -367,7 +403,7 @@ savesRoute.post('/:saveId/checkpoints', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: error || 'Save not found' }, 404);
   }
 
-  let body: { ref: string; name?: string; description?: string; visibility?: 'PRIVATE' | 'UNLISTED' | 'PUBLIC' };
+  let body: { ref: string; id?: string; name?: string; description?: string; visibility?: 'PRIVATE' | 'UNLISTED' | 'PUBLIC' };
   try {
     body = await c.req.json();
   } catch {
@@ -384,12 +420,13 @@ savesRoute.post('/:saveId/checkpoints', authMiddleware, async (c) => {
   }
 
   try {
-    await c.env.GAMESAVE.createCheckpoint(saveId, body.ref, {
+    const checkpointId = await c.env.GAMESAVE.createCheckpoint(saveId, body.ref, {
+      id: body.id,
       name: body.name,
       description: body.description,
       visibility: body.visibility,
     });
-    return c.json({ success: true }, 201);
+    return c.json({ success: true, id: checkpointId }, 201);
   } catch (error) {
     console.error('Failed to create checkpoint:', error);
     const message = error instanceof Error ? error.message : 'Failed to create checkpoint';
@@ -397,12 +434,12 @@ savesRoute.post('/:saveId/checkpoints', authMiddleware, async (c) => {
   }
 });
 
-// DELETE /saves/:saveId/checkpoints/:ref - 删除 checkpoint
-savesRoute.delete('/:saveId/checkpoints/:ref', authMiddleware, async (c) => {
+// DELETE /saves/:saveId/checkpoints/:checkpointId - 删除 checkpoint
+savesRoute.delete('/:saveId/checkpoints/:checkpointId', authMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const user = c.get('user');
   const saveId = c.req.param('saveId');
-  const ref = c.req.param('ref');
+  const checkpointId = c.req.param('checkpointId');
 
   if (!UUID_REGEX.test(saveId)) {
     return c.json<ApiError>({ error: 'Invalid save ID format' }, 400);
@@ -417,7 +454,7 @@ savesRoute.delete('/:saveId/checkpoints/:ref', authMiddleware, async (c) => {
   }
 
   try {
-    const deleted = await c.env.GAMESAVE.deleteCheckpoint(saveId, ref);
+    const deleted = await c.env.GAMESAVE.deleteCheckpoint(saveId, checkpointId);
     if (!deleted) {
       return c.json<ApiError>({ error: 'Checkpoint not found' }, 404);
     }

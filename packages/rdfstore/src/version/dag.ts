@@ -3,36 +3,29 @@
  * 
  * Manages a DAG of state references where each operation creates a new ref.
  * Supports checkout to any ref and implicit branching.
+ * 
+ * Uses Dexie.js (IndexedDB) for persistence via VersionStore.
  */
 
 import type { Quad } from '@rdfjs/types'
-import type { Ref, RefNode, Checkpoint, Operation, LevelInstance } from '../types.js'
+import type { Ref, RefNode, Checkpoint, CheckpointOptions, Operation } from '../types.js'
 import { ROOT_REF, toSyncOperation } from '../types.js'
-import { exportToJsonl, importFromJsonl } from '../serialization/formats.js'
-import { generateRef } from '@pubwiki/rdfsync'
-
-// Sublevel names
-const VERSION_SUBLEVEL = 'version'
-const CHECKPOINT_DATA_SUBLEVEL = 'checkpoint-data'
-
-// Key prefixes
-const NODE_PREFIX = 'node:'
-const CHECKPOINT_PREFIX = 'ckpt:'
-const CHILDREN_PREFIX = 'children:'
-const META_PREFIX = 'meta:'
+import { generateRef, fromRdfQuad, toRdfQuad } from '@pubwiki/rdfsync'
+import { VersionStore, VersionDatabase } from './store.js'
 
 /**
  * Version DAG Manager
  * 
- * Manages the immutable state DAG and checkpoints
+ * Manages the immutable state DAG and checkpoints using Dexie.js storage
  */
 export class VersionDAG {
-  private versionLevel: LevelInstance | null = null
-  private checkpointDataLevel: LevelInstance | null = null
+  private store: VersionStore
   private _currentRef: Ref = ROOT_REF
   private _isOpen = false
 
-  constructor(private db: LevelInstance) {}
+  constructor(store: VersionStore) {
+    this.store = store
+  }
 
   get currentRef(): Ref {
     return this._currentRef
@@ -43,17 +36,22 @@ export class VersionDAG {
   }
 
   /**
+   * Get the underlying VersionStore
+   */
+  getStore(): VersionStore {
+    return this.store
+  }
+
+  /**
    * Open the version DAG
    */
   async open(): Promise<void> {
     if (this._isOpen) return
     
-    this.versionLevel = this.db.sublevel(VERSION_SUBLEVEL, { valueEncoding: 'utf8' }) as LevelInstance
-    this.checkpointDataLevel = this.db.sublevel(CHECKPOINT_DATA_SUBLEVEL, { valueEncoding: 'utf8' }) as LevelInstance
     this._isOpen = true
     
     // Restore current ref
-    const savedRef = await this.getMeta<Ref>('head')
+    const savedRef = await this.store.getHead()
     if (savedRef) {
       this._currentRef = savedRef
     }
@@ -64,16 +62,14 @@ export class VersionDAG {
    */
   async close(): Promise<void> {
     if (!this._isOpen) return
-    this.versionLevel = null
-    this.checkpointDataLevel = null
+    await this.store.close()
     this._isOpen = false
   }
 
-  private ensureOpen(): LevelInstance {
-    if (!this._isOpen || !this.versionLevel) {
+  private ensureOpen(): void {
+    if (!this._isOpen) {
       throw new Error('VersionDAG not open')
     }
-    return this.versionLevel
   }
 
   // ============ Ref Node Operations ============
@@ -86,6 +82,8 @@ export class VersionDAG {
    * @returns The new ref
    */
   async recordOperation(operation: Operation): Promise<Ref> {
+    this.ensureOpen()
+    
     // Generate deterministic ref using chain hash
     const ref = await generateRef(this._currentRef, toSyncOperation(operation))
     
@@ -97,24 +95,16 @@ export class VersionDAG {
     }
 
     // Save the node
-    await this.saveNode(node)
+    await this.store.saveNode(node)
 
     // Update children index of parent
-    await this.addChild(this._currentRef, ref)
+    await this.store.addChild(this._currentRef, ref)
 
     // Update current ref
     this._currentRef = ref
-    await this.setMeta('head', ref)
+    await this.store.setHead(ref)
 
     return ref
-  }
-
-  /**
-   * Save a ref node
-   */
-  private async saveNode(node: RefNode): Promise<void> {
-    const db = this.ensureOpen()
-    await db.put(`${NODE_PREFIX}${node.ref}`, JSON.stringify(node))
   }
 
   /**
@@ -122,54 +112,16 @@ export class VersionDAG {
    */
   async getNode(ref: Ref): Promise<RefNode | null> {
     if (ref === ROOT_REF) return null
-    
-    const db = this.ensureOpen()
-    try {
-      const value = await db.get(`${NODE_PREFIX}${ref}`)
-      if (value === undefined) return null
-      return JSON.parse(value) as RefNode
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * Add a child to a ref's children index
-   */
-  private async addChild(parent: Ref, child: Ref): Promise<void> {
-    const db = this.ensureOpen()
-    const children = await this.getChildren(parent)
-    if (!children.includes(child)) {
-      children.push(child)
-      await db.put(`${CHILDREN_PREFIX}${parent}`, JSON.stringify(children))
-    }
+    this.ensureOpen()
+    return this.store.getNode(ref)
   }
 
   /**
    * Get children of a ref
    */
   async getChildren(ref: Ref): Promise<Ref[]> {
-    const db = this.ensureOpen()
-    try {
-      const value = await db.get(`${CHILDREN_PREFIX}${ref}`)
-      if (value === undefined) return []
-      return JSON.parse(value) as Ref[]
-    } catch {
-      return []
-    }
-  }
-
-  /**
-   * Remove a child from a ref's children index
-   */
-  private async removeChild(parent: Ref, child: Ref): Promise<void> {
-    const db = this.ensureOpen()
-    const children = await this.getChildren(parent)
-    const index = children.indexOf(child)
-    if (index !== -1) {
-      children.splice(index, 1)
-      await db.put(`${CHILDREN_PREFIX}${parent}`, JSON.stringify(children))
-    }
+    this.ensureOpen()
+    return this.store.getChildren(ref)
   }
 
   /**
@@ -179,21 +131,17 @@ export class VersionDAG {
   async deleteRef(ref: Ref): Promise<void> {
     if (ref === ROOT_REF) return
     
-    const db = this.ensureOpen()
-    const node = await this.getNode(ref)
+    this.ensureOpen()
+    const node = await this.store.getNode(ref)
     if (!node) return
 
     // Remove from parent's children
     if (node.parent) {
-      await this.removeChild(node.parent, ref)
+      await this.store.removeChild(node.parent, ref)
     }
 
     // Delete the node
-    try {
-      await db.del(`${NODE_PREFIX}${ref}`)
-    } catch {
-      // Ignore if not found
-    }
+    await this.store.deleteNode(ref)
   }
 
   /**
@@ -201,11 +149,12 @@ export class VersionDAG {
    * @returns Array of refs from the given ref to root (inclusive)
    */
   async getPathToRoot(ref: Ref): Promise<Ref[]> {
+    this.ensureOpen()
     const path: Ref[] = [ref]
     let current = ref
 
     while (current !== ROOT_REF) {
-      const node = await this.getNode(current)
+      const node = await this.store.getNode(current)
       if (!node || !node.parent) break
       path.push(node.parent)
       current = node.parent
@@ -219,11 +168,12 @@ export class VersionDAG {
    * @param limit Maximum number of entries to return
    */
   async log(limit?: number): Promise<RefNode[]> {
+    this.ensureOpen()
     const nodes: RefNode[] = []
     let current = this._currentRef
 
     while (current !== ROOT_REF) {
-      const node = await this.getNode(current)
+      const node = await this.store.getNode(current)
       if (!node) break
       nodes.push(node)
       if (limit && nodes.length >= limit) break
@@ -233,14 +183,51 @@ export class VersionDAG {
     return nodes
   }
 
+  /**
+   * Get operations from baseRef to targetRef (exclusive baseRef, inclusive targetRef)
+   * Returns nodes in chronological order (oldest first)
+   * Used for syncing operations to cloud
+   */
+  async getOperationsBetween(baseRef: Ref, targetRef: Ref): Promise<RefNode[]> {
+    this.ensureOpen()
+    
+    // Early return if same ref
+    if (baseRef === targetRef) {
+      return []
+    }
+
+    // Walk from targetRef towards root, stop when we hit baseRef
+    const nodes: RefNode[] = []
+    let current = targetRef
+
+    while (current !== ROOT_REF) {
+      // Check if we've reached baseRef
+      if (current === baseRef) {
+        // Found baseRef, return collected nodes in chronological order
+        return nodes.reverse()
+      }
+
+      const node = await this.store.getNode(current)
+      if (!node) break
+      
+      nodes.push(node)
+      current = node.parent!
+    }
+
+    // If we get here, baseRef was not found in the path
+    // Return all nodes from root to targetRef (chronological order)
+    return nodes.reverse()
+  }
+
   // ============ Checkout ============
 
   /**
    * Set the current ref (used during checkout)
    */
   async setCurrentRef(ref: Ref): Promise<void> {
+    this.ensureOpen()
     this._currentRef = ref
-    await this.setMeta('head', ref)
+    await this.store.setHead(ref)
   }
 
   // ============ Checkpoint Operations ============
@@ -248,53 +235,48 @@ export class VersionDAG {
   /**
    * Create a checkpoint at the current ref
    * @param quads The current quad data to save
-   * @returns The current ref
+   * @param options Checkpoint options including title and description
+   * @returns The checkpoint (including id and ref)
    */
-  async createCheckpoint(quads: Quad[]): Promise<Ref> {
+  async createCheckpoint(quads: Quad[], options: CheckpointOptions): Promise<Checkpoint> {
+    this.ensureOpen()
     const ref = this._currentRef
+    const id = options.id ?? crypto.randomUUID()
     
     // Save checkpoint metadata
     const checkpoint: Checkpoint = {
+      id,
       ref,
+      title: options.title,
+      description: options.description,
       timestamp: Date.now(),
       quadCount: quads.length,
     }
-    const db = this.ensureOpen()
-    await db.put(`${CHECKPOINT_PREFIX}${ref}`, JSON.stringify(checkpoint))
+    await this.store.saveCheckpoint(checkpoint)
 
-    // Save checkpoint data
-    const data = exportToJsonl(quads)
-    await this.checkpointDataLevel!.put(ref, data)
+    // Save checkpoint data (convert RDF.js Quads to simple Quads)
+    const data = quads.map(fromRdfQuad)
+    await this.store.saveCheckpointData(ref, data)
 
-    return ref
+    return checkpoint
   }
 
   /**
-   * Get checkpoint metadata for a ref
+   * Get checkpoint metadata by id
    */
-  async getCheckpoint(ref: Ref): Promise<Checkpoint | null> {
-    const db = this.ensureOpen()
-    try {
-      const value = await db.get(`${CHECKPOINT_PREFIX}${ref}`)
-      if (value === undefined) return null
-      return JSON.parse(value) as Checkpoint
-    } catch {
-      return null
-    }
+  async getCheckpoint(id: string): Promise<Checkpoint | null> {
+    this.ensureOpen()
+    return this.store.getCheckpoint(id)
   }
 
   /**
    * Load checkpoint data for a ref
    */
   async loadCheckpointData(ref: Ref): Promise<Quad[] | null> {
-    if (!this.checkpointDataLevel) return null
-    try {
-      const data = await this.checkpointDataLevel.get(ref)
-      if (data === undefined) return null
-      return importFromJsonl(data)
-    } catch {
-      return null
-    }
+    this.ensureOpen()
+    const data = await this.store.getCheckpointData(ref)
+    if (data === null) return null
+    return data.map(toRdfQuad)
   }
 
   /**
@@ -302,6 +284,7 @@ export class VersionDAG {
    * @returns The checkpoint ref and the path from checkpoint to target
    */
   async findNearestCheckpoint(targetRef: Ref): Promise<{ checkpointRef: Ref; pathFromCheckpoint: Ref[] } | null> {
+    this.ensureOpen()
     const path = await this.getPathToRoot(targetRef)
     
     // Check each ref in path for a checkpoint
@@ -316,8 +299,8 @@ export class VersionDAG {
         }
       }
       
-      const checkpoint = await this.getCheckpoint(ref)
-      if (checkpoint) {
+      const hasCheckpoint = await this.store.hasCheckpointForRef(ref)
+      if (hasCheckpoint) {
         return {
           checkpointRef: ref,
           pathFromCheckpoint: path.slice(0, i).reverse(),
@@ -336,33 +319,21 @@ export class VersionDAG {
    * List all checkpoints
    */
   async listCheckpoints(): Promise<Checkpoint[]> {
-    const db = this.ensureOpen()
-    const checkpoints: Checkpoint[] = []
-    
-    for await (const [key, value] of db.iterator()) {
-      if (key.startsWith(CHECKPOINT_PREFIX)) {
-        checkpoints.push(JSON.parse(value) as Checkpoint)
-      }
-    }
-    
-    return checkpoints.sort((a, b) => b.timestamp - a.timestamp)
+    this.ensureOpen()
+    return this.store.listCheckpoints()
   }
 
-  // ============ Meta Operations ============
-
-  private async setMeta<T>(key: string, value: T): Promise<void> {
-    const db = this.ensureOpen()
-    await db.put(`${META_PREFIX}${key}`, JSON.stringify(value))
-  }
-
-  private async getMeta<T>(key: string): Promise<T | null> {
-    const db = this.ensureOpen()
-    try {
-      const value = await db.get(`${META_PREFIX}${key}`)
-      if (value === undefined) return null
-      return JSON.parse(value) as T
-    } catch {
-      return null
+  /**
+   * Delete a checkpoint by id
+   * Note: This only deletes the checkpoint metadata, not the checkpoint data or underlying operations
+   * @param id - The checkpoint id
+   * @param ref - The ref to delete checkpoint data for (optional, will delete data if provided)
+   */
+  async deleteCheckpoint(id: string, ref?: Ref): Promise<void> {
+    this.ensureOpen()
+    await this.store.deleteCheckpoint(id)
+    if (ref) {
+      await this.store.deleteCheckpointData(ref)
     }
   }
 
@@ -373,16 +344,37 @@ export class VersionDAG {
    */
   async hasRef(ref: Ref): Promise<boolean> {
     if (ref === ROOT_REF) return true
-    const node = await this.getNode(ref)
-    return node !== null
+    this.ensureOpen()
+    return this.store.hasNode(ref)
   }
 }
 
 /**
- * Create and open a VersionDAG
+ * Create and open a VersionDAG with a new Dexie database
+ * @param dbName The name for the IndexedDB database
  */
-export async function createVersionDAG(level: LevelInstance): Promise<VersionDAG> {
-  const dag = new VersionDAG(level)
+export async function createVersionDAG(dbName: string): Promise<VersionDAG> {
+  const store = VersionStore.create(dbName)
+  const dag = new VersionDAG(store)
+  await dag.open()
+  return dag
+}
+
+/**
+ * Create and open a VersionDAG with an existing VersionStore
+ */
+export async function createVersionDAGWithStore(store: VersionStore): Promise<VersionDAG> {
+  const dag = new VersionDAG(store)
+  await dag.open()
+  return dag
+}
+
+/**
+ * Create and open a VersionDAG with an existing VersionDatabase
+ */
+export async function createVersionDAGWithDatabase(db: VersionDatabase): Promise<VersionDAG> {
+  const store = new VersionStore(db)
+  const dag = new VersionDAG(store)
   await dag.open()
   return dag
 }

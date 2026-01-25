@@ -20,7 +20,7 @@ unsafe extern "C" {
     // 版本控制 API
     fn js_rdf_current_ref(context_id: u32) -> EM_VAL;
     fn js_rdf_checkout_async(context_id: u32, ref_ptr: *const c_char, callback_id: u32);
-    fn js_rdf_checkpoint_async(context_id: u32, callback_id: u32);
+    fn js_rdf_checkpoint_async(context_id: u32, title_ptr: *const c_char, desc_ptr: *const c_char, callback_id: u32);
     
     // SPARQL 流式查询 API
     fn js_rdf_sparql_query_start(context_id: u32, sparql_ptr: *const c_char, callback_id: u32);
@@ -379,12 +379,31 @@ pub fn install_rdf_api(lua: &Lua, context_id: u32) -> LuaResult<()> {
     })?;
     state_table.set("checkout", checkout_fn)?;
     
-    // State:checkpoint() - 创建检查点，返回 Ref（异步）
-    let checkpoint_fn = lua.create_async_function(move |lua, _: LuaTable| async move {
+    // State:checkpoint(title?, description?) - 创建检查点，返回 { id, ref }（异步）
+    let checkpoint_fn = lua.create_async_function(move |lua, args: LuaMultiValue| async move {
         let (callback_id, rx) = register_callback();
         
+        // 解析可选参数
+        let mut args_iter = args.into_iter();
+        let _self_table = args_iter.next(); // 跳过 self
+        
+        let title = match args_iter.next() {
+            Some(LuaValue::String(s)) => Some(CString::new(s.to_str()?.to_string()).map_err(|e| LuaError::external(e))?),
+            _ => None,
+        };
+        
+        let description = match args_iter.next() {
+            Some(LuaValue::String(s)) => Some(CString::new(s.to_str()?.to_string()).map_err(|e| LuaError::external(e))?),
+            _ => None,
+        };
+        
         unsafe {
-            js_rdf_checkpoint_async(context_id, callback_id)
+            js_rdf_checkpoint_async(
+                context_id,
+                title.as_ref().map(|s| s.as_ptr()).unwrap_or(std::ptr::null()),
+                description.as_ref().map(|s| s.as_ptr()).unwrap_or(std::ptr::null()),
+                callback_id
+            )
         };
         
         match rx.recv().await {

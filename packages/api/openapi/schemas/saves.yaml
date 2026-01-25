@@ -231,12 +231,18 @@ VersionHistoryResponse:
 CheckpointInfo:
   type: object
   required:
+    - id
     - ref
     - timestamp
     - quadCount
+    - visibility
   properties:
+    id:
+      type: string
+      description: Checkpoint unique ID
     ref:
       type: string
+      description: Version ref (hash)
     timestamp:
       type: integer
     quadCount:
@@ -247,6 +253,12 @@ CheckpointInfo:
     description:
       type: string
       nullable: true
+    visibility:
+      type: string
+      enum:
+        - PRIVATE
+        - UNLISTED
+        - PUBLIC
 
 CreateCheckpointRequest:
   type: object
@@ -255,10 +267,31 @@ CreateCheckpointRequest:
   properties:
     ref:
       type: string
+    id:
+      type: string
+      description: Optional custom checkpoint ID
     name:
       type: string
     description:
       type: string
+    visibility:
+      type: string
+      enum:
+        - PRIVATE
+        - UNLISTED
+        - PUBLIC
+
+CreateCheckpointResponse:
+  type: object
+  required:
+    - success
+    - id
+  properties:
+    success:
+      type: boolean
+    id:
+      type: string
+      description: Created checkpoint ID
 
 ExportResult:
   type: object

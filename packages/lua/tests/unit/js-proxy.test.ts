@@ -3,10 +3,17 @@ import { loadRunner, createLuaInstance, type LuaInstance } from '../../src/index
 import { RDFStore } from '@pubwiki/rdfstore'
 import { MemoryLevel } from 'memory-level'
 
+// 计数器用于生成唯一的数据库名称
+let dbCounter = 0
+
 // 辅助函数：创建一个新的内存 RDFStore
 async function createMemoryStore(): Promise<RDFStore> {
   const level = new MemoryLevel()
-  return RDFStore.create(level)
+  const versionDbName = `test-version-db-${Date.now()}-${dbCounter++}`
+  return RDFStore.create({
+    quadstoreLevel: level,
+    versionDbName
+  })
 }
 
 describe('JsProxy - 参数传递', () => {

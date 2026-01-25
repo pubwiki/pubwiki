@@ -699,6 +699,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/saves/by-state/{stateNodeId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 通过 stateNodeId 获取存档
+         * @description 根据关联的 state node ID 查找存档，用于恢复本地未保存的 saveId
+         */
+        get: operations["getSaveByStateNode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/saves/{saveId}": {
         parameters: {
             query?: never;
@@ -801,7 +821,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/saves/{saveId}/checkpoints/{ref}": {
+    "/saves/{saveId}/checkpoints/{checkpointId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1562,22 +1582,36 @@ export interface components {
             versions: components["schemas"]["RefNode"][];
         };
         CheckpointInfo: {
+            /** @description Checkpoint unique ID */
+            id: string;
+            /** @description Version ref (hash) */
             ref: string;
             timestamp: number;
             quadCount: number;
             name?: string | null;
             description?: string | null;
+            /** @enum {string} */
+            visibility: "PRIVATE" | "UNLISTED" | "PUBLIC";
         };
         CreateCheckpointRequest: {
             ref: string;
+            /** @description Optional custom checkpoint ID */
+            id?: string;
             name?: string;
             description?: string;
+            /** @enum {string} */
+            visibility?: "PRIVATE" | "UNLISTED" | "PUBLIC";
         };
         ExportResult: {
             /** @description JSONL 格式的 quad 数据 */
             data: string;
             ref: string;
             quadCount: number;
+        };
+        CreateCheckpointResponse: {
+            success: boolean;
+            /** @description Created checkpoint ID */
+            id: string;
         };
     };
     responses: never;
@@ -3835,6 +3869,53 @@ export interface operations {
             };
         };
     };
+    getSaveByStateNode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description State node ID */
+                stateNodeId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 存档信息 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * Format: uuid
+                         * @description 存档 ID
+                         */
+                        id: string;
+                    };
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未找到关联的存档 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     deleteSave: {
         parameters: {
             query?: never;
@@ -4127,9 +4208,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        success?: boolean;
-                    };
+                    "application/json": components["schemas"]["CreateCheckpointResponse"];
                 };
             };
             /** @description 无效的请求 */
@@ -4176,7 +4255,7 @@ export interface operations {
             header?: never;
             path: {
                 saveId: string;
-                ref: string;
+                checkpointId: string;
             };
             cookie?: never;
         };

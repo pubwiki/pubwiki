@@ -280,6 +280,8 @@ paths:
   # Cloud Saves
   /saves:
     $ref: './openapi/paths/saves.yaml#/~1saves'
+  /saves/by-state/{stateNodeId}:
+    $ref: './openapi/paths/saves.yaml#/~1saves~1by-state~1{stateNodeId}'
   /saves/{saveId}:
     $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}'
   /saves/{saveId}/sync:
@@ -290,5 +292,5 @@ paths:
     $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1export~1{ref}'
   /saves/{saveId}/checkpoints:
     $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints'
-  /saves/{saveId}/checkpoints/{ref}:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{ref}'
+  /saves/{saveId}/checkpoints/{checkpointId}:
+    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{checkpointId}'
