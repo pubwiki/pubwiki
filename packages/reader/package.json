@@ -1,0 +1,31 @@
+{
+	"name": "@pubwiki/reader",
+	"version": "0.0.1",
+	"type": "module",
+	"svelte": "./src/index.ts",
+	"main": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"svelte": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"peerDependencies": {
+		"svelte": "catalog:"
+	},
+	"dependencies": {
+		"@pubwiki/api": "workspace:*",
+		"lexical": "catalog:",
+		"@lexical/rich-text": "catalog:",
+		"@lexical/utils": "catalog:",
+		"svelte-lexical": "catalog:"
+	},
+	"devDependencies": {
+		"@sveltejs/kit": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"typescript": "catalog:"
+	}
+}

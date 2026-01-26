@@ -12,43 +12,35 @@
 	
 	const artifactStore = useArtifactStore();
 	
-	let content = $state<string | null>(null);
+	// Content is now directly available in node.content from ArtifactNodeSummary
+	let content = $derived(node.content ? JSON.stringify(node.content, null, 2) : null);
 	let nodeDetail = $state<ArtifactNodeDetail | null>(null);
 	let loadingContent = $state(false);
 	let expanded = $state(false);
 	let vfsExpandedFolders = $state(new Set<string>());
 
-	// Load content for non-VFS nodes
-	async function loadContent() {
-		if (node.external) return;
+	// Load file list for VFS nodes only
+	async function loadVfsDetail() {
+		if (node.external || node.type !== 'VFS') return;
 		
 		loadingContent = true;
 		try {
-			if (node.type === 'VFS') {
-				// For VFS nodes, fetch node detail to get file list
-				const result = await artifactStore.fetchNodeDetail(artifactId, node.id);
-				if (result) {
-					nodeDetail = result;
-				}
-			} else {
-				// For other nodes, fetch text content
-				const result = await artifactStore.fetchNodeContent(artifactId, node.id);
-				if (result) {
-					content = result;
-				}
+			// For VFS nodes, fetch node detail to get file list
+			const result = await artifactStore.fetchNodeDetail(artifactId, node.id);
+			if (result) {
+				nodeDetail = result;
 			}
 		} catch {
-			content = null;
 			nodeDetail = null;
 		} finally {
 			loadingContent = false;
 		}
 	}
 
-	// Load content when card is expanded
+	// Load VFS file list when card is expanded
 	$effect(() => {
-		if (expanded && content === null && nodeDetail === null && !loadingContent) {
-			loadContent();
+		if (expanded && node.type === 'VFS' && nodeDetail === null && !loadingContent) {
+			loadVfsDetail();
 		}
 	});
 
@@ -146,11 +138,6 @@
 						View source artifact
 					</a>
 				{/if}
-			{:else if loadingContent}
-				<div class="flex items-center gap-2 text-sm text-gray-500">
-					<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
-					Loading content...
-				</div>
 			{:else if content}
 				<div class="bg-white rounded-md p-3 overflow-x-auto border border-gray-100">
 					<pre class="text-xs text-gray-700 whitespace-pre-wrap font-mono">{content}</pre>

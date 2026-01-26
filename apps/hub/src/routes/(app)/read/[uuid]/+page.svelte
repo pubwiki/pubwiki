@@ -2,9 +2,8 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import type { ArticleDetail } from '@pubwiki/api';
-	import Reader from '$lib/components/reader/Reader.svelte';
-	import { type ReaderContent, extractToc } from '$lib/components/reader/content';
+	import type { ArticleDetail, GameRef } from '@pubwiki/api';
+	import { Reader, type ReaderContent, extractToc } from '@pubwiki/reader';
 	import { useArticleStore } from '$lib/stores/articles.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -262,8 +261,7 @@
 	>
 		<Reader 
 			content={content} 
-			artifactId={article.artifactId}
-			sandboxNodeId={article.sandboxNodeId}
+			buildPlaybackUrl={(gameRef: GameRef) => `/${article!.artifactId}/play/${article!.sandboxNodeId}?load=${encodeURIComponent(gameRef.ref)}`}
 		/>
 	</main>
 

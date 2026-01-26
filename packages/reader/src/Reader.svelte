@@ -1,20 +1,16 @@
 <script lang="ts">
 	/**
 	 * Reader - Rich text reader component using Lexical
-	 * 
+	 *
 	 * A read-only text viewer optimized for long-form content reading.
 	 * Features:
 	 * - Clean typography for comfortable reading
 	 * - Support for structured ReaderContent format
-	 * - Game reference buttons for linked text blocks
+	 * - Game reference buttons for linked text blocks (via buildPlaybackUrl callback)
 	 * - Read-only mode by default
 	 */
 	import { onMount } from 'svelte';
-	import {
-		Composer,
-		ContentEditable,
-		RichTextPlugin,
-	} from 'svelte-lexical';
+	import { Composer, ContentEditable, RichTextPlugin } from 'svelte-lexical';
 	import {
 		$getRoot as getRoot,
 		$createParagraphNode as createParagraphNode,
@@ -22,26 +18,27 @@
 		type LexicalEditor,
 	} from 'lexical';
 	import { HeadingNode, $createHeadingNode as createHeadingNode } from '@lexical/rich-text';
-	import { GameRefParagraphNode, $createGameRefParagraphNode as createGameRefParagraphNode, setArticleContext } from './GameRefParagraphNode';
-	import { type ReaderContent, type TextContent, getTextWithRefs } from './content';
+	import {
+		GameRefParagraphNode,
+		$createGameRefParagraphNode as createGameRefParagraphNode,
+		setReaderContext,
+	} from './nodes/GameRefParagraphNode.js';
+	import type { ReaderContent, GameRef } from '@pubwiki/api';
+	import { getTextWithRefs } from './utils.js';
 
 	interface Props {
 		/** Structured reader content */
 		content: ReaderContent;
-		/** Artifact ID for playback links */
-		artifactId: string;
-		/** Sandbox node ID for playback links */
-		sandboxNodeId: string;
+		/**
+		 * Playback URL builder (decouples routing logic)
+		 * Return null/undefined to hide the playback button
+		 */
+		buildPlaybackUrl?: (gameRef: GameRef) => string | null | undefined;
 		/** Additional CSS class */
 		class?: string;
 	}
 
-	let {
-		content = [],
-		artifactId,
-		sandboxNodeId,
-		class: className = '',
-	}: Props = $props();
+	let { content = [], buildPlaybackUrl, class: className = '' }: Props = $props();
 
 	let composer: Composer | undefined = $state();
 	let editorRef: LexicalEditor | null = null;
@@ -76,12 +73,12 @@
 		if (composer) {
 			const editor = composer.getEditor();
 			editorRef = editor;
-			
+
 			// Ensure editor is read-only
 			editor.setEditable(false);
 
-			// Set article context for playback URLs
-			setArticleContext(artifactId, sandboxNodeId);
+			// Set reader context for playback URLs
+			setReaderContext({ buildPlaybackUrl });
 
 			// Initialize content
 			if (Array.isArray(content) && content.length > 0) {
@@ -94,53 +91,56 @@
 	 * Parse ReaderContent and initialize editor
 	 */
 	function initializeContent(editor: LexicalEditor, readerContent: ReaderContent) {
-		editor.update(() => {
-			const root = getRoot();
-			root.clear();
+		editor.update(
+			() => {
+				const root = getRoot();
+				root.clear();
 
-			const textWithRefs = getTextWithRefs(readerContent);
+				const textWithRefs = getTextWithRefs(readerContent);
 
-			for (const { text, gameRef } of textWithRefs) {
-				const lines = text.text.split('\n');
-				
-				for (const line of lines) {
-					// Check for headings (simple markdown support)
-					if (line.startsWith('# ')) {
-						const heading = createHeadingNode('h1');
-						heading.append(createTextNode(line.slice(2)));
-						root.append(heading);
-					} else if (line.startsWith('## ')) {
-						const heading = createHeadingNode('h2');
-						heading.append(createTextNode(line.slice(3)));
-						root.append(heading);
-					} else if (line.startsWith('### ')) {
-						const heading = createHeadingNode('h3');
-						heading.append(createTextNode(line.slice(4)));
-						root.append(heading);
-					} else if (line.startsWith('---')) {
-						// Horizontal rule
-						const hr = createParagraphNode();
-						hr.append(createTextNode('⸻'));
-						root.append(hr);
-					} else if (line.trim()) {
-						// Regular paragraph - use GameRefParagraphNode if has gameRef
-						if (gameRef) {
-							const paragraph = createGameRefParagraphNode(gameRef);
-							paragraph.append(createTextNode(line));
-							root.append(paragraph);
+				for (const { text, gameRef } of textWithRefs) {
+					const lines = text.text.split('\n');
+
+					for (const line of lines) {
+						// Check for headings (simple markdown support)
+						if (line.startsWith('# ')) {
+							const heading = createHeadingNode('h1');
+							heading.append(createTextNode(line.slice(2)));
+							root.append(heading);
+						} else if (line.startsWith('## ')) {
+							const heading = createHeadingNode('h2');
+							heading.append(createTextNode(line.slice(3)));
+							root.append(heading);
+						} else if (line.startsWith('### ')) {
+							const heading = createHeadingNode('h3');
+							heading.append(createTextNode(line.slice(4)));
+							root.append(heading);
+						} else if (line.startsWith('---')) {
+							// Horizontal rule
+							const hr = createParagraphNode();
+							hr.append(createTextNode('⸻'));
+							root.append(hr);
+						} else if (line.trim()) {
+							// Regular paragraph - use GameRefParagraphNode if has gameRef
+							if (gameRef) {
+								const paragraph = createGameRefParagraphNode(gameRef);
+								paragraph.append(createTextNode(line));
+								root.append(paragraph);
+							} else {
+								const paragraph = createParagraphNode();
+								paragraph.append(createTextNode(line));
+								root.append(paragraph);
+							}
 						} else {
+							// Empty line
 							const paragraph = createParagraphNode();
-							paragraph.append(createTextNode(line));
 							root.append(paragraph);
 						}
-					} else {
-						// Empty line
-						const paragraph = createParagraphNode();
-						root.append(paragraph);
 					}
 				}
-			}
-		}, { discrete: true });
+			},
+			{ discrete: true }
+		);
 	}
 </script>
 
@@ -157,7 +157,15 @@
 	.reader {
 		position: relative;
 		width: 100%;
-		font-family: var(--reader-font-family, 'Noto Serif SC', 'Source Han Serif CN', 'Songti SC', Georgia, 'Times New Roman', serif);
+		font-family: var(
+			--reader-font-family,
+			'Noto Serif SC',
+			'Source Han Serif CN',
+			'Songti SC',
+			Georgia,
+			'Times New Roman',
+			serif
+		);
 	}
 
 	.reader-inner {

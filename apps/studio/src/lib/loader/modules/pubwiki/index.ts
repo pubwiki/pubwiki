@@ -12,6 +12,7 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { FlowNodeData } from '$lib/types/flow';
 import type { JsModuleDefinition } from '$lib/loader';
+import type { ReaderContent } from '@pubwiki/reader';
 import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
 import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
@@ -56,7 +57,7 @@ interface UploadArticleInput {
 	articleId?: string;
 	title: string;
 	sandboxNodeId: string;
-	content: unknown[];
+	content: ReaderContent;
 	visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
 }
 

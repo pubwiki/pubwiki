@@ -58,8 +58,6 @@ export class ArtifactStore {
 	
 	// Cache for artifact details
 	private detailsCache = new Map<string, ArtifactDetails>();
-	// Cache for node content (key: `${artifactId}:${nodeId}`)
-	private nodeContentCache = new Map<string, string>();
 	// Cache for node details (key: `${artifactId}:${nodeId}`)
 	private nodeDetailCache = new Map<string, ArtifactNodeDetail>();
 
@@ -200,34 +198,6 @@ export class ArtifactStore {
 		return details;
 	}
 
-	async fetchNodeContent(artifactId: string, nodeId: string): Promise<string | null> {
-		const cacheKey = `${artifactId}:${nodeId}`;
-		
-		// Check cache first
-		if (this.nodeContentCache.has(cacheKey)) {
-			return this.nodeContentCache.get(cacheKey)!;
-		}
-		
-		try {
-			const client = this.getClient();
-			const { data, error } = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}/content', {
-				params: { 
-					path: { artifactId, nodeId },
-					query: { version: 'latest' }
-				}
-			});
-			if (!error && data) {
-				const content = JSON.stringify(data);
-				// Cache the result
-				this.nodeContentCache.set(cacheKey, content);
-				return content;
-			}
-			return null;
-		} catch {
-			return null;
-		}
-	}
-
 	async fetchNodeDetail(artifactId: string, nodeId: string): Promise<ArtifactNodeDetail | null> {
 		const cacheKey = `${artifactId}:${nodeId}`;
 		
@@ -267,7 +237,6 @@ export class ArtifactStore {
 
 	clearCache() {
 		this.detailsCache.clear();
-		this.nodeContentCache.clear();
 		this.nodeDetailCache.clear();
 	}
 }

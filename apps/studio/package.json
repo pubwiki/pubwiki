@@ -43,6 +43,7 @@
 		"@pubwiki/chat": "workspace:*",
 		"@pubwiki/lua": "workspace:*",
 		"@pubwiki/rdfstore": "workspace:*",
+		"@pubwiki/reader": "workspace:*",
 		"@pubwiki/sandbox-host": "workspace:*",
 		"@pubwiki/svelte-chat": "workspace:*",
 		"@pubwiki/ui": "workspace:*",

@@ -51,6 +51,7 @@
 		"@lexical/utils": "catalog:",
 		"svelte-lexical": "catalog:",
 		"@pubwiki/api": "workspace:*",
+		"@pubwiki/reader": "workspace:*",
 		"@pubwiki/ui": "workspace:*",
 		"@xyflow/svelte": "catalog:",
 		"@zenfs/core": "^2.4.4",
