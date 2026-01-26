@@ -388,6 +388,30 @@ export function createStateModule(store: RDFStore) {
     },
 
     /**
+     * List all checkpoints, sorted by timestamp descending
+     * @param _self - Lua self reference (ignored)
+     * @returns Array of checkpoint info wrapped for Lua table conversion
+     */
+    async listCheckpoints(_self?: unknown): Promise<LuaTable<Array<{
+      id: string
+      ref: Ref
+      title: string
+      description?: string
+      timestamp: number
+      quadCount: number
+    }>>> {
+      const checkpoints = await store.listCheckpoints()
+      return new LuaTable(checkpoints.map(cp => ({
+        id: cp.id,
+        ref: cp.ref,
+        title: cp.title,
+        description: cp.description,
+        timestamp: cp.timestamp,
+        quadCount: cp.quadCount
+      })))
+    },
+
+    /**
      * Execute a SPARQL query
      * Returns an async iterator that yields binding results
      * @param _self - Lua self reference (ignored)
