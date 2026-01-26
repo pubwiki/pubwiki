@@ -1,4 +1,7 @@
-import { ICustomService, ServiceDefinition } from "@pubwiki/sandbox-service"
+import { ICustomService, ServiceDefinition, UserInfo } from "@pubwiki/sandbox-service"
+
+// Re-export UserInfo from sandbox-service for convenience
+export type { UserInfo } from "@pubwiki/sandbox-service"
 
 /**
  * Options for initializing the sandbox client
@@ -24,6 +27,12 @@ export interface ISandboxClient {
    * Get the entry file for this sandbox
    */
   readonly entryFile: string
+
+  /**
+   * Get user information for the current play session
+   * Returns null if not in play mode
+   */
+  readonly userInfo: UserInfo | null
 
   /**
    * Get a custom service by ID

@@ -7,7 +7,7 @@
  * not working correctly when accessed across iframes.
  */
 
-import { ICustomService, RpcStub, SandboxMainService, ServiceDefinition } from '@pubwiki/sandbox-service'
+import { ICustomService, RpcStub, SandboxMainService, ServiceDefinition, UserInfo } from '@pubwiki/sandbox-service'
 import { RpcTarget } from '@pubwiki/sandbox-service'
 import type { ISandboxClient } from '@pubwiki/sandbox-client'
 
@@ -62,6 +62,7 @@ export class SandboxClient implements ISandboxClient {
   private session: RpcStub<SandboxMainService>
   private _basePath: string
   private _entryFile: string
+  private _userInfo: UserInfo | null = null
 
   constructor(
     rpcStub: RpcStub<SandboxMainService>,
@@ -71,6 +72,24 @@ export class SandboxClient implements ISandboxClient {
     this.session = rpcStub
     this._basePath = basePath
     this._entryFile = entryFile
+    
+    // Parse userInfo from window.name (set by parent iframe)
+    this.parseUserInfoFromWindowName()
+  }
+
+  /**
+   * Parse userInfo from window.name
+   * The parent page passes userInfo as JSON in the iframe's name attribute
+   */
+  private parseUserInfoFromWindowName(): void {
+    try {
+      if (window.name && window.name.startsWith('{')) {
+        this._userInfo = JSON.parse(window.name) as UserInfo
+      }
+    } catch {
+      // Invalid JSON or not in play mode
+      this._userInfo = null
+    }
   }
 
   /**
@@ -85,6 +104,14 @@ export class SandboxClient implements ISandboxClient {
    */
   get entryFile(): string {
     return this._entryFile
+  }
+
+  /**
+   * Get user information for the current play session
+   * Returns null if not in play mode or not yet loaded
+   */
+  get userInfo(): UserInfo | null {
+    return this._userInfo
   }
 
   /**

@@ -47,7 +47,8 @@ export { initSandboxClient, isSandboxEnvironment } from './init'
 // Types
 export type {
   ISandboxClient,
-  InitOptions
+  InitOptions,
+  UserInfo
 } from './types'
 
 export { SANDBOX_CLIENT_KEY } from './types'

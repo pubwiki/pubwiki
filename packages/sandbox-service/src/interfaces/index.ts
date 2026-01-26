@@ -16,6 +16,32 @@ import type { IHmrService } from "./hmr-service"
 import type { ICustomService, ServiceDefinition } from "./custom-service"
 
 /**
+ * User information for play mode
+ */
+export interface UserInfo {
+    /** Whether the user is logged in */
+    isLoggedIn: boolean
+    
+    /** User ID (null if not logged in) */
+    userId: string | null
+    
+    /** Username or display name (null if not logged in) */
+    username: string | null
+    
+    /** Save ID that the user loaded from (if loading from someone else's save) */
+    sourceSaveId: string | null
+    
+    /** Checkpoint ID that the user loaded from */
+    sourceCheckpointId: string | null
+    
+    /** User's own save ID (created when loading from cloud) */
+    userSaveId: string | null
+    
+    /** User's own starting checkpoint ID */
+    userCheckpointId: string | null
+}
+
+/**
  * Main service interface for sandbox-to-main communication
  * 
  * This is the primary interface exposed by the main site to sandbox applications.

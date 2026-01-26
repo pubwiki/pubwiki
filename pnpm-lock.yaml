@@ -711,6 +711,9 @@ importers:
       '@pubwiki/bundler':
         specifier: workspace:*
         version: link:../bundler
+      '@pubwiki/sandbox-client':
+        specifier: workspace:*
+        version: link:../sandbox-client
       '@pubwiki/sandbox-service':
         specifier: workspace:*
         version: link:../sandbox-service

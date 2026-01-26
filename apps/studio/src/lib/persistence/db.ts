@@ -125,6 +125,10 @@ export interface StoredProject {
   userId?: string;
   /** Whether this is a draft (not yet published) */
   isDraft: boolean;
+  /** Whether this project is hidden (created for Play mode) */
+  isHidden?: boolean;
+  /** State node ID for Play mode */
+  playStateNodeId?: string;
 }
 
 // ============================================================================

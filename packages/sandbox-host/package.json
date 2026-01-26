@@ -41,6 +41,7 @@
   "dependencies": {
     "@pubwiki/bundler": "workspace:*",
     "@pubwiki/sandbox-service": "workspace:*",
+    "@pubwiki/sandbox-client": "workspace:*",
     "@pubwiki/vfs": "workspace:*",
     "capnweb": "catalog:"
   },

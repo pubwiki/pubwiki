@@ -7,11 +7,11 @@
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
-	import type { SandboxConnection, ProjectConfig, CustomServiceFactory, MainRpcHostConfig, ICustomService, ServiceDefinition, JsonSchema, ConsoleLogEntry } from '@pubwiki/sandbox-host';
-	import { createSandboxConnection, RpcTarget, RpcStub, isStreamingService } from '@pubwiki/sandbox-host';
+	import type { SandboxConnection, ProjectConfig, ConsoleLogEntry } from '@pubwiki/sandbox-host';
+	import { createSandboxConnection } from '@pubwiki/sandbox-host';
 	import type { VersionedVfs } from '$lib/vfs';
 	import type { LoaderNodeData } from '$lib/types';
-	import { createLoaderInterface, type LoaderInterface } from '../loader/controller.svelte';
+	import { createLoaderServices } from '$lib/sandbox';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
@@ -71,171 +71,6 @@
 	const warnCount = $derived(consoleLogs.filter(l => l.level === 'warn').length);
 
 	const sandboxUrl = $derived(`${sandboxOrigin}/__sandbox.html`);
-
-	// ============================================================================
-	// Lua Service Bridge
-	// ============================================================================
-
-	/**
-	 * Bridge class that exposes Lua services via RPC.
-	 * 
-	 * This creates a dynamic RpcTarget that forwards method calls to the Lua VM.
-	 * When a method is called, it maps to a service call in the Lua ServiceRegistry.
-	 * Implements ICustomService interface for unified service access.
-	 * 
-	 * For streaming services (iterator-based), use the stream() method with callback.
-	 */
-	class LoaderServiceBridge extends RpcTarget implements ICustomService {
-		private loaderInterface: LoaderInterface;
-		private serviceIdentifier: string;
-		private serviceDef: ServiceDefinition | null = null;
-		private _isStreaming: boolean = false;
-		
-		constructor(loaderInterface: LoaderInterface, serviceIdentifier: string) {
-			super();
-			this.loaderInterface = loaderInterface;
-			this.serviceIdentifier = serviceIdentifier;
-		}
-
-		/**
-		 * Check if this is a streaming service
-		 */
-		get isStreaming(): boolean {
-			return this._isStreaming;
-		}
-
-		/**
-		 * Initialize the bridge by loading service definition
-		 */
-		async init(): Promise<void> {
-			const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
-			
-			if (def) {
-				this.serviceDef = def;
-				this._isStreaming = isStreamingService(def);
-			}
-		}
-
-		/**
-		 * Call the Lua service with given inputs.
-		 * This is the main entry point for RPC calls (non-streaming).
-		 * 
-		 * @param inputs - Key-value map of inputs to pass to the service
-		 * @returns The outputs from the service call
-		 */
-		async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
-			if (this._isStreaming) {
-				throw new Error(`Service ${this.serviceIdentifier} is a streaming service. Use stream() method instead.`);
-			}
-
-			const result = await this.loaderInterface.callService(this.serviceIdentifier, inputs);
-			if (!result.success) {
-				throw new Error(result.error ?? 'Service call failed');
-			}
-			return result.outputs ?? {};
-		}
-
-		/**
-		 * Call a streaming service with callback.
-		 * 
-		 * For services that return an iterator, this method iterates over all values
-		 * and invokes the callback for each yielded value.
-		 * 
-		 * Note: The `on` parameter comes as an RpcTarget stub from the sandbox side,
-		 * which has an `on(value)` method. We type it as `any` here because the RPC
-		 * layer transforms the callback function into an RpcTarget stub.
-		 * 
-		 * @param inputs - Input parameters for the service
-		 * @param on - RpcTarget stub with on(value) method, or callback function
-		 */
-		async stream(
-			inputs: Record<string, unknown>,
-			callback: RpcStub<(value: unknown) => Promise<void> | void>
-		): Promise<void> {
-			if (!this._isStreaming) {
-				throw new Error(`Service ${this.serviceIdentifier} is not a streaming service`);
-			}
-			
-			await this.loaderInterface.streamService(
-				this.serviceIdentifier,
-				inputs,
-				callback
-			);
-		}
-
-		/**
-		 * Get service definition with JSON Schema.
-		 * Required by ICustomService interface.
-		 */
-		async getDefinition(): Promise<ServiceDefinition> {
-			if (!this.serviceDef) {
-				const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
-				if (!def) {
-					throw new Error(`Service definition not found: ${this.serviceIdentifier}`);
-				}
-				this.serviceDef = def;
-			}
-			return this.serviceDef;
-		}
-
-		/**
-		 * Check if the loader is still ready
-		 */
-		isReady(): boolean {
-			return this.loaderInterface.isReady();
-		}
-	}
-
-	// ============================================================================
-	// Service Factory
-	// ============================================================================
-
-	/**
-	 * Create service factories from connected Loader nodes.
-	 * 
-	 * Each service registered in Lua ServiceRegistry is exposed via a LuaServiceBridge.
-	 * The bridge forwards RPC calls to the actual Lua VM implementation.
-	 * 
-	 * This is now async because registeredServices is obtained via listServices().
-	 */
-	async function createLoaderServices(): Promise<Map<string, CustomServiceFactory<MainRpcHostConfig>>> {
-		const services = new Map<string, CustomServiceFactory<MainRpcHostConfig>>();
-
-		for (const loaderInfo of loaderNodes) {
-			// Create interface for this loader node
-			const loaderInterface = createLoaderInterface(loaderInfo.id);
-			
-			// Skip loaders that aren't ready
-			if (!loaderInterface.isReady()) continue;
-			
-			// Get registered services from the loader
-			let serviceDefinitions: ServiceDefinition[];
-			try {
-				serviceDefinitions = await loaderInterface.listServices();
-			} catch (e) {
-				console.warn(`[SandboxPreviewView] Failed to list services for loader ${loaderInfo.id}:`, e);
-				continue;
-			}
-			
-			// For each registered service, create a factory
-			for (const serviceDef of serviceDefinitions) {
-				const serviceIdentifier = serviceDef.identifier;
-				// Create factory that returns a LuaServiceBridge
-				services.set(serviceIdentifier, () => {
-					const bridge = new LoaderServiceBridge(loaderInterface, serviceIdentifier);
-					// Initialize asynchronously (service definition loading)
-					bridge.init().catch(err => {
-						console.error(`[LuaServiceBridge] Failed to init ${serviceIdentifier}:`, err);
-					});
-					return bridge;
-				});
-				
-				console.log(`[SandboxPreviewView] Registered Lua service: ${serviceIdentifier}`);
-			}
-		}
-
-		return services;
-	}
 
 	// ============================================================================
 	// Portal action
@@ -327,7 +162,8 @@
 			error = null;
 
 			// Collect custom services from connected Loader nodes
-			const customServices = loaderNodes.length > 0 ? await createLoaderServices() : undefined;
+			const loaderNodeIds = loaderNodes.map(l => l.id);
+			const customServices = loaderNodeIds.length > 0 ? await createLoaderServices(loaderNodeIds) : undefined;
 
 			// Create sandbox connection - it will auto-initialize when sandbox sends SANDBOX_READY
 			sandboxConnection = createSandboxConnection({
