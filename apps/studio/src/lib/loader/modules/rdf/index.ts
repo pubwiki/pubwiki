@@ -82,7 +82,7 @@ function rdfToLuaValue(value: string, datatype: string): unknown {
     case PUBWIKI_LUAVALUE: {
       // Parse JSON and wrap in LuaTable for deep conversion to Lua table
       const parsed = JSON.parse(value)
-      return new LuaTable(parsed)
+      return parsed
     }
     
     default:
@@ -269,7 +269,7 @@ export function createStateModule(store: RDFStore) {
       
       const first = quads[0]
       if (first.object.termType === 'Literal') {
-        return rdfToLuaValue(first.object.value, first.object.datatype?.value || XSD_STRING)
+        return new LuaTable(rdfToLuaValue(first.object.value, first.object.datatype?.value || XSD_STRING))
       }
       return first.object.value
     },
