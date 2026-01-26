@@ -27,6 +27,16 @@ unsafe extern "C" {
         args_count: u32,
         callback_id: u32,
     );
+    
+    // Async iterator 支持
+    fn js_async_iterator_next(
+        iterator_id: u32,
+        callback_id: u32,
+    );
+    
+    fn js_async_iterator_close(
+        iterator_id: u32,
+    );
 }
 
 // ==================== JsProxy 结构体 ====================
@@ -75,17 +85,13 @@ impl Clone for JsProxy {
 // ==================== 类型转换 ====================
 
 /// 检查 table 是否是数组类型（连续整数键从 1 开始）
+/// Note: 空表被视为对象（返回 false），这是更常见的使用场景
 fn is_array_like(table: &LuaTable) -> LuaResult<bool> {
     let len = table.raw_len();
     if len == 0 {
-        // 空表检查是否有非整数键
-        for pair in table.pairs::<LuaValue, LuaValue>() {
-            let (k, _) = pair?;
-            if !matches!(k, LuaValue::Integer(_)) {
-                return Ok(false);
-            }
-        }
-        return Ok(true);
+        // 空表视为对象，而非数组
+        // 这样 json.encode({}) 会产生 "{}" 而非 "[]"
+        return Ok(false);
     }
 
     // 检查是否所有键都是 1..=len 的整数
@@ -157,6 +163,149 @@ pub fn lua_to_val(lua: &Lua, value: LuaValue, instance_id: u32) -> LuaResult<JsV
     }
 }
 
+/// 创建 async iterator 的迭代器函数
+/// 返回一个 Lua 函数，每次调用时获取下一个值，返回 nil 时表示迭代结束
+fn create_async_iterator_function(lua: &Lua, iterator_id: u32, instance_id: u32) -> LuaResult<LuaFunction> {
+    lua.create_async_function(move |lua, _: ()| {
+        async move {
+            // 注册回调
+            let (callback_id, rx) = register_callback();
+            
+            // 调用 JavaScript 的 iterator.next()
+            unsafe {
+                js_async_iterator_next(iterator_id, callback_id);
+            }
+            
+            // 等待结果
+            let result = rx.recv().await
+                .map_err(|e| LuaError::external(format!("Iterator receive error: {}", e)))?;
+            
+            match result {
+                PromiseResult::Success { handle } => {
+                    // handle 为 0 表示 undefined
+                    if handle == 0 {
+                        // 返回 undefined，表示迭代结束
+                        unsafe {
+                            js_async_iterator_close(iterator_id);
+                        }
+                        return Ok(LuaValue::Nil);
+                    }
+                    
+                    let result_val = JsVal::from_handle(handle as EM_VAL);
+                    
+                    // 获取 done 和 value
+                    let done_val = result_val.get("done");
+                    let done = done_val.is_true();
+                    
+                    if done {
+                        // 迭代结束，关闭 iterator 并返回 nil
+                        unsafe {
+                            js_async_iterator_close(iterator_id);
+                        }
+                        Ok(LuaValue::Nil)
+                    } else {
+                        // 返回 value
+                        let value_val = result_val.get("value");
+                        val_to_lua(&lua, value_val, instance_id)
+                    }
+                }
+                PromiseResult::Error { message } => {
+                    // 发生错误时也关闭 iterator
+                    unsafe {
+                        js_async_iterator_close(iterator_id);
+                    }
+                    Err(LuaError::external(message))
+                }
+            }
+        }
+    })
+}
+
+/// 检查 JS 值是否是 AsyncIterator 标记对象
+/// 使用 Symbol.for('pubwiki.lua.asyncIterator') 进行检测
+/// 如果是，返回 iterator_id
+fn get_async_iterator_id(val: &JsVal) -> Option<u32> {
+    if val.type_of() != "object" {
+        return None;
+    }
+    
+    // 获取 Symbol.for('pubwiki.lua.asyncIterator')
+    let symbol = JsVal::global("Symbol").call_method("for", &[&JsVal::from_str("pubwiki.lua.asyncIterator")]);
+    
+    // 检查 symbol 是否存在于对象中
+    if val.has_val(&symbol) {
+        let iter_id_val = val.get_val(&symbol);
+        if iter_id_val.is_number() {
+            return Some(iter_id_val.as_f64() as u32);
+        }
+    }
+    None
+}
+
+/// 检查 JS 值是否被 LuaValue 包装器标记（应该深度转换为 Lua 原生类型）
+/// 如果是，返回内部的 value
+fn get_lua_value_inner(val: &JsVal) -> Option<JsVal> {
+    if val.type_of() != "object" {
+        return None;
+    }
+    
+    // 获取 Symbol.for('pubwiki.lua.value')
+    let symbol = JsVal::global("Symbol").call_method("for", &[&JsVal::from_str("pubwiki.lua.value")]);
+    
+    // 检查 symbol 是否存在于对象中
+    if val.has_val(&symbol) {
+        Some(val.get("value"))
+    } else {
+        None
+    }
+}
+
+/// 深度转换：递归将 JS 对象/数组转换为 Lua tables
+fn val_to_lua_deep(lua: &Lua, val: JsVal, instance_id: u32) -> LuaResult<LuaValue> {
+    if val.is_undefined() || val.is_null() {
+        return Ok(LuaValue::Nil);
+    }
+    if val.is_string() {
+        let s = val.as_string();
+        return Ok(LuaValue::String(lua.create_string(&s)?));
+    }
+    if val.is_number() {
+        let n = val.as_f64();
+        // 检查是否可以表示为整数
+        if n.fract() == 0.0 && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
+            return Ok(LuaValue::Integer(n as i64));
+        }
+        return Ok(LuaValue::Number(n));
+    }
+    if val.is_true() {
+        return Ok(LuaValue::Boolean(true));
+    }
+    if val.is_false() {
+        return Ok(LuaValue::Boolean(false));
+    }
+    if val.is_array() {
+        let table = lua.create_table()?;
+        let len = val.length();
+        for i in 0..len {
+            let item = val.get_index(i);
+            let lua_item = val_to_lua_deep(lua, item, instance_id)?;
+            table.raw_set(i + 1, lua_item)?;  // Lua 数组是 1-indexed
+        }
+        return Ok(LuaValue::Table(table));
+    }
+    // 普通对象
+    let table = lua.create_table()?;
+    let keys = val.keys();
+    let keys_len = keys.length();
+    for i in 0..keys_len {
+        let key = keys.get_index(i).as_string();
+        let value = val.get(&key);
+        let lua_value = val_to_lua_deep(lua, value, instance_id)?;
+        table.raw_set(key, lua_value)?;
+    }
+    Ok(LuaValue::Table(table))
+}
+
 /// JS JsVal 转 Lua 值
 pub fn val_to_lua(lua: &Lua, val: JsVal, instance_id: u32) -> LuaResult<LuaValue> {
     if val.is_undefined() || val.is_null() {
@@ -177,6 +326,17 @@ pub fn val_to_lua(lua: &Lua, val: JsVal, instance_id: u32) -> LuaResult<LuaValue
         let s = val.as_string();
         Ok(LuaValue::String(lua.create_string(&s)?))
     } else {
+        // 检查是否是 LuaValue 标记（需要深度转换）
+        if let Some(inner_val) = get_lua_value_inner(&val) {
+            return val_to_lua_deep(lua, inner_val, instance_id);
+        }
+        
+        // 检查是否是 async iterator 标记
+        if let Some(iterator_id) = get_async_iterator_id(&val) {
+            let iter_func = create_async_iterator_function(lua, iterator_id, instance_id)?;
+            return Ok(LuaValue::Function(iter_func));
+        }
+        
         // 对象、函数等都包装为 JsProxy，支持懒加载和调用
         let proxy = JsProxy::new(val, instance_id);
         let ud = lua.create_userdata(proxy)?;

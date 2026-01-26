@@ -12,6 +12,7 @@ export type {
 	BackendInitResult,
 	ServiceCallResult,
 	JsModuleDefinition,
+	JsModuleEntry,
 	JsModuleRegistry,
 	RDFStore,
 	BackendType,

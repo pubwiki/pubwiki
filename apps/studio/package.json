@@ -10,6 +10,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"test": "vitest run",
+		"test:watch": "vitest",
 		"i18n": "pnpm exec paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide"
 	},
 	"devDependencies": {
@@ -22,6 +24,9 @@
 		"@types/dagre": "^0.7.53",
 		"@types/n3": "catalog:",
 		"@types/node": "catalog:",
+		"fake-indexeddb": "^6.2.5",
+		"memory-level": "catalog:",
+		"vitest": "^4.0.17",
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"tailwindcss": "catalog:",

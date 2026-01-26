@@ -44,7 +44,6 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
-    "@types/n3": "catalog:",
     "@vitest/ui": "catalog:",
     "fake-indexeddb": "^6.2.5",
     "memory-level": "catalog:",
@@ -52,8 +51,6 @@
     "vitest": "catalog:"
   },
   "dependencies": {
-    "@pubwiki/rdfstore": "workspace:*",
-    "@pubwiki/vfs": "workspace:*",
-    "n3": "catalog:"
+    "@pubwiki/vfs": "workspace:*"
   }
 }

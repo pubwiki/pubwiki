@@ -1,23 +1,17 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import { loadRunner, createLuaInstance, type LuaInstance } from '../../src/index'
-import { RDFStore } from '@pubwiki/rdfstore'
-import { MemoryLevel } from 'memory-level'
 
-// 计数器用于生成唯一的数据库名称
-let dbCounter = 0
-
-// 辅助函数：创建一个新的内存 RDFStore
-async function createMemoryStore(): Promise<RDFStore> {
-  const level = new MemoryLevel()
-  const versionDbName = `test-version-db-${Date.now()}-${dbCounter++}`
-  return RDFStore.create({
-    quadstoreLevel: level,
-    versionDbName
-  })
-}
+// Simple json module for testing JsProxy serialization
+const createTestJsonModule = () => ({
+  encode(value: unknown): string {
+    return JSON.stringify(value)
+  },
+  decode(str: string): unknown {
+    return JSON.parse(str)
+  }
+})
 
 describe('JsProxy - 参数传递', () => {
-  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
@@ -25,15 +19,13 @@ describe('JsProxy - 参数传递', () => {
   })
 
   beforeEach(async () => {
-    store = await createMemoryStore()
-    instance = createLuaInstance({ rdfStore: store })
+    instance = createLuaInstance()
+    // Register json module for tests that need it
+    instance.registerJsModule('json', createTestJsonModule(), { mode: 'global' })
   })
 
   afterEach(async () => {
     instance.destroy()
-    if (store.isOpen) {
-      await store.close()
-    }
   })
 
   describe('基本类型传递', () => {
@@ -547,7 +539,6 @@ describe('JsProxy - 参数传递', () => {
 })
 
 describe('JsProxy - 与 JS 模块集成', () => {
-  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
@@ -555,15 +546,11 @@ describe('JsProxy - 与 JS 模块集成', () => {
   })
 
   beforeEach(async () => {
-    store = await createMemoryStore()
-    instance = createLuaInstance({ rdfStore: store })
+    instance = createLuaInstance()
   })
 
   afterEach(async () => {
     instance.destroy()
-    if (store.isOpen) {
-      await store.close()
-    }
   })
 
   it('应该能同时使用 JS 模块和参数', async () => {
@@ -608,7 +595,6 @@ describe('JsProxy - 与 JS 模块集成', () => {
 })
 
 describe('JsProxy - table.insert 和 table.remove 支持', () => {
-  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
@@ -616,15 +602,11 @@ describe('JsProxy - table.insert 和 table.remove 支持', () => {
   })
 
   beforeEach(async () => {
-    store = await createMemoryStore()
-    instance = createLuaInstance({ rdfStore: store })
+    instance = createLuaInstance()
   })
 
   afterEach(async () => {
     instance.destroy()
-    if (store.isOpen) {
-      await store.close()
-    }
   })
 
   describe('table.insert 基本操作', () => {

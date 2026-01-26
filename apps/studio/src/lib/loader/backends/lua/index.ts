@@ -249,18 +249,17 @@ export class LuaBackend implements LoaderBackend {
 				provider.mount(`/user/assets${path}`, vfs);
 			}
 
-			// Create Lua instance with RDF store if provided
+			// Create Lua instance
 			this.instance = createLuaInstance({
 				vfs: this.mountedVfs,
-				workingDirectory: '/',
-				rdfStore: config.rdfStore
+				workingDirectory: '/'
 			});
 
 			// Register JS modules from config
 			if (config.jsModules) {
-				for (const [name, module] of config.jsModules) {
-					console.log(`[LuaBackend] Registering JS module: ${name}`);
-					this.instance.registerJsModule(name, module);
+				for (const [name, entry] of config.jsModules) {
+					console.log(`[LuaBackend] Registering JS module: ${name} (mode: ${entry.mode ?? 'module'})`);
+					this.instance.registerJsModule(name, entry.module, { mode: entry.mode ?? 'module' });
 				}
 			}
 

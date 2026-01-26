@@ -3,10 +3,10 @@
  *
  * Functions to publish workspace nodes as an artifact to the backend.
  * 
- * After content-type refactoring:
- * - All node content is stored in node.data.content
- * - Content is uploaded as JSON for structured data preservation
- * - VFS nodes upload all files and include file list in descriptor
+ * After artifact storage refactoring:
+ * - Non-VFS nodes: content is stored in descriptor, no separate file uploads
+ * - VFS nodes: files are packaged as tar.gz and uploaded separately
+ * - Simplified upload: just descriptor with content + VFS tar.gz archives
  * 
  * After layer separation:
  * - FlowNodeData for flow layer
@@ -24,6 +24,133 @@ import { nodeStore } from '../persistence';
 
 // Create a singleton API client
 const apiClient = createApiClient(API_BASE_URL);
+
+// ============================================================================
+// Simple TAR Implementation
+// ============================================================================
+
+/**
+ * Create a TAR header for a file
+ * TAR uses 512-byte headers with ustar format
+ */
+function createTarHeader(filename: string, size: number): Uint8Array {
+	const header = new Uint8Array(512);
+	const encoder = new TextEncoder();
+	
+	// Truncate filename to 100 chars (TAR limit)
+	const name = filename.slice(0, 100);
+	
+	// File name (0-99)
+	header.set(encoder.encode(name), 0);
+	
+	// File mode (100-107) - regular file with 644 permissions
+	header.set(encoder.encode('0000644\0'), 100);
+	
+	// UID (108-115) - 0
+	header.set(encoder.encode('0000000\0'), 108);
+	
+	// GID (116-123) - 0
+	header.set(encoder.encode('0000000\0'), 116);
+	
+	// File size in octal (124-135)
+	const sizeOctal = size.toString(8).padStart(11, '0') + ' ';
+	header.set(encoder.encode(sizeOctal), 124);
+	
+	// Modification time (136-147) - current time
+	const mtime = Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + ' ';
+	header.set(encoder.encode(mtime), 136);
+	
+	// Checksum placeholder (148-155) - filled with spaces for calculation
+	header.set(encoder.encode('        '), 148);
+	
+	// Type flag (156) - '0' for regular file
+	header[156] = 0x30; // '0'
+	
+	// Link name (157-256) - empty
+	
+	// Magic (257-262) - 'ustar\0'
+	header.set(encoder.encode('ustar\0'), 257);
+	
+	// Version (263-264) - '00'
+	header.set(encoder.encode('00'), 263);
+	
+	// Calculate checksum (sum of all bytes in header, treating checksum field as spaces)
+	let checksum = 0;
+	for (let i = 0; i < 512; i++) {
+		checksum += header[i];
+	}
+	const checksumStr = checksum.toString(8).padStart(6, '0') + '\0 ';
+	header.set(encoder.encode(checksumStr), 148);
+	
+	return header;
+}
+
+/**
+ * Create a TAR archive from files
+ */
+function createTar(files: { path: string; content: Uint8Array }[]): Uint8Array {
+	const chunks: Uint8Array[] = [];
+	
+	for (const file of files) {
+		// Create header
+		const header = createTarHeader(file.path, file.content.byteLength);
+		chunks.push(header);
+		
+		// Add file content
+		chunks.push(file.content);
+		
+		// Pad to 512-byte boundary
+		const padding = 512 - (file.content.byteLength % 512);
+		if (padding < 512) {
+			chunks.push(new Uint8Array(padding));
+		}
+	}
+	
+	// Add two empty blocks to mark end of archive
+	chunks.push(new Uint8Array(1024));
+	
+	// Concatenate all chunks
+	const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+	const result = new Uint8Array(totalLength);
+	let offset = 0;
+	for (const chunk of chunks) {
+		result.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	
+	return result;
+}
+
+/**
+ * Compress data using gzip via CompressionStream API
+ */
+async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
+	const stream = new CompressionStream('gzip');
+	const writer = stream.writable.getWriter();
+	// Create a new ArrayBuffer to avoid TypeScript type issues with SharedArrayBuffer
+	const buffer = new Uint8Array(data).buffer as ArrayBuffer;
+	writer.write(buffer);
+	writer.close();
+	
+	const chunks: Uint8Array[] = [];
+	const reader = stream.readable.getReader();
+	
+	while (true) {
+		const { done, value } = await reader.read();
+		if (done) break;
+		chunks.push(value);
+	}
+	
+	const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+	const result = new Uint8Array(totalLength);
+	let offset = 0;
+	for (const chunk of chunks) {
+		result.set(chunk, offset);
+		offset += chunk.byteLength;
+	}
+	
+	return result;
+}
 
 /**
  * Metadata for publishing an artifact
@@ -57,6 +184,9 @@ interface OriginalRefDescriptor {
 
 /**
  * Artifact descriptor for API
+ * After artifact storage refactoring:
+ * - content field contains the serialized node content (for non-external nodes)
+ * - VFS nodes include filesSummary instead of files array
  */
 interface ArtifactNodeDescriptor {
 	id: string;
@@ -64,7 +194,13 @@ interface ArtifactNodeDescriptor {
 	type: ApiNodeType;
 	name?: string;
 	position: { x: number, y: number }
-	files?: string[];
+	/** Serialized node content (included for non-external nodes) */
+	content?: unknown;
+	/** Summary of files for VFS nodes (count, size, etc.) */
+	filesSummary?: {
+		totalFiles: number;
+		totalSize: number;
+	};
 	/** Reference to the original external node (for Fork-on-Write) */
 	originalRef?: OriginalRefDescriptor;
 }
@@ -84,43 +220,11 @@ interface ArtifactDescriptor {
 }
 
 // ============================================================================
-// VFS File Collection Helpers
+// VFS File Collection and Packaging Helpers
 // ============================================================================
 
 /**
- * Recursively collect all file paths from a VFS
- */
-async function collectVfsFilePaths(
-	projectId: string,
-	nodeId: string
-): Promise<string[]> {
-	const vfs = await getNodeVfs(projectId, nodeId);
-	const filePaths: string[] = [];
-
-	async function collectRecursive(path: string): Promise<void> {
-		const items = await vfs.listFolder(path);
-		for (const item of items) {
-			if ('folderPath' in item) {
-				// It's a file (VfsFile has folderPath, VfsFolder has parentPath)
-				filePaths.push(item.path);
-			} else {
-				// It's a folder, recurse into it
-				await collectRecursive(item.path);
-			}
-		}
-	}
-
-	try {
-		await collectRecursive('/');
-	} catch {
-		// VFS might be empty or not initialized
-	}
-
-	return filePaths;
-}
-
-/**
- * File info for VFS upload
+ * File info for VFS packaging
  */
 interface VfsFileInfo {
 	path: string;
@@ -165,6 +269,35 @@ async function collectVfsFiles(
 	return files;
 }
 
+/**
+ * Package VFS files as a tar.gz archive
+ */
+async function packageVfsAsTarGz(
+	projectId: string,
+	nodeId: string
+): Promise<{ archive: Uint8Array; totalFiles: number; totalSize: number }> {
+	const files = await collectVfsFiles(projectId, nodeId);
+	
+	let totalSize = 0;
+	const tarFiles: { path: string; content: Uint8Array }[] = [];
+	
+	for (const file of files) {
+		// Remove leading slash for tar path
+		const tarPath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
+		tarFiles.push({ path: tarPath, content: file.content });
+		totalSize += file.content.byteLength;
+	}
+	
+	const tarData = createTar(tarFiles);
+	const gzipped = await gzipCompress(tarData);
+	
+	return {
+		archive: gzipped,
+		totalFiles: files.length,
+		totalSize
+	};
+}
+
 // ============================================================================
 // Descriptor and FormData Creation
 // ============================================================================
@@ -184,16 +317,20 @@ function isExternalNodeModified(node: StudioNodeData): boolean {
  * Result of preparing nodes for publish with Fork-on-Write applied
  */
 interface PreparedNodes {
-	/** Node descriptors for the API */
+	/** Node descriptors for the API (includes content) */
 	descriptors: ArtifactNodeDescriptor[];
 	/** Map from original node ID to forked node ID (for edge remapping) */
 	idMapping: Map<string, string>;
-	/** Nodes that need content uploaded (includes forked external nodes) */
-	nodesToUpload: Node<StudioNodeData>[];
+	/** VFS nodes that need tar.gz archives uploaded (nodeId -> archive data) */
+	vfsArchives: Map<string, Uint8Array>;
 }
 
 /**
  * Prepare nodes for publish, applying Fork-on-Write for modified external nodes
+ * 
+ * After artifact storage refactoring:
+ * - Non-VFS nodes: content is serialized directly into descriptor
+ * - VFS nodes: files are packaged as tar.gz, only filesSummary in descriptor
  * 
  * Fork-on-Write: When an external node has been modified (commit != originalRef.commit),
  * it is "forked" into a new internal node with a new ID, preserving the originalRef
@@ -204,7 +341,7 @@ async function prepareNodesForPublish(
 ): Promise<PreparedNodes> {
 	const descriptors: ArtifactNodeDescriptor[] = [];
 	const idMapping = new Map<string, string>();
-	const nodesToUpload: Node<StudioNodeData>[] = [];
+	const vfsArchives = new Map<string, Uint8Array>();
 
 	for (const node of nodes) {
 		const isModifiedExternal = isExternalNodeModified(node.data);
@@ -224,21 +361,23 @@ async function prepareNodesForPublish(
 				originalRef: node.data.originalRef
 			};
 
-			// For VFS nodes, include file list
+			// Add content based on node type
 			if (node.data.type === 'VFS') {
 				const vfsData = node.data as VFSNodeData;
-				const filePaths = await collectVfsFilePaths(vfsData.content.projectId, node.data.id);
-				descriptor.files = filePaths;
+				const { archive, totalFiles, totalSize } = await packageVfsAsTarGz(
+					vfsData.content.projectId, 
+					node.data.id  // Use original ID to access VFS
+				);
+				vfsArchives.set(newId, archive);  // Use new ID for upload
+				descriptor.content = vfsData.content.toJSON();
+				descriptor.filesSummary = { totalFiles, totalSize };
+			} else {
+				descriptor.content = node.data.content.toJSON();
 			}
 
 			descriptors.push(descriptor);
-			// Forked nodes need content uploaded
-			nodesToUpload.push({
-				...node,
-				data: { ...node.data, id: newId } as StudioNodeData
-			});
 		} else if (node.data.external) {
-			// Unmodified external node - just reference it
+			// Unmodified external node - just reference it (no content)
 			descriptors.push({
 				id: node.data.id,
 				external: true,
@@ -257,31 +396,41 @@ async function prepareNodesForPublish(
 				position: { x: node.position.x, y: node.position.y }
 			};
 
-			// For VFS nodes, include file list
+			// Add content based on node type
 			if (node.data.type === 'VFS') {
 				const vfsData = node.data as VFSNodeData;
-				const filePaths = await collectVfsFilePaths(vfsData.content.projectId, node.data.id);
-				descriptor.files = filePaths;
+				const { archive, totalFiles, totalSize } = await packageVfsAsTarGz(
+					vfsData.content.projectId,
+					node.data.id
+				);
+				vfsArchives.set(node.data.id, archive);
+				descriptor.content = vfsData.content.toJSON();
+				descriptor.filesSummary = { totalFiles, totalSize };
+			} else {
+				descriptor.content = node.data.content.toJSON();
 			}
 
 			descriptors.push(descriptor);
-			nodesToUpload.push(node);
 		}
 	}
 
-	return { descriptors, idMapping, nodesToUpload };
+	return { descriptors, idMapping, vfsArchives };
 }
 
 /**
  * Prepare artifact descriptor from nodes and edges
+ * 
+ * After artifact storage refactoring:
+ * - Descriptors include content for non-external nodes
+ * - VFS nodes have their files packaged separately as tar.gz
+ * 
  * Applies Fork-on-Write for modified external nodes
- * VFS nodes include their file list
  */
 async function createDescriptor(
 	nodes: Node<StudioNodeData>[],
 	edges: Edge[]
-): Promise<{ descriptor: ArtifactDescriptor; nodesToUpload: Node<StudioNodeData>[] }> {
-	const { descriptors, idMapping, nodesToUpload } = await prepareNodesForPublish(nodes);
+): Promise<{ descriptor: ArtifactDescriptor; vfsArchives: Map<string, Uint8Array> }> {
+	const { descriptors, idMapping, vfsArchives } = await prepareNodesForPublish(nodes);
 
 	// Remap edge source/target IDs for forked nodes
 	const edgeDescriptors: ArtifactEdgeDescriptor[] = edges.map((edge) => ({
@@ -298,31 +447,26 @@ async function createDescriptor(
 		edges: edgeDescriptors
 	};
 
-	return { descriptor, nodesToUpload };
+	return { descriptor, vfsArchives };
 }
 
 /**
  * Create form data for multipart upload
  * 
- * After content-type refactoring:
- * - All node content is uploaded as JSON (node.json)
- * - This preserves structured data like MessageBlocks, mountpoints, etc.
- * - Only nodesToUpload are processed (external nodes already filtered out)
- * - VFS nodes upload all their files
+ * After artifact storage refactoring:
+ * - Descriptor contains all node content (no separate node.json uploads)
+ * - Only VFS nodes need separate file uploads (as tar.gz archives)
  * 
- * @param nodesToUpload - Pre-filtered nodes that need content uploaded (includes forked external nodes)
- * @param originalNodes - Original nodes for VFS file access (needed for forked VFS nodes)
+ * @param metadata - Artifact metadata
+ * @param descriptor - Artifact descriptor (includes node content)
+ * @param vfsArchives - Map of VFS node ID to tar.gz archive data
  */
-async function createFormData(
+function createFormData(
 	metadata: PublishMetadata,
 	descriptor: ArtifactDescriptor,
-	nodesToUpload: Node<StudioNodeData>[],
-	originalNodes: Node<StudioNodeData>[]
-): Promise<FormData> {
+	vfsArchives: Map<string, Uint8Array>
+): FormData {
 	const formData = new FormData();
-
-	// Build a map from node ID to original node for VFS file access
-	const originalNodeMap = new Map(originalNodes.map(n => [n.data.id, n]));
 
 	// Add metadata as JSON string
 	const metadataJson = JSON.stringify({
@@ -337,36 +481,14 @@ async function createFormData(
 	});
 	formData.append('metadata', metadataJson);
 
-	// Add descriptor as JSON string
+	// Add descriptor as JSON string (includes all node content)
 	formData.append('descriptor', JSON.stringify(descriptor));
 
-	// Add node content files
-	for (const node of nodesToUpload) {
-		if (node.data.type === 'VFS') {
-			// For VFS nodes, upload all files
-			// For forked VFS nodes, we need to get files from the original node's VFS
-			const vfsData = node.data as VFSNodeData;
-			
-			// Find original node to get the correct VFS projectId
-			// For forked nodes, node.data.id is the new ID, but we need original ID for VFS access
-			const originalNode = originalNodeMap.get(node.id) ?? node;
-			const originalVfsData = originalNode.data as VFSNodeData;
-			
-			const files = await collectVfsFiles(originalVfsData.content.projectId, originalNode.data.id);
-			
-			for (const file of files) {
-				// Remove leading slash from path for the filename
-				const filename = file.path.startsWith('/') ? file.path.slice(1) : file.path;
-				const blob = new Blob([file.content.buffer as ArrayBuffer], { type: 'application/octet-stream' });
-				// Use the (potentially new) node ID for the upload key
-				formData.append(`nodes[${node.data.id}]`, blob, filename);
-			}
-		} else {
-			// For other nodes, upload content as JSON
-			const contentJson = JSON.stringify(node.data.content.toJSON());
-			const blob = new Blob([contentJson], { type: 'application/json' });
-			formData.append(`nodes[${node.data.id}]`, blob, 'node.json');
-		}
+	// Add VFS tar.gz archives
+	for (const [nodeId, archive] of vfsArchives.entries()) {
+		// Create a new Uint8Array to ensure proper ArrayBuffer type
+		const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
+		formData.append(`vfs[${nodeId}]`, blob, `${nodeId}.tar.gz`);
 	}
 
 	// Add homepage markdown if provided
@@ -406,6 +528,10 @@ function validateStateNodes(nodes: Node<StudioNodeData>[]): { valid: boolean; er
 /**
  * Publish nodes as an artifact to the backend
  * 
+ * After artifact storage refactoring:
+ * - Descriptor includes all node content (no separate file uploads)
+ * - Only VFS nodes need separate tar.gz archive uploads
+ * 
  * After layer separation:
  * - Takes FlowNodeData nodes from flow layer
  * - Gets business data from nodeStore
@@ -442,9 +568,9 @@ export async function publishArtifact(
 		};
 	}
 
-	// Create descriptor with Fork-on-Write applied
-	const { descriptor, nodesToUpload } = await createDescriptor(nodes, edges);
-	const formData = await createFormData(metadata, descriptor, nodesToUpload, nodes);
+	// Create descriptor with content and VFS archives
+	const { descriptor, vfsArchives } = await createDescriptor(nodes, edges);
+	const formData = createFormData(metadata, descriptor, vfsArchives);
 
 	try {
 		// Use openapi-fetch with custom bodySerializer for FormData

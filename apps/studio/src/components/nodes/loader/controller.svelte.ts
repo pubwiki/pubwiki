@@ -36,6 +36,7 @@ import { getNodeVfs } from '$lib/vfs';
 import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import type { LLMConfig, PubChat } from '@pubwiki/chat';
 import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
+import type { RDFStore } from '@pubwiki/rdfstore';
 
 // Import loader backend abstraction
 import {
@@ -53,6 +54,8 @@ import {
 	createPubChat, 
 	createPubWikiModule,
 	createPartialJsonModule,
+	createJsonModule,
+	createStateModule,
 	type PubWikiModuleContext 
 } from '$lib/loader/modules';
 
@@ -248,7 +251,7 @@ export async function initializeLoader(
 	nodeId: string,
 	backendVfs: Vfs<VfsProvider>,
 	assetMounts: Map<string, Vfs<VfsProvider>>,
-	rdfStore: unknown | undefined,
+	rdfStore: RDFStore | undefined,
 	llmConfig: LLMConfig | undefined,
 	pubwikiContext?: PubWikiModuleContext
 ): Promise<LoaderInitResult> {
@@ -269,6 +272,14 @@ export async function initializeLoader(
 		// Build JS modules registry
 		const jsModules: JsModuleRegistry = new Map();
 		
+		// Register JSON module (preload - available globally)
+		jsModules.set('json', { module: createJsonModule(), mode: 'global' });
+		
+		// Register State module if RDF store is available (preload - available globally)
+		if (rdfStore) {
+			jsModules.set('State', { module: createStateModule(rdfStore), mode: 'global' });
+		}
+		
 		// Create PubChat and LLM module if config is provided
 		// Uses RDFMessageStore when rdfStore is available, otherwise MemoryMessageStore
 		let pubchat: PubChat | undefined;
@@ -277,15 +288,15 @@ export async function initializeLoader(
 			rdfStore: rdfStore as BackendConfig['rdfStore']
 		});
 		pubchat = pc;
-		jsModules.set('LLM', createLLMModule(pubchat, messageStore));
+		jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore) });
 		
 		// Register PubWiki module if context is provided
 		if (pubwikiContext) {
-			jsModules.set('pubwiki', createPubWikiModule(pubwikiContext));
+			jsModules.set('pubwiki', { module: createPubWikiModule(pubwikiContext) });
 		}
 		
 		// Register partial-json module (always available)
-		jsModules.set('partial-json', createPartialJsonModule());
+		jsModules.set('partial-json', { module: createPartialJsonModule() });
 		
 		// Build backend config
 		const config: BackendConfig = {

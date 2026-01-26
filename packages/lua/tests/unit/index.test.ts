@@ -1,68 +1,19 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
-import { loadRunner, runLua, createLuaInstance, type LuaInstance } from '../../src/index'
-import { RDFStore } from '@pubwiki/rdfstore'
-import { MemoryLevel } from 'memory-level'
-import { DataFactory } from 'n3'
+import { loadRunner, runLua, createLuaInstance, LuaTable, type LuaInstance } from '../../src/index'
 
-const { namedNode, literal } = DataFactory
-
-// 辅助函数：延迟
+// Helper function: delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-// 计数器用于生成唯一的数据库名称
-let dbCounter = 0
-
-// 辅助函数：创建一个新的内存 RDFStore
-async function createMemoryStore(): Promise<RDFStore> {
-  const level = new MemoryLevel()
-  const versionDbName = `test-version-db-${Date.now()}-${dbCounter++}`
-  return RDFStore.create({
-    quadstoreLevel: level,
-    versionDbName
-  })
-}
-
-// 辅助函数：按字符串查询（用于测试断言）
-async function queryByStrings(
-  store: RDFStore, 
-  pattern: { subject?: string; predicate?: string; object?: string; graph?: string }
-): Promise<{ subject: string; predicate: string; object: string; graph: string }[]> {
-  const quads = await store.query({
-    subject: pattern.subject ? namedNode(pattern.subject) : undefined,
-    predicate: pattern.predicate ? namedNode(pattern.predicate) : undefined,
-    object: pattern.object ? literal(pattern.object) : undefined,
-    graph: pattern.graph ? namedNode(pattern.graph) : undefined,
-  })
-  return quads.map(q => ({
-    subject: q.subject.value,
-    predicate: q.predicate.value,
-    object: q.object.value,
-    graph: q.graph.value,
-  }))
-}
-
 describe('pubwiki-lua', () => {
-  let store: RDFStore
-
   beforeAll(async () => {
-    // 加载 WASM 模块
+    // Load WASM module
     await loadRunner()
     console.log('WASM module loaded successfully')
   })
 
-  beforeEach(async () => {
-    store = await createMemoryStore()
-  })
-
-  afterEach(async () => {
-    if (store.isOpen) {
-      await store.close()
-    }
-  })
-
   describe('Basic Lua execution', () => {
     it('should run simple Lua code', async () => {
-      const result = await runLua('return 1 + 2', { rdfStore: store })
+      const result = await runLua('return 1 + 2')
       expect(result.result).toBe(3)
       expect(result.error).toBeNull()
     })
@@ -72,389 +23,16 @@ describe('pubwiki-lua', () => {
         print('Hello')
         print('World')
         return 42
-      `, { rdfStore: store })
+      `)
       expect(result.output).toContain('Hello')
       expect(result.output).toContain('World')
       expect(result.result).toBe(42)
       expect(result.error).toBeNull()
     })
   })
-
-  describe('State:insert', () => {
-    it('should insert a quad and return ref', async () => {
-      const result = await runLua(`
-        local ref = State:insert('book:1984', 'title', '1984')
-        return ref
-      `, { rdfStore: store })
-
-      expect(typeof result.result).toBe('string')
-      
-      const results = await queryByStrings(store, { predicate: 'title' })
-      expect(results).toHaveLength(1)
-      expect(results[0].subject).toBe('book:1984')
-      expect(results[0].object).toBe('1984')
-    })
-
-    it('should insert multiple quads', async () => {
-      await runLua(`
-        State:insert('book:1984', 'title', '1984')
-        State:insert('book:1984', 'author', 'George Orwell')
-        State:insert('book:1984', 'year', 1949)
-      `, { rdfStore: store })
-
-      const results = await queryByStrings(store, { subject: 'book:1984' })
-      expect(results).toHaveLength(3)
-    })
-
-    it('should insert with graph parameter', async () => {
-      const result = await runLua(`
-        local ref = State:insert('book:1984', 'title', '1984', 'graph:books')
-        return ref
-      `, { rdfStore: store })
-
-      expect(typeof result.result).toBe('string')
-      
-      const results = await queryByStrings(store, { graph: 'graph:books' })
-      expect(results).toHaveLength(1)
-    })
-  })
-
-  describe('State:match', () => {
-    it('should query by subject', async () => {
-      await runLua(`
-        State:insert('book:1984', 'title', '1984')
-        State:insert('book:1984', 'author', 'George Orwell')
-        State:insert('book:brave', 'title', 'Brave New World')
-      `, { rdfStore: store })
-
-      const result = await runLua(`
-        local results = State:match({subject = 'book:1984'})
-        return #results
-      `, { rdfStore: store })
-
-      expect(result.result).toBe(2)
-    })
-
-    it('should query by predicate', async () => {
-      await runLua(`
-        State:insert('book:1984', 'title', '1984')
-        State:insert('book:brave', 'title', 'Brave New World')
-      `, { rdfStore: store })
-
-      const result = await runLua(`
-        local results = State:match({predicate = 'title'})
-        return #results
-      `, { rdfStore: store })
-
-      expect(result.result).toBe(2)
-    })
-
-    it('should query by object', async () => {
-      await runLua(`
-        State:insert('book:1984', 'genre', 'dystopian')
-        State:insert('book:brave', 'genre', 'dystopian')
-        State:insert('book:lotr', 'genre', 'fantasy')
-      `, { rdfStore: store })
-
-      const result = await runLua(`
-        local results = State:match({object = 'dystopian'})
-        return #results
-      `, { rdfStore: store })
-
-      expect(result.result).toBe(2)
-    })
-  })
-
-  describe('State:delete', () => {
-    it('should delete a specific quad and return ref', async () => {
-      const result = await runLua(`
-        State:insert('user:alice', 'age', 25)
-        local ref = State:delete('user:alice', 'age', 25)
-        return ref
-      `, { rdfStore: store })
-
-      expect(typeof result.result).toBe('string')
-      const results = await queryByStrings(store, { subject: 'user:alice' })
-      expect(results).toHaveLength(0)
-    })
-
-    it('should delete all quads with subject+predicate', async () => {
-      await runLua(`
-        State:insert('user:alice', 'hobby', 'reading')
-        State:insert('user:alice', 'hobby', 'coding')
-        State:delete('user:alice', 'hobby')
-      `, { rdfStore: store })
-
-      const results = await queryByStrings(store, { subject: 'user:alice' })
-      expect(results).toHaveLength(0)
-    })
-  })
-
-  describe('State:batchInsert', () => {
-    it('should insert multiple quads at once and return ref', async () => {
-      const result = await runLua(`
-        local books = {
-          {subject = 'book:1', predicate = 'title', object = 'Book 1'},
-          {subject = 'book:2', predicate = 'title', object = 'Book 2'},
-          {subject = 'book:3', predicate = 'title', object = 'Book 3'},
-        }
-        return State:batchInsert(books)
-      `, { rdfStore: store })
-
-      expect(typeof result.result).toBe('string')
-      const results = await queryByStrings(store, { predicate: 'title' })
-      expect(results).toHaveLength(3)
-    })
-
-    it('should support graph in batch insert', async () => {
-      await runLua(`
-        local books = {
-          {subject = 'book:1', predicate = 'title', object = 'Book 1', graph = 'graph:test'},
-          {subject = 'book:2', predicate = 'title', object = 'Book 2', graph = 'graph:test'},
-        }
-        State:batchInsert(books)
-      `, { rdfStore: store })
-
-      const results = await queryByStrings(store, { graph: 'graph:test' })
-      expect(results).toHaveLength(2)
-    })
-  })
-
-  describe('State:set', () => {
-    it('should replace existing value and return ref', async () => {
-      const result = await runLua(`
-        State:insert('user:alice', 'age', 25)
-        local ref = State:set('user:alice', 'age', 30)
-        return ref
-      `, { rdfStore: store })
-
-      expect(typeof result.result).toBe('string')
-      const results = await queryByStrings(store, { subject: 'user:alice', predicate: 'age' })
-      expect(results).toHaveLength(1)
-      expect(results[0].object).toBe('30')
-    })
-
-    it('should work like insert when no previous value', async () => {
-      await runLua(`
-        State:set('user:alice', 'city', 'Tokyo')
-      `, { rdfStore: store })
-
-      const results = await queryByStrings(store, { subject: 'user:alice', predicate: 'city' })
-      expect(results).toHaveLength(1)
-      expect(results[0].object).toBe('Tokyo')
-    })
-
-    it('should preserve table/object type when set and get', async () => {
-      // 用户反馈：当存储 Lua table 然后再获取时，得到的是 '[object] [Object]' 字符串而非原来的 table
-      const result = await runLua(`
-        local o = {test = 123, v = "456"}
-        local typeBefore = type(o)
-        State:set("a", ":b", o)
-        local r = State:get("a", ":b")
-        local typeAfter = type(r)
-        return {
-          typeBefore = typeBefore,
-          typeAfter = typeAfter,
-          originalValue = o,
-          retrievedValue = r
-        }
-      `, { rdfStore: store })
-
-      expect(result.error).toBeNull()
-      expect(result.result.typeBefore).toBe('table')
-      // 期望: 获取的值也应该是 table 类型，而不是 string
-      expect(result.result.typeAfter).toBe('table')
-      // 期望: 获取的值应该保持原有结构
-      expect(result.result.retrievedValue.test).toBe(123)
-      expect(result.result.retrievedValue.v).toBe('456')
-    })
-
-    it('should delete value when object is nil', async () => {
-      // 先插入一个值
-      await runLua(`
-        State:insert('user:bob', 'email', 'bob@example.com')
-      `, { rdfStore: store })
-
-      // 确认值存在
-      const beforeResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
-      expect(beforeResults).toHaveLength(1)
-
-      // 使用 set(subject, predicate, nil) 删除
-      const result = await runLua(`
-        local ref = State:set('user:bob', 'email', nil)
-        return ref
-      `, { rdfStore: store })
-
-      // 应该返回 ref
-      expect(typeof result.result).toBe('string')
-
-      // 确认值已被删除
-      const afterResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
-      expect(afterResults).toHaveLength(0)
-    })
-
-    it('should delete all values for predicate when object is nil', async () => {
-      // 插入多个值
-      await runLua(`
-        State:insert('user:carol', 'tag', 'developer')
-        State:insert('user:carol', 'tag', 'designer')
-        State:insert('user:carol', 'tag', 'manager')
-      `, { rdfStore: store })
-
-      // 确认有三个值
-      const beforeResults = await queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
-      expect(beforeResults).toHaveLength(3)
-
-      // 使用 set(subject, predicate, nil) 删除所有
-      await runLua(`
-        State:set('user:carol', 'tag', nil)
-      `, { rdfStore: store })
-
-      // 确认所有值已被删除
-      const afterResults = await queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
-      expect(afterResults).toHaveLength(0)
-    })
-
-    it('should return nil from get after set with nil', async () => {
-      // 先设置一个值
-      await runLua(`
-        State:set('user:dave', 'status', 'active')
-      `, { rdfStore: store })
-
-      // 确认可以获取
-      const result1 = await runLua(`
-        return State:get('user:dave', 'status')
-      `, { rdfStore: store })
-      expect(result1.result).toBe('active')
-
-      // 使用 nil 删除
-      await runLua(`
-        State:set('user:dave', 'status', nil)
-      `, { rdfStore: store })
-
-      // 确认获取返回 nil
-      const result2 = await runLua(`
-        return State:get('user:dave', 'status')
-      `, { rdfStore: store })
-      expect(result2.result).toBeNull()
-    })
-  })
-
-  describe('State:get', () => {
-    it('should get a single value', async () => {
-      await runLua(`
-        State:insert('user:alice', 'name', 'Alice')
-      `, { rdfStore: store })
-
-      const result = await runLua(`
-        local name = State:get('user:alice', 'name')
-        return name
-      `, { rdfStore: store })
-
-      expect(result.result).toBe('Alice')
-    })
-
-    it('should return nil for non-existent property', async () => {
-      const result = await runLua(`
-        local value = State:get('user:alice', 'nonexistent')
-        if value == nil then
-          return 'is nil'
-        else
-          return 'not nil'
-        end
-      `, { rdfStore: store })
-
-      expect(result.result).toBe('is nil')
-    })
-
-    it('should work with default values', async () => {
-      const result = await runLua(`
-        local city = State:get('user:alice', 'city') or 'Unknown'
-        return city
-      `, { rdfStore: store })
-
-      expect(result.result).toBe('Unknown')
-    })
-  })
-
-  describe('Version Control', () => {
-    it('should return current ref', async () => {
-      await runLua(`
-        State:insert('user:alice', 'name', 'Alice')
-      `, { rdfStore: store })
-
-      const result = await runLua(`
-        return State:currentRef()
-      `, { rdfStore: store })
-
-      expect(typeof result.result).toBe('string')
-      expect(result.result).toBe(store.currentRef)
-    })
-
-    it('should create checkpoint', async () => {
-      await runLua(`
-        State:insert('user:alice', 'name', 'Alice')
-      `, { rdfStore: store })
-
-      const result = await runLua(`
-        return State:checkpoint()
-      `, { rdfStore: store })
-
-      expect(typeof result.result).toBe('object')
-      expect(typeof result.result.id).toBe('string')
-      expect(typeof result.result.ref).toBe('string')
-    })
-
-    it('should checkout to specific ref', async () => {
-      const insertResult = await runLua(`
-        local ref1 = State:insert('user:alice', 'name', 'Alice')
-        local ref2 = State:insert('user:bob', 'name', 'Bob')
-        State:checkout(ref1)
-        return ref1
-      `, { rdfStore: store })
-
-      expect(store.currentRef).toBe(insertResult.result)
-    })
-  })
-
-  describe('Complex scenarios', () => {
-    it('should handle book catalog example', async () => {
-      const result = await runLua(`
-        -- Insert books
-        State:batchInsert({
-          {subject = 'book:1984', predicate = 'title', object = '1984'},
-          {subject = 'book:1984', predicate = 'author', object = 'George Orwell'},
-          {subject = 'book:1984', predicate = 'year', object = 1949},
-          {subject = 'book:1984', predicate = 'genre', object = 'dystopian'},
-          {subject = 'book:brave', predicate = 'title', object = 'Brave New World'},
-          {subject = 'book:brave', predicate = 'author', object = 'Aldous Huxley'},
-          {subject = 'book:brave', predicate = 'year', object = 1932},
-          {subject = 'book:brave', predicate = 'genre', object = 'dystopian'},
-        })
-        
-        -- Query dystopian books
-        local dystopian = State:match({predicate = 'genre', object = 'dystopian'})
-        local count = #dystopian
-        
-        -- Get titles
-        local titles = {}
-        for i, triple in ipairs(dystopian) do
-          local title = State:get(triple.subject, 'title')
-          table.insert(titles, title)
-        end
-        
-        return string.format('Found %d dystopian books: %s', count, table.concat(titles, ', '))
-      `, { rdfStore: store })
-
-      expect(result.result).toContain('Found 2 dystopian books')
-      expect(result.result).toContain('1984')
-      expect(result.result).toContain('Brave New World')
-    })
-  })
 })
 
 describe('Persistent Lua Instance', () => {
-  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
@@ -462,15 +40,11 @@ describe('Persistent Lua Instance', () => {
   })
 
   beforeEach(async () => {
-    store = await createMemoryStore()
-    instance = createLuaInstance({ rdfStore: store })
+    instance = createLuaInstance()
   })
 
   afterEach(async () => {
     instance.destroy()
-    if (store.isOpen) {
-      await store.close()
-    }
   })
 
   describe('State persistence between runs', () => {
@@ -522,27 +96,9 @@ describe('Persistent Lua Instance', () => {
     })
   })
 
-  describe('RDF state persistence', () => {
-    it('should preserve RDF data in instance', async () => {
-      // Insert data
-      await instance.run(`
-        State:insert("http://example.org/person1", "http://xmlns.com/foaf/0.1/name", "Alice")
-        State:insert("http://example.org/person1", "http://xmlns.com/foaf/0.1/age", 30)
-      `)
-
-      // Query in separate run
-      const result = await instance.run(`
-        local results = State:match({ subject = "http://example.org/person1" })
-        return #results
-      `)
-      expect(result.result).toBe(2)
-    })
-  })
-
   describe('Instance cleanup', () => {
     it('should not share state between different instances', async () => {
-      const store2 = await createMemoryStore()
-      const instance2 = createLuaInstance({ rdfStore: store2 })
+      const instance2 = createLuaInstance()
 
       // Set value in first instance
       await instance.run('shared_value = 42')
@@ -558,18 +114,16 @@ describe('Persistent Lua Instance', () => {
       expect(result.result).toBe('not found')
 
       instance2.destroy()
-      await store2.close()
     })
 
     it('should properly destroy instance', () => {
-      const tempInstance = createLuaInstance({ rdfStore: store })
+      const tempInstance = createLuaInstance()
       expect(() => tempInstance.destroy()).not.toThrow()
     })
   })
 })
 
 describe('JS Module Registration', () => {
-  let store: RDFStore
   let instance: LuaInstance
 
   beforeAll(async () => {
@@ -577,15 +131,11 @@ describe('JS Module Registration', () => {
   })
 
   beforeEach(async () => {
-    store = await createMemoryStore()
-    instance = createLuaInstance({ rdfStore: store })
+    instance = createLuaInstance()
   })
 
   afterEach(async () => {
     instance.destroy()
-    if (store.isOpen) {
-      await store.close()
-    }
   })
 
   describe('Synchronous functions', () => {
@@ -640,6 +190,55 @@ describe('JS Module Registration', () => {
         return result.greeting .. " - " .. result.category
       `)
       expect(result.result).toBe('Hello, Alice! - adult')
+    })
+
+    it('should return JS object as Lua table type', async () => {
+      const LUA_VALUE_SYMBOL = Symbol.for('pubwiki.lua.value')
+      
+      instance.registerJsModule('myAPI', {
+        // 不带标记的对象 - 应该返回 userdata（JsProxy）
+        getPlainObject: () => ({ name: 'test', value: 123 }),
+        getPlainArray: () => [1, 2, 3],
+        // 带标记的对象 - 应该转换为 Lua table
+        getMarkedObject: () => ({ [LUA_VALUE_SYMBOL]: true, value: { name: 'test', num: 456 } }),
+        getMarkedArray: () => ({ [LUA_VALUE_SYMBOL]: true, value: [4, 5, 6] })
+      })
+
+      // 不带标记的对象返回 userdata（这是预期行为，支持懒加载）
+      const plainResult = await instance.run(`
+        local api = require("myAPI")
+        local obj = api.getPlainObject()
+        local arr = api.getPlainArray()
+        return {
+          objType = type(obj),
+          arrType = type(arr),
+          objName = obj.name,
+          arrLen = #arr
+        }
+      `)
+      expect(plainResult.error).toBeNull()
+      expect(plainResult.result.objType).toBe('userdata')
+      expect(plainResult.result.arrType).toBe('userdata')
+      expect(plainResult.result.objName).toBe('test')
+      expect(plainResult.result.arrLen).toBe(3)
+
+      // 带标记的对象应该转换为 Lua table
+      const markedResult = await instance.run(`
+        local api = require("myAPI")
+        local obj = api.getMarkedObject()
+        local arr = api.getMarkedArray()
+        return {
+          objType = type(obj),
+          arrType = type(arr),
+          objName = obj.name,
+          arrLen = #arr
+        }
+      `)
+      expect(markedResult.error).toBeNull()
+      expect(markedResult.result.objType).toBe('table')
+      expect(markedResult.result.arrType).toBe('table')
+      expect(markedResult.result.objName).toBe('test')
+      expect(markedResult.result.arrLen).toBe(3)
     })
   })
 
@@ -838,20 +437,8 @@ describe('JS Module Registration', () => {
 })
 
 describe('Error Output Preservation', () => {
-  let store: RDFStore
-
   beforeAll(async () => {
     await loadRunner()
-  })
-
-  beforeEach(async () => {
-    store = await createMemoryStore()
-  })
-
-  afterEach(async () => {
-    if (store.isOpen) {
-      await store.close()
-    }
   })
 
   it('should preserve output before error in runLua', async () => {
@@ -860,7 +447,7 @@ describe('Error Output Preservation', () => {
       print("Line 2")
       print("Line 3")
       error("Test error")
-    `, { rdfStore: store })
+    `)
 
     // Should have error
     expect(result.error).toBeTruthy()
@@ -873,7 +460,7 @@ describe('Error Output Preservation', () => {
   })
 
   it('should preserve output before error in persistent instance', async () => {
-    const instance = createLuaInstance({ rdfStore: store })
+    const instance = createLuaInstance()
 
     const result = await instance.run(`
       print("Before error 1")
@@ -892,13 +479,13 @@ describe('Error Output Preservation', () => {
     const result = await runLua(`
       print("This should print")
       local x = -- syntax error
-    `, { rdfStore: store })
+    `)
 
     expect(result.error).toBeTruthy()
   })
 
   it('should continue working after an error in persistent instance', async () => {
-    const instance = createLuaInstance({ rdfStore: store })
+    const instance = createLuaInstance()
 
     // First run with error
     const errorResult = await instance.run(`
@@ -918,563 +505,152 @@ describe('Error Output Preservation', () => {
 
     instance.destroy()
   })
-
-  describe('JSON module', () => {
-    describe('json.encode', () => {
-      it('should encode nil as null', async () => {
-        const result = await runLua('return json.encode(nil)', { rdfStore: store })
-        expect(result.result).toBe('null')
-        expect(result.error).toBeNull()
-      })
-
-      it('should encode boolean values', async () => {
-        const resultTrue = await runLua('return json.encode(true)', { rdfStore: store })
-        expect(resultTrue.result).toBe('true')
-
-        const resultFalse = await runLua('return json.encode(false)', { rdfStore: store })
-        expect(resultFalse.result).toBe('false')
-      })
-
-      it('should encode integer numbers', async () => {
-        const result = await runLua('return json.encode(42)', { rdfStore: store })
-        expect(result.result).toBe('42')
-      })
-
-      it('should encode floating point numbers', async () => {
-        const result = await runLua('return json.encode(3.14)', { rdfStore: store })
-        expect(JSON.parse(result.result as string)).toBeCloseTo(3.14)
-      })
-
-      it('should encode strings', async () => {
-        const result = await runLua('return json.encode("hello world")', { rdfStore: store })
-        expect(result.result).toBe('"hello world"')
-      })
-
-      it('should encode strings with special characters', async () => {
-        const result = await runLua('return json.encode("hello\\nworld")', { rdfStore: store })
-        expect(JSON.parse(result.result as string)).toBe('hello\nworld')
-      })
-
-      it('should encode arrays (sequential integer keys from 1)', async () => {
-        const result = await runLua('return json.encode({1, 2, 3})', { rdfStore: store })
-        expect(JSON.parse(result.result as string)).toEqual([1, 2, 3])
-      })
-
-      it('should encode objects (string keys)', async () => {
-        const result = await runLua('return json.encode({name = "Alice", age = 30})', { rdfStore: store })
-        const parsed = JSON.parse(result.result as string)
-        expect(parsed.name).toBe('Alice')
-        expect(parsed.age).toBe(30)
-      })
-
-      it('should encode nested structures', async () => {
-        const result = await runLua(`
-          local data = {
-            name = "test",
-            items = {1, 2, 3},
-            nested = {
-              foo = "bar"
-            }
-          }
-          return json.encode(data)
-        `, { rdfStore: store })
-        const parsed = JSON.parse(result.result as string)
-        expect(parsed.name).toBe('test')
-        expect(parsed.items).toEqual([1, 2, 3])
-        expect(parsed.nested.foo).toBe('bar')
-      })
-
-      it('should encode empty table as empty object', async () => {
-        // mlua 的序列化将空表视为空对象
-        const result = await runLua('return json.encode({})', { rdfStore: store })
-        expect(result.result).toBe('{}')
-      })
-
-      it('should encode mixed arrays as objects', async () => {
-        // 注意：mlua 序列化对于混合键表（同时有整数键和字符串键）的行为是
-        // 将其视为数组，只保留连续整数键的值，忽略字符串键
-        // 这是 mlua 的预期行为，如需保留所有键应使用纯字符串键的表
-        const result = await runLua('return json.encode({foo = "bar", baz = 123})', { rdfStore: store })
-        const parsed = JSON.parse(result.result as string)
-        expect(parsed.foo).toBe('bar')
-        expect(parsed.baz).toBe(123)
-      })
-
-      it('should error on encoding functions', async () => {
-        const result = await runLua('return json.encode(function() end)', { rdfStore: store })
-        expect(result.error).toBeTruthy()
-      })
-    })
-
-    describe('json.decode', () => {
-      it('should decode null to nil', async () => {
-        const result = await runLua('return json.decode("null")', { rdfStore: store })
-        expect(result.result).toBeNull()
-        expect(result.error).toBeNull()
-      })
-
-      it('should decode boolean values', async () => {
-        const resultTrue = await runLua('return json.decode("true")', { rdfStore: store })
-        expect(resultTrue.result).toBe(true)
-
-        const resultFalse = await runLua('return json.decode("false")', { rdfStore: store })
-        expect(resultFalse.result).toBe(false)
-      })
-
-      it('should decode integer numbers', async () => {
-        const result = await runLua('return json.decode("42")', { rdfStore: store })
-        expect(result.result).toBe(42)
-      })
-
-      it('should decode floating point numbers', async () => {
-        const result = await runLua('return json.decode("3.14")', { rdfStore: store })
-        expect(result.result).toBeCloseTo(3.14)
-      })
-
-      it('should decode strings', async () => {
-        const result = await runLua('return json.decode(\'"hello world"\')', { rdfStore: store })
-        expect(result.result).toBe('hello world')
-      })
-
-      it('should decode arrays', async () => {
-        const result = await runLua(`
-          local arr = json.decode('[1, 2, 3]')
-          return {arr[1], arr[2], arr[3]}
-        `, { rdfStore: store })
-        expect(result.result).toEqual([1, 2, 3])
-      })
-
-      it('should decode objects', async () => {
-        const result = await runLua(`
-          local obj = json.decode('{"name": "Alice", "age": 30}')
-          return {obj.name, obj.age}
-        `, { rdfStore: store })
-        expect(result.result).toEqual(['Alice', 30])
-      })
-
-      it('should decode nested structures', async () => {
-        const result = await runLua(`
-          local data = json.decode('{"items": [1, 2, 3], "nested": {"foo": "bar"}}')
-          return {data.items[1], data.items[2], data.nested.foo}
-        `, { rdfStore: store })
-        expect(result.result).toEqual([1, 2, 'bar'])
-      })
-
-      it('should decode empty array', async () => {
-        const result = await runLua(`
-          local arr = json.decode('[]')
-          return #arr
-        `, { rdfStore: store })
-        expect(result.result).toBe(0)
-      })
-
-      it('should decode empty object', async () => {
-        const result = await runLua(`
-          local obj = json.decode('{}')
-          local count = 0
-          for _ in pairs(obj) do count = count + 1 end
-          return count
-        `, { rdfStore: store })
-        expect(result.result).toBe(0)
-      })
-
-      it('should error on invalid JSON', async () => {
-        const result = await runLua('return json.decode("invalid json")', { rdfStore: store })
-        expect(result.error).toBeTruthy()
-      })
-
-      it('should error on truncated JSON', async () => {
-        const result = await runLua('return json.decode(\'{"incomplete":\')', { rdfStore: store })
-        expect(result.error).toBeTruthy()
-      })
-    })
-
-    describe('json roundtrip', () => {
-      it('should roundtrip simple values', async () => {
-        const result = await runLua(`
-          local original = 42
-          local encoded = json.encode(original)
-          local decoded = json.decode(encoded)
-          return decoded
-        `, { rdfStore: store })
-        expect(result.result).toBe(42)
-      })
-
-      it('should roundtrip complex structures', async () => {
-        const result = await runLua(`
-          local original = {
-            name = "test",
-            count = 100,
-            active = true,
-            tags = {"lua", "json", "test"}
-          }
-          local encoded = json.encode(original)
-          local decoded = json.decode(encoded)
-          return {decoded.name, decoded.count, decoded.active, decoded.tags[1], decoded.tags[3]}
-        `, { rdfStore: store })
-        expect(result.result).toEqual(['test', 100, true, 'lua', 'test'])
-      })
-
-      it('should roundtrip UTF-8 strings', async () => {
-        const result = await runLua(`
-          local original = "你好世界 🌍"
-          local encoded = json.encode(original)
-          local decoded = json.decode(encoded)
-          return decoded
-        `, { rdfStore: store })
-        expect(result.result).toBe('你好世界 🌍')
-      })
-    })
-  })
 })
 
-// ============= VFS 文件系统测试 =============
-import * as fs from 'node:fs/promises'
-import * as path from 'node:path'
-import * as os from 'node:os'
-import { createVfs, type Vfs, type VfsProvider } from '@pubwiki/vfs'
-
-// 简单的内存 VfsProvider 实现用于测试
-class MemoryVfsProvider implements VfsProvider {
-  private files = new Map<string, { content: Uint8Array; createdAt: Date; updatedAt: Date }>()
-  private directories = new Set<string>(['/'])
-
-  private normalizePath(p: string): string {
-    return path.posix.normalize('/' + p).replace(/\/+$/, '') || '/'
-  }
-
-  async id(filePath: string): Promise<string> {
-    return this.normalizePath(filePath)
-  }
-
-  async readFile(filePath: string): Promise<Uint8Array> {
-    const p = this.normalizePath(filePath)
-    const file = this.files.get(p)
-    if (!file) throw new Error(`File not found: ${p}`)
-    return file.content
-  }
-
-  async writeFile(filePath: string, content: Uint8Array): Promise<void> {
-    const p = this.normalizePath(filePath)
-    const now = new Date()
-    const existing = this.files.get(p)
-    this.files.set(p, {
-      content,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now
-    })
-  }
-
-  async unlink(filePath: string): Promise<void> {
-    const p = this.normalizePath(filePath)
-    if (!this.files.has(p)) throw new Error(`File not found: ${p}`)
-    this.files.delete(p)
-  }
-
-  async mkdir(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
-    const p = this.normalizePath(dirPath)
-    if (options?.recursive) {
-      const parts = p.split('/').filter(Boolean)
-      let current = ''
-      for (const part of parts) {
-        current += '/' + part
-        this.directories.add(current)
-      }
-    } else {
-      this.directories.add(p)
-    }
-  }
-
-  async readdir(dirPath: string): Promise<string[]> {
-    const p = this.normalizePath(dirPath)
-    
-    // 检查目录是否存在
-    if (!this.directories.has(p)) {
-      throw new Error(`Directory not found: ${p}`)
-    }
-    
-    const entries: string[] = []
-    
-    // 查找文件
-    for (const [filePath] of this.files) {
-      const parent = path.posix.dirname(filePath)
-      if (parent === p) {
-        entries.push(path.posix.basename(filePath))
-      }
-    }
-    
-    // 查找子目录
-    for (const dir of this.directories) {
-      if (dir !== p && path.posix.dirname(dir) === p) {
-        entries.push(path.posix.basename(dir))
-      }
-    }
-    
-    return entries
-  }
-
-  async rmdir(dirPath: string, options?: { recursive?: boolean }): Promise<void> {
-    const p = this.normalizePath(dirPath)
-    if (options?.recursive) {
-      // 删除目录下的所有文件
-      for (const [filePath] of this.files) {
-        if (filePath.startsWith(p + '/') || filePath === p) {
-          this.files.delete(filePath)
-        }
-      }
-      // 删除目录及子目录
-      for (const dir of this.directories) {
-        if (dir.startsWith(p + '/') || dir === p) {
-          this.directories.delete(dir)
-        }
-      }
-    } else {
-      this.directories.delete(p)
-    }
-  }
-
-  async stat(filePath: string): Promise<{ size: number; isFile: boolean; isDirectory: boolean; createdAt: Date; updatedAt: Date }> {
-    const p = this.normalizePath(filePath)
-    
-    // 检查是否是文件
-    const file = this.files.get(p)
-    if (file) {
-      return {
-        size: file.content.length,
-        isFile: true,
-        isDirectory: false,
-        createdAt: file.createdAt,
-        updatedAt: file.updatedAt
-      }
-    }
-    
-    // 检查是否是目录
-    if (this.directories.has(p)) {
-      const now = new Date()
-      return {
-        size: 0,
-        isFile: false,
-        isDirectory: true,
-        createdAt: now,
-        updatedAt: now
-      }
-    }
-    
-    throw new Error(`Path not found: ${p}`)
-  }
-
-  async exists(filePath: string): Promise<boolean> {
-    const p = this.normalizePath(filePath)
-    return this.files.has(p) || this.directories.has(p)
-  }
-
-  async rename(from: string, to: string): Promise<void> {
-    const fromPath = this.normalizePath(from)
-    const toPath = this.normalizePath(to)
-    
-    const file = this.files.get(fromPath)
-    if (file) {
-      this.files.delete(fromPath)
-      this.files.set(toPath, file)
-    } else if (this.directories.has(fromPath)) {
-      this.directories.delete(fromPath)
-      this.directories.add(toPath)
-    } else {
-      throw new Error(`Path not found: ${fromPath}`)
-    }
-  }
-
-  async copyFile(from: string, to: string): Promise<void> {
-    const fromPath = this.normalizePath(from)
-    const toPath = this.normalizePath(to)
-    
-    const file = this.files.get(fromPath)
-    if (!file) throw new Error(`File not found: ${fromPath}`)
-    
-    const now = new Date()
-    this.files.set(toPath, {
-      content: new Uint8Array(file.content),
-      createdAt: now,
-      updatedAt: now
-    })
-  }
-
-  async initialize(): Promise<void> {}
-  async dispose(): Promise<void> {}
-}
-
-describe('VFS File System Operations', () => {
-  let store: RDFStore
-  let vfs: Vfs<VfsProvider>
+describe('LuaTable wrapper', () => {
+  let instance: LuaInstance
 
   beforeAll(async () => {
     await loadRunner()
   })
 
-  beforeEach(async () => {
-    store = await createMemoryStore()
-    const provider = new MemoryVfsProvider()
-    vfs = createVfs(provider)
+  beforeEach(() => {
+    instance = createLuaInstance()
   })
 
-  afterEach(async () => {
-    if (store.isOpen) {
-      await store.close()
+  afterEach(() => {
+    instance.destroy()
+  })
+
+  it('should convert wrapped array to native Lua table', async () => {
+    const testModule = {
+      getArray() {
+        return new LuaTable([1, 2, 3])
+      }
     }
+    instance.registerJsModule('testMod', testModule, { mode: 'global' })
+
+    const result = await instance.run(`
+      local arr = testMod.getArray()
+      return { type = type(arr), len = #arr, first = arr[1], last = arr[3] }
+    `)
+
+    expect(result.error).toBeNull()
+    expect(result.result.type).toBe('table')
+    expect(result.result.len).toBe(3)
+    expect(result.result.first).toBe(1)
+    expect(result.result.last).toBe(3)
   })
 
-  describe('fs.stat', () => {
-    it('should get file stat', async () => {
-      // 先创建一个文件
-      await vfs.createFile('/test.txt', 'Hello, World!')
+  it('should convert wrapped object to native Lua table', async () => {
+    const testModule = {
+      getObject() {
+        return new LuaTable({ name: 'Alice', age: 30 })
+      }
+    }
+    instance.registerJsModule('testMod', testModule, { mode: 'global' })
 
-      const result = await runLua(`
-        local stat, err = fs.stat('/test.txt')
-        if err then return { error = err } end
-        return {
-          size = stat.size,
-          isDirectory = stat.isDirectory,
-          hasCreatedAt = stat.createdAt ~= nil,
-          hasUpdatedAt = stat.updatedAt ~= nil
-        }
-      `, { rdfStore: store, vfs })
+    const result = await instance.run(`
+      local obj = testMod.getObject()
+      return { type = type(obj), name = obj.name, age = obj.age }
+    `)
 
-      expect(result.error).toBeNull()
-      expect(result.result.size).toBe(13) // "Hello, World!" 长度
-      expect(result.result.isDirectory).toBe(false)
-      expect(result.result.hasCreatedAt).toBe(true)
-      expect(result.result.hasUpdatedAt).toBe(true)
-    })
-
-    it('should get directory stat', async () => {
-      await vfs.createFolder('/mydir')
-
-      const result = await runLua(`
-        local stat, err = fs.stat('/mydir')
-        if err then return { error = err } end
-        return {
-          isDirectory = stat.isDirectory,
-          size = stat.size
-        }
-      `, { rdfStore: store, vfs })
-
-      expect(result.error).toBeNull()
-      expect(result.result.isDirectory).toBe(true)
-      expect(result.result.size).toBe(0)
-    })
-
-    it('should return error for non-existent path', async () => {
-      const result = await runLua(`
-        local stat, err = fs.stat('/nonexistent')
-        return { stat = stat, hasError = err ~= nil }
-      `, { rdfStore: store, vfs })
-
-      expect(result.error).toBeNull()
-      expect(result.result.stat).toBeFalsy()
-      expect(result.result.hasError).toBe(true)
-    })
+    expect(result.error).toBeNull()
+    expect(result.result.type).toBe('table')
+    expect(result.result.name).toBe('Alice')
+    expect(result.result.age).toBe(30)
   })
 
-  describe('fs.readdir', () => {
-    it('should list directory contents', async () => {
-      // 创建一些文件和目录
-      await vfs.createFile('/dir/file1.txt', 'content1')
-      await vfs.createFile('/dir/file2.txt', 'content2')
-      await vfs.createFolder('/dir/subdir')
+  it('should convert nested structures deeply', async () => {
+    const testModule = {
+      getNested() {
+        return new LuaTable([
+          { name: 'Alice' },
+          { name: 'Bob' }
+        ])
+      }
+    }
+    instance.registerJsModule('testMod', testModule, { mode: 'global' })
 
-      const result = await runLua(`
-        local entries, err = fs.readdir('/dir')
-        if err then return { error = err } end
-        
-        local names = {}
-        for _, entry in ipairs(entries) do
-          table.insert(names, entry.name)
-        end
-        table.sort(names)
-        return names
-      `, { rdfStore: store, vfs })
+    const result = await instance.run(`
+      local arr = testMod.getNested()
+      return { 
+        type = type(arr), 
+        len = #arr, 
+        firstName = arr[1].name,
+        secondName = arr[2].name,
+        innerType = type(arr[1])
+      }
+    `)
 
-      expect(result.error).toBeNull()
-      expect(result.result).toEqual(['file1.txt', 'file2.txt', 'subdir'])
-    })
-
-    it('should return entries with stat info', async () => {
-      await vfs.createFile('/testdir/hello.txt', 'Hello!')
-      await vfs.createFolder('/testdir/folder')
-
-      const result = await runLua(`
-        local entries, err = fs.readdir('/testdir')
-        if err then return { error = err } end
-        
-        local result = {}
-        for _, entry in ipairs(entries) do
-          table.insert(result, {
-            name = entry.name,
-            isDirectory = entry.isDirectory,
-            size = entry.size,
-            hasPath = entry.path ~= nil
-          })
-        end
-        return result
-      `, { rdfStore: store, vfs })
-
-      expect(result.error).toBeNull()
-      expect(result.result).toHaveLength(2)
-      
-      // 检查文件
-      const file = result.result.find((e: any) => e.name === 'hello.txt')
-      expect(file).toBeDefined()
-      expect(file.isDirectory).toBe(false)
-      expect(file.size).toBe(6) // "Hello!" 长度
-      expect(file.hasPath).toBe(true)
-      
-      // 检查目录
-      const folder = result.result.find((e: any) => e.name === 'folder')
-      expect(folder).toBeDefined()
-      expect(folder.isDirectory).toBe(true)
-    })
-
-    it('should return empty array for empty directory', async () => {
-      await vfs.createFolder('/emptydir')
-
-      const result = await runLua(`
-        local entries, err = fs.readdir('/emptydir')
-        if err then return { error = err } end
-        return #entries
-      `, { rdfStore: store, vfs })
-
-      expect(result.error).toBeNull()
-      expect(result.result).toBe(0)
-    })
-
-    it('should return error for non-existent directory', async () => {
-      const result = await runLua(`
-        local entries, err = fs.readdir('/nonexistent')
-        if err then
-          return { hasError = true, errorMsg = err }
-        end
-        return { hasError = false, count = #entries }
-      `, { rdfStore: store, vfs })
-
-      expect(result.error).toBeNull()
-      expect(result.result.hasError).toBe(true)
-      expect(result.result.errorMsg).toContain('not found')
-    })
+    expect(result.error).toBeNull()
+    expect(result.result.type).toBe('table')
+    expect(result.result.len).toBe(2)
+    expect(result.result.firstName).toBe('Alice')
+    expect(result.result.secondName).toBe('Bob')
+    expect(result.result.innerType).toBe('table')
   })
 
-  describe('fs.stat with relative paths', () => {
-    it('should resolve relative paths from working directory', async () => {
-      await vfs.createFile('/work/project/file.txt', 'content')
+  it('should work with async functions', async () => {
+    const testModule = {
+      async fetchData() {
+        return new LuaTable(['a', 'b', 'c'])
+      }
+    }
+    instance.registerJsModule('testMod', testModule, { mode: 'global' })
 
-      const result = await runLua(`
-        local stat, err = fs.stat('./file.txt')
-        if err then return { error = err } end
-        return { size = stat.size, isDirectory = stat.isDirectory }
-      `, { rdfStore: store, vfs, workingDirectory: '/work/project' })
+    const result = await instance.run(`
+      local data = testMod.fetchData()
+      return { type = type(data), len = #data }
+    `)
 
-      expect(result.error).toBeNull()
-      expect(result.result.size).toBe(7)
-      expect(result.result.isDirectory).toBe(false)
-    })
+    expect(result.error).toBeNull()
+    expect(result.result.type).toBe('table')
+    expect(result.result.len).toBe(3)
+  })
+
+  it('should allow ipairs iteration on wrapped arrays', async () => {
+    const testModule = {
+      getNumbers() {
+        return new LuaTable([10, 20, 30])
+      }
+    }
+    instance.registerJsModule('testMod', testModule, { mode: 'global' })
+
+    const result = await instance.run(`
+      local nums = testMod.getNumbers()
+      local sum = 0
+      for i, v in ipairs(nums) do
+        sum = sum + v
+      end
+      return sum
+    `)
+
+    expect(result.error).toBeNull()
+    expect(result.result).toBe(60)
+  })
+
+  it('should allow pairs iteration on wrapped objects', async () => {
+    const testModule = {
+      getScores() {
+        return new LuaTable({ math: 90, english: 85, science: 95 })
+      }
+    }
+    instance.registerJsModule('testMod', testModule, { mode: 'global' })
+
+    const result = await instance.run(`
+      local scores = testMod.getScores()
+      local total = 0
+      local count = 0
+      for k, v in pairs(scores) do
+        total = total + v
+        count = count + 1
+      end
+      return { total = total, count = count }
+    `)
+
+    expect(result.error).toBeNull()
+    expect(result.result.total).toBe(270)
+    expect(result.result.count).toBe(3)
   })
 })

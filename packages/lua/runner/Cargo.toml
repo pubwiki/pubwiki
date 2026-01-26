@@ -5,10 +5,7 @@ edition = "2024"
 
 
 [dependencies]
-mlua = { version = "0.11", features = ["lua54", "async", "vendored", "serialize"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-regex = "1.10"
+mlua = { version = "0.11", features = ["lua54", "async", "vendored"] }
 
 # 异步运行时
 async-executor = "1.13"

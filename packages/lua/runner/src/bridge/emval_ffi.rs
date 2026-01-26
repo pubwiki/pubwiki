@@ -47,6 +47,7 @@ unsafe extern "C" {
     pub fn emval_get_property_str(handle: EM_VAL, key: *const c_char) -> EM_VAL;
     pub fn emval_get_property_idx(handle: EM_VAL, index: u32) -> EM_VAL;
     pub fn emval_get_property_val(handle: EM_VAL, key_handle: EM_VAL) -> EM_VAL;
+    pub fn emval_has_property_val(handle: EM_VAL, key_handle: EM_VAL) -> bool;
     pub fn emval_set_property_str(handle: EM_VAL, key: *const c_char, value_handle: EM_VAL);
     pub fn emval_set_property_idx(handle: EM_VAL, index: u32, value_handle: EM_VAL);
 
@@ -232,6 +233,12 @@ impl JsVal {
 
     pub fn get_val(&self, key: &JsVal) -> JsVal {
         JsVal::from_handle(unsafe { emval_get_property_val(self.handle, key.handle) })
+    }
+
+    /// Check if object has a property (implements JavaScript 'in' operator)
+    /// Works with both string keys and Symbol keys
+    pub fn has_val(&self, key: &JsVal) -> bool {
+        unsafe { emval_has_property_val(self.handle, key.handle) }
     }
 
     pub fn set(&self, key: &str, value: &JsVal) {

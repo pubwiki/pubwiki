@@ -3,12 +3,14 @@
  * 
  * Functions for importing artifacts into studio projects.
  * 
- * Note: After content-type refactoring, imported content should be parsed as JSON
- * when the backend sends JSON content (node.json files).
+ * After artifact storage refactoring:
+ * - Node content is now included directly in the graph response
+ * - VFS nodes need to download and extract tar.gz archives
+ * - No separate /content API calls needed
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { ArtifactGraphData, ArtifactNodeDetail, ArtifactNodeSummary, ArtifactEdge, NodeFileInfo } from '$lib/types';
+import type { ArtifactGraphData, ArtifactNodeDetail, ArtifactNodeSummary, ArtifactEdge } from '$lib/types';
 import type { 
   StudioNodeData, 
   VFSNodeData, 
@@ -39,16 +41,136 @@ import { API_BASE_URL } from '$lib/config';
 
 /**
  * Content fetcher interface for dependency injection
+ * After refactoring: only used for VFS archive downloads
  */
 export interface ContentFetcher {
+  /** @deprecated Content is now in graph response */
   fetchNodeContent(artifactId: string, nodeId: string): Promise<string | null>;
   fetchNodeDetail(artifactId: string, nodeId: string): Promise<ArtifactNodeDetail | null>;
+  /** Fetch VFS tar.gz archive for a node */
+  fetchVfsArchive?(artifactId: string, nodeId: string): Promise<ArrayBuffer | null>;
 }
 
 /**
  * ID mapping from old (artifact) node IDs to new (studio) node IDs
  */
 type IdMap = Map<string, string>;
+
+/**
+ * Node summary with content - use type assertion since API types may be slightly different
+ * The API now returns content directly in the graph response
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NodeSummaryWithContent = ArtifactNodeSummary & { content?: any; filesSummary?: { totalFiles: number; totalSize: number } };
+
+// ============================================================================
+// TAR.GZ Extraction Helpers
+// ============================================================================
+
+/**
+ * Decompress gzip data using DecompressionStream API
+ */
+async function gzipDecompress(data: ArrayBuffer): Promise<Uint8Array> {
+  const stream = new DecompressionStream('gzip');
+  const writer = stream.writable.getWriter();
+  writer.write(data);
+  writer.close();
+  
+  const chunks: Uint8Array[] = [];
+  const reader = stream.readable.getReader();
+  
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+  }
+  
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  
+  return result;
+}
+
+/**
+ * Parse a TAR archive and extract files
+ * TAR format: 512-byte headers followed by file content padded to 512 bytes
+ */
+function parseTar(data: Uint8Array): { path: string; content: Uint8Array }[] {
+  const files: { path: string; content: Uint8Array }[] = [];
+  let offset = 0;
+  const decoder = new TextDecoder();
+  
+  while (offset + 512 <= data.length) {
+    // Read 512-byte header
+    const header = data.slice(offset, offset + 512);
+    
+    // Check for end of archive (two empty blocks)
+    if (header.every(b => b === 0)) {
+      break;
+    }
+    
+    // Extract filename (bytes 0-99)
+    const nameBytes = header.slice(0, 100);
+    const nameEnd = nameBytes.indexOf(0);
+    const name = decoder.decode(nameBytes.slice(0, nameEnd === -1 ? 100 : nameEnd)).trim();
+    
+    if (!name) {
+      break;
+    }
+    
+    // Extract file size (bytes 124-135, octal string)
+    const sizeBytes = header.slice(124, 136);
+    const sizeStr = decoder.decode(sizeBytes).trim();
+    const size = parseInt(sizeStr, 8) || 0;
+    
+    // Extract type flag (byte 156)
+    const typeFlag = header[156];
+    
+    // Skip to file content
+    offset += 512;
+    
+    // Only process regular files (type '0' or '\0')
+    if ((typeFlag === 0x30 || typeFlag === 0) && size > 0) {
+      const content = data.slice(offset, offset + size);
+      files.push({ path: '/' + name, content: new Uint8Array(content) });
+    }
+    
+    // Skip to next header (content is padded to 512-byte boundary)
+    offset += Math.ceil(size / 512) * 512;
+  }
+  
+  return files;
+}
+
+/**
+ * Fetch and extract VFS archive from API
+ */
+async function fetchAndExtractVfsArchive(
+  artifactId: string, 
+  nodeId: string
+): Promise<{ path: string; content: Uint8Array }[]> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/artifacts/${artifactId}/nodes/${nodeId}/archive`
+    );
+    if (!response.ok) {
+      console.warn(`Failed to fetch VFS archive for node ${nodeId}: ${response.status}`);
+      return [];
+    }
+    
+    const gzippedData = await response.arrayBuffer();
+    const tarData = await gzipDecompress(gzippedData);
+    return parseTar(tarData);
+  } catch (error) {
+    console.error(`Error fetching VFS archive for node ${nodeId}:`, error);
+    return [];
+  }
+}
 
 // ============================================================================
 // Internal Helpers
@@ -88,39 +210,15 @@ function remapGeneratedContent(content: GeneratedContent, idMap: IdMap): Generat
 }
 
 // ============================================================================
-// Internal Helpers
-// ============================================================================
-
-/**
- * Fetch a single VFS file content from the API
- */
-async function fetchVfsFileContent(
-  artifactId: string, 
-  nodeId: string, 
-  filePath: string
-): Promise<Uint8Array | null> {
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/artifacts/${artifactId}/nodes/${nodeId}/files/${encodeURIComponent(filePath)}`
-    );
-    if (response.ok) {
-      const buffer = await response.arrayBuffer();
-      return new Uint8Array(buffer);
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-// ============================================================================
 // Core Import Functions
 // ============================================================================
 
 /**
  * Convert artifact graph data to studio nodes and edges format.
- * Fetches content for each node from the API.
- * For VFS nodes, also fetches all files and writes them to the VFS storage.
+ * 
+ * After artifact storage refactoring:
+ * - Node content is directly available in graphData.nodes[].content
+ * - VFS nodes: download tar.gz archive and extract to VFS storage
  * 
  * All nodes are assigned new UUIDs to avoid ID conflicts with existing nodes.
  * References within node content (e.g., GeneratedContent refs) are remapped accordingly.
@@ -129,49 +227,36 @@ export async function convertArtifactToStudioGraph(
   graphData: ArtifactGraphData,
   artifactId: string,
   targetProjectId: string,
-  contentFetcher: ContentFetcher
+  _contentFetcher?: ContentFetcher  // @deprecated - kept for API compatibility
 ): Promise<{ nodes: Node<StudioNodeData>[]; edges: Edge[] }> {
+  // Cast nodes to extended type that includes content
+  const nodesWithContent = graphData.nodes as NodeSummaryWithContent[];
+  
   // Create ID mapping for all nodes (old ID -> new UUID)
   const idMap = createIdMapping(graphData.nodes);
 
-  // Fetch content for all non-VFS nodes in parallel
-  const contentPromises = graphData.nodes.map(async (node: ArtifactNodeSummary) => {
-    // Skip VFS nodes and external nodes
-    if (node.type === 'VFS' || node.external) {
-      return { nodeId: node.id, content: '' };
-    }
-    const content = await contentFetcher.fetchNodeContent(artifactId, node.id);
-    return { nodeId: node.id, content: content ?? '' };
-  });
-  
-  const contentResults = await Promise.all(contentPromises);
-  const contentMap = new Map<string, string>(contentResults.map((r: { nodeId: string; content: string }) => [r.nodeId, r.content]));
-
-  // Process VFS nodes: fetch details and files (use NEW node IDs for VFS storage)
-  const vfsNodes = graphData.nodes.filter((n: ArtifactNodeSummary) => n.type === 'VFS' && !n.external);
+  // Process VFS nodes: download tar.gz and extract files (use NEW node IDs for VFS storage)
+  const vfsNodes = nodesWithContent.filter((n) => n.type === 'VFS' && !n.external);
   for (const vfsNode of vfsNodes) {
-    // Fetch node detail to get file list
-    const nodeDetail = await contentFetcher.fetchNodeDetail(artifactId, vfsNode.id);
-    if (nodeDetail?.files && nodeDetail.files.length > 0) {
+    // Download and extract tar.gz archive
+    const files = await fetchAndExtractVfsArchive(artifactId, vfsNode.id);
+    
+    if (files.length > 0) {
       // Get VFS instance for this node using the NEW ID
       const newNodeId = idMap.get(vfsNode.id)!;
       const vfs = await getNodeVfs(targetProjectId, newNodeId);
       
-      // Fetch and write all files in parallel
-      const filePromises = nodeDetail.files.map(async (fileInfo: NodeFileInfo) => {
-        const content = await fetchVfsFileContent(artifactId, vfsNode.id, fileInfo.filepath);
-        if (content) {
-          await vfs.createFile(fileInfo.filepath, content.buffer as ArrayBuffer);
-        }
-      });
-      await Promise.all(filePromises);
+      // Write all files to VFS
+      for (const file of files) {
+        await vfs.createFile(file.path, new Uint8Array(file.content).buffer as ArrayBuffer);
+      }
       
       // Commit the changes
       await vfs.commit('Imported from artifact');
     }
   }
 
-  const nodes: Node<StudioNodeData>[] = await Promise.all(graphData.nodes.map(async (node: ArtifactNodeSummary, index: number) => {
+  const nodes: Node<StudioNodeData>[] = await Promise.all(nodesWithContent.map(async (node: NodeSummaryWithContent, index: number) => {
     // Get the new ID for this node
     const newNodeId = idMap.get(node.id)!;
     
@@ -182,12 +267,16 @@ export async function convertArtifactToStudioGraph(
     const nodeType = node.type;
     const commit = await generateCommitHash(newNodeId);
 
-    // Get content from map (may be JSON or plain text depending on backend)
-    const rawContent = contentMap.get(node.id) ?? '';
+    // Get content directly from node (new architecture)
+    // Content is already parsed as JSON in the graph response
+    const nodeContent = node.content;
 
     // Handle each node type
     switch (nodeType) {
       case 'VFS': {
+        // VFS content comes from graph, files were already extracted above
+        // VFSContent needs projectId, which we set to targetProjectId
+        const vfsContent = new VFSContent(targetProjectId);
         const vfsData: VFSNodeData = {
           id: newNodeId,
           name: node.name || `Files ${index + 1}`,
@@ -195,7 +284,7 @@ export async function convertArtifactToStudioGraph(
           commit,
           snapshotRefs: [],
           parents: [],
-          content: new VFSContent(targetProjectId),
+          content: vfsContent,
           expandedFolders: [],
           selectedFilePath: undefined,
           isExpandedViewOpen: false,
@@ -212,10 +301,9 @@ export async function convertArtifactToStudioGraph(
 
       case 'SANDBOX': {
         let parsedContent: SandboxContent;
-        try {
-          const json = JSON.parse(rawContent);
-          parsedContent = SandboxContent.fromJSON(json);
-        } catch {
+        if (nodeContent) {
+          parsedContent = SandboxContent.fromJSON(nodeContent as Record<string, unknown>);
+        } else {
           parsedContent = new SandboxContent();
         }
         const sandboxData: SandboxNodeData = {
@@ -241,10 +329,9 @@ export async function convertArtifactToStudioGraph(
 
       case 'LOADER': {
         let parsedContent: LoaderContent;
-        try {
-          const json = JSON.parse(rawContent);
-          parsedContent = LoaderContent.fromJSON(json);
-        } catch {
+        if (nodeContent) {
+          parsedContent = LoaderContent.fromJSON(nodeContent as Record<string, unknown>);
+        } else {
           parsedContent = new LoaderContent();
         }
         const loaderData: LoaderNodeData = {
@@ -269,6 +356,12 @@ export async function convertArtifactToStudioGraph(
       }
 
       case 'STATE': {
+        let stateContent: StateContent;
+        if (nodeContent) {
+          stateContent = StateContent.fromJSON(nodeContent as Record<string, unknown>);
+        } else {
+          stateContent = new StateContent();
+        }
         const stateData: StateNodeData = {
           id: newNodeId,
           name: node.name || `State ${index + 1}`,
@@ -276,7 +369,7 @@ export async function convertArtifactToStudioGraph(
           commit,
           snapshotRefs: [],
           parents: [],
-          content: new StateContent(),
+          content: stateContent,
           external: true,
           originalRef: { nodeId: node.id, commit },
           isReady: false,
@@ -292,8 +385,13 @@ export async function convertArtifactToStudioGraph(
       }
 
       case 'INPUT': {
-        const json = JSON.parse(rawContent);
-        const parsedContent = InputContent.fromJSON(json);
+        let parsedContent: InputContent;
+        if (nodeContent) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          parsedContent = InputContent.fromJSON(nodeContent as any);
+        } else {
+          parsedContent = new InputContent([]);
+        }
         const inputData: InputNodeData = {
           id: newNodeId,
           name: node.name || `Input ${index + 1}`,
@@ -315,11 +413,11 @@ export async function convertArtifactToStudioGraph(
 
       case 'PROMPT': {
         let parsedContent: PromptContent;
-        try {
-          const json = JSON.parse(rawContent);
-          parsedContent = PromptContent.fromJSON(json);
-        } catch {
-          parsedContent = PromptContent.fromText(rawContent);
+        if (nodeContent) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          parsedContent = PromptContent.fromJSON(nodeContent as any);
+        } else {
+          parsedContent = PromptContent.fromText('');
         }
         const promptData: PromptNodeData = {
           id: newNodeId,
@@ -344,12 +442,12 @@ export async function convertArtifactToStudioGraph(
       case 'GENERATED':
       default: {
         let parsedContent: GeneratedContent;
-        try {
-          const json = JSON.parse(rawContent);
-          parsedContent = GeneratedContent.fromJSON(json);
+        if (nodeContent) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          parsedContent = GeneratedContent.fromJSON(nodeContent as any);
           // Remap node ID references in GeneratedContent
           parsedContent = remapGeneratedContent(parsedContent, idMap);
-        } catch {
+        } else {
           parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
         }
         const generatedData: GeneratedNodeData = {

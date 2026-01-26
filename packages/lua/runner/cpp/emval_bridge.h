@@ -206,6 +206,16 @@ inline EM_VAL get_property_val(EM_VAL handle, EM_VAL key_handle) {
     return result.release_ownership();
 }
 
+// Check if property exists (implements JavaScript 'in' operator)
+// Works with both string keys and Symbol keys
+inline bool has_property_val(EM_VAL handle, EM_VAL key_handle) {
+    EMVAL_LOG("has_property_val(%p, %p)", handle, key_handle);
+    BorrowedVal v(handle);
+    BorrowedVal key(key_handle);
+    // Use Reflect.has() which is equivalent to 'key in object'
+    return val::global("Reflect").call<bool>("has", v.get(), key.get());
+}
+
 // Set property - BORROWS all handles
 inline void set_property_str(EM_VAL handle, const char* key, EM_VAL value_handle) {
     EMVAL_LOG("set_property_str(%p, \"%s\", %p)", handle, key, value_handle);

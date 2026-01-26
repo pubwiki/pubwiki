@@ -202,8 +202,8 @@ export class TsBackend implements LoaderBackend {
 
 		// Register JS modules
 		if (this.currentConfig.jsModules) {
-			for (const [name, module] of this.currentConfig.jsModules) {
-				this.registerJsModuleInternal(name, module);
+			for (const [name, entry] of this.currentConfig.jsModules) {
+				this.registerJsModuleInternal(name, entry.module);
 			}
 		}
 		for (const [name, module] of this.pendingModules) {

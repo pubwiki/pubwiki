@@ -24,3 +24,43 @@ export {
 export {
   createPartialJsonModule,
 } from './partial-json'
+
+// JSON Module
+export {
+  createJsonModule,
+  JSON_NULL
+} from './json'
+
+// RDF State Module
+export {
+  createStateModule,
+  luaValueToRdf,
+  rdfToLuaValue,
+  XSD_STRING,
+  XSD_INTEGER,
+  XSD_DOUBLE,
+  XSD_BOOLEAN,
+  PUBWIKI_LUAVALUE
+} from './rdf'
+
+// String Module
+export {
+  createStringModule,
+  len,
+  sub,
+  reverse,
+  upper,
+  lower,
+  char_at,
+  chars,
+  byte,
+  char,
+  find,
+  match,
+  gmatch,
+  gsub,
+  rep,
+  format,
+  toGraphemes,
+  luaIndexToJs
+} from './string'

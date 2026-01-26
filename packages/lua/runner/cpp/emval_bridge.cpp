@@ -117,6 +117,10 @@ EM_VAL emval_get_property_val(EM_VAL handle, EM_VAL key_handle) {
     return emval_bridge::get_property_val(handle, key_handle);
 }
 
+bool emval_has_property_val(EM_VAL handle, EM_VAL key_handle) {
+    return emval_bridge::has_property_val(handle, key_handle);
+}
+
 void emval_set_property_str(EM_VAL handle, const char* key, EM_VAL value_handle) {
     emval_bridge::set_property_str(handle, key, value_handle);
 }

@@ -8,7 +8,8 @@
 import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
 import type { LLMConfig } from '@pubwiki/chat';
-import type { RDFStore, JsModuleDefinition } from '@pubwiki/lua';
+import type { JsModuleDefinition } from '@pubwiki/lua';
+import type { RDFStore } from '@pubwiki/rdfstore';
 
 // Re-export for convenience
 export type { ServiceDefinition, LLMConfig, RDFStore, JsModuleDefinition };
@@ -18,9 +19,23 @@ export type { ServiceDefinition, LLMConfig, RDFStore, JsModuleDefinition };
 // ============================================================================
 
 /**
- * JS module registry - name to module definition
+ * JS module register mode
  */
-export type JsModuleRegistry = Map<string, JsModuleDefinition>;
+export type JsModuleMode = 'module' | 'global' | 'patch';
+
+/**
+ * JS module entry with options
+ */
+export interface JsModuleEntry {
+	module: JsModuleDefinition;
+	/** Registration mode: 'module' (require), 'global', or 'patch' */
+	mode?: JsModuleMode;
+}
+
+/**
+ * JS module registry - name to module entry
+ */
+export type JsModuleRegistry = Map<string, JsModuleEntry>;
 
 // ============================================================================
 // Backend Configuration
