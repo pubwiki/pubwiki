@@ -1,7 +1,7 @@
 import { relations } from 'drizzle-orm';
 import { user, session, account, userFollows } from './schema/auth';
 import { artifacts, artifactVersions, tags, artifactTags } from './schema/artifacts';
-import { artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs } from './schema/nodes';
+import { artifactNodes, artifactNodeVersions, artifactNodeRefs } from './schema/nodes';
 import { artifactLineage, artifactGenerationParams } from './schema/lineage';
 import { artifactStats, artifactStars, artifactViews } from './schema/stats';
 import { discussions, discussionReplies } from './schema/discussions';
@@ -109,19 +109,10 @@ export const artifactNodesRelations = relations(artifactNodes, ({ one, many }) =
 }));
 
 // Artifact node versions relations
-export const artifactNodeVersionsRelations = relations(artifactNodeVersions, ({ one, many }) => ({
+export const artifactNodeVersionsRelations = relations(artifactNodeVersions, ({ one }) => ({
   node: one(artifactNodes, {
     fields: [artifactNodeVersions.nodeId],
     references: [artifactNodes.id],
-  }),
-  files: many(artifactNodeFiles),
-}));
-
-// Artifact node files relations
-export const artifactNodeFilesRelations = relations(artifactNodeFiles, ({ one }) => ({
-  version: one(artifactNodeVersions, {
-    fields: [artifactNodeFiles.nodeVersionId],
-    references: [artifactNodeVersions.id],
   }),
 }));
 

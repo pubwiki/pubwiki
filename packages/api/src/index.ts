@@ -42,6 +42,7 @@ export type ArtifactNodeSummary = components['schemas']['ArtifactNodeSummary'];
 export type ArtifactEdge = components['schemas']['ArtifactEdge'];
 export type NodeVersionInfo = components['schemas']['NodeVersionInfo'];
 export type NodeFileInfo = components['schemas']['NodeFileInfo'];
+export type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 
 // Discussion 相关类型
 export type DiscussionTargetType = components['schemas']['DiscussionTargetType'];

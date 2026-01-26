@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, ArtifactService, NodeService, cloudSaves, eq, and, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNodeFileInput } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, ArtifactType, CreateArtifactMetadata, CreateArtifactResponse, ArtifactDescriptor, GetArtifactGraphResponse, GetNodeDetailResponse } from '@pubwiki/api';
+import { createDb, ArtifactService, NodeService, cloudSaves, eq, and, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNodeContent } from '@pubwiki/db';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, ArtifactType, CreateArtifactMetadata, CreateArtifactResponse, ArtifactDescriptor, GetArtifactGraphResponse, GetNodeDetailResponse, ArtifactNodeDescriptor } from '@pubwiki/api';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { marked } from 'marked';
 
@@ -182,90 +182,28 @@ artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, async (c) =>
   return c.html(html);
 });
 
-// 节点类型对应的文件规则
-const NODE_FILE_RULES = {
-  PROMPT: { filename: 'node.json', multiple: false },
-  INPUT: { filename: 'node.json', multiple: false },
-  GENERATED: { filename: 'node.json', multiple: false },
-  LOADER: { filename: 'node.json', multiple: false },
-  SANDBOX: { filename: 'node.json', multiple: false },
-  STATE: { filename: 'node.json', multiple: false },
-  VFS: { filename: null, multiple: true }, // VFS 允许多文件，文件名任意
-} as const;
-
-// 验证节点和文件的对应关系
-interface NodeFileValidationResult {
+// 验证 descriptor 中的节点内容
+interface DescriptorValidationResult {
   valid: boolean;
   error?: string;
 }
 
-function validateNodeFiles(
-  descriptor: ArtifactDescriptor,
-  uploadedFiles: Map<string, File[]>
-): NodeFileValidationResult {
-  // 收集 descriptor 中所有内部节点的 ID
-  const internalNodeIds = new Set<string>();
-  const nodeTypeMap = new Map<string, string>(); // nodeId -> type
-
+function validateDescriptor(descriptor: ArtifactDescriptor): DescriptorValidationResult {
   for (const node of descriptor.nodes) {
     if (!node.external) {
       if (!node.type) {
         return { valid: false, error: `Internal node ${node.id} must have a type` };
       }
-      internalNodeIds.add(node.id);
-      nodeTypeMap.set(node.id, node.type);
-    }
-  }
-
-  // 收集上传的文件对应的节点 ID
-  const uploadedNodeIds = new Set(uploadedFiles.keys());
-
-  // 检查是否有多余的文件上传（上传了不存在的节点）
-  for (const nodeId of uploadedNodeIds) {
-    if (!internalNodeIds.has(nodeId)) {
-      return { valid: false, error: `Uploaded files for unknown node: ${nodeId}` };
-    }
-  }
-
-  // 检查是否有缺失的文件上传（内部节点必须上传文件）
-  for (const nodeId of internalNodeIds) {
-    if (!uploadedNodeIds.has(nodeId)) {
-      return { valid: false, error: `Missing files for node: ${nodeId}` };
-    }
-  }
-
-  // 验证每个节点的文件上传规则
-  for (const [nodeId, files] of uploadedFiles) {
-    const nodeType = nodeTypeMap.get(nodeId);
-    if (!nodeType) continue; // 已经在前面检查过了
-
-    const rule = NODE_FILE_RULES[nodeType as keyof typeof NODE_FILE_RULES];
-    if (!rule) {
-      return { valid: false, error: `Unknown node type: ${nodeType}` };
-    }
-
-    if (rule.multiple) {
-      // VFS 类型：允许多文件，但至少要有一个文件
-      if (files.length === 0) {
-        return { valid: false, error: `VFS node ${nodeId} must have at least one file` };
-      }
-    } else {
-      // 非 VFS 类型：只允许单文件，且文件名必须是 node.json
-      if (files.length !== 1) {
-        return { valid: false, error: `Node ${nodeId} (type: ${nodeType}) must have exactly one file, got ${files.length}` };
-      }
-      const expectedFilename = rule.filename;
-      const actualFilename = files[0].name;
-      if (actualFilename !== expectedFilename) {
-        return { valid: false, error: `Node ${nodeId} (type: ${nodeType}) file must be named '${expectedFilename}', got '${actualFilename}'` };
+      // 非外部节点必须有 content（VFS 节点除外，VFS 的 content 可以为空，因为文件在 tar.gz 中）
+      if (node.type !== 'VFS' && !node.content) {
+        return { valid: false, error: `Internal node ${node.id} (type: ${node.type}) must have content in descriptor` };
       }
     }
   }
-
   return { valid: true };
 }
 
-// 创建 artifact（支持 multipart/form-data 文件上传）
+// 创建 artifact（新架构：内容在 descriptor 中，VFS 文件单独上传为 tar.gz）
 artifactsRoute.post('/', authMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
@@ -345,75 +283,72 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
-  // 收集上传的节点文件（先收集 File 对象用于验证）
-  // 文件 key 格式: nodes[{nodeId}] 或 nodes[{nodeId}][]
-  const uploadedFiles = new Map<string, File[]>();
-
-  for (const [key, value] of formData.entries()) {
-    const match = key.match(/^nodes\[([^\]]+)\](\[\])?$/);
-    if (match && value instanceof File) {
-      const nodeId = match[1];
-      if (!uploadedFiles.has(nodeId)) {
-        uploadedFiles.set(nodeId, []);
-      }
-      uploadedFiles.get(nodeId)!.push(value);
-    }
-  }
-
-  // 严格验证节点和文件的对应关系
-  const validationResult = validateNodeFiles(descriptor, uploadedFiles);
+  // 验证 descriptor 中的节点 content（新架构）
+  const validationResult = validateDescriptor(descriptor);
   if (!validationResult.valid) {
     return c.json<ApiError>({ error: validationResult.error! }, 400);
   }
 
-  // 处理文件为 CreateArtifactNodeFileInput 格式并计算 hash
-  const nodeFiles = new Map<string, CreateArtifactNodeFileInput[]>();
-  const nodeFileBuffers = new Map<string, Map<string, ArrayBuffer>>();
-  // 存储解析后的 node.json 内容用于验证
-  const nodeContents = new Map<string, Record<string, unknown>>();
+  // 收集 VFS 节点的 tar.gz 文件
+  // 文件 key 格式: vfs[{nodeId}]
+  const vfsArchives = new Map<string, ArrayBuffer>();
 
-  for (const [nodeId, files] of uploadedFiles) {
-    nodeFiles.set(nodeId, []);
-    nodeFileBuffers.set(nodeId, new Map());
+  for (const [key, value] of formData.entries()) {
+    const match = key.match(/^vfs\[([^\]]+)\]$/);
+    if (match && value instanceof File) {
+      const nodeId = match[1];
+      const arrayBuffer = await value.arrayBuffer();
+      vfsArchives.set(nodeId, arrayBuffer);
+    }
+  }
 
-    for (const file of files) {
-      const arrayBuffer = await file.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const contentHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
-
-      const fileInput: CreateArtifactNodeFileInput = {
-        filepath: file.name,
-        filename: file.name,
-        mimeType: file.type || undefined,
-        sizeBytes: file.size,
-        contentHash,
-      };
-
-      nodeFiles.get(nodeId)!.push(fileInput);
-      nodeFileBuffers.get(nodeId)!.set(file.name, arrayBuffer);
-
-      // 解析 node.json 用于后续验证
-      if (file.name === 'node.json') {
-        try {
-          const textDecoder = new TextDecoder();
-          const content = JSON.parse(textDecoder.decode(arrayBuffer));
-          nodeContents.set(nodeId, content);
-        } catch {
-          // 忽略解析错误，后续验证会处理
-        }
+  // 验证 VFS 节点必须有对应的 tar.gz 文件（非 external 的）
+  for (const node of descriptor.nodes) {
+    if (node.type === 'VFS' && !node.external) {
+      if (!vfsArchives.has(node.id)) {
+        return c.json<ApiError>({ 
+          error: `VFS node ${node.id} requires a tar.gz archive (vfs[${node.id}])` 
+        }, 400);
       }
     }
+  }
+
+  // 构建 nodeContents Map（从 descriptor 中提取）
+  const nodeContents = new Map<string, CreateArtifactNodeContent>();
+
+  for (const node of descriptor.nodes) {
+    if (node.external) continue;
+
+    const content = node.content;
+    if (content === undefined || content === null) {
+      return c.json<ApiError>({ 
+        error: `Node ${node.id} is missing content in descriptor` 
+      }, 400);
+    }
+
+    // 计算 content hash
+    const contentStr = JSON.stringify(content);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(contentStr);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const contentHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+
+    nodeContents.set(node.id, {
+      content,
+      contentHash,
+    });
   }
 
   // 验证 STATE 节点必须指定有效的 saveId 和 checkpointId
   for (const node of descriptor.nodes) {
     if (node.type === 'STATE' && !node.external) {
-      const nodeContent = nodeContents.get(node.id);
+      const nodeContentEntry = nodeContents.get(node.id);
+      const nodeContent = nodeContentEntry?.content as Record<string, unknown> | undefined;
       
       if (!nodeContent?.saveId || !nodeContent?.checkpointId) {
         return c.json<ApiError>({ 
-          error: `STATE node ${node.id} must specify saveId and checkpointId in node.json` 
+          error: `STATE node ${node.id} must specify saveId and checkpointId in content` 
         }, 400);
       }
 
@@ -459,7 +394,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     authorId: user.id,
     metadata,
     descriptor,
-    nodeFiles,
+    nodeContents,
   });
 
   if (!result.success) {
@@ -481,27 +416,19 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   const { artifact: createdArtifact } = result.data;
   const artifactId = createdArtifact.id;
 
-  // 上传节点文件到 R2
+  // 上传 VFS 节点的 tar.gz 到 R2
   const nodeService = new NodeService(db);
 
-  for (const [nodeId, files] of nodeFiles.entries()) {
-    const nodeDetail = await nodeService.getNodeDetail(artifactId, nodeId);
-    if (!nodeDetail.success) continue;
+  for (const [nodeId, archiveBuffer] of vfsArchives.entries()) {
+    const archiveKeyResult = await nodeService.getVfsArchiveKey(artifactId, nodeId);
+    if (!archiveKeyResult.success) continue;
 
-    const versionHash = nodeDetail.data.version.commitHash;
-    const buffers = nodeFileBuffers.get(nodeId)!;
-
-    for (const file of files) {
-      const buffer = buffers.get(file.filepath);
-      if (buffer) {
-        const r2Key = `${artifactId}/nodes/${nodeId}/${versionHash}/${file.filepath}`;
-        await c.env.R2_BUCKET.put(r2Key, buffer, {
-          httpMetadata: {
-            contentType: file.mimeType || 'application/octet-stream',
-          },
-        });
-      }
-    }
+    const r2Key = archiveKeyResult.data.key;
+    await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+      httpMetadata: {
+        contentType: 'application/gzip',
+      },
+    });
   }
 
   // 上传主页 HTML 到 R2
@@ -614,8 +541,8 @@ artifactsRoute.get('/:artifactId/nodes/:nodeId', optionalAuthMiddleware, async (
   return c.json<GetNodeDetailResponse>(nodeResult.data);
 });
 
-// 获取节点文本内容（便捷接口）
-artifactsRoute.get('/:artifactId/nodes/:nodeId/content', optionalAuthMiddleware, async (c) => {
+// 获取 VFS 节点的 tar.gz 归档文件
+artifactsRoute.get('/:artifactId/nodes/:nodeId/archive', optionalAuthMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
   const nodeService = new NodeService(db);
@@ -648,7 +575,7 @@ artifactsRoute.get('/:artifactId/nodes/:nodeId/content', optionalAuthMiddleware,
     }
   }
 
-  // 获取节点详情
+  // 获取节点详情以检查类型
   const nodeResult = await nodeService.getNodeDetail(artifactId, nodeId, version);
   if (!nodeResult.success) {
     if (nodeResult.error.code === 'NOT_FOUND') {
@@ -659,97 +586,36 @@ artifactsRoute.get('/:artifactId/nodes/:nodeId/content', optionalAuthMiddleware,
 
   const node = nodeResult.data;
 
-  // VFS 类型不支持此接口
-  if (node.type === 'VFS') {
-    return c.json<ApiError>({ error: 'VFS type nodes do not support content endpoint. Use /files/{path} instead.' }, 400);
+  // 只有 VFS 类型节点支持 archive 端点
+  if (node.type !== 'VFS') {
+    return c.json<ApiError>({ error: 'Only VFS type nodes support the archive endpoint. Use node detail for content.' }, 400);
   }
 
-  // 非VFS节点统一使用 node.json
-  const filepath = 'node.json';
-
-  // 获取文件记录
-  const fileResult = await nodeService.getNodeFile(artifactId, nodeId, filepath, version);
-  if (!fileResult.success) {
-    if (fileResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Content not found' }, 404);
+  // 获取 archive key
+  const archiveKeyResult = await nodeService.getVfsArchiveKey(artifactId, nodeId, version);
+  if (!archiveKeyResult.success) {
+    if (archiveKeyResult.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: archiveKeyResult.error.message }, 404);
     }
-    return c.json<ApiError>({ error: fileResult.error.message }, 500);
+    return c.json<ApiError>({ error: archiveKeyResult.error.message }, 500);
   }
 
-  // 从 R2 获取文件内容
-  const object = await c.env.R2_BUCKET.get(fileResult.data.r2Key);
+  // 从 R2 获取 archive
+  const object = await c.env.R2_BUCKET.get(archiveKeyResult.data.key);
   if (!object) {
-    return c.json<ApiError>({ error: 'Content not found in storage' }, 404);
+    return c.json<ApiError>({ error: 'Archive not found in storage' }, 404);
   }
 
-  const content = await object.text();
-
-  return new Response(content, {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-});
-
-// 获取节点文件内容
-artifactsRoute.get('/:artifactId/nodes/:nodeId/files/:filePath{.+}', optionalAuthMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
-  const nodeService = new NodeService(db);
-  const artifactId = c.req.param('artifactId');
-  const nodeId = c.req.param('nodeId');
-  const filePath = c.req.param('filePath');
-  const user = c.get('user');
-  const version = c.req.query('version');
-
-  // 获取 artifact 信息进行权限检查
-  const artifactResult = await artifactService.getArtifactById(artifactId);
-  if (!artifactResult.success) {
-    if (artifactResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Artifact not found' }, 404);
-    }
-    return c.json<ApiError>({ error: artifactResult.error.message }, 500);
-  }
-
-  const { artifact } = artifactResult.data;
-
-  // 权限检查
-  if (artifact.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted artifact' }, 401);
-  }
-  if (artifact.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
-    }
-    if (user.id !== artifact.authorId) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
-    }
-  }
-
-  // 获取文件记录
-  const fileResult = await nodeService.getNodeFile(artifactId, nodeId, filePath, version);
-  if (!fileResult.success) {
-    if (fileResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: fileResult.error.message }, 404);
-    }
-    return c.json<ApiError>({ error: fileResult.error.message }, 500);
-  }
-
-  // 从 R2 获取文件
-  const object = await c.env.R2_BUCKET.get(fileResult.data.r2Key);
-  if (!object) {
-    return c.json<ApiError>({ error: 'File not found in storage' }, 404);
-  }
-
-  // 返回文件内容
+  // 返回 tar.gz 文件
   const headers = new Headers();
-  headers.set('Content-Type', fileResult.data.file.mimeType || object.httpMetadata?.contentType || 'application/octet-stream');
+  headers.set('Content-Type', 'application/gzip');
   if (object.size) {
     headers.set('Content-Length', object.size.toString());
   }
   if (object.etag) {
     headers.set('ETag', object.etag);
   }
+  headers.set('Content-Disposition', `attachment; filename="${nodeId}.tar.gz"`);
 
   return new Response(object.body, { headers });
 });

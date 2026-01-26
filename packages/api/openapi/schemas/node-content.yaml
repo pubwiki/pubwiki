@@ -1,0 +1,233 @@
+# Node Content Schemas
+# 定义各种节点类型的内容结构
+
+# ============================================================================
+# Common Types
+# ============================================================================
+
+# 节点引用
+NodeRef:
+  type: object
+  required:
+    - id
+    - commit
+  properties:
+    id:
+      type: string
+      format: uuid
+      description: 节点 ID
+    commit:
+      type: string
+      description: 引用时的 commit hash
+
+# VFS 引用
+VfsRef:
+  type: object
+  required:
+    - nodeId
+    - commit
+  properties:
+    nodeId:
+      type: string
+      format: uuid
+      description: VFS 节点 ID
+    commit:
+      type: string
+      description: VFS 状态的 commit hash
+
+# 挂载点
+Mountpoint:
+  type: object
+  required:
+    - id
+    - path
+  properties:
+    id:
+      type: string
+      description: 挂载点唯一标识符
+    path:
+      type: string
+      description: 挂载路径
+
+# ============================================================================
+# Content Block Types (用于 Input/Prompt 节点)
+# ============================================================================
+
+TextBlock:
+  type: object
+  required:
+    - type
+    - value
+  properties:
+    type:
+      type: string
+      const: text
+    value:
+      type: string
+
+RefTagBlock:
+  type: object
+  required:
+    - type
+    - name
+  properties:
+    type:
+      type: string
+      const: reftag
+    name:
+      type: string
+      description: 引用的节点名称
+
+ContentBlock:
+  oneOf:
+    - $ref: '#/TextBlock'
+    - $ref: '#/RefTagBlock'
+  discriminator:
+    propertyName: type
+
+# ============================================================================
+# Input Generation Config
+# ============================================================================
+
+InputGenerationConfig:
+  type: object
+  properties:
+    model:
+      type: string
+      description: 生成使用的模型（空=使用全局设置）
+    temperature:
+      type: number
+      minimum: 0
+      maximum: 2
+      description: 生成温度
+    schema:
+      type: string
+      description: 结构化输出的 JSON Schema
+
+# ============================================================================
+# Node Content Types
+# ============================================================================
+
+# INPUT 节点内容
+InputNodeContent:
+  type: object
+  required:
+    - blocks
+  properties:
+    blocks:
+      type: array
+      items:
+        $ref: '#/ContentBlock'
+    mountpoints:
+      type: array
+      items:
+        $ref: '#/Mountpoint'
+    generationConfig:
+      $ref: '#/InputGenerationConfig'
+
+# PROMPT 节点内容
+PromptNodeContent:
+  type: object
+  required:
+    - blocks
+  properties:
+    blocks:
+      type: array
+      items:
+        $ref: '#/ContentBlock'
+
+# GENERATED 节点内容 (MessageBlock 来自 @pubwiki/chat，这里简化定义)
+GeneratedNodeContent:
+  type: object
+  required:
+    - blocks
+    - inputRef
+  properties:
+    blocks:
+      type: array
+      items:
+        type: object
+        description: MessageBlock 来自 @pubwiki/chat
+    inputRef:
+      $ref: '#/NodeRef'
+    promptRefs:
+      type: array
+      items:
+        $ref: '#/NodeRef'
+    indirectPromptRefs:
+      type: array
+      items:
+        $ref: '#/NodeRef'
+    inputVfsRef:
+      $ref: '#/VfsRef'
+      nullable: true
+    outputVfsId:
+      type: string
+      format: uuid
+      nullable: true
+
+# SANDBOX 节点内容
+SandboxNodeContent:
+  type: object
+  properties:
+    entryFile:
+      type: string
+      default: index.html
+    sandboxOrigin:
+      type: string
+
+# LOADER 节点内容
+LoaderNodeContent:
+  type: object
+  properties:
+    mountpoints:
+      type: array
+      items:
+        $ref: '#/Mountpoint'
+
+# STATE 节点内容
+StateNodeContent:
+  type: object
+  properties:
+    saveId:
+      type: string
+      format: uuid
+      nullable: true
+    checkpointId:
+      type: string
+      nullable: true
+    checkpointRef:
+      type: string
+      nullable: true
+
+# VFS 节点内容（仅文件摘要信息）
+VfsNodeContent:
+  type: object
+  properties:
+    files:
+      type: array
+      items:
+        type: object
+        required:
+          - path
+        properties:
+          path:
+            type: string
+          size:
+            type: integer
+          mimeType:
+            type: string
+
+# ============================================================================
+# Union Type for All Node Contents
+# ============================================================================
+
+ArtifactNodeContent:
+  oneOf:
+    - $ref: '#/InputNodeContent'
+    - $ref: '#/PromptNodeContent'
+    - $ref: '#/GeneratedNodeContent'
+    - $ref: '#/SandboxNodeContent'
+    - $ref: '#/LoaderNodeContent'
+    - $ref: '#/StateNodeContent'
+    - $ref: '#/VfsNodeContent'

@@ -50,13 +50,13 @@ describe('E2E: Articles API', () => {
           id: testSandboxNodeId,
           type: 'SANDBOX',
           name: 'Test Sandbox Node',
+          content: {
+            entryFile: 'index.html',
+          },
         },
       ],
       edges: [],
     }));
-    // 为 SANDBOX node 添加 node.json 文件
-    const nodeJson = JSON.stringify({ type: 'SANDBOX', name: 'Test Sandbox Node' });
-    formData.append(`nodes[${testSandboxNodeId}]`, new Blob([nodeJson], { type: 'application/json' }), 'node.json');
 
     const artifactResponse = await fetch(`${baseUrl}/artifacts`, {
       method: 'POST',

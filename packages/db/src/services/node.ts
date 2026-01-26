@@ -5,14 +5,11 @@ import { artifacts, artifactVersions } from '../schema/artifacts';
 import { 
   artifactNodes, 
   artifactNodeVersions, 
-  artifactNodeFiles, 
   artifactNodeRefs,
   type ArtifactNode,
   type ArtifactNodeVersion,
-  type ArtifactNodeFile,
 } from '../schema/nodes';
 import { user } from '../schema/auth';
-import { chunkArray } from '../utils';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArtifactNodeSummary,
@@ -20,13 +17,14 @@ import type {
   NodeVersionInfo,
   NodeFileInfo,
   ArtifactNodeType,
+  ArtifactNodeContent,
 } from '@pubwiki/api';
 import type { StoredEdge } from '../schema/artifacts';
 
 // 重新导出类型
 export type { ArtifactNodeSummary, ArtifactEdge, NodeVersionInfo, NodeFileInfo };
 
-// 获取图结构响应
+// 获取图结构响应 - 现在包含节点内容
 export interface GetArtifactGraphResult {
   nodes: ArtifactNodeSummary[];
   edges: ArtifactEdge[];
@@ -38,7 +36,7 @@ export interface GetArtifactGraphResult {
   };
 }
 
-// 获取节点详情响应
+// 获取节点详情响应 - 包含内容
 export interface GetNodeDetailResult {
   id: string;
   type: ArtifactNodeType;
@@ -54,7 +52,7 @@ export interface GetNodeDetailResult {
     };
   };
   version: NodeVersionInfo;
-  files?: NodeFileInfo[];
+  content?: ArtifactNodeContent;
 }
 
 // 创建节点输入
@@ -63,30 +61,25 @@ export interface CreateNodeInput {
   artifactId: string;
   type: ArtifactNodeType;
   name?: string;
+  positionX?: number;
+  positionY?: number;
+  originalNodeId?: string;
+  originalCommit?: string;
 }
 
-// 创建节点版本输入
+// 创建节点版本输入 - 现在包含 content 而不是 files
 export interface CreateNodeVersionInput {
   nodeId: string;
   commitHash: string;
   contentHash: string;
+  content: unknown; // JSON content - 结构化内容或 VFS 文件摘要
   message?: string;
-  files: CreateNodeFileInput[];
-}
-
-// 创建节点文件输入
-export interface CreateNodeFileInput {
-  filepath: string;
-  filename: string;
-  mimeType?: string;
-  sizeBytes?: number;
-  checksum?: string;
 }
 
 export class NodeService {
   constructor(private db: Database) {}
 
-  // 获取 artifact 的图结构（节点和边）
+  // 获取 artifact 的图结构（节点和边，包含节点内容）
   async getArtifactGraph(
     artifactId: string,
     versionHash?: string
@@ -129,6 +122,25 @@ export class NodeService {
         .from(artifactNodes)
         .where(eq(artifactNodes.artifactId, artifactId));
 
+      // 获取每个内部节点的最新版本内容
+      const nodeContentMap = new Map<string, ArtifactNodeContent>();
+      for (const node of nodesResult) {
+        const latestVersion = await this.db
+          .select()
+          .from(artifactNodeVersions)
+          .where(eq(artifactNodeVersions.nodeId, node.id))
+          .orderBy(desc(artifactNodeVersions.createdAt))
+          .limit(1);
+        
+        if (latestVersion.length > 0 && latestVersion[0].content) {
+          try {
+            nodeContentMap.set(node.id, JSON.parse(latestVersion[0].content) as ArtifactNodeContent);
+          } catch {
+            // 忽略解析错误
+          }
+        }
+      }
+
       // 获取外部节点引用
       const refsResult = await this.db
         .select({
@@ -141,7 +153,24 @@ export class NodeService {
         .leftJoin(artifactNodes, eq(artifactNodeRefs.externalNodeId, artifactNodes.id))
         .where(eq(artifactNodeRefs.artifactVersionId, version.id));
 
-      // 构建节点列表
+      // 获取外部节点的内容
+      for (const ref of refsResult) {
+        const externalVersion = await this.db
+          .select()
+          .from(artifactNodeVersions)
+          .where(eq(artifactNodeVersions.id, ref.ref.externalNodeVersionId))
+          .limit(1);
+        
+        if (externalVersion.length > 0 && externalVersion[0].content) {
+          try {
+            nodeContentMap.set(ref.ref.externalNodeId, JSON.parse(externalVersion[0].content) as ArtifactNodeContent);
+          } catch {
+            // 忽略解析错误
+          }
+        }
+      }
+
+      // 构建节点列表（现在包含 content）
       const nodes: ArtifactNodeSummary[] = [
         // 内部节点
         ...nodesResult.map((n) => ({
@@ -152,6 +181,7 @@ export class NodeService {
           position: n.positionX != null && n.positionY != null 
             ? { x: n.positionX, y: n.positionY } 
             : undefined,
+          content: nodeContentMap.get(n.id),
         })),
         // 外部节点引用
         ...refsResult.map((r) => ({
@@ -163,6 +193,7 @@ export class NodeService {
           position: r.externalNode?.positionX != null && r.externalNode?.positionY != null
             ? { x: r.externalNode.positionX, y: r.externalNode.positionY }
             : undefined,
+          content: nodeContentMap.get(r.ref.externalNodeId),
         })),
       ];
 
@@ -248,18 +279,15 @@ export class NodeService {
 
         const nodeVersion = nodeVersionResult[0];
 
-        // 获取文件列表
-        const filesResult = await this.db
-          .select()
-          .from(artifactNodeFiles)
-          .where(eq(artifactNodeFiles.nodeVersionId, nodeVersion.id));
-
-        const files: NodeFileInfo[] = filesResult.map((f) => ({
-          filepath: f.filepath,
-          filename: f.filename,
-          mimeType: f.mimeType,
-          sizeBytes: f.sizeBytes,
-        }));
+        // 解析内容
+        let content: ArtifactNodeContent | undefined;
+        if (nodeVersion.content) {
+          try {
+            content = JSON.parse(nodeVersion.content) as ArtifactNodeContent;
+          } catch {
+            // 忽略解析错误
+          }
+        }
 
         return {
           success: true,
@@ -275,7 +303,7 @@ export class NodeService {
               message: nodeVersion.message,
               createdAt: nodeVersion.createdAt,
             },
-            files,
+            content,
           },
         };
       }
@@ -341,18 +369,15 @@ export class NodeService {
 
       const externalVersion = externalVersionResult[0];
 
-      // 获取文件列表
-      const filesResult = await this.db
-        .select()
-        .from(artifactNodeFiles)
-        .where(eq(artifactNodeFiles.nodeVersionId, externalVersion.id));
-
-      const files: NodeFileInfo[] = filesResult.map((f) => ({
-        filepath: f.filepath,
-        filename: f.filename,
-        mimeType: f.mimeType,
-        sizeBytes: f.sizeBytes,
-      }));
+      // 解析内容
+      let content: ArtifactNodeContent | undefined;
+      if (externalVersion.content) {
+        try {
+          content = JSON.parse(externalVersion.content) as ArtifactNodeContent;
+        } catch {
+          // 忽略解析错误
+        }
+      }
 
       return {
         success: true,
@@ -374,7 +399,7 @@ export class NodeService {
             message: externalVersion.message,
             createdAt: externalVersion.createdAt,
           },
-          files,
+          content,
         },
       };
     } catch (error) {
@@ -386,141 +411,93 @@ export class NodeService {
     }
   }
 
-  // 获取节点文件记录
-  async getNodeFile(
+  // 获取 VFS 节点的 tar.gz 归档文件 R2 key
+  async getVfsArchiveKey(
     artifactId: string,
     nodeId: string,
-    filepath: string,
-    versionHash?: string
-  ): Promise<ServiceResult<{
-    file: ArtifactNodeFile;
-    r2Key: string;
-  }>> {
+    version?: string
+  ): Promise<ServiceResult<{ key: string }>> {
     try {
-      // 首先检查是否是内部节点
+      // 获取版本信息以获取 commitHash
+      const versionInfoResult = await this.getNodeVersionInfo(nodeId, version);
+      if (!versionInfoResult.success) {
+        return versionInfoResult;
+      }
+
+      const { commitHash } = versionInfoResult.data;
+      const key = `${artifactId}/nodes/${nodeId}/${commitHash}/files.tar.gz`;
+      
+      return {
+        success: true,
+        data: { key },
+      };
+    } catch (error) {
+      console.error('Get VFS archive key error:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to get VFS archive key' },
+      };
+    }
+  }
+
+  // 获取节点版本信息（用于获取 commitHash）
+  async getNodeVersionInfo(
+    nodeId: string,
+    versionHash?: string
+  ): Promise<ServiceResult<{ commitHash: string; nodeType: ArtifactNodeType }>> {
+    try {
+      // 获取节点
       const nodeResult = await this.db
         .select()
         .from(artifactNodes)
-        .where(and(
-          eq(artifactNodes.id, nodeId),
-          eq(artifactNodes.artifactId, artifactId)
-        ))
+        .where(eq(artifactNodes.id, nodeId))
         .limit(1);
 
-      let nodeVersionId: string;
-      let nodeVersion: ArtifactNodeVersion;
-
-      if (nodeResult.length > 0) {
-        // 内部节点
-        let nodeVersionResult;
-        if (versionHash && versionHash !== 'latest') {
-          nodeVersionResult = await this.db
-            .select()
-            .from(artifactNodeVersions)
-            .where(
-              and(
-                eq(artifactNodeVersions.nodeId, nodeId),
-                eq(artifactNodeVersions.commitHash, versionHash)
-              )
-            )
-            .limit(1);
-        } else {
-          nodeVersionResult = await this.db
-            .select()
-            .from(artifactNodeVersions)
-            .where(eq(artifactNodeVersions.nodeId, nodeId))
-            .orderBy(desc(artifactNodeVersions.createdAt))
-            .limit(1);
-        }
-
-        if (nodeVersionResult.length === 0) {
-          return {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Node version not found' },
-          };
-        }
-        nodeVersion = nodeVersionResult[0];
-        nodeVersionId = nodeVersion.id;
-      } else {
-        // 外部节点引用
-        const artifactVersionResult = await this.db
-          .select()
-          .from(artifactVersions)
-          .where(eq(artifactVersions.artifactId, artifactId))
-          .orderBy(desc(artifactVersions.createdAt))
-          .limit(1);
-
-        if (artifactVersionResult.length === 0) {
-          return {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Artifact version not found' },
-          };
-        }
-
-        const refResult = await this.db
-          .select()
-          .from(artifactNodeRefs)
-          .where(and(
-            eq(artifactNodeRefs.artifactVersionId, artifactVersionResult[0].id),
-            eq(artifactNodeRefs.externalNodeId, nodeId)
-          ))
-          .limit(1);
-
-        if (refResult.length === 0) {
-          return {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Node not found' },
-          };
-        }
-
-        nodeVersionId = refResult[0].externalNodeVersionId;
-        
-        // 获取版本信息
-        const externalVersionResult = await this.db
-          .select()
-          .from(artifactNodeVersions)
-          .where(eq(artifactNodeVersions.id, nodeVersionId))
-          .limit(1);
-
-        if (externalVersionResult.length === 0) {
-          return {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'External node version not found' },
-          };
-        }
-        nodeVersion = externalVersionResult[0];
-      }
-
-      // 获取文件记录
-      const fileResult = await this.db
-        .select()
-        .from(artifactNodeFiles)
-        .where(and(
-          eq(artifactNodeFiles.nodeVersionId, nodeVersionId),
-          eq(artifactNodeFiles.filepath, filepath)
-        ))
-        .limit(1);
-
-      if (fileResult.length === 0) {
+      if (nodeResult.length === 0) {
         return {
           success: false,
-          error: { code: 'NOT_FOUND', message: 'File not found' },
+          error: { code: 'NOT_FOUND', message: 'Node not found' },
         };
       }
 
-      // 构建 R2 key
-      // 格式: /{artifact_id}/nodes/{node_id}/{version_hash}/{filepath}
-      const r2Key = `${artifactId}/nodes/${nodeId}/${nodeVersion.commitHash}/${filepath}`;
+      const node = nodeResult[0];
+
+      // 获取版本
+      let versionResult;
+      if (versionHash && versionHash !== 'latest') {
+        versionResult = await this.db
+          .select()
+          .from(artifactNodeVersions)
+          .where(and(
+            eq(artifactNodeVersions.nodeId, nodeId),
+            eq(artifactNodeVersions.commitHash, versionHash)
+          ))
+          .limit(1);
+      } else {
+        versionResult = await this.db
+          .select()
+          .from(artifactNodeVersions)
+          .where(eq(artifactNodeVersions.nodeId, nodeId))
+          .orderBy(desc(artifactNodeVersions.createdAt))
+          .limit(1);
+      }
+
+      if (versionResult.length === 0) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Node version not found' },
+        };
+      }
 
       return {
         success: true,
         data: {
-          file: fileResult[0],
-          r2Key,
+          commitHash: versionResult[0].commitHash,
+          nodeType: node.type as ArtifactNodeType,
         },
       };
     } catch (error) {
-      console.error('Get node file error:', error);
+      console.error('Get node version info error:', error);
       return {
         success: false,
         error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
@@ -536,6 +513,10 @@ export class NodeService {
         artifactId: input.artifactId,
         type: input.type,
         name: input.name ?? null,
+        positionX: input.positionX ?? null,
+        positionY: input.positionY ?? null,
+        originalNodeId: input.originalNodeId ?? null,
+        originalCommit: input.originalCommit ?? null,
       };
 
       await this.db.insert(artifactNodes).values(newNode);
@@ -559,7 +540,7 @@ export class NodeService {
     }
   }
 
-  // 创建节点版本（使用 batch 保证原子性）
+  // 创建节点版本（现在内容存储在数据库中）
   async createNodeVersion(input: CreateNodeVersionInput): Promise<ServiceResult<ArtifactNodeVersion>> {
     try {
       const versionId = crypto.randomUUID();
@@ -568,35 +549,11 @@ export class NodeService {
         nodeId: input.nodeId,
         commitHash: input.commitHash,
         contentHash: input.contentHash,
+        content: JSON.stringify(input.content),
         message: input.message ?? null,
       };
 
-      // 收集所有批量操作的语句
-      const batchOperations: BatchItem<"sqlite">[] = [];
-      
-      batchOperations.push(this.db.insert(artifactNodeVersions).values(newVersion));
-
-      // 创建文件记录（分批插入以遵守 SQLite 参数限制）
-      if (input.files.length > 0) {
-        const fileRecords = input.files.map((f) => ({
-          id: crypto.randomUUID(),
-          nodeVersionId: versionId,
-          filepath: f.filepath,
-          filename: f.filename,
-          mimeType: f.mimeType ?? null,
-          sizeBytes: f.sizeBytes ?? null,
-          checksum: f.checksum ?? null,
-        }));
-
-        // 每行 7 个字段，分批插入
-        const chunks = chunkArray(fileRecords, 7);
-        for (const chunk of chunks) {
-          batchOperations.push(this.db.insert(artifactNodeFiles).values(chunk));
-        }
-      }
-
-      // 使用 batch 执行所有操作（D1 的 batch 是事务性的）
-      await this.db.batch(batchOperations as any);
+      await this.db.insert(artifactNodeVersions).values(newVersion);
 
       const result = await this.db
         .select()

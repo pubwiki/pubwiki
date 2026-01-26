@@ -520,16 +520,16 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
-/artifacts/{artifactId}/nodes/{nodeId}/content:
+/artifacts/{artifactId}/nodes/{nodeId}/archive:
   get:
-    summary: 获取节点 JSON 内容
+    summary: 下载 VFS 节点的打包文件
     description: |
-      便捷接口，用于获取非 VFS 类型节点的 node.json 内容。
-      支持的节点类型：PROMPT, INPUT, GENERATED, LOADER, SANDBOX, STATE
+      返回 tar.gz 格式的 VFS 内容压缩包。
+      仅支持 VFS 类型节点。
       - PUBLIC artifact: 所有人可访问
       - UNLISTED artifact: 仅注册用户可访问
       - PRIVATE artifact: 仅 owner 可访问
-    operationId: getNodeContent
+    operationId: getNodeArchive
     tags:
       - Nodes
     parameters:
@@ -554,11 +554,12 @@
       '200':
         description: 成功
         content:
-          application/json:
+          application/gzip:
             schema:
-              type: object
+              type: string
+              format: binary
       '400':
-        description: VFS 类型节点请使用 /files/{path} 接口
+        description: 非 VFS 类型节点不支持此接口
         content:
           application/json:
             schema:
@@ -576,7 +577,7 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
       '404':
-        description: Node 不存在
+        description: Node 不存在或归档文件不存在
         content:
           application/json:
             schema:

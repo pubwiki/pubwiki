@@ -11,6 +11,30 @@ import type {
 } from '@pubwiki/api';
 import type { Operation, Quad } from '@pubwiki/rdfsync';
 
+/**
+ * Helper to create a save with required stateNodeId
+ */
+async function createSave(
+  baseUrl: string,
+  sessionCookie: string,
+  name: string,
+  description?: string
+): Promise<CloudSave> {
+  const response = await fetch(`${baseUrl}/saves`, {
+    method: 'POST',
+    headers: {
+      Cookie: sessionCookie,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name,
+      description,
+      stateNodeId: crypto.randomUUID(),
+    }),
+  });
+  return await response.json() as CloudSave;
+}
+
 describe('E2E: Saves API', () => {
   let worker: Unstable_DevWorker;
   let baseUrl: string;
@@ -52,6 +76,7 @@ describe('E2E: Saves API', () => {
         body: JSON.stringify({
           name: 'E2E Test Save',
           description: 'Created for e2e testing',
+          stateNodeId: crypto.randomUUID(),
         }),
       });
 
@@ -90,7 +115,7 @@ describe('E2E: Saves API', () => {
           Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'To be deleted' }),
+        body: JSON.stringify({ name: 'To be deleted', stateNodeId: crypto.randomUUID() }),
       });
       const created = await createResponse.json() as CloudSave;
 
@@ -124,7 +149,7 @@ describe('E2E: Saves API', () => {
           Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'Sync Test Save' }),
+        body: JSON.stringify({ name: 'Sync Test Save', stateNodeId: crypto.randomUUID() }),
       });
       const data = await response.json() as CloudSave;
       syncSaveId = data.id;
@@ -295,7 +320,7 @@ describe('E2E: Saves API', () => {
           Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'History Test Save' }),
+        body: JSON.stringify({ name: 'History Test Save', stateNodeId: crypto.randomUUID() }),
       });
       const created = await createResponse.json() as CloudSave;
       historySaveId = created.id;
@@ -374,7 +399,7 @@ describe('E2E: Saves API', () => {
           Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'Private Save' }),
+        body: JSON.stringify({ name: 'Private Save', stateNodeId: crypto.randomUUID() }),
       });
       const data = await response.json() as CloudSave;
       privateSaveId = data.id;
@@ -436,7 +461,7 @@ describe('E2E: Saves API', () => {
           Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'Checkpoint Test Save' }),
+        body: JSON.stringify({ name: 'Checkpoint Test Save', stateNodeId: crypto.randomUUID() }),
       });
       const created = await createResponse.json() as CloudSave;
       checkpointSaveId = created.id;
@@ -643,7 +668,7 @@ describe('E2E: Saves API', () => {
           Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'ROOT_REF Checkpoint Test' }),
+        body: JSON.stringify({ name: 'ROOT_REF Checkpoint Test', stateNodeId: crypto.randomUUID() }),
       });
       const created = await createResponse.json() as CloudSave;
 
@@ -686,7 +711,7 @@ describe('E2E: Saves API', () => {
           Cookie: sessionCookie,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: 'Visibility Test Save' }),
+        body: JSON.stringify({ name: 'Visibility Test Save', stateNodeId: crypto.randomUUID() }),
       });
       const created = await createResponse.json() as CloudSave;
       visibilitySaveId = created.id;

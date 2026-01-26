@@ -113,12 +113,25 @@ ArtifactNodeDescriptor:
           type: integer
         y:
           type: integer
-
-    files:
+    # 节点内容（非 VFS 节点的结构化数据）
+    content:
+      $ref: './node-content.yaml#/ArtifactNodeContent'
+      description: 节点内容。非 VFS 节点必须包含此字段。
+    # VFS 节点的文件摘要
+    filesSummary:
       type: array
       items:
-        type: string
-      description: VFS 类型时的文件路径列表
+        type: object
+        required:
+          - path
+        properties:
+          path:
+            type: string
+          size:
+            type: integer
+          mimeType:
+            type: string
+      description: VFS 节点的文件摘要列表
     originalRef:
       type: object
       description: Fork 来源信息（当节点是从外部节点 Fork 而来时）
@@ -198,6 +211,10 @@ ArtifactNodeSummary:
       type: string
       format: uuid
       description: 外部引用时，被引用的 artifact ID
+    # 节点内容（非 VFS 节点包含完整内容，VFS 节点包含文件摘要）
+    content:
+      $ref: './node-content.yaml#/ArtifactNodeContent'
+      description: 节点内容。对于内部节点，包含完整的结构化数据；对于外部节点，此字段可能为空。
 
 ArtifactEdge:
   type: object

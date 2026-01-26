@@ -41,7 +41,7 @@
 	} from '$lib/version';
 	import { validateConnection } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
-	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject, type ContentFetcher } from '$lib/io';
+	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject } from '$lib/io';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$components/pubwiki';
@@ -760,49 +760,12 @@
 				return;
 			}
 			
-			// Create content fetcher
-			const contentFetcher: ContentFetcher = {
-				async fetchNodeContent(artId: string, nodeId: string) {
-					console.log('[Studio] Fetching node content:', { artId, nodeId });
-					try {
-						const response = await fetch(`${API_BASE_URL}/artifacts/${artId}/nodes/${nodeId}/content`);
-						if (response.ok) {
-							const text = await response.text();
-							console.log('[Studio] Node content fetched, length:', text.length);
-							return text;
-						}
-						console.log('[Studio] Node content fetch failed:', response.status);
-						return null;
-					} catch (e) {
-						console.error('[Studio] Node content fetch error:', e);
-						return null;
-					}
-				},
-				async fetchNodeDetail(artId: string, nodeId: string) {
-					console.log('[Studio] Fetching node detail:', { artId, nodeId });
-					try {
-						const { data } = await apiClient.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
-							params: {
-								path: { artifactId: artId, nodeId },
-								query: { version: 'latest' }
-							}
-						});
-						console.log('[Studio] Node detail fetched:', data);
-						return data ?? null;
-					} catch (e) {
-						console.error('[Studio] Node detail fetch error:', e);
-						return null;
-					}
-				}
-			};
-			
 			// Import artifact nodes to current project
 			console.log('[Studio] Adding artifact to project...');
 			await addArtifactToProject(
 				{ nodes: graphData.nodes, edges: graphData.edges, version: graphData.version },
 				artifactId,
-				currentProjectId,
-				contentFetcher
+				currentProjectId
 			);
 			
 			console.log('[Studio] Artifact import complete, refreshing view...');

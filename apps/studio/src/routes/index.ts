@@ -171,7 +171,7 @@ export {
 } from '$lib/rdf';
 
 // Import/Export
-export type { ContentFetcher, PublishMetadata } from '$lib/io';
+export type { PublishMetadata } from '$lib/io';
 export {
   convertArtifactToStudioGraph,
   importArtifactToNewProject,

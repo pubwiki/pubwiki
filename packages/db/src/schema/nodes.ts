@@ -14,7 +14,7 @@ export const artifactNodes = sqliteTable(
     artifactId: text('artifact_id')
       .notNull()
       .references(() => artifacts.id, { onDelete: 'cascade' }),
-    type: text('type').$type<ArtifactNodeType>().notNull(), // PROMPT, INPUT, GENERATED, VFS
+    type: text('type').$type<ArtifactNodeType>().notNull(), // PROMPT, INPUT, GENERATED, VFS, LOADER, SANDBOX, STATE
     name: text('name'),
     // Node position in the graph
     positionX: integer('position_x'),
@@ -33,6 +33,7 @@ export const artifactNodes = sqliteTable(
 );
 
 // artifact_node_versions - 节点版本表
+// 现在包含节点内容（非 VFS 节点为 JSON，VFS 节点为文件摘要）
 export const artifactNodeVersions = sqliteTable(
   'artifact_node_versions',
   {
@@ -42,33 +43,16 @@ export const artifactNodeVersions = sqliteTable(
       .references(() => artifactNodes.id, { onDelete: 'cascade' }),
     commitHash: text('commit_hash').notNull(), // SHA-256 前8位
     contentHash: text('content_hash').notNull(), // 用于去重
+    // 节点内容 - JSON 格式
+    // 非 VFS 节点：完整的结构化内容
+    // VFS 节点：文件摘要列表 { files: [{ path, size, mimeType }] }
+    content: text('content'),
     message: text('message'),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
   },
   (table) => [
     index('idx_node_versions_node').on(table.nodeId),
     uniqueIndex('idx_node_versions_hash').on(table.nodeId, table.commitHash),
-  ]
-);
-
-// artifact_node_files - 节点文件表
-export const artifactNodeFiles = sqliteTable(
-  'artifact_node_files',
-  {
-    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    nodeVersionId: text('node_version_id')
-      .notNull()
-      .references(() => artifactNodeVersions.id, { onDelete: 'cascade' }),
-    filepath: text('filepath').notNull(), // 支持嵌套目录，如 subdir/file.txt
-    filename: text('filename').notNull(),
-    mimeType: text('mime_type'),
-    sizeBytes: integer('size_bytes'),
-    checksum: text('checksum'),
-    createdAt: text('created_at').default(currentTimestamp).notNull(),
-  },
-  (table) => [
-    index('idx_node_files_version').on(table.nodeVersionId),
-    index('idx_node_files_path').on(table.nodeVersionId, table.filepath),
   ]
 );
 
@@ -99,7 +83,5 @@ export type ArtifactNode = typeof artifactNodes.$inferSelect;
 export type NewArtifactNode = typeof artifactNodes.$inferInsert;
 export type ArtifactNodeVersion = typeof artifactNodeVersions.$inferSelect;
 export type NewArtifactNodeVersion = typeof artifactNodeVersions.$inferInsert;
-export type ArtifactNodeFile = typeof artifactNodeFiles.$inferSelect;
-export type NewArtifactNodeFile = typeof artifactNodeFiles.$inferInsert;
 export type ArtifactNodeRef = typeof artifactNodeRefs.$inferSelect;
 export type NewArtifactNodeRef = typeof artifactNodeRefs.$inferInsert;

@@ -2,7 +2,7 @@ import { eq, and, or, inArray, notInArray, asc, desc, sql, count } from 'drizzle
 import type { BatchItem } from 'drizzle-orm/batch';
 import type { Database } from '../client';
 import { artifacts, tags, artifactTags, artifactVersions, type Artifact, type Tag, type ArtifactVersion, type NewArtifact, type NewArtifactVersion, type StoredEdge } from '../schema/artifacts';
-import { artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs, type NewArtifactNode, type NewArtifactNodeVersion, type NewArtifactNodeFile, type NewArtifactNodeRef } from '../schema/nodes';
+import { artifactNodes, artifactNodeVersions, artifactNodeRefs, type NewArtifactNode, type NewArtifactNodeVersion, type NewArtifactNodeRef } from '../schema/nodes';
 import { artifactLineage, type ArtifactLineage } from '../schema/lineage';
 import { artifactStats, type ArtifactStats } from '../schema/stats';
 import { user, type User } from '../schema/auth';
@@ -44,22 +44,18 @@ export interface ListArtifactsResult {
   pagination: PaginationInfo;
 }
 
+// 节点内容输入
+export interface CreateArtifactNodeContent {
+  content: unknown; // JSON 格式的节点内容
+  contentHash: string; // 用于生成 commitHash
+}
+
 // 创建 artifact 的输入参数
 export interface CreateArtifactInput {
   authorId: string;
   metadata: CreateArtifactMetadata;
   descriptor: ArtifactDescriptor;
-  nodeFiles: Map<string, CreateArtifactNodeFileInput[]>; // userNodeId -> files
-}
-
-// 节点文件输入
-export interface CreateArtifactNodeFileInput {
-  filepath: string;
-  filename: string;
-  mimeType?: string;
-  sizeBytes?: number;
-  checksum?: string;
-  contentHash: string; // 用于生成 commitHash
+  nodeContents: Map<string, CreateArtifactNodeContent>; // nodeId -> content
 }
 
 // 创建 artifact 的返回结果
@@ -83,7 +79,7 @@ export class ArtifactService {
   // 创建或更新 artifact（使用 batch 保证原子性）
   // 通过检查 metadata.artifactId 是否存在于数据库中决定是创建还是更新
   async createArtifact(input: CreateArtifactInput): Promise<ServiceResult<CreateArtifactResult>> {
-    const { authorId, metadata, descriptor, nodeFiles } = input;
+    const { authorId, metadata, descriptor, nodeContents } = input;
     const artifactId = metadata.artifactId;
 
     try {
@@ -391,7 +387,7 @@ export class ArtifactService {
           // 内部节点 - 直接使用用户传入的 ID
           const nodeId = nodeDesc.id;
 
-          // 创建节点（包含 position 信息）
+          // 创建节点（包含 position 信息和 originalRef）
           const newNode: NewArtifactNode = {
             id: nodeId,
             artifactId,
@@ -399,44 +395,26 @@ export class ArtifactService {
             name: nodeDesc.name ?? null,
             positionX: nodeDesc.position?.x ?? null,
             positionY: nodeDesc.position?.y ?? null,
+            originalNodeId: nodeDesc.originalRef?.nodeId ?? null,
+            originalCommit: nodeDesc.originalRef?.commit ?? null,
           };
           batchOperations.push(this.db.insert(artifactNodes).values(newNode));
 
-          // 获取该节点的文件
-          const files = nodeFiles.get(nodeId) || [];
-
-          // 生成 content hash (基于文件内容的哈希)
-          const contentForHash = files.map(f => f.contentHash).sort().join('');
-          const contentHash = await this.generateCommitHash(contentForHash || nodeId);
+          // 获取该节点的内容
+          const nodeContent = nodeContents.get(nodeId);
+          const contentHash = nodeContent?.contentHash ?? await this.generateCommitHash(nodeId);
           const nodeCommitHash = await this.generateCommitHash(contentHash + timestamp);
 
-          // 创建节点版本
+          // 创建节点版本（现在内容直接存储在数据库中）
           const nodeVersionId = crypto.randomUUID();
           const newNodeVersion: NewArtifactNodeVersion = {
             id: nodeVersionId,
             nodeId: nodeId,
             commitHash: nodeCommitHash,
             contentHash,
+            content: nodeContent ? JSON.stringify(nodeContent.content) : null,
           };
           batchOperations.push(this.db.insert(artifactNodeVersions).values(newNodeVersion));
-
-          // 创建文件记录（分批插入以遵守 SQLite 参数限制）
-          if (files.length > 0) {
-            const fileRecords: NewArtifactNodeFile[] = files.map((f) => ({
-              id: crypto.randomUUID(),
-              nodeVersionId,
-              filepath: f.filepath,
-              filename: f.filename,
-              mimeType: f.mimeType ?? null,
-              sizeBytes: f.sizeBytes ?? null,
-              checksum: f.checksum ?? null,
-            }));
-            // 每行 7 个字段，分批插入
-            const chunks = chunkArray(fileRecords, 7);
-            for (const chunk of chunks) {
-              batchOperations.push(this.db.insert(artifactNodeFiles).values(chunk));
-            }
-          }
         }
       }
 

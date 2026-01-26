@@ -271,7 +271,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/artifacts/{artifactId}/nodes/{nodeId}/content": {
+    "/artifacts/{artifactId}/nodes/{nodeId}/archive": {
         parameters: {
             query?: never;
             header?: never;
@@ -279,14 +279,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 获取节点 JSON 内容
-         * @description 便捷接口，用于获取非 VFS 类型节点的 node.json 内容。
-         *     支持的节点类型：PROMPT, INPUT, GENERATED, LOADER, SANDBOX, STATE
+         * 下载 VFS 节点的打包文件
+         * @description 返回 tar.gz 格式的 VFS 内容压缩包。
+         *     仅支持 VFS 类型节点。
          *     - PUBLIC artifact: 所有人可访问
          *     - UNLISTED artifact: 仅注册用户可访问
          *     - PRIVATE artifact: 仅 owner 可访问
          */
-        get: operations["getNodeContent"];
+        get: operations["getNodeArchive"];
         put?: never;
         post?: never;
         delete?: never;
@@ -947,8 +947,14 @@ export interface components {
                 x?: number;
                 y?: number;
             };
-            /** @description VFS 类型时的文件路径列表 */
-            files?: string[];
+            /** @description 节点内容。非 VFS 节点必须包含此字段。 */
+            content?: components["schemas"]["ArtifactNodeContent"];
+            /** @description VFS 节点的文件摘要列表 */
+            filesSummary?: {
+                path: string;
+                size?: number;
+                mimeType?: string;
+            }[];
             /** @description Fork 来源信息（当节点是从外部节点 Fork 而来时） */
             originalRef?: {
                 /**
@@ -990,6 +996,8 @@ export interface components {
              * @description 外部引用时，被引用的 artifact ID
              */
             externalArtifactId?: string;
+            /** @description 节点内容。对于内部节点，包含完整的结构化数据；对于外部节点，此字段可能为空。 */
+            content?: components["schemas"]["ArtifactNodeContent"];
         };
         ArtifactEdge: {
             /** Format: uuid */
@@ -1094,6 +1102,70 @@ export interface components {
                 downloadCount?: number;
             };
         };
+        NodeRef: {
+            /**
+             * Format: uuid
+             * @description 节点 ID
+             */
+            id: string;
+            /** @description 引用时的 commit hash */
+            commit: string;
+        };
+        VfsRef: {
+            /**
+             * Format: uuid
+             * @description VFS 节点 ID
+             */
+            nodeId: string;
+            /** @description VFS 状态的 commit hash */
+            commit: string;
+        };
+        Mountpoint: {
+            /** @description 挂载点唯一标识符 */
+            id: string;
+            /** @description 挂载路径 */
+            path: string;
+        };
+        ContentBlock: components["schemas"]["TextBlock"] | components["schemas"]["RefTagBlock"];
+        InputNodeContent: {
+            blocks: components["schemas"]["ContentBlock"][];
+            mountpoints?: components["schemas"]["Mountpoint"][];
+            generationConfig?: components["schemas"]["InputGenerationConfig"];
+        };
+        PromptNodeContent: {
+            blocks: components["schemas"]["ContentBlock"][];
+        };
+        GeneratedNodeContent: {
+            blocks: Record<string, never>[];
+            inputRef: components["schemas"]["NodeRef"];
+            promptRefs?: components["schemas"]["NodeRef"][];
+            indirectPromptRefs?: components["schemas"]["NodeRef"][];
+            inputVfsRef?: components["schemas"]["VfsRef"];
+            /** Format: uuid */
+            outputVfsId?: string | null;
+        };
+        SandboxNodeContent: {
+            /** @default index.html */
+            entryFile: string;
+            sandboxOrigin?: string;
+        };
+        LoaderNodeContent: {
+            mountpoints?: components["schemas"]["Mountpoint"][];
+        };
+        StateNodeContent: {
+            /** Format: uuid */
+            saveId?: string | null;
+            checkpointId?: string | null;
+            checkpointRef?: string | null;
+        };
+        VfsNodeContent: {
+            files?: {
+                path: string;
+                size?: number;
+                mimeType?: string;
+            }[];
+        };
+        ArtifactNodeContent: components["schemas"]["InputNodeContent"] | components["schemas"]["PromptNodeContent"] | components["schemas"]["GeneratedNodeContent"] | components["schemas"]["SandboxNodeContent"] | components["schemas"]["LoaderNodeContent"] | components["schemas"]["StateNodeContent"] | components["schemas"]["VfsNodeContent"];
         ProjectRole: {
             /** Format: uuid */
             id: string;
@@ -1615,6 +1687,31 @@ export interface components {
             data: string;
             ref: string;
             quadCount: number;
+        };
+        TextBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "TextBlock";
+            value: string;
+        };
+        RefTagBlock: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "RefTagBlock";
+            /** @description 引用的节点名称 */
+            name: string;
+        };
+        InputGenerationConfig: {
+            /** @description 生成使用的模型（空=使用全局设置） */
+            model?: string;
+            /** @description 生成温度 */
+            temperature?: number;
+            /** @description 结构化输出的 JSON Schema */
+            schema?: string;
         };
         CreateCheckpointResponse: {
             success: boolean;
@@ -2353,7 +2450,7 @@ export interface operations {
             };
         };
     };
-    getNodeContent: {
+    getNodeArchive: {
         parameters: {
             query?: {
                 version?: string;
@@ -2373,10 +2470,10 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>;
+                    "application/gzip": string;
                 };
             };
-            /** @description VFS 类型节点请使用 /files/{path} 接口 */
+            /** @description 非 VFS 类型节点不支持此接口 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2403,7 +2500,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Node 不存在 */
+            /** @description Node 不存在或归档文件不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;

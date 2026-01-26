@@ -10,7 +10,7 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { ArtifactGraphData, ArtifactNodeDetail, ArtifactNodeSummary, ArtifactEdge } from '$lib/types';
+import type { ArtifactGraphData, ArtifactNodeSummary, ArtifactEdge } from '$lib/types';
 import type { 
   StudioNodeData, 
   VFSNodeData, 
@@ -38,18 +38,6 @@ import { API_BASE_URL } from '$lib/config';
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Content fetcher interface for dependency injection
- * After refactoring: only used for VFS archive downloads
- */
-export interface ContentFetcher {
-  /** @deprecated Content is now in graph response */
-  fetchNodeContent(artifactId: string, nodeId: string): Promise<string | null>;
-  fetchNodeDetail(artifactId: string, nodeId: string): Promise<ArtifactNodeDetail | null>;
-  /** Fetch VFS tar.gz archive for a node */
-  fetchVfsArchive?(artifactId: string, nodeId: string): Promise<ArrayBuffer | null>;
-}
 
 /**
  * ID mapping from old (artifact) node IDs to new (studio) node IDs
@@ -226,8 +214,7 @@ function remapGeneratedContent(content: GeneratedContent, idMap: IdMap): Generat
 export async function convertArtifactToStudioGraph(
   graphData: ArtifactGraphData,
   artifactId: string,
-  targetProjectId: string,
-  _contentFetcher?: ContentFetcher  // @deprecated - kept for API compatibility
+  targetProjectId: string
 ): Promise<{ nodes: Node<StudioNodeData>[]; edges: Edge[] }> {
   // Cast nodes to extended type that includes content
   const nodesWithContent = graphData.nodes as NodeSummaryWithContent[];
@@ -496,8 +483,7 @@ export async function convertArtifactToStudioGraph(
  */
 export async function importArtifactToNewProject(
   graphData: ArtifactGraphData,
-  artifactId: string,
-  contentFetcher: ContentFetcher
+  artifactId: string
 ): Promise<string> {
   const newProjectId = crypto.randomUUID();
   
@@ -507,8 +493,7 @@ export async function importArtifactToNewProject(
   const { nodes, edges } = await convertArtifactToStudioGraph(
     graphData, 
     artifactId, 
-    newProjectId, 
-    contentFetcher
+    newProjectId
   );
   
   // Initialize stores with the new project
@@ -538,14 +523,12 @@ export async function importArtifactToNewProject(
 export async function addArtifactToProject(
   graphData: ArtifactGraphData,
   artifactId: string,
-  projectId: string,
-  contentFetcher: ContentFetcher
+  projectId: string
 ): Promise<void> {
   const { nodes: newNodes, edges: newEdges } = await convertArtifactToStudioGraph(
     graphData, 
     artifactId, 
-    projectId, 
-    contentFetcher
+    projectId
   );
   
   // Ensure stores are initialized for this project

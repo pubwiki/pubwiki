@@ -6,7 +6,7 @@
  */
 
 import type { TextPatch, Operation as SyncOperation } from '@pubwiki/rdfsync'
-import { fromRdfQuad, toRdfQuad, serializeTerm, deserializeSubject, deserializePredicate } from '@pubwiki/rdfsync'
+import { fromRdfQuad, toRdfQuad, serializeTerm, deserializeSubject, deserializePredicate } from '@pubwiki/rdfsync/convert'
 import type { Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 import { AbstractLevel } from 'abstract-level'
 import type { Quad } from '@rdfjs/types'

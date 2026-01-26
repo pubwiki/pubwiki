@@ -10,7 +10,8 @@
 import type { Quad } from '@rdfjs/types'
 import type { Ref, RefNode, Checkpoint, CheckpointOptions, Operation } from '../types.js'
 import { ROOT_REF, toSyncOperation } from '../types.js'
-import { generateRef, fromRdfQuad, toRdfQuad } from '@pubwiki/rdfsync'
+import { generateRef } from '@pubwiki/rdfsync'
+import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfsync/convert'
 import { VersionStore, VersionDatabase } from './store.js'
 
 /**

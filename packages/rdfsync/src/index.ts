@@ -4,6 +4,9 @@
  * Blockchain-style verifiable sync protocol for RDF operations
  * 
  * 核心算法: ref = SHA256(parentRef + '|' + canonical(operation))[0:16]
+ * 
+ * Note: RDF.js conversion utilities are in a separate export '@pubwiki/rdfsync/convert'
+ * to avoid bundling n3 dependency when only sync functions are needed.
  */
 
 export type {
@@ -26,14 +29,3 @@ export {
 } from './ref.js'
 
 export { canonicalizeOperation } from './canonical.js'
-
-// RDF.js 转换工具
-export { 
-  fromRdfQuad, 
-  toRdfQuad, 
-  serializeTerm,
-  deserializeSubject,
-  deserializePredicate,
-  deserializeObject,
-  deserializeGraph,
-} from './convert.js'

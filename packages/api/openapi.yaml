@@ -102,6 +102,32 @@ components:
     ArtifactListItem:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactListItem'
 
+    # Node Content schemas
+    NodeRef:
+      $ref: './openapi/schemas/node-content.yaml#/NodeRef'
+    VfsRef:
+      $ref: './openapi/schemas/node-content.yaml#/VfsRef'
+    Mountpoint:
+      $ref: './openapi/schemas/node-content.yaml#/Mountpoint'
+    ContentBlock:
+      $ref: './openapi/schemas/node-content.yaml#/ContentBlock'
+    InputNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/InputNodeContent'
+    PromptNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/PromptNodeContent'
+    GeneratedNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/GeneratedNodeContent'
+    SandboxNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/SandboxNodeContent'
+    LoaderNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/LoaderNodeContent'
+    StateNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/StateNodeContent'
+    VfsNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/VfsNodeContent'
+    ArtifactNodeContent:
+      $ref: './openapi/schemas/node-content.yaml#/ArtifactNodeContent'
+
     # Project schemas
     ProjectRole:
       $ref: './openapi/schemas/project.yaml#/ProjectRole'
@@ -236,8 +262,8 @@ paths:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1graph'
   /artifacts/{artifactId}/nodes/{nodeId}:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1nodes~1{nodeId}'
-  /artifacts/{artifactId}/nodes/{nodeId}/content:
-    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1nodes~1{nodeId}~1content'
+  /artifacts/{artifactId}/nodes/{nodeId}/archive:
+    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1nodes~1{nodeId}~1archive'
   /artifacts/{artifactId}/nodes/{nodeId}/files/{filePath}:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1nodes~1{nodeId}~1files~1{filePath}'
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
-import { registerUser } from './helpers';
+import { registerUser, createVfsTarGz } from './helpers';
 
 describe('E2E: Artifacts API', () => {
   let worker: Unstable_DevWorker;
@@ -276,42 +276,81 @@ describe('E2E: Artifacts API', () => {
     });
   });
 
+  // 辅助函数：创建 FormData（无 VFS 文件）
+  function createFormData(
+    metadata: Record<string, unknown>, 
+    vfsFiles?: { name: string; content: string }[],
+    customDescriptor?: { version: number; nodes: { id: string; type?: string; name?: string; external?: boolean; content?: unknown }[]; edges: { source: string; target: string }[]; exportedAt?: string }
+  ): FormData {
+    const formData = new FormData();
+    // 如果未提供 artifactId，则自动生成一个
+    const metadataWithId = {
+      artifactId: crypto.randomUUID(),
+      ...metadata,
+    };
+    formData.append('metadata', JSON.stringify(metadataWithId));
+    
+    // 生成默认的 descriptor
+    const defaultNodeId = crypto.randomUUID();
+    const descriptor = customDescriptor || {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      nodes: vfsFiles && vfsFiles.length > 0 ? [{ 
+        id: defaultNodeId, 
+        type: 'VFS', 
+        name: 'files',
+        content: { root: '/', files: vfsFiles.map(f => f.name) }
+      }] : [],
+      edges: [],
+    };
+    formData.append('descriptor', JSON.stringify(descriptor));
+    
+    // VFS 文件将在外部异步处理，因为需要创建 tar.gz
+    return formData;
+  }
+
+  // 辅助函数：创建带 VFS tar.gz 归档的 FormData
+  async function createFormDataWithVfs(
+    metadata: Record<string, unknown>, 
+    vfsFiles?: { name: string; content: string }[],
+    customDescriptor?: { version: number; nodes: { id: string; type?: string; name?: string; external?: boolean; content?: unknown }[]; edges: { source: string; target: string }[]; exportedAt?: string }
+  ): Promise<FormData> {
+    const formData = new FormData();
+    // 如果未提供 artifactId，则自动生成一个
+    const metadataWithId = {
+      artifactId: crypto.randomUUID(),
+      ...metadata,
+    };
+    formData.append('metadata', JSON.stringify(metadataWithId));
+    
+    // 生成默认的 descriptor
+    const defaultNodeId = crypto.randomUUID();
+    const descriptor = customDescriptor || {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      nodes: vfsFiles && vfsFiles.length > 0 ? [{ 
+        id: defaultNodeId, 
+        type: 'VFS', 
+        name: 'files',
+        content: { root: '/', files: vfsFiles.map(f => f.name) }
+      }] : [],
+      edges: [],
+    };
+    formData.append('descriptor', JSON.stringify(descriptor));
+    
+    // 为 VFS 节点创建 tar.gz 归档
+    if (vfsFiles && vfsFiles.length > 0) {
+      const nodeId = customDescriptor?.nodes.find(n => n.type === 'VFS')?.id || defaultNodeId;
+      const tarGz = await createVfsTarGz(vfsFiles);
+      const blob = new Blob([tarGz], { type: 'application/gzip' });
+      formData.append(`vfs[${nodeId}]`, blob, 'archive.tar.gz');
+    }
+    
+    return formData;
+  }
+
   describe('POST /artifacts', () => {
     let sessionCookie: string;
-
-    function createFormData(
-      metadata: Record<string, unknown>, 
-      files?: { name: string; content: string }[],
-      customDescriptor?: { version: number; nodes: { id: string; type?: string; name?: string; external?: boolean }[]; edges: { source: string; target: string }[]; exportedAt?: string }
-    ): FormData {
-      const formData = new FormData();
-      // 如果未提供 artifactId，则自动生成一个
-      const metadataWithId = {
-        artifactId: crypto.randomUUID(),
-        ...metadata,
-      };
-      formData.append('metadata', JSON.stringify(metadataWithId));
-      
-      // 生成默认的 descriptor
-      const defaultNodeId = crypto.randomUUID();
-      const descriptor = customDescriptor || {
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        nodes: files && files.length > 0 ? [{ id: defaultNodeId, type: 'VFS', name: 'files' }] : [],
-        edges: [],
-      };
-      formData.append('descriptor', JSON.stringify(descriptor));
-      
-      if (files) {
-        const nodeId = customDescriptor?.nodes[0]?.id || defaultNodeId;
-        for (const file of files) {
-          const blob = new Blob([file.content], { type: 'text/plain' });
-          formData.append(`nodes[${nodeId}]`, blob, file.name);
-        }
-      }
-      
-      return formData;
-    }
 
     beforeEach(async () => {
       const username = `e2euser${Date.now()}`;
@@ -363,7 +402,8 @@ describe('E2E: Artifacts API', () => {
 
     it('should create artifact with files', async () => {
       const slug = `e2e-test-with-files-${Date.now()}`;
-      const formData = createFormData(
+      const vfsNodeId = crypto.randomUUID();
+      const formData = await createFormDataWithVfs(
         {
           type: 'PROMPT',
           name: 'E2E Prompt Pack',
@@ -372,7 +412,18 @@ describe('E2E: Artifacts API', () => {
         },
         [
           { name: 'prompt.md', content: '# Test Prompt\nThis is a test prompt.' },
-        ]
+        ],
+        {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          nodes: [{ 
+            id: vfsNodeId, 
+            type: 'VFS', 
+            name: 'files',
+            content: { root: '/', files: ['prompt.md'] }
+          }],
+          edges: [],
+        }
       );
 
       const response = await fetch(`${baseUrl}/artifacts`, {
@@ -403,11 +454,14 @@ describe('E2E: Artifacts API', () => {
       // Find the VFS node that contains our file
       const nodeId = graphResponse.data!.nodes[0].id;
 
-      // Verify file is accessible via new node-based path
-      const fileResponse = await fetch(`${baseUrl}/artifacts/${data.artifact.id}/nodes/${nodeId}/files/prompt.md`);
-      expect(fileResponse.status).toBe(200);
-      const fileContent = await fileResponse.text();
-      expect(fileContent).toBe('# Test Prompt\nThis is a test prompt.');
+      // Verify VFS archive is accessible via new /archive endpoint
+      const archiveResponse = await fetch(`${baseUrl}/artifacts/${data.artifact.id}/nodes/${nodeId}/archive`);
+      expect(archiveResponse.status).toBe(200);
+      expect(archiveResponse.headers.get('content-type')).toBe('application/gzip');
+      
+      // Verify we got a valid gzip file
+      const archiveBuffer = await archiveResponse.arrayBuffer();
+      expect(archiveBuffer.byteLength).toBeGreaterThan(0);
     });
 
     it('should return 400 for missing required fields', async () => {
@@ -868,6 +922,182 @@ describe('E2E: Artifacts API', () => {
         expect(updateData.artifact.viewCount).toBe(initialViewCount);
         expect(updateData.artifact.likeCount).toBe(initialLikeCount);
       });
+    });
+  });
+
+  describe('GET /artifacts/:artifactId/nodes/:nodeId/archive', () => {
+    let sessionCookie: string;
+
+    beforeEach(async () => {
+      const username = `archiveuser${Date.now()}`;
+      const result = await registerUser(baseUrl, username);
+      sessionCookie = result.sessionCookie;
+    });
+
+    it('should return tar.gz archive for VFS node', async () => {
+      const slug = `vfs-archive-test-${Date.now()}`;
+      const vfsNodeId = crypto.randomUUID();
+      const formData = await createFormDataWithVfs(
+        {
+          type: 'RECIPE',
+          name: 'VFS Archive Test',
+          slug,
+          version: '1.0.0',
+        },
+        [
+          { name: 'file1.txt', content: 'Hello World' },
+          { name: 'file2.txt', content: 'Second file content' },
+        ],
+        {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          nodes: [{ 
+            id: vfsNodeId, 
+            type: 'VFS', 
+            name: 'files',
+            content: { root: '/', files: ['file1.txt', 'file2.txt'] }
+          }],
+          edges: [],
+        }
+      );
+
+      const createResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(createResponse.status).toBe(200);
+      const createData = await createResponse.json() as { artifact: { id: string } };
+
+      // Fetch archive
+      const archiveResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/${vfsNodeId}/archive`
+      );
+      
+      expect(archiveResponse.status).toBe(200);
+      expect(archiveResponse.headers.get('content-type')).toBe('application/gzip');
+      
+      const buffer = await archiveResponse.arrayBuffer();
+      expect(buffer.byteLength).toBeGreaterThan(0);
+      
+      // Verify gzip magic number (1f 8b)
+      const bytes = new Uint8Array(buffer);
+      expect(bytes[0]).toBe(0x1f);
+      expect(bytes[1]).toBe(0x8b);
+    });
+
+    it('should return 404 for non-VFS node', async () => {
+      const slug = `non-vfs-archive-test-${Date.now()}`;
+      const inputNodeId = crypto.randomUUID();
+      const formData = new FormData();
+      formData.append('metadata', JSON.stringify({
+        artifactId: crypto.randomUUID(),
+        type: 'RECIPE',
+        name: 'Non-VFS Test',
+        slug,
+        version: '1.0.0',
+      }));
+      formData.append('descriptor', JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        nodes: [{ 
+          id: inputNodeId, 
+          type: 'INPUT', 
+          name: 'input',
+          content: { text: 'some input text' }
+        }],
+        edges: [],
+      }));
+
+      const createResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(createResponse.status).toBe(200);
+      const createData = await createResponse.json() as { artifact: { id: string } };
+
+      // Try to fetch archive for INPUT node (should fail with 400 Bad Request)
+      // 400 is returned because the node exists but is not a VFS type
+      const archiveResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/${inputNodeId}/archive`
+      );
+      
+      expect(archiveResponse.status).toBe(400);
+    });
+
+    it('should return 404 for non-existent node', async () => {
+      const slug = `archive-nonexistent-${Date.now()}`;
+      const formData = createFormData({
+        type: 'RECIPE',
+        name: 'Test',
+        slug,
+        version: '1.0.0',
+      });
+
+      const createResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(createResponse.status).toBe(200);
+      const createData = await createResponse.json() as { artifact: { id: string } };
+
+      // Try to fetch archive for non-existent node
+      const archiveResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/non-existent-node/archive`
+      );
+      
+      expect(archiveResponse.status).toBe(404);
+    });
+
+    it('should require auth for private artifact archive', async () => {
+      const slug = `private-archive-test-${Date.now()}`;
+      const vfsNodeId = crypto.randomUUID();
+      const formData = await createFormDataWithVfs(
+        {
+          type: 'RECIPE',
+          name: 'Private VFS Test',
+          slug,
+          version: '1.0.0',
+          visibility: 'PRIVATE',
+        },
+        [{ name: 'secret.txt', content: 'secret content' }],
+        {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          nodes: [{ 
+            id: vfsNodeId, 
+            type: 'VFS', 
+            name: 'files',
+            content: { root: '/', files: ['secret.txt'] }
+          }],
+          edges: [],
+        }
+      );
+
+      const createResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(createResponse.status).toBe(200);
+      const createData = await createResponse.json() as { artifact: { id: string } };
+
+      // Try to fetch without auth
+      const archiveResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/${vfsNodeId}/archive`
+      );
+      
+      expect(archiveResponse.status).toBe(401);
+
+      // Should work with auth
+      const authArchiveResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/${vfsNodeId}/archive`,
+        { headers: { Cookie: sessionCookie } }
+      );
+      
+      expect(authArchiveResponse.status).toBe(200);
     });
   });
 

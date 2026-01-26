@@ -400,17 +400,6 @@ if (fileResponse.ok) {
   console.log(`File size: ${binaryContent.byteLength} bytes`);
 }
 
-// 获取非 VFS 节点内容（PROMPT、RECIPE 等类型）
-const contentResponse = await fetch(
-  `${baseUrl}/artifacts/${artifactId}/nodes/${nodeId}/content`,
-  { headers: authToken ? { Authorization: `Bearer ${authToken}` } : {} }
-);
-
-if (contentResponse.ok) {
-  const content = await contentResponse.text();
-  console.log(content);
-}
-
 // 获取 Artifact 谱系信息（支持递归查询多代）
 // 不指定深度参数时，默认无限递归获取所有祖先和后代
 const { data: lineageData } = await client.GET('/artifacts/{artifactId}/lineage', {
@@ -813,7 +802,7 @@ if (error) {
 | GET | `/artifacts/{artifactId}/lineage` | 获取 Artifact 谱系信息（支持递归） | 🔒* |
 | GET | `/artifacts/{artifactId}/graph` | 获取 Artifact 节点图结构 | 🔒* |
 | GET | `/artifacts/{artifactId}/nodes/{nodeId}` | 获取节点详情 | 🔒* |
-| GET | `/artifacts/{artifactId}/nodes/{nodeId}/content` | 获取非 VFS 节点内容 | 🔒* |
+| GET | `/artifacts/{artifactId}/nodes/{nodeId}/archive` | 获取 VFS 节点 tar.gz 存档 | 🔒* |
 | GET | `/artifacts/{artifactId}/nodes/{nodeId}/files/{filePath}` | 获取 VFS 节点文件内容 | 🔒* |
 | GET | `/projects` | 获取公开 Project 列表 | ❌ |
 | POST | `/projects` | 创建 Project（支持角色树和多页面） | ✅ |

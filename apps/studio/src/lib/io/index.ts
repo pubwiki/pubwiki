@@ -5,8 +5,7 @@
 export {
   convertArtifactToStudioGraph,
   importArtifactToNewProject,
-  addArtifactToProject,
-  type ContentFetcher
+  addArtifactToProject
 } from './import';
 
 export {
