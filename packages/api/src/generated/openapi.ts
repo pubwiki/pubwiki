@@ -2426,8 +2426,8 @@ export interface operations {
                             };
                         };
                         version: components["schemas"]["NodeVersionInfo"];
-                        /** @description VFS 类型时包含文件路径列表 */
-                        files?: components["schemas"]["NodeFileInfo"][];
+                        /** @description 节点内容，VFS 类型时包含 files 数组 */
+                        content?: components["schemas"]["ArtifactNodeContent"];
                     };
                 };
             };

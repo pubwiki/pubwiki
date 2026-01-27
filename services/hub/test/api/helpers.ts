@@ -152,6 +152,96 @@ export async function createTestUser(db: TestDb, username: string = 'testuser'):
   return createdUser.id;
 }
 
+/**
+ * 创建 VFS tar.gz 归档
+ * @param files 文件列表，每个文件包含名称和内容
+ * @returns tar.gz 压缩后的 ArrayBuffer
+ */
+export async function createVfsTarGz(
+  files: { name: string; content: string | Uint8Array }[]
+): Promise<ArrayBuffer> {
+  // 创建 tar 数据
+  const tarParts: Uint8Array[] = [];
+  const encoder = new TextEncoder();
+
+  for (const file of files) {
+    const content = typeof file.content === 'string' 
+      ? encoder.encode(file.content) 
+      : file.content;
+    
+    // 创建 tar header (512 bytes)
+    const header = new Uint8Array(512);
+    
+    // 文件名 (0-99)
+    const nameBytes = encoder.encode(file.name);
+    header.set(nameBytes.slice(0, 100), 0);
+    
+    // 文件模式 (100-107): 0644
+    header.set(encoder.encode('0000644\0'), 100);
+    
+    // UID (108-115): 0
+    header.set(encoder.encode('0000000\0'), 108);
+    
+    // GID (116-123): 0
+    header.set(encoder.encode('0000000\0'), 116);
+    
+    // 文件大小 (124-135): 八进制
+    const sizeOctal = content.length.toString(8).padStart(11, '0') + '\0';
+    header.set(encoder.encode(sizeOctal), 124);
+    
+    // 修改时间 (136-147): 当前时间
+    const mtime = Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + '\0';
+    header.set(encoder.encode(mtime), 136);
+    
+    // 校验和占位符 (148-155): 8个空格
+    header.set(encoder.encode('        '), 148);
+    
+    // 类型标志 (156): '0' 表示普通文件
+    header[156] = 48; // '0'
+    
+    // USTAR magic (257-262): 'ustar\0'
+    header.set(encoder.encode('ustar\0'), 257);
+    
+    // USTAR version (263-264): '00'
+    header.set(encoder.encode('00'), 263);
+    
+    // 计算校验和
+    let checksum = 0;
+    for (let i = 0; i < 512; i++) {
+      checksum += header[i];
+    }
+    const checksumOctal = checksum.toString(8).padStart(6, '0') + '\0 ';
+    header.set(encoder.encode(checksumOctal), 148);
+    
+    tarParts.push(header);
+    tarParts.push(content);
+    
+    // 填充到 512 字节边界
+    const padding = (512 - (content.length % 512)) % 512;
+    if (padding > 0) {
+      tarParts.push(new Uint8Array(padding));
+    }
+  }
+  
+  // 添加两个空的 512 字节块作为结束标记
+  tarParts.push(new Uint8Array(1024));
+  
+  // 合并所有部分
+  const totalLength = tarParts.reduce((acc, part) => acc + part.length, 0);
+  const tarData = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of tarParts) {
+    tarData.set(part, offset);
+    offset += part.length;
+  }
+  
+  // 使用 CompressionStream 进行 gzip 压缩
+  const stream = new Blob([tarData]).stream();
+  const compressedStream = stream.pipeThrough(new CompressionStream('gzip'));
+  const compressedBlob = await new Response(compressedStream).blob();
+  return compressedBlob.arrayBuffer();
+}
+
 // 导出数据库表和eq操作符，方便测试文件使用
 // 注意: 'user' 是正确的表名，'users' 是别名保持向后兼容
 export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, artifactLineage, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, artifactNodes, artifactNodeVersions, artifactNodeRefs, discussions, discussionReplies, articles, eq };

@@ -496,11 +496,9 @@
                           type: string
                 version:
                   $ref: '../schemas/artifact.yaml#/NodeVersionInfo'
-                files:
-                  type: array
-                  items:
-                    $ref: '../schemas/artifact.yaml#/NodeFileInfo'
-                  description: VFS 类型时包含文件路径列表
+                content:
+                  $ref: '../schemas/node-content.yaml#/ArtifactNodeContent'
+                  description: 节点内容，VFS 类型时包含 files 数组
       '401':
         description: 需要认证
         content:

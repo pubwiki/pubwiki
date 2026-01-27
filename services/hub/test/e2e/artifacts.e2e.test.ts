@@ -299,7 +299,7 @@ describe('E2E: Artifacts API', () => {
         id: defaultNodeId, 
         type: 'VFS', 
         name: 'files',
-        content: { root: '/', files: vfsFiles.map(f => f.name) }
+        content: { files: vfsFiles.map(f => ({ path: f.name })) }
       }] : [],
       edges: [],
     };
@@ -332,7 +332,7 @@ describe('E2E: Artifacts API', () => {
         id: defaultNodeId, 
         type: 'VFS', 
         name: 'files',
-        content: { root: '/', files: vfsFiles.map(f => f.name) }
+        content: { files: vfsFiles.map(f => ({ path: f.name })) }
       }] : [],
       edges: [],
     };
@@ -420,7 +420,7 @@ describe('E2E: Artifacts API', () => {
             id: vfsNodeId, 
             type: 'VFS', 
             name: 'files',
-            content: { root: '/', files: ['prompt.md'] }
+            content: { files: [{ path: 'prompt.md', mimeType: 'text/markdown' }] }
           }],
           edges: [],
         }
@@ -524,6 +524,163 @@ describe('E2E: Artifacts API', () => {
       expect(response.status).toBe(400);
       const data = await response.json() as { error: string };
       expect(data.error).toContain('semver');
+    });
+
+    it('should return 400 for VFS node without files array in content', async () => {
+      const slug = `vfs-no-files-${Date.now()}`;
+      const vfsNodeId = crypto.randomUUID();
+      const formData = new FormData();
+      formData.append('metadata', JSON.stringify({
+        artifactId: crypto.randomUUID(),
+        type: 'RECIPE',
+        name: 'VFS Without Files',
+        slug,
+        version: '1.0.0',
+      }));
+      formData.append('descriptor', JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        nodes: [{ 
+          id: vfsNodeId, 
+          type: 'VFS', 
+          name: 'invalid-vfs',
+          // Invalid content - missing 'files' array, has random projectId instead
+          content: { projectId: 'some-random-id' }
+        }],
+        edges: [],
+      }));
+
+      // Add a dummy archive so it doesn't fail on missing archive
+      const dummyArchive = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03]);
+      const archiveBlob = new Blob([dummyArchive], { type: 'application/gzip' });
+      formData.append(`vfs[${vfsNodeId}]`, archiveBlob, 'archive.tar.gz');
+
+      const response = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: {
+          Cookie: sessionCookie,
+        },
+        body: formData,
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json() as { error: string };
+      expect(data.error).toContain('files');
+    });
+
+    it('should return 400 for VFS node with invalid files array item', async () => {
+      const slug = `vfs-invalid-file-${Date.now()}`;
+      const vfsNodeId = crypto.randomUUID();
+      const formData = new FormData();
+      formData.append('metadata', JSON.stringify({
+        artifactId: crypto.randomUUID(),
+        type: 'RECIPE',
+        name: 'VFS With Invalid File',
+        slug,
+        version: '1.0.0',
+      }));
+      formData.append('descriptor', JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        nodes: [{ 
+          id: vfsNodeId, 
+          type: 'VFS', 
+          name: 'invalid-vfs',
+          // Invalid content - files array item missing 'path'
+          content: { files: [{ name: 'file.txt' }] }
+        }],
+        edges: [],
+      }));
+
+      const dummyArchive = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03]);
+      const archiveBlob = new Blob([dummyArchive], { type: 'application/gzip' });
+      formData.append(`vfs[${vfsNodeId}]`, archiveBlob, 'archive.tar.gz');
+
+      const response = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: {
+          Cookie: sessionCookie,
+        },
+        body: formData,
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json() as { error: string };
+      expect(data.error).toContain('path');
+    });
+
+    it('should return 400 for INPUT node without blocks array', async () => {
+      const slug = `input-no-blocks-${Date.now()}`;
+      const inputNodeId = crypto.randomUUID();
+      const formData = new FormData();
+      formData.append('metadata', JSON.stringify({
+        artifactId: crypto.randomUUID(),
+        type: 'RECIPE',
+        name: 'Input Without Blocks',
+        slug,
+        version: '1.0.0',
+      }));
+      formData.append('descriptor', JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        nodes: [{ 
+          id: inputNodeId, 
+          type: 'INPUT', 
+          name: 'invalid-input',
+          // Invalid content - missing 'blocks' array
+          content: { text: 'some text' }
+        }],
+        edges: [],
+      }));
+
+      const response = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: {
+          Cookie: sessionCookie,
+        },
+        body: formData,
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json() as { error: string };
+      expect(data.error).toContain('blocks');
+    });
+
+    it('should return 400 for GENERATED node without inputRef', async () => {
+      const slug = `generated-no-inputref-${Date.now()}`;
+      const generatedNodeId = crypto.randomUUID();
+      const formData = new FormData();
+      formData.append('metadata', JSON.stringify({
+        artifactId: crypto.randomUUID(),
+        type: 'RECIPE',
+        name: 'Generated Without InputRef',
+        slug,
+        version: '1.0.0',
+      }));
+      formData.append('descriptor', JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        nodes: [{ 
+          id: generatedNodeId, 
+          type: 'GENERATED', 
+          name: 'invalid-generated',
+          // Invalid content - missing 'inputRef'
+          content: { blocks: [] }
+        }],
+        edges: [],
+      }));
+
+      const response = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: {
+          Cookie: sessionCookie,
+        },
+        body: formData,
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json() as { error: string };
+      expect(data.error).toContain('inputRef');
     });
 
     it('should return 409 for duplicate slug from same user', async () => {
@@ -925,6 +1082,189 @@ describe('E2E: Artifacts API', () => {
     });
   });
 
+  describe('GET /artifacts/:artifactId/nodes/:nodeId', () => {
+    let sessionCookie: string;
+
+    beforeEach(async () => {
+      const username = `nodedetailuser${Date.now()}`;
+      const result = await registerUser(baseUrl, username);
+      sessionCookie = result.sessionCookie;
+    });
+
+    it('should return node detail for VFS node with files in content', async () => {
+      const slug = `vfs-node-detail-test-${Date.now()}`;
+      const vfsNodeId = crypto.randomUUID();
+      const formData = await createFormDataWithVfs(
+        {
+          type: 'RECIPE',
+          name: 'VFS Node Detail Test',
+          slug,
+          version: '1.0.0',
+        },
+        [
+          { name: 'file1.txt', content: 'Hello World' },
+          { name: 'subdir/file2.txt', content: 'Nested file content' },
+        ],
+        {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          nodes: [{ 
+            id: vfsNodeId, 
+            type: 'VFS', 
+            name: 'test-vfs',
+            content: { files: [
+              { path: 'file1.txt', size: 11, mimeType: 'text/plain' },
+              { path: 'subdir/file2.txt', size: 19, mimeType: 'text/plain' },
+            ]}
+          }],
+          edges: [],
+        }
+      );
+
+      const createResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(createResponse.status).toBe(200);
+      const createData = await createResponse.json() as { artifact: { id: string } };
+
+      // Fetch node detail
+      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
+        params: {
+          path: { artifactId: createData.artifact.id, nodeId: vfsNodeId },
+          query: { version: 'latest' },
+        },
+      });
+      
+      expect(nodeDetailResponse.response.status).toBe(200);
+      expect(nodeDetailResponse.data).toBeDefined();
+      
+      const nodeDetail = nodeDetailResponse.data!;
+      expect(nodeDetail.id).toBe(vfsNodeId);
+      expect(nodeDetail.type).toBe('VFS');
+      expect(nodeDetail.name).toBe('test-vfs');
+      expect(nodeDetail.external).toBe(false);
+      expect(nodeDetail.version).toBeDefined();
+      expect(nodeDetail.version.commitHash).toBeDefined();
+      
+      // VFS node should have content with files array
+      expect(nodeDetail.content).toBeDefined();
+      // content should be VfsNodeContent with files
+      const content = nodeDetail.content as { files?: { path: string; size?: number; mimeType?: string }[] };
+      expect(content.files).toBeDefined();
+      expect(Array.isArray(content.files)).toBe(true);
+      expect(content.files!.length).toBe(2);
+      
+      // Verify file structure
+      const file1 = content.files!.find(f => f.path === 'file1.txt');
+      expect(file1).toBeDefined();
+      expect(file1!.mimeType).toBe('text/plain');
+      
+      const file2 = content.files!.find(f => f.path === 'subdir/file2.txt');
+      expect(file2).toBeDefined();
+    });
+
+    it('should return node detail for non-VFS node', async () => {
+      const slug = `input-node-detail-test-${Date.now()}`;
+      const inputNodeId = crypto.randomUUID();
+      const formData = new FormData();
+      formData.append('metadata', JSON.stringify({
+        artifactId: crypto.randomUUID(),
+        type: 'RECIPE',
+        name: 'Input Node Detail Test',
+        slug,
+        version: '1.0.0',
+      }));
+      formData.append('descriptor', JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        nodes: [{ 
+          id: inputNodeId, 
+          type: 'INPUT', 
+          name: 'test-input',
+          content: { blocks: [] }
+        }],
+        edges: [],
+      }));
+
+      const createResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(createResponse.status).toBe(200);
+      const createData = await createResponse.json() as { artifact: { id: string } };
+
+      // Fetch node detail
+      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
+        params: {
+          path: { artifactId: createData.artifact.id, nodeId: inputNodeId },
+          query: { version: 'latest' },
+        },
+      });
+      
+      expect(nodeDetailResponse.response.status).toBe(200);
+      expect(nodeDetailResponse.data).toBeDefined();
+      
+      const nodeDetail = nodeDetailResponse.data!;
+      expect(nodeDetail.id).toBe(inputNodeId);
+      expect(nodeDetail.type).toBe('INPUT');
+      expect(nodeDetail.name).toBe('test-input');
+      expect(nodeDetail.external).toBe(false);
+      expect(nodeDetail.content).toBeDefined();
+    });
+
+    it('should return 404 for non-existent node', async () => {
+      const slug = `non-existent-node-test-${Date.now()}`;
+      const vfsNodeId = crypto.randomUUID();
+      const formData = await createFormDataWithVfs(
+        {
+          type: 'RECIPE',
+          name: 'Non-existent Node Test',
+          slug,
+          version: '1.0.0',
+        },
+        [{ name: 'file.txt', content: 'test' }],
+        {
+          version: 1,
+          exportedAt: new Date().toISOString(),
+          nodes: [{ id: vfsNodeId, type: 'VFS', name: 'vfs', content: { files: [{ path: 'file.txt' }] } }],
+          edges: [],
+        }
+      );
+
+      const createResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(createResponse.status).toBe(200);
+      const createData = await createResponse.json() as { artifact: { id: string } };
+
+      // Fetch non-existent node
+      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
+        params: {
+          path: { artifactId: createData.artifact.id, nodeId: crypto.randomUUID() },
+          query: { version: 'latest' },
+        },
+      });
+      
+      expect(nodeDetailResponse.response.status).toBe(404);
+    });
+
+    it('should return 404 for non-existent artifact', async () => {
+      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
+        params: {
+          path: { artifactId: crypto.randomUUID(), nodeId: crypto.randomUUID() },
+          query: { version: 'latest' },
+        },
+      });
+      
+      expect(nodeDetailResponse.response.status).toBe(404);
+    });
+  });
+
   describe('GET /artifacts/:artifactId/nodes/:nodeId/archive', () => {
     let sessionCookie: string;
 
@@ -955,7 +1295,7 @@ describe('E2E: Artifacts API', () => {
             id: vfsNodeId, 
             type: 'VFS', 
             name: 'files',
-            content: { root: '/', files: ['file1.txt', 'file2.txt'] }
+            content: { files: [{ path: 'file1.txt' }, { path: 'file2.txt' }] }
           }],
           edges: [],
         }
@@ -1004,7 +1344,7 @@ describe('E2E: Artifacts API', () => {
           id: inputNodeId, 
           type: 'INPUT', 
           name: 'input',
-          content: { text: 'some input text' }
+          content: { blocks: [] }
         }],
         edges: [],
       }));
@@ -1070,7 +1410,7 @@ describe('E2E: Artifacts API', () => {
             id: vfsNodeId, 
             type: 'VFS', 
             name: 'files',
-            content: { root: '/', files: ['secret.txt'] }
+            content: { files: [{ path: 'secret.txt' }] }
           }],
           edges: [],
         }

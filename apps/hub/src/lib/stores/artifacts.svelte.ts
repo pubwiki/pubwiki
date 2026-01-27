@@ -216,6 +216,20 @@ export class ArtifactStore {
 			});
 			
 			if (data) {
+				// For VFS nodes, extract files from content.files and convert to NodeFileInfo format
+				let files: NodeFileInfo[] | undefined;
+				if (data.type === 'VFS' && data.content) {
+					const vfsContent = data.content as { files?: { path: string; size?: number; mimeType?: string }[] };
+					if (vfsContent.files && Array.isArray(vfsContent.files)) {
+						files = vfsContent.files.map(f => ({
+							filepath: f.path,
+							filename: f.path.split('/').pop() || f.path,
+							mimeType: f.mimeType ?? null,
+							sizeBytes: f.size ?? null,
+						}));
+					}
+				}
+				
 				const detail: ArtifactNodeDetail = {
 					id: data.id,
 					type: data.type,
@@ -223,7 +237,7 @@ export class ArtifactStore {
 					external: data.external,
 					externalArtifact: data.externalArtifact,
 					version: data.version,
-					files: data.files
+					files
 				};
 				// Cache the result
 				this.nodeDetailCache.set(cacheKey, detail);

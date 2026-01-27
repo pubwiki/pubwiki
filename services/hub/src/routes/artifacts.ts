@@ -188,15 +188,83 @@ interface DescriptorValidationResult {
   error?: string;
 }
 
+// 验证节点 content 结构是否符合其类型要求
+function validateNodeContent(nodeId: string, nodeType: string, content: unknown): DescriptorValidationResult {
+  if (!content || typeof content !== 'object') {
+    return { valid: false, error: `Node ${nodeId} (type: ${nodeType}) content must be an object` };
+  }
+
+  const c = content as Record<string, unknown>;
+
+  switch (nodeType) {
+    case 'VFS':
+      // VFS 节点必须有 files 数组
+      if (!c.files || !Array.isArray(c.files)) {
+        return { valid: false, error: `VFS node ${nodeId} content must have a 'files' array` };
+      }
+      // 每个 file 必须有 path 字段
+      for (let i = 0; i < c.files.length; i++) {
+        const file = c.files[i] as Record<string, unknown>;
+        if (!file || typeof file !== 'object' || typeof file.path !== 'string') {
+          return { valid: false, error: `VFS node ${nodeId} files[${i}] must have a 'path' string` };
+        }
+      }
+      break;
+
+    case 'INPUT':
+    case 'PROMPT':
+      // INPUT/PROMPT 节点必须有 blocks 数组
+      if (!c.blocks || !Array.isArray(c.blocks)) {
+        return { valid: false, error: `${nodeType} node ${nodeId} content must have a 'blocks' array` };
+      }
+      break;
+
+    case 'GENERATED':
+      // GENERATED 节点必须有 blocks 数组和 inputRef
+      if (!c.blocks || !Array.isArray(c.blocks)) {
+        return { valid: false, error: `GENERATED node ${nodeId} content must have a 'blocks' array` };
+      }
+      if (!c.inputRef || typeof c.inputRef !== 'object') {
+        return { valid: false, error: `GENERATED node ${nodeId} content must have an 'inputRef' object` };
+      }
+      break;
+
+    case 'SANDBOX':
+      // SANDBOX 节点的 content 可以是空对象或包含 entryFile
+      // 没有必填字段，所以不需要额外校验
+      break;
+
+    case 'LOADER':
+      // LOADER 节点的 content 可以是空对象或包含 mountpoints
+      // 没有必填字段，所以不需要额外校验
+      break;
+
+    case 'STATE':
+      // STATE 节点的 content 可以是空对象或包含 saveId, checkpointId 等
+      // 没有必填字段，所以不需要额外校验
+      break;
+
+    default:
+      return { valid: false, error: `Unknown node type: ${nodeType}` };
+  }
+
+  return { valid: true };
+}
+
 function validateDescriptor(descriptor: ArtifactDescriptor): DescriptorValidationResult {
   for (const node of descriptor.nodes) {
     if (!node.external) {
       if (!node.type) {
         return { valid: false, error: `Internal node ${node.id} must have a type` };
       }
-      // 非外部节点必须有 content（VFS 节点除外，VFS 的 content 可以为空，因为文件在 tar.gz 中）
-      if (node.type !== 'VFS' && !node.content) {
+      // 非外部节点必须有 content
+      if (!node.content) {
         return { valid: false, error: `Internal node ${node.id} (type: ${node.type}) must have content in descriptor` };
+      }
+      // 验证 content 结构
+      const contentValidation = validateNodeContent(node.id, node.type, node.content);
+      if (!contentValidation.valid) {
+        return contentValidation;
       }
     }
   }

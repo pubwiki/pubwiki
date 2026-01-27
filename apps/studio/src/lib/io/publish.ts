@@ -270,22 +270,40 @@ async function collectVfsFiles(
 }
 
 /**
+ * File info for VFS content in descriptor
+ */
+interface VfsContentFileInfo {
+	path: string;
+	size: number;
+	mimeType?: string;
+}
+
+/**
  * Package VFS files as a tar.gz archive
+ * Returns file info for descriptor content
  */
 async function packageVfsAsTarGz(
 	projectId: string,
 	nodeId: string
-): Promise<{ archive: Uint8Array; totalFiles: number; totalSize: number }> {
-	const files = await collectVfsFiles(projectId, nodeId);
+): Promise<{ archive: Uint8Array; totalFiles: number; totalSize: number; files: VfsContentFileInfo[] }> {
+	const collectedFiles = await collectVfsFiles(projectId, nodeId);
 	
 	let totalSize = 0;
 	const tarFiles: { path: string; content: Uint8Array }[] = [];
+	const fileInfos: VfsContentFileInfo[] = [];
 	
-	for (const file of files) {
+	for (const file of collectedFiles) {
 		// Remove leading slash for tar path
 		const tarPath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
 		tarFiles.push({ path: tarPath, content: file.content });
 		totalSize += file.content.byteLength;
+		
+		// Build file info for descriptor content
+		fileInfos.push({
+			path: tarPath,
+			size: file.content.byteLength,
+			mimeType: guessMimeType(tarPath)
+		});
 	}
 	
 	const tarData = createTar(tarFiles);
@@ -293,9 +311,41 @@ async function packageVfsAsTarGz(
 	
 	return {
 		archive: gzipped,
-		totalFiles: files.length,
-		totalSize
+		totalFiles: collectedFiles.length,
+		totalSize,
+		files: fileInfos
 	};
+}
+
+/**
+ * Guess MIME type from file extension
+ */
+function guessMimeType(path: string): string {
+	const ext = path.split('.').pop()?.toLowerCase() ?? '';
+	const mimeTypes: Record<string, string> = {
+		'txt': 'text/plain',
+		'md': 'text/markdown',
+		'json': 'application/json',
+		'js': 'text/javascript',
+		'ts': 'text/typescript',
+		'html': 'text/html',
+		'css': 'text/css',
+		'xml': 'application/xml',
+		'yaml': 'text/yaml',
+		'yml': 'text/yaml',
+		'lua': 'text/x-lua',
+		'png': 'image/png',
+		'jpg': 'image/jpeg',
+		'jpeg': 'image/jpeg',
+		'gif': 'image/gif',
+		'svg': 'image/svg+xml',
+		'webp': 'image/webp',
+		'pdf': 'application/pdf',
+		'zip': 'application/zip',
+		'tar': 'application/x-tar',
+		'gz': 'application/gzip',
+	};
+	return mimeTypes[ext] ?? 'application/octet-stream';
 }
 
 // ============================================================================
@@ -399,12 +449,13 @@ async function prepareNodesForPublish(
 			// Add content based on node type
 			if (node.data.type === 'VFS') {
 				const vfsData = node.data as VFSNodeData;
-				const { archive, totalFiles, totalSize } = await packageVfsAsTarGz(
+				const { archive, totalFiles, totalSize, files } = await packageVfsAsTarGz(
 					vfsData.content.projectId,
 					node.data.id
 				);
 				vfsArchives.set(node.data.id, archive);
-				descriptor.content = vfsData.content.toJSON();
+				// VFS content must have files array for backend validation
+				descriptor.content = { files };
 				descriptor.filesSummary = { totalFiles, totalSize };
 			} else {
 				descriptor.content = node.data.content.toJSON();

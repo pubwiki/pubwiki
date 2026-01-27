@@ -13,6 +13,7 @@ import {
   sendRequest,
   registerUser,
   createTestUser,
+  createVfsTarGz,
   user,
   artifacts,
   tags,
@@ -683,11 +684,11 @@ describe('Artifacts API', () => {
       sessionCookie = result.sessionCookie;
     });
 
-    // 创建 VFS 类型的节点 FormData（多文件）
-    function createVfsFormData(
+    // 创建 VFS 类型的节点 FormData（多文件，使用 tar.gz 归档）
+    async function createVfsFormData(
       metadata: Record<string, unknown>,
       files?: { name: string; content: string | Uint8Array; type?: string }[]
-    ): FormData {
+    ): Promise<FormData> {
       const formData = new FormData();
       // 如果未提供 artifactId，则自动生成一个
       const metadataWithId = {
@@ -700,16 +701,24 @@ describe('Artifacts API', () => {
       const descriptor = {
         version: 1,
         exportedAt: new Date().toISOString(),
-        nodes: files && files.length > 0 ? [{ id: nodeId, type: 'VFS', name: 'files' }] : [],
+        nodes: files && files.length > 0 ? [{ 
+          id: nodeId, 
+          type: 'VFS', 
+          name: 'files',
+          content: { files: files.map(f => ({ path: f.name })) }
+        }] : [],
         edges: [],
       };
       formData.append('descriptor', JSON.stringify(descriptor));
 
-      if (files) {
-        for (const file of files) {
-          const blob = new Blob([file.content], { type: file.type || 'text/plain' });
-          formData.append(`nodes[${nodeId}]`, blob, file.name);
-        }
+      if (files && files.length > 0) {
+        // 创建 tar.gz 归档
+        const tarGz = await createVfsTarGz(files.map(f => ({ 
+          name: f.name, 
+          content: f.content 
+        })));
+        const blob = new Blob([tarGz], { type: 'application/gzip' });
+        formData.append(`vfs[${nodeId}]`, blob, 'archive.tar.gz');
       }
 
       return formData;
@@ -733,7 +742,12 @@ describe('Artifacts API', () => {
       const descriptor = {
         version: 1,
         exportedAt: new Date().toISOString(),
-        nodes: hasContent ? [{ id: nodeId, type: 'PROMPT', name: 'prompt' }] : [],
+        nodes: hasContent ? [{ 
+          id: nodeId, 
+          type: 'PROMPT', 
+          name: 'prompt',
+          content: { blocks: [] }
+        }] : [],
         edges: [],
       };
       formData.append('descriptor', JSON.stringify(descriptor));
@@ -764,7 +778,12 @@ describe('Artifacts API', () => {
       const descriptor = {
         version: 1,
         exportedAt: new Date().toISOString(),
-        nodes: hasContent ? [{ id: nodeId, type: 'GENERATED', name: 'output' }] : [],
+        nodes: hasContent ? [{ 
+          id: nodeId, 
+          type: 'GENERATED', 
+          name: 'output',
+          content: { blocks: [], inputRef: { nodeId: crypto.randomUUID(), version: 'latest' } }
+        }] : [],
         edges: [],
       };
       formData.append('descriptor', JSON.stringify(descriptor));
@@ -780,7 +799,7 @@ describe('Artifacts API', () => {
     // 创建自定义 descriptor 的 FormData
     function createCustomFormData(
       metadata: Record<string, unknown>,
-      descriptor: { version: number; nodes: { id: string; type?: string; name?: string; external?: boolean }[]; edges: { source: string; target: string }[]; exportedAt?: string },
+      descriptor: { version: number; nodes: { id: string; type?: string; name?: string; external?: boolean; content?: unknown }[]; edges: { source: string; target: string }[]; exportedAt?: string },
       nodeFiles?: Map<string, { name: string; content: string | Uint8Array; type?: string }[]>
     ): FormData {
       const formData = new FormData();
@@ -808,7 +827,7 @@ describe('Artifacts API', () => {
     }
 
     it('should return 401 when not authenticated', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'RECIPE',
         name: 'Test Recipe',
         slug: 'test-recipe',
@@ -825,7 +844,7 @@ describe('Artifacts API', () => {
     });
 
     it('should create artifact successfully without files', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'RECIPE',
         name: 'My Recipe',
         slug: 'my-recipe',
@@ -850,7 +869,7 @@ describe('Artifacts API', () => {
     });
 
     it('should create artifact with VFS files', async () => {
-      const formData = createVfsFormData(
+      const formData = await createVfsFormData(
         {
           type: 'PROMPT',
           name: 'Prompt Pack',
@@ -874,7 +893,7 @@ describe('Artifacts API', () => {
       const data = await response.json<CreateArtifactResponse>();
       expect(data.artifact.name).toBe('Prompt Pack');
 
-      // Verify files are uploaded to R2 - new path format: {artifact_id}/nodes/{node_id}/{version_hash}/{filepath}
+      // Verify VFS archive is uploaded to R2
       const r2Bucket = getTestR2Bucket();
       
       // Get node info from database to construct R2 path
@@ -887,13 +906,12 @@ describe('Artifacts API', () => {
       
       const versionHash = nodeVersions[0].commitHash;
       
-      const file1 = await r2Bucket.get(`${data.artifact.id}/nodes/${node.id}/${versionHash}/prompt1.md`);
-      const file2 = await r2Bucket.get(`${data.artifact.id}/nodes/${node.id}/${versionHash}/prompt2.md`);
+      // VFS archives are stored as a single tar.gz file
+      const archiveKey = `${data.artifact.id}/nodes/${node.id}/${versionHash}/files.tar.gz`;
+      const archive = await r2Bucket.get(archiveKey);
       
-      expect(file1).not.toBeNull();
-      expect(file2).not.toBeNull();
-      expect(await file1!.text()).toBe('# Prompt 1\nContent here');
-      expect(await file2!.text()).toBe('# Prompt 2\nMore content');
+      expect(archive).not.toBeNull();
+      expect(archive!.httpMetadata?.contentType).toBe('application/gzip');
     });
 
     it('should create artifact with tags', async () => {
@@ -904,7 +922,7 @@ describe('Artifacts API', () => {
         usageCount: 5,
       });
 
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'GAME',
         name: 'Tagged Game',
         slug: 'tagged-game',
@@ -934,124 +952,6 @@ describe('Artifacts API', () => {
 
     // 节点文件验证测试
     describe('Node file validation', () => {
-      it('should return 400 when files uploaded for unknown node', async () => {
-        const nodeId = crypto.randomUUID();
-        const unknownNodeId = crypto.randomUUID();
-        const nodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        // 上传到不存在的节点
-        nodeFiles.set(unknownNodeId, [{ name: 'node.json', content: 'test' }]);
-
-        const formData = createCustomFormData(
-          { type: 'RECIPE', name: 'Test', slug: 'test', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT' }], edges: [] },
-          nodeFiles
-        );
-
-        const request = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: formData,
-        });
-        const response = await sendRequest(request);
-
-        expect(response.status).toBe(400);
-        const data = await response.json<ApiError>();
-        expect(data.error).toContain('unknown node');
-      });
-
-      it('should return 400 when missing files for internal node', async () => {
-        const nodeId = crypto.randomUUID();
-        
-        const formData = createCustomFormData(
-          { type: 'RECIPE', name: 'Test', slug: 'test', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT' }], edges: [] },
-          new Map() // 不上传任何文件
-        );
-
-        const request = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: formData,
-        });
-        const response = await sendRequest(request);
-
-        expect(response.status).toBe(400);
-        const data = await response.json<ApiError>();
-        expect(data.error).toContain('Missing files for node');
-      });
-
-      it('should return 400 when PROMPT node has wrong filename', async () => {
-        const nodeId = crypto.randomUUID();
-        const nodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles.set(nodeId, [{ name: 'wrong.txt', content: 'test' }]);
-
-        const formData = createCustomFormData(
-          { type: 'RECIPE', name: 'Test', slug: 'test', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT' }], edges: [] },
-          nodeFiles
-        );
-
-        const request = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: formData,
-        });
-        const response = await sendRequest(request);
-
-        expect(response.status).toBe(400);
-        const data = await response.json<ApiError>();
-        expect(data.error).toContain("must be named 'node.json'");
-      });
-
-      it('should return 400 when GENERATED node has wrong filename', async () => {
-        const nodeId = crypto.randomUUID();
-        const nodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles.set(nodeId, [{ name: 'wrong.txt', content: 'test' }]); // 应该是 node.json
-
-        const formData = createCustomFormData(
-          { type: 'RECIPE', name: 'Test', slug: 'test', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'GENERATED' }], edges: [] },
-          nodeFiles
-        );
-
-        const request = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: formData,
-        });
-        const response = await sendRequest(request);
-
-        expect(response.status).toBe(400);
-        const data = await response.json<ApiError>();
-        expect(data.error).toContain("must be named 'node.json'");
-      });
-
-      it('should return 400 when PROMPT node has multiple files', async () => {
-        const nodeId = crypto.randomUUID();
-        const nodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles.set(nodeId, [
-          { name: 'node.json', content: 'test1' },
-          { name: 'another.txt', content: 'test2' },
-        ]);
-
-        const formData = createCustomFormData(
-          { type: 'RECIPE', name: 'Test', slug: 'test', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT' }], edges: [] },
-          nodeFiles
-        );
-
-        const request = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: formData,
-        });
-        const response = await sendRequest(request);
-
-        expect(response.status).toBe(400);
-        const data = await response.json<ApiError>();
-        expect(data.error).toContain('must have exactly one file');
-      });
-
       it('should create artifact with valid PROMPT node', async () => {
         const formData = createPromptFormData(
           { type: 'RECIPE', name: 'Prompt Test', slug: 'prompt-test', version: '1.0.0' },
@@ -1089,7 +989,7 @@ describe('Artifacts API', () => {
       });
 
       it('should create artifact with valid VFS node with multiple files', async () => {
-        const formData = createVfsFormData(
+        const formData = await createVfsFormData(
           { type: 'ASSET_PACK', name: 'VFS Test', slug: 'vfs-test', version: '1.0.0' },
           [
             { name: 'file1.txt', content: 'content 1' },
@@ -1135,7 +1035,7 @@ describe('Artifacts API', () => {
     });
 
     it('should return 400 for missing required fields', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'RECIPE',
         name: 'Incomplete',
         // Missing slug and version
@@ -1154,7 +1054,7 @@ describe('Artifacts API', () => {
     });
 
     it('should return 400 for invalid type', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'INVALID_TYPE',
         name: 'Invalid',
         slug: 'invalid',
@@ -1174,7 +1074,7 @@ describe('Artifacts API', () => {
     });
 
     it('should return 400 for invalid slug format', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'RECIPE',
         name: 'Bad Slug',
         slug: 'BAD SLUG WITH SPACES!',
@@ -1194,7 +1094,7 @@ describe('Artifacts API', () => {
     });
 
     it('should return 400 for invalid version format', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'RECIPE',
         name: 'Bad Version',
         slug: 'bad-version',
@@ -1231,7 +1131,7 @@ describe('Artifacts API', () => {
 
     it('should return 409 for duplicate slug', async () => {
       // Create first artifact
-      const formData1 = createVfsFormData({
+      const formData1 = await createVfsFormData({
         type: 'RECIPE',
         name: 'First',
         slug: 'duplicate-slug',
@@ -1247,7 +1147,7 @@ describe('Artifacts API', () => {
       expect(response1.status).toBe(200);
 
       // Try to create second artifact with same slug
-      const formData2 = createVfsFormData({
+      const formData2 = await createVfsFormData({
         type: 'GAME',
         name: 'Second',
         slug: 'duplicate-slug',
@@ -1268,7 +1168,7 @@ describe('Artifacts API', () => {
 
     it('should allow same slug for different users', async () => {
       // Create artifact with first user
-      const formData1 = createVfsFormData({
+      const formData1 = await createVfsFormData({
         type: 'RECIPE',
         name: 'User1 Recipe',
         slug: 'shared-slug',
@@ -1285,7 +1185,7 @@ describe('Artifacts API', () => {
 
       // Create artifact with second user using same slug
       const { sessionCookie: sessionCookie2 } = await registerUser('createartifactuser2');
-      const formData2 = createVfsFormData({
+      const formData2 = await createVfsFormData({
         type: 'RECIPE',
         name: 'User2 Recipe',
         slug: 'shared-slug',
@@ -1305,7 +1205,7 @@ describe('Artifacts API', () => {
     });
 
     it('should create artifact with all optional fields', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'ASSET_PACK',
         name: 'Full Asset Pack',
         slug: 'full-asset-pack',
@@ -1337,7 +1237,7 @@ describe('Artifacts API', () => {
     });
 
     it('should create version record correctly', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'PROMPT',
         name: 'Versioned Prompt',
         slug: 'versioned-prompt',
@@ -1367,7 +1267,7 @@ describe('Artifacts API', () => {
     });
 
     it('should create file records correctly', async () => {
-      const formData = createVfsFormData(
+      const formData = await createVfsFormData(
         {
           type: 'RECIPE',
           name: 'Recipe with Files',
@@ -1418,7 +1318,7 @@ describe('Artifacts API', () => {
     });
 
     it('should create stats record', async () => {
-      const formData = createVfsFormData({
+      const formData = await createVfsFormData({
         type: 'GAME',
         name: 'Stats Game',
         slug: 'stats-game',
@@ -1491,7 +1391,7 @@ describe('Artifacts API', () => {
     describe('Update artifact (with artifactId in metadata)', () => {
       it('should update artifact successfully when artifactId is provided', async () => {
         // 首先创建一个 artifact
-        const createFormData = createVfsFormData({
+        const createFormData = await createVfsFormData({
           type: 'RECIPE',
           name: 'Original Recipe',
           slug: 'original-recipe',
@@ -1510,7 +1410,7 @@ describe('Artifacts API', () => {
         const artifactId = createData.artifact.id;
 
         // 更新这个 artifact
-        const updateFormData = createVfsFormData({
+        const updateFormData = await createVfsFormData({
           artifactId,
           type: 'RECIPE',
           name: 'Updated Recipe',
@@ -1537,7 +1437,7 @@ describe('Artifacts API', () => {
 
       it('should preserve stats when updating artifact', async () => {
         // 首先创建一个 artifact
-        const createFormData = createVfsFormData({
+        const createFormData = await createVfsFormData({
           type: 'RECIPE',
           name: 'Recipe for Stats',
           slug: 'recipe-stats',
@@ -1560,7 +1460,7 @@ describe('Artifacts API', () => {
           .where(eq(artifactStats.artifactId, artifactId));
 
         // 更新这个 artifact
-        const updateFormData = createVfsFormData({
+        const updateFormData = await createVfsFormData({
           artifactId,
           type: 'RECIPE',
           name: 'Updated Recipe Stats',
@@ -1583,7 +1483,7 @@ describe('Artifacts API', () => {
 
       it('should create new artifact when artifactId does not exist in database', async () => {
         const newId = crypto.randomUUID();
-        const formData = createVfsFormData({
+        const formData = await createVfsFormData({
           artifactId: newId,
           type: 'RECIPE',
           name: 'New Artifact',
@@ -1607,7 +1507,7 @@ describe('Artifacts API', () => {
       it('should return 403 when trying to update artifact owned by another user', async () => {
         // 创建另一个用户的 artifact
         const { sessionCookie: otherUserSessionCookie } = await registerUser('otheruser');
-        const createFormData = createVfsFormData({
+        const createFormData = await createVfsFormData({
           type: 'RECIPE',
           name: 'Other User Recipe',
           slug: 'other-user-recipe',
@@ -1625,7 +1525,7 @@ describe('Artifacts API', () => {
         const artifactId = createData.artifact.id;
 
         // 尝试用当前用户更新
-        const updateFormData = createVfsFormData({
+        const updateFormData = await createVfsFormData({
           artifactId,
           type: 'RECIPE',
           name: 'Hijacked Recipe',
@@ -1647,7 +1547,7 @@ describe('Artifacts API', () => {
 
       it('should return 409 when updated slug conflicts with another artifact', async () => {
         // 创建第一个 artifact
-        const createFormData1 = createVfsFormData({
+        const createFormData1 = await createVfsFormData({
           type: 'RECIPE',
           name: 'First Recipe',
           slug: 'first-recipe',
@@ -1662,7 +1562,7 @@ describe('Artifacts API', () => {
         await sendRequest(createRequest1);
 
         // 创建第二个 artifact
-        const createFormData2 = createVfsFormData({
+        const createFormData2 = await createVfsFormData({
           type: 'RECIPE',
           name: 'Second Recipe',
           slug: 'second-recipe',
@@ -1680,7 +1580,7 @@ describe('Artifacts API', () => {
         const artifactId2 = createData2.artifact.id;
 
         // 尝试将第二个 artifact 的 slug 更新为第一个的
-        const updateFormData = createVfsFormData({
+        const updateFormData = await createVfsFormData({
           artifactId: artifactId2,
           type: 'RECIPE',
           name: 'Updated Recipe',
@@ -1702,7 +1602,7 @@ describe('Artifacts API', () => {
 
       it('should allow updating slug to the same value', async () => {
         // 创建一个 artifact
-        const createFormData = createVfsFormData({
+        const createFormData = await createVfsFormData({
           type: 'RECIPE',
           name: 'Same Slug Recipe',
           slug: 'same-slug',
@@ -1720,7 +1620,7 @@ describe('Artifacts API', () => {
         const artifactId = createData.artifact.id;
 
         // 更新，保持相同的 slug
-        const updateFormData = createVfsFormData({
+        const updateFormData = await createVfsFormData({
           artifactId,
           type: 'RECIPE',
           name: 'Updated Same Slug',
@@ -1749,7 +1649,7 @@ describe('Artifacts API', () => {
         ]);
 
         // 创建带标签的 artifact
-        const createFormData = createVfsFormData({
+        const createFormData = await createVfsFormData({
           type: 'RECIPE',
           name: 'Tagged Recipe',
           slug: 'tagged-recipe',
@@ -1773,7 +1673,7 @@ describe('Artifacts API', () => {
         expect(tagA1.usageCount).toBe(11);
 
         // 更新，移除 tag-a，添加 tag-b
-        const updateFormData = createVfsFormData({
+        const updateFormData = await createVfsFormData({
           artifactId,
           type: 'RECIPE',
           name: 'Updated Tagged Recipe',
@@ -1809,7 +1709,7 @@ describe('Artifacts API', () => {
 
         const createFormData = createCustomFormData(
           { type: 'RECIPE', name: 'Node Recipe', slug: 'node-recipe', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId1, type: 'PROMPT', name: 'original-node' }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId1, type: 'PROMPT', name: 'original-node', content: { blocks: [] } }], edges: [] },
           nodeFiles1
         );
 
@@ -1835,7 +1735,7 @@ describe('Artifacts API', () => {
 
         const updateFormData = createCustomFormData(
           { artifactId, type: 'RECIPE', name: 'Updated Node Recipe', slug: 'updated-node-recipe', version: '2.0.0' },
-          { version: 1, nodes: [{ id: nodeId2, type: 'PROMPT', name: 'new-node' }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId2, type: 'PROMPT', name: 'new-node', content: { blocks: [] } }], edges: [] },
           nodeFiles2
         );
 
@@ -1862,7 +1762,7 @@ describe('Artifacts API', () => {
 
         const createFormData = createCustomFormData(
           { type: 'RECIPE', name: 'Reuse Node Recipe', slug: 'reuse-node-recipe', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'my-node' }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'my-node', content: { blocks: [] } }], edges: [] },
           nodeFiles
         );
 
@@ -1882,7 +1782,7 @@ describe('Artifacts API', () => {
 
         const updateFormData = createCustomFormData(
           { artifactId, type: 'RECIPE', name: 'Updated Reuse Recipe', slug: 'reuse-node-recipe', version: '2.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'my-node-updated' }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'my-node-updated', content: { blocks: [] } }], edges: [] },
           updatedNodeFiles
         );
 
@@ -1909,7 +1809,7 @@ describe('Artifacts API', () => {
 
         const createFormData1 = createCustomFormData(
           { type: 'RECIPE', name: 'First Artifact', slug: 'first-artifact', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'shared-node' }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'shared-node', content: { blocks: [] } }], edges: [] },
           nodeFiles
         );
 
@@ -1927,7 +1827,7 @@ describe('Artifacts API', () => {
 
         const createFormData2 = createCustomFormData(
           { type: 'RECIPE', name: 'Second Artifact', slug: 'second-artifact', version: '1.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'stolen-node' }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'stolen-node', content: { blocks: [] } }], edges: [] },
           nodeFiles2
         );
 
