@@ -45,6 +45,16 @@ import { API_BASE_URL } from '$lib/config';
 type IdMap = Map<string, string>;
 
 /**
+ * Progress callback for import operations
+ */
+export type ImportProgressCallback = (progress: {
+  phase: 'downloading-vfs' | 'writing-vfs' | 'processing-nodes' | 'saving';
+  current?: number;
+  total?: number;
+  detail?: string;
+}) => void;
+
+/**
  * Node summary with content - use type assertion since API types may be slightly different
  * The API now returns content directly in the graph response
  */
@@ -214,7 +224,8 @@ function remapGeneratedContent(content: GeneratedContent, idMap: IdMap): Generat
 export async function convertArtifactToStudioGraph(
   graphData: ArtifactGraphData,
   artifactId: string,
-  targetProjectId: string
+  targetProjectId: string,
+  onProgress?: ImportProgressCallback
 ): Promise<{ nodes: Node<StudioNodeData>[]; edges: Edge[] }> {
   // Cast nodes to extended type that includes content
   const nodesWithContent = graphData.nodes as NodeSummaryWithContent[];
@@ -222,30 +233,64 @@ export async function convertArtifactToStudioGraph(
   // Create ID mapping for all nodes (old ID -> new UUID)
   const idMap = createIdMapping(graphData.nodes);
 
-  // Process VFS nodes: download tar.gz and extract files (use NEW node IDs for VFS storage)
+  // Process VFS nodes: download tar.gz and extract files in parallel
   const vfsNodes = nodesWithContent.filter((n) => n.type === 'VFS' && !n.external);
-  for (const vfsNode of vfsNodes) {
-    // Download and extract tar.gz archive
-    const files = await fetchAndExtractVfsArchive(artifactId, vfsNode.id);
+  
+  if (vfsNodes.length > 0) {
+    // Phase 1: Download all VFS archives in parallel
+    onProgress?.({ phase: 'downloading-vfs', current: 0, total: vfsNodes.length });
     
-    if (files.length > 0) {
-      // Get VFS instance for this node using the NEW ID
-      const newNodeId = idMap.get(vfsNode.id)!;
-      const vfs = await getNodeVfs(targetProjectId, newNodeId);
-      
-      // Write all files to VFS
-      for (const file of files) {
-        await vfs.createFile(file.path, new Uint8Array(file.content).buffer as ArrayBuffer);
+    const downloadResults = await Promise.all(
+      vfsNodes.map(async (vfsNode, index) => {
+        const files = await fetchAndExtractVfsArchive(artifactId, vfsNode.id);
+        onProgress?.({ 
+          phase: 'downloading-vfs', 
+          current: index + 1, 
+          total: vfsNodes.length,
+          detail: vfsNode.name || `VFS ${index + 1}`
+        });
+        return { vfsNode, files, newNodeId: idMap.get(vfsNode.id)! };
+      })
+    );
+    
+    // Phase 2: Write files to VFS storage (must be sequential due to OPFS limitations)
+    let writtenCount = 0;
+    const totalFiles = downloadResults.reduce((sum, r) => sum + r.files.length, 0);
+    onProgress?.({ phase: 'writing-vfs', current: 0, total: totalFiles });
+    
+    for (const { vfsNode, files, newNodeId } of downloadResults) {
+      if (files.length > 0) {
+        const vfs = await getNodeVfs(targetProjectId, newNodeId);
+        
+        for (const file of files) {
+          await vfs.createFile(file.path, new Uint8Array(file.content).buffer as ArrayBuffer);
+          writtenCount++;
+          if (writtenCount % 10 === 0 || writtenCount === totalFiles) {
+            onProgress?.({ 
+              phase: 'writing-vfs', 
+              current: writtenCount, 
+              total: totalFiles,
+              detail: vfsNode.name || newNodeId.substring(0, 8)
+            });
+          }
+        }
+        
+        await vfs.commit('Imported from artifact');
       }
-      
-      // Commit the changes
-      await vfs.commit('Imported from artifact');
     }
   }
 
-  const nodes: Node<StudioNodeData>[] = await Promise.all(nodesWithContent.map(async (node: NodeSummaryWithContent, index: number) => {
+  // Phase 3: Process all nodes
+  onProgress?.({ phase: 'processing-nodes', current: 0, total: nodesWithContent.length });
+  
+  const nodes = await Promise.all(nodesWithContent.map(async (node, index) => {
     // Get the new ID for this node
     const newNodeId = idMap.get(node.id)!;
+    
+    // Report progress periodically
+    if (index % 5 === 0 || index === nodesWithContent.length - 1) {
+      onProgress?.({ phase: 'processing-nodes', current: index + 1, total: nodesWithContent.length });
+    }
     
     // Use saved position if available, otherwise calculate a default position (arranged in a grid)
     const posX = node.position?.x ?? ((index % 3) * 300 + 100);
@@ -523,13 +568,18 @@ export async function importArtifactToNewProject(
 export async function addArtifactToProject(
   graphData: ArtifactGraphData,
   artifactId: string,
-  projectId: string
+  projectId: string,
+  onProgress?: ImportProgressCallback
 ): Promise<void> {
   const { nodes: newNodes, edges: newEdges } = await convertArtifactToStudioGraph(
     graphData, 
     artifactId, 
-    projectId
+    projectId,
+    onProgress
   );
+  
+  // Phase: Saving to local storage
+  onProgress?.({ phase: 'saving', current: 0, total: newNodes.length + 1 });
   
   // Ensure stores are initialized for this project
   if (nodeStore.currentProjectId !== projectId) {
@@ -551,14 +601,19 @@ export async function addArtifactToProject(
   const existingEdges = await getEdges(projectId);
   
   // Save new nodes with offset
-  for (const node of newNodes) {
+  for (let i = 0; i < newNodes.length; i++) {
+    const node = newNodes[i];
     nodeStore.set(node.id, node.data);
     layoutStore.add(node.id, node.position.x + offsetX, node.position.y);
+    if (i % 5 === 0 || i === newNodes.length - 1) {
+      onProgress?.({ phase: 'saving', current: i + 1, total: newNodes.length + 1 });
+    }
   }
   
   // Merge and save edges
   const mergedEdges = [...existingEdges, ...newEdges];
   await saveEdges(mergedEdges, projectId);
+  onProgress?.({ phase: 'saving', current: newNodes.length + 1, total: newNodes.length + 1 });
   
   // Flush stores to persist
   await nodeStore.flush();

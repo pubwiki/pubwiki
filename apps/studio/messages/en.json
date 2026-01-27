@@ -507,5 +507,20 @@
 	"studio_vfs_linked_vscode": "Linked to VSCode",
 	"studio_vfs_link_vscode_placeholder": "Enter callback URL from VSCode",
 	"studio_vfs_link_vscode_button": "Link",
-	"studio_vfs_link_vscode_disconnect": "Disconnect"
+	"studio_vfs_link_vscode_disconnect": "Disconnect",
+	
+	"studio_import_title": "Importing Artifact",
+	"studio_import_fetching": "Fetching artifact data...",
+	"studio_import_adding_nodes": "Adding {count} nodes to project...",
+	"studio_import_step": "Step {current} of {total}",
+	"studio_import_step_fetching": "Fetching artifact data",
+	"studio_import_step_processing": "Processing graph data",
+	"studio_import_step_adding": "Adding nodes to project",
+	"studio_import_step_refreshing": "Refreshing view",
+	"studio_import_nodes": "nodes",
+	"studio_import_edges": "edges",
+	"studio_import_downloading_vfs": "Downloading file archives...",
+	"studio_import_writing_vfs": "Writing files to storage...",
+	"studio_import_processing_nodes": "Processing node data...",
+	"studio_import_saving": "Saving to local storage..."
 }

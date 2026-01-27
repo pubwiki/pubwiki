@@ -41,7 +41,7 @@
 	} from '$lib/version';
 	import { validateConnection } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
-	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject } from '$lib/io';
+	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$components/pubwiki';
@@ -119,6 +119,21 @@
 	let initialized = $state(false);
 	let loaded = $state(false);
 	let saving = $state(false);
+	
+	// Import state for loading overlay
+	let importing = $state(false);
+	let importProgress = $state<{
+		phase: 'fetching' | 'processing' | 'adding' | 'refreshing';
+		subPhase?: 'downloading-vfs' | 'writing-vfs' | 'processing-nodes' | 'saving';
+		artifactId?: string;
+		nodeCount?: number;
+		edgeCount?: number;
+		currentStep?: number;
+		totalSteps?: number;
+		subCurrent?: number;
+		subTotal?: number;
+		subDetail?: string;
+	} | null>(null);
 
 	// Whether this project is a draft (not yet published)
 	let isDraft = $state(true);
@@ -735,6 +750,15 @@
 	async function handleArtifactImport(artifactId: string) {
 		console.log('[Studio] handleArtifactImport starting:', artifactId);
 		
+		// Show loading overlay
+		importing = true;
+		importProgress = { 
+			phase: 'fetching', 
+			artifactId: artifactId,
+			currentStep: 1,
+			totalSteps: 4
+		};
+		
 		try {
 			// Fetch artifact graph
 			console.log('[Studio] Fetching artifact graph...');
@@ -749,26 +773,74 @@
 			
 			if (error || !graphData) {
 				console.error('[Studio] Failed to fetch artifact graph:', error);
+				importing = false;
+				importProgress = null;
 				return;
 			}
+			
+			// Update progress with node count
+			importProgress = { 
+				phase: 'processing',
+				artifactId: artifactId,
+				nodeCount: graphData.nodes?.length ?? 0,
+				edgeCount: graphData.edges?.length ?? 0,
+				currentStep: 2,
+				totalSteps: 4
+			};
 			
 			console.log('[Studio] Artifact graph nodes:', graphData.nodes?.length ?? 0);
 			console.log('[Studio] Artifact graph edges:', graphData.edges?.length ?? 0);
 			
 			if (!graphData.nodes || graphData.nodes.length === 0) {
 				console.warn('[Studio] Artifact has no nodes to import');
+				importing = false;
+				importProgress = null;
 				return;
 			}
 			
 			// Import artifact nodes to current project
 			console.log('[Studio] Adding artifact to project...');
+			importProgress = { 
+				phase: 'adding',
+				artifactId: artifactId,
+				nodeCount: graphData.nodes?.length ?? 0,
+				edgeCount: graphData.edges?.length ?? 0,
+				currentStep: 3,
+				totalSteps: 4
+			};
+			
+			// Progress callback for detailed updates
+			const onImportProgress: ImportProgressCallback = (progress) => {
+				importProgress = {
+					phase: 'adding',
+					subPhase: progress.phase,
+					artifactId: artifactId,
+					nodeCount: graphData.nodes?.length ?? 0,
+					edgeCount: graphData.edges?.length ?? 0,
+					currentStep: 3,
+					totalSteps: 4,
+					subCurrent: progress.current,
+					subTotal: progress.total,
+					subDetail: progress.detail
+				};
+			};
+			
 			await addArtifactToProject(
 				{ nodes: graphData.nodes, edges: graphData.edges, version: graphData.version },
 				artifactId,
-				currentProjectId
+				currentProjectId,
+				onImportProgress
 			);
 			
 			console.log('[Studio] Artifact import complete, refreshing view...');
+			importProgress = { 
+				phase: 'refreshing',
+				artifactId: artifactId,
+				nodeCount: graphData.nodes?.length ?? 0,
+				edgeCount: graphData.edges?.length ?? 0,
+				currentStep: 4,
+				totalSteps: 4
+			};
 			
 			// Refresh nodes and edges from stores
 			const layouts = layoutStore.getAll();
@@ -787,8 +859,14 @@
 			edges = await getEdges(currentProjectId);
 			
 			console.log('[Studio] View refreshed, nodes:', nodes.length, 'edges:', edges.length);
+			
+			// Clear import parameter from URL to prevent re-import on refresh
+			await goto(`/${currentProjectId}`, { replaceState: true });
 		} catch (err) {
 			console.error('[Studio] Failed to import artifact:', err);
+		} finally {
+			importing = false;
+			importProgress = null;
 		}
 	}
 	
@@ -1104,6 +1182,137 @@
 <svelte:window onclick={() => contextMenu && closeContextMenu()} />
 
 <div class="h-screen w-full relative flex">
+	<!-- Import Loading Overlay -->
+	{#if importing}
+		<div class="fixed inset-0 bg-black/60 flex items-center justify-center z-9999 backdrop-blur-sm">
+			<div class="bg-white rounded-2xl shadow-2xl p-10 max-w-lg w-full mx-4">
+				<!-- Header with spinner -->
+				<div class="flex items-center gap-4 mb-6">
+					<div class="shrink-0">
+						<svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+						</svg>
+					</div>
+					<div>
+						<h3 class="text-xl font-semibold text-gray-900">
+							{m.studio_import_title()}
+						</h3>
+						{#if importProgress?.artifactId}
+							<p class="text-sm text-gray-500 font-mono mt-0.5">
+								{importProgress.artifactId.substring(0, 8)}...
+							</p>
+						{/if}
+					</div>
+				</div>
+				
+				<!-- Progress bar -->
+				{#if importProgress?.currentStep && importProgress?.totalSteps}
+					<div class="mb-6">
+						<div class="flex justify-between text-xs text-gray-500 mb-1.5">
+							<span>{m.studio_import_step({ current: importProgress.currentStep, total: importProgress.totalSteps })}</span>
+							<span>{Math.round((importProgress.currentStep / importProgress.totalSteps) * 100)}%</span>
+						</div>
+						<div class="w-full bg-gray-200 rounded-full h-2">
+							<div 
+								class="bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out"
+								style="width: {(importProgress.currentStep / importProgress.totalSteps) * 100}%"
+							></div>
+						</div>
+					</div>
+				{/if}
+				
+				<!-- Progress steps -->
+				<div class="space-y-3">
+					<!-- Step 1: Fetching -->
+					<div class="flex items-center gap-3 {importProgress?.phase === 'fetching' ? 'text-blue-600' : importProgress?.currentStep && importProgress.currentStep > 1 ? 'text-green-600' : 'text-gray-400'}">
+						{#if importProgress?.currentStep && importProgress.currentStep > 1}
+							<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+						{:else if importProgress?.phase === 'fetching'}
+							<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+						{:else}
+							<div class="w-5 h-5 rounded-full border-2 border-current"></div>
+						{/if}
+						<span class="text-sm font-medium">{m.studio_import_step_fetching()}</span>
+					</div>
+					
+					<!-- Step 2: Processing -->
+					<div class="flex items-center gap-3 {importProgress?.phase === 'processing' ? 'text-blue-600' : importProgress?.currentStep && importProgress.currentStep > 2 ? 'text-green-600' : 'text-gray-400'}">
+						{#if importProgress?.currentStep && importProgress.currentStep > 2}
+							<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+						{:else if importProgress?.phase === 'processing'}
+							<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+						{:else}
+							<div class="w-5 h-5 rounded-full border-2 border-current"></div>
+						{/if}
+						<span class="text-sm font-medium">{m.studio_import_step_processing()}</span>
+						{#if importProgress?.nodeCount !== undefined && importProgress.phase !== 'fetching'}
+							<span class="text-xs text-gray-500">({importProgress.nodeCount} {m.studio_import_nodes()}, {importProgress.edgeCount ?? 0} {m.studio_import_edges()})</span>
+						{/if}
+					</div>
+					
+					<!-- Step 3: Adding -->
+					<div class="flex flex-col gap-1">
+						<div class="flex items-center gap-3 {importProgress?.phase === 'adding' ? 'text-blue-600' : importProgress?.currentStep && importProgress.currentStep > 3 ? 'text-green-600' : 'text-gray-400'}">
+							{#if importProgress?.currentStep && importProgress.currentStep > 3}
+								<svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+							{:else if importProgress?.phase === 'adding'}
+								<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+							{:else}
+								<div class="w-5 h-5 rounded-full border-2 border-current"></div>
+							{/if}
+							<span class="text-sm font-medium">{m.studio_import_step_adding()}</span>
+						</div>
+						
+						<!-- Sub-progress for Adding phase -->
+						{#if importProgress?.phase === 'adding' && importProgress?.subPhase}
+							<div class="ml-8 space-y-1.5">
+								<!-- Sub-phase label -->
+								<div class="flex items-center gap-2 text-xs text-gray-600">
+									{#if importProgress.subPhase === 'downloading-vfs'}
+										<span>{m.studio_import_downloading_vfs()}</span>
+									{:else if importProgress.subPhase === 'writing-vfs'}
+										<span>{m.studio_import_writing_vfs()}</span>
+									{:else if importProgress.subPhase === 'processing-nodes'}
+										<span>{m.studio_import_processing_nodes()}</span>
+									{:else if importProgress.subPhase === 'saving'}
+										<span>{m.studio_import_saving()}</span>
+									{/if}
+									{#if importProgress.subDetail}
+										<span class="text-gray-400">• {importProgress.subDetail}</span>
+									{/if}
+								</div>
+								
+								<!-- Sub-progress bar -->
+								{#if importProgress.subTotal && importProgress.subTotal > 0}
+									<div class="flex items-center gap-2">
+										<div class="flex-1 bg-gray-200 rounded-full h-1.5">
+											<div 
+												class="bg-blue-400 h-1.5 rounded-full transition-all duration-150 ease-out"
+												style="width: {((importProgress.subCurrent ?? 0) / importProgress.subTotal) * 100}%"
+											></div>
+										</div>
+										<span class="text-xs text-gray-500 w-12 text-right">{importProgress.subCurrent ?? 0}/{importProgress.subTotal}</span>
+									</div>
+								{/if}
+							</div>
+						{/if}
+					</div>
+					
+					<!-- Step 4: Refreshing -->
+					<div class="flex items-center gap-3 {importProgress?.phase === 'refreshing' ? 'text-blue-600' : 'text-gray-400'}">
+						{#if importProgress?.phase === 'refreshing'}
+							<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+						{:else}
+							<div class="w-5 h-5 rounded-full border-2 border-current"></div>
+						{/if}
+						<span class="text-sm font-medium">{m.studio_import_step_refreshing()}</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	{/if}
+	
 	<!-- Flow Editor -->
 	<div class="flex-1 h-full relative">
 		<SvelteFlow 

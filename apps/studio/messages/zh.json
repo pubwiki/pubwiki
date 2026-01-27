@@ -507,5 +507,20 @@
 	"studio_vfs_linked_vscode": "已连接到 VSCode",
 	"studio_vfs_link_vscode_placeholder": "输入 VSCode 回调 URL",
 	"studio_vfs_link_vscode_button": "连接",
-	"studio_vfs_link_vscode_disconnect": "断开连接"
+	"studio_vfs_link_vscode_disconnect": "断开连接",
+	
+	"studio_import_title": "正在导入",
+	"studio_import_fetching": "正在获取数据...",
+	"studio_import_adding_nodes": "正在添加 {count} 个节点...",
+	"studio_import_step": "步骤 {current} / {total}",
+	"studio_import_step_fetching": "获取 Artifact 数据",
+	"studio_import_step_processing": "处理图数据",
+	"studio_import_step_adding": "添加节点到项目",
+	"studio_import_step_refreshing": "刷新视图",
+	"studio_import_nodes": "个节点",
+	"studio_import_edges": "条边",
+	"studio_import_downloading_vfs": "正在下载文件档案...",
+	"studio_import_writing_vfs": "正在写入文件到存储...",
+	"studio_import_processing_nodes": "正在处理节点数据...",
+	"studio_import_saving": "正在保存到本地存储..."
 }
