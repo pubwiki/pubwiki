@@ -34,15 +34,7 @@ import { generateCommitHash } from '../version';
 import { getNodeVfs } from '../vfs';
 import { ensureProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
 import { API_BASE_URL } from '$lib/config';
-
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * ID mapping from old (artifact) node IDs to new (studio) node IDs
- */
-type IdMap = Map<string, string>;
+import { createIdMapping, remapGeneratedContent, type IdMap } from './remap';
 
 /**
  * Progress callback for import operations
@@ -168,43 +160,6 @@ async function fetchAndExtractVfsArchive(
     console.error(`Error fetching VFS archive for node ${nodeId}:`, error);
     return [];
   }
-}
-
-// ============================================================================
-// Internal Helpers
-// ============================================================================
-
-/**
- * Generate new IDs for all nodes and create a mapping
- */
-function createIdMapping(nodes: ArtifactNodeSummary[]): IdMap {
-  const idMap = new Map<string, string>();
-  for (const node of nodes) {
-    idMap.set(node.id, crypto.randomUUID());
-  }
-  return idMap;
-}
-
-/**
- * Remap node ID references in GeneratedContent
- */
-function remapGeneratedContent(content: GeneratedContent, idMap: IdMap): GeneratedContent {
-  const remapNodeRef = (ref: { id: string; commit: string }) => ({
-    id: idMap.get(ref.id) ?? ref.id,
-    commit: ref.commit
-  });
-
-  return new GeneratedContent(
-    structuredClone(content.blocks),
-    remapNodeRef(content.inputRef),
-    content.promptRefs.map(remapNodeRef),
-    content.indirectPromptRefs.map(remapNodeRef),
-    content.inputVfsRef ? {
-      nodeId: idMap.get(content.inputVfsRef.nodeId) ?? content.inputVfsRef.nodeId,
-      commit: content.inputVfsRef.commit
-    } : null,
-    content.outputVfsId ? (idMap.get(content.outputVfsId) ?? content.outputVfsId) : null
-  );
 }
 
 // ============================================================================

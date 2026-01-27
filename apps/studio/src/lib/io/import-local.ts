@@ -14,12 +14,13 @@ import type { Edge } from '@xyflow/svelte';
 import type { StudioNodeData, VFSNodeData } from '../types';
 import type { StoredProject, StoredNodeData, StoredLayout } from '../persistence/db';
 import { db, saveProject } from '../persistence/db';
-import { restoreContent, type NodeType, VFSContent } from '../types/content';
+import { restoreContent, type NodeType, VFSContent, GeneratedContent } from '../types/content';
 import type { NodeRef } from '../version';
 import { getNodeVfs } from '../vfs';
 import { getNodeRDFStore } from '../rdf';
 import JSZip from 'jszip';
 import type { ExportManifest, ExportedNodeData } from './export-local';
+import { createIdMapping, remapGeneratedContent, remapNodeRef, type IdMap } from './remap';
 
 // ============================================================================
 // Import Functions
@@ -131,13 +132,24 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
     }
   });
   
+  // First pass: read all node data and create ID mapping
+  const exportedNodes: { originalNodeId: string; exportedNode: ExportedNodeData }[] = [];
+  for (const { nodeId, file } of nodeDataFiles) {
+    const dataText = await file.async('text');
+    const exportedNode: ExportedNodeData = JSON.parse(dataText);
+    exportedNodes.push({ originalNodeId: nodeId, exportedNode });
+  }
+  
+  // Create ID mapping from old node IDs to new UUIDs
+  const idMap: IdMap = createIdMapping(exportedNodes.map(n => ({ id: n.exportedNode.id })));
+  
   // Prepare node data and layouts for batch insert
   const nodesToInsert: StoredNodeData[] = [];
   const layoutsToInsert: StoredLayout[] = [];
   
-  for (const { nodeId, file } of nodeDataFiles) {
-    const dataText = await file.async('text');
-    const exportedNode: ExportedNodeData = JSON.parse(dataText);
+  for (const { originalNodeId, exportedNode } of exportedNodes) {
+    // Get the new node ID from the mapping
+    const newNodeId = idMap.get(exportedNode.id) ?? exportedNode.id;
     
     // Restore content to proper class instance
     let content = restoreContent(exportedNode.type as NodeType, exportedNode.content);
@@ -147,16 +159,20 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
       content = new VFSContent(newProjectId);
     }
     
-    // Convert parents to NodeRef format
-    const parents: NodeRef[] = (exportedNode.parents ?? []).map(p => ({
-      id: p.id,
-      commit: p.commit
-    }));
+    // For GENERATED nodes, remap content references
+    if (exportedNode.type === 'GENERATED' && content instanceof GeneratedContent) {
+      content = remapGeneratedContent(content, idMap);
+    }
+    
+    // Convert parents to NodeRef format with remapped IDs
+    const parents: NodeRef[] = (exportedNode.parents ?? []).map(p => 
+      remapNodeRef(p, idMap)
+    );
     
     // Create StoredNodeData for direct DB insert
     const storedNode: StoredNodeData = {
       projectId: newProjectId,
-      nodeId: exportedNode.id,
+      nodeId: newNodeId,
       type: exportedNode.type as NodeType,
       name: exportedNode.name,
       commit: exportedNode.commit,
@@ -169,13 +185,13 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
     nodesToInsert.push(storedNode);
     nodeCount++;
     
-    // For VFS nodes, import files
+    // For VFS nodes, import files (use new node ID for storage)
     if (exportedNode.type === 'VFS' && exportedNode.files && !exportedNode.external) {
-      const vfs = await getNodeVfs(newProjectId, exportedNode.id);
+      const vfs = await getNodeVfs(newProjectId, newNodeId);
       
       for (const filePath of exportedNode.files) {
-        // Find the file in the ZIP
-        const zipPath = `nodes/${nodeId}/files${filePath.startsWith('/') ? filePath : '/' + filePath}`;
+        // Find the file in the ZIP (using original node ID from ZIP structure)
+        const zipPath = `nodes/${originalNodeId}/files${filePath.startsWith('/') ? filePath : '/' + filePath}`;
         const vfsFile = zip.file(zipPath);
         
         if (vfsFile) {
@@ -185,38 +201,39 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
       }
     }
     
-    // For STATE nodes, import full RDF state
+    // For STATE nodes, import full RDF state (use new node ID for storage)
     if (exportedNode.type === 'STATE' && exportedNode.hasStateExport) {
-      const stateZipPath = `nodes/${nodeId}/state.json`;
+      const stateZipPath = `nodes/${originalNodeId}/state.json`;
       const stateFile = zip.file(stateZipPath);
       
       if (stateFile) {
         try {
           const stateData = await stateFile.async('text');
-          const store = await getNodeRDFStore(exportedNode.id);
+          const store = await getNodeRDFStore(newNodeId);
           await store.importFullState(stateData);
         } catch (e) {
-          console.warn(`[Import] Failed to import state for node ${exportedNode.id}:`, e);
+          console.warn(`[Import] Failed to import state for node ${newNodeId}:`, e);
         }
       }
     }
   }
   
-  // Import layouts
+  // Import layouts with remapped node IDs
   for (const layout of manifest.layouts) {
+    const newNodeId = idMap.get(layout.nodeId) ?? layout.nodeId;
     layoutsToInsert.push({
       projectId: newProjectId,
-      nodeId: layout.nodeId,
+      nodeId: newNodeId,
       x: layout.x,
       y: layout.y
     });
   }
   
-  // Import edges - generate new IDs to avoid conflicts with other projects
+  // Import edges - generate new IDs and remap source/target node IDs
   const edges: Edge[] = manifest.edges.map(e => ({
     id: crypto.randomUUID(), // Generate new ID for each edge
-    source: e.source,
-    target: e.target,
+    source: idMap.get(e.source) ?? e.source,
+    target: idMap.get(e.target) ?? e.target,
     sourceHandle: e.sourceHandle,
     targetHandle: e.targetHandle
   }));
