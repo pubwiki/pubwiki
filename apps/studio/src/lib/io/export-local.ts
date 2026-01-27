@@ -7,13 +7,15 @@
  * - manifest.json: Project metadata and graph structure
  * - nodes/<nodeId>/data.json: Node business data
  * - nodes/<nodeId>/files/*: VFS files (for VFS nodes only)
+ * - nodes/<nodeId>/state.json: Full RDF state (for STATE nodes only)
  */
 
 import type { Edge } from '@xyflow/svelte';
-import type { StudioNodeData, VFSNodeData } from '../types';
+import type { StudioNodeData, VFSNodeData, StateNodeData } from '../types';
 import type { StoredProject, StoredLayout } from '../persistence/db';
 import { nodeStore, layoutStore, getProject, getEdges } from '../persistence';
 import { getNodeVfs } from '../vfs';
+import { getNodeRDFStore } from '../rdf';
 import JSZip from 'jszip';
 
 // ============================================================================
@@ -66,6 +68,8 @@ export interface ExportedNodeData {
   external?: boolean;
   /** For VFS nodes: list of file paths */
   files?: string[];
+  /** For STATE nodes: indicates full state is exported separately */
+  hasStateExport?: boolean;
 }
 
 // ============================================================================
@@ -211,6 +215,19 @@ export async function exportProjectToZip(projectId: string): Promise<void> {
           const zipPath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
           filesFolder.file(zipPath, file.content);
         }
+      }
+    }
+    
+    // For STATE nodes, export full RDF state
+    if (node.type === 'STATE') {
+      try {
+        const store = await getNodeRDFStore(node.id);
+        const stateData = await store.exportFullState();
+        nodeFolder.file('state.json', stateData);
+        nodeData.hasStateExport = true;
+      } catch (e) {
+        // State might be empty or not initialized, skip
+        console.warn(`[Export] Failed to export state for node ${node.id}:`, e);
       }
     }
     

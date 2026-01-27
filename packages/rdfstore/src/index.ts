@@ -98,12 +98,17 @@ export {
   importFromJson,
   exportOperations,
   importOperations,
+  // Full state export/import
+  exportFullState,
+  importFullState,
 } from './serialization/index.js'
 export type {
   SerializationFormat,
   ExportOptions,
   ImportOptions,
   ExportMetadata,
+  FullStateExport,
+  FullStateExportOptions,
 } from './serialization/index.js'
 
 // Utilities

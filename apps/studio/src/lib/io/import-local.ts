@@ -7,6 +7,7 @@
  * - manifest.json: Project metadata and graph structure
  * - nodes/<nodeId>/data.json: Node business data
  * - nodes/<nodeId>/files/*: VFS files (for VFS nodes only)
+ * - nodes/<nodeId>/state.json: Full RDF state (for STATE nodes only)
  */
 
 import type { Edge } from '@xyflow/svelte';
@@ -16,6 +17,7 @@ import { db, saveProject } from '../persistence/db';
 import { restoreContent, type NodeType, VFSContent } from '../types/content';
 import type { NodeRef } from '../version';
 import { getNodeVfs } from '../vfs';
+import { getNodeRDFStore } from '../rdf';
 import JSZip from 'jszip';
 import type { ExportManifest, ExportedNodeData } from './export-local';
 
@@ -179,6 +181,22 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
         if (vfsFile) {
           const fileContent = await vfsFile.async('arraybuffer');
           await vfs.createFile(filePath, fileContent);
+        }
+      }
+    }
+    
+    // For STATE nodes, import full RDF state
+    if (exportedNode.type === 'STATE' && exportedNode.hasStateExport) {
+      const stateZipPath = `nodes/${nodeId}/state.json`;
+      const stateFile = zip.file(stateZipPath);
+      
+      if (stateFile) {
+        try {
+          const stateData = await stateFile.async('text');
+          const store = await getNodeRDFStore(exportedNode.id);
+          await store.importFullState(stateData);
+        } catch (e) {
+          console.warn(`[Import] Failed to import state for node ${exportedNode.id}:`, e);
         }
       }
     }

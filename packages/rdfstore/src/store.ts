@@ -30,8 +30,11 @@ import { EventEmitter } from './utils/events.js'
 import {
   exportQuads,
   importQuads,
+  exportFullState,
+  importFullState,
   type ExportOptions,
   type ImportOptions,
+  type FullStateExportOptions,
 } from './serialization/index.js'
 import { Engine } from 'quadstore-comunica'
 
@@ -515,6 +518,35 @@ export class RDFStore {
     }
     
     return this.currentRef
+  }
+
+  /**
+   * Export the complete store state including version history and checkpoints
+   * This exports everything needed to fully restore the store state
+   * 
+   * @param options - Export options (e.g., pretty print)
+   * @returns JSON string of the full state
+   */
+  async exportFullState(options: FullStateExportOptions = {}): Promise<string> {
+    const versionStore = this.versionDAG.getStore()
+    return exportFullState(this.backend, versionStore, options)
+  }
+
+  /**
+   * Import a complete store state from a full state export
+   * WARNING: This completely replaces all current data including version history!
+   * 
+   * @param data - JSON string from exportFullState
+   */
+  async importFullState(data: string): Promise<void> {
+    const versionStore = this.versionDAG.getStore()
+    await importFullState(this.backend, versionStore, data)
+    
+    // Sync the VersionDAG's internal currentRef with the restored head
+    const head = await versionStore.getHead()
+    if (head) {
+      await this.versionDAG.setCurrentRef(head)
+    }
   }
 
   // ========== Private Methods ==========

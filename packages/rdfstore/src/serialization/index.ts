@@ -21,3 +21,11 @@ export {
   exportOperations,
   importOperations,
 } from './formats.js'
+
+// Full state export/import
+export {
+  exportFullState,
+  importFullState,
+  type FullStateExport,
+  type FullStateExportOptions,
+} from './state.js'
