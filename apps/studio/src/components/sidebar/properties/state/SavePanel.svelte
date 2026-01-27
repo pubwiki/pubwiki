@@ -56,6 +56,9 @@
 
 	// Menu state for each checkpoint
 	let openMenuId = $state<string | null>(null);
+	// Submenu position for upload visibility selection (fixed positioning)
+	let submenuPosition = $state<{ top: number; left: number } | null>(null);
+	let hoveredUploadId = $state<string | null>(null);
 
 	// Create form state
 	let showCreateForm = $state(false);
@@ -64,9 +67,10 @@
 	let syncToCloud = $state(false);
 
 	// Visibility options for dropdown
-	type VisibilityOption = { value: 'PRIVATE' | 'PUBLIC'; label: string };
+	type VisibilityOption = { value: 'PRIVATE' | 'UNLISTED' | 'PUBLIC'; label: string };
 	const visibilityOptions: VisibilityOption[] = [
 		{ value: 'PRIVATE', label: '私有' },
+		{ value: 'UNLISTED', label: '不公开' },
 		{ value: 'PUBLIC', label: '公开' }
 	];
 	let selectedVisibility = $state<VisibilityOption>(visibilityOptions[0]);
@@ -77,6 +81,11 @@
 	// Derived state
 	let saveId = $derived(data.content.saveId);
 	let hasSave = $derived(!!saveId);
+	
+	// Get checkpoint by hoveredUploadId for the fixed submenu
+	let hoveredCheckpoint = $derived(
+		hoveredUploadId ? mergedCheckpoints.find(c => c.id === hoveredUploadId) : null
+	);
 
 	// Merge local and cloud checkpoints
 	function mergeCheckpoints() {
@@ -328,8 +337,8 @@
 		}
 	}
 
-	// Upload a local checkpoint to cloud
-	async function uploadCheckpoint(checkpoint: MergedCheckpoint) {
+	// Upload a local checkpoint to cloud with specified visibility
+	async function uploadCheckpoint(checkpoint: MergedCheckpoint, visibility: 'PRIVATE' | 'UNLISTED' | 'PUBLIC') {
 		if (checkpoint.isCloud) {
 			error = '此存档已在云端';
 			clearMessages();
@@ -339,6 +348,8 @@
 		isUploading = true;
 		error = null;
 		openMenuId = null;
+		hoveredUploadId = null;
+		submenuPosition = null;
 
 		try {
 			if (!store) {
@@ -391,7 +402,7 @@
 					ref: checkpoint.ref,
 					name: checkpoint.title,
 					description: checkpoint.description,
-					visibility: 'PRIVATE'
+					visibility: visibility
 				}
 			);
 			if (!result.success) {
@@ -413,12 +424,44 @@
 	// Toggle menu for a checkpoint
 	function toggleMenu(id: string) {
 		openMenuId = openMenuId === id ? null : id;
+		hoveredUploadId = null; // Close submenu when toggling main menu
+		submenuPosition = null;
+	}
+
+	// Handle hover on upload button - show submenu with fixed position
+	function handleUploadMouseEnter(id: string, event: MouseEvent) {
+		const target = event.currentTarget as HTMLElement;
+		const rect = target.getBoundingClientRect();
+		submenuPosition = {
+			top: rect.top,
+			left: rect.right
+		};
+		hoveredUploadId = id;
+	}
+
+	// Handle mouse leave on upload button
+	function handleUploadMouseLeave() {
+		// Delay to allow moving to submenu
+		setTimeout(() => {
+			if (!document.querySelector('.upload-submenu:hover')) {
+				hoveredUploadId = null;
+				submenuPosition = null;
+			}
+		}, 100);
+	}
+
+	// Handle mouse leave on submenu
+	function handleSubmenuMouseLeave() {
+		hoveredUploadId = null;
+		submenuPosition = null;
 	}
 
 	// Close menu when clicking outside
 	function handleClickOutside(event: MouseEvent) {
-		if (openMenuId && !(event.target as Element).closest('.checkpoint-menu')) {
+		if ((openMenuId || hoveredUploadId) && !(event.target as Element).closest('.checkpoint-menu')) {
 			openMenuId = null;
+			hoveredUploadId = null;
+			submenuPosition = null;
 		}
 	}
 
@@ -651,16 +694,23 @@
 								{#if openMenuId === checkpoint.id}
 									<div class="absolute right-0 top-full mt-1 w-32 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
 										{#if checkpoint.isLocal && !checkpoint.isCloud}
+											<!-- Upload with submenu for visibility selection -->
 											<button
 												type="button"
-												onclick={() => uploadCheckpoint(checkpoint)}
+												onmouseenter={(e) => handleUploadMouseEnter(checkpoint.id, e)}
+												onmouseleave={handleUploadMouseLeave}
 												disabled={isUploading}
-												class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400 flex items-center gap-2"
+												class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400 flex items-center justify-between gap-2"
 											>
-												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+												<span class="flex items-center gap-2">
+													<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+													</svg>
+													上传
+												</span>
+												<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
 												</svg>
-												上传
 											</button>
 										{/if}
 										<button
@@ -709,3 +759,38 @@
 		</p>
 	{/if}
 </div>
+
+<!-- Fixed position upload visibility submenu (rendered outside overflow container) -->
+{#if hoveredCheckpoint && submenuPosition}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		class="upload-submenu fixed w-24 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1"
+		style="top: {submenuPosition.top}px; left: {submenuPosition.left}px;"
+		onmouseleave={handleSubmenuMouseLeave}
+	>
+		<button
+			type="button"
+			onclick={() => uploadCheckpoint(hoveredCheckpoint, 'PRIVATE')}
+			disabled={isUploading}
+			class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400"
+		>
+			私有
+		</button>
+		<button
+			type="button"
+			onclick={() => uploadCheckpoint(hoveredCheckpoint, 'UNLISTED')}
+			disabled={isUploading}
+			class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400"
+		>
+			不公开
+		</button>
+		<button
+			type="button"
+			onclick={() => uploadCheckpoint(hoveredCheckpoint, 'PUBLIC')}
+			disabled={isUploading}
+			class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400"
+		>
+			公开
+		</button>
+	</div>
+{/if}

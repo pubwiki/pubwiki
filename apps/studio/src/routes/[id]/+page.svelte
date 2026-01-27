@@ -1141,13 +1141,14 @@
 			throw new Error(result.error || 'Failed to publish');
 		}
 		
-		// Use artifactId (from metadata) as the new project ID
-		const newProjectId = metadata.artifactId;
-		const oldProjectId = currentProjectId;
+		// Flush pending changes to IndexedDB
+		await nodeStore.flush();
+		await layoutStore.flush();
+		await saveEdges(edges, currentProjectId);
 		
-		// Save the graph to the new project (with artifact ID, isDraft = false)
+		// Update project metadata (same projectId, just mark as published)
 		await saveProject({
-			id: newProjectId,
+			id: currentProjectId,
 			name: metadata.name,
 			artifactId: metadata.artifactId,
 			createdAt: Date.now(),
@@ -1155,25 +1156,9 @@
 			isDraft: false
 		});
 		
-		// Flush stores and save edges
-		await nodeStore.flush();
-		await layoutStore.flush();
-		await saveEdges(edges, newProjectId);
-		
-		// Delete the old temporary project if it's different from the new one
-		if (oldProjectId !== newProjectId) {
-			await deleteProject(oldProjectId);
-		}
-		
 		// Update local state
 		isDraft = false;
 		projectName = metadata.name;
-		
-		// Set the new project as current project
-		setCurrentProject(newProjectId);
-		
-		// Navigate to the new project URL (artifact ID based)
-		goto(`/${newProjectId}`);
 	}
 
 	

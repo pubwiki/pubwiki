@@ -11,13 +11,16 @@
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { FlowNodeData } from '$lib/types/flow';
+import type { StateNodeData } from '$lib/types/node-data';
 import type { JsModuleDefinition } from '$lib/loader';
 import type { ReaderContent } from '@pubwiki/reader';
+import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
 import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 import { HandleId } from '$lib/graph';
 import { nodeStore } from '$lib/persistence';
+import { StateContent } from '$lib/types';
 import PublishForm from '$components/pubwiki/PublishForm.svelte';
 import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
 
@@ -162,6 +165,27 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				};
 			}
 
+			// Find connected State node and get saveId
+			const stateInfo = findConnectedStateNode(
+				context.loaderNodeId,
+				context.getNodes(),
+				context.getEdges()
+			);
+
+			if (!stateInfo) {
+				return {
+					success: false,
+					error: 'No State node connected to this Loader. Please connect a State node via the state input.'
+				};
+			}
+
+			if (!stateInfo.saveId) {
+				return {
+					success: false,
+					error: 'Connected State node has no cloud save configured. Please set up cloud save first.'
+				};
+			}
+
 			// Build initial values for confirmation dialog
 			const initialValues = {
 				title: data.title || '',
@@ -180,32 +204,28 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 
 			// Build final data from user-edited values
 			const articleId = data.articleId || crypto.randomUUID();
-			const finalData = {
-				title: editedValues.title as string,
-				sandboxNodeId,
-				content: data.content,
-				visibility: (editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED') || 'PUBLIC'
-			};
+			const visibility = (editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED') || 'PUBLIC';
 
 			try {
-				const response = await fetch(`${context.apiBaseUrl}/articles/${articleId}`, {
-					method: 'PUT',
-					credentials: 'include',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify(finalData)
+				const apiClient = createApiClient(context.apiBaseUrl);
+				const { data: result, error } = await apiClient.PUT('/articles/{articleId}', {
+					params: { path: { articleId } },
+					body: {
+						title: editedValues.title as string,
+						sandboxNodeId,
+						saveId: stateInfo.saveId,
+						content: data.content,
+						visibility
+					}
 				});
 
-				if (!response.ok) {
-					const errorData = await response.json().catch(() => ({}));
+				if (error) {
 					return {
 						success: false,
-						error: errorData.error || `HTTP ${response.status}`
+						error: error.error || 'Failed to upload article'
 					};
 				}
 
-				const result = await response.json();
 				return {
 					success: true,
 					articleId: result.id || articleId
@@ -264,6 +284,39 @@ function findConnectedSandboxNode(
 		const targetData = nodeStore.get(targetNode.id);
 		if (targetData?.type === 'SANDBOX') {
 			return targetNode.id;
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Find the State node connected to a Loader node via the state input.
+ * State node connects to Loader's LOADER_STATE handle.
+ * Returns the state node id and saveId if found.
+ */
+function findConnectedStateNode(
+	loaderNodeId: string,
+	nodes: Node<FlowNodeData>[],
+	edges: Edge[]
+): { stateNodeId: string; saveId: string | null } | null {
+	// Find edges where this Loader is the target and the targetHandle is LOADER_STATE
+	const incomingEdges = edges.filter(
+		e => e.target === loaderNodeId && e.targetHandle === HandleId.LOADER_STATE
+	);
+
+	for (const edge of incomingEdges) {
+		// Check if source is a State node
+		const sourceNode = nodes.find(n => n.id === edge.source);
+		if (!sourceNode) continue;
+
+		const sourceData = nodeStore.get(sourceNode.id) as StateNodeData | undefined;
+		if (sourceData?.type === 'STATE') {
+			const content = sourceData.content as StateContent;
+			return {
+				stateNodeId: sourceNode.id,
+				saveId: content.saveId
+			};
 		}
 	}
 

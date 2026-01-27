@@ -589,7 +589,9 @@ function autoSelectStateCheckpoints(
 		const stateContent = stateData.content as StateContent;
 		
 		// Skip if no cloud save configured
-		if (!stateContent.saveId) continue;
+		if (!stateContent.saveId) {
+			continue;
+		}
 		
 		// Get cloud checkpoints (stored in StateContent.checkpoints)
 		const cloudCheckpoints = stateContent.checkpoints.filter(cp => {
@@ -597,7 +599,9 @@ function autoSelectStateCheckpoints(
 			return cpVisibilityLevel >= requiredVisibilityLevel;
 		});
 		
-		if (cloudCheckpoints.length === 0) continue;
+		if (cloudCheckpoints.length === 0) {
+			continue;
+		}
 		
 		// Find the most recent checkpoint by timestamp
 		const latestCheckpoint = cloudCheckpoints.reduce((latest, cp) => {
@@ -627,6 +631,35 @@ function autoSelectStateCheckpoints(
 	}
 
 	return result;
+}
+
+/**
+ * Select appropriate cloud checkpoints for STATE nodes based on visibility requirement.
+ * This is the public API that works with FlowNodeData and nodeStore.
+ * 
+ * Call this when visibility changes in the UI to update checkpoint selections.
+ * 
+ * @param flowNodes - FlowNodeData nodes from the flow layer
+ * @param artifactVisibility - The artifact's visibility level
+ * @returns Object with updated node count and any errors
+ */
+export function selectCheckpointsForVisibility(
+	flowNodes: Node<FlowNodeData>[],
+	artifactVisibility: VisibilityType
+): { updatedCount: number; errors: string[] } {
+	// Reconstruct full nodes with business data from nodeStore
+	const nodes: Node<StudioNodeData>[] = flowNodes
+		.map(n => {
+			const data = nodeStore.get(n.id);
+			if (!data) return null;
+			return {
+				...n,
+				data: data as StudioNodeData
+			};
+		})
+		.filter((n): n is Node<StudioNodeData> => n !== null);
+
+	return autoSelectStateCheckpoints(nodes, artifactVisibility);
 }
 
 /**

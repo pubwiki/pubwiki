@@ -11,6 +11,7 @@ export {
 
 export {
   publishArtifact,
+  selectCheckpointsForVisibility,
   type PublishMetadata
 } from './publish';
 

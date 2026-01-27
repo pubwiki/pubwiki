@@ -8,7 +8,7 @@
 	import type { GeneratedNodeData, StateNodeData } from '$lib/types';
 	import type { StudioNodeData } from '$lib/types';
 	import type { NodeRef } from '$lib/version';
-	import type { PublishMetadata } from '$lib/io';
+	import { selectCheckpointsForVisibility, type PublishMetadata } from '$lib/io';
 	import { StateContent } from '$lib/types';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -56,6 +56,17 @@
 			name = projectName;
 			slug = generateSlug(projectName);
 			initialized = true;
+		}
+	});
+
+	// Auto-select checkpoints for STATE nodes when visibility changes
+	$effect(() => {
+		// Only run after nodes are available
+		if (nodes.length > 0) {
+			const result = selectCheckpointsForVisibility(nodes, visibility);
+			if (result.updatedCount > 0) {
+				console.log('[ProjectTab] Auto-selected checkpoints for', result.updatedCount, 'STATE nodes');
+			}
 		}
 	});
 
@@ -177,11 +188,10 @@
 		isSubmitting = true;
 
 		try {
-			// Use existing projectId if already published, otherwise generate a new UUID
-			const artifactId = isDraft ? crypto.randomUUID() : projectId;
-			
+			// Always use existing projectId as artifactId
+			// Draft projects already have a UUID as their projectId
 			const metadata: PublishMetadata = {
-				artifactId,
+				artifactId: projectId,
 				type: artifactType,
 				name: name.trim(),
 				slug: slug.trim(),
