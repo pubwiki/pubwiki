@@ -160,9 +160,42 @@ export async function exportFullState(
     checkpointData
   }
 
-  return options.pretty 
+  // Diagnostic logging for export size analysis
+  const currentQuadsJson = JSON.stringify(serializedQuads)
+  const refNodesJson = JSON.stringify(refNodes)
+  const childrenIndexJson = JSON.stringify(childrenIndex)
+  const checkpointsJson = JSON.stringify(checkpoints)
+  const checkpointDataJson = JSON.stringify(checkpointData)
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+  }
+
+  console.log('[RDFStore State Export] Size breakdown:')
+  console.log(`  - currentQuads: ${serializedQuads.length} quads, ${formatSize(currentQuadsJson.length)}`)
+  console.log(`  - refNodes: ${refNodes.length} nodes, ${formatSize(refNodesJson.length)}`)
+  console.log(`  - childrenIndex: ${childrenIndex.length} entries, ${formatSize(childrenIndexJson.length)}`)
+  console.log(`  - checkpoints: ${checkpoints.length} checkpoints, ${formatSize(checkpointsJson.length)}`)
+  console.log(`  - checkpointData: ${checkpointData.length} snapshots, ${formatSize(checkpointDataJson.length)}`)
+
+  // Detailed breakdown for checkpointData (often the largest)
+  if (checkpointData.length > 0) {
+    console.log('[RDFStore State Export] Checkpoint data breakdown:')
+    checkpointData.forEach((cpd, i) => {
+      const cpdJson = JSON.stringify(cpd)
+      console.log(`  - checkpoint[${i}] (ref: ${cpd.ref.substring(0, 8)}...): ${cpd.quads.length} quads, ${formatSize(cpdJson.length)}`)
+    })
+  }
+
+  const result = options.pretty 
     ? JSON.stringify(exportData, null, 2) 
     : JSON.stringify(exportData)
+
+  console.log(`[RDFStore State Export] Total export size: ${formatSize(result.length)}`)
+
+  return result
 }
 
 // ============================================================================
