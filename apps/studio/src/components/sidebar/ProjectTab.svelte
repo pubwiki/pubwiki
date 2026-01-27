@@ -5,10 +5,11 @@
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
-	import type { GeneratedNodeData } from '$lib/types';
+	import type { GeneratedNodeData, StateNodeData } from '$lib/types';
 	import type { StudioNodeData } from '$lib/types';
 	import type { NodeRef } from '$lib/version';
 	import type { PublishMetadata } from '$lib/io';
+	import { StateContent } from '$lib/types';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -203,6 +204,23 @@
 	function getNodeDisplayName(node: Node<FlowNodeData>): string {
 		const nodeData = nodeStore.get(node.id);
 		return nodeData?.name || node.id.slice(0, 8);
+	}
+
+	/**
+	 * Get the selected checkpoint name for a STATE node
+	 */
+	function getStateCheckpointName(node: Node<FlowNodeData>): string | null {
+		const nodeData = nodeStore.get(node.id);
+		if (!nodeData || nodeData.type !== 'STATE') return null;
+		
+		const stateData = nodeData as StateNodeData;
+		const stateContent = stateData.content as StateContent;
+		
+		if (!stateContent.checkpointId) return null;
+		
+		// Find the checkpoint name from the checkpoints list
+		const checkpoint = stateContent.checkpoints.find(cp => cp.id === stateContent.checkpointId);
+		return checkpoint?.name || stateContent.checkpointId.slice(0, 8);
 	}
 
 	function getCategoryLabel(type: string): string {
@@ -416,6 +434,14 @@
 										<div class="px-3 py-1.5 flex items-center gap-2 text-xs">
 											<span class="text-gray-400 font-mono">{node.id.slice(0, 6)}</span>
 											<span class="text-gray-600 truncate">{getNodeDisplayName(node)}</span>
+											{#if type === 'STATE'}
+												{@const checkpointName = getStateCheckpointName(node)}
+												{#if checkpointName}
+													<span class="text-teal-600 text-xs">@ {checkpointName}</span>
+												{:else}
+													<span class="text-amber-600 text-xs italic">未选择存档</span>
+												{/if}
+											{/if}
 										</div>
 									{/each}
 								</div>
