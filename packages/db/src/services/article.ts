@@ -99,6 +99,7 @@ export class ArticleService {
       },
       sandboxNodeId: article.sandboxNodeId,
       artifactId,
+      saveId: article.saveId,
       visibility: article.visibility,
       likes: article.likes,
       collections: article.collections,
@@ -197,6 +198,7 @@ export class ArticleService {
           .set({
             title: data.title,
             sandboxNodeId: data.sandboxNodeId,
+            saveId: data.saveId,
             content: data.content as ReaderContent,
             visibility: data.visibility ?? 'PUBLIC',
             updatedAt: sql`(datetime('now'))`,
@@ -209,6 +211,7 @@ export class ArticleService {
           authorId,
           title: data.title,
           sandboxNodeId: data.sandboxNodeId,
+          saveId: data.saveId,
           content: data.content as ReaderContent,
           visibility: data.visibility ?? 'PUBLIC',
         });

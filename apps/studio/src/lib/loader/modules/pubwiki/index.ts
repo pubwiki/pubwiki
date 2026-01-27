@@ -16,6 +16,8 @@ import type { ReaderContent } from '@pubwiki/reader';
 import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
 import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
+import { HandleId } from '$lib/graph';
+import { nodeStore } from '$lib/persistence';
 import PublishForm from '$components/pubwiki/PublishForm.svelte';
 import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
 
@@ -29,6 +31,8 @@ import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
 export interface PubWikiModuleContext {
 	/** Current project ID */
 	projectId: string;
+	/** Loader node ID (used to find connected Sandbox node) */
+	loaderNodeId: string;
 	/** Function to get current flow nodes */
 	getNodes: () => Node<FlowNodeData>[];
 	/** Function to get current flow edges */
@@ -56,7 +60,6 @@ interface PublishInput {
 interface UploadArticleInput {
 	articleId?: string;
 	title: string;
-	sandboxNodeId: string;
 	content: ReaderContent;
 	visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
 }
@@ -145,10 +148,23 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 		 * Upload an article
 		 */
 		async uploadArticle(data: UploadArticleInput): Promise<PubWikiResult> {
+			// Find connected Sandbox node
+			const sandboxNodeId = findConnectedSandboxNode(
+				context.loaderNodeId,
+				context.getNodes(),
+				context.getEdges()
+			);
+
+			if (!sandboxNodeId) {
+				return {
+					success: false,
+					error: 'No Sandbox node connected to this Loader. Please connect a Sandbox node via the service output.'
+				};
+			}
+
 			// Build initial values for confirmation dialog
 			const initialValues = {
 				title: data.title || '',
-				sandboxNodeId: data.sandboxNodeId || '',
 				visibility: data.visibility || 'PUBLIC'
 			};
 
@@ -166,7 +182,7 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 			const articleId = data.articleId || crypto.randomUUID();
 			const finalData = {
 				title: editedValues.title as string,
-				sandboxNodeId: editedValues.sandboxNodeId as string,
+				sandboxNodeId,
 				content: data.content,
 				visibility: (editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED') || 'PUBLIC'
 			};
@@ -209,13 +225,47 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
  */
 export function createPubWikiContext(
 	projectId: string,
+	loaderNodeId: string,
 	getNodes: () => Node<FlowNodeData>[],
 	getEdges: () => Edge[]
 ): PubWikiModuleContext {
 	return {
 		projectId,
+		loaderNodeId,
 		getNodes,
 		getEdges,
 		apiBaseUrl: API_BASE_URL
 	};
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Find the Sandbox node connected to a Loader node via the service output.
+ * Loader's LOADER_OUTPUT connects to Sandbox's SERVICE_INPUT.
+ */
+function findConnectedSandboxNode(
+	loaderNodeId: string,
+	nodes: Node<FlowNodeData>[],
+	edges: Edge[]
+): string | null {
+	// Find edges where this Loader is the source and the sourceHandle is LOADER_OUTPUT
+	const outgoingEdges = edges.filter(
+		e => e.source === loaderNodeId && e.sourceHandle === HandleId.LOADER_OUTPUT
+	);
+
+	for (const edge of outgoingEdges) {
+		// Check if target is a Sandbox node
+		const targetNode = nodes.find(n => n.id === edge.target);
+		if (!targetNode) continue;
+
+		const targetData = nodeStore.get(targetNode.id);
+		if (targetData?.type === 'SANDBOX') {
+			return targetNode.id;
+		}
+	}
+
+	return null;
 }

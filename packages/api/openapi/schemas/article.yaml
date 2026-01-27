@@ -22,7 +22,7 @@ GameRef:
   required:
     - type
     - textId
-    - ref
+    - checkpointId
   properties:
     type:
       type: string
@@ -30,9 +30,9 @@ GameRef:
     textId:
       type: string
       description: 关联的文本块 ID
-    ref:
+    checkpointId:
       type: string
-      description: 游戏状态引用（存档标识）
+      description: 存档检查点 ID
 
 ReaderContentBlock:
   oneOf:
@@ -72,6 +72,7 @@ ArticleDetail:
     - author
     - sandboxNodeId
     - artifactId
+    - saveId
     - visibility
     - likes
     - collections
@@ -97,6 +98,10 @@ ArticleDetail:
       type: string
       format: uuid
       description: Artifact ID（通过 sandboxNodeId 获取）
+    saveId:
+      type: string
+      format: uuid
+      description: 云存档 ID（文章关联的游戏存档）
     visibility:
       $ref: './common.yaml#/VisibilityType'
     likes:
@@ -115,6 +120,7 @@ UpsertArticleRequest:
   required:
     - title
     - sandboxNodeId
+    - saveId
     - content
   properties:
     title:
@@ -125,6 +131,10 @@ UpsertArticleRequest:
       type: string
       format: uuid
       description: Sandbox 节点 ID（用于游戏回放）
+    saveId:
+      type: string
+      format: uuid
+      description: 云存档 ID（文章关联的游戏存档）
     content:
       type: array
       items:

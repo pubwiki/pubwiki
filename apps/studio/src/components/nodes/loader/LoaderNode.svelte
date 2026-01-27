@@ -399,6 +399,7 @@
 			// Create PubWiki context for publish/article upload functionality
 			const pubwikiContext = createPubWikiContext(
 				backendVfsContent.projectId,
+				id,
 				() => ctx.nodes,
 				() => ctx.edges
 			);

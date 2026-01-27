@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { createDb, UserService, user, account, session, artifacts, artifactTags, artifactStats, artifactVersions, artifactLineage, artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs, eq } from '@pubwiki/db';
+import { createDb, UserService, user, account, session, artifacts, artifactTags, artifactStats, artifactVersions, artifactLineage, artifactNodes, artifactNodeVersions, artifactNodeRefs, eq } from '@pubwiki/db';
 
 describe('UserService', () => {
   let db: ReturnType<typeof createDb>;
@@ -40,7 +40,6 @@ describe('UserService', () => {
     
     // 清空数据库（按外键顺序）
     await db.delete(artifactLineage);
-    await db.delete(artifactNodeFiles);
     await db.delete(artifactNodeVersions);
     await db.delete(artifactNodeRefs);
     await db.delete(artifactNodes);

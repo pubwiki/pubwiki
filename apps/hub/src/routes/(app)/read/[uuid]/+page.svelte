@@ -261,7 +261,7 @@
 	>
 		<Reader 
 			content={content} 
-			buildPlaybackUrl={(gameRef: GameRef) => `/${article!.artifactId}/play/${article!.sandboxNodeId}?load=${encodeURIComponent(gameRef.ref)}`}
+			buildPlaybackUrl={(gameRef: GameRef) => `/${article!.artifactId}/play?sandbox_id=${article!.sandboxNodeId}&saveid=${article!.saveId}&checkpoint=${gameRef.checkpointId}`}
 		/>
 	</main>
 

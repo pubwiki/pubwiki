@@ -67,9 +67,14 @@ describe('Articles API', () => {
       {
         type: 'game_ref',
         textId: 'text-1',
-        ref: 'save-state-1',
+        checkpointId: 'checkpoint-1',
       },
     ];
+  }
+
+  // Helper: 创建测试用 saveId
+  function createTestSaveId(): string {
+    return crypto.randomUUID();
   }
 
   describe('GET /api/articles/:articleId', () => {
@@ -98,10 +103,12 @@ describe('Articles API', () => {
 
       // 直接创建文章
       const articleId = crypto.randomUUID();
+      const saveId = createTestSaveId();
       await db.insert(articles).values({
         id: articleId,
         authorId: userId,
         sandboxNodeId,
+        saveId,
         title: 'Test Article',
         content: createTestContent(),
         visibility: 'PUBLIC',
@@ -322,6 +329,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Test Article',
           sandboxNodeId: crypto.randomUUID(), // non-existent
+          saveId: createTestSaveId(),
           content: createTestContent(),
         }),
       });
@@ -345,6 +353,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Test Article',
           sandboxNodeId: nonSandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
         }),
       });
@@ -370,6 +379,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'My First Article',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
           visibility: 'PUBLIC',
         }),
@@ -405,6 +415,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Original Title',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
           visibility: 'PUBLIC',
         }),
@@ -421,6 +432,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Updated Title',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: [{ type: 'text', id: 'text-1', text: 'Updated content' }],
           visibility: 'PRIVATE',
         }),
@@ -446,6 +458,7 @@ describe('Articles API', () => {
         id: articleId,
         authorId,
         sandboxNodeId,
+        saveId: createTestSaveId(),
         title: 'Test Article',
         content: createTestContent(),
         visibility: 'PUBLIC',
@@ -461,6 +474,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Hijacked Title',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: [],
         }),
       });
@@ -484,6 +498,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Test Article',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
           visibility: 'INVALID',
         }),
@@ -559,6 +574,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Article 1',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
         }),
       }));
@@ -574,6 +590,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Article 2',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
         }),
       }));
@@ -605,6 +622,7 @@ describe('Articles API', () => {
           body: JSON.stringify({
             title: `Article ${i + 1}`,
             sandboxNodeId,
+            saveId: createTestSaveId(),
             content: createTestContent(),
           }),
         }));
@@ -648,6 +666,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Public Article',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
           visibility: 'PUBLIC',
         }),
@@ -664,6 +683,7 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Private Article',
           sandboxNodeId,
+          saveId: createTestSaveId(),
           content: createTestContent(),
           visibility: 'PRIVATE',
         }),

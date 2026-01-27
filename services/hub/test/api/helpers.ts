@@ -1,6 +1,6 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import app from '../../src/index';
-import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, artifactLineage, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs, discussions, discussionReplies, articles, eq } from '@pubwiki/db';
+import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, artifactLineage, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, artifactNodes, artifactNodeVersions, artifactNodeRefs, discussions, discussionReplies, articles, eq } from '@pubwiki/db';
 
 export type TestDb = ReturnType<typeof createDb>;
 
@@ -26,7 +26,6 @@ export async function clearDatabase(db: TestDb): Promise<void> {
   await db.delete(discussions);
   await db.delete(articles);
   await db.delete(artifactLineage);
-  await db.delete(artifactNodeFiles);
   await db.delete(artifactNodeVersions);
   await db.delete(artifactNodeRefs);
   await db.delete(artifactNodes);
@@ -155,4 +154,4 @@ export async function createTestUser(db: TestDb, username: string = 'testuser'):
 
 // 导出数据库表和eq操作符，方便测试文件使用
 // 注意: 'user' 是正确的表名，'users' 是别名保持向后兼容
-export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, artifactLineage, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, artifactNodes, artifactNodeVersions, artifactNodeFiles, artifactNodeRefs, discussions, discussionReplies, articles, eq };
+export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, artifactLineage, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, artifactNodes, artifactNodeVersions, artifactNodeRefs, discussions, discussionReplies, articles, eq };

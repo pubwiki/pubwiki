@@ -15,15 +15,15 @@ export interface TextContent extends ContentBlock {
 }
 
 /**
- * Game reference - links text to a game save state
- * 注意：不存储 projectId 和 sandboxNodeId，这些信息从文章 metadata 中获取
+ * Game reference - links text to a game checkpoint
+ * saveId 从文章 metadata 中获取，这里只存储 checkpointId
  */
 export interface GameRef extends ContentBlock {
   type: 'game_ref';
   /** ID of the text block this reference is attached to */
   textId: string;
-  /** Reference to game state (e.g., save file or state snapshot) */
-  ref: string;
+  /** Checkpoint ID to load (within the article's saveId) */
+  checkpointId: string;
 }
 
 /** Union type for all content blocks */

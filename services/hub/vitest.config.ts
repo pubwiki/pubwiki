@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // 在 Node.js 环境中读取所有迁移文件
-const migrationsDir = path.resolve(__dirname, '../packages/db/drizzle');
+const migrationsDir = path.resolve(__dirname, '../../packages/db/drizzle');
 const migrationFiles = fs.readdirSync(migrationsDir)
   .filter(f => f.endsWith('.sql'))
   .sort();
@@ -20,7 +20,7 @@ export default defineWorkersConfig({
   test: {
     poolOptions: {
       workers: {
-        wrangler: { configPath: './wrangler.jsonc' },
+        wrangler: { configPath: './wrangler.test.jsonc' },
       },
     },
     // 单元测试文件目录 - 排除 e2e 测试

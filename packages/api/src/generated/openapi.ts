@@ -1514,8 +1514,8 @@ export interface components {
             type: "game_ref";
             /** @description 关联的文本块 ID */
             textId: string;
-            /** @description 游戏状态引用（存档标识） */
-            ref: string;
+            /** @description 存档检查点 ID */
+            checkpointId: string;
         };
         ReaderContentBlock: components["schemas"]["TextContent"] | components["schemas"]["GameRef"];
         ArticleAuthor: {
@@ -1542,6 +1542,11 @@ export interface components {
              * @description Artifact ID（通过 sandboxNodeId 获取）
              */
             artifactId: string;
+            /**
+             * Format: uuid
+             * @description 云存档 ID（文章关联的游戏存档）
+             */
+            saveId: string;
             visibility: components["schemas"]["VisibilityType"];
             likes: number;
             collections: number;
@@ -1557,6 +1562,11 @@ export interface components {
              * @description Sandbox 节点 ID（用于游戏回放）
              */
             sandboxNodeId: string;
+            /**
+             * Format: uuid
+             * @description 云存档 ID（文章关联的游戏存档）
+             */
+            saveId: string;
             content: components["schemas"]["ReaderContentBlock"][];
             /** @default PUBLIC */
             visibility: components["schemas"]["VisibilityType"];

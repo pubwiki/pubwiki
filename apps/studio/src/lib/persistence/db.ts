@@ -127,7 +127,9 @@ export interface StoredProject {
   isDraft: boolean;
   /** Whether this project is hidden (created for Play mode) */
   isHidden?: boolean;
-  /** State node ID for Play mode */
+  /** Sandbox node ID for Play mode (original artifact ID) */
+  playSandboxNodeId?: string;
+  /** State node ID for Play mode (original artifact ID) */
   playStateNodeId?: string;
 }
 

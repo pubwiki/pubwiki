@@ -21,7 +21,6 @@ import {
   artifactVersions,
   artifactNodes,
   artifactNodeVersions,
-  artifactNodeFiles,
   artifactLineage,
   eq,
   type TestDb,
@@ -1391,25 +1390,29 @@ describe('Artifacts API', () => {
       expect(response.status).toBe(200);
       const data = await response.json<CreateArtifactResponse>();
 
-      // Verify file records in database through node structure
+      // Verify file records in database through node version content
       const [artifact] = await db.select().from(artifacts).where(eq(artifacts.id, data.artifact.id));
       
       // Get all nodes for this artifact
       const nodes = await db.select().from(artifactNodes).where(eq(artifactNodes.artifactId, artifact.id));
       expect(nodes.length).toBeGreaterThan(0);
 
-      // Get all files across all node versions
-      const allFiles: { filename: string }[] = [];
+      // Get all files from node version content field
+      const allFiles: { path: string }[] = [];
       for (const node of nodes) {
         const nodeVersions = await db.select().from(artifactNodeVersions).where(eq(artifactNodeVersions.nodeId, node.id));
         for (const nv of nodeVersions) {
-          const files = await db.select().from(artifactNodeFiles).where(eq(artifactNodeFiles.nodeVersionId, nv.id));
-          allFiles.push(...files);
+          if (nv.content) {
+            const content = JSON.parse(nv.content);
+            if (content.files && Array.isArray(content.files)) {
+              allFiles.push(...content.files);
+            }
+          }
         }
       }
 
       expect(allFiles).toHaveLength(2);
-      const filenames = allFiles.map(f => f.filename);
+      const filenames = allFiles.map(f => f.path);
       expect(filenames).toContain('recipe.json');
       expect(filenames).toContain('README.md');
     });

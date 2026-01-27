@@ -40,7 +40,7 @@
 	import { StateContent } from '$lib/types';
 	import type { Edge } from '@xyflow/svelte';
 	import { useAuth } from '@pubwiki/ui/stores';
-	import type { GetArtifactGraphResponse } from '@pubwiki/api';
+	import type { GetArtifactGraphResponse, ArtifactEdge } from '@pubwiki/api';
 	import PlayLoader from './PlayLoader.svelte';
 	import PlayError from './PlayError.svelte';
 
@@ -135,8 +135,8 @@
 	async function initialize() {
 		try {
 			// Validate required params
-			if (!data.stateNodeId) {
-				throw new Error('Missing state_id parameter');
+			if (!data.sandboxNodeId) {
+				throw new Error('Missing sandbox_id parameter');
 			}
 
 			// Stage 1: Fetch artifact graph
@@ -167,6 +167,15 @@
 			const existingProject = await getProject(projectId);
 			
 			if (!existingProject) {
+				// Find original stateNodeId from artifact edges BEFORE remap
+				const originalStateNodeId = findOriginalStateNodeId(
+					(graphData as GetArtifactGraphResponse).edges,
+					data.sandboxNodeId!
+				);
+				if (!originalStateNodeId) {
+					throw new Error('Could not find State node connected to Sandbox in artifact graph');
+				}
+
 				// Create new hidden project
 				await saveProject({
 					id: projectId,
@@ -176,7 +185,8 @@
 					isDraft: false,
 					artifactId: data.artifactId,
 					isHidden: true,
-					playStateNodeId: data.stateNodeId
+					playSandboxNodeId: data.sandboxNodeId,
+					playStateNodeId: originalStateNodeId
 				});
 
 				// Convert artifact to studio nodes
@@ -330,9 +340,21 @@
 	}
 
 	/**
+	 * Find original stateNodeId from artifact edges BEFORE ID remap
+	 * URL params contain original artifact node IDs
+	 */
+	function findOriginalStateNodeId(edges: ArtifactEdge[], originalSandboxNodeId: string): string | null {
+		for (const edge of edges) {
+			if (edge.source === originalSandboxNodeId && edge.targetHandle === 'state-input') {
+				return edge.target;  // Return original stateNodeId
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Find the remapped state node ID from originalRef
-	 * URL params contain original artifact node IDs, but after import
-	 * all node IDs are remapped. We need to find the new ID via originalRef.
+	 * After import, all node IDs are remapped. We need to find the new ID via originalRef.
 	 */
 	function findRemappedStateNodeId(originalStateNodeId: string): string | null {
 		// Iterate through all nodes to find the one with matching originalRef
@@ -347,38 +369,54 @@
 	}
 
 	/**
+	 * Find the remapped sandbox node ID from originalRef
+	 */
+	function findRemappedSandboxNodeId(originalSandboxNodeId: string): string | null {
+		const allNodeIds = nodeStore.getAllIds();
+		for (const nodeId of allNodeIds) {
+			const nodeData = nodeStore.get(nodeId);
+			if (nodeData?.type === 'SANDBOX' && nodeData.originalRef?.nodeId === originalSandboxNodeId) {
+				return nodeId;
+			}
+		}
+		return null;
+	}
+
+	/**
 	 * Find connected nodes from edges
+	 * Uses originalRef to map from original artifact IDs to remapped IDs
 	 */
 	function findNodes(edges: Edge[]) {
-		const originalStateNodeId = data.stateNodeId;
-		if (!originalStateNodeId) return;
+		const originalSandboxNodeId = data.sandboxNodeId;
+		if (!originalSandboxNodeId) return;
 
-		// First, find the remapped state node ID
-		const remappedStateNodeId = findRemappedStateNodeId(originalStateNodeId);
-		if (!remappedStateNodeId) {
-			console.error('[Play] Could not find remapped state node for original ID:', originalStateNodeId);
+		// Find the remapped sandbox node ID
+		const remappedSandboxId = findRemappedSandboxNodeId(originalSandboxNodeId);
+		if (!remappedSandboxId) {
+			console.error('[Play] Could not find remapped sandbox node for original ID:', originalSandboxNodeId);
 			return;
 		}
-		
-		// Store the remapped state node ID for later use
-		stateNodeId = remappedStateNodeId;
+		sandboxNodeId = remappedSandboxId;
 
-		// Find Sandbox connected to State via state-input
+		// Find State connected to Sandbox via state-input
 		for (const edge of edges) {
-			if (edge.target === remappedStateNodeId && edge.targetHandle === 'state-input') {
-				const nodeData = nodeStore.get(edge.source);
-				if (nodeData?.type === 'SANDBOX') {
-					sandboxNodeId = edge.source;
+			if (edge.source === remappedSandboxId && edge.targetHandle === 'state-input') {
+				const nodeData = nodeStore.get(edge.target);
+				if (nodeData?.type === 'STATE') {
+					stateNodeId = edge.target;
 					break;
 				}
 			}
 		}
 
-		if (!sandboxNodeId) return;
+		if (!stateNodeId) {
+			console.error('[Play] Could not find State node connected to Sandbox');
+			return;
+		}
 
 		// Find VFS connected to Sandbox via vfs-input
 		for (const edge of edges) {
-			if (edge.target === sandboxNodeId && edge.targetHandle === 'vfs-input') {
+			if (edge.target === remappedSandboxId && edge.targetHandle === 'vfs-input') {
 				const nodeData = nodeStore.get(edge.source);
 				if (nodeData?.type === 'VFS') {
 					vfsNodeId = edge.source;
@@ -390,7 +428,7 @@
 		// Find Loaders connected to Sandbox via service-input
 		const loaders: string[] = [];
 		for (const edge of edges) {
-			if (edge.target === sandboxNodeId && edge.targetHandle === 'service-input') {
+			if (edge.target === remappedSandboxId && edge.targetHandle === 'service-input') {
 				const nodeData = nodeStore.get(edge.source);
 				if (nodeData?.type === 'LOADER') {
 					loaders.push(edge.source);
@@ -400,9 +438,9 @@
 		loaderNodeIds = loaders;
 
 		console.log('[Play] Found nodes:', { 
-			originalStateNodeId,
-			remappedStateNodeId,
-			sandboxNodeId, 
+			originalSandboxNodeId,
+			remappedSandboxId,
+			stateNodeId,
 			vfsNodeId, 
 			loaderNodeIds 
 		});

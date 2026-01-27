@@ -19,6 +19,7 @@ export const articles = sqliteTable(
     sandboxNodeId: text('sandbox_node_id')
       .notNull()
       .references(() => artifactNodes.id, { onDelete: 'cascade' }),
+    saveId: text('save_id').notNull(),
     title: text('title', { length: 200 }).notNull(),
     content: text('content', { mode: 'json' }).$type<ReaderContent>().notNull(),
     visibility: text('visibility').$type<VisibilityType>().default('PUBLIC').notNull(),
@@ -30,6 +31,7 @@ export const articles = sqliteTable(
   (table) => [
     index('idx_articles_author').on(table.authorId),
     index('idx_articles_sandbox').on(table.sandboxNodeId),
+    index('idx_articles_save').on(table.saveId),
     index('idx_articles_visibility').on(table.visibility),
     index('idx_articles_created').on(table.createdAt),
   ]
