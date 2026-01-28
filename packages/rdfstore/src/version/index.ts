@@ -1,16 +1,13 @@
 export { 
-  VersionDAG, 
-  createVersionDAG, 
-  createVersionDAGWithStore,
-  createVersionDAGWithDatabase,
-} from './dag.js'
+  CheckpointManager, 
+  createCheckpointManager, 
+  createCheckpointManagerWithStore,
+  createCheckpointManagerWithDatabase,
+} from './manager.js'
 
 export { 
-  VersionStore, 
-  VersionDatabase,
-  type RefNodeRecord,
-  type ChildrenRecord,
+  CheckpointStore, 
+  CheckpointDatabase,
   type CheckpointRecord,
   type CheckpointDataRecord,
-  type MetaRecord,
 } from './store.js'

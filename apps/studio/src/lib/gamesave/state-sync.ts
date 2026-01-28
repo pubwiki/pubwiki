@@ -55,7 +55,6 @@ async function fetchCloudSaveInfo(saveId: string): Promise<CloudSaveInfo> {
     // Transform API response to local CheckpointInfo format
     const checkpoints: CheckpointInfo[] = (data.checkpoints || []).map(cp => ({
       id: cp.id,
-      ref: cp.ref,
       name: cp.name || 'Unnamed',
       description: cp.description ?? undefined,
       createdAt: cp.timestamp,

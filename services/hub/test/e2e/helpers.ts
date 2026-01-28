@@ -4,7 +4,7 @@
  */
 
 import { createAuthClient } from '@pubwiki/api/client';
-import { ROOT_REF, generateRef, type Operation, type Quad } from '@pubwiki/rdfsync';
+import type { Quad } from '@pubwiki/api';
 
 // 存储 cookies 的简单实现
 let storedCookies: Map<string, string> = new Map();
@@ -303,67 +303,26 @@ export async function createCloudSave(
 }
 
 /**
- * 初始化 save 并执行一个同步操作，返回最终的 ref
- */
-async function initializeSaveWithData(
-  baseUrl: string,
-  sessionCookie: string,
-  saveId: string
-): Promise<string> {
-  // 创建一个简单的 insert 操作
-  const quad: Quad = {
-    subject: 'http://test.example/init',
-    predicate: 'http://test.example/type',
-    object: 'TestData',
-    graph: '',
-  };
-  const operation: Operation = { type: 'insert', quad };
-  
-  // 使用 rdfsync 的 generateRef 计算 ref
-  const ref = await generateRef(ROOT_REF, operation);
-  
-  const response = await fetch(`${baseUrl}/saves/${saveId}/sync`, {
-    method: 'POST',
-    headers: {
-      Cookie: sessionCookie,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      baseRef: ROOT_REF,
-      operations: [{ operation, ref }],
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to initialize save with data: ${response.status} - ${text}`);
-  }
-
-  const data = (await response.json()) as { finalRef: string };
-  return data.finalRef;
-}
-
-/**
  * 创建 checkpoint
  * @param baseUrl API 基础 URL
  * @param sessionCookie session cookie 字符串
  * @param saveId 存档 ID
- * @param checkpointId 自定义 checkpoint ID (可选)
- * @param visibility checkpoint 可见性 (默认 PUBLIC)
- * @param ref 版本引用 (如果不提供，会自动初始化 save)
+ * @param quads checkpoint 包含的 quads 数组
+ * @param options 可选配置 (id, visibility)
  * @returns 创建的 checkpointId
  */
 export async function createCheckpoint(
   baseUrl: string,
   sessionCookie: string,
   saveId: string,
-  checkpointId?: string,
-  visibility: 'PRIVATE' | 'UNLISTED' | 'PUBLIC' = 'PUBLIC',
-  ref?: string
+  quads: Quad[] = [],
+  options: {
+    id?: string;
+    visibility?: 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
+    name?: string;
+  } = {}
 ): Promise<string> {
-  // 如果没有提供 ref，先初始化 save 以获取一个有效的 ref
-  const actualRef = ref ?? await initializeSaveWithData(baseUrl, sessionCookie, saveId);
-  
+  const { id: checkpointId, visibility = 'PUBLIC', name } = options;
   const response = await fetch(`${baseUrl}/saves/${saveId}/checkpoints`, {
     method: 'POST',
     headers: {
@@ -371,9 +330,9 @@ export async function createCheckpoint(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      ref: actualRef,
+      quads,
       id: checkpointId,
-      name: `Test Checkpoint ${checkpointId || Date.now()}`,
+      name: name ?? `Test Checkpoint ${checkpointId || Date.now()}`,
       visibility,
     }),
   });

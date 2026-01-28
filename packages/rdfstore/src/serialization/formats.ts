@@ -9,7 +9,6 @@
 
 import { DataFactory } from 'n3'
 import type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph, NamedNode, Literal, BlankNode, DefaultGraph } from '@rdfjs/types'
-import type { Operation } from '../types.js'
 // termKey not currently used after compact json simplification
 // import { termKey, type GraphTerm } from '../utils/term.js'
 
@@ -17,6 +16,7 @@ const { namedNode, literal, blankNode, defaultGraph, quad } = DataFactory
 
 /** Serializable term types - subset of RDF.js terms we actually use */
 type SerializableTerm = NamedNode | Literal | BlankNode | DefaultGraph
+
 
 // ============ Format Types ============
 
@@ -683,23 +683,4 @@ export function importQuads(data: string, options: ImportOptions = {}): Quad[] {
     default:
       return importFromJson(data, skipInvalid)
   }
-}
-
-// ============ Operations Export/Import ============
-
-/**
- * Export operations log to JSON Lines format
- */
-export function exportOperations(operations: Operation[]): string {
-  return operations.map(op => JSON.stringify(op)).join('\n')
-}
-
-/**
- * Import operations from JSON Lines format
- */
-export function importOperations(data: string): Operation[] {
-  return data
-    .split('\n')
-    .filter(line => line.trim())
-    .map(line => JSON.parse(line) as Operation)
 }

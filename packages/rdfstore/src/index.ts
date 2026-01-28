@@ -1,51 +1,30 @@
 /**
  * @pubwiki/rdfstore
  * 
- * RDF store with immutable version DAG
+ * RDF store with checkpoint-based versioning
  * 
  * Storage architecture:
  * - Quadstore (RDF data): Uses abstract-level (browser-level/memory-level)
- * - VersionDAG (version metadata): Uses Dexie.js (IndexedDB)
+ * - Checkpoints (version snapshots): Uses Dexie.js (IndexedDB)
+ * 
+ * 重构后：移除了区块链式版本控制，简化为纯 Checkpoint 快照模式
  */
 
 // Types
 export type {
   QuadPattern,
-  Ref,
-  RefNode,
   Checkpoint,
   CheckpointOptions,
-  StoreConfig,
   StoreEventType,
   StoreEvents,
   LevelInstance,
 } from './types.js'
 
-export { DEFAULT_STORE_CONFIG, toSyncOperation } from './types.js'
+// Re-export Quad type from @rdfjs/types for RDF operations
+export type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 
-// Re-export from rdfsync
-export {
-  ROOT_REF,
-  type Operation,
-  type OperationWithRef,
-  type SyncOperationsRequest,
-  type SyncOperationsResponse,
-  type SyncErrorType,
-  type RefMismatchInfo,
-  generateRef,
-  generateRefChain,
-  verifyRefChain,
-  canonicalizeOperation,
-} from '@pubwiki/rdfsync'
-
-// Re-export Quad types from @rdfjs/types for convenience
-export type { 
-  Quad, 
-  Quad_Subject, 
-  Quad_Predicate, 
-  Quad_Object, 
-  Quad_Graph 
-} from '@rdfjs/types'
+// Re-export Quad from @pubwiki/api for sync protocol
+export type { Quad as SyncQuad } from '@pubwiki/api'
 
 // Main Store API
 export { RDFStore } from './store.js'
@@ -54,34 +33,20 @@ export type { SparqlBinding, StorageConfig } from './store.js'
 // Backend
 export { StoreBackend, createBackend } from './backend/index.js'
 
-// Version DAG (Dexie-based)
+// Checkpoint Manager (Dexie-based)
 export { 
-  VersionDAG, 
-  createVersionDAG,
-  createVersionDAGWithStore,
-  createVersionDAGWithDatabase,
-  VersionStore,
-  VersionDatabase,
+  CheckpointManager, 
+  createCheckpointManager,
+  createCheckpointManagerWithStore,
+  createCheckpointManagerWithDatabase,
+  CheckpointStore,
+  CheckpointDatabase,
 } from './version/index.js'
 
 export type {
-  RefNodeRecord,
-  ChildrenRecord,
   CheckpointRecord,
   CheckpointDataRecord,
-  MetaRecord,
 } from './version/index.js'
-
-// Delta computation
-export {
-  computeDelta,
-  applyDelta,
-  invertOperation,
-  invertOperations,
-  optimizeOperations,
-  quadsEqual,
-  uniqueQuads,
-} from './delta/index.js'
 
 // Serialization (Import/Export)
 export {
@@ -96,8 +61,6 @@ export {
   importFromCompactJson,
   exportToJson,
   importFromJson,
-  exportOperations,
-  importOperations,
   // Full state export/import
   exportFullState,
   importFullState,
@@ -114,9 +77,8 @@ export type {
 // Utilities
 export {
   generateId,
-  generateSnapshotRef,
-  generateCheckpointRef,
-  isEmptySnapshotRef,
-  generateEmptySnapshotRef,
   EventEmitter,
 } from './utils/index.js'
+
+// Quad conversion utilities
+export { fromRdfQuad, toRdfQuad } from './convert.js'

@@ -21,10 +21,10 @@ let dbCounter = 0
 // Helper function: create a new in-memory RDFStore
 async function createMemoryStore(): Promise<RDFStore> {
   const level = new MemoryLevel()
-  const versionDbName = `test-version-db-${Date.now()}-${dbCounter++}`
+  const checkpointDbName = `test-checkpoint-db-${Date.now()}-${dbCounter++}`
   return RDFStore.create({
     quadstoreLevel: level,
-    versionDbName
+    checkpointDbName
   })
 }
 
@@ -357,19 +357,6 @@ describe('State Module (RDF)', () => {
   })
 
   describe('Version Control', () => {
-    it('should return current ref', async () => {
-      await instance.run(`
-        State:insert('user:alice', 'name', 'Alice')
-      `)
-
-      const result = await instance.run(`
-        return State:currentRef()
-      `)
-
-      expect(typeof result.result).toBe('string')
-      expect(result.result).toBe(store.currentRef)
-    })
-
     it('should create checkpoint', async () => {
       await instance.run(`
         State:insert('user:alice', 'name', 'Alice')
@@ -381,18 +368,6 @@ describe('State Module (RDF)', () => {
 
       expect(typeof result.result).toBe('object')
       expect(typeof result.result.id).toBe('string')
-      expect(typeof result.result.ref).toBe('string')
-    })
-
-    it('should checkout to specific ref', async () => {
-      const insertResult = await instance.run(`
-        local ref1 = State:insert('user:alice', 'name', 'Alice')
-        local ref2 = State:insert('user:bob', 'name', 'Bob')
-        State:checkout(ref1)
-        return ref1
-      `)
-
-      expect(store.currentRef).toBe(insertResult.result)
     })
   })
 

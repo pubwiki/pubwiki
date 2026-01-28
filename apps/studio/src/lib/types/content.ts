@@ -477,8 +477,6 @@ export type CheckpointVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC'
 export interface CheckpointInfo {
   /** Checkpoint unique ID */
   id: string
-  /** Version ref (hash) */
-  ref: string
   /** User-defined checkpoint name */
   name: string
   /** Optional description */

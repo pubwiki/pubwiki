@@ -1,31 +1,27 @@
 /**
- * RDF Store with Immutable Version DAG
+ * RDF Store with Checkpoint-based Versioning
  * 
- * High-level API for RDF storage with immutable state versioning.
- * Each operation creates a new ref, enabling checkout to any historical state
- * and implicit branching.
+ * High-level API for RDF storage with checkpoint-based versioning.
+ * Users can create checkpoints (snapshots) at any time.
  * 
  * Storage architecture:
  * - Quadstore (RDF data): Uses abstract-level (browser-level/memory-level)
- * - VersionDAG (version metadata): Uses Dexie.js (IndexedDB)
+ * - Checkpoints (version snapshots): Uses Dexie.js (IndexedDB)
+ * 
+ * 重构后：移除了区块链式版本控制，简化为纯 Checkpoint 快照模式
  */
 
 import { DataFactory } from 'n3'
 import type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 import type {
   QuadPattern,
-  Operation,
-  Ref,
-  RefNode,
   Checkpoint,
   CheckpointOptions,
-  StoreConfig,
   StoreEvents,
   LevelInstance,
 } from './types.js'
-import { ROOT_REF } from './types.js'
 import { StoreBackend, createBackend } from './backend/quadstore.js'
-import { VersionDAG, createVersionDAG } from './version/index.js'
+import { CheckpointManager, createCheckpointManager } from './version/index.js'
 import { EventEmitter } from './utils/events.js'
 import {
   exportQuads,
@@ -51,16 +47,16 @@ export type SparqlBinding = Record<string, unknown>
 export interface StorageConfig {
   /** abstract-level instance for Quadstore (RDF data) */
   quadstoreLevel: LevelInstance
-  /** Dexie database name for VersionDAG (version metadata) */
-  versionDbName: string
+  /** Dexie database name for Checkpoints */
+  checkpointDbName: string
 }
 
 /**
- * RDF Store with immutable version DAG
+ * RDF Store with checkpoint-based versioning
  */
 export class RDFStore {
   private backend: StoreBackend
-  private versionDAG: VersionDAG
+  private checkpointManager: CheckpointManager
   private events = new EventEmitter<StoreEvents & Record<string, unknown>>()
   private _isOpen = false
   private level: LevelInstance
@@ -69,34 +65,29 @@ export class RDFStore {
   private constructor(
     level: LevelInstance,
     backend: StoreBackend,
-    versionDAG: VersionDAG,
-    _config: StoreConfig
+    checkpointManager: CheckpointManager
   ) {
     this.level = level
     this.backend = backend
-    this.versionDAG = versionDAG
+    this.checkpointManager = checkpointManager
   }
 
   /**
    * Create a new RDF store with separate storage backends
-   * @param storage Storage configuration with quadstore level and version db name
-   * @param config Optional store configuration
+   * @param storage Storage configuration with quadstore level and checkpoint db name
    */
   static async create(
-    storage: StorageConfig,
-    _config: Partial<StoreConfig> = {}
+    storage: StorageConfig
   ): Promise<RDFStore> {
-    const fullConfig: StoreConfig = {}
-
     // Ensure level is open
     if (storage.quadstoreLevel.status !== 'open') {
       await storage.quadstoreLevel.open()
     }
 
     const backend = await createBackend(storage.quadstoreLevel)
-    const versionDAG = await createVersionDAG(storage.versionDbName)
+    const checkpointManager = await createCheckpointManager(storage.checkpointDbName)
 
-    const store = new RDFStore(storage.quadstoreLevel, backend, versionDAG, fullConfig)
+    const store = new RDFStore(storage.quadstoreLevel, backend, checkpointManager)
     store._isOpen = true
     
     // Initialize SPARQL engine
@@ -109,10 +100,9 @@ export class RDFStore {
    * Open an existing RDF store (alias for create)
    */
   static async open(
-    storage: StorageConfig,
-    config: Partial<StoreConfig> = {}
+    storage: StorageConfig
   ): Promise<RDFStore> {
-    return RDFStore.create(storage, config)
+    return RDFStore.create(storage)
   }
 
   /**
@@ -120,13 +110,6 @@ export class RDFStore {
    */
   get isOpen(): boolean {
     return this._isOpen
-  }
-
-  /**
-   * Get the current state reference
-   */
-  get currentRef(): Ref {
-    return this.versionDAG.currentRef
   }
 
   /**
@@ -144,10 +127,10 @@ export class RDFStore {
   }
 
   /**
-   * Get the underlying VersionDAG
+   * Get the underlying CheckpointManager
    */
-  getVersionDAG(): VersionDAG {
-    return this.versionDAG
+  getCheckpointManager(): CheckpointManager {
+    return this.checkpointManager
   }
 
   /**
@@ -156,7 +139,7 @@ export class RDFStore {
   async close(): Promise<void> {
     if (!this._isOpen) return
 
-    await this.versionDAG.close()
+    await this.checkpointManager.close()
     await this.backend.close()
     await this.level.close()
     this.events.removeAllListeners()
@@ -167,34 +150,26 @@ export class RDFStore {
 
   /**
    * Insert a quad
-   * @returns The new ref after this operation
    */
   async insert(
     subject: Quad_Subject, 
     predicate: Quad_Predicate, 
     object: Quad_Object, 
     graph?: Quad_Graph
-  ): Promise<Ref> {
+  ): Promise<void> {
     const q = quad(subject, predicate, object, graph ?? defaultGraph())
-    const operation: Operation = { type: 'insert', quad: q }
-
     await this.backend.insert(q)
-    const ref = await this.versionDAG.recordOperation(operation)
-
-    this.events.emit('change', { ref, operation })
-    return ref
   }
 
   /**
    * Delete quads matching the pattern
-   * @returns The new ref after this operation (or current ref if nothing deleted)
    */
   async delete(
     subject: Quad_Subject,
     predicate: Quad_Predicate,
     object?: Quad_Object | null,
     graph?: Quad_Graph | null
-  ): Promise<Ref> {
+  ): Promise<void> {
     // Find matching quads
     const pattern: QuadPattern = { subject, predicate }
     if (object !== undefined && object !== null) {
@@ -206,22 +181,10 @@ export class RDFStore {
 
     const matches = await this.backend.query(pattern)
     
-    if (matches.length === 0) {
-      return this.currentRef
-    }
-
-    // Delete all matches as a batch
+    // Delete all matches
     for (const q of matches) {
       await this.backend.delete(q)
     }
-
-    const operation: Operation = matches.length === 1
-      ? { type: 'delete', quad: matches[0] }
-      : { type: 'batch-delete', quads: matches }
-
-    const ref = await this.versionDAG.recordOperation(operation)
-    this.events.emit('change', { ref, operation })
-    return ref
   }
 
   /**
@@ -240,153 +203,96 @@ export class RDFStore {
 
   /**
    * Batch insert multiple quads
-   * @returns The new ref after this operation
    */
-  async batchInsert(quads: Quad[]): Promise<Ref> {
+  async batchInsert(quads: Quad[]): Promise<void> {
     if (quads.length === 0) {
-      return this.currentRef
+      return
     }
-
     await this.backend.batchInsert(quads)
-    const operation: Operation = { type: 'batch-insert', quads }
-    const ref = await this.versionDAG.recordOperation(operation)
-
-    this.events.emit('change', { ref, operation })
-    return ref
   }
 
   /**
    * Batch delete quads matching patterns
-   * @returns The new ref after this operation
    */
-  async batchDelete(patterns: QuadPattern[]): Promise<Ref> {
+  async batchDelete(patterns: QuadPattern[]): Promise<void> {
     if (patterns.length === 0) {
-      return this.currentRef
+      return
     }
-
-    const allDeleted: Quad[] = []
 
     for (const pattern of patterns) {
-      const deleted = await this.backend.batchDelete(pattern)
-      allDeleted.push(...deleted)
+      await this.backend.batchDelete(pattern)
     }
-
-    if (allDeleted.length === 0) {
-      return this.currentRef
-    }
-
-    const operation: Operation = { type: 'batch-delete', quads: allDeleted }
-    const ref = await this.versionDAG.recordOperation(operation)
-
-    this.events.emit('change', { ref, operation })
-    return ref
   }
 
-  // ========== Version Control ==========
-
   /**
-   * Checkout to a specific ref
-   * Rebuilds the store state to match that ref
+   * Clear all quads from the store
    */
-  async checkout(targetRef: Ref): Promise<void> {
-    if (targetRef === this.currentRef) return
-
-    // Verify ref exists
-    if (targetRef !== ROOT_REF && !(await this.versionDAG.hasRef(targetRef))) {
-      throw new Error(`Ref not found: ${targetRef}`)
-    }
-
-    const fromRef = this.currentRef
-
-    // Find nearest checkpoint on path to target
-    const checkpointInfo = await this.versionDAG.findNearestCheckpoint(targetRef)
-
-    // Clear current state
+  async clear(): Promise<void> {
     await this.backend.clear()
-
-    if (checkpointInfo) {
-      const { checkpointRef, pathFromCheckpoint } = checkpointInfo
-
-      // Load checkpoint data (if not root)
-      if (checkpointRef !== ROOT_REF) {
-        const checkpointData = await this.versionDAG.loadCheckpointData(checkpointRef)
-        if (checkpointData) {
-          await this.backend.batchInsert(checkpointData)
-        }
-      }
-
-      // Replay operations from checkpoint to target
-      for (const ref of pathFromCheckpoint) {
-        const node = await this.versionDAG.getNode(ref)
-        if (node) {
-          await this.applyOperationDirectly(node.operation)
-        }
-      }
-    }
-
-    // Update current ref
-    await this.versionDAG.setCurrentRef(targetRef)
-
-    this.events.emit('checkout', { from: fromRef, to: targetRef })
   }
 
+  // ========== Checkpoint Operations ==========
+
   /**
-   * Create a checkpoint at the current ref
-   * Saves the complete quad data for faster future checkouts
+   * Create a checkpoint at the current state
+   * Saves the complete quad data for future restoration
    * @param options Checkpoint options including title and description
    * @returns The created checkpoint
    */
   async checkpoint(options: CheckpointOptions): Promise<Checkpoint> {
     const quads = await this.backend.getAllQuads()
-    return this.versionDAG.createCheckpoint(quads, options)
+    const checkpoint = await this.checkpointManager.createCheckpoint(quads, options)
+    this.events.emit('checkpointCreated', { checkpointId: checkpoint.id })
+    return checkpoint
   }
 
   /**
-   * Get operation history from current ref to root
-   * @param limit Maximum number of entries
+   * Load a checkpoint's data into the store
+   * WARNING: This replaces all current data!
+   * @param checkpointId The checkpoint ID to load
    */
-  async log(limit?: number): Promise<RefNode[]> {
-    return this.versionDAG.log(limit)
+  async loadCheckpoint(checkpointId: string): Promise<void> {
+    const data = await this.checkpointManager.loadCheckpointData(checkpointId)
+    if (data === null) {
+      throw new Error(`Checkpoint not found: ${checkpointId}`)
+    }
+
+    // Clear current state and load checkpoint data
+    await this.backend.clear()
+    if (data.length > 0) {
+      await this.backend.batchInsert(data)
+    }
+
+    this.events.emit('checkpointLoaded', { checkpointId })
   }
 
   /**
-   * Get operations from baseRef to targetRef (exclusive baseRef, inclusive targetRef)
-   * Returns nodes in chronological order (oldest first)
-   * Used for syncing operations to cloud
+   * Get checkpoint metadata by ID
    */
-  async getOperationsBetween(baseRef: Ref, targetRef: Ref): Promise<RefNode[]> {
-    return this.versionDAG.getOperationsBetween(baseRef, targetRef)
+  async getCheckpoint(id: string): Promise<Checkpoint | null> {
+    return this.checkpointManager.getCheckpoint(id)
   }
 
   /**
    * List all checkpoints
    */
   async listCheckpoints(): Promise<Checkpoint[]> {
-    return this.versionDAG.listCheckpoints()
+    return this.checkpointManager.listCheckpoints()
   }
 
   /**
    * Delete a checkpoint by id
-   * Note: This only deletes the checkpoint metadata and data, not the underlying operations
    * @param id - The checkpoint id
-   * @param ref - The ref to delete checkpoint data for (optional)
    */
-  async deleteCheckpoint(id: string, ref?: Ref): Promise<void> {
-    return this.versionDAG.deleteCheckpoint(id, ref)
+  async deleteCheckpoint(id: string): Promise<void> {
+    return this.checkpointManager.deleteCheckpoint(id)
   }
 
   /**
-   * Check if a ref exists in the version history
+   * Check if a checkpoint exists
    */
-  async hasRef(ref: Ref): Promise<boolean> {
-    return this.versionDAG.hasRef(ref)
-  }
-
-  /**
-   * Get children refs (branches from a ref)
-   */
-  async getChildren(ref: Ref): Promise<Ref[]> {
-    return this.versionDAG.getChildren(ref)
+  async hasCheckpoint(id: string): Promise<boolean> {
+    return this.checkpointManager.hasCheckpoint(id)
   }
 
   // ========== Events ==========
@@ -426,49 +332,6 @@ export class RDFStore {
     }
   }
 
-  // ========== Transaction ==========
-
-  /**
-   * Execute a callback within a transaction context.
-   * If the callback throws an error, all changes are rolled back and
-   * the created refs are deleted from the DAG.
-   * If the callback succeeds, changes are committed.
-   * 
-   * @param callback The function to execute within the transaction
-   * @returns The result of the callback
-   * @throws Re-throws any error from the callback after rollback
-   */
-  async transaction<T>(callback: () => T | Promise<T>): Promise<T> {
-    const startRef = this.currentRef
-
-    try {
-      const result = await callback()
-      return result
-    } catch (error) {
-      // Collect all refs created during the transaction
-      const refsToDelete: string[] = []
-      let current = this.currentRef
-      while (current !== startRef && current !== ROOT_REF) {
-        refsToDelete.push(current)
-        const node = await this.versionDAG.getNode(current)
-        if (!node || !node.parent) break
-        current = node.parent
-      }
-
-      // Delete the refs in reverse order (from newest to oldest)
-      for (const ref of refsToDelete) {
-        await this.versionDAG.deleteRef(ref)
-      }
-
-      // Rollback to the state before the transaction
-      if (this.currentRef !== startRef) {
-        await this.checkout(startRef)
-      }
-
-      throw error
-    }
-  }
-
   // ========== Import/Export ==========
 
   /**
@@ -485,23 +348,19 @@ export class RDFStore {
 
   /**
    * Import quads from a string format
-   * @returns The new ref after import
    */
-  async importData(data: string, options: ImportOptions = {}): Promise<Ref> {
+  async importData(data: string, options: ImportOptions = {}): Promise<void> {
     const quads = importQuads(data, options)
     
     if (quads.length > 0) {
-      return this.batchInsert(quads)
+      await this.batchInsert(quads)
     }
-    
-    return this.currentRef
   }
 
   /**
    * Replace all data with imported quads (clears existing data first)
-   * @returns The new ref after import
    */
-  async replaceWithImport(data: string, options: ImportOptions = {}): Promise<Ref> {
+  async replaceWithImport(data: string, options: ImportOptions = {}): Promise<void> {
     const quads = importQuads(data, options)
     
     // Clear existing data
@@ -509,70 +368,29 @@ export class RDFStore {
     
     if (quads.length > 0) {
       await this.backend.batchInsert(quads)
-      
-      const operation: Operation = { type: 'batch-insert', quads }
-      const ref = await this.versionDAG.recordOperation(operation)
-      
-      this.events.emit('change', { ref, operation })
-      return ref
     }
-    
-    return this.currentRef
   }
 
   /**
-   * Export the complete store state including version history and checkpoints
+   * Export the complete store state including checkpoints
    * This exports everything needed to fully restore the store state
    * 
    * @param options - Export options (e.g., pretty print)
    * @returns JSON string of the full state
    */
   async exportFullState(options: FullStateExportOptions = {}): Promise<string> {
-    const versionStore = this.versionDAG.getStore()
-    return exportFullState(this.backend, versionStore, options)
+    const checkpointStore = this.checkpointManager.getStore()
+    return exportFullState(this.backend, checkpointStore, options)
   }
 
   /**
    * Import a complete store state from a full state export
-   * WARNING: This completely replaces all current data including version history!
+   * WARNING: This completely replaces all current data including checkpoints!
    * 
    * @param data - JSON string from exportFullState
    */
   async importFullState(data: string): Promise<void> {
-    const versionStore = this.versionDAG.getStore()
-    await importFullState(this.backend, versionStore, data)
-    
-    // Sync the VersionDAG's internal currentRef with the restored head
-    const head = await versionStore.getHead()
-    if (head) {
-      await this.versionDAG.setCurrentRef(head)
-    }
-  }
-
-  // ========== Private Methods ==========
-
-  /**
-   * Apply operation directly without recording
-   */
-  private async applyOperationDirectly(operation: Operation): Promise<void> {
-    switch (operation.type) {
-      case 'insert':
-        await this.backend.insert(operation.quad)
-        break
-
-      case 'delete':
-        await this.backend.delete(operation.quad)
-        break
-
-      case 'batch-insert':
-        await this.backend.batchInsert(operation.quads)
-        break
-
-      case 'batch-delete':
-        for (const q of operation.quads) {
-          await this.backend.delete(q)
-        }
-        break
-    }
+    const checkpointStore = this.checkpointManager.getStore()
+    await importFullState(this.backend, checkpointStore, data)
   }
 }

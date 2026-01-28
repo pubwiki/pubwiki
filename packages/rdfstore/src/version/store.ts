@@ -1,46 +1,22 @@
 /**
- * VersionStore - Dexie-based storage for Version DAG
+ * CheckpointStore - Dexie-based storage for Checkpoints
  * 
- * Provides persistent storage for version nodes, checkpoints, and metadata
+ * Provides persistent storage for checkpoint metadata and data
  * using IndexedDB via Dexie.js.
  * 
- * Note on storage format:
- * - Operation objects are stored as SyncOperation (simple string-based format)
- *   which IndexedDB's structured clone can handle directly.
- * - SyncOperation is from @pubwiki/rdfsync and contains only primitive types.
- * - When reading, we convert back to Operation with RDF.js Quads.
+ * 重构后：移除了 RefNode、Children 等操作历史相关的表
+ * 简化为纯 Checkpoint 快照存储
  */
 
 import Dexie, { type Table } from 'dexie'
-import type { Operation as SyncOperation, Quad as SyncQuad } from '@pubwiki/rdfsync'
-import type { Ref, RefNode, Checkpoint } from '../types.js'
-import { toSyncOperation, fromSyncOperation } from '../types.js'
+import type { Quad as SyncQuad } from '@pubwiki/api'
+import type { Checkpoint } from '../types.js'
 
 // ============ Database Records ============
-
-export interface RefNodeRecord {
-  /** Primary key - the ref */
-  ref: string
-  /** Parent ref or null for root-derived nodes */
-  parent: string | null
-  /** SyncOperation stored directly (no JSON serialization needed) */
-  operation: SyncOperation
-  /** Creation timestamp */
-  timestamp: number
-}
-
-export interface ChildrenRecord {
-  /** Primary key - parent ref */
-  parentRef: string
-  /** Array of child refs */
-  children: string[]
-}
 
 export interface CheckpointRecord {
   /** Primary key - unique checkpoint ID */
   id: string
-  /** The ref this checkpoint is for */
-  ref: string
   /** User-provided title */
   title: string
   /** Optional description */
@@ -52,67 +28,54 @@ export interface CheckpointRecord {
 }
 
 export interface CheckpointDataRecord {
-  /** Primary key - the ref */
-  ref: string
+  /** Primary key - checkpoint ID */
+  id: string
   /** Quad array stored directly (no serialization needed) */
   data: SyncQuad[]
-}
-
-export interface MetaRecord {
-  /** Primary key - meta key name */
-  key: string
-  /** Value - currently only stores 'head' (Ref string) */
-  value: string
 }
 
 // ============ Dexie Database ============
 
 /**
- * Dexie database for version storage
+ * Dexie database for checkpoint storage
  */
-export class VersionDatabase extends Dexie {
-  refNodes!: Table<RefNodeRecord>
-  children!: Table<ChildrenRecord>
+export class CheckpointDatabase extends Dexie {
   checkpoints!: Table<CheckpointRecord>
   checkpointData!: Table<CheckpointDataRecord>
-  meta!: Table<MetaRecord>
 
   constructor(name: string) {
     super(name)
     this.version(1).stores({
-      refNodes: 'ref, parent, timestamp',
-      children: 'parentRef',
-      checkpoints: 'id, ref, timestamp',
-      checkpointData: 'ref',
-      meta: 'key'
+      checkpoints: 'id, timestamp',
+      checkpointData: 'id',
     })
   }
 }
 
-// ============ VersionStore API ============
+// ============ CheckpointStore API ============
 
 /**
- * High-level store for version DAG data
+ * High-level store for checkpoint data
  */
-export class VersionStore {
-  private db: VersionDatabase
+export class CheckpointStore {
+  private db: CheckpointDatabase
 
-  constructor(db: VersionDatabase) {
+  constructor(db: CheckpointDatabase) {
     this.db = db
   }
 
   /**
-   * Create a VersionStore with a new database
+   * Create a CheckpointStore with a new database
    */
-  static create(dbName: string): VersionStore {
-    const db = new VersionDatabase(dbName)
-    return new VersionStore(db)
+  static create(dbName: string): CheckpointStore {
+    const db = new CheckpointDatabase(dbName)
+    return new CheckpointStore(db)
   }
 
   /**
    * Get the underlying Dexie database
    */
-  get database(): VersionDatabase {
+  get database(): CheckpointDatabase {
     return this.db
   }
 
@@ -123,84 +86,6 @@ export class VersionStore {
     this.db.close()
   }
 
-  // ============ RefNode Operations ============
-
-  /**
-   * Save a ref node
-   */
-  async saveNode(node: RefNode): Promise<void> {
-    await this.db.refNodes.put({
-      ref: node.ref,
-      parent: node.parent,
-      operation: toSyncOperation(node.operation),
-      timestamp: node.timestamp
-    })
-  }
-
-  /**
-   * Get a ref node by ref
-   */
-  async getNode(ref: Ref): Promise<RefNode | null> {
-    const record = await this.db.refNodes.get(ref)
-    if (!record) return null
-    
-    return {
-      ref: record.ref,
-      parent: record.parent,
-      operation: fromSyncOperation(record.operation),
-      timestamp: record.timestamp
-    }
-  }
-
-  /**
-   * Delete a ref node
-   */
-  async deleteNode(ref: Ref): Promise<void> {
-    await this.db.refNodes.delete(ref)
-  }
-
-  /**
-   * Check if a ref node exists
-   */
-  async hasNode(ref: Ref): Promise<boolean> {
-    const count = await this.db.refNodes.where('ref').equals(ref).count()
-    return count > 0
-  }
-
-  // ============ Children Index Operations ============
-
-  /**
-   * Get children of a ref
-   */
-  async getChildren(parentRef: Ref): Promise<Ref[]> {
-    const record = await this.db.children.get(parentRef)
-    return record?.children ?? []
-  }
-
-  /**
-   * Add a child to a parent's children list
-   */
-  async addChild(parentRef: Ref, childRef: Ref): Promise<void> {
-    const existing = await this.db.children.get(parentRef)
-    const children = existing?.children ?? []
-    
-    if (!children.includes(childRef)) {
-      children.push(childRef)
-      await this.db.children.put({ parentRef, children })
-    }
-  }
-
-  /**
-   * Remove a child from a parent's children list
-   */
-  async removeChild(parentRef: Ref, childRef: Ref): Promise<void> {
-    const existing = await this.db.children.get(parentRef)
-    if (!existing) return
-    
-    const children = existing.children.filter(c => c !== childRef)
-    await this.db.children.put({ parentRef, children })
-  }
-
   // ============ Checkpoint Operations ============
 
   /**
@@ -209,7 +94,6 @@ export class VersionStore {
   async saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
     await this.db.checkpoints.put({
       id: checkpoint.id,
-      ref: checkpoint.ref,
       title: checkpoint.title,
       description: checkpoint.description,
       timestamp: checkpoint.timestamp,
@@ -226,7 +110,6 @@ export class VersionStore {
     
     return {
       id: record.id,
-      ref: record.ref,
       title: record.title,
       description: record.description,
       timestamp: record.timestamp,
@@ -235,10 +118,10 @@ export class VersionStore {
   }
 
   /**
-   * Check if a checkpoint exists for a ref
+   * Check if a checkpoint exists
    */
-  async hasCheckpointForRef(ref: Ref): Promise<boolean> {
-    const count = await this.db.checkpoints.where('ref').equals(ref).count()
+  async hasCheckpoint(id: string): Promise<boolean> {
+    const count = await this.db.checkpoints.where('id').equals(id).count()
     return count > 0
   }
 
@@ -253,7 +136,6 @@ export class VersionStore {
     
     return records.map(record => ({
       id: record.id,
-      ref: record.ref,
       title: record.title,
       description: record.description,
       timestamp: record.timestamp,
@@ -273,39 +155,30 @@ export class VersionStore {
   /**
    * Save checkpoint quad data
    */
-  async saveCheckpointData(ref: Ref, data: SyncQuad[]): Promise<void> {
-    await this.db.checkpointData.put({ ref, data })
+  async saveCheckpointData(id: string, data: SyncQuad[]): Promise<void> {
+    await this.db.checkpointData.put({ id, data })
   }
 
   /**
    * Get checkpoint quad data
    */
-  async getCheckpointData(ref: Ref): Promise<SyncQuad[] | null> {
-    const record = await this.db.checkpointData.get(ref)
+  async getCheckpointData(id: string): Promise<SyncQuad[] | null> {
+    const record = await this.db.checkpointData.get(id)
     return record?.data ?? null
   }
 
   /**
    * Delete checkpoint data
    */
-  async deleteCheckpointData(ref: Ref): Promise<void> {
-    await this.db.checkpointData.delete(ref)
-  }
-
-  // ============ Meta Operations ============
-
-  /**
-   * Set head ref
-   */
-  async setHead(ref: Ref): Promise<void> {
-    await this.db.meta.put({ key: 'head', value: ref })
+  async deleteCheckpointData(id: string): Promise<void> {
+    await this.db.checkpointData.delete(id)
   }
 
   /**
-   * Get head ref
+   * Clear all data (for testing or reset)
    */
-  async getHead(): Promise<Ref | null> {
-    const record = await this.db.meta.get('head')
-    return record?.value ?? null
+  async clear(): Promise<void> {
+    await this.db.checkpoints.clear()
+    await this.db.checkpointData.clear()
   }
 }

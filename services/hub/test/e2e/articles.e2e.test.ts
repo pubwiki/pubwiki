@@ -38,8 +38,11 @@ describe('E2E: Articles API', () => {
     // 先创建云端存档（使用随机的 stateNodeId，不需要关联到真实的 STATE 节点）
     testSaveId = await createCloudSave(baseUrl, sessionCookie, testStateNodeId);
 
-    // 创建 PUBLIC checkpoint
-    testCheckpointId = await createCheckpoint(baseUrl, sessionCookie, testSaveId, 'test-checkpoint-public', 'PUBLIC');
+    // 创建 PUBLIC checkpoint（使用空的 quads 数组）
+    testCheckpointId = await createCheckpoint(baseUrl, sessionCookie, testSaveId, [], {
+      id: 'test-checkpoint-public',
+      visibility: 'PUBLIC',
+    });
 
     // 创建测试 artifact，只包含 SANDBOX node（不包含 STATE 节点以避免循环依赖）
     const formData = new FormData();
@@ -224,8 +227,8 @@ describe('E2E: Articles API', () => {
         baseUrl, 
         sessionCookie, 
         testSaveId, 
-        `private-cp-${Date.now()}`, 
-        'PRIVATE'
+        [], 
+        { id: `private-cp-${Date.now()}`, visibility: 'PRIVATE' }
       );
 
       const articleId = crypto.randomUUID();
@@ -257,8 +260,8 @@ describe('E2E: Articles API', () => {
         baseUrl, 
         sessionCookie, 
         testSaveId, 
-        `private-cp-unlisted-${Date.now()}`, 
-        'PRIVATE'
+        [], 
+        { id: `private-cp-unlisted-${Date.now()}`, visibility: 'PRIVATE' }
       );
 
       const articleId = crypto.randomUUID();
@@ -289,8 +292,8 @@ describe('E2E: Articles API', () => {
         baseUrl, 
         sessionCookie, 
         testSaveId, 
-        `private-cp-allowed-${Date.now()}`, 
-        'PRIVATE'
+        [], 
+        { id: `private-cp-allowed-${Date.now()}`, visibility: 'PRIVATE' }
       );
 
       const articleId = crypto.randomUUID();
@@ -490,6 +493,122 @@ describe('E2E: Articles API', () => {
       expect(response.status).toBe(403);
     });
 
+    it('should return 400 for invalid content block structure', async () => {
+      const articleId = crypto.randomUUID();
+
+      // TextContent with wrong format (missing text field)
+      const response1 = await fetch(`${baseUrl}/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          Cookie: sessionCookie,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          sandboxNodeId: testSandboxNodeId,
+          saveId: testSaveId,
+          content: [
+            { type: 'text', id: 'text-1' }, // missing 'text' field
+          ],
+        }),
+      });
+      expect(response1.status).toBe(400);
+
+      // GameRef with wrong format (missing textId)
+      const response2 = await fetch(`${baseUrl}/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          Cookie: sessionCookie,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          sandboxNodeId: testSandboxNodeId,
+          saveId: testSaveId,
+          content: [
+            { type: 'game_ref', checkpointId: testCheckpointId }, // missing 'textId'
+          ],
+        }),
+      });
+      expect(response2.status).toBe(400);
+
+      // Invalid content type
+      const response3 = await fetch(`${baseUrl}/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          Cookie: sessionCookie,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          sandboxNodeId: testSandboxNodeId,
+          saveId: testSaveId,
+          content: [
+            { type: 'invalid_type', id: 'text-1', text: 'Test' },
+          ],
+        }),
+      });
+      expect(response3.status).toBe(400);
+    });
+
+    it('should return 400 for non-sandbox node type', async () => {
+      // Create a GENERATED node artifact
+      const generatedNodeId = crypto.randomUUID();
+      const generatedArtifactId = crypto.randomUUID();
+      const generatedArtifactSlug = `generated-artifact-${Date.now()}`;
+
+      const formData = new FormData();
+      formData.append('metadata', JSON.stringify({
+        artifactId: generatedArtifactId,
+        type: 'GAME',
+        name: 'Test Artifact with Generated Node',
+        slug: generatedArtifactSlug,
+        version: '1.0.0',
+        description: 'Test artifact with non-sandbox node',
+        visibility: 'PUBLIC',
+      }));
+      formData.append('descriptor', JSON.stringify({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        nodes: [
+          {
+            id: generatedNodeId,
+            type: 'GENERATED',
+            name: 'Generated Node',
+            content: {
+              blocks: [],
+              inputRef: { nodeId: crypto.randomUUID(), path: 'input.txt' },
+            },
+          },
+        ],
+        edges: [],
+      }));
+
+      const artifactResponse = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: { Cookie: sessionCookie },
+        body: formData,
+      });
+      expect(artifactResponse.ok).toBe(true);
+
+      // Try to create article with GENERATED node
+      const articleId = crypto.randomUUID();
+      const response = await fetch(`${baseUrl}/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          Cookie: sessionCookie,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          sandboxNodeId: generatedNodeId, // not a SANDBOX node
+          content: [],
+          saveId: testSaveId,
+        }),
+      });
+      expect(response.status).toBe(400);
+    });
+
     it('should handle different visibility settings with proper checkpoints', async () => {
       // Create PUBLIC article with PUBLIC checkpoint
       const publicArticleId = crypto.randomUUID();
@@ -534,8 +653,8 @@ describe('E2E: Articles API', () => {
 
     it('should handle complex content with multiple game refs', async () => {
       // 创建多个 PUBLIC checkpoints
-      const cp1 = await createCheckpoint(baseUrl, sessionCookie, testSaveId, `cp1-${Date.now()}`, 'PUBLIC');
-      const cp2 = await createCheckpoint(baseUrl, sessionCookie, testSaveId, `cp2-${Date.now()}`, 'PUBLIC');
+      const cp1 = await createCheckpoint(baseUrl, sessionCookie, testSaveId, [], { id: `cp1-${Date.now()}`, visibility: 'PUBLIC' });
+      const cp2 = await createCheckpoint(baseUrl, sessionCookie, testSaveId, [], { id: `cp2-${Date.now()}`, visibility: 'PUBLIC' });
 
       const articleId = crypto.randomUUID();
       const complexContent: UpsertArticleRequest['content'] = [

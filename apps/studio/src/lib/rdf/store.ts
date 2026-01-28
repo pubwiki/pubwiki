@@ -3,9 +3,9 @@
  *
  * Uses @pubwiki/rdfstore with:
  * - BrowserLevel for Quadstore (RDF data) - IndexedDB persistence
- * - Dexie.js for VersionDAG (version metadata) - IndexedDB persistence
+ * - Dexie.js for Checkpoints (version snapshots) - IndexedDB persistence
  * 
- * This allows State nodes to persist RDF triples with full version control.
+ * This allows State nodes to persist RDF triples with checkpoint-based versioning.
  */
 
 import { RDFStore } from '@pubwiki/rdfstore';
@@ -29,7 +29,7 @@ export async function getNodeRDFStore(nodeId: string): Promise<RDFStore> {
     const quadstoreLevel = new BrowserLevel<string, string>(`${dbName}-quads`);
     store = await RDFStore.create({
       quadstoreLevel,
-      versionDbName: `${dbName}-version`
+      checkpointDbName: `${dbName}-checkpoints`
     });
     storeRegistry.set(nodeId, store);
     levelRegistry.set(nodeId, quadstoreLevel);

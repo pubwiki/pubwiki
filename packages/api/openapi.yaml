@@ -200,37 +200,23 @@ components:
     UpsertArticleRequest:
       $ref: './openapi/schemas/article.yaml#/UpsertArticleRequest'
 
-    # Cloud Saves schemas
+    # Cloud Saves schemas (纯 Checkpoint 存储模式)
     CloudSave:
       $ref: './openapi/schemas/saves.yaml#/CloudSave'
     CreateSaveRequest:
       $ref: './openapi/schemas/saves.yaml#/CreateSaveRequest'
     Quad:
       $ref: './openapi/schemas/saves.yaml#/Quad'
-    TextPatch:
-      $ref: './openapi/schemas/saves.yaml#/TextPatch'
-    Operation:
-      $ref: './openapi/schemas/saves.yaml#/Operation'
-    OperationWithRef:
-      $ref: './openapi/schemas/saves.yaml#/OperationWithRef'
-    SyncOperationsRequest:
-      $ref: './openapi/schemas/saves.yaml#/SyncOperationsRequest'
-    SyncErrorType:
-      $ref: './openapi/schemas/saves.yaml#/SyncErrorType'
-    RefMismatchInfo:
-      $ref: './openapi/schemas/saves.yaml#/RefMismatchInfo'
-    SyncOperationsResponse:
-      $ref: './openapi/schemas/saves.yaml#/SyncOperationsResponse'
-    RefNode:
-      $ref: './openapi/schemas/saves.yaml#/RefNode'
-    VersionHistoryResponse:
-      $ref: './openapi/schemas/saves.yaml#/VersionHistoryResponse'
+    CheckpointVisibility:
+      $ref: './openapi/schemas/saves.yaml#/CheckpointVisibility'
     CheckpointInfo:
       $ref: './openapi/schemas/saves.yaml#/CheckpointInfo'
     CreateCheckpointRequest:
       $ref: './openapi/schemas/saves.yaml#/CreateCheckpointRequest'
-    ExportResult:
-      $ref: './openapi/schemas/saves.yaml#/ExportResult'
+    CreateCheckpointResponse:
+      $ref: './openapi/schemas/saves.yaml#/CreateCheckpointResponse'
+    ExportCheckpointResponse:
+      $ref: './openapi/schemas/saves.yaml#/ExportCheckpointResponse'
 
 paths:
   # Health
@@ -303,20 +289,18 @@ paths:
   /articles/by-sandbox/{sandboxNodeId}:
     $ref: './openapi/paths/articles.yaml#/~1articles~1by-sandbox~1{sandboxNodeId}'
 
-  # Cloud Saves
+  # Cloud Saves (纯 Checkpoint 存储模式)
   /saves:
     $ref: './openapi/paths/saves.yaml#/~1saves'
   /saves/by-state/{stateNodeId}:
     $ref: './openapi/paths/saves.yaml#/~1saves~1by-state~1{stateNodeId}'
   /saves/{saveId}:
     $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}'
-  /saves/{saveId}/sync:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1sync'
-  /saves/{saveId}/history:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1history'
-  /saves/{saveId}/export/{ref}:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1export~1{ref}'
   /saves/{saveId}/checkpoints:
     $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints'
   /saves/{saveId}/checkpoints/{checkpointId}:
     $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{checkpointId}'
+  /saves/{saveId}/checkpoints/{checkpointId}/export:
+    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{checkpointId}~1export'
+  /saves/{saveId}/checkpoints/{checkpointId}/visibility:
+    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{checkpointId}~1visibility'

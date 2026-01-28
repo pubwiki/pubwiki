@@ -13,6 +13,7 @@
 	import type { PageData } from './$types';
 	import { createApiClient } from '@pubwiki/api/client';
 	import { API_BASE_URL } from '$lib/config';
+	import { toRdfQuad } from '@pubwiki/rdfstore';
 	import { 
 		nodeStore, 
 		layoutStore, 
@@ -453,7 +454,7 @@
 		if (!data.saveId || !rdfStore) return;
 
 		try {
-			// First get checkpoints to find the right ref
+			// First get checkpoints to find the right one
 			const { data: checkpointsData } = await apiClient.GET('/saves/{saveId}/checkpoints', {
 				params: { path: { saveId: data.saveId } }
 			});
@@ -463,24 +464,24 @@
 				return;
 			}
 
-			// Find target checkpoint
-			let targetRef: string;
+			// Find target checkpoint ID
+			let targetCheckpointId: string;
 			if (data.checkpointId) {
 				const checkpoint = checkpointsData.checkpoints.find(cp => cp.id === data.checkpointId);
 				if (checkpoint) {
-					targetRef = checkpoint.ref;
+					targetCheckpointId = checkpoint.id;
 				} else {
 					// Fallback to latest
-					targetRef = checkpointsData.checkpoints[0].ref;
+					targetCheckpointId = checkpointsData.checkpoints[0].id;
 				}
 			} else {
 				// Use latest checkpoint
-				targetRef = checkpointsData.checkpoints[0].ref;
+				targetCheckpointId = checkpointsData.checkpoints[0].id;
 			}
 
-			// Export data at ref
-			const { data: exportData, error: exportError } = await apiClient.GET('/saves/{saveId}/export/{ref}', {
-				params: { path: { saveId: data.saveId, ref: targetRef } }
+			// Export checkpoint data by ID
+			const { data: exportData, error: exportError } = await apiClient.GET('/saves/{saveId}/checkpoints/{checkpointId}/export', {
+				params: { path: { saveId: data.saveId, checkpointId: targetCheckpointId } }
 			});
 
 			if (exportError || !exportData) {
@@ -488,9 +489,12 @@
 				return;
 			}
 
-			// Import the N-Quads data into local RDF store
-			if (exportData.data) {
-				await rdfStore.replaceWithImport(exportData.data, { format: 'nquads' });
+			// Import the quads into local RDF store
+			if (exportData.quads && exportData.quads.length > 0) {
+				// Convert API Quads to RDF.js Quads using toRdfQuad
+				await rdfStore.clear();
+				const rdfQuads = exportData.quads.map(toRdfQuad);
+				await rdfStore.batchInsert(rdfQuads);
 				console.log('[Play] Imported checkpoint data:', exportData.quadCount, 'quads');
 			}
 

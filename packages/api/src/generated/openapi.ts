@@ -736,70 +736,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/saves/{saveId}/sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 可验证的批量同步操作
-         * @description 区块链式可验证同步 API。
-         *
-         *     验证流程:
-         *     1. 检查 baseRef 是否存在于服务端历史
-         *     2. 对每个操作验证客户端提供的 ref 是否正确
-         *     3. 应用操作并记录到 version DAG
-         *
-         *     Ref 生成算法: `ref = SHA256(parentRef + canonical(operation))[0:16]`
-         */
-        post: operations["syncSave"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/saves/{saveId}/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取版本历史 */
-        get: operations["getSaveHistory"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/saves/{saveId}/export/{ref}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 导出任意 ref 处的数据
-         * @description 通过 checkpoint 机制高效导出历史版本数据
-         */
-        get: operations["exportSaveAtRef"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/saves/{saveId}/checkpoints": {
         parameters: {
             query?: never;
@@ -807,12 +743,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 获取所有 checkpoints */
+        /**
+         * 获取所有 checkpoints
+         * @description 获取存档的所有 checkpoints。非 owner 只能看到 PUBLIC 的 checkpoints
+         */
         get: operations["listSaveCheckpoints"];
         put?: never;
         /**
          * 创建 checkpoint
-         * @description 在指定 ref 处创建 checkpoint，用于加速历史版本导出
+         * @description 直接传入完整的 RDF quad 快照创建 checkpoint
          */
         post: operations["createSaveCheckpoint"];
         delete?: never;
@@ -828,7 +767,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 获取单个 checkpoint 信息 */
+        get: operations["getSaveCheckpoint"];
         put?: never;
         post?: never;
         /** 删除 checkpoint */
@@ -836,6 +776,43 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/saves/{saveId}/checkpoints/{checkpointId}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 导出 checkpoint 数据
+         * @description 导出指定 checkpoint 的完整 RDF quads
+         */
+        get: operations["exportCheckpoint"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/saves/{saveId}/checkpoints/{checkpointId}/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 更新 checkpoint 可见性 */
+        patch: operations["updateCheckpointVisibility"];
         trace?: never;
     };
 }
@@ -1591,111 +1568,51 @@ export interface components {
             name: string;
             description?: string;
             /** Format: uuid */
-            stateNodeId?: string;
+            stateNodeId: string;
         };
         Quad: {
-            /** @description N3 格式的 subject (e.g., '<http://example.org/s>') */
+            /** @description N3 格式的 subject (e.g., '<http://example.org/s>' 或 '_:blank1') */
             subject: string;
             /** @description N3 格式的 predicate (e.g., '<http://example.org/p>') */
             predicate: string;
-            /** @description N3 格式的 object value */
+            /** @description N3 格式的 object (e.g., '"value"' 或 '<http://example.org/o>') */
             object: string;
-            /** @description Literal 的 datatype URI */
-            objectDatatype?: string | null;
-            /** @description Literal 的语言标签 */
-            objectLanguage?: string | null;
-            /** @description 图名称，默认为空字符串 */
-            graph?: string;
+            /**
+             * @description 图名称，默认为空字符串
+             * @default
+             */
+            graph: string;
         };
-        TextPatch: {
-            originalLength: number;
-            hunks: {
-                start: number;
-                deleteCount: number;
-                insert: string;
-            }[];
-        };
-        Operation: {
-            /** @enum {string} */
-            type: "insert" | "delete" | "batch-insert" | "batch-delete" | "patch";
-            quad?: components["schemas"]["Quad"];
-            quads?: components["schemas"]["Quad"][];
-            subject?: string;
-            predicate?: string;
-            patch?: components["schemas"]["TextPatch"];
-        };
-        OperationWithRef: {
-            operation: components["schemas"]["Operation"];
-            /** @description 客户端计算的 ref (链式 hash) */
-            ref: string;
-        };
-        SyncOperationsRequest: {
-            /** @description 操作基于的 ref (parent of first operation) */
-            baseRef: string;
-            /** @description 操作列表，按顺序执行 */
-            operations: components["schemas"]["OperationWithRef"][];
-        };
-        /**
-         * @description - UNKNOWN_BASE_REF: baseRef 不存在于服务端历史
-         *     - REF_MISMATCH: 客户端计算的 ref 与服务端不匹配
-         *     - INVALID_OPERATION: 操作格式无效
-         *     - INTERNAL_ERROR: 服务端内部错误
-         * @enum {string}
-         */
-        SyncErrorType: "UNKNOWN_BASE_REF" | "REF_MISMATCH" | "INVALID_OPERATION" | "INTERNAL_ERROR";
-        RefMismatchInfo: {
-            /** @description 第一个不匹配的操作索引 */
-            index: number;
-            /** @description 服务端计算的 ref */
-            expected: string;
-            /** @description 客户端提供的 ref */
-            received: string;
-        };
-        SyncOperationsResponse: {
-            success: boolean;
-            /** @description 最终的 ref (成功时返回) */
-            finalRef?: string;
-            error?: components["schemas"]["SyncErrorType"];
-            /** @description 错误消息 */
-            message?: string;
-            mismatch?: components["schemas"]["RefMismatchInfo"];
-            /** @description 影响的 quad 数量 (成功时返回) */
-            affectedCount?: number;
-        };
-        RefNode: {
-            ref: string;
-            parent?: string | null;
-            operation?: components["schemas"]["Operation"];
-            timestamp: number;
-        };
-        VersionHistoryResponse: {
-            versions: components["schemas"]["RefNode"][];
-        };
+        /** @enum {string} */
+        CheckpointVisibility: "PRIVATE" | "UNLISTED" | "PUBLIC";
         CheckpointInfo: {
             /** @description Checkpoint unique ID */
             id: string;
-            /** @description Version ref (hash) */
-            ref: string;
+            /** @description 创建时间戳 (Unix ms) */
             timestamp: number;
+            /** @description Quad 数量 */
             quadCount: number;
             name?: string | null;
             description?: string | null;
-            /** @enum {string} */
-            visibility: "PRIVATE" | "UNLISTED" | "PUBLIC";
+            visibility: components["schemas"]["CheckpointVisibility"];
         };
         CreateCheckpointRequest: {
-            ref: string;
-            /** @description Optional custom checkpoint ID */
+            /** @description Optional custom checkpoint ID (UUID format) */
             id?: string;
             name?: string;
             description?: string;
-            /** @enum {string} */
-            visibility?: "PRIVATE" | "UNLISTED" | "PUBLIC";
+            visibility?: components["schemas"]["CheckpointVisibility"];
+            /** @description 完整的 RDF quad 快照数据 */
+            quads: components["schemas"]["Quad"][];
         };
-        ExportResult: {
-            /** @description JSONL 格式的 quad 数据 */
-            data: string;
-            ref: string;
+        CreateCheckpointResponse: {
+            success: boolean;
+            /** @description Created checkpoint ID */
+            id: string;
+        };
+        ExportCheckpointResponse: {
+            /** @description Checkpoint 中存储的所有 quads */
+            quads: components["schemas"]["Quad"][];
             quadCount: number;
         };
         TextBlock: {
@@ -1722,11 +1639,6 @@ export interface components {
             temperature?: number;
             /** @description 结构化输出的 JSON Schema */
             schema?: string;
-        };
-        CreateCheckpointResponse: {
-            success: boolean;
-            /** @description Created checkpoint ID */
-            id: string;
         };
     };
     responses: never;
@@ -3982,6 +3894,15 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
+            /** @description 存档已存在 */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     getSaveByStateNode: {
@@ -4078,179 +3999,6 @@ export interface operations {
             };
         };
     };
-    syncSave: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                saveId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SyncOperationsRequest"];
-            };
-        };
-        responses: {
-            /** @description 同步结果 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyncOperationsResponse"];
-                };
-            };
-            /** @description 请求参数错误或验证失败 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SyncOperationsResponse"];
-                };
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 存档不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    getSaveHistory: {
-        parameters: {
-            query?: {
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                saveId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 版本历史 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["VersionHistoryResponse"];
-                };
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 存档不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    exportSaveAtRef: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                saveId: string;
-                /** @description 目标版本的 ref，可以是任意历史版本 */
-                ref: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 导出的数据 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportResult"];
-                };
-            };
-            /** @description 无效的 ref */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 存档不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     listSaveCheckpoints: {
         parameters: {
             query?: never;
@@ -4269,26 +4017,8 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        checkpoints?: components["schemas"]["CheckpointInfo"][];
+                        checkpoints: components["schemas"]["CheckpointInfo"][];
                     };
-                };
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             /** @description 存档不存在 */
@@ -4364,6 +4094,47 @@ export interface operations {
             };
         };
     };
+    getSaveCheckpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saveId: string;
+                checkpointId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Checkpoint 信息 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckpointInfo"];
+                };
+            };
+            /** @description 无权访问 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Checkpoint 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     deleteSaveCheckpoint: {
         parameters: {
             query?: never;
@@ -4402,6 +4173,114 @@ export interface operations {
                 };
             };
             /** @description 存档或 checkpoint 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    exportCheckpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saveId: string;
+                checkpointId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 导出成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportCheckpointResponse"];
+                };
+            };
+            /** @description 无权访问 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Checkpoint 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateCheckpointVisibility: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saveId: string;
+                checkpointId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    visibility: components["schemas"]["CheckpointVisibility"];
+                };
+            };
+        };
+        responses: {
+            /** @description 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        success: boolean;
+                    };
+                };
+            };
+            /** @description 无效的可见性值 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权访问 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Checkpoint 不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;

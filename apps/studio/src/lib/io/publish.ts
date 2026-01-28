@@ -621,7 +621,8 @@ function autoSelectStateCheckpoints(
 		// 1. No checkpoint selected, or
 		// 2. Current checkpoint visibility is insufficient
 		if (!stateContent.checkpointId || currentVisibilityLevel < requiredVisibilityLevel) {
-			const updatedContent = stateContent.withCheckpoint(latestCheckpoint.id, latestCheckpoint.ref);
+			// Note: ref is deprecated in the new snapshot model, use checkpoint ID only
+			const updatedContent = stateContent.withCheckpoint(latestCheckpoint.id, latestCheckpoint.id);
 			nodeStore.update(node.id, (prev) => ({
 				...prev,
 				content: updatedContent

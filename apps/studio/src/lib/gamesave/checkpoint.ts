@@ -1,14 +1,20 @@
 /**
- * Checkpoint Sync Service
+ * Checkpoint Sync Service (Simplified)
  * 
- * Functions for syncing local checkpoints to cloud:
- * - Determine baseRef (common ancestor with cloud)
- * - Sync operations to cloud
- * - Create cloud checkpoint
+ * Pure snapshot-based cloud sync:
+ * - Export current state to cloud
+ * - Create cloud checkpoint with quads directly
+ * - Restore from cloud checkpoint
+ * 
+ * Removed blockchain-style operation sync:
+ * - No more buildSyncOperations
+ * - No more syncOperationsToCloud
+ * - No more versionDAG dependencies
  */
 
-import { toSyncOperation, ROOT_REF, type RDFStore } from '@pubwiki/rdfstore';
-import type { SyncOperationsResponse, CheckpointInfo } from '@pubwiki/api';
+import type { RDFStore } from '@pubwiki/rdfstore';
+import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
+import type { CheckpointInfo, Quad } from '@pubwiki/api';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 
@@ -21,8 +27,6 @@ const apiClient = createApiClient(API_BASE_URL);
 export interface UploadCheckpointOptions {
   /** Checkpoint ID (use local checkpoint id for consistency) */
   id: string;
-  /** The ref to upload */
-  ref: string;
   /** Checkpoint title */
   name: string;
   /** Optional description */
@@ -41,164 +45,89 @@ export interface UploadCheckpointResult {
 }
 
 /**
- * Result of building sync operations
- */
-export interface SyncOperationsInfo {
-  baseRef: string;
-  operations: Array<{ operation: ReturnType<typeof toSyncOperation>; ref: string }>;
-}
-
-/**
- * Build sync operations from cloud ancestor to target ref.
- * 
- * Walks from targetRef towards root, collecting operations until we find
- * a cloud checkpoint (or reach ROOT_REF). This combines findBaseRef and
- * getOperationsBetween into a single traversal.
- * 
- * @param store - The local RDF store
- * @param cloudCheckpoints - List of cloud checkpoints
- * @param targetRef - The target ref we want to sync to
- * @returns baseRef and operations to sync
- */
-export async function buildSyncOperations(
-  store: RDFStore,
-  cloudCheckpoints: CheckpointInfo[],
-  targetRef: string
-): Promise<SyncOperationsInfo> {
-  // Build a set of cloud checkpoint refs for quick lookup
-  const cloudRefSet = new Set(cloudCheckpoints.map(cp => cp.ref));
-
-  // If targetRef is already synced, no operations needed
-  if (cloudRefSet.has(targetRef)) {
-    return { baseRef: targetRef, operations: [] };
-  }
-
-  const versionDAG = store.getVersionDAG();
-  const operations: SyncOperationsInfo['operations'] = [];
-  let current = targetRef;
-
-  while (current !== ROOT_REF) {
-    const node = await versionDAG.getNode(current);
-    if (!node) break;
-
-    // Collect this operation
-    operations.push({
-      operation: toSyncOperation(node.operation),
-      ref: node.ref
-    });
-
-    // Check if parent is a cloud checkpoint (or ROOT_REF)
-    const parent = node.parent!;
-    if (parent === ROOT_REF || cloudRefSet.has(parent)) {
-      // Found baseRef, return operations in chronological order (oldest first)
-      return { baseRef: parent, operations: operations.reverse() };
-    }
-
-    current = parent;
-  }
-
-  // Reached root without finding cloud checkpoint
-  return { baseRef: ROOT_REF, operations: operations.reverse() };
-}
-
-/**
- * Sync operations from baseRef to targetRef to cloud.
- * 
- * @param saveId - The cloud save ID
- * @param syncInfo - The sync operations info from buildSyncOperations
- * @returns Sync result
- */
-export async function syncOperationsToCloud(
-  saveId: string,
-  syncInfo: SyncOperationsInfo
-): Promise<SyncOperationsResponse> {
-  const { baseRef, operations } = syncInfo;
-
-  // If no operations, return success immediately
-  if (operations.length === 0) {
-    return { success: true, finalRef: baseRef, affectedCount: 0 };
-  }
-
-  const { data, error } = await apiClient.POST('/saves/{saveId}/sync', {
-    params: { path: { saveId } },
-    body: { baseRef, operations }
-  });
-
-  if (error) {
-    return { success: false, message: error.error || 'Sync failed' };
-  }
-
-  return data as SyncOperationsResponse;
-}
-
-/**
- * Create a checkpoint on cloud.
- * 
- * @param saveId - The cloud save ID
- * @param options - Checkpoint options
- * @returns The created checkpoint ID
- */
-export async function createCloudCheckpoint(
-  saveId: string,
-  options: UploadCheckpointOptions
-): Promise<string> {
-  const { data, error } = await apiClient.POST('/saves/{saveId}/checkpoints', {
-    params: { path: { saveId } },
-    body: {
-      id: options.id,
-      ref: options.ref,
-      name: options.name,
-      description: options.description,
-      visibility: options.visibility ?? 'PRIVATE'
-    }
-  });
-
-  if (error) {
-    throw new Error(error.error || '创建云端存档失败');
-  }
-
-  return data!.id;
-}
-
-/**
- * Upload a local checkpoint to cloud.
- * This is the main function that orchestrates:
- * 1. Building sync operations (finds baseRef and collects operations in one traversal)
- * 2. Syncing operations to cloud
- * 3. Creating checkpoint
+ * Upload current local state as a checkpoint to cloud.
+ * This exports the current quads and uploads them directly as a new checkpoint.
  * 
  * @param store - The local RDF store
  * @param saveId - The cloud save ID
- * @param cloudCheckpoints - Current cloud checkpoints (for finding baseRef)
  * @param options - Checkpoint options
  * @returns Upload result
  */
 export async function uploadCheckpointToCloud(
   store: RDFStore,
   saveId: string,
-  cloudCheckpoints: CheckpointInfo[],
   options: UploadCheckpointOptions
 ): Promise<UploadCheckpointResult> {
-  // 1. Build sync operations (finds baseRef and collects operations in one traversal)
-  const syncInfo = await buildSyncOperations(store, cloudCheckpoints, options.ref);
+  try {
+    // 1. Export current state as RDF quads
+    const rdfQuads = await store.getAllQuads();
+    
+    // 2. Convert to API Quad format (N3 strings)
+    const quads: Quad[] = rdfQuads.map(fromRdfQuad);
 
-  // 2. Sync operations to cloud
-  const syncResult = await syncOperationsToCloud(saveId, syncInfo);
-  
-  if (!syncResult.success) {
+    // 3. Create checkpoint directly with quads
+    const { data, error } = await apiClient.POST('/saves/{saveId}/checkpoints', {
+      params: { path: { saveId } },
+      body: {
+        quads,
+        id: options.id,
+        name: options.name,
+        description: options.description,
+        visibility: options.visibility ?? 'PRIVATE'
+      }
+    });
+
+    if (error) {
+      return {
+        success: false,
+        error: error.error || '创建云端存档失败'
+      };
+    }
+
+    return {
+      success: true,
+      checkpointId: data!.id
+    };
+  } catch (e) {
     return {
       success: false,
-      error: syncResult.message || '同步操作失败'
+      error: e instanceof Error ? e.message : '上传失败'
     };
   }
+}
 
-  // 3. Create checkpoint on cloud
-  const checkpointId = await createCloudCheckpoint(saveId, options);
+/**
+ * Download checkpoint from cloud and import into local store.
+ * 
+ * @param store - The local RDF store
+ * @param saveId - The cloud save ID
+ * @param checkpointId - The checkpoint ID to restore
+ * @returns Whether restore was successful
+ */
+export async function restoreFromCloudCheckpoint(
+  store: RDFStore,
+  saveId: string,
+  checkpointId: string
+): Promise<boolean> {
+  try {
+    // 1. Export checkpoint data from cloud
+    const { data, error } = await apiClient.GET('/saves/{saveId}/checkpoints/{checkpointId}/export', {
+      params: { path: { saveId, checkpointId } }
+    });
 
-  return {
-    success: true,
-    checkpointId
-  };
+    if (error || !data) {
+      return false;
+    }
+
+    // 2. Convert API Quads to RDF.js Quads and replace local store
+    const rdfQuads = data.quads.map(toRdfQuad);
+    await store.clear();
+    await store.batchInsert(rdfQuads);
+
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

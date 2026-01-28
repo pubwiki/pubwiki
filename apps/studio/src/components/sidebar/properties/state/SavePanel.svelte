@@ -15,10 +15,7 @@
 		cloudSaveExists,
 		createCloudSave,
 		uploadCheckpointToCloud,
-		createCloudCheckpoint,
 		deleteCloudCheckpoint,
-		buildSyncOperations,
-		syncOperationsToCloud,
 		getSaveIdByStateNode
 	} from '$lib/gamesave/checkpoint';
 	import * as m from '$lib/paraglide/messages';
@@ -33,7 +30,6 @@
 	// Merged checkpoint info (local + cloud sync status)
 	interface MergedCheckpoint {
 		id: string; // Checkpoint ID (same for local and cloud)
-		ref: string;
 		title: string;
 		description?: string;
 		timestamp: number;
@@ -95,7 +91,6 @@
 		for (const local of localCheckpoints) {
 			merged.set(local.id, {
 				id: local.id,
-				ref: local.ref,
 				title: local.title,
 				description: local.description,
 				timestamp: local.timestamp,
@@ -113,8 +108,7 @@
 			} else {
 				merged.set(cloud.id, {
 					id: cloud.id,
-					ref: cloud.ref,
-					title: cloud.name || `存档 ${cloud.ref.slice(0, 8)}`,
+					title: cloud.name || `存档 ${cloud.id.slice(0, 8)}`,
 					description: cloud.description || undefined,
 					timestamp: cloud.timestamp,
 					quadCount: cloud.quadCount,
@@ -203,10 +197,8 @@
 				store = await getNodeRDFStore(nodeId);
 			}
 
-			// Generate checkpoint info (but don't save yet if syncing to cloud)
+			// Generate checkpoint ID
 			const checkpointId = crypto.randomUUID();
-			const currentRef = store.currentRef;
-			const quads = await store.getAllQuads();
 
 			// Sync to cloud first if requested (before creating local checkpoint)
 			if (syncToCloud) {
@@ -228,19 +220,16 @@
 					});
 				}
 
-				// Build sync operations and sync to cloud
-				const syncInfo = await buildSyncOperations(store, cloudCheckpoints, currentRef);
-				const syncResult = await syncOperationsToCloud(targetSaveId, syncInfo);
-				if (!syncResult.success) {
-					throw new Error(syncResult.message || '同步操作失败');
-				}
-				await createCloudCheckpoint(targetSaveId, {
+				// Upload current state and create checkpoint
+				const result = await uploadCheckpointToCloud(store, targetSaveId, {
 					id: checkpointId,
-					ref: currentRef,
 					name: newCheckpointTitle.trim(),
 					description: newCheckpointDescription.trim() || undefined,
 					visibility: cloudVisibility
 				});
+				if (!result.success) {
+					throw new Error(result.error || '同步失败');
+				}
 			}
 
 			// Now create local checkpoint (after cloud sync succeeded, or if not syncing)
@@ -251,11 +240,12 @@
 			});
 
 			// Update node with checkpoint pointing to the new checkpoint
+			// Note: ref is deprecated in the new snapshot model, use checkpoint ID only
 			nodeStore.update(nodeId, (nodeData) => {
 				const stateData = nodeData as StateNodeData;
 				return {
 					...stateData,
-					content: stateData.content.withCheckpoint(checkpointId, currentRef)
+					content: stateData.content.withCheckpoint(checkpointId, checkpointId)
 				} as StateNodeData;
 			});
 
@@ -288,15 +278,16 @@
 				store = await getNodeRDFStore(nodeId);
 			}
 
-			// Checkout to the ref
-			await store.checkout(checkpoint.ref);
+			// Load checkpoint data
+			await store.loadCheckpoint(checkpoint.id);
 
 			// Update node content with selected checkpoint
+			// Note: ref is deprecated in the new snapshot model, use checkpoint ID only
 			nodeStore.update(nodeId, (nodeData) => {
 				const stateData = nodeData as StateNodeData;
 				return {
 					...stateData,
-					content: stateData.content.withCheckpoint(checkpoint.id, checkpoint.ref)
+					content: stateData.content.withCheckpoint(checkpoint.id, checkpoint.id)
 				} as StateNodeData;
 			});
 
@@ -325,7 +316,7 @@
 				if (!store) {
 					store = await getNodeRDFStore(nodeId);
 				}
-				await store.deleteCheckpoint(checkpoint.id, checkpoint.ref);
+				await store.deleteCheckpoint(checkpoint.id);
 			}
 
 			await refreshCheckpoints();
@@ -392,14 +383,12 @@
 				});
 			}
 
-			// Sync operations and create checkpoint
+			// Upload current state and create checkpoint
 			const result = await uploadCheckpointToCloud(
 				store,
 				targetSaveId,
-				cloudCheckpoints,
 				{
 					id: checkpoint.id,
-					ref: checkpoint.ref,
 					name: checkpoint.title,
 					description: checkpoint.description,
 					visibility: visibility

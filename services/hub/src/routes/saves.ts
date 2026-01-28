@@ -1,19 +1,14 @@
 /**
- * Cloud Saves API Routes
+ * Cloud Saves API Routes (纯 Checkpoint 存储模式)
  * 
- * 处理云端存档的 CRUD 操作，通过 Service Binding 调用 gamesave Worker
+ * gamesave DO 不维护当前状态，只存储 checkpoint 快照
+ * createCheckpoint 直接传入完整的 quads 数组
  */
 
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, cloudSaves, eq, and } from '@pubwiki/db';
-import type {
-  ApiError,
-  CloudSave,
-  CreateSaveRequest,
-  SyncOperationsRequest,
-  SyncOperationsResponse,
-} from '@pubwiki/api';
+import type { ApiError, CloudSave, CreateSaveRequest, CreateCheckpointRequest, Quad } from '@pubwiki/api';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 
 export const savesRoute = new Hono<{ Bindings: Env }>();
@@ -203,153 +198,6 @@ savesRoute.delete('/:saveId', authMiddleware, async (c) => {
   return c.body(null, 204);
 });
 
-// ============ 可验证同步 ============
-
-// POST /saves/:saveId/sync - 可验证的批量同步操作
-savesRoute.post('/:saveId/sync', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const user = c.get('user');
-  const saveId = c.req.param('saveId');
-
-  if (!UUID_REGEX.test(saveId)) {
-    return c.json<ApiError>({ error: 'Invalid save ID format' }, 400);
-  }
-
-  const { save, error } = await verifySaveAccess(db, saveId, user.id);
-  if (!save) {
-    if (error === 'Access denied') {
-      return c.json<ApiError>({ error }, 403);
-    }
-    return c.json<ApiError>({ error: error || 'Save not found' }, 404);
-  }
-
-  let body: SyncOperationsRequest;
-  try {
-    body = await c.req.json<SyncOperationsRequest>();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
-
-  if (!body.baseRef || typeof body.baseRef !== 'string') {
-    return c.json<ApiError>({ error: 'baseRef is required' }, 400);
-  }
-
-  if (!body.operations || !Array.isArray(body.operations)) {
-    return c.json<ApiError>({ error: 'operations must be an array' }, 400);
-  }
-
-  try {
-    const syncResult = await c.env.GAMESAVE.syncOperations(
-      saveId,
-      body.baseRef,
-      body.operations
-    );
-
-    // 如果成功，更新 D1 中的 updatedAt 和 lastSyncedAt（不再更新 currentRef）
-    if (syncResult.success && syncResult.finalRef) {
-      await db.update(cloudSaves)
-        .set({
-          updatedAt: new Date().toISOString(),
-          lastSyncedAt: new Date().toISOString(),
-        })
-        .where(eq(cloudSaves.id, saveId));
-    }
-
-    // 返回状态码：成功返回 200，验证失败返回 400
-    const statusCode = syncResult.success ? 200 : 400;
-    return c.json(syncResult as SyncOperationsResponse, statusCode);
-  } catch (error) {
-    console.error('Failed to sync operations:', error);
-    const result: SyncOperationsResponse = {
-      success: false,
-      error: 'INTERNAL_ERROR',
-      message: 'Failed to sync operations',
-    };
-    return c.json(result, 500);
-  }
-});
-
-// ============ 版本历史 ============
-
-// GET /saves/:saveId/history - 获取版本历史
-savesRoute.get('/:saveId/history', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const user = c.get('user');
-  const saveId = c.req.param('saveId');
-
-  if (!UUID_REGEX.test(saveId)) {
-    return c.json<ApiError>({ error: 'Invalid save ID format' }, 400);
-  }
-
-  const { save, error } = await verifySaveAccess(db, saveId, user.id);
-  if (!save) {
-    if (error === 'Access denied') {
-      return c.json<ApiError>({ error }, 403);
-    }
-    return c.json<ApiError>({ error: error || 'Save not found' }, 404);
-  }
-
-  const query = c.req.query();
-  const limit = query.limit ? Math.min(Math.max(parseInt(query.limit, 10), 1), 200) : 50;
-
-  try {
-    const versions = await c.env.GAMESAVE.getHistory(saveId, limit);
-
-    return c.json({
-      versions,
-    });
-  } catch (error) {
-    console.error('Failed to get history:', error);
-    return c.json<ApiError>({ error: 'Failed to get history' }, 500);
-  }
-});
-
-// ============ 导出历史版本 ============
-
-// GET /saves/:saveId/export/:ref - 导出任意 ref 处的数据
-// 支持非 owner 访问：需要 ref 有对应的非 PRIVATE checkpoint
-savesRoute.get('/:saveId/export/:ref', optionalAuthMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const user = c.get('user');
-  const saveId = c.req.param('saveId');
-  const ref = c.req.param('ref');
-
-  if (!UUID_REGEX.test(saveId)) {
-    return c.json<ApiError>({ error: 'Invalid save ID format' }, 400);
-  }
-
-  const [save] = await db.select().from(cloudSaves)
-    .where(eq(cloudSaves.id, saveId))
-    .limit(1);
-
-  if (!save) {
-    return c.json<ApiError>({ error: 'Save not found' }, 404);
-  }
-
-  const isOwner = user?.id === save.userId;
-
-  // 非 owner 需要验证：ref 必须有非 PRIVATE 的 checkpoint
-  if (!isOwner) {
-    const isPubliclyAccessible = await c.env.GAMESAVE.isRefPubliclyAccessible(saveId, ref);
-    if (!isPubliclyAccessible) {
-      return c.json<ApiError>({ error: 'Access denied' }, 403);
-    }
-  }
-
-  try {
-    const exportResult = await c.env.GAMESAVE.exportAtRef(saveId, ref);
-    return c.json({
-      data: exportResult.data,
-      ref: exportResult.ref,
-      quadCount: exportResult.quadCount,
-    });
-  } catch (error) {
-    console.error('Failed to export at ref:', error);
-    const message = error instanceof Error ? error.message : 'Failed to export at ref';
-    return c.json<ApiError>({ error: message }, 400);
-  }
-});
-
 // ============ Checkpoint API ============
 
 // GET /saves/:saveId/checkpoints - 获取 checkpoints
@@ -385,7 +233,7 @@ savesRoute.get('/:saveId/checkpoints', optionalAuthMiddleware, async (c) => {
   }
 });
 
-// POST /saves/:saveId/checkpoints - 创建 checkpoint
+// POST /saves/:saveId/checkpoints - 创建 checkpoint (直接传入 quads 快照)
 savesRoute.post('/:saveId/checkpoints', authMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const user = c.get('user');
@@ -403,15 +251,16 @@ savesRoute.post('/:saveId/checkpoints', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: error || 'Save not found' }, 404);
   }
 
-  let body: { ref: string; id?: string; name?: string; description?: string; visibility?: 'PRIVATE' | 'UNLISTED' | 'PUBLIC' };
+  let body: CreateCheckpointRequest;
   try {
     body = await c.req.json();
   } catch {
     return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
   }
 
-  if (!body.ref || typeof body.ref !== 'string') {
-    return c.json<ApiError>({ error: 'ref is required' }, 400);
+  // 验证 quads 数组
+  if (!body.quads || !Array.isArray(body.quads)) {
+    return c.json<ApiError>({ error: 'quads is required and must be an array' }, 400);
   }
 
   // 验证 visibility 参数
@@ -420,17 +269,155 @@ savesRoute.post('/:saveId/checkpoints', authMiddleware, async (c) => {
   }
 
   try {
-    const checkpointId = await c.env.GAMESAVE.createCheckpoint(saveId, body.ref, {
+    const checkpointId = await c.env.GAMESAVE.createCheckpoint(saveId, body.quads, {
       id: body.id,
       name: body.name,
       description: body.description,
       visibility: body.visibility,
     });
+
+    // 更新 D1 中的 updatedAt
+    await db.update(cloudSaves)
+      .set({
+        updatedAt: new Date().toISOString(),
+        lastSyncedAt: new Date().toISOString(),
+      })
+      .where(eq(cloudSaves.id, saveId));
+
     return c.json({ success: true, id: checkpointId }, 201);
   } catch (error) {
     console.error('Failed to create checkpoint:', error);
     const message = error instanceof Error ? error.message : 'Failed to create checkpoint';
     return c.json<ApiError>({ error: message }, 400);
+  }
+});
+
+// GET /saves/:saveId/checkpoints/:checkpointId - 获取单个 checkpoint 信息
+savesRoute.get('/:saveId/checkpoints/:checkpointId', optionalAuthMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const user = c.get('user');
+  const saveId = c.req.param('saveId');
+  const checkpointId = c.req.param('checkpointId');
+
+  if (!UUID_REGEX.test(saveId)) {
+    return c.json<ApiError>({ error: 'Invalid save ID format' }, 400);
+  }
+
+  const [save] = await db.select().from(cloudSaves)
+    .where(eq(cloudSaves.id, saveId))
+    .limit(1);
+
+  if (!save) {
+    return c.json<ApiError>({ error: 'Save not found' }, 404);
+  }
+
+  const isOwner = user?.id === save.userId;
+
+  try {
+    const checkpoint = await c.env.GAMESAVE.getCheckpoint(saveId, checkpointId);
+    if (!checkpoint) {
+      return c.json<ApiError>({ error: 'Checkpoint not found' }, 404);
+    }
+
+    // 非 owner 只能访问非 PRIVATE 的 checkpoint
+    if (!isOwner && checkpoint.visibility === 'PRIVATE') {
+      return c.json<ApiError>({ error: 'Access denied' }, 403);
+    }
+
+    return c.json(checkpoint);
+  } catch (error) {
+    console.error('Failed to get checkpoint:', error);
+    return c.json<ApiError>({ error: 'Failed to get checkpoint' }, 500);
+  }
+});
+
+// GET /saves/:saveId/checkpoints/:checkpointId/export - 导出 checkpoint 数据
+savesRoute.get('/:saveId/checkpoints/:checkpointId/export', optionalAuthMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const user = c.get('user');
+  const saveId = c.req.param('saveId');
+  const checkpointId = c.req.param('checkpointId');
+
+  if (!UUID_REGEX.test(saveId)) {
+    return c.json<ApiError>({ error: 'Invalid save ID format' }, 400);
+  }
+
+  const [save] = await db.select().from(cloudSaves)
+    .where(eq(cloudSaves.id, saveId))
+    .limit(1);
+
+  if (!save) {
+    return c.json<ApiError>({ error: 'Save not found' }, 404);
+  }
+
+  const isOwner = user?.id === save.userId;
+
+  try {
+    // 先获取 checkpoint 信息检查权限
+    const checkpoint = await c.env.GAMESAVE.getCheckpoint(saveId, checkpointId);
+    if (!checkpoint) {
+      return c.json<ApiError>({ error: 'Checkpoint not found' }, 404);
+    }
+
+    // 非 owner 只能访问非 PRIVATE 的 checkpoint
+    if (!isOwner && checkpoint.visibility === 'PRIVATE') {
+      return c.json<ApiError>({ error: 'Access denied' }, 403);
+    }
+
+    const exportResult = await c.env.GAMESAVE.exportCheckpoint(saveId, checkpointId);
+    if (!exportResult) {
+      return c.json<ApiError>({ error: 'Checkpoint not found' }, 404);
+    }
+
+    return c.json({
+      quads: exportResult.quads,
+      quadCount: exportResult.quadCount,
+    });
+  } catch (error) {
+    console.error('Failed to export checkpoint:', error);
+    return c.json<ApiError>({ error: 'Failed to export checkpoint' }, 500);
+  }
+});
+
+// PATCH /saves/:saveId/checkpoints/:checkpointId/visibility - 更新 checkpoint 可见性
+savesRoute.patch('/:saveId/checkpoints/:checkpointId/visibility', authMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const user = c.get('user');
+  const saveId = c.req.param('saveId');
+  const checkpointId = c.req.param('checkpointId');
+
+  if (!UUID_REGEX.test(saveId)) {
+    return c.json<ApiError>({ error: 'Invalid save ID format' }, 400);
+  }
+
+  const { save, error } = await verifySaveAccess(db, saveId, user.id);
+  if (!save) {
+    if (error === 'Access denied') {
+      return c.json<ApiError>({ error }, 403);
+    }
+    return c.json<ApiError>({ error: error || 'Save not found' }, 404);
+  }
+
+  let body: { visibility: 'PRIVATE' | 'UNLISTED' | 'PUBLIC' };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.visibility || !['PRIVATE', 'UNLISTED', 'PUBLIC'].includes(body.visibility)) {
+    return c.json<ApiError>({ error: 'Invalid visibility value. Must be one of: PRIVATE, UNLISTED, PUBLIC' }, 400);
+  }
+
+  try {
+    const success = await c.env.GAMESAVE.updateCheckpointVisibility(saveId, checkpointId, body.visibility);
+    if (!success) {
+      return c.json<ApiError>({ error: 'Checkpoint not found' }, 404);
+    }
+    return c.json({ success: true });
+  } catch (error) {
+    console.error('Failed to update checkpoint visibility:', error);
+    return c.json<ApiError>({ error: 'Failed to update checkpoint visibility' }, 500);
   }
 });
 

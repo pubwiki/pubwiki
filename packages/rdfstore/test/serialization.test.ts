@@ -16,11 +16,9 @@ import {
   importFromCompactJson,
   exportToJson,
   importFromJson,
-  exportOperations,
-  importOperations,
 } from '../src/serialization/index.js'
 import { RDFStore } from '../src/store.js'
-import type { Operation, LevelInstance } from '../src/types.js'
+import type { LevelInstance } from '../src/types.js'
 import type { Quad } from '@rdfjs/types'
 import { quad, namedNode, literal, blankNode } from './helpers.js'
 
@@ -412,44 +410,6 @@ describe('Unified Export/Import', () => {
   })
 })
 
-describe('Operations Export/Import', () => {
-  const testOps: Operation[] = [
-    { type: 'insert', quad: quad('ex:s1', 'ex:p1', 'v1') },
-    { type: 'delete', quad: quad('ex:s2', 'ex:p2', 'v2') },
-    { type: 'batch-insert', quads: [
-      quad('ex:s3', 'ex:p3', 'v3'),
-      quad('ex:s4', 'ex:p4', 'v4'),
-    ]},
-  ]
-
-  it('should export operations to JSON Lines', () => {
-    const exported = exportOperations(testOps)
-    const lines = exported.split('\n')
-    
-    expect(lines).toHaveLength(3)
-  })
-
-  it('should import operations from JSON Lines', () => {
-    const exported = exportOperations(testOps)
-    const imported = importOperations(exported)
-    
-    expect(imported).toHaveLength(3)
-    expect(imported[0].type).toBe('insert')
-    expect(imported[1].type).toBe('delete')
-    expect(imported[2].type).toBe('batch-insert')
-  })
-
-  it('should roundtrip operations', () => {
-    const exported = exportOperations(testOps)
-    const imported = importOperations(exported)
-    
-    expect(imported).toHaveLength(testOps.length)
-    for (let i = 0; i < testOps.length; i++) {
-      expect(imported[i].type).toBe(testOps[i].type)
-    }
-  })
-})
-
 describe('RDFStore Import/Export Integration', () => {
   let store: RDFStore
   let dbCounter = 0
@@ -459,7 +419,7 @@ describe('RDFStore Import/Export Integration', () => {
     dbCounter++
     store = await RDFStore.create({
       quadstoreLevel: level,
-      versionDbName: `test-serialization-db-${dbCounter}-${Date.now()}`
+      checkpointDbName: `test-serialization-db-${dbCounter}-${Date.now()}`
     })
   })
 
@@ -482,9 +442,8 @@ describe('RDFStore Import/Export Integration', () => {
   it('should import data into store', async () => {
     const data = '[{"type":"uri","value":"ex:s1"},{"type":"uri","value":"ex:p1"},{"type":"literal","value":"v1"}]\n[{"type":"uri","value":"ex:s2"},{"type":"uri","value":"ex:p2"},{"type":"literal","value":"42"}]'
     
-    const ref = await store.importData(data, { format: 'jsonl' })
+    await store.importData(data, { format: 'jsonl' })
     
-    expect(ref).toBeTruthy()
     const results = await store.query({})
     expect(results).toHaveLength(2)
   })
@@ -493,9 +452,8 @@ describe('RDFStore Import/Export Integration', () => {
     await store.insert(namedNode('ex:old'), namedNode('ex:p'), literal('old-value'))
     
     const data = '[{"type":"uri","value":"ex:new"},{"type":"uri","value":"ex:p"},{"type":"literal","value":"new-value"}]'
-    const ref = await store.replaceWithImport(data, { format: 'jsonl' })
+    await store.replaceWithImport(data, { format: 'jsonl' })
     
-    expect(ref).toBeTruthy()
     const results = await store.query({})
     expect(results).toHaveLength(1)
     expect(results[0].subject.value).toBe('ex:new')

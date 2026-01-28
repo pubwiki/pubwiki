@@ -2,12 +2,12 @@
  * RDF State Module for Lua
  * 
  * Provides the State API for Lua scripts, allowing RDF triple/quad storage
- * with version control capabilities.
+ * with checkpoint-based persistence.
  * 
  * Replaces the Rust-side rdf.rs implementation.
  */
 
-import type { RDFStore, Ref, QuadPattern } from '@pubwiki/rdfstore'
+import type { RDFStore, QuadPattern } from '@pubwiki/rdfstore'
 import { LuaTable } from '@pubwiki/lua'
 import { DataFactory } from 'n3'
 
@@ -122,7 +122,6 @@ export function createStateModule(store: RDFStore) {
      * @param predicate - Predicate IRI
      * @param object - Object value (any Lua-compatible type)
      * @param graph - Optional graph IRI
-     * @returns New ref after the operation
      */
     async insert(
       _self: unknown,
@@ -130,13 +129,13 @@ export function createStateModule(store: RDFStore) {
       predicate: string,
       object: unknown,
       graph?: string
-    ): Promise<Ref> {
+    ): Promise<void> {
       const [objectStr, datatype] = luaValueToRdf(object)
       
       const objectTerm = literal(objectStr, namedNode(datatype))
       const graphTerm = graph ? namedNode(graph) : defaultGraph()
       
-      return store.insert(
+      await store.insert(
         namedNode(subject),
         namedNode(predicate),
         objectTerm,
@@ -151,7 +150,6 @@ export function createStateModule(store: RDFStore) {
      * @param predicate - Predicate IRI
      * @param object - Optional object value to match
      * @param graph - Optional graph IRI
-     * @returns New ref after the operation
      */
     async delete(
       _self: unknown,
@@ -159,7 +157,7 @@ export function createStateModule(store: RDFStore) {
       predicate: string,
       object?: unknown,
       graph?: string
-    ): Promise<Ref> {
+    ): Promise<void> {
       let objectTerm = undefined
       if (object !== undefined && object !== null) {
         const [objectStr, datatype] = luaValueToRdf(object)
@@ -168,7 +166,7 @@ export function createStateModule(store: RDFStore) {
       
       const graphTerm = graph ? namedNode(graph) : undefined
       
-      return store.delete(
+      await store.delete(
         namedNode(subject),
         namedNode(predicate),
         objectTerm,
@@ -282,7 +280,6 @@ export function createStateModule(store: RDFStore) {
      * @param predicate - Predicate IRI
      * @param object - Object value (nil to just delete)
      * @param graph - Optional graph IRI
-     * @returns New ref after the operation
      */
     async set(
       _self: unknown,
@@ -290,7 +287,7 @@ export function createStateModule(store: RDFStore) {
       predicate: string,
       object: unknown,
       graph?: string
-    ): Promise<Ref> {
+    ): Promise<void> {
       const graphTerm = graph ? namedNode(graph) : undefined
       
       // First delete all matching quads
@@ -301,16 +298,16 @@ export function createStateModule(store: RDFStore) {
         graphTerm
       )
       
-      // If object is nil/undefined, just return current ref (delete-only semantics)
+      // If object is nil/undefined, just return (delete-only semantics)
       if (object === undefined || object === null) {
-        return store.currentRef
+        return
       }
         
       // Insert new quad
       const [objectStr, datatype] = luaValueToRdf(object)
       const objectTerm = literal(objectStr, namedNode(datatype))
       
-      return store.insert(
+      await store.insert(
         namedNode(subject),
         namedNode(predicate),
         objectTerm,
@@ -322,16 +319,15 @@ export function createStateModule(store: RDFStore) {
      * Batch insert multiple quads
      * @param _self - Lua self reference (ignored)
      * @param quads - Array of quad objects
-     * @returns New ref after the operation
      */
     async batchInsert(_self: unknown, quads: Array<{
       subject: string
       predicate: string
       object: unknown
       graph?: string
-    }>): Promise<Ref> {
+    }>): Promise<void> {
       if (quads.length === 0) {
-        return store.currentRef
+        return
       }
       
       const n3Quads = quads.map(q => {
@@ -347,44 +343,32 @@ export function createStateModule(store: RDFStore) {
         )
       })
       
-      return store.batchInsert(n3Quads)
+      await store.batchInsert(n3Quads)
     },
 
     /**
-     * Get current version reference
-     * @param _self - Lua self reference (ignored)
-     * @returns Current ref
-     */
-    currentRef(_self?: unknown): Ref {
-      return store.currentRef
-    },
-
-    /**
-     * Checkout to a specific version
-     * @param _self - Lua self reference (ignored)
-     * @param ref - Version reference to checkout to
-     */
-    async checkout(_self: unknown, ref: Ref): Promise<void> {
-      await store.checkout(ref)
-    },
-
-    /**
-     * Create a checkpoint at current version
+     * Create a checkpoint at current state
      * @param _self - Lua self reference (ignored)
      * @param title - Optional checkpoint title
      * @param description - Optional checkpoint description
      * @returns Checkpoint info
      */
-    async checkpoint(_self: unknown, title?: string, description?: string): Promise<{ id: string; ref: Ref }> {
+    async checkpoint(_self: unknown, title?: string, description?: string): Promise<string> {
       const checkpoint = await store.checkpoint({
         title: title || 'Checkpoint',
         description: description || ''
       })
       
-      return {
-        id: checkpoint.id,
-        ref: checkpoint.ref
-      }
+      return checkpoint.id
+    },
+
+    /**
+     * Load a checkpoint by ID
+     * @param _self - Lua self reference (ignored)
+     * @param checkpointId - Checkpoint ID to load
+     */
+    async checkout(_self: unknown, checkpointId: string): Promise<void> {
+      await store.loadCheckpoint(checkpointId)
     },
 
     /**
@@ -394,7 +378,6 @@ export function createStateModule(store: RDFStore) {
      */
     async listCheckpoints(_self?: unknown): Promise<LuaTable<Array<{
       id: string
-      ref: Ref
       title: string
       description?: string
       timestamp: number
@@ -403,7 +386,6 @@ export function createStateModule(store: RDFStore) {
       const checkpoints = await store.listCheckpoints()
       return new LuaTable(checkpoints.map(cp => ({
         id: cp.id,
-        ref: cp.ref,
         title: cp.title,
         description: cp.description,
         timestamp: cp.timestamp,

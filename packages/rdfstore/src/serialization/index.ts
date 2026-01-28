@@ -17,9 +17,6 @@ export {
   importFromCompactJson,
   exportToJson,
   importFromJson,
-  // Operations
-  exportOperations,
-  importOperations,
 } from './formats.js'
 
 // Full state export/import
@@ -29,3 +26,4 @@ export {
   type FullStateExport,
   type FullStateExportOptions,
 } from './state.js'
+

@@ -26,7 +26,6 @@
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.4",
     "@cloudflare/workers-types": "catalog:",
-    "@pubwiki/rdfsync": "workspace:*",
     "@types/node": "catalog:",
     "@vitest/runner": "catalog:vitest3",
     "@vitest/snapshot": "catalog:vitest3",
