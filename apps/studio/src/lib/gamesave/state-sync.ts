@@ -11,6 +11,7 @@ import { nodeStore } from '$lib/persistence';
 import { StateContent, type StateNodeData, type CheckpointInfo } from '$lib/types';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
+import { cloudSaveExists, createCloudSave } from './checkpoint';
 
 // Create a singleton API client
 const apiClient = createApiClient(API_BASE_URL);
@@ -154,4 +155,76 @@ export async function syncStateNodesFromCloud(): Promise<StateSyncResult> {
 
   console.log(`[StateSync] Sync complete: ${result.validSaves} valid, ${result.invalidSaves} invalid`);
   return result;
+}
+
+/**
+ * Result of ensuring a cloud save exists
+ */
+export interface EnsureCloudSaveResult {
+  /** The save ID (existing or newly created) */
+  saveId: string;
+  /** Whether a new save was created */
+  created: boolean;
+}
+
+/**
+ * Ensure a cloud save exists for a STATE node.
+ * If saveId exists and is valid, returns it.
+ * If saveId doesn't exist or is invalid, creates a new one.
+ * Updates the node's StateContent with the valid saveId.
+ * 
+ * @param stateNodeId - The STATE node ID
+ * @returns The valid save ID and whether it was created
+ * @throws Error if node is not found or not a STATE node
+ */
+export async function ensureCloudSave(stateNodeId: string): Promise<EnsureCloudSaveResult> {
+  const nodeData = nodeStore.get(stateNodeId);
+  if (!nodeData || nodeData.type !== 'STATE') {
+    throw new Error(`Node ${stateNodeId} is not a STATE node`);
+  }
+
+  const stateData = nodeData as StateNodeData;
+  const content = stateData.content as StateContent;
+  let saveId = content.saveId;
+  let created = false;
+
+  // Verify save exists if we have a saveId
+  if (saveId) {
+    const exists = await cloudSaveExists(saveId);
+    if (!exists) {
+      console.log(`[ensureCloudSave] Save ${saveId} not found, will create new save`);
+      saveId = null;
+      
+      // Clear the invalid saveId from state
+      nodeStore.update(stateNodeId, (prev) => {
+        const data = prev as StateNodeData;
+        return {
+          ...data,
+          content: data.content.withSaveId(null)
+        } as StateNodeData;
+      });
+    }
+  }
+
+  // Create cloud save if not exists
+  if (!saveId) {
+    saveId = await createCloudSave(
+      stateData.name || `State ${stateNodeId.slice(0, 8)}`,
+      stateNodeId
+    );
+    created = true;
+    
+    // Update node with saveId
+    nodeStore.update(stateNodeId, (prev) => {
+      const data = prev as StateNodeData;
+      return {
+        ...data,
+        content: data.content.withSaveId(saveId)
+      } as StateNodeData;
+    });
+    
+    console.log(`[ensureCloudSave] Created new save ${saveId} for node ${stateNodeId}`);
+  }
+
+  return { saveId, created };
 }

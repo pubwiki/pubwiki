@@ -102,10 +102,13 @@
 		onUpload: async (files: FileList) => {
 			if (!vfs || !controller) return;
 			
+			// Capture controller reference to avoid null access if component unmounts during upload
+			const ctrl = controller;
+			const currentVfs = vfs;
 			const totalFiles = files.length;
 			
 			// Set uploading flag to pause git status monitoring
-			controller.setUploading(true, { current: 0, total: totalFiles });
+			ctrl.setUploading(true, { current: 0, total: totalFiles });
 			
 			// Track created directories to avoid redundant createFolder calls
 			const createdDirs = new Set<string>();
@@ -123,7 +126,7 @@
 					const parentDir = targetPath.slice(0, targetPath.lastIndexOf('/'));
 					if (parentDir && parentDir !== '/' && !createdDirs.has(parentDir)) {
 						try {
-							await vfs.createFolder(parentDir);
+							await currentVfs.createFolder(parentDir);
 						} catch {
 							// Directory might already exist
 						}
@@ -141,20 +144,20 @@
 					
 					// Create or update the file
 					try {
-						await vfs.createFile(targetPath, content);
+						await currentVfs.createFile(targetPath, content);
 					} catch {
 						// File might already exist, try to update it
-						await vfs.updateFile(targetPath, content);
+						await currentVfs.updateFile(targetPath, content);
 					}
 					
 					filesProcessed++;
 					
 					// Update progress
-					controller.setUploading(true, { current: filesProcessed, total: totalFiles });
+					ctrl.setUploading(true, { current: filesProcessed, total: totalFiles });
 				}
 			} finally {
 				// Always clear uploading flag when done
-				controller.setUploading(false);
+				ctrl.setUploading(false);
 			}
 		},
 		onDownload: async () => {

@@ -5,6 +5,8 @@
  * The module exposes:
  * - pubwiki.publish(metadata) -> {success: bool, artifactId?: string, error?: string}
  * - pubwiki.uploadArticle(data) -> {success: bool, articleId?: string, error?: string}
+ * - pubwiki.uploadCheckpoint(checkpointId, visibility?) -> {success: bool, checkpointId?: string, error?: string}
+ * - pubwiki.uploadCheckpoints(checkpointIds[], defaultVisibility?) -> {success: bool, checkpointIds?: string[], error?: string}
  * 
  * Each method requests user confirmation before executing API calls.
  */
@@ -17,12 +19,17 @@ import type { ReaderContent } from '@pubwiki/reader';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
+import { uploadCheckpointToCloud } from '$lib/gamesave/checkpoint';
+import { ensureCloudSave } from '$lib/gamesave/state-sync';
+import { getNodeRDFStore } from '$lib/rdf';
 import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 import { HandleId } from '$lib/graph';
 import { nodeStore } from '$lib/persistence';
 import { StateContent } from '$lib/types';
 import PublishForm from '$components/pubwiki/PublishForm.svelte';
 import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
+import UploadCheckpointForm from '$components/pubwiki/UploadCheckpointForm.svelte';
+import UploadCheckpointsForm from '$components/pubwiki/UploadCheckpointsForm.svelte';
 
 // ============================================================================
 // Types
@@ -68,12 +75,36 @@ interface UploadArticleInput {
 }
 
 /**
+ * Upload checkpoint data from Lua/TS script
+ * Uploads an existing local checkpoint to the cloud
+ */
+interface UploadCheckpointInput {
+	/** Checkpoint ID of an existing local checkpoint */
+	checkpointId: string;
+	/** Visibility setting */
+	visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+}
+
+/**
+ * Batch upload checkpoints data from Lua/TS script
+ * Uploads multiple existing local checkpoints to the cloud
+ */
+interface UploadCheckpointsInput {
+	/** Array of checkpoint IDs to upload */
+	checkpointIds: string[];
+	/** Default visibility for all checkpoints */
+	defaultVisibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+}
+
+/**
  * Result of PubWiki operations
  */
 interface PubWikiResult {
 	success: boolean;
 	artifactId?: string;
 	articleId?: string;
+	checkpointId?: string;
+	checkpointIds?: string[];
 	error?: string;
 }
 
@@ -229,6 +260,187 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				return {
 					success: true,
 					articleId: result.id || articleId
+				};
+			} catch (err) {
+				return {
+					success: false,
+					error: err instanceof Error ? err.message : String(err)
+				};
+			}
+		},
+
+		/**
+		 * Upload an existing local checkpoint to cloud
+		 */
+		async uploadCheckpoint(data: UploadCheckpointInput): Promise<PubWikiResult> {
+			// Find connected State node
+			const stateInfo = findConnectedStateNode(
+				context.loaderNodeId,
+				context.getNodes(),
+				context.getEdges()
+			);
+
+			if (!stateInfo) {
+				return {
+					success: false,
+					error: 'No State node connected to this Loader. Please connect a State node via the state input.'
+				};
+			}
+
+			try {
+				// Get RDF store for the state node
+				const store = await getNodeRDFStore(stateInfo.stateNodeId);
+
+				// Get checkpoint info from local store
+				const checkpoint = await store.getCheckpoint(data.checkpointId);
+				if (!checkpoint) {
+					return {
+						success: false,
+						error: `Checkpoint "${data.checkpointId}" not found in local store`
+					};
+				}
+
+				// Build initial values for confirmation dialog
+				const initialValues = {
+					name: checkpoint.title,
+					description: checkpoint.description || '',
+					visibility: data.visibility || 'PRIVATE'
+				};
+
+				// Request user confirmation with editable form
+				const editedValues = await requestConfirmation('uploadCheckpoint', UploadCheckpointForm, initialValues);
+
+				if (editedValues === null) {
+					return {
+						success: false,
+						error: 'User cancelled the operation'
+					};
+				}
+
+				// Ensure cloud save exists (creates if needed)
+				const { saveId: targetSaveId } = await ensureCloudSave(stateInfo.stateNodeId);
+
+				const visibility = editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+
+				// Upload checkpoint to cloud
+				const result = await uploadCheckpointToCloud(store, targetSaveId, {
+					id: data.checkpointId,
+					name: checkpoint.title,
+					description: checkpoint.description,
+					visibility
+				});
+
+				if (!result.success) {
+					return {
+						success: false,
+						error: result.error || 'Failed to upload checkpoint'
+					};
+				}
+
+				return {
+					success: true,
+					checkpointId: result.checkpointId
+				};
+			} catch (err) {
+				return {
+					success: false,
+					error: err instanceof Error ? err.message : String(err)
+				};
+			}
+		},
+
+		/**
+		 * Upload multiple existing local checkpoints to cloud
+		 */
+		async uploadCheckpoints(data: UploadCheckpointsInput): Promise<PubWikiResult> {
+			// Find connected State node
+			const stateInfo = findConnectedStateNode(
+				context.loaderNodeId,
+				context.getNodes(),
+				context.getEdges()
+			);
+
+			if (!stateInfo) {
+				return {
+					success: false,
+					error: 'No State node connected to this Loader. Please connect a State node via the state input.'
+				};
+			}
+
+			if (!data.checkpointIds || data.checkpointIds.length === 0) {
+				return {
+					success: false,
+					error: 'No checkpoint IDs provided'
+				};
+			}
+
+			try {
+				// Get RDF store for the state node
+				const store = await getNodeRDFStore(stateInfo.stateNodeId);
+
+				// Validate all checkpoints exist and collect their info
+				const checkpoints: Array<{ id: string; title: string; description?: string }> = [];
+				for (const checkpointId of data.checkpointIds) {
+					const checkpoint = await store.getCheckpoint(checkpointId);
+					if (!checkpoint) {
+						return {
+							success: false,
+							error: `Checkpoint "${checkpointId}" not found in local store`
+						};
+					}
+					checkpoints.push({
+						id: checkpoint.id,
+						title: checkpoint.title,
+						description: checkpoint.description
+					});
+				}
+
+				// Build initial values for confirmation dialog
+				const initialValues = {
+					count: checkpoints.length,
+					names: checkpoints.map(c => c.title).join(', '),
+					visibility: data.defaultVisibility || 'PRIVATE'
+				};
+
+				// Request user confirmation with editable form
+				const editedValues = await requestConfirmation('uploadCheckpoints', UploadCheckpointsForm, initialValues);
+
+				if (editedValues === null) {
+					return {
+						success: false,
+						error: 'User cancelled the operation'
+					};
+				}
+
+				// Ensure cloud save exists (creates if needed)
+				const { saveId: targetSaveId } = await ensureCloudSave(stateInfo.stateNodeId);
+
+				const visibility = editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+				const uploadedIds: string[] = [];
+
+				// Upload each checkpoint
+				for (const checkpoint of checkpoints) {
+					const result = await uploadCheckpointToCloud(store, targetSaveId, {
+						id: checkpoint.id,
+						name: checkpoint.title,
+						description: checkpoint.description,
+						visibility
+					});
+
+					if (!result.success) {
+						return {
+							success: false,
+							checkpointIds: uploadedIds,
+							error: `Failed to upload checkpoint "${checkpoint.title}": ${result.error}`
+						};
+					}
+
+					uploadedIds.push(checkpoint.id);
+				}
+
+				return {
+					success: true,
+					checkpointIds: uploadedIds
 				};
 			} catch (err) {
 				return {

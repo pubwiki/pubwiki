@@ -7,7 +7,6 @@
 // Re-export shared types for convenience
 export type {
   BundleOptions,
-  BuildResult,
   FileBuildResult,
   ProjectBuildResult,
   BuildError,
