@@ -28,6 +28,12 @@
 	import { createLoaderServices } from '$lib/sandbox';
 	import { detectProject, type ProjectConfig } from '@pubwiki/bundler';
 	import { 
+		initializeLoader, 
+		destroyLoader 
+	} from '$components/nodes/loader/controller.svelte';
+	import { HandleId, isLoaderMountpointHandle, getLoaderMountpointId } from '$lib/graph';
+	import type { LoaderNodeData, LoaderContent, VFSContent } from '$lib/types';
+	import { 
 		createSandboxConnection, 
 		type SandboxConnection, 
 		type ConsoleLogEntry
@@ -95,6 +101,7 @@
 	let sandboxOrigin = $state<string>('');
 	let entryFile = $state<string>('index.ts');
 	let consoleLogs = $state<ConsoleLogEntry[]>([]);
+	let iframeSrc = $state<string>('');  // Controlled separately to avoid timing issues
 	
 	// Node IDs found from the graph
 	let sandboxNodeId = $state<string | null>(null);
@@ -284,6 +291,15 @@
 				userCheckpointId: null
 			};
 
+			// Stage 4.5: Initialize Loader nodes
+			// This must happen BEFORE Stage 5 so that services are registered
+			loadingState = {
+				stage: 'loading-state',  // Reuse loading-state stage
+				progress: 70,
+				message: 'Loading services...'
+			};
+			await initializeLoaders(edges);
+
 			// Stage 5: Start sandbox
 			loadingState = {
 				stage: 'starting-sandbox',
@@ -291,18 +307,29 @@
 				message: 'Starting game...'
 			};
 
+			console.log('[Play] Stage 5: Starting sandbox...');
+			console.log('[Play] sandboxOrigin:', sandboxOrigin);
+			console.log('[Play] entryFile:', entryFile);
+			console.log('[Play] loaderNodeIds:', loaderNodeIds);
+			console.log('[Play] vfs:', vfs);
+			console.log('[Play] projectConfig:', projectConfig);
+
 			// Wait for iframe to be mounted
 			await new Promise(resolve => setTimeout(resolve, 100));
+			console.log('[Play] After 100ms wait, iframeRef:', iframeRef);
 
 			if (!iframeRef) {
 				throw new Error('Sandbox iframe not ready');
 			}
 
 			// Create custom services from loaders
+			console.log('[Play] Creating loader services for', loaderNodeIds.length, 'loaders...');
 			const customServices = loaderNodeIds.length > 0 ? await createLoaderServices(loaderNodeIds) : undefined;
+			console.log('[Play] customServices created:', customServices?.size ?? 0, 'services');
 
 			// Create sandbox connection
 			// Note: userInfo is passed via iframe.name, not through RPC
+			console.log('[Play] Creating sandbox connection...');
 			sandboxConnection = createSandboxConnection({
 				iframe: iframeRef,
 				basePath: '/',
@@ -316,7 +343,14 @@
 				}
 			});
 
+			// Now set iframe src to trigger sandbox loading
+			// This must be after createSandboxConnection to avoid missing SANDBOX_READY message
+			console.log('[Play] Setting iframe src to trigger sandbox loading...');
+			iframeSrc = `${sandboxOrigin}/__sandbox.html`;
+
+			console.log('[Play] Waiting for sandbox ready...');
 			const success = await sandboxConnection.waitForReady();
+			console.log('[Play] waitForReady returned:', success);
 			if (!success) {
 				throw new Error('Failed to initialize sandbox');
 			}
@@ -343,11 +377,23 @@
 	/**
 	 * Find original stateNodeId from artifact edges BEFORE ID remap
 	 * URL params contain original artifact node IDs
+	 * Connection path: State → Loader (loader-state) → Sandbox (service-input)
 	 */
 	function findOriginalStateNodeId(edges: ArtifactEdge[], originalSandboxNodeId: string): string | null {
+		// Step 1: Find Loaders connected to Sandbox via service-input
+		const loaderNodeIds: string[] = [];
 		for (const edge of edges) {
-			if (edge.source === originalSandboxNodeId && edge.targetHandle === 'state-input') {
-				return edge.target;  // Return original stateNodeId
+			if (edge.target === originalSandboxNodeId && edge.targetHandle === 'service-input') {
+				loaderNodeIds.push(edge.source);
+			}
+		}
+		
+		// Step 2: Find State connected to any Loader via loader-state
+		for (const loaderId of loaderNodeIds) {
+			for (const edge of edges) {
+				if (edge.target === loaderId && edge.targetHandle === 'loader-state') {
+					return edge.source;  // Return original stateNodeId
+				}
 			}
 		}
 		return null;
@@ -399,19 +445,34 @@
 		}
 		sandboxNodeId = remappedSandboxId;
 
-		// Find State connected to Sandbox via state-input
+		// Find Loaders connected to Sandbox via service-input
+		const loaders: string[] = [];
 		for (const edge of edges) {
-			if (edge.source === remappedSandboxId && edge.targetHandle === 'state-input') {
-				const nodeData = nodeStore.get(edge.target);
-				if (nodeData?.type === 'STATE') {
-					stateNodeId = edge.target;
-					break;
+			if (edge.target === remappedSandboxId && edge.targetHandle === 'service-input') {
+				const nodeData = nodeStore.get(edge.source);
+				if (nodeData?.type === 'LOADER') {
+					loaders.push(edge.source);
 				}
 			}
 		}
+		loaderNodeIds = loaders;
+
+		// Find State connected to any Loader via loader-state
+		for (const loaderId of loaderNodeIds) {
+			for (const edge of edges) {
+				if (edge.target === loaderId && edge.targetHandle === 'loader-state') {
+					const nodeData = nodeStore.get(edge.source);
+					if (nodeData?.type === 'STATE') {
+						stateNodeId = edge.source;
+						break;
+					}
+				}
+			}
+			if (stateNodeId) break;
+		}
 
 		if (!stateNodeId) {
-			console.error('[Play] Could not find State node connected to Sandbox');
+			console.error('[Play] Could not find State node connected to Loader');
 			return;
 		}
 
@@ -426,18 +487,6 @@
 			}
 		}
 
-		// Find Loaders connected to Sandbox via service-input
-		const loaders: string[] = [];
-		for (const edge of edges) {
-			if (edge.target === remappedSandboxId && edge.targetHandle === 'service-input') {
-				const nodeData = nodeStore.get(edge.source);
-				if (nodeData?.type === 'LOADER') {
-					loaders.push(edge.source);
-				}
-			}
-		}
-		loaderNodeIds = loaders;
-
 		console.log('[Play] Found nodes:', { 
 			originalSandboxNodeId,
 			remappedSandboxId,
@@ -445,6 +494,106 @@
 			vfsNodeId, 
 			loaderNodeIds 
 		});
+	}
+
+	/**
+	 * Initialize all Loader nodes so their services become available
+	 * This mimics what LoaderNode.svelte does during normal studio operation.
+	 */
+	async function initializeLoaders(edges: Edge[]) {
+		if (loaderNodeIds.length === 0) {
+			console.log('[Play] No loader nodes to initialize');
+			return;
+		}
+
+		console.log('[Play] Initializing', loaderNodeIds.length, 'loader nodes...');
+
+		for (const loaderId of loaderNodeIds) {
+			try {
+				// Find backend VFS connected to Loader via loader-backend handle
+				let backendVfsNodeId: string | null = null;
+				for (const edge of edges) {
+					if (edge.target === loaderId && edge.targetHandle === HandleId.LOADER_BACKEND) {
+						const sourceData = nodeStore.get(edge.source);
+						if (sourceData?.type === 'VFS') {
+							backendVfsNodeId = edge.source;
+							break;
+						}
+					}
+				}
+
+				if (!backendVfsNodeId) {
+					console.warn(`[Play] Loader ${loaderId} has no backend VFS connected`);
+					continue;
+				}
+
+				// Get backend VFS instance
+				const backendVfsData = nodeStore.get(backendVfsNodeId);
+				if (!backendVfsData || backendVfsData.type !== 'VFS') {
+					console.warn(`[Play] Backend VFS node data not found for loader ${loaderId}`);
+					continue;
+				}
+				const backendVfsContent = backendVfsData.content as VFSContent;
+				const backendVfs = await getNodeVfs(backendVfsContent.projectId, backendVfsNodeId);
+
+				// Find mounted asset VFS nodes
+				const loaderData = nodeStore.get(loaderId) as LoaderNodeData | undefined;
+				const mountpoints = loaderData?.content?.mountpoints ?? [];
+				const assetMounts = new Map<string, Awaited<ReturnType<typeof getNodeVfs>>>();
+
+				for (const edge of edges) {
+					if (edge.target === loaderId && isLoaderMountpointHandle(edge.targetHandle)) {
+						const mountpointId = getLoaderMountpointId(edge.targetHandle!);
+						const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
+						if (!mountpoint) continue;
+
+						const sourceData = nodeStore.get(edge.source);
+						if (sourceData?.type === 'VFS') {
+							const vfsContent = sourceData.content as VFSContent;
+							const mountVfs = await getNodeVfs(vfsContent.projectId, edge.source);
+							assetMounts.set(mountpoint.path, mountVfs);
+						}
+					}
+				}
+
+				// Find State node connected to Loader via loader-state handle
+				let loaderStateNodeId: string | null = null;
+				for (const edge of edges) {
+					if (edge.target === loaderId && edge.targetHandle === HandleId.LOADER_STATE) {
+						const sourceData = nodeStore.get(edge.source);
+						if (sourceData?.type === 'STATE') {
+							loaderStateNodeId = edge.source;
+							break;
+						}
+					}
+				}
+
+				// Get RDF store for State node (can use existing rdfStore if same state node)
+				const loaderRdfStore = loaderStateNodeId 
+					? (loaderStateNodeId === stateNodeId ? rdfStore : await getNodeRDFStore(loaderStateNodeId))
+					: undefined;
+
+				// Initialize loader (no LLM config in play mode)
+				const result = await initializeLoader(
+					loaderId,
+					backendVfs,
+					assetMounts,
+					loaderRdfStore ?? undefined,
+					undefined,  // No LLM config in play mode
+					undefined   // No pubwiki context in play mode
+				);
+
+				if (result.success) {
+					console.log(`[Play] Loader ${loaderId} initialized with services:`, result.services);
+				} else {
+					console.warn(`[Play] Loader ${loaderId} initialization failed:`, result.error);
+				}
+			} catch (error) {
+				console.error(`[Play] Error initializing loader ${loaderId}:`, error);
+			}
+		}
+
+		console.log('[Play] Loader initialization complete');
 	}
 
 	/**
@@ -518,19 +667,19 @@
 		if (stateNodeId) {
 			closeNodeRDFStore(stateNodeId);
 		}
+		// Destroy all initialized loaders
+		for (const loaderId of loaderNodeIds) {
+			destroyLoader(loaderId);
+		}
 	});
-
-	// ============================================================================
-	// Sandbox URL
-	// ============================================================================
-
-	const sandboxUrl = $derived(sandboxOrigin ? `${sandboxOrigin}/__sandbox.html` : '');
 
 	// ============================================================================
 	// Error Retry
 	// ============================================================================
 
 	function handleRetry() {
+		// Reset iframeSrc to allow fresh reload
+		iframeSrc = '';
 		loadingState = {
 			stage: 'init',
 			progress: 0,
@@ -556,14 +705,16 @@
 
 	<!-- Sandbox iframe (always rendered but hidden until ready) -->
 	<!-- userInfo is passed via iframe name attribute as JSON -->
+	<!-- iframeSrc is set after createSandboxConnection to avoid missing SANDBOX_READY message -->
 	<iframe
 		bind:this={iframeRef}
-		src={sandboxUrl}
+		src={iframeSrc}
 		name={JSON.stringify(userInfo)}
 		class="w-full h-full border-0"
 		class:opacity-0={loadingState.stage !== 'ready'}
 		class:pointer-events-none={loadingState.stage !== 'ready'}
-		allow="fullscreen"
+		sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+		allow="fullscreen; clipboard-read; clipboard-write"
 		title="Game"
 	></iframe>
 </div>
