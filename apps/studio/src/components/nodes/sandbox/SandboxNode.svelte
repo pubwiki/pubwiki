@@ -322,7 +322,7 @@
 	<SandboxPreviewView
 		{vfs}
 		{projectConfig}
-		sandboxOrigin={nodeData.content.sandboxOrigin}
+		sandboxOrigin={process.env.PUBLIC_SANDBOX_SITE_URL ?? "https://sandbox.soyo.mu"}
 		entryFile={nodeData.content.entryFile}
 		name={nodeData.name}
 		loaderNodes={connectedLoaderNodes}

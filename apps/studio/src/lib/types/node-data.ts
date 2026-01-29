@@ -268,11 +268,10 @@ export async function createVFSNodeData(
  * Create a new Sandbox node data object
  */
 export async function createSandboxNodeData(
-  name: string = 'Preview',
-  sandboxOrigin: string = 'http://localhost:4001'
+  name: string = 'Preview'
 ): Promise<SandboxNodeData> {
   const id = crypto.randomUUID()
-  const content = new SandboxContent('index.html', sandboxOrigin)
+  const content = new SandboxContent('index.html')
   const commit = await generateCommitHash(content.serialize())
   return {
     id,

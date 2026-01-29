@@ -259,7 +259,7 @@
 			if (!sandboxNodeData) {
 				throw new Error('Sandbox node data not found');
 			}
-			sandboxOrigin = sandboxNodeData.content.sandboxOrigin;
+			sandboxOrigin = process.env.PUBLIC_SANDBOX_SITE_URL ?? "https://sandbox.soyo.mu";
 			entryFile = sandboxNodeData.content.entryFile;
 
 			// Stage 4: Load state (RDF store)

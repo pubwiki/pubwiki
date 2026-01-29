@@ -173,8 +173,6 @@ SandboxNodeContent:
     entryFile:
       type: string
       default: index.html
-    sandboxOrigin:
-      type: string
 
 # LOADER 节点内容
 LoaderNodeContent:

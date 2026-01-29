@@ -1124,7 +1124,6 @@ export interface components {
         SandboxNodeContent: {
             /** @default index.html */
             entryFile: string;
-            sandboxOrigin?: string;
         };
         LoaderNodeContent: {
             mountpoints?: components["schemas"]["Mountpoint"][];

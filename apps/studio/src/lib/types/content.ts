@@ -389,7 +389,6 @@ export class VFSContent implements NodeContent {
 export class SandboxContent implements NodeContent {
   constructor(
     public entryFile: string = 'index.html',
-    public sandboxOrigin: string = 'http://localhost:4001'
   ) {}
 
   getText(): string {
@@ -397,19 +396,19 @@ export class SandboxContent implements NodeContent {
   }
 
   serialize(): string {
-    return JSON.stringify({ entryFile: this.entryFile, sandboxOrigin: this.sandboxOrigin })
+    return JSON.stringify({ entryFile: this.entryFile })
   }
 
   clone(): SandboxContent {
-    return new SandboxContent(this.entryFile, this.sandboxOrigin)
+    return new SandboxContent(this.entryFile)
   }
 
   toJSON() {
-    return { entryFile: this.entryFile, sandboxOrigin: this.sandboxOrigin }
+    return { entryFile: this.entryFile }
   }
 
   static fromJSON(data: { entryFile?: string; sandboxOrigin?: string }): SandboxContent {
-    return new SandboxContent(data.entryFile ?? 'index.html', data.sandboxOrigin ?? 'http://localhost:4001')
+    return new SandboxContent(data.entryFile ?? 'index.html')
   }
 }
 
