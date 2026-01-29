@@ -100,6 +100,8 @@
 
 				for (const { text, gameRef } of textWithRefs) {
 					const lines = text.text.split('\n');
+					// Track if we've already used the gameRef for this text block
+					let gameRefUsed = false;
 
 					for (const line of lines) {
 						// Check for headings (simple markdown support)
@@ -121,11 +123,12 @@
 							hr.append(createTextNode('⸻'));
 							root.append(hr);
 						} else if (line.trim()) {
-							// Regular paragraph - use GameRefParagraphNode if has gameRef
-							if (gameRef) {
+							// Regular paragraph - use GameRefParagraphNode only for the first paragraph
+							if (gameRef && !gameRefUsed) {
 								const paragraph = createGameRefParagraphNode(gameRef);
 								paragraph.append(createTextNode(line));
 								root.append(paragraph);
+								gameRefUsed = true;
 							} else {
 								const paragraph = createParagraphNode();
 								paragraph.append(createTextNode(line));
