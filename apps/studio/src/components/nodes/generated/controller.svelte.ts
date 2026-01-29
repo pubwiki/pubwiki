@@ -153,7 +153,7 @@ export function createPubChat(config: GenerationConfig): PubChat {
 		messageStore: new MemoryMessageStore(),
 		toolCalling: {
 			enabled: true,
-			maxIterations: 10
+			maxIterations: 10000
 		}
 	});
 }
