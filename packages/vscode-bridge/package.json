@@ -23,7 +23,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@pubwiki/vfs": "link:../../pubwiki/packages/vfs",
+    "@pubwiki/vfs": "workspace:*",
     "capnweb": "^0.2.0"
   },
   "devDependencies": {
