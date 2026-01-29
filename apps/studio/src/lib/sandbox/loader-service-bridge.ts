@@ -20,14 +20,14 @@ import { createLoaderInterface, type LoaderInterface } from '$components/nodes/l
  */
 export class LoaderServiceBridge extends RpcTarget implements ICustomService {
 	private loaderInterface: LoaderInterface;
-	private serviceIdentifier: string;
-	private serviceDef: ServiceDefinition | null = null;
-	private _isStreaming: boolean = false;
+	private serviceDef: ServiceDefinition;
+	private _isStreaming: boolean;
 	
-	constructor(loaderInterface: LoaderInterface, serviceIdentifier: string) {
+	constructor(loaderInterface: LoaderInterface, serviceDef: ServiceDefinition) {
 		super();
 		this.loaderInterface = loaderInterface;
-		this.serviceIdentifier = serviceIdentifier;
+		this.serviceDef = serviceDef;
+		this._isStreaming = isStreamingService(serviceDef);
 	}
 
 	/**
@@ -38,15 +38,10 @@ export class LoaderServiceBridge extends RpcTarget implements ICustomService {
 	}
 
 	/**
-	 * Initialize the bridge by loading service definition
+	 * Get the service identifier
 	 */
-	async init(): Promise<void> {
-		const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
-		
-		if (def) {
-			this.serviceDef = def;
-			this._isStreaming = isStreamingService(def);
-		}
+	get serviceIdentifier(): string {
+		return this.serviceDef.identifier;
 	}
 
 	/**
@@ -96,14 +91,7 @@ export class LoaderServiceBridge extends RpcTarget implements ICustomService {
 	 * Get service definition with JSON Schema.
 	 * Required by ICustomService interface.
 	 */
-	async getDefinition(): Promise<ServiceDefinition> {
-		if (!this.serviceDef) {
-			const def = await this.loaderInterface.getServiceDefinition(this.serviceIdentifier);
-			if (!def) {
-				throw new Error(`Service definition not found: ${this.serviceIdentifier}`);
-			}
-			this.serviceDef = def;
-		}
+	getDefinition(): ServiceDefinition {
 		return this.serviceDef;
 	}
 
@@ -149,12 +137,7 @@ export async function createLoaderServices(
 			const serviceIdentifier = serviceDef.identifier;
 			// Create factory that returns a LoaderServiceBridge
 			services.set(serviceIdentifier, () => {
-				const bridge = new LoaderServiceBridge(loaderInterface, serviceIdentifier);
-				// Initialize asynchronously (service definition loading)
-				bridge.init().catch(err => {
-					console.error(`[LoaderServiceBridge] Failed to init ${serviceIdentifier}:`, err);
-				});
-				return bridge;
+				return new LoaderServiceBridge(loaderInterface, serviceDef);
 			});
 			
 			console.log(`[createLoaderServices] Registered Loader service: ${serviceIdentifier}`);

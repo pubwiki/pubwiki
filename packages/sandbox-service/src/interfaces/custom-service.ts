@@ -105,7 +105,7 @@ export interface ICustomService {
      * Get the service definition including JSON Schema for inputs/outputs
      * @returns Service definition with metadata and schemas
      */
-    getDefinition(): Promise<ServiceDefinition>
+    getDefinition(): ServiceDefinition
     
     /**
      * Check if this is a streaming service

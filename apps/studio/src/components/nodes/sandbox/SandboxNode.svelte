@@ -175,7 +175,6 @@
 	// ============================================================================
 
 	function openPreview() {
-		console.log("sandbox site: ", )
 		showPreview = true;
 	}
 

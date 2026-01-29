@@ -664,8 +664,6 @@ export interface LoaderInterface {
 		inputs: Record<string, unknown>,
 		on: RpcStub<(value: unknown) => Promise<void> | void>
 	): Promise<void>;
-	/** Get service definition (for schema generation) */
-	getServiceDefinition(identifier: string): Promise<ServiceDefinition | null>;
 }
 
 /**
@@ -678,10 +676,6 @@ export function createLoaderInterface(nodeId: string): LoaderInterface {
 		listServices: () => listServices(nodeId),
 		callService: (id, inputs) => callService(nodeId, id, inputs),
 		streamService: (id, inputs, on) => streamService(nodeId, id, inputs, on),
-		getServiceDefinition: async (id) => {
-			const services = await listServices(nodeId);
-			return services.find(s => s.identifier === id) ?? null;
-		}
 	};
 }
 
