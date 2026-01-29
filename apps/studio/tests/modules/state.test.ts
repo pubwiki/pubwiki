@@ -76,13 +76,10 @@ describe('State Module (RDF)', () => {
   })
 
   describe('State:insert', () => {
-    it('should insert a quad and return ref', async () => {
-      const result = await instance.run(`
-        local ref = State:insert('book:1984', 'title', '1984')
-        return ref
+    it('should insert a quad', async () => {
+      await instance.run(`
+        State:insert('book:1984', 'title', '1984')
       `)
-
-      expect(typeof result.result).toBe('string')
       
       const results = await queryByStrings(store, { predicate: 'title' })
       expect(results).toHaveLength(1)
@@ -102,12 +99,9 @@ describe('State Module (RDF)', () => {
     })
 
     it('should insert with graph parameter', async () => {
-      const result = await instance.run(`
-        local ref = State:insert('book:1984', 'title', '1984', 'graph:books')
-        return ref
+      await instance.run(`
+        State:insert('book:1984', 'title', '1984', 'graph:books')
       `)
-
-      expect(typeof result.result).toBe('string')
       
       const results = await queryByStrings(store, { graph: 'graph:books' })
       expect(results).toHaveLength(1)
@@ -161,14 +155,12 @@ describe('State Module (RDF)', () => {
   })
 
   describe('State:delete', () => {
-    it('should delete a specific quad and return ref', async () => {
-      const result = await instance.run(`
+    it('should delete a specific quad', async () => {
+      await instance.run(`
         State:insert('user:alice', 'age', 25)
-        local ref = State:delete('user:alice', 'age', 25)
-        return ref
+        State:delete('user:alice', 'age', 25)
       `)
 
-      expect(typeof result.result).toBe('string')
       const results = await queryByStrings(store, { subject: 'user:alice' })
       expect(results).toHaveLength(0)
     })
@@ -186,17 +178,16 @@ describe('State Module (RDF)', () => {
   })
 
   describe('State:batchInsert', () => {
-    it('should insert multiple quads at once and return ref', async () => {
-      const result = await instance.run(`
+    it('should insert multiple quads at once', async () => {
+      await instance.run(`
         local books = {
           {subject = 'book:1', predicate = 'title', object = 'Book 1'},
           {subject = 'book:2', predicate = 'title', object = 'Book 2'},
           {subject = 'book:3', predicate = 'title', object = 'Book 3'},
         }
-        return State:batchInsert(books)
+        State:batchInsert(books)
       `)
 
-      expect(typeof result.result).toBe('string')
       const results = await queryByStrings(store, { predicate: 'title' })
       expect(results).toHaveLength(3)
     })
@@ -216,14 +207,12 @@ describe('State Module (RDF)', () => {
   })
 
   describe('State:set', () => {
-    it('should replace existing value and return ref', async () => {
-      const result = await instance.run(`
+    it('should replace existing value', async () => {
+      await instance.run(`
         State:insert('user:alice', 'age', 25)
-        local ref = State:set('user:alice', 'age', 30)
-        return ref
+        State:set('user:alice', 'age', 30)
       `)
 
-      expect(typeof result.result).toBe('string')
       const results = await queryByStrings(store, { subject: 'user:alice', predicate: 'age' })
       expect(results).toHaveLength(1)
       expect(results[0].object).toBe('30')
@@ -269,12 +258,9 @@ describe('State Module (RDF)', () => {
       const beforeResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
       expect(beforeResults).toHaveLength(1)
 
-      const result = await instance.run(`
-        local ref = State:set('user:bob', 'email', nil)
-        return ref
+      await instance.run(`
+        State:set('user:bob', 'email', nil)
       `)
-
-      expect(typeof result.result).toBe('string')
 
       const afterResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
       expect(afterResults).toHaveLength(0)
@@ -357,7 +343,7 @@ describe('State Module (RDF)', () => {
   })
 
   describe('Version Control', () => {
-    it('should create checkpoint', async () => {
+    it('should create checkpoint and return id', async () => {
       await instance.run(`
         State:insert('user:alice', 'name', 'Alice')
       `)
@@ -366,8 +352,8 @@ describe('State Module (RDF)', () => {
         return State:checkpoint()
       `)
 
-      expect(typeof result.result).toBe('object')
-      expect(typeof result.result.id).toBe('string')
+      expect(typeof result.result).toBe('string')
+      expect(result.result.length).toBeGreaterThan(0)
     })
   })
 

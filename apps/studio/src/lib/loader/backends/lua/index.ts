@@ -34,6 +34,9 @@ import { registerBackendFactory } from '../../types';
 import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
 import typesLuaCode from '$lib/assets/lua/types.lua?raw';
 
+// Schema-based type coercion
+import { coerceToSchema, coerceOutputs, getIteratorYieldSchema } from './schema-coercion';
+
 // ============================================================================
 // MemoryVfsProvider - Simple in-memory VFS implementation
 // ============================================================================
@@ -211,6 +214,9 @@ export class LuaBackend implements LoaderBackend {
 	
 	/** Stored config for reload */
 	private currentConfig: BackendConfig | null = null;
+	
+	/** Cached service definitions for schema-based type coercion */
+	private serviceSchemas = new Map<string, ServiceDefinition>();
 
 	// ========================================================================
 	// LoaderBackend Interface
@@ -326,6 +332,7 @@ export class LuaBackend implements LoaderBackend {
 		}
 		this.mountedVfs = null;
 		this.ready = false;
+		this.serviceSchemas.clear();
 		// Don't clear currentConfig - needed for reload after destroy
 	}
 
@@ -354,9 +361,17 @@ export class LuaBackend implements LoaderBackend {
 			throw new Error(result.error);
 		}
 
-		// Convert to array format
+		// Convert to array format and cache schemas
 		const servicesMap = result.result as Record<string, ServiceDefinition>;
-		return Object.values(servicesMap);
+		const services = Object.values(servicesMap);
+		
+		// Cache service definitions for schema-based type coercion
+		this.serviceSchemas.clear();
+		for (const service of services) {
+			this.serviceSchemas.set(service.identifier, service);
+		}
+		
+		return services;
 	}
 
 	async callService(
@@ -381,9 +396,15 @@ export class LuaBackend implements LoaderBackend {
 			return { success: false, error: result.error };
 		}
 
-		const outputs = result.result as Record<string, unknown>;
+		let outputs = result.result as Record<string, unknown>;
 		if (outputs && outputs._error) {
 			return { success: false, error: outputs._error as string };
+		}
+
+		// Apply schema-based type coercion
+		const serviceDef = this.serviceSchemas.get(identifier);
+		if (serviceDef && outputs) {
+			outputs = coerceOutputs(outputs, serviceDef.outputs);
 		}
 
 		return { success: true, outputs };
@@ -397,6 +418,15 @@ export class LuaBackend implements LoaderBackend {
 		if (!this.instance) {
 			throw new Error('Lua backend not initialized');
 		}
+
+		// Get yield type schema for coercion
+		const serviceDef = this.serviceSchemas.get(identifier);
+		const yieldSchema = serviceDef ? getIteratorYieldSchema(serviceDef.outputs) : null;
+
+		// Wrap callback to apply schema coercion
+		const coercedCallback = yieldSchema
+			? (value: unknown) => on(coerceToSchema(value, yieldSchema))
+			: on;
 
 		console.log(
 			'[LuaBackend.streamService] invoked with inputs',
@@ -422,7 +452,7 @@ export class LuaBackend implements LoaderBackend {
 				end
 			end
 		`,
-			{ identifier, inputs, callback: on }
+			{ identifier, inputs, callback: coercedCallback }
 		);
 
 		if (result.error) {
