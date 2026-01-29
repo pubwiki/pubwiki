@@ -224,7 +224,7 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.shiftKey && event.key === 'Tab' && isFullscreen) {
+		if (event.key === 'Escape' && isFullscreen) {
 			event.preventDefault();
 			isFullscreen = false;
 		}
