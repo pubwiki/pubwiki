@@ -7,7 +7,7 @@
 
 import type { Component } from 'svelte';
 
-export type ConfirmationType = 'publish' | 'uploadArticle';
+export type ConfirmationType = 'publish' | 'uploadArticle' | 'uploadCheckpoint' | 'uploadCheckpoints';
 
 /** 表单组件的 Props 接口 */
 export interface FormComponentProps {

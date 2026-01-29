@@ -4,7 +4,7 @@
  * Manages WebSocket connection between VFS and VS Code using @vfs/browser-client
  */
 
-import { VfsBrowserClient, type VfsConnectionOptions } from '@vfs/browser-client';
+import { VfsBrowserClient, type VfsConnectionOptions } from '@pubwiki/vscode-bridge';
 import type { VersionedVfs } from './store';
 
 // ============================================================================

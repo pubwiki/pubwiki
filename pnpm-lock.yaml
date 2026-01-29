@@ -371,9 +371,9 @@ importers:
       '@pubwiki/vfs':
         specifier: workspace:*
         version: link:../../packages/vfs
-      '@vfs/browser-client':
-        specifier: file:../../../pubwiki-code/vfs-browser-client
-        version: '@pubwiki/vfs-browser-client@file:../pubwiki-code/vfs-browser-client'
+      '@pubwiki/vscode-bridge':
+        specifier: workspace:*
+        version: link:../../packages/vscode-bridge
       '@xyflow/svelte':
         specifier: 'catalog:'
         version: 1.5.0(svelte@5.46.1)
@@ -853,6 +853,31 @@ importers:
       vitest:
         specifier: 'catalog:'
         version: 4.0.17(@types/node@22.19.5)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
+
+  packages/vscode-bridge:
+    dependencies:
+      '@pubwiki/vfs':
+        specifier: workspace:*
+        version: link:../vfs
+      capnweb:
+        specifier: ^0.2.0
+        version: 0.2.0
+    devDependencies:
+      '@types/node':
+        specifier: ^18.0.0
+        version: 18.19.130
+      '@types/ws':
+        specifier: ^8.5.0
+        version: 8.18.1
+      tsx:
+        specifier: ^4.7.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+      ws:
+        specifier: ^8.14.0
+        version: 8.18.3
 
   services/gamesave:
     dependencies:
@@ -2014,9 +2039,6 @@ packages:
   '@poppinss/exception@1.2.3':
     resolution: {integrity: sha512-dCED+QRChTVatE9ibtoaxc+WkdzOSjYTKi/+uacHWIsfodVfpsueo3+DKpgU5Px8qXjgmXkSvhXvSCz3fnP9lw==}
 
-  '@pubwiki/vfs-browser-client@file:../pubwiki-code/vfs-browser-client':
-    resolution: {directory: ../pubwiki-code/vfs-browser-client, type: directory}
-
   '@rdfjs/types@1.1.2':
     resolution: {integrity: sha512-wqpOJK1QCbmsGNtyzYnojPU8gRDPid2JO0Q0kMtb4j65xhCK880cnKAfEOwC+dX85VJcCByQx5zOwyyfCjDJsg==}
 
@@ -2639,6 +2661,9 @@ packages:
   '@types/n3@1.26.1':
     resolution: {integrity: sha512-TilYHzpU6ecXVJAbV+6o17Z8ZkWLWx6ZJD3IluaU4RiGHxqjU2or9fopxFHS6iXS6qcl5Mg1K3wSx9L8xxJaJQ==}
 
+  '@types/node@18.19.130':
+    resolution: {integrity: sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg==}
+
   '@types/node@22.19.5':
     resolution: {integrity: sha512-HfF8+mYcHPcPypui3w3mvzuIErlNOh2OAG+BCeBZCEwyiD5ls2SiCwEyT47OELtf7M3nHxBdu0FsmzdKxkN52Q==}
 
@@ -2656,6 +2681,9 @@ packages:
 
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
+
+  '@types/ws@8.18.1':
+    resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
 
   '@typescript-eslint/eslint-plugin@8.53.0':
     resolution: {integrity: sha512-eEXsVvLPu8Z4PkFibtuFJLJOTAV/nPdgtSjkGoPpddpFk3/ym2oy97jynY6ic2m6+nc5M8SE1e9v/mHKsulcJg==}
@@ -4765,6 +4793,9 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  undici-types@5.26.5:
+    resolution: {integrity: sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==}
+
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
@@ -5931,14 +5962,9 @@ snapshots:
 
   '@poppinss/exception@1.2.3': {}
 
-  '@pubwiki/vfs-browser-client@file:../pubwiki-code/vfs-browser-client':
-    dependencies:
-      '@pubwiki/vfs': link:../../pubwiki/packages/vfs
-      capnweb: 0.2.0
-
   '@rdfjs/types@1.1.2':
     dependencies:
-      '@types/node': 25.0.3
+      '@types/node': 18.19.130
 
   '@rdfjs/types@2.0.1':
     dependencies:
@@ -6445,7 +6471,7 @@ snapshots:
 
   '@types/better-sqlite3@7.6.13':
     dependencies:
-      '@types/node': 25.0.3
+      '@types/node': 18.19.130
     optional: true
 
   '@types/chai@5.2.3':
@@ -6489,6 +6515,10 @@ snapshots:
       '@rdfjs/types': 2.0.1
       '@types/node': 25.0.3
 
+  '@types/node@18.19.130':
+    dependencies:
+      undici-types: 5.26.5
+
   '@types/node@22.19.5':
     dependencies:
       undici-types: 6.21.0
@@ -6509,6 +6539,10 @@ snapshots:
 
   '@types/trusted-types@2.0.7':
     optional: true
+
+  '@types/ws@8.18.1':
+    dependencies:
+      '@types/node': 18.19.130
 
   '@typescript-eslint/eslint-plugin@8.53.0(@typescript-eslint/parser@8.53.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3))(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)':
     dependencies:
@@ -8786,6 +8820,8 @@ snapshots:
       - supports-color
 
   typescript@5.9.3: {}
+
+  undici-types@5.26.5: {}
 
   undici-types@6.21.0: {}
 

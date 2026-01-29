@@ -1,0 +1,41 @@
+{
+  "name": "@pubwiki/vscode-bridge",
+  "version": "1.0.0",
+  "description": "Browser-side adapter for @pubwiki/vfs to VS Code extension",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -watch",
+    "prepublishOnly": "npm run build",
+    "example": "tsx examples/cli-example.ts"
+  },
+  "keywords": [
+    "vscode",
+    "filesystem",
+    "virtual-fs",
+    "browser",
+    "websocket",
+    "rpc",
+    "pubwiki"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@pubwiki/vfs": "workspace:*",
+    "capnweb": "^0.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.0.0",
+    "ws": "^8.14.0"
+  },
+  "peerDependencies": {},
+  "files": [
+    "src",
+    "README.md"
+  ]
+}
