@@ -857,8 +857,8 @@ importers:
   packages/vscode-bridge:
     dependencies:
       '@pubwiki/vfs':
-        specifier: link:../../pubwiki/packages/vfs
-        version: link:../../pubwiki/packages/vfs
+        specifier: workspace:*
+        version: link:../vfs
       capnweb:
         specifier: ^0.2.0
         version: 0.2.0
