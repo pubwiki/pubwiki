@@ -5,25 +5,20 @@
 <section class="relative min-h-screen flex items-center overflow-hidden pt-16">
 	<!-- Background Gradient -->
 	<div
-		class="absolute inset-0 bg-gradient-to-br from-[#f6f8fa] via-white to-[#f0f4ff] -z-10"
+		class="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-slate-100 -z-10"
 	></div>
 
-	<!-- Decorative Elements -->
-	<div class="absolute top-20 left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float"></div>
-	<div class="absolute top-40 right-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float" style="animation-delay: 1s;"></div>
-	<div class="absolute bottom-20 left-1/3 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float" style="animation-delay: 2s;"></div>
+	<!-- Decorative Elements (subtle, platform-neutral) -->
+	<div class="absolute top-20 left-10 w-72 h-72 bg-slate-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float"></div>
+	<div class="absolute top-40 right-20 w-72 h-72 bg-slate-300 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-float" style="animation-delay: 1s;"></div>
+	<div class="absolute bottom-20 left-1/3 w-72 h-72 bg-slate-200 rounded-full mix-blend-multiply filter blur-3xl opacity-25 animate-float" style="animation-delay: 2s;"></div>
 
 	<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20">
 		<div class="grid lg:grid-cols-2 gap-12 items-center">
 			<!-- Left: Text Content -->
 			<div class="text-center lg:text-left">
-				<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-medium mb-6">
-					<span class="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></span>
-					AI-Powered Interactive Fiction
-				</div>
-
 				<h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6">
-					<span class="block text-[#24292f]">Create AI Stories</span>
+					<span class="block text-[#24292f]">AI Roleplay</span>
 					<span class="block gradient-text">That Come to Life</span>
 				</h1>
 
@@ -35,7 +30,7 @@
 				<div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
 					<a
 						href="https://studio.pub.wiki"
-						class="inline-flex items-center justify-center gap-2 px-6 py-3 text-base font-semibold text-white rounded-xl bg-gradient-to-r from-[#8b5cf6] to-[#ec4899] hover:opacity-90 transition-all shadow-xl shadow-purple-500/25 hover:shadow-purple-500/40 hover:-translate-y-0.5"
+						class="btn-primary inline-flex items-center justify-center gap-2 px-6 py-3 text-base font-semibold text-white rounded-xl"
 					>
 						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path
@@ -45,11 +40,11 @@
 								d="M13 10V3L4 14h7v7l9-11h-7z"
 							/>
 						</svg>
-						Start Creating — It's Free
+						Start Creating
 					</a>
 					<a
 						href="https://hub.pub.wiki"
-						class="inline-flex items-center justify-center gap-2 px-6 py-3 text-base font-semibold text-[#24292f] rounded-xl border-2 border-gray-200 bg-white hover:border-[#0969da] hover:text-[#0969da] transition-all"
+						class="btn-secondary inline-flex items-center justify-center gap-2 px-6 py-3 text-base font-semibold text-slate-700 rounded-xl"
 					>
 						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path

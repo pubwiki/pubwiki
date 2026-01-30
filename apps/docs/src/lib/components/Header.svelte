@@ -20,11 +20,11 @@
 </script>
 
 <header
-	class="fixed top-0 left-0 right-0 z-50 transition-all duration-300 {scrolled
-		? 'glass shadow-lg'
-		: 'bg-white/80 backdrop-blur-sm'}"
+	class="fixed top-0 left-0 right-0 z-50 transition-all duration-300 bg-white/80 backdrop-blur-sm border-b {scrolled
+		? 'border-gray-200 shadow-sm'
+		: 'border-transparent'}"
 >
-	<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+	<div class="px-4 sm:px-6 lg:px-8">
 		<div class="flex h-16 items-center justify-between">
 			<!-- Logo -->
 			<a href="https://pub.wiki" class="flex items-center gap-2 font-bold text-xl">

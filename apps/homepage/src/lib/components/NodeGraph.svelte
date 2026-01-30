@@ -64,7 +64,7 @@
 
 <div class="relative w-full aspect-square max-w-lg mx-auto">
 	<!-- Background glow -->
-	<div class="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-pink-500/10 to-blue-500/10 rounded-3xl blur-2xl"></div>
+	<div class="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-green-500/10 rounded-3xl blur-2xl"></div>
 
 	<!-- SVG Canvas -->
 	<svg viewBox="0 0 500 420" class="w-full h-full relative z-10">
@@ -72,7 +72,7 @@
 			<!-- Gradient for connections -->
 			<linearGradient id="connectionGradient" x1="0%" y1="0%" x2="100%" y2="0%">
 				<stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.5" />
-				<stop offset="100%" stop-color="#ec4899" stop-opacity="0.5" />
+				<stop offset="100%" stop-color="#22c55e" stop-opacity="0.5" />
 			</linearGradient>
 
 			<!-- Glow filter -->

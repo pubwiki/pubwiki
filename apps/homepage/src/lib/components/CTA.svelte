@@ -23,13 +23,13 @@
 
 <section class="py-24 relative overflow-hidden" bind:this={container}>
 	<!-- Background -->
-	<div class="absolute inset-0 bg-gradient-to-br from-[#0d1117] via-[#161b22] to-[#0d1117]"></div>
+	<div class="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900"></div>
 
-	<!-- Decorative elements -->
+	<!-- Decorative elements (subtle slate tones) -->
 	<div class="absolute top-0 left-0 w-full h-full overflow-hidden">
-		<div class="absolute top-20 left-10 w-96 h-96 bg-purple-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float"></div>
-		<div class="absolute bottom-20 right-10 w-96 h-96 bg-pink-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float" style="animation-delay: 1s"></div>
-		<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float" style="animation-delay: 2s"></div>
+		<div class="absolute top-20 left-10 w-96 h-96 bg-slate-600 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float"></div>
+		<div class="absolute bottom-20 right-10 w-96 h-96 bg-slate-500 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float" style="animation-delay: 1s"></div>
+		<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-slate-700 rounded-full mix-blend-multiply filter blur-3xl opacity-10 animate-float" style="animation-delay: 2s"></div>
 	</div>
 
 	<!-- Grid pattern overlay -->
@@ -55,7 +55,7 @@
 			<!-- Heading -->
 			<h2 class="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-6">
 				Start Creating
-				<span class="block mt-2 bg-gradient-to-r from-purple-400 via-pink-400 to-purple-400 bg-clip-text text-transparent animate-gradient">
+				<span class="block mt-2 text-slate-300">
 					Your AI Story Today
 				</span>
 			</h2>
@@ -70,7 +70,7 @@
 			<div class="flex flex-col sm:flex-row gap-4 justify-center">
 				<a
 					href="https://studio.pub.wiki"
-					class="inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-semibold text-white rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 transition-all shadow-2xl shadow-purple-500/25 hover:shadow-purple-500/40 hover:-translate-y-0.5"
+					class="inline-flex items-center justify-center gap-2 px-8 py-4 text-lg font-semibold text-slate-900 rounded-xl bg-white hover:bg-slate-50 transition-all shadow-2xl hover:-translate-y-0.5"
 				>
 					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />

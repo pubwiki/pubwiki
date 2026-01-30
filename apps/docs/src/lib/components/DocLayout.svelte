@@ -18,7 +18,7 @@
 <div class="flex min-h-[calc(100vh-64px)] pt-16">
 	<!-- Sidebar -->
 	<aside
-		class="hidden lg:block w-[260px] shrink-0 border-r border-gray-200 bg-[#f6f8fa] overflow-y-auto sticky top-16 h-[calc(100vh-64px)]"
+		class="hidden lg:block w-65 shrink-0 border-r border-gray-200 bg-[#f6f8fa] overflow-y-auto sticky top-16 h-[calc(100vh-64px)]"
 	>
 		<nav class="p-4">
 			<Sidebar items={sidebarItems} />
@@ -27,7 +27,7 @@
 
 	<!-- Main Content -->
 	<main class="flex-1 min-w-0">
-		<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+		<div class="max-w-6xl mx-auto px-6 lg:px-12 py-8">
 			<div class="flex gap-8">
 				<!-- Article -->
 				<article class="flex-1 min-w-0">
