@@ -19,6 +19,8 @@ packages:
   - apps/hub
   - apps/studio
   - apps/sandbox
+  - apps/homepage
+  - apps/docs
   - services/hub
   - services/gamesave
 
