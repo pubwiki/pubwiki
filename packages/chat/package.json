@@ -1,6 +1,6 @@
 {
   "name": "@pubwiki/chat",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Core chat library with function calling, streaming, and message history support",
   "type": "module",
   "main": "./src/index.ts",
