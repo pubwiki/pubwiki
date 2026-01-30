@@ -12,6 +12,7 @@ import { LLMClient, type ResponseFormat } from '../llm/client'
 import { ToolRegistry } from '../llm/tools'
 import type { ChatMessage, ToolCall } from '../types/chat'
 import type { MessageBlock, ToolCallStatus, ReasoningDetail } from '../types/message'
+import { ReasoningConfig } from './pubchat'
 
 /**
  * Generate block ID
@@ -42,19 +43,6 @@ export interface CompletionSummary {
   totalToolCalls: number
   reasoning?: string
   reasoning_details?: ReasoningDetail[]
-}
-
-/**
- * Reasoning effort level for reasoning models
- */
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-
-/**
- * Reasoning configuration for reasoning models
- */
-export interface ReasoningConfig {
-  effort?: ReasoningEffort
-  summary?: 'auto' | 'concise' | 'detailed'
 }
 
 /**
