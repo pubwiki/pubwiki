@@ -53,11 +53,11 @@ function generateIndexTs(timestamp: string): string {
 // Re-export everything from sandbox-client
 export * from '@pubwiki/sandbox-client';
 
-// Re-export generated service types
-export * from './services';
+// Re-export generated service types (type-only export for .d.ts module)
+export type * from './services.d.ts';
 
 // Import for side-effect: extends ServiceMap via declaration merging
-import './services';
+import './services.d.ts';
 `;
 }
 
@@ -401,7 +401,7 @@ type ServiceId = keyof ServiceMap;
 ### 获取特定服务的输入/输出类型
 
 \`\`\`typescript
-import type { Services } from './services';
+import type { Services } from './services.d.ts';
 
 // 获取特定服务的输入类型
 type MyServiceInput = Services['my:service']['input'];

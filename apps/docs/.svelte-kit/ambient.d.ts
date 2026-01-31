@@ -52,8 +52,8 @@ declare module '$env/static/private' {
 	export const LMOD_DIR: string;
 	export const EDITOR: string;
 	export const PWD: string;
-	export const LOGNAME: string;
 	export const XDG_SESSION_DESKTOP: string;
+	export const LOGNAME: string;
 	export const XDG_SESSION_TYPE: string;
 	export const MODULESHOME: string;
 	export const MANPATH: string;
@@ -76,8 +76,8 @@ declare module '$env/static/private' {
 	export const XDG_CURRENT_DESKTOP: string;
 	export const npm_package_version: string;
 	export const WASMTIME_HOME: string;
-	export const PYTHONSTARTUP: string;
 	export const MEMORY_PRESSURE_WATCH: string;
+	export const PYTHONSTARTUP: string;
 	export const STARSHIP_SHELL: string;
 	export const npm_config_proxy: string;
 	export const LMOD_SETTARG_FULL_SUPPORT: string;
@@ -118,8 +118,8 @@ declare module '$env/static/private' {
 	export const npm_config_user_agent: string;
 	export const PNPM_SCRIPT_SRC_DIR: string;
 	export const npm_execpath: string;
-	export const CONDA_PYTHON_EXE: string;
 	export const FC_FONTATIONS: string;
+	export const CONDA_PYTHON_EXE: string;
 	export const LC_CTYPE: string;
 	export const XDG_RUNTIME_DIR: string;
 	export const NODE_PATH: string;
@@ -202,8 +202,8 @@ declare module '$env/dynamic/private' {
 		LMOD_DIR: string;
 		EDITOR: string;
 		PWD: string;
-		LOGNAME: string;
 		XDG_SESSION_DESKTOP: string;
+		LOGNAME: string;
 		XDG_SESSION_TYPE: string;
 		MODULESHOME: string;
 		MANPATH: string;
@@ -226,8 +226,8 @@ declare module '$env/dynamic/private' {
 		XDG_CURRENT_DESKTOP: string;
 		npm_package_version: string;
 		WASMTIME_HOME: string;
-		PYTHONSTARTUP: string;
 		MEMORY_PRESSURE_WATCH: string;
+		PYTHONSTARTUP: string;
 		STARSHIP_SHELL: string;
 		npm_config_proxy: string;
 		LMOD_SETTARG_FULL_SUPPORT: string;
@@ -268,8 +268,8 @@ declare module '$env/dynamic/private' {
 		npm_config_user_agent: string;
 		PNPM_SCRIPT_SRC_DIR: string;
 		npm_execpath: string;
-		CONDA_PYTHON_EXE: string;
 		FC_FONTATIONS: string;
+		CONDA_PYTHON_EXE: string;
 		LC_CTYPE: string;
 		XDG_RUNTIME_DIR: string;
 		NODE_PATH: string;

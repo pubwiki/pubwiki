@@ -170,6 +170,11 @@ catalogs:
       specifier: ^3.2.4
       version: 3.2.4
 
+patchedDependencies:
+  modern-monaco@0.3.7:
+    hash: fe1b045c96c8bd63ffe677c8346809dac26779666e34e7da9e098e3607b84aee
+    path: patches/modern-monaco@0.3.7.patch
+
 importers:
 
   .:
@@ -446,9 +451,6 @@ importers:
       '@lexical/utils':
         specifier: 'catalog:'
         version: 0.33.1
-      '@monaco-editor/loader':
-        specifier: ^1.7.0
-        version: 1.7.0
       '@pubwiki/api':
         specifier: workspace:*
         version: link:../../packages/api
@@ -521,9 +523,9 @@ importers:
       marked:
         specifier: ^17.0.1
         version: 17.0.1
-      monaco-editor:
-        specifier: ^0.55.1
-        version: 0.55.1
+      modern-monaco:
+        specifier: ^0.3.7
+        version: 0.3.7(patch_hash=fe1b045c96c8bd63ffe677c8346809dac26779666e34e7da9e098e3607b84aee)(typescript@5.9.3)
       n3:
         specifier: 'catalog:'
         version: 2.0.1
@@ -783,10 +785,6 @@ importers:
         version: 5.9.3
 
   packages/sandbox-client:
-    dependencies:
-      '@pubwiki/sandbox-service':
-        specifier: workspace:*
-        version: link:../sandbox-service
     devDependencies:
       typescript:
         specifier: 'catalog:'
@@ -843,6 +841,9 @@ importers:
 
   packages/sandbox-service:
     dependencies:
+      '@pubwiki/sandbox-client':
+        specifier: workspace:*
+        version: link:../sandbox-client
       capnweb:
         specifier: 'catalog:'
         version: 0.4.0
@@ -2118,9 +2119,6 @@ packages:
   '@lix-js/server-protocol-schema@0.1.1':
     resolution: {integrity: sha512-jBeALB6prAbtr5q4vTuxnRZZv1M2rKe8iNqRQhFJ4Tv7150unEa0vKyz0hs8Gl3fUGsWaNJBh3J8++fpbrpRBQ==}
 
-  '@monaco-editor/loader@1.7.0':
-    resolution: {integrity: sha512-gIwR1HrJrrx+vfyOhYmCZ0/JcWqG5kbfG7+d3f/C1LXk2EvzAbHSg3MQ5lO2sMlo9izoAZ04shohfKLVT6crVA==}
-
   '@noble/ciphers@2.1.1':
     resolution: {integrity: sha512-bysYuiVfhxNJuldNXlFEitTVdNnYUc+XNJZd7Qm2a5j1vZHgY+fazadNFWFaMK/2vye0JVlxV3gHmC0WDfAOQw==}
     engines: {node: '>= 20.19.0'}
@@ -2819,9 +2817,6 @@ packages:
   '@types/sparqljs@3.1.12':
     resolution: {integrity: sha512-zg/sdKKtYI0845wKPSuSgunyU1o/+7tRzMw85lHsf4p/0UbA6+65MXAyEtv1nkaqSqrq/bXm7+bqXas+Xo5dpQ==}
 
-  '@types/trusted-types@2.0.7':
-    resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
-
   '@types/unist@2.0.11':
     resolution: {integrity: sha512-CmBKiL6NNo/OqgmMn95Fk9Whlp2mtvIv+KNpQKN2F4SjvrEesubTRWGYSg+BnWZOnlCaSTU1sMpsBOzgbYhnsA==}
 
@@ -3465,9 +3460,6 @@ packages:
   diff@8.0.3:
     resolution: {integrity: sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ==}
     engines: {node: '>=0.3.1'}
-
-  dompurify@3.2.7:
-    resolution: {integrity: sha512-WhL/YuveyGXJaerVlMYGWhvQswa7myDG17P7Vu65EWC05o8vfeNbvNf4d/BOvH99+ZW+LlQsc1GDKMa1vNK6dw==}
 
   dotenv@16.6.1:
     resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
@@ -4270,11 +4262,6 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  marked@14.0.0:
-    resolution: {integrity: sha512-uIj4+faQ+MgHgwUW1l2PsPglZLOLOT1uErt06dAPtx2kjteLAkbsd/0FiYg/MGS+i7ZKLb7w2WClxHkzOOuryQ==}
-    engines: {node: '>= 18'}
-    hasBin: true
-
   marked@17.0.1:
     resolution: {integrity: sha512-boeBdiS0ghpWcSwoNm/jJBwdpFaMnZWRzjA6SkUMYb40SVaN1x7mmfGKp0jvexGcx+7y2La5zRZsYFZI6Qpypg==}
     engines: {node: '>= 20'}
@@ -4351,12 +4338,14 @@ packages:
   mkdirp-classic@0.5.3:
     resolution: {integrity: sha512-gKLcREMhtuZRwRAfqP3RFW+TK4JqApVBtOIftVgjuABpAtpxhPGaDcfvbhNvD0B8iD1oUr/txX35NjcaY6Ns/A==}
 
+  modern-monaco@0.3.7:
+    resolution: {integrity: sha512-YPpKf7wr7mXpcD3GqWGxGKJ9LllCJ7luQF07tTJ7TMLPBNyWDt1CqjUa2soY/Q1KgEJBG6Cu0RtoYDbFw/fVNg==}
+    peerDependencies:
+      typescript: '>= 5.0.0'
+
   module-error@1.0.2:
     resolution: {integrity: sha512-0yuvsqSCv8LbaOKhnsQ/T5JhyFlCYLPXK3U2sgV10zoKQwzs/MyfuQUOZQ1V/6OCOJsK/TRgNVrPuPDqtdMFtA==}
     engines: {node: '>=10'}
-
-  monaco-editor@0.55.1:
-    resolution: {integrity: sha512-jz4x+TJNFHwHtwuV9vA9rMujcZRb0CEilTEwG2rRSpe/A7Jdkuj8xPKttCgOh+v/lkHy7HsZ64oj+q3xoAFl9A==}
 
   mri@1.2.0:
     resolution: {integrity: sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA==}
@@ -4859,9 +4848,6 @@ packages:
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
-
-  state-local@1.0.7:
-    resolution: {integrity: sha512-HTEHMNieakEnoe33shBYcZ7NX83ACUjCu8c40iOGEZsngj9zRnkqS9j1pqQPXwobB0ZcVTk27REb7COQ0UR59w==}
 
   std-env@3.10.0:
     resolution: {integrity: sha512-5GS12FdOZNliM5mAOxFRg7Ir0pWz8MdpYm6AY6VPkGpbA7ZzmbzNcBJQ0GPvvyWgcY7QAhCgf9Uy89I03faLkg==}
@@ -6241,10 +6227,6 @@ snapshots:
 
   '@lix-js/server-protocol-schema@0.1.1': {}
 
-  '@monaco-editor/loader@1.7.0':
-    dependencies:
-      state-local: 1.0.7
-
   '@noble/ciphers@2.1.1': {}
 
   '@noble/hashes@2.0.1': {}
@@ -6889,9 +6871,6 @@ snapshots:
     dependencies:
       '@rdfjs/types': 2.0.1
 
-  '@types/trusted-types@2.0.7':
-    optional: true
-
   '@types/unist@2.0.11': {}
 
   '@types/unist@3.0.3': {}
@@ -7153,7 +7132,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vitest: 4.0.17(@types/node@25.0.3)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
+      vitest: 4.0.17(@types/node@22.19.5)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
 
   '@vitest/utils@3.2.4':
     dependencies:
@@ -7632,10 +7611,6 @@ snapshots:
   diff3@0.0.3: {}
 
   diff@8.0.3: {}
-
-  dompurify@3.2.7:
-    optionalDependencies:
-      '@types/trusted-types': 2.0.7
 
   dotenv@16.6.1: {}
 
@@ -8443,8 +8418,6 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  marked@14.0.0: {}
-
   marked@17.0.1: {}
 
   math-intrinsics@1.1.0: {}
@@ -8539,12 +8512,11 @@ snapshots:
   mkdirp-classic@0.5.3:
     optional: true
 
-  module-error@1.0.2: {}
-
-  monaco-editor@0.55.1:
+  modern-monaco@0.3.7(patch_hash=fe1b045c96c8bd63ffe677c8346809dac26779666e34e7da9e098e3607b84aee)(typescript@5.9.3):
     dependencies:
-      dompurify: 3.2.7
-      marked: 14.0.0
+      typescript: 5.9.3
+
+  module-error@1.0.2: {}
 
   mri@1.2.0: {}
 
@@ -9083,8 +9055,6 @@ snapshots:
       kysely: 0.27.6
 
   stackback@0.0.2: {}
-
-  state-local@1.0.7: {}
 
   std-env@3.10.0: {}
 

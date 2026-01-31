@@ -1348,6 +1348,7 @@
 	{#if vfsEditorState}
 		<VFSFileEditor
 			vfs={vfsEditorState.vfs}
+			nodeId={vfsEditorState.nodeId}
 			filePath={vfsEditorState.filePath}
 			onClose={handleCloseVfsEditor}
 		/>

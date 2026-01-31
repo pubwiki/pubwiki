@@ -12,7 +12,7 @@ import { LLMClient, type ResponseFormat } from '../llm/client'
 import { ToolRegistry } from '../llm/tools'
 import type { ChatMessage, ToolCall } from '../types/chat'
 import type { MessageBlock, ToolCallStatus, ReasoningDetail } from '../types/message'
-import { ReasoningConfig } from './pubchat'
+import type { ReasoningConfig } from './pubchat'
 
 /**
  * Generate block ID

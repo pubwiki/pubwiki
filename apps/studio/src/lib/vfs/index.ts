@@ -27,3 +27,5 @@ export {
   type VSCodeLinkStatus,
   type VSCodeLinkState
 } from './vscode-link.svelte';
+
+export { VfsMonacoAdapter } from './monaco-adapter';
