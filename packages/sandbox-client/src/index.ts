@@ -48,7 +48,10 @@ export { initSandboxClient, isSandboxEnvironment } from './init'
 export type {
   ISandboxClient,
   InitOptions,
-  UserInfo
+  UserInfo,
+  ServiceMap,
+  ServiceTypeEntry,
+  ITypedService
 } from './types'
 
 export { SANDBOX_CLIENT_KEY } from './types'

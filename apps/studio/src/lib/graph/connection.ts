@@ -77,6 +77,8 @@ export const HandleId = {
   LOADER_STATE: 'loader-state',
   /** Loader Node: Service output */
   LOADER_OUTPUT: 'loader-output',
+  /** Loader Node: Documentation VFS output */
+  LOADER_DOCS_OUTPUT: 'loader-docs-output',
   /** Generated Node: VFS output (for file creation/modification) */
   VFS_OUTPUT: 'vfs-output',
 } as const;
@@ -328,6 +330,13 @@ export const NodeRegistry: Record<string, NodeSpec> = {
         dataType: DataType.SERVICE,
         cardinality: Cardinality.MANY,
         colorClass: 'bg-purple-400',
+      },
+      {
+        id: HandleId.LOADER_DOCS_OUTPUT,
+        label: 'Docs Output',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.OPTIONAL,
+        colorClass: 'bg-indigo-400',
       },
     ],
     manualInput: true,

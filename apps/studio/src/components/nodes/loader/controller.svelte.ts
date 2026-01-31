@@ -12,13 +12,14 @@
  */
 
 import { tick } from 'svelte';
-import { type Node, type Edge } from '@xyflow/svelte';
+import { Position, type Node, type Edge } from '@xyflow/svelte';
 import type { 
 	LoaderNodeData, 
 	Mountpoint
 } from '$lib/types';
 import type { FlowNodeData } from '$lib/types/flow';
-import { nodeStore } from '$lib/persistence';
+import { createVFSNodeData } from '$lib/types';
+import { nodeStore, layoutStore } from '$lib/persistence';
 import { 
 	HandleId, 
 	isLoaderMountpointHandle, 
@@ -41,11 +42,13 @@ import type { RDFStore } from '@pubwiki/rdfstore';
 // Import loader backend abstraction
 import {
 	createBackendFromVfs,
+	generateServiceDocs,
 	type LoaderBackend,
 	type BackendConfig,
 	type ServiceCallResult,
 	type JsModuleRegistry,
-	type JsModuleDefinition
+	type JsModuleDefinition,
+	type GeneratedDocs
 } from '$lib/loader';
 
 // Import module factories
@@ -700,4 +703,129 @@ export function registerLoaderNodeHandlers(): () => void {
 		unsubConnection();
 		unsubEdgeDelete();
 	};
+}
+
+// ============================================================================
+// Documentation Generation
+// ============================================================================
+
+/**
+ * Result from documentation generation
+ */
+export interface DocsGenerationResult {
+	success: boolean;
+	vfsNodeId?: string;
+	error?: string;
+}
+
+/**
+ * Callbacks for docs generation operations
+ */
+export interface DocsGenerationCallbacks {
+	updateNodes: (updater: (nodes: Node<FlowNodeData>[]) => Node<FlowNodeData>[]) => void;
+	updateEdges: (updater: (edges: Edge[]) => Edge[]) => void;
+}
+
+/**
+ * Generate documentation for Loader services and create a VFS node
+ * 
+ * @param loaderId - The Loader node ID
+ * @param callbacks - Callbacks to update flow nodes and edges
+ * @param existingVfsNodeId - Optional existing VFS node ID to update instead of creating new
+ * @returns Result with success status and VFS node ID
+ */
+export async function generateDocs(
+	loaderId: string,
+	callbacks: DocsGenerationCallbacks,
+	existingVfsNodeId?: string
+): Promise<DocsGenerationResult> {
+	try {
+		// 1. Get services list
+		const services = await listServices(loaderId);
+		if (services.length === 0) {
+			return { success: false, error: 'No services registered' };
+		}
+
+		// 2. Generate documentation
+		const docs = generateServiceDocs(services);
+
+		let vfsNodeId: string;
+		let projectId: string;
+
+		if (existingVfsNodeId) {
+			// Update existing VFS node
+			const existingNodeData = nodeStore.get(existingVfsNodeId);
+			if (!existingNodeData || existingNodeData.type !== 'VFS') {
+				return { success: false, error: 'Existing VFS node not found' };
+			}
+			vfsNodeId = existingVfsNodeId;
+			projectId = (existingNodeData.content as { projectId: string }).projectId;
+		} else {
+			// 3. Create new VFS node
+			projectId = crypto.randomUUID();
+			const vfsNodeData = await createVFSNodeData(projectId, 'Service Docs');
+			nodeStore.create(vfsNodeData);
+			vfsNodeId = vfsNodeData.id;
+
+			// 4. Calculate position (to the right of Loader node)
+			const loaderLayout = layoutStore.get(loaderId);
+			const position = loaderLayout
+				? { x: loaderLayout.x + 300, y: loaderLayout.y + 50 }
+				: { x: 300, y: 0 };
+			layoutStore.add(vfsNodeId, position.x, position.y);
+
+			// 5. Create flow node
+			const vfsFlowNode: Node<FlowNodeData> = {
+				id: vfsNodeId,
+				type: 'VFS',
+				data: { id: vfsNodeId, type: 'VFS' },
+				position,
+				sourcePosition: Position.Right,
+				targetPosition: Position.Left,
+			};
+
+			// 6. Create edge
+			const vfsEdge: Edge = {
+				id: `e-${loaderId}-${vfsNodeId}-docs`,
+				source: loaderId,
+				sourceHandle: HandleId.LOADER_DOCS_OUTPUT,
+				target: vfsNodeId,
+				targetHandle: HandleId.DEFAULT,
+			};
+
+			// 7. Add to flow
+			callbacks.updateNodes(nodes => [...nodes, vfsFlowNode]);
+			callbacks.updateEdges(edges => [...edges, vfsEdge]);
+		}
+
+		// 8. Write docs to VFS (create or overwrite)
+		const vfs = await getNodeVfs(projectId, vfsNodeId);
+		
+		// Use updateFile to overwrite existing files, or createFile for new ones
+		const writeOrCreate = async (path: string, content: string) => {
+			try {
+				// Try to check if file exists by reading it first
+				await vfs.readFile(path);
+				// File exists, update it
+				await vfs.updateFile(path, content);
+			} catch {
+				// File doesn't exist, create it
+				await vfs.createFile(path, content);
+			}
+		};
+		
+		await writeOrCreate('/index.ts', docs.indexTs);
+		await writeOrCreate('/services.d.ts', docs.servicesDts);
+		await writeOrCreate('/services.md', docs.servicesMd);
+		await writeOrCreate('/agents.md', docs.agentsMd);
+
+		console.log(`[LoaderController] ${existingVfsNodeId ? 'Regenerated' : 'Generated'} docs for ${loaderId}, VFS: ${vfsNodeId}`);
+		return { success: true, vfsNodeId };
+	} catch (error) {
+		console.error('[LoaderController] Failed to generate docs:', error);
+		return {
+			success: false,
+			error: error instanceof Error ? error.message : String(error)
+		};
+	}
 }

@@ -40,8 +40,11 @@
 		findMountedVfsNodes,
 		findStateNode,
 		onLoaderReload,
-		getLoaderBackendType
+		getLoaderBackendType,
+		generateDocs,
+		type DocsGenerationCallbacks
 	} from './controller.svelte';
+	import { HandleId as GraphHandleId } from '$lib/graph';
 	import { createPubWikiContext } from '$lib/loader/modules';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
@@ -148,6 +151,21 @@
 		)
 	);
 
+	/** Check if Docs VFS is connected */
+	const hasDocsVfs = $derived(
+		allEdges.current.some(
+			e => e.source === id && e.sourceHandle === GraphHandleId.LOADER_DOCS_OUTPUT
+		)
+	);
+
+	/** Get the Docs VFS node ID if it exists */
+	const docsVfsNodeId = $derived.by(() => {
+		const edge = allEdges.current.find(
+			e => e.source === id && e.sourceHandle === GraphHandleId.LOADER_DOCS_OUTPUT
+		);
+		return edge?.target;
+	});
+
 	/** Map of mountpoint ID -> source node ID */
 	const mountpointConnections = $derived.by(() => {
 		return new Map(
@@ -214,6 +232,9 @@
 
 	/** Track whether a reload is in progress (to show loading UI while keeping old data) */
 	let isReloading = $state(false);
+
+	/** Track whether docs generation is in progress */
+	let isGeneratingDocs = $state(false);
 
 	/** Track whether load has been attempted (prevents infinite loop when services is empty) */
 	let hasLoaded = $state(false);
@@ -444,6 +465,35 @@
 			isReloading = false;
 		}
 	}
+
+	async function handleGenerateDocs() {
+		if (isGeneratingDocs) return;
+		
+		isGeneratingDocs = true;
+		
+		try {
+			const callbacks: DocsGenerationCallbacks = {
+				updateNodes: ctx.updateNodes,
+				updateEdges: ctx.updateEdges
+			};
+			
+			// Pass existing VFS node ID if regenerating
+			const result = await generateDocs(id, callbacks, docsVfsNodeId);
+			
+			if (!result.success) {
+				console.error('[LoaderNode] Failed to generate docs:', result.error);
+				error = result.error ?? 'Failed to generate docs';
+			} else {
+				// Update node internals to show new handle
+				updateNodeInternals(id);
+			}
+		} catch (e) {
+			console.error('[LoaderNode] Error generating docs:', e);
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			isGeneratingDocs = false;
+		}
+	}
 </script>
 
 <BaseNode
@@ -502,7 +552,7 @@
 				</div>
 			{:else}
 				<!-- Status Display -->
-				<div class="flex items-center">
+				<div class="flex items-center justify-between">
 					{#if isReady}
 						<div class="flex items-center gap-1.5 text-green-600">
 							<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -516,6 +566,29 @@
 								</svg>
 							{/if}
 						</div>
+						<!-- Generate Docs Button (or Regenerate if already exists) -->
+						<button
+							class="nodrag flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded transition-colors disabled:opacity-50 {hasDocsVfs ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}"
+							onclick={handleGenerateDocs}
+							disabled={isGeneratingDocs}
+							title={hasDocsVfs ? "Regenerate TypeScript type definitions and documentation" : "Generate TypeScript type definitions and documentation"}
+						>
+							{#if isGeneratingDocs}
+								<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+								</svg>
+							{:else if hasDocsVfs}
+								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+								</svg>
+							{:else}
+								<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+								</svg>
+							{/if}
+							{hasDocsVfs ? 'Regen' : 'Docs'}
+						</button>
 					{:else if hasError}
 						<div class="text-sm text-red-500">Load failed</div>
 					{:else if !backendConnected}
@@ -566,7 +639,7 @@
 	{/snippet}
 
 	{#snippet rightHandles()}
-		<!-- Output Handle -->
+		<!-- Main Output Handle -->
 		<Handle
 			type="source"
 			position={Position.Right}
@@ -574,6 +647,17 @@
 			{isConnectable}
 			class="w-3! h-3! bg-purple-500! border-2! border-white!"
 		/>
+		<!-- Docs VFS Output Handle (shown only when docs VFS exists) -->
+		{#if hasDocsVfs}
+			<Handle
+				type="source"
+				position={Position.Right}
+				id={GraphHandleId.LOADER_DOCS_OUTPUT}
+				{isConnectable}
+				class="w-3! h-3! bg-blue-500! border-2! border-white!"
+				style="top: 70%;"
+			/>
+		{/if}
 	{/snippet}
 </BaseNode>
 

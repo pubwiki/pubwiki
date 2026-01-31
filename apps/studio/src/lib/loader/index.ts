@@ -47,3 +47,9 @@ export {
 	type LLMModuleConfig,
 	type PubWikiModuleContext
 } from './modules';
+
+// Export documentation generator
+export {
+	generateServiceDocs,
+	type GeneratedDocs
+} from './docs-generator';
