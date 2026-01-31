@@ -51,11 +51,8 @@ export type {
   UserInfo,
   ServiceMap,
   ServiceTypeEntry,
-  ITypedService
+  ITypedService,
+  ICustomService,
 } from './types'
 
 export { SANDBOX_CLIENT_KEY } from './types'
-
-// Re-export useful types from sandbox-service
-export type { RpcStub, IHmrService, HmrUpdate } from '@pubwiki/sandbox-service'
-

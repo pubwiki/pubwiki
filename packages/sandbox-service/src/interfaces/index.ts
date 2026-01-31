@@ -12,34 +12,11 @@ export * from './vfs-service'
 export * from './hmr-service'
 export * from './custom-service'
 
-import type { IHmrService } from "./hmr-service"
-import type { ICustomService, ServiceDefinition } from "./custom-service"
+// Re-export UserInfo from sandbox-client
+export type { UserInfo } from '@pubwiki/sandbox-client'
 
-/**
- * User information for play mode
- */
-export interface UserInfo {
-    /** Whether the user is logged in */
-    isLoggedIn: boolean
-    
-    /** User ID (null if not logged in) */
-    userId: string | null
-    
-    /** Username or display name (null if not logged in) */
-    username: string | null
-    
-    /** Save ID that the user loaded from (if loading from someone else's save) */
-    sourceSaveId: string | null
-    
-    /** Checkpoint ID that the user loaded from */
-    sourceCheckpointId: string | null
-    
-    /** User's own save ID (created when loading from cloud) */
-    userSaveId: string | null
-    
-    /** User's own starting checkpoint ID */
-    userCheckpointId: string | null
-}
+import type { IHmrService } from "./hmr-service"
+import type { ICustomService } from "./custom-service"
 
 /**
  * Main service interface for sandbox-to-main communication
@@ -63,11 +40,4 @@ export interface SandboxMainService {
      * @returns The typed service interface, or undefined if not registered
      */
     getService(id: string): ICustomService | undefined
-
-    /**
-     * List all registered custom service definitions
-     * 
-     * @returns Array of service definitions including JSON Schema for inputs/outputs
-     */
-    listServices(): Promise<ServiceDefinition[]>
 }

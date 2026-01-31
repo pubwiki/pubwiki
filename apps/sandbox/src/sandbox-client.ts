@@ -7,7 +7,7 @@
  * not working correctly when accessed across iframes.
  */
 
-import { ICustomService, RpcStub, SandboxMainService, ServiceDefinition, UserInfo } from '@pubwiki/sandbox-service'
+import { ICustomService, RpcStub, SandboxMainService, UserInfo } from '@pubwiki/sandbox-service'
 import { RpcTarget } from '@pubwiki/sandbox-service'
 import type { ISandboxClient } from '@pubwiki/sandbox-client'
 
@@ -147,10 +147,6 @@ export class SandboxClient implements ISandboxClient {
           const callback = new RpcStub(on)
           console.log("[SandboxClient] streaming service with input", input)
           await rpcService.stream!(input, callback)
-        },
-        
-        async getDefinition() {
-          return await rpcService.getDefinition()
         }
       }
     } else {
@@ -161,25 +157,8 @@ export class SandboxClient implements ISandboxClient {
         async call(inputs) {
           const input = cloneWithRpcStubs(inputs)
           return await rpcService.call(input)
-        },
-        
-        async getDefinition() {
-          return await rpcService.getDefinition()
         }
       }
-    }
-  }
-
-  /**
-   * List all available custom service definitions
-   * 
-   * @returns Array of service definitions with JSON Schema
-   */
-  async listServices(): Promise<ServiceDefinition[]> {
-    try {
-      return await this.session.listServices()
-    } catch {
-      return []
     }
   }
 
@@ -189,7 +168,8 @@ export class SandboxClient implements ISandboxClient {
    * @param serviceId - The service identifier to check
    */
   async hasService(serviceId: string): Promise<boolean> {
-    const services = await this.listServices()
-    return services.some(s => s.identifier === serviceId)
+    // Try to get the service, if it exists it's available
+    const service = this.session.getService(serviceId)
+    return service !== undefined
   }
 }

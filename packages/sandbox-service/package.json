@@ -26,6 +26,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@pubwiki/sandbox-client": "workspace:*",
     "capnweb": "catalog:"
   },
   "devDependencies": {

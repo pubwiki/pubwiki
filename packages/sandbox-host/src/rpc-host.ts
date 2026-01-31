@@ -16,7 +16,7 @@ import type {
   CustomServiceFactory,
   ICustomService
 } from './types'
-import type { SandboxMainService, ServiceDefinition } from '@pubwiki/sandbox-service'
+import type { SandboxMainService } from '@pubwiki/sandbox-service'
 export type { MainRpcHost, VfsRpcHost } from './types'
 import type { Vfs } from '@pubwiki/vfs'
 import { VfsServiceImpl, type VfsServiceConfig } from './services/vfs-service'
@@ -164,22 +164,6 @@ class MainRpcServicesBase extends RpcTarget implements SandboxMainService {
    */
   getService(id: string): ICustomService | undefined {
     return this.customServicesMap.get(id)
-  }
-
-  /**
-   * List all registered custom service definitions
-   */
-  async listServices(): Promise<ServiceDefinition[]> {
-    const definitions: ServiceDefinition[] = []
-    for (const [_id, service] of this.customServicesMap) {
-      try {
-        const def = await service.getDefinition()
-        definitions.push(def)
-      } catch (e) {
-        console.error(`[MainRpcServices] Failed to get definition for service:`, e)
-      }
-    }
-    return definitions
   }
 
   /**

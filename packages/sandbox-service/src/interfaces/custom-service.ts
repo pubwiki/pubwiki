@@ -102,12 +102,6 @@ export interface ICustomService {
     ): Promise<void>
     
     /**
-     * Get the service definition including JSON Schema for inputs/outputs
-     * @returns Service definition with metadata and schemas
-     */
-    getDefinition(): ServiceDefinition
-    
-    /**
      * Check if this is a streaming service
      * Returns true if the service returns an iterator function
      */
