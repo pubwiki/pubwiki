@@ -713,7 +713,7 @@
 		class="w-full h-full border-0"
 		class:opacity-0={loadingState.stage !== 'ready'}
 		class:pointer-events-none={loadingState.stage !== 'ready'}
-		sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+		sandbox="allow-downloads allow-scripts allow-same-origin allow-forms allow-popups"
 		allow="fullscreen; clipboard-read; clipboard-write"
 		title="Game"
 	></iframe>

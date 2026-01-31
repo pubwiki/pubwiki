@@ -15,7 +15,7 @@ export * from '../helpers/fixtures'
 export function createRealIframe(): HTMLIFrameElement {
   const iframe = document.createElement('iframe')
   iframe.style.display = 'none'
-  iframe.sandbox.add('allow-scripts', 'allow-same-origin')
+  iframe.sandbox.add('allow-downloads', 'allow-scripts', 'allow-same-origin')
   document.body.appendChild(iframe)
   return iframe
 }
