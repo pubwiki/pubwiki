@@ -353,7 +353,7 @@
 				bind:this={iframeRef}
 				src={sandboxUrl}
 				class="absolute inset-0 w-full h-full border-0 {isLoading || error ? 'invisible' : 'visible'}"
-				sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+				sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
 				allow="clipboard-read; clipboard-write"
 				title={m.studio_node_sandbox_preview()}
 			></iframe>
