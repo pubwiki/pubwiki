@@ -98,7 +98,7 @@ export interface ICustomService {
      */
     stream?(
         inputs: Record<string, unknown>,
-        on: (value: unknown) => Promise<void> | void
+        on: (value: Record<string, unknown>) => Promise<void> | void
     ): Promise<void>
     
     /**

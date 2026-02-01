@@ -169,12 +169,16 @@ export interface ISandboxClient {
    * // and returns the correct output type
    * ```
    */
-  getService<K extends string>(
+  getService<K extends keyof ServiceMap>(
     serviceId: K
   ): Promise<
-    K extends keyof ServiceMap
-      ? ITypedService<ServiceMap[K]['inputs'], ServiceMap[K]['outputs']>
-      : ITypedService<Record<string, unknown>, Record<string, unknown>>
+    ITypedService<ServiceMap[K]['inputs'], ServiceMap[K]['outputs']>
+  >
+
+  getService(
+    serviceId: string
+  ): Promise<
+    ITypedService<Record<string, unknown>, Record<string, unknown>>
   >
 
   /**
