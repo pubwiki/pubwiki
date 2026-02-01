@@ -31,13 +31,13 @@ import {
   LoaderContent,
   StateContent,
   restoreContent,
-  type Mountpoint,
   type NodeContent,
-  type VfsRef
+  type VfsRef,
+  type VfsMountConfig
 } from './content'
 
 // Re-export content types and classes for external use
-export type { Mountpoint, NodeContent, VfsRef }
+export type { NodeContent, VfsRef, VfsMountConfig }
 export {
   InputContent,
   PromptContent,
@@ -102,7 +102,7 @@ export interface BaseNodeData<T extends NodeContent> {
 
 /**
  * Input node data - represents user input that triggered generation
- * Content contains: text (user input) and mountpoints (VFS mount configuration)
+ * Content contains: blocks (user input text and reftags), generationConfig
  */
 export interface InputNodeData extends BaseNodeData<InputContent> {
   type: 'INPUT'
@@ -148,7 +148,7 @@ export interface SandboxNodeData extends BaseNodeData<SandboxContent> {
 
 /**
  * Loader node data - Lua VM service executor
- * Content contains: mountpoints
+ * Content is empty (asset VFS mounts are managed via VFSContent.mounts array)
  */
 export interface LoaderNodeData extends BaseNodeData<LoaderContent> {
   type: 'LOADER'
@@ -177,8 +177,7 @@ export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData 
 export async function createInputNodeData(
   text: string,
   parents: NodeRef[] = [],
-  name: string = '',
-  mountpoints: Mountpoint[] = []
+  name: string = ''
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
   const commit = await generateCommitHash(text)
@@ -191,7 +190,7 @@ export async function createInputNodeData(
     commit,
     snapshotRefs: [],
     parents,
-    content: new InputContent(blocks, mountpoints)
+    content: new InputContent(blocks)
   }
 }
 
@@ -245,6 +244,9 @@ export async function createGeneratedNodeData(
 
 /**
  * Create a new VFS node data object
+ * 
+ * @param projectId - The project ID for the VFS
+ * @param name - Display name shown on the node (node-data.name), also used as the VFS identifier
  */
 export async function createVFSNodeData(
   projectId: string,
@@ -291,7 +293,7 @@ export async function createLoaderNodeData(
   name: string = 'Services'
 ): Promise<LoaderNodeData> {
   const id = crypto.randomUUID()
-  const content = new LoaderContent([])
+  const content = new LoaderContent()
   const commit = await generateCommitHash(content.serialize())
   return {
     id,

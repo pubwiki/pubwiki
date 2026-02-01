@@ -483,6 +483,7 @@ export class Vfs<P extends VfsProvider = VfsProvider> {
       parentPath,
       createdAt: stat.createdAt.toISOString(),
       updatedAt: stat.updatedAt.toISOString(),
+      mountedId: stat.mountedId,
     }
   }
 

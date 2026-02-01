@@ -14,9 +14,9 @@ export type {
   LoaderNodeData,
   StateNodeData,
   StudioNodeData,
-  Mountpoint,
   NodeContent,
-  VfsRef
+  VfsRef,
+  VfsMountConfig
 } from './node-data';
 
 export {

@@ -4,7 +4,7 @@
 	 * 
 	 * Features:
 	 * - Backend VFS handle for init.lua and service implementations
-	 * - Dynamic mountpoint handles for asset VFS
+	 * - Asset VFS handle for mounting additional VFS nodes
 	 * - Auto-loads when backend VFS is connected
 	 * - Displays registered services list
 	 * - Service output handle for connecting to Sandbox nodes
@@ -23,17 +23,8 @@
 	import BaseNode from '../BaseNode.svelte';
 	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
+	import { HandleId } from '$lib/graph';
 	import { 
-		HandleId,
-		createLoaderMountpointHandleId, 
-		isLoaderMountpointHandle, 
-		getLoaderMountpointId 
-	} from '$lib/graph';
-	import { 
-		getEditingMountpoint, 
-		setEditingMountpoint, 
-		updateMountpointPath,
-		validateMountpointPath,
 		initializeLoader,
 		destroyLoader,
 		findBackendVfsNode,
@@ -44,7 +35,6 @@
 		generateDocs,
 		type DocsGenerationCallbacks
 	} from './controller.svelte';
-	import { HandleId as GraphHandleId } from '$lib/graph';
 	import { createPubWikiContext } from '$lib/loader/modules';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
@@ -98,27 +88,6 @@
 		handle: 'bg-indigo-300'
 	};
 
-	const MOUNT_TAG_CONNECTED: HandleColorScheme = {
-		bg: '#eef2ff',
-		border: '#a5b4fc',
-		text: 'text-indigo-600',
-		handle: 'bg-indigo-500'
-	};
-
-	const MOUNT_TAG_DISCONNECTED: HandleColorScheme = {
-		bg: '#f5f3ff',
-		border: '#c7d2fe',
-		text: 'text-indigo-400',
-		handle: 'bg-indigo-300'
-	};
-
-	const ADD_MOUNT_COLOR: HandleColorScheme = {
-		bg: '#e0e7ff',
-		border: '#a5b4fc',
-		text: 'text-indigo-500',
-		handle: 'bg-indigo-400'
-	};
-
 	const STATE_CONNECTED: HandleColorScheme = {
 		bg: '#ccfbf1',
 		border: '#14b8a6',
@@ -154,31 +123,16 @@
 	/** Check if Docs VFS is connected */
 	const hasDocsVfs = $derived(
 		allEdges.current.some(
-			e => e.source === id && e.sourceHandle === GraphHandleId.LOADER_DOCS_OUTPUT
+			e => e.source === id && e.sourceHandle === HandleId.LOADER_DOCS_OUTPUT
 		)
 	);
 
 	/** Get the Docs VFS node ID if it exists */
 	const docsVfsNodeId = $derived.by(() => {
 		const edge = allEdges.current.find(
-			e => e.source === id && e.sourceHandle === GraphHandleId.LOADER_DOCS_OUTPUT
+			e => e.source === id && e.sourceHandle === HandleId.LOADER_DOCS_OUTPUT
 		);
 		return edge?.target;
-	});
-
-	/** Map of mountpoint ID -> source node ID */
-	const mountpointConnections = $derived.by(() => {
-		return new Map(
-			allEdges.current
-				.filter(e => e.target === id && isLoaderMountpointHandle(e.targetHandle))
-				.map(e => [getLoaderMountpointId(e.targetHandle!), e.source])
-		);
-	});
-
-	/** Check if we're editing a mountpoint on this node */
-	const editingMountpointId = $derived.by(() => {
-		const editing = getEditingMountpoint();
-		return editing?.nodeId === id ? editing.mountpointId : null;
 	});
 
 	/** Backend handle definition */
@@ -199,23 +153,8 @@
 		disconnectedColor: STATE_DISCONNECTED
 	});
 
-	/** Mountpoint handles from nodeData.content.mountpoints */
-	const mountpointHandles = $derived.by(() => {
-		const mounts = nodeData?.content?.mountpoints ?? [];
-		return mounts.map((mp): TaggedHandle => ({
-			id: createLoaderMountpointHandleId(mp.id),
-			label: mp.path,
-			isConnected: mountpointConnections.has(mp.id),
-			connectedColor: MOUNT_TAG_CONNECTED,
-			disconnectedColor: MOUNT_TAG_DISCONNECTED,
-			isEditing: mp.id === editingMountpointId,
-			editable: true,
-			data: { mountpointId: mp.id }
-		}));
-	});
-
 	/** All left handles */
-	const allHandles = $derived([backendHandle, stateHandle, ...mountpointHandles]);
+	const allHandles = $derived([backendHandle, stateHandle]);
 
 	/** Whether there's an error */
 	const hasError = $derived(error !== null);
@@ -245,12 +184,6 @@
 	// ============================================================================
 	// Effects
 	// ============================================================================
-
-	$effect(() => {
-		// Update node internals when mountpoints change
-		nodeData?.mountpoints;
-		updateNodeInternals(id);
-	});
 
 	// Auto-load when backend is connected and not already loaded
 	$effect(() => {
@@ -311,8 +244,11 @@
 			e => e.target === id && e.targetHandle === HandleId.LOADER_STATE
 		)?.source ?? '';
 		
-		const mountVfsIds = Array.from(mountpointConnections.values()).sort().join(',');
-		const currentIds = `${backendVfsId}|${stateNodeId}|${mountVfsIds}`;
+		// Asset VFS connections are now managed via the LOADER_ASSET_VFS handle
+		const assetVfsId = allEdges.current.find(
+			e => e.target === id && e.targetHandle === HandleId.LOADER_ASSET_VFS
+		)?.source ?? '';
+		const currentIds = `${backendVfsId}|${stateNodeId}|${assetVfsId}`;
 		
 		// If connections changed and we have previously loaded
 		if (lastConnectedIds && currentIds !== lastConnectedIds && hasLoaded) {
@@ -333,43 +269,6 @@
 	// ============================================================================
 	// Event Handlers
 	// ============================================================================
-
-	function handleMountpointLabelChange(handleId: string, _oldLabel: string, newLabel: string, handleData?: Record<string, unknown>) {
-		let validPath = newLabel.trim();
-		if (!validPath.startsWith('/')) {
-			validPath = '/' + validPath;
-		}
-		
-		const mountpointId = handleData?.mountpointId as string | undefined;
-		if (!mountpointId) {
-			console.warn('Missing mountpointId in handle data');
-			return;
-		}
-		
-		// updateMountpointPath now uses nodeStore directly
-		updateMountpointPath(
-			id,
-			mountpointId,
-			validPath
-		);
-	}
-
-	function handleMountpointEditComplete(_handleId: string) {
-		setEditingMountpoint(null);
-	}
-	
-	function handleMountpointValidation(_handleId: string, label: string, handleData?: Record<string, unknown>): string | null {
-		const existingMountpoints = nodeData?.content?.mountpoints ?? [];
-		const currentMountpointId = handleData?.mountpointId as string | undefined;
-		return validateMountpointPath(label, existingMountpoints, currentMountpointId);
-	}
-
-	function handleMountpointStartEdit(_handleId: string, handleData?: Record<string, unknown>) {
-		const mountpointId = handleData?.mountpointId as string | undefined;
-		if (mountpointId) {
-			setEditingMountpoint({ nodeId: id, mountpointId });
-		}
-	}
 
 	async function handleLoad() {
 		if (isLoading || hasLoaded) return;
@@ -513,15 +412,6 @@
 			handleType="target"
 			position="left"
 			nodeOverlap={24}
-			addHandle={{
-				id: HandleId.LOADER_ADD_MOUNT,
-				label: 'mount',
-				color: ADD_MOUNT_COLOR
-			}}
-			onLabelChange={handleMountpointLabelChange}
-			onEditComplete={handleMountpointEditComplete}
-			validateLabel={handleMountpointValidation}
-			onStartEdit={handleMountpointStartEdit}
 		/>
 	{/snippet}
 
@@ -652,7 +542,7 @@
 			<Handle
 				type="source"
 				position={Position.Right}
-				id={GraphHandleId.LOADER_DOCS_OUTPUT}
+				id={HandleId.LOADER_DOCS_OUTPUT}
 				{isConnectable}
 				class="w-3! h-3! bg-blue-500! border-2! border-white!"
 				style="top: 70%;"

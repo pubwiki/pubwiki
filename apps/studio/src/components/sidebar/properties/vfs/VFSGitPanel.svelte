@@ -6,7 +6,8 @@
 	 */
 	import { onDestroy } from 'svelte';
 	import type { VFSNodeData } from '$lib/types';
-	import { getNodeVfs, type VersionedVfs } from '$lib/vfs';
+	import { getNodeVfs, type NodeVfs } from '$lib/vfs';
+	import { syncMountsToSubmodules, updateSubmoduleCommits } from '$lib/vfs/submodule';
 	import { getVfsController, releaseVfsController, type VfsController } from '../../../nodes/vfs/controller.svelte';
 	import type { VfsCommit } from '@pubwiki/vfs';
 	import * as m from '$lib/paraglide/messages';
@@ -27,7 +28,7 @@
 	// ============================================================================
 
 	let controller = $state<VfsController | null>(null);
-	let vfs = $state<VersionedVfs | null>(null);
+	let vfs = $state<NodeVfs | null>(null);
 	let changedFiles = $state<Array<{
 		path: string;
 		status: 'added' | 'modified' | 'deleted' | 'untracked';
@@ -211,6 +212,16 @@
 
 		isCommitting = true;
 		try {
+			// Sync mount configurations to git submodules (cleanup stale entries)
+			await syncMountsToSubmodules(vfs, nodeId);
+			
+			// Update all submodule commit references to latest HEAD
+			await updateSubmoduleCommits(vfs, nodeId, async (sourceNodeId) => {
+				// Get the source VFS using the same project ID
+				return await getNodeVfs(data.content.projectId, sourceNodeId);
+			});
+			
+			// Now commit with submodules properly configured
 			await vfs.commit(commitMessage.trim());
 			commitMessage = '';
 			await refreshStatus();

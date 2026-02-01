@@ -12,18 +12,6 @@ import { blocksToContent, type MessageBlock } from '@pubwiki/chat'
 import type { NodeRef } from '../version'
 
 // ============================================================================
-// Shared Types
-// ============================================================================
-
-/**
- * Mountpoint definition with stable ID for handle identification
- */
-export interface Mountpoint {
-  id: string
-  path: string
-}
-
-// ============================================================================
 // NodeContent Interface
 // ============================================================================
 
@@ -76,7 +64,6 @@ export interface InputGenerationConfig {
 export class InputContent implements NodeContent {
   constructor(
     public blocks: ContentBlock[] = [],
-    public mountpoints: Mountpoint[] = [],
     public generationConfig: InputGenerationConfig = {}
   ) {}
 
@@ -91,61 +78,29 @@ export class InputContent implements NodeContent {
   clone(): InputContent {
     return new InputContent(
       structuredClone(this.blocks),
-      this.mountpoints.map(mp => ({ ...mp })),
       { ...this.generationConfig }
     )
   }
 
   /** Create a copy with updated blocks */
   withBlocks(blocks: ContentBlock[]): InputContent {
-    return new InputContent(blocks, this.mountpoints.map(mp => ({ ...mp })), { ...this.generationConfig })
-  }
-
-  /** Create a copy with updated mountpoints */
-  withMountpoints(mountpoints: Mountpoint[]): InputContent {
-    return new InputContent(this.blocks, mountpoints, { ...this.generationConfig })
+    return new InputContent(blocks, { ...this.generationConfig })
   }
 
   /** Create a copy with updated generation config */
   withGenerationConfig(config: Partial<InputGenerationConfig>): InputContent {
     return new InputContent(
       structuredClone(this.blocks),
-      this.mountpoints.map(mp => ({ ...mp })),
       { ...this.generationConfig, ...config }
     )
   }
 
-  /** Create a copy with a new mountpoint added */
-  addMountpoint(mountpoint: Mountpoint): InputContent {
-    return new InputContent(structuredClone(this.blocks), [...this.mountpoints, mountpoint], { ...this.generationConfig })
-  }
-
-  /** Create a copy with a mountpoint removed */
-  removeMountpoint(mountpointId: string): InputContent {
-    return new InputContent(
-      structuredClone(this.blocks), 
-      this.mountpoints.filter(mp => mp.id !== mountpointId),
-      { ...this.generationConfig }
-    )
-  }
-
-  /** Create a copy with a mountpoint's path updated */
-  updateMountpointPath(mountpointId: string, newPath: string): InputContent {
-    return new InputContent(
-      structuredClone(this.blocks),
-      this.mountpoints.map(mp => 
-        mp.id === mountpointId ? { ...mp, path: newPath } : mp
-      ),
-      { ...this.generationConfig }
-    )
-  }
-
   toJSON() {
-    return { blocks: this.blocks, mountpoints: this.mountpoints, generationConfig: this.generationConfig }
+    return { blocks: this.blocks, generationConfig: this.generationConfig }
   }
 
-  static fromJSON(data: { blocks: ContentBlock[]; mountpoints?: Mountpoint[]; generationConfig?: InputGenerationConfig }): InputContent {
-    return new InputContent(data.blocks ?? [], data.mountpoints ?? [], data.generationConfig ?? {})
+  static fromJSON(data: { blocks: ContentBlock[]; generationConfig?: InputGenerationConfig }): InputContent {
+    return new InputContent(data.blocks ?? [], data.generationConfig ?? {})
   }
 }
 
@@ -357,29 +312,101 @@ export class GeneratedContent implements NodeContent {
 }
 
 /**
+ * VFS mount configuration - represents a mounted child VFS
+ */
+export interface VfsMountConfig {
+  /** Unique mount ID for tracking */
+  id: string
+  /** Source VFS Node ID */
+  sourceNodeId: string
+  /** Mount path in the target VFS (where the source VFS will appear) */
+  mountPath: string
+  /** Source VFS commit hash (for version tracking) */
+  sourceCommit?: string
+}
+
+/**
  * VFS node content - virtual file system reference
+ * 
+ * Includes:
+ * - projectId: Project this VFS belongs to
+ * - mounts: Child VFS mounts (VFS-to-VFS mounting)
  */
 export class VFSContent implements NodeContent {
-  constructor(public projectId: string) {}
+  constructor(
+    public projectId: string,
+    public mounts: VfsMountConfig[] = []
+  ) {}
 
   getText(): string {
     return '' // VFS has no text representation
   }
 
   serialize(): string {
-    return this.projectId
+    return JSON.stringify({
+      projectId: this.projectId,
+      mounts: this.mounts
+    })
   }
 
   clone(): VFSContent {
-    return new VFSContent(this.projectId)
+    return new VFSContent(
+      this.projectId,
+      structuredClone(this.mounts)
+    )
+  }
+
+  /** Create a copy with a new mount added */
+  addMount(mount: VfsMountConfig): VFSContent {
+    return new VFSContent(
+      this.projectId,
+      [...this.mounts, mount]
+    )
+  }
+
+  /** Create a copy with a mount removed */
+  removeMount(mountId: string): VFSContent {
+    return new VFSContent(
+      this.projectId,
+      this.mounts.filter(m => m.id !== mountId)
+    )
+  }
+
+  /** Create a copy with a mount's path updated */
+  updateMountPath(mountId: string, newPath: string): VFSContent {
+    return new VFSContent(
+      this.projectId,
+      this.mounts.map(m =>
+        m.id === mountId ? { ...m, mountPath: newPath } : m
+      )
+    )
+  }
+
+  /** Create a copy with a mount's source commit updated */
+  updateMountCommit(mountId: string, sourceCommit: string): VFSContent {
+    return new VFSContent(
+      this.projectId,
+      this.mounts.map(m =>
+        m.id === mountId ? { ...m, sourceCommit } : m
+      )
+    )
   }
 
   toJSON() {
-    return { projectId: this.projectId }
+    return {
+      projectId: this.projectId,
+      mounts: this.mounts
+    }
   }
 
-  static fromJSON(data: { projectId: string }): VFSContent {
-    return new VFSContent(data.projectId)
+  static fromJSON(data: { 
+    projectId: string
+    mounts?: VfsMountConfig[]
+  }): VFSContent {
+    return new VFSContent(
+      data.projectId,
+      data.mounts ?? []
+    )
   }
 }
 
@@ -414,54 +441,29 @@ export class SandboxContent implements NodeContent {
 
 /**
  * Loader node content - Lua VM service executor configuration
+ * Note: VFS mounts are now configured through VFSContent.mounts, not here
  */
 export class LoaderContent implements NodeContent {
-  constructor(public mountpoints: Mountpoint[] = []) {}
+  constructor() {}
 
   getText(): string {
     return '' // Loader has no text representation
   }
 
   serialize(): string {
-    return JSON.stringify(this.mountpoints)
+    return '{}'
   }
 
   clone(): LoaderContent {
-    return new LoaderContent(this.mountpoints.map(mp => ({ ...mp })))
-  }
-
-  /** Create a copy with updated mountpoints */
-  withMountpoints(mountpoints: Mountpoint[]): LoaderContent {
-    return new LoaderContent(mountpoints)
-  }
-
-  /** Create a copy with a new mountpoint added */
-  addMountpoint(mountpoint: Mountpoint): LoaderContent {
-    return new LoaderContent([...this.mountpoints, mountpoint])
-  }
-
-  /** Create a copy with a mountpoint removed */
-  removeMountpoint(mountpointId: string): LoaderContent {
-    return new LoaderContent(
-      this.mountpoints.filter(mp => mp.id !== mountpointId)
-    )
-  }
-
-  /** Create a copy with a mountpoint's path updated */
-  updateMountpointPath(mountpointId: string, newPath: string): LoaderContent {
-    return new LoaderContent(
-      this.mountpoints.map(mp => 
-        mp.id === mountpointId ? { ...mp, path: newPath } : mp
-      )
-    )
+    return new LoaderContent()
   }
 
   toJSON() {
-    return { mountpoints: this.mountpoints }
+    return {}
   }
 
-  static fromJSON(data: { mountpoints?: Mountpoint[] }): LoaderContent {
-    return new LoaderContent(data.mountpoints ?? [])
+  static fromJSON(_data: Record<string, unknown>): LoaderContent {
+    return new LoaderContent()
   }
 }
 
@@ -597,7 +599,7 @@ export function restoreContent(type: NodeType, data: unknown): NodeContent {
   const json = data as Record<string, unknown>
   switch (type) {
     case 'INPUT':
-      return InputContent.fromJSON(json as { blocks: ContentBlock[]; mountpoints?: Mountpoint[] })
+      return InputContent.fromJSON(json as { blocks: ContentBlock[]; generationConfig?: InputGenerationConfig })
     case 'PROMPT':
       return PromptContent.fromJSON(json as { blocks: ContentBlock[] })
     case 'GENERATED':
@@ -610,11 +612,15 @@ export function restoreContent(type: NodeType, data: unknown): NodeContent {
         outputVfsId?: string | null
       })
     case 'VFS':
-      return VFSContent.fromJSON(json as { projectId: string })
+      return VFSContent.fromJSON(json as { 
+        projectId: string
+        displayName?: string
+        mounts?: VfsMountConfig[]
+      })
     case 'SANDBOX':
       return SandboxContent.fromJSON(json as { entryFile?: string; sandboxOrigin?: string })
     case 'LOADER':
-      return LoaderContent.fromJSON(json as { mountpoints?: Mountpoint[] })
+      return LoaderContent.fromJSON(json as Record<string, unknown>)
     case 'STATE':
       return StateContent.fromJSON(json as {
         saveId?: string | null

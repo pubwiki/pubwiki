@@ -1,10 +1,10 @@
 /**
  * VFS Adapter for modern-monaco
  * 
- * Bridges our VersionedVfs interface with modern-monaco's FileSystem interface.
+ * Bridges our Vfs interface with modern-monaco's FileSystem interface.
  */
 
-import type { VersionedVfs } from '@pubwiki/vfs';
+import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
 // ============================================================================
 // modern-monaco FileSystem types (copied from workspace.d.ts since not exported)
@@ -50,7 +50,7 @@ interface FileSystem {
 }
 
 /**
- * Adapter that wraps VersionedVfs to implement modern-monaco's FileSystem interface
+ * Adapter that wraps Vfs to implement modern-monaco's FileSystem interface
  */
 export class VfsMonacoAdapter implements FileSystem {
   private watchHandlers = new Map<string, Set<FileSystemWatchHandle>>();
@@ -58,7 +58,7 @@ export class VfsMonacoAdapter implements FileSystem {
   private readonly pathPrefix: string;
 
   constructor(
-    private readonly vfs: VersionedVfs,
+    private readonly vfs: Vfs<VfsProvider>,
     private readonly nodeId: string
   ) {
     // Path prefix used to isolate this VFS from others in Monaco's model system

@@ -12,7 +12,6 @@ export { default as BaseNode } from './BaseNode.svelte';
 export { PromptNode } from './prompt';
 export { 
 	InputNode, 
-	registerInputNodeHandlers,
 	generate,
 	type GenerationCallbacks
 } from './input';
@@ -24,7 +23,7 @@ export {
 	type GenerationConfig,
 	type StreamGenerationCallbacks
 } from './generated';
-export { VFSNode, VFSFileEditor } from './vfs';
+export { VFSNode, VFSFileEditor, registerVfsNodeHandlers } from './vfs';
 export { SandboxNode, SandboxPreviewView } from './sandbox';
 export { 
 	LoaderNode, 

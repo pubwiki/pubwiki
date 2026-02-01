@@ -2,9 +2,6 @@
  * InputNode Controller
  * 
  * Handles InputNode-specific logic:
- * - Creating mountpoints when VFS connects to ADD_MOUNT handle
- * - Removing mountpoints when edges are deleted
- * - Managing mountpoint path editing state
  * - Generation trigger from input nodes (onGenerate)
  * - Auto-creation of output VFS for file creation scenarios
  */
@@ -15,7 +12,6 @@ import type {
 	StudioNodeData, 
 	InputNodeData, 
 	VFSNodeData,
-	Mountpoint,
 	GeneratedNodeData,
 	VfsRef
 } from '$lib/types';
@@ -23,18 +19,8 @@ import type { FlowNodeData } from '$lib/types/flow';
 import type { MessageBlock } from '@pubwiki/chat';
 import { createGeneratedNodeData, createVFSNodeData } from '$lib/types';
 import { 
-	HandleId, 
-	isMountpointHandle, 
-	getMountpointId, 
-	createMountpointHandleId,
-	generateMountpointId
+	HandleId
 } from '$lib/graph';
-import { 
-	onConnection, 
-	onEdgeDelete,
-	type ConnectionEvent,
-	type EdgeDeleteEvent
-} from '$lib/state';
 import { prepareForGeneration, syncNode, getIncomingEdges } from '$lib/version';
 import { positionNewNodesFromSources } from '$lib/graph';
 import { getNodeVfs } from '$lib/vfs';
@@ -67,247 +53,8 @@ export function isFileWriteTool(toolName: string): boolean {
 }
 
 // ============================================================================
-// State
-// ============================================================================
-
-/** Currently editing mountpoint (node-local state, exposed for UI) */
-let editingMountpoint: { nodeId: string; mountpointId: string } | null = $state(null);
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/** Initial mountpoint path - user must edit */
-const INITIAL_MOUNTPOINT_PATH = '/';
-
-/** Regex for valid mountpoint path characters (after the leading /) */
-const VALID_PATH_CHARS = /^[0-9a-zA-Z]*$/;
-
-/**
- * Validate a mountpoint path
- * @param path - The path to validate
- * @param existingMountpoints - All mountpoints in the node
- * @param currentMountpointId - The ID of the mountpoint being edited (to exclude from duplicate check)
- * @returns Error message if invalid, null if valid
- */
-export function validateMountpointPath(
-	path: string, 
-	existingMountpoints: Mountpoint[], 
-	currentMountpointId?: string
-): string | null {
-	// Must start with /
-	if (!path.startsWith('/')) {
-		return 'Path must start with /';
-	}
-	
-	const pathPart = path.slice(1); // Remove leading /
-	
-	// Only allow alphanumeric characters (empty is OK for root /)
-	if (!VALID_PATH_CHARS.test(pathPart)) {
-		return 'Path can only contain letters and numbers (a-z, A-Z, 0-9)';
-	}
-	
-	// Check for duplicates (excluding the current mountpoint being edited)
-	const otherPaths = existingMountpoints
-		.filter(mp => mp.id !== currentMountpointId)
-		.map(mp => mp.path);
-	
-	if (otherPaths.includes(path)) {
-		return 'This path already exists';
-	}
-	
-	return null; // Valid
-}
-
-// ============================================================================
-// Public API
-// ============================================================================
-
-/**
- * Get the currently editing mountpoint
- */
-export function getEditingMountpoint(): { nodeId: string; mountpointId: string } | null {
-	return editingMountpoint;
-}
-
-/**
- * Set the editing mountpoint (called from UI when editing completes)
- */
-export function setEditingMountpoint(mp: { nodeId: string; mountpointId: string } | null): void {
-	editingMountpoint = mp;
-}
-
-/**
- * Update a mountpoint path in an Input node
- * Note: Since we use stable IDs for handles, we only need to update the node data, not the edges
- * Now uses nodeStore directly, no longer requires updateNodes/updateEdges callbacks
- */
-export function updateMountpointPath(
-	nodeId: string,
-	mountpointId: string,
-	newPath: string
-): void {
-	// Update the mountpoint path in the Input node via nodeStore
-	const nodeData = nodeStore.get(nodeId);
-	if (nodeData && nodeData.type === 'INPUT') {
-		const inputData = nodeData as InputNodeData;
-		nodeStore.update(nodeId, (data) => {
-			const input = data as InputNodeData;
-			return {
-				...input,
-				content: inputData.content.updateMountpointPath(mountpointId, newPath)
-			};
-		});
-	}
-	// No need to update edges - they use the stable mountpoint ID
-}
-
-// ============================================================================
-// Event Handlers
-// ============================================================================
-
-/**
- * Handle connection to ADD_MOUNT handle
- * Creates a new mountpoint and redirects the edge
- */
-function handleAddMountConnection(event: ConnectionEvent): boolean {
-	if (event.targetHandle !== HandleId.ADD_MOUNT) {
-		return false;
-	}
-
-	// Get existing mountpoints for validation from nodeStore
-	const nodeData = nodeStore.get(event.target);
-	const existingMountpoints = nodeData?.type === 'INPUT' 
-		? (nodeData as InputNodeData).content.mountpoints ?? []
-		: [];
-
-	// Use the initial placeholder path - user will edit it
-	const newMountPath = INITIAL_MOUNTPOINT_PATH;
-	
-	// Validate before creating - check for duplicates
-	const validationError = validateMountpointPath(newMountPath, existingMountpoints);
-	if (validationError) {
-		console.warn(`Cannot create mountpoint: ${validationError}`);
-		return true; // Handled (but rejected) - prevent default edge creation
-	}
-	
-	// Generate a stable ID for the new mountpoint
-	const newMountpointId = generateMountpointId();
-	const newMountpoint: Mountpoint = { id: newMountpointId, path: newMountPath };
-	
-	// Update the Input node to add the new mountpoint via nodeStore
-	if (nodeData && nodeData.type === 'INPUT') {
-		const inputData = nodeData as InputNodeData;
-		nodeStore.update(event.target, (data) => {
-			const input = data as InputNodeData;
-			return {
-				...input,
-				content: inputData.content.addMountpoint(newMountpoint)
-			};
-		});
-	}
-
-	// Create edge to the new mountpoint handle (using stable ID)
-	const newEdge: Edge = {
-		id: `e-${event.source}-${event.target}-${newMountpointId}`,
-		source: event.source,
-		target: event.target,
-		sourceHandle: event.sourceHandle ?? undefined,
-		targetHandle: createMountpointHandleId(newMountpointId)
-	};
-
-	// Set editing mountpoint to focus the input
-	editingMountpoint = { nodeId: event.target, mountpointId: newMountpointId };
-
-	// Wait for the node to re-render with the new handle before adding the edge
-	// Need multiple ticks: one for Svelte to update DOM, one for SvelteFlow to register handles
-	// Using requestAnimationFrame ensures the browser has completed layout/paint
-	tick().then(() => tick()).then(() => tick()).then(() => {
-		requestAnimationFrame(() => {
-			requestAnimationFrame(() => {
-				event.updateEdges(edges => [
-					...edges.filter(e => e.targetHandle !== HandleId.ADD_MOUNT),
-					newEdge
-				]);
-			});
-		});
-	});
-
-	return true; // Handled - prevent default edge creation
-}
-
-/**
- * Handle edge deletion for mountpoint edges
- * Removes the corresponding mountpoint from the Input node
- */
-function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
-	if (!isMountpointHandle(event.edge.targetHandle)) {
-		return;
-	}
-
-	const mountpointId = getMountpointId(event.edge.targetHandle!);
-	const targetNodeId = event.edge.target;
-
-	// Remove the mountpoint from the Input node via nodeStore
-	const nodeData = nodeStore.get(targetNodeId);
-	if (nodeData && nodeData.type === 'INPUT') {
-		const inputData = nodeData as InputNodeData;
-		nodeStore.update(targetNodeId, (data) => {
-			const input = data as InputNodeData;
-			return {
-				...input,
-				content: inputData.content.removeMountpoint(mountpointId)
-			};
-		});
-	}
-}
-
-// ============================================================================
 // Generation Logic
 // ============================================================================
-
-/**
- * Find all VFS nodes connected to a node via mountpoint handles
- * Returns a map of mount path -> VFS node ID
- * 
- * After layer separation:
- * - Uses FlowNodeData for flow layer
- * - Uses nodeStore for business data lookup
- */
-export function findConnectedVfsNodes(
-	nodeId: string,
-	nodes: Node<FlowNodeData>[],
-	edges: Edge[]
-): Map<string, string> {
-	const result = new Map<string, string>();
-	
-	// Get the target Input node's business data
-	const inputData = nodeStore.get(nodeId);
-	if (!inputData || inputData.type !== 'INPUT') {
-		return result;
-	}
-	const mountpoints = (inputData as InputNodeData).content.mountpoints ?? [];
-	
-	// Find edges where this node is the target and handle is a mountpoint
-	for (const edge of edges) {
-		if (edge.target === nodeId && isMountpointHandle(edge.targetHandle)) {
-			const mountpointId = getMountpointId(edge.targetHandle!);
-			// Look up the path from the node's mountpoints array
-			const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
-			if (!mountpoint) continue;
-			
-			const sourceNode = nodes.find(n => n.id === edge.source);
-			if (!sourceNode) continue;
-			
-			const sourceData = nodeStore.get(sourceNode.id);
-			if (sourceData && sourceData.type === 'VFS') {
-				result.set(mountpoint.path, sourceNode.id);
-			}
-		}
-	}
-	
-	return result;
-}
 
 // ============================================================================
 // Auto-VFS Creation for File Operations
@@ -390,6 +137,50 @@ export async function createPendingVfsNode(
 		edge: vfsEdge,
 		vfs
 	};
+}
+
+// ============================================================================
+// VFS Mount Resolution
+// ============================================================================
+
+/**
+ * Find VFS nodes connected to an input node via the VFS_MOUNT handle.
+ * Returns a Map of mount path -> source VFS node ID.
+ * 
+ * With the new VFS mount system, mounts are configured via VFSContent.mounts array.
+ * The edge connects to VFS_MOUNT handle, and the VFSContent on the target node 
+ * specifies the mount configuration.
+ */
+export function findConnectedVfsNodes(
+	inputNodeId: string,
+	nodes: Node<FlowNodeData>[],
+	edges: Edge[]
+): Map<string, string> {
+	const result = new Map<string, string>();
+	
+	// Find edges connecting to the VFS_MOUNT handle
+	const vfsMountEdge = edges.find(
+		e => e.target === inputNodeId && e.targetHandle === HandleId.VFS_MOUNT
+	);
+	
+	if (!vfsMountEdge) {
+		return result;
+	}
+	
+	// Get the source VFS node
+	const sourceNodeId = vfsMountEdge.source;
+	const sourceNode = nodes.find(n => n.id === sourceNodeId);
+	if (!sourceNode || sourceNode.data.type !== 'VFS') {
+		return result;
+	}
+	
+	// Use the VFS node's name or a default path
+	const vfsData = sourceNode.data as VFSNodeData;
+	const mountPath = vfsData.name ? `/${vfsData.name}` : '/assets';
+	
+	result.set(mountPath, sourceNodeId);
+	
+	return result;
 }
 
 /**
@@ -496,7 +287,7 @@ export async function generate(
 	// Create PubChat on-demand so user settings changes take effect immediately
 	const pubchat = createPubChat(config);
 
-	// Check if there are VFS nodes connected to this input node via mountpoints
+	// Check if there are VFS nodes connected to this input node via VFS_MOUNT handle
 	const vfsNodeIds = findConnectedVfsNodes(inputNodeId, nodes, edges);
 	
 	// Track input VFS ref for file modification scenario
@@ -832,32 +623,4 @@ export async function generate(
 	});
 
 	return generatedNode;
-}
-
-// ============================================================================
-// Registration
-// ============================================================================
-
-let registered = false;
-
-/**
- * Register InputNode event handlers
- * Call this once at app initialization
- */
-export function registerInputNodeHandlers(): () => void {
-	if (registered) {
-		console.warn('InputNode handlers already registered');
-		return () => {};
-	}
-	
-	registered = true;
-	
-	const unsubConnection = onConnection(handleAddMountConnection);
-	const unsubEdgeDelete = onEdgeDelete(handleMountpointEdgeDelete);
-	
-	return () => {
-		unsubConnection();
-		unsubEdgeDelete();
-		registered = false;
-	};
 }

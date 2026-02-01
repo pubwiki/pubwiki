@@ -3,7 +3,7 @@
  */
 
 export { default as VfsMonacoEditor } from './VfsMonacoEditor.svelte';
-export type { VfsMonacoEditorProps } from './VfsMonacoEditor.svelte';
+export type { VfsMonacoEditorProps } from './types';
 
 export {
 	getLanguageFromExtension,

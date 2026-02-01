@@ -9,7 +9,7 @@
 	import { fade } from 'svelte/transition';
 	import type { SandboxConnection, ProjectConfig, ConsoleLogEntry } from '@pubwiki/sandbox-host';
 	import { createSandboxConnection } from '@pubwiki/sandbox-host';
-	import type { VersionedVfs } from '$lib/vfs';
+	import type { NodeVfs } from '$lib/vfs';
 	import type { LoaderNodeData } from '$lib/types';
 	import { createLoaderServices } from '$lib/sandbox';
 	import * as m from '$lib/paraglide/messages';
@@ -29,7 +29,7 @@
 	}
 
 	interface Props {
-		vfs: VersionedVfs;
+		vfs: NodeVfs;
 		projectConfig: ProjectConfig;
 		sandboxOrigin: string;
 		entryFile: string;

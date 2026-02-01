@@ -12,4 +12,9 @@ export interface VfsStat {
   createdAt: Date
   /** 更新时间 */
   updatedAt: Date
+  /** 
+   * 如果此项是一个挂载点，则表示挂载的ID标识
+   * 如果不是挂载点，则为 undefined
+   */
+  mountedId?: string
 }

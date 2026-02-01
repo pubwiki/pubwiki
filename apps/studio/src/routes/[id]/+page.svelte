@@ -13,9 +13,9 @@
 		SandboxNode, 
 		LoaderNode, 
 		StateNode, 
-		registerInputNodeHandlers,
 		registerGeneratedNodeHandlers,
-		registerLoaderNodeHandlers
+		registerLoaderNodeHandlers,
+		registerVfsNodeHandlers
 	} from '$components/nodes';
 	import VFSFileEditor from '$components/nodes/vfs/VFSFileEditor.svelte';
 	import FlowController from '$components/FlowController.svelte';
@@ -57,7 +57,7 @@
 		setCurrentProject, 
 		getProject
 	} from '$lib/persistence';
-	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type VersionedVfs } from '$lib/vfs';
+	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type NodeVfs } from '$lib/vfs';
 	import { requestVfsDeleteConfirmation } from '$lib/state/vfs-delete-confirm.svelte';
 	import { syncStateNodesFromCloud } from '$lib/gamesave/state-sync';
 	import { useAuth } from '@pubwiki/ui/stores';
@@ -160,7 +160,7 @@
 	let vfsEditorState = $state<{
 		nodeId: string;
 		filePath: string;
-		vfs: VersionedVfs;
+		vfs: NodeVfs;
 	} | null>(null);
 
 	async function handleOpenVfsFile(nodeId: string, filePath: string) {
@@ -350,20 +350,20 @@
 	// ============================================================================
 	
 	// Register node-specific event handlers
-	let unregisterInputNode: (() => void) | null = null;
 	let unregisterGeneratedNode: (() => void) | null = null;
 	let unregisterLoaderNode: (() => void) | null = null;
+	let unregisterVfsNode: (() => void) | null = null;
 	
 	onMount(() => {
-		unregisterInputNode = registerInputNodeHandlers();
 		unregisterGeneratedNode = registerGeneratedNodeHandlers();
 		unregisterLoaderNode = registerLoaderNodeHandlers();
+		unregisterVfsNode = registerVfsNodeHandlers();
 	});
 	
 	onDestroy(() => {
-		unregisterInputNode?.();
 		unregisterGeneratedNode?.();
 		unregisterLoaderNode?.();
+		unregisterVfsNode?.();
 		clearAllHandlers();
 	});
 
@@ -635,6 +635,7 @@
 	}
 
 	async function addVFSNode() {
+		// Create new VFS node - will trigger auto-edit mode for the node name
 		const newVFSData = await createVFSNodeData(currentProjectId, m.studio_default_files());
 		const position = getNewNodePosition();
 		await addNode({
@@ -647,6 +648,8 @@
 			content: newVFSData.content,
 			external: newVFSData.external
 		}, position);
+		// Auto-trigger name editing for new VFS nodes
+		editingNameNodeId = newVFSData.id;
 		closeContextMenu();
 	}
 

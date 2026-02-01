@@ -19,13 +19,6 @@ export {
   createTagHandleId,
   isTagHandle,
   getTagName,
-  createMountpointHandleId,
-  isMountpointHandle,
-  getMountpointId,
-  generateMountpointId,
-  createLoaderMountpointHandleId,
-  isLoaderMountpointHandle,
-  getLoaderMountpointId,
   type HandleSpec,
   type NodeSpec
 } from './connection';
@@ -43,11 +36,8 @@ export {
 // RefTag utilities
 export {
   REFTAG_PATTERN,
-  MOUNTPOINT_PATTERN,
   parseRefTags,
-  parseMountpoints,
   getUniqueRefTagNames,
-  getUniqueMountpointPaths,
   isRefTagEdge,
   getRefTagNameFromEdge,
   getRefTagConnections,
@@ -57,10 +47,6 @@ export {
   getInputTagConnections,
   getInputTagConnectionsFromSnapshotEdges,
   getSystemPromptConnection,
-  isMountpointEdge,
-  getMountpointIdFromEdge,
-  getMountpointConnections,
-  getMountpointConnectionsFromSnapshotEdges,
   resolvePromptContent,
   resolvePromptContentFromRefs,
   resolveInputContent,
@@ -70,6 +56,5 @@ export {
   resolveContentBlocks,
   blocksToText,
   type ParsedRefTag,
-  type ParsedMountpoint,
   type ResolvedPrompt
 } from './reftag';

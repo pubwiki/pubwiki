@@ -7,6 +7,8 @@ export interface FileItem {
 	name: string;
 	path: string;
 	files?: FileItem[];
+	/** Whether this folder is a mount point (for displaying special icon) */
+	isMounted?: boolean;
 }
 
 export interface ContextMenuState {

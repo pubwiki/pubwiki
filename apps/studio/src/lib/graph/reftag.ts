@@ -4,8 +4,7 @@
  * Provides utilities for parsing and resolving reftag references in prompt content.
  * reftag format: @name - Creates a named input slot for prompt composition (e.g., @system, @context)
  * 
- * Note: Mountpoints for VFS are no longer parsed from text. They are managed via
- * InputNodeData.content.mountpoints array and created through UI interactions.
+ * Note: VFS mounts are now managed via VFSContent.mounts array and the VFS_MOUNT / LOADER_ASSET_VFS handles.
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
@@ -14,7 +13,7 @@ import type { FlowNodeData } from '../types/flow';
 import type { PromptContent, InputContent } from '../types/content';
 import type { NodeRef, SnapshotEdge } from '../version';
 import { nodeStore } from '../persistence';
-import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHandle, getMountpointId, HandleId } from './connection';
+import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, HandleId } from './connection';
 
 // ============================================================================
 // Types
@@ -26,18 +25,6 @@ import { isRefTagHandle, getRefTagName, isTagHandle, getTagName, isMountpointHan
 export interface ParsedRefTag {
   /** The reftag name (without @) */
   name: string;
-  /** Start position in the content */
-  start: number;
-  /** End position in the content */
-  end: number;
-}
-
-/**
- * Represents a parsed mountpoint in content (for VFS mounting)
- */
-export interface ParsedMountpoint {
-  /** The mount path (including leading /) */
-  path: string;
   /** Start position in the content */
   start: number;
   /** End position in the content */
@@ -65,12 +52,6 @@ export interface ResolvedPrompt {
 export const REFTAG_PATTERN = /@([a-zA-Z_][a-zA-Z0-9_]*)/g;
 
 /**
- * Regex pattern for mountpoints: @/ followed by path characters
- * This matches VFS mount tags like @/src, @/config/settings
- */
-export const MOUNTPOINT_PATTERN = /@(\/[a-zA-Z0-9_\-./]*)/g;
-
-/**
  * Parse reftags from content string (prompt references only)
  */
 export function parseRefTags(content: string): ParsedRefTag[] {
@@ -92,42 +73,12 @@ export function parseRefTags(content: string): ParsedRefTag[] {
 }
 
 /**
- * Parse mountpoints from content string (VFS mount references)
- */
-export function parseMountpoints(content: string): ParsedMountpoint[] {
-  const mountpoints: ParsedMountpoint[] = [];
-  let match: RegExpExecArray | null;
-  
-  // Reset regex lastIndex
-  MOUNTPOINT_PATTERN.lastIndex = 0;
-  
-  while ((match = MOUNTPOINT_PATTERN.exec(content)) !== null) {
-    mountpoints.push({
-      path: match[1],
-      start: match.index,
-      end: match.index + match[0].length
-    });
-  }
-  
-  return mountpoints;
-}
-
-/**
  * Get unique reftag names from content
  */
 export function getUniqueRefTagNames(content: string): string[] {
   const reftags = parseRefTags(content);
   const uniqueNames = new Set(reftags.map(h => h.name));
   return Array.from(uniqueNames);
-}
-
-/**
- * Get unique mountpoint paths from content
- */
-export function getUniqueMountpointPaths(content: string): string[] {
-  const mountpoints = parseMountpoints(content);
-  const uniquePaths = new Set(mountpoints.map(m => m.path));
-  return Array.from(uniquePaths);
 }
 
 // ============================================================================
@@ -243,66 +194,6 @@ export function getInputTagConnectionsFromSnapshotEdges(
     if (isTagHandle(edge.targetHandle)) {
       const tagName = getTagName(edge.targetHandle!);
       connections.set(tagName, edge.source);
-    }
-  }
-  
-  return connections;
-}
-
-// ============================================================================
-// Mountpoint Edge Utilities (for VFS on Input Node)
-// ============================================================================
-
-/**
- * Check if an edge is a mountpoint edge (for VFS mounting)
- */
-export function isMountpointEdge(edge: Edge | SnapshotEdge): boolean {
-  return isMountpointHandle(edge.targetHandle);
-}
-
-/**
- * Extract mountpoint ID from edge's targetHandle
- */
-export function getMountpointIdFromEdge(edge: Edge | SnapshotEdge): string | null {
-  if (!isMountpointEdge(edge)) return null;
-  return getMountpointId(edge.targetHandle!);
-}
-
-/**
- * Get mountpoint connections for an Input node
- * Returns a map of mountpoint ID -> connected VFS node ID
- */
-export function getMountpointConnections(
-  nodeId: string,
-  edges: Edge[]
-): Map<string, string> {
-  const connections = new Map<string, string>();
-  
-  for (const edge of edges) {
-    if (edge.target === nodeId && isMountpointEdge(edge)) {
-      const mountpointId = getMountpointIdFromEdge(edge);
-      if (mountpointId) {
-        connections.set(mountpointId, edge.source);
-      }
-    }
-  }
-  
-  return connections;
-}
-
-/**
- * Get mountpoint connections from snapshot edges
- * Returns a map of mountpoint ID -> connected VFS node ID
- */
-export function getMountpointConnectionsFromSnapshotEdges(
-  edges: SnapshotEdge[]
-): Map<string, string> {
-  const connections = new Map<string, string>();
-  
-  for (const edge of edges) {
-    if (isMountpointHandle(edge.targetHandle)) {
-      const mountpointId = getMountpointId(edge.targetHandle!);
-      connections.set(mountpointId, edge.source);
     }
   }
   

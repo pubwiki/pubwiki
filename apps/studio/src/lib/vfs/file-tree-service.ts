@@ -10,8 +10,7 @@
  */
 
 import type { FileItem } from '@pubwiki/ui/components';
-import { isVfsFolder } from '@pubwiki/vfs';
-import type { VersionedVfs } from './store';
+import { isVfsFolder, type Vfs, type VfsProvider } from '@pubwiki/vfs';
 
 /**
  * Count files in a tree
@@ -58,7 +57,7 @@ export function getFileName(path: string): string {
  * VfsFileTreeService - Manages file tree state for a VFS instance
  */
 export class VfsFileTreeService {
-  private vfs: VersionedVfs;
+  private vfs: Vfs<VfsProvider>;
   private eventUnsubscribers: (() => void)[] = [];
   private onTreeChange: (tree: FileItem[]) => void;
   private tree: FileItem[] = [];
@@ -71,10 +70,11 @@ export class VfsFileTreeService {
   private updateDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingAddFiles: string[] = [];
   private pendingAddFolders: string[] = [];
+  private pendingAddMountedFolders: string[] = [];
   private pendingRemoves: string[] = [];
   private treeModified = false;
   
-  constructor(vfs: VersionedVfs, onTreeChange: (tree: FileItem[]) => void) {
+  constructor(vfs: Vfs<VfsProvider>, onTreeChange: (tree: FileItem[]) => void) {
     this.vfs = vfs;
     this.onTreeChange = onTreeChange;
   }
@@ -145,6 +145,19 @@ export class VfsFileTreeService {
         this.queueRemove(e.fromPath);
         this.queueAddFolder(e.toPath);
       }),
+      events.on('mount:added', (e) => {
+        // Mount added - add as mounted folder with contents
+        this.queueAddMountedFolder(e.path);
+      }),
+      events.on('mount:moved', (e) => {
+        // Mount moved - need special handling to preserve isMounted flag and load contents
+        this.queueRemove(e.fromPath);
+        this.queueAddMountedFolder(e.toPath);
+      }),
+      events.on('mount:removed', (e) => {
+        // Mount removed - remove the folder from tree
+        this.queueRemove(e.path);
+      }),
       events.on('version:checkout', () => {
         this.scheduleRefresh();
       })
@@ -154,10 +167,18 @@ export class VfsFileTreeService {
   // ========== Batched Updates ==========
   
   /**
-   * Check if a path should be filtered (root .git directory)
+   * Check if a path should be filtered (.git directories everywhere)
    */
   private shouldFilter(path: string): boolean {
-    return path === '/.git' || path.startsWith('/.git/');
+    // Filter .git at root
+    if (path === '/.git' || path.startsWith('/.git/')) {
+      return true;
+    }
+    // Filter .git in any subdirectory (including mounted VFS)
+    if (path.includes('/.git/') || path.endsWith('/.git')) {
+      return true;
+    }
+    return false;
   }
   
   private queueAddFile(path: string): void {
@@ -178,6 +199,12 @@ export class VfsFileTreeService {
     this.scheduleUpdate();
   }
   
+  private queueAddMountedFolder(path: string): void {
+    if (this.shouldFilter(path)) return;
+    this.pendingAddMountedFolders.push(path);
+    this.scheduleUpdate();
+  }
+  
   private scheduleUpdate(): void {
     if (this.updateDebounceTimer) {
       return; // Already scheduled
@@ -191,15 +218,17 @@ export class VfsFileTreeService {
   private processPendingUpdates(): void {
     const addFiles = this.pendingAddFiles;
     const addFolders = this.pendingAddFolders;
+    const addMountedFolders = this.pendingAddMountedFolders;
     const removes = this.pendingRemoves;
     
     // Clear queues
     this.pendingAddFiles = [];
     this.pendingAddFolders = [];
+    this.pendingAddMountedFolders = [];
     this.pendingRemoves = [];
     this.treeModified = false;
     
-    const totalOps = addFiles.length + addFolders.length + removes.length;
+    const totalOps = addFiles.length + addFolders.length + addMountedFolders.length + removes.length;
     if (totalOps === 0) {
       return;
     }
@@ -222,10 +251,33 @@ export class VfsFileTreeService {
       this.addFileToTreeInternal(path);
     }
     
-    // Only notify once for the entire batch
+    // Notify for synchronous updates
     if (this.treeModified) {
       this.onTreeChange([...this.tree]);
     }
+    
+    // Process mounted folder adds asynchronously (need to load contents)
+    if (addMountedFolders.length > 0) {
+      this.processMountedFolderAdds(addMountedFolders);
+    }
+  }
+  
+  /**
+   * Process mounted folder additions asynchronously.
+   * These require loading folder contents from VFS.
+   */
+  private async processMountedFolderAdds(paths: string[]): Promise<void> {
+    // Sort by depth so parents come first
+    const sortedPaths = paths.sort((a, b) => 
+      a.split('/').length - b.split('/').length
+    );
+    
+    for (const path of sortedPaths) {
+      await this.addMountedFolderToTreeInternal(path);
+    }
+    
+    // Notify after all mounted folders are added
+    this.onTreeChange([...this.tree]);
   }
   
   // ========== Full Tree Loading ==========
@@ -260,7 +312,7 @@ export class VfsFileTreeService {
   private async loadFolderContents(folderPath: string, depth: number): Promise<FileItem[]> {
     const entries = await this.vfs.listFolder(folderPath);
     
-    // Filter out root .git directory
+    // Filter out .git directories everywhere
     const filteredEntries = entries.filter(e => !this.shouldFilter(e.path));
     
     // Separate folders and files
@@ -275,7 +327,9 @@ export class VfsFileTreeService {
           type: 'folder' as const,
           name: folder.name,
           path: folder.path,
-          files: children
+          files: children,
+          // Use mountedId from VfsFolder (comes from stat.mountedId)
+          isMounted: folder.mountedId !== undefined
         };
       })
     );
@@ -377,6 +431,40 @@ export class VfsFileTreeService {
       this.sortItems(parentItems);
       this.treeModified = true;
     }
+  }
+  
+  /**
+   * Add a mounted folder to the tree, loading its contents from VFS.
+   * This is used for mount:moved events where we need to preserve isMounted flag
+   * and load the folder's children.
+   */
+  private async addMountedFolderToTreeInternal(path: string): Promise<void> {
+    const parentPath = getParentPath(path);
+    const folderName = getFileName(path);
+    
+    // Ensure parent exists (creates missing ancestors automatically)
+    const parentItems = this.ensureParentExists(parentPath);
+    
+    // Check if folder already exists
+    const existingIndex = parentItems.findIndex(item => item.path === path);
+    if (existingIndex !== -1) {
+      // Remove existing entry (we'll replace it with loaded content)
+      parentItems.splice(existingIndex, 1);
+    }
+    
+    // Load folder contents from VFS
+    const children = await this.loadFolderContents(path, 0);
+    
+    // Create folder with isMounted flag and loaded children
+    const newFolder: FileItem = { 
+      type: 'folder', 
+      name: folderName, 
+      path, 
+      files: children,
+      isMounted: true
+    };
+    parentItems.push(newFolder);
+    this.sortItems(parentItems);
   }
   
   private removeItemFromTreeInternal(path: string): void {

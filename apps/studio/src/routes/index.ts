@@ -15,7 +15,6 @@ export type {
   SandboxNodeData,
   LoaderNodeData,
   StateNodeData,
-  Mountpoint,
   NodeContent
 } from '$lib/types';
 
@@ -47,11 +46,8 @@ export type {
 // Graph utilities
 export {
   REFTAG_PATTERN,
-  MOUNTPOINT_PATTERN,
   parseRefTags,
-  parseMountpoints,
   getUniqueRefTagNames,
-  getUniqueMountpointPaths,
   resolvePromptContentFromRefs,
   getRefTagConnectionsFromSnapshotEdges,
   HandleId,
@@ -61,13 +57,6 @@ export {
   createRefTagHandleId,
   isRefTagHandle,
   getRefTagName,
-  createMountpointHandleId,
-  isMountpointHandle,
-  getMountpointId,
-  generateMountpointId,
-  createLoaderMountpointHandleId,
-  isLoaderMountpointHandle,
-  getLoaderMountpointId,
   positionNewNodesFromSources,
   getNodeDimensions,
   DEFAULT_NODE_WIDTH,
@@ -80,7 +69,6 @@ export type {
   HandleSpec,
   NodeSpec,
   ParsedRefTag,
-  ParsedMountpoint,
   ResolvedPrompt
 } from '$lib/graph';
 
@@ -159,8 +147,7 @@ export type {
 } from '$lib/persistence';
 
 // VFS
-export { getNodeVfs, getVfsFactory } from '$lib/vfs';
-export type { VersionedVfs } from '$lib/vfs';
+export { getNodeVfs, getVfsFactory, NodeVfs } from '$lib/vfs';
 
 // RDF Store (for State nodes)
 export {

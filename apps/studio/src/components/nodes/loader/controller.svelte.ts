@@ -4,35 +4,22 @@
  * Handles LoaderNode-specific logic:
  * - Backend lifecycle management (via LoaderBackend abstraction)
  * - Backend VFS connection handling
- * - Mountpoint management for asset VFS
  * - Service registration and calling
  * 
  * Backend selection is automatic based on VFS content:
  * - init.lua present -> LuaBackend
  */
 
-import { tick } from 'svelte';
 import { Position, type Node, type Edge } from '@xyflow/svelte';
 import type { 
-	LoaderNodeData, 
-	Mountpoint
+	LoaderNodeData
 } from '$lib/types';
 import type { FlowNodeData } from '$lib/types/flow';
 import { createVFSNodeData } from '$lib/types';
 import { nodeStore, layoutStore } from '$lib/persistence';
 import { 
-	HandleId, 
-	isLoaderMountpointHandle, 
-	getLoaderMountpointId, 
-	createLoaderMountpointHandleId,
-	generateMountpointId
+	HandleId
 } from '$lib/graph';
-import { 
-	onConnection, 
-	onEdgeDelete,
-	type ConnectionEvent,
-	type EdgeDeleteEvent
-} from '$lib/state';
 import { getNodeVfs } from '$lib/vfs';
 import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import type { LLMConfig, PubChat } from '@pubwiki/chat';
@@ -100,9 +87,6 @@ const loaderRuntimes = new Map<string, LoaderRuntime>();
 /** Reload callback registry (nodeId -> callbacks) */
 const reloadCallbacks = new Map<string, Set<(result: LoaderInitResult) => void>>();
 
-/** Currently editing mountpoint (node-local state, exposed for UI) */
-let editingMountpoint: { nodeId: string; mountpointId: string } | null = $state(null);
-
 // ============================================================================
 // Reload Event Subscription
 // ============================================================================
@@ -148,88 +132,6 @@ function notifyReloadCallbacks(nodeId: string, result: LoaderInitResult): void {
 			}
 		}
 	}
-}
-
-// ============================================================================
-// Mountpoint Helpers
-// ============================================================================
-
-/** Initial mountpoint path - user must edit */
-const INITIAL_MOUNTPOINT_PATH = '/';
-
-/** Regex for valid mountpoint path characters (after the leading /) */
-const VALID_PATH_CHARS = /^[0-9a-zA-Z]*$/;
-
-/**
- * Validate a mountpoint path
- * @param path - The path to validate
- * @param existingMountpoints - All mountpoints in the node
- * @param currentMountpointId - The ID of the mountpoint being edited (to exclude from duplicate check)
- * @returns Error message if invalid, null if valid
- */
-export function validateMountpointPath(
-	path: string, 
-	existingMountpoints: Mountpoint[], 
-	currentMountpointId?: string
-): string | null {
-	// Must start with /
-	if (!path.startsWith('/')) {
-		return 'Path must start with /';
-	}
-	
-	const pathPart = path.slice(1); // Remove leading /
-	
-	// Only allow alphanumeric characters (empty is OK for root /)
-	if (!VALID_PATH_CHARS.test(pathPart)) {
-		return 'Path can only contain letters and numbers (a-z, A-Z, 0-9)';
-	}
-	
-	// Check for duplicates (excluding the current mountpoint being edited)
-	const otherPaths = existingMountpoints
-		.filter(mp => mp.id !== currentMountpointId)
-		.map(mp => mp.path);
-	
-	if (otherPaths.includes(path)) {
-		return 'This path already exists';
-	}
-	
-	return null; // Valid
-}
-
-// ============================================================================
-// Public API - Mountpoint Management
-// ============================================================================
-
-/**
- * Get the currently editing mountpoint
- */
-export function getEditingMountpoint(): { nodeId: string; mountpointId: string } | null {
-	return editingMountpoint;
-}
-
-/**
- * Set the editing mountpoint (called from UI when editing completes)
- */
-export function setEditingMountpoint(mp: { nodeId: string; mountpointId: string } | null): void {
-	editingMountpoint = mp;
-}
-
-/**
- * Update a mountpoint path in a Loader node
- */
-export function updateMountpointPath(
-	nodeId: string,
-	mountpointId: string,
-	newPath: string
-): void {
-	nodeStore.update(nodeId, (data) => {
-		if (data.type !== 'LOADER') return data;
-		const loaderContent = data.content as import('$lib/types').LoaderContent;
-		return {
-			...data,
-			content: loaderContent.updateMountpointPath(mountpointId, newPath)
-		};
-	});
 }
 
 // ============================================================================
@@ -490,8 +392,11 @@ export function findBackendVfsNode(
 }
 
 /**
- * Find all asset VFS nodes connected to a Loader node via mountpoint handles
+ * Find all asset VFS nodes connected to a Loader node via LOADER_ASSET_VFS handle
  * Returns a map of mount path -> VFS node ID
+ * 
+ * This uses the new VFS mount mechanism where VFSContent.mounts tracks connections.
+ * The mount path is stored in the source VFS's mounts array.
  */
 export function findMountedVfsNodes(
 	nodeId: string,
@@ -500,27 +405,29 @@ export function findMountedVfsNodes(
 ): Map<string, string> {
 	const result = new Map<string, string>();
 	
-	// Get the Loader node's business data to look up mountpoint paths
-	const loaderData = nodeStore.get(nodeId);
-	if (!loaderData || loaderData.type !== 'LOADER') {
-		return result;
-	}
-	const loaderContent = loaderData.content as import('$lib/types').LoaderContent;
-	const mountpoints = loaderContent.mountpoints ?? [];
-	
-	// Find edges where this node is the target and handle is a loader mountpoint
+	// Find edges where this Loader node is the target and handle is LOADER_ASSET_VFS
 	for (const edge of edges) {
-		if (edge.target === nodeId && isLoaderMountpointHandle(edge.targetHandle)) {
-			const mountpointId = getLoaderMountpointId(edge.targetHandle!);
-			const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
-			if (!mountpoint) continue;
-			
+		if (edge.target === nodeId && edge.targetHandle === HandleId.LOADER_ASSET_VFS) {
 			const sourceNode = nodes.find(n => n.id === edge.source);
 			if (!sourceNode) continue;
 			
 			const sourceData = nodeStore.get(sourceNode.id);
 			if (sourceData?.type === 'VFS') {
-				result.set(mountpoint.path, sourceNode.id);
+				const vfsContent = sourceData.content as import('$lib/types').VFSContent;
+				// Find the mount config in the source VFS that points to this connection
+				// The mount config stores sourceNodeId (the VFS being mounted) and mountPath
+				// In the VFS->Loader connection, the VFS stores its own mount configuration
+				for (const mount of vfsContent.mounts) {
+					// If this mount's sourceNodeId matches the VFS itself (self-reference for loader mount)
+					// Or if we use node name as the mount path
+					result.set(mount.mountPath, sourceNode.id);
+				}
+				
+				// If no specific mount config, use node name or root path
+				if (vfsContent.mounts.length === 0) {
+					const mountPath = sourceData.name ? `/${sourceData.name}` : '/';
+					result.set(mountPath, sourceNode.id);
+				}
 			}
 		}
 	}
@@ -552,97 +459,6 @@ export function findStateNode(
 	}
 	
 	return null;
-}
-
-// ============================================================================
-// Event Handlers
-// ============================================================================
-
-/**
- * Handle connection to LOADER_ADD_MOUNT handle
- * Creates a new mountpoint and redirects the edge
- */
-function handleAddMountConnection(event: ConnectionEvent): boolean {
-	if (event.targetHandle !== HandleId.LOADER_ADD_MOUNT) {
-		return false;
-	}
-
-	// Get existing mountpoints for validation from nodeStore
-	const targetData = nodeStore.get(event.target);
-	const existingMountpoints = targetData?.type === 'LOADER' 
-		? (targetData.content as import('$lib/types').LoaderContent).mountpoints ?? []
-		: [];
-
-	// Use the initial placeholder path - user will edit it
-	const newMountPath = INITIAL_MOUNTPOINT_PATH;
-	
-	// Validate before creating - check for duplicates
-	const validationError = validateMountpointPath(newMountPath, existingMountpoints);
-	if (validationError) {
-		console.warn(`Cannot create mountpoint: ${validationError}`);
-		return true; // Handled (but rejected) - prevent default edge creation
-	}
-	
-	// Generate a stable ID for the new mountpoint
-	const newMountpointId = generateMountpointId();
-	const newMountpoint: Mountpoint = { id: newMountpointId, path: newMountPath };
-	
-	// Update the Loader node to add the new mountpoint via nodeStore
-	nodeStore.update(event.target, (data) => {
-		if (data.type !== 'LOADER') return data;
-		const loaderContent = data.content as import('$lib/types').LoaderContent;
-		return {
-			...data,
-			content: loaderContent.addMountpoint(newMountpoint)
-		};
-	});
-
-	// Create edge to the new mountpoint handle (using stable ID)
-	const newEdge: Edge = {
-		id: `e-${event.source}-${event.target}-${newMountpointId}`,
-		source: event.source,
-		target: event.target,
-		sourceHandle: event.sourceHandle ?? undefined,
-		targetHandle: createLoaderMountpointHandleId(newMountpointId)
-	};
-
-	// Set editing mountpoint to focus the input
-	editingMountpoint = { nodeId: event.target, mountpointId: newMountpointId };
-
-	// Wait for the node to re-render with the new handle before adding the edge
-	tick().then(() => {
-		requestAnimationFrame(() => {
-			event.updateEdges(edges => [
-				...edges.filter(e => e.targetHandle !== HandleId.LOADER_ADD_MOUNT),
-				newEdge
-			]);
-		});
-	});
-
-	return true; // Handled - prevent default edge creation
-}
-
-/**
- * Handle edge deletion for loader mountpoint edges
- * Removes the corresponding mountpoint from the Loader node
- */
-function handleMountpointEdgeDelete(event: EdgeDeleteEvent): void {
-	if (!isLoaderMountpointHandle(event.edge.targetHandle)) {
-		return;
-	}
-
-	const mountpointId = getLoaderMountpointId(event.edge.targetHandle!);
-	const targetNodeId = event.edge.target;
-
-	// Remove the mountpoint from the Loader node via nodeStore
-	nodeStore.update(targetNodeId, (data) => {
-		if (data.type !== 'LOADER') return data;
-		const loaderContent = data.content as import('$lib/types').LoaderContent;
-		return {
-			...data,
-			content: loaderContent.removeMountpoint(mountpointId)
-		};
-	});
 }
 
 // ============================================================================
@@ -689,20 +505,14 @@ export function createLoaderInterface(nodeId: string): LoaderInterface {
 /**
  * Register Loader Node event handlers
  * Should be called once when the Studio component mounts
+ * 
+ * Note: VFS mount connections are now handled by VFSNode controller via VFS_MOUNT handle.
+ * This function is kept for future Loader-specific event handling.
  */
 export function registerLoaderNodeHandlers(): () => void {
-	const unsubConnection = onConnection((event) => {
-		return handleAddMountConnection(event);
-	});
-	
-	const unsubEdgeDelete = onEdgeDelete((event) => {
-		handleMountpointEdgeDelete(event);
-	});
-	
-	return () => {
-		unsubConnection();
-		unsubEdgeDelete();
-	};
+	// Currently no Loader-specific event handlers needed
+	// VFS mount connections are handled by VFSNode via VFS_MOUNT handle
+	return () => {};
 }
 
 // ============================================================================

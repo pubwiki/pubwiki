@@ -2,7 +2,7 @@
  * Import map management utilities for Monaco editor with VFS
  */
 
-import type { VersionedVfs } from '@pubwiki/vfs';
+import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
 // ============================================================================
 // Types
@@ -82,7 +82,7 @@ export class ImportMapManager {
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(
-		private readonly vfs: VersionedVfs,
+		private readonly vfs: Vfs<VfsProvider>,
 		config: ImportMapConfig = {}
 	) {
 		this.importMapPath = config.path ?? DEFAULT_IMPORTMAP_PATH;

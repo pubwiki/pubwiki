@@ -5,6 +5,9 @@
  * and isomorphic-git for version control.
  *
  * Each node gets an isolated VFS provider scoped to /<project_id>/<node_id>/
+ * 
+ * API: Use getNodeVfs() to get the NodeVfs for a node. NodeVfs is the unified
+ * interface that includes file operations, mount support, and version control.
  */
 
 // Polyfill Buffer for isomorphic-git in browser environment
@@ -26,6 +29,9 @@ import {
   createVfs,
   type VersionedVfs,
 } from '@pubwiki/vfs';
+import { NodeVfs } from './node-vfs';
+import { nodeStore } from '$lib/persistence';
+import type { VFSNodeData, VFSContent } from '$lib/types';
 
 // ============================================================================
 // ZenFS Configuration
@@ -120,6 +126,31 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
       return this.basePath;
     }
     return this.basePath + normalized;
+  }
+
+  // ========== Submodule Support (for isomorphic-git) ==========
+
+  /**
+   * Get the underlying file system interface (ZenFS)
+   * Used by submodule.ts to call isomorphic-git directly
+   */
+  getFs(): typeof zenfs {
+    return zenfs;
+  }
+
+  /**
+   * Get the repository directory path
+   * Used by submodule.ts to call isomorphic-git directly
+   */
+  getDir(): string {
+    return this.basePath;
+  }
+
+  /**
+   * Get the node ID for this VFS
+   */
+  getNodeId(): string {
+    return this.nodeId;
   }
 
   // ========== Lifecycle ==========
@@ -827,17 +858,178 @@ export function getVfsFactory(): NodeVfsFactory {
 }
 
 /**
- * Convenience function to get a VersionedVfs for a node
+ * Internal function to get a raw VersionedVfs for a node.
+ * This is used internally by getNodeVfs() to create the base VFS.
+ * 
+ * @internal - Do not use directly, use getNodeVfs() instead.
  */
-export async function getNodeVfs(
+async function getBaseVersionedVfs(
   projectId: string,
   nodeId: string
 ): Promise<VersionedVfs> {
-  console.log(`[VFS:getNodeVfs] Called for ${projectId}/${nodeId}`);
-  console.log('[VFS:getNodeVfs] Call stack:', new Error().stack);
   const factory = getVfsFactory();
   return factory.getVfs(projectId, nodeId);
 }
 
-// Re-export types
-export type { VfsProvider, VersionedVfsProvider, VersionedVfs };
+// ============================================================================
+// NodeVfs Cache - Complete VFS with mounts
+// ============================================================================
+
+/**
+ * Cache for NodeVfs instances.
+ * Each NodeVfs includes the base VFS + all mount configurations.
+ */
+const nodeVfsCache = new Map<string, NodeVfs>();
+
+/**
+ * Pending NodeVfs creation promises to prevent duplicate concurrent creations.
+ */
+const pendingNodeVfsCreations = new Map<string, Promise<NodeVfs>>();
+
+/**
+ * Get or create a NodeVfs for a node.
+ * 
+ * This is the primary and ONLY API for accessing VFS nodes. The returned NodeVfs:
+ * - Includes all mount configurations from the node's content
+ * - Supports nested mounts (mounted child VFS also includes their mounts)
+ * - Provides both file operations and version control
+ * 
+ * @param projectId The project ID
+ * @param nodeId The VFS node ID
+ * @param visitedNodes Set of node IDs already being resolved (for cycle detection)
+ * @returns Complete NodeVfs instance
+ */
+export async function getNodeVfs(
+  projectId: string,
+  nodeId: string,
+  visitedNodes: Set<string> = new Set()
+): Promise<NodeVfs> {
+  const key = `${projectId}:${nodeId}`;
+  
+  // Check for circular mount
+  if (visitedNodes.has(nodeId)) {
+    throw new Error(`Circular mount detected: ${Array.from(visitedNodes).join(' -> ')} -> ${nodeId}`);
+  }
+  
+  // Return cached instance if available
+  if (nodeVfsCache.has(key)) {
+    console.log(`[VFS:NodeVfs] ${key} found in cache`);
+    return nodeVfsCache.get(key)!;
+  }
+  
+  // Check if creation is already in progress
+  const pending = pendingNodeVfsCreations.get(key);
+  if (pending) {
+    console.log(`[VFS:NodeVfs] ${key} creation already pending, waiting...`);
+    return pending;
+  }
+  
+  console.log(`[VFS:NodeVfs] Creating NodeVfs for ${key}...`);
+  
+  // Create promise and cache it
+  const createPromise = (async (): Promise<NodeVfs> => {
+    // Get the base VersionedVfs
+    const baseVfs = await getBaseVersionedVfs(projectId, nodeId);
+    
+    // Create NodeVfs (wraps base VFS with MountedVfsProvider)
+    const nodeVfs = new NodeVfs(baseVfs);
+    
+    // Load mount configuration and mount child VFS nodes
+    const nodeData = nodeStore.get(nodeId) as VFSNodeData | undefined;
+    if (nodeData && nodeData.content) {
+      const content = nodeData.content as VFSContent;
+      const mounts = content.mounts || [];
+      
+      // Track visited nodes for cycle detection
+      const newVisited = new Set(visitedNodes);
+      newVisited.add(nodeId);
+      
+      for (const mount of mounts) {
+        try {
+          // Recursively get child's complete NodeVfs (includes its mounts)
+          const childVfs = await getNodeVfs(projectId, mount.sourceNodeId, newVisited);
+          // Pass the sourceNodeId so stat() can return mountedId
+          nodeVfs.mount(mount.mountPath, childVfs, mount.sourceNodeId);
+          console.log(`[VFS:NodeVfs] ${key} mounted ${mount.sourceNodeId} at ${mount.mountPath}`);
+        } catch (err) {
+          console.error(`[VFS:NodeVfs] Failed to mount ${mount.sourceNodeId}:`, err);
+          // Continue with other mounts even if one fails
+        }
+      }
+    }
+    
+    // Cache the complete NodeVfs
+    nodeVfsCache.set(key, nodeVfs);
+    
+    return nodeVfs;
+  })();
+  
+  pendingNodeVfsCreations.set(key, createPromise);
+  
+  try {
+    const result = await createPromise;
+    console.log(`[VFS:NodeVfs] ${key} created successfully`);
+    return result;
+  } finally {
+    pendingNodeVfsCreations.delete(key);
+  }
+}
+
+/**
+ * Invalidate a cached NodeVfs instance.
+ * Call this when mount configuration changes.
+ * 
+ * @param projectId The project ID
+ * @param nodeId The VFS node ID
+ */
+export function invalidateNodeVfs(projectId: string, nodeId: string): void {
+  const key = `${projectId}:${nodeId}`;
+  const nodeVfs = nodeVfsCache.get(key);
+  if (nodeVfs) {
+    // Note: We don't dispose here since the base VFS may still be valid
+    nodeVfsCache.delete(key);
+    console.log(`[VFS:NodeVfs] ${key} invalidated`);
+  }
+  
+  // Also invalidate any NodeVfs that mounts this one
+  // (We need to find and invalidate parent VFS nodes that mount this one)
+  invalidateMountingNodes(projectId, nodeId);
+}
+
+/**
+ * Find and invalidate all NodeVfs instances that mount the given node.
+ */
+function invalidateMountingNodes(projectId: string, mountedNodeId: string): void {
+  // Get all VFS nodes and check their mount configurations
+  for (const data of nodeStore.getAll()) {
+    if (data.type !== 'VFS') continue;
+    
+    const content = data.content as VFSContent;
+    const mounts = content.mounts || [];
+    
+    // Check if this node mounts the invalidated node
+    const mountsTarget = mounts.some(m => m.sourceNodeId === mountedNodeId);
+    if (mountsTarget) {
+      const key = `${projectId}:${data.id}`;
+      if (nodeVfsCache.has(key)) {
+        nodeVfsCache.delete(key);
+        console.log(`[VFS:NodeVfs] ${key} invalidated (mounts ${mountedNodeId})`);
+        // Recursively invalidate nodes that mount this one
+        invalidateMountingNodes(projectId, data.id);
+      }
+    }
+  }
+}
+
+/**
+ * Clear all cached NodeVfs instances.
+ * Use this when switching projects or for cleanup.
+ */
+export function clearNodeVfsCache(): void {
+  nodeVfsCache.clear();
+  console.log('[VFS:NodeVfs] Cache cleared');
+}
+
+// Re-export types - only VfsProvider for internal use, NodeVfs is the public API
+export type { VfsProvider };
+export { NodeVfs };

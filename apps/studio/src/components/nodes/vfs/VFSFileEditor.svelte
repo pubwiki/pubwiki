@@ -6,7 +6,7 @@
 	 * and allows editing files from a VFS node. Uses VfsMonacoEditor internally.
 	 */
 	import { fly } from 'svelte/transition';
-	import type { VersionedVfs } from '$lib/vfs';
+	import type { NodeVfs } from '$lib/vfs';
 	import { VfsMonacoEditor } from '$components/monaco';
 	import * as m from '$lib/paraglide/messages';
 
@@ -15,7 +15,7 @@
 	// ============================================================================
 
 	interface Props {
-		vfs: VersionedVfs;
+		vfs: NodeVfs;
 		nodeId: string;
 		filePath: string;
 		onClose: () => void;

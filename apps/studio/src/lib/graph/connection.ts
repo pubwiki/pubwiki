@@ -55,6 +55,8 @@ export const HandleId = {
   DEFAULT: 'default',
   /** VFS input on Sandbox/Input node */
   VFS_INPUT: 'vfs-input',
+  /** VFS mount input - for mounting child VFS into parent VFS */
+  VFS_MOUNT: 'vfs-mount',
   /** Service input on Sandbox node */
   SERVICE_INPUT: 'service-input',
   /** RefTag handle prefix for dynamic handles (for prompts) */
@@ -63,16 +65,10 @@ export const HandleId = {
   SYSTEM_TAG: 'system-prompt',
   /** Tag handle prefix for generic tagged handles */
   TAG_PREFIX: 'tag-',
-  /** Mountpoint prefix for VFS mounting (e.g., mount-abc123) */
-  MOUNTPOINT_PREFIX: 'mount-',
-  /** Add mount handle - when VFS connects here, a new mountpoint is created */
-  ADD_MOUNT: 'add-mount',
   /** Loader Node: Backend VFS input (single) */
   LOADER_BACKEND: 'loader-backend',
-  /** Loader Node: Mountpoint prefix for asset VFS */
-  LOADER_MOUNTPOINT_PREFIX: 'loader-mount-',
-  /** Loader Node: Add mount handle (dynamically creates mountpoint) */
-  LOADER_ADD_MOUNT: 'loader-add-mount',
+  /** Loader Node: Asset VFS input (multiple) - VFS mounts are configured on VFS nodes */
+  LOADER_ASSET_VFS: 'loader-asset-vfs',
   /** Loader Node: State input (connects to State node for RDF store) */
   LOADER_STATE: 'loader-state',
   /** Loader Node: Service output */
@@ -186,21 +182,6 @@ export const NodeRegistry: Record<string, NodeSpec> = {
         dynamic: true,
         colorClass: 'bg-blue-400',
       },
-      {
-        id: HandleId.MOUNTPOINT_PREFIX,
-        label: 'Mountpoint',
-        dataType: DataType.VFS,
-        cardinality: Cardinality.OPTIONAL,
-        dynamic: true,
-        colorClass: 'bg-indigo-400',
-      },
-      {
-        id: HandleId.ADD_MOUNT,
-        label: 'Add Mount',
-        dataType: DataType.VFS,
-        cardinality: Cardinality.MANY,
-        colorClass: 'bg-indigo-300',
-      },
     ],
     outputs: [
       {
@@ -247,7 +228,15 @@ export const NodeRegistry: Record<string, NodeSpec> = {
   VFS: {
     type: 'VFS',
     label: 'VFS',
-    inputs: [],
+    inputs: [
+      {
+        id: HandleId.VFS_MOUNT,
+        label: 'Mount',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.MANY,
+        colorClass: 'bg-indigo-400',
+      },
+    ],
     outputs: [
       {
         id: HandleId.DEFAULT,
@@ -257,7 +246,7 @@ export const NodeRegistry: Record<string, NodeSpec> = {
         colorClass: 'bg-indigo-400',
       },
     ],
-    manualInput: false,
+    manualInput: true,
     manualOutput: true,
     headerColorClass: 'bg-indigo-500',
     handleColorClass: 'bg-indigo-400!',
@@ -308,19 +297,11 @@ export const NodeRegistry: Record<string, NodeSpec> = {
         colorClass: 'bg-teal-400',
       },
       {
-        id: HandleId.LOADER_MOUNTPOINT_PREFIX,
-        label: 'Mount',
-        dataType: DataType.VFS,
-        cardinality: Cardinality.OPTIONAL,
-        dynamic: true,
-        colorClass: 'bg-indigo-400',
-      },
-      {
-        id: HandleId.LOADER_ADD_MOUNT,
-        label: 'Add Mount',
+        id: HandleId.LOADER_ASSET_VFS,
+        label: 'Assets',
         dataType: DataType.VFS,
         cardinality: Cardinality.MANY,
-        colorClass: 'bg-indigo-300',
+        colorClass: 'bg-indigo-400',
       },
     ],
     outputs: [
@@ -461,63 +442,6 @@ export function createTagHandleId(tagName: string): string {
 }
 
 // ============================================================================
-// Mountpoint Handle Helpers
-// ============================================================================
-
-/**
- * Check if a handle ID is a mountpoint handle (for VFS mounting)
- */
-export function isMountpointHandle(handleId: string | null | undefined): boolean {
-  return typeof handleId === 'string' && handleId.startsWith(HandleId.MOUNTPOINT_PREFIX);
-}
-
-/**
- * Extract mountpoint ID from handle ID (e.g., 'mount-abc123' -> 'abc123')
- */
-export function getMountpointId(handleId: string): string {
-  return handleId.slice(HandleId.MOUNTPOINT_PREFIX.length);
-}
-
-/**
- * Create mountpoint handle ID from mountpoint ID
- */
-export function createMountpointHandleId(mountpointId: string): string {
-  return `${HandleId.MOUNTPOINT_PREFIX}${mountpointId}`;
-}
-
-/**
- * Generate a new unique mountpoint ID
- */
-export function generateMountpointId(): string {
-  return crypto.randomUUID().slice(0, 8);
-}
-
-// ============================================================================
-// Loader Mountpoint Handle Helpers
-// ============================================================================
-
-/**
- * Check if a handle ID is a loader mountpoint handle
- */
-export function isLoaderMountpointHandle(handleId: string | null | undefined): boolean {
-  return typeof handleId === 'string' && handleId.startsWith(HandleId.LOADER_MOUNTPOINT_PREFIX);
-}
-
-/**
- * Extract mountpoint ID from loader handle ID (e.g., 'loader-mount-abc123' -> 'abc123')
- */
-export function getLoaderMountpointId(handleId: string): string {
-  return handleId.slice(HandleId.LOADER_MOUNTPOINT_PREFIX.length);
-}
-
-/**
- * Create loader mountpoint handle ID from mountpoint ID
- */
-export function createLoaderMountpointHandleId(mountpointId: string): string {
-  return `${HandleId.LOADER_MOUNTPOINT_PREFIX}${mountpointId}`;
-}
-
-// ============================================================================
 // Connection Validation
 // ============================================================================
 
@@ -607,37 +531,6 @@ export function validateConnection(
       valid: false,
       reason: `Type mismatch: ${sourceHandleSpec.dataType} cannot connect to ${targetHandleSpec.dataType}`,
     };
-  }
-
-  // === Special handling for ADD_MOUNT connections ===
-  if (targetHandleId === HandleId.ADD_MOUNT && targetType === 'INPUT') {
-    // Check 1: VFS already connected to this Input node (to any mountpoint)
-    const vfsAlreadyConnected = existingEdges.some(
-      e => e.source === connection.source && 
-           e.target === connection.target &&
-           isMountpointHandle(e.targetHandle)
-    );
-    if (vfsAlreadyConnected) {
-      return {
-        valid: false,
-        reason: 'This VFS is already mounted to this Input node',
-      };
-    }
-
-    // Check 2: Already has an uncommitted '/' mountpoint
-    if (getNodeData) {
-      const targetData = getNodeData(connection.target);
-      if (targetData?.type === 'INPUT') {
-        const inputData = targetData as InputNodeData;
-        const existingMountpoints = inputData.content.mountpoints ?? [];
-        if (existingMountpoints.some(mp => mp.path === '/')) {
-          return {
-            valid: false,
-            reason: 'Please edit the existing "/" mountpoint before adding another',
-          };
-        }
-      }
-    }
   }
 
   // Check cardinality

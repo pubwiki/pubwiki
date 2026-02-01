@@ -84,6 +84,31 @@ export interface VersionRevertEvent extends VfsEventBase {
   ref: string
 }
 
+/** 挂载点添加事件 */
+export interface MountAddedEvent extends VfsEventBase {
+  type: 'mount:added'
+  path: string
+  /** Optional mount ID (e.g., node ID in studio) */
+  mountedId?: string
+}
+
+/** 挂载点移动事件 */
+export interface MountMovedEvent extends VfsEventBase {
+  type: 'mount:moved'
+  fromPath: string
+  toPath: string
+  /** Optional mount ID (e.g., node ID in studio) */
+  mountedId?: string
+}
+
+/** 挂载点移除事件 */
+export interface MountRemovedEvent extends VfsEventBase {
+  type: 'mount:removed'
+  path: string
+  /** Optional mount ID (e.g., node ID in studio) */
+  mountedId?: string
+}
+
 /** 所有 VFS 事件的联合类型 */
 export type VfsEvent =
   | FileCreatedEvent
@@ -97,6 +122,9 @@ export type VfsEvent =
   | VersionCommitEvent
   | VersionCheckoutEvent
   | VersionRevertEvent
+  | MountAddedEvent
+  | MountMovedEvent
+  | MountRemovedEvent
 
 /** 事件类型字符串 */
 export type VfsEventType = VfsEvent['type']

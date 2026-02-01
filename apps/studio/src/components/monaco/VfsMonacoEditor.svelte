@@ -2,44 +2,15 @@
 	/**
 	 * VfsMonacoEditor - Monaco editor component with VFS integration
 	 * 
-	 * A reusable Monaco editor component that integrates with VersionedVfs.
+	 * A reusable Monaco editor component that integrates with VFS.
 	 * Handles TypeScript LSP configuration, import map management, and file operations.
 	 */
 	import { onMount, onDestroy, tick } from 'svelte';
 	import { init, Workspace } from 'modern-monaco';
-	import type { VersionedVfs } from '@pubwiki/vfs';
 	import { VfsMonacoAdapter } from '$lib/vfs/monaco-adapter';
 	import { getLanguageFromPath, isScriptFile } from './language';
 	import { ImportMapManager } from './import-map';
-
-	// ============================================================================
-	// Types
-	// ============================================================================
-
-	export interface VfsMonacoEditorProps {
-		/** The VFS instance to use */
-		vfs: VersionedVfs;
-		/** Unique identifier for this editor instance (used to isolate Monaco models) */
-		instanceId: string;
-		/** Path to the file to edit */
-		filePath: string;
-		/** Monaco theme (default: 'light-plus') */
-		theme?: string;
-		/** Font size in pixels (default: 13) */
-		fontSize?: number;
-		/** Enable auto-detection of imports and importMap updates (default: true) */
-		autoImports?: boolean;
-		/** Callback when file content changes */
-		onContentChange?: (content: string, isDirty: boolean) => void;
-		/** Callback when file is saved */
-		onSave?: (content: string) => void;
-		/** Callback when external file changes are detected */
-		onExternalChange?: () => void;
-		/** Custom loading content snippet */
-		loading?: import('svelte').Snippet;
-		/** Custom error content snippet */
-		error?: import('svelte').Snippet<[string]>;
-	}
+	import type { VfsMonacoEditorProps } from './types';
 
 	// ============================================================================
 	// Props

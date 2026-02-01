@@ -17,7 +17,6 @@ import {
   resolvePromptContent, 
   getInputTagConnections,
   getSystemPromptConnection,
-  getMountpointConnections,
   resolveInputContent,
   getRefTagConnections
 } from '../graph/reftag';
@@ -44,8 +43,6 @@ export interface PrepareGenerationResult {
   resolvedSystemPrompt: string;
   /** Fully resolved user input content (with tags substituted) */
   resolvedUserInput: string;
-  /** Map of mount paths to VFS node IDs */
-  mountpoints: Map<string, string>;
 }
 
 // ============================================================================
@@ -88,9 +85,6 @@ export async function prepareForGeneration(
   const parentPromptIds = systemPromptNodeId 
     ? [systemPromptNodeId, ...tagPromptIds]
     : tagPromptIds;
-  
-  // Get mountpoint connections (VFS nodes connected via @/path)
-  const mountpoints = getMountpointConnections(inputNodeId, edges);
 
   // Collect all node IDs that might be involved (direct + indirect via reftags)
   const collectAllInvolvedNodes = (nodeIds: string[], visited: Set<string> = new Set()): string[] => {
@@ -211,7 +205,6 @@ export async function prepareForGeneration(
     indirectPromptRefs: uniqueIndirectRefs,
     parentRefs,
     resolvedSystemPrompt,
-    resolvedUserInput,
-    mountpoints
+    resolvedUserInput
   };
 }

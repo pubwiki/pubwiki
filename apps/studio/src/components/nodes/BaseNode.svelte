@@ -36,6 +36,8 @@
 		headerBgClass: string;
 		handleBgClass: string;
 		borderClass?: string;
+		// Name validation callback - returns error message if invalid, null if valid
+		validateName?: (name: string, nodeId: string) => string | null;
 		// Slots
 		headerIcon?: Snippet;
 		headerActions?: Snippet;
@@ -56,6 +58,7 @@
 		headerBgClass,
 		handleBgClass,
 		borderClass: customBorderClass,
+		validateName,
 		headerIcon,
 		headerActions,
 		children,
@@ -101,6 +104,7 @@
 	const isEditingName = $derived(ctx.editingNameNodeId === id);
 	let editingNameValue = $state('');
 	let nameInputRef: HTMLInputElement | null = $state(null);
+	let nameError = $state<string | null>(null);
 
 	// ============================================================================
 	// Derived
@@ -160,6 +164,7 @@
 	$effect(() => {
 		if (ctx.editingNameNodeId === id) {
 			editingNameValue = nodeData?.name || '';
+			nameError = null;
 			setTimeout(() => nameInputRef?.focus(), 0);
 		}
 	});
@@ -188,16 +193,37 @@
 	}
 
 	function saveNameEdit() {
+		const trimmedName = editingNameValue.trim();
+		
+		// Validate if callback is provided
+		if (validateName) {
+			const error = validateName(trimmedName, id);
+			if (error) {
+				nameError = error;
+				nameInputRef?.focus();
+				return;
+			}
+		}
+		
+		// Basic validation: name cannot be empty
+		if (!trimmedName) {
+			nameError = m.studio_error_name_required?.() ?? 'Name is required';
+			nameInputRef?.focus();
+			return;
+		}
+		
 		ctx.updateNodeData(id, (data) => ({
 			...data,
-			name: editingNameValue.trim()
+			name: trimmedName
 		}));
 		ctx.setEditingNameNodeId(null);
+		nameError = null;
 	}
 
 	function cancelNameEdit() {
 		ctx.setEditingNameNodeId(null);
 		editingNameValue = '';
+		nameError = null;
 	}
 
 	function handleWheel(e: WheelEvent) {
@@ -290,17 +316,20 @@
 			</div>
 			
 			<!-- Center: Node Name -->
-			<div class="flex-1 min-w-0 flex justify-center">
+			<div class="flex-1 min-w-0 flex flex-col items-center">
 				{#if isEditingName}
 					<input
 						bind:this={nameInputRef}
 						type="text"
-						class="nodrag w-full max-w-32 px-1.5 py-0.5 text-xs bg-white/90 text-gray-800 rounded border-none outline-none text-center"
+						class="nodrag w-full max-w-32 px-1.5 py-0.5 text-xs bg-white/90 text-gray-800 rounded border-none outline-none text-center {nameError ? 'ring-2 ring-red-500' : ''}"
 						placeholder={m.studio_node_name_placeholder()}
 						bind:value={editingNameValue}
 						onkeydown={handleNameInputKeydown}
 						onblur={saveNameEdit}
 					/>
+					{#if nameError}
+						<span class="text-xs text-red-200 mt-0.5 max-w-40 truncate" title={nameError}>{nameError}</span>
+					{/if}
 				{:else if nodeData?.name}
 					<span class="text-xs text-white/90 truncate max-w-32" title={nodeData.name}>
 						{nodeData.name}

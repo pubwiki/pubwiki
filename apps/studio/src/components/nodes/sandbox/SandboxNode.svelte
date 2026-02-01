@@ -15,7 +15,7 @@
 	import { Handle, Position, type NodeProps, type Node, useEdges, useSvelteFlow } from '@xyflow/svelte';
 	import { untrack } from 'svelte';
 	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData, FlowNodeData } from '$lib/types';
-	import { getNodeVfs, type VersionedVfs } from '$lib/vfs';
+	import { getNodeVfs, type NodeVfs } from '$lib/vfs';
 	import { getStudioContext } from '$lib/state';
 	import { nodeStore } from '$lib/persistence';
 	import { HandleId } from '$lib/graph';
@@ -45,7 +45,7 @@
 	// State
 	// ============================================================================
 
-	let vfs: VersionedVfs | null = $state(null);
+	let vfs: NodeVfs | null = $state(null);
 	let projectConfig: ProjectConfig | null = $state(null);
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);

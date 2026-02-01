@@ -23,7 +23,7 @@
 		saveProject
 	} from '$lib/persistence';
 	import { convertArtifactToStudioGraph } from '$lib/io/import';
-	import { getNodeVfs, preInitializeZenFS, type VersionedVfs } from '$lib/vfs';
+	import { getNodeVfs, preInitializeZenFS, type NodeVfs } from '$lib/vfs';
 	import { getNodeRDFStore, closeNodeRDFStore, type RDFStore } from '$lib/rdf';
 	import { createLoaderServices } from '$lib/sandbox';
 	import { detectProject, type ProjectConfig } from '@pubwiki/bundler';
@@ -31,7 +31,7 @@
 		initializeLoader, 
 		destroyLoader 
 	} from '$components/nodes/loader/controller.svelte';
-	import { HandleId, isLoaderMountpointHandle, getLoaderMountpointId } from '$lib/graph';
+	import { HandleId } from '$lib/graph';
 	import type { LoaderNodeData, LoaderContent, VFSContent } from '$lib/types';
 	import { 
 		createSandboxConnection, 
@@ -95,7 +95,7 @@
 
 	let iframeRef = $state<HTMLIFrameElement | null>(null);
 	let sandboxConnection = $state<SandboxConnection | null>(null);
-	let vfs = $state<VersionedVfs | null>(null);
+	let vfs = $state<NodeVfs | null>(null);
 	let rdfStore = $state<RDFStore | null>(null);
 	let projectConfig = $state<ProjectConfig | null>(null);
 	let sandboxOrigin = $state<string>('');
@@ -536,23 +536,18 @@
 				const backendVfsContent = backendVfsData.content as VFSContent;
 				const backendVfs = await getNodeVfs(backendVfsContent.projectId, backendVfsNodeId);
 
-				// Find mounted asset VFS nodes
-				const loaderData = nodeStore.get(loaderId) as LoaderNodeData | undefined;
-				const mountpoints = loaderData?.content?.mountpoints ?? [];
+				// Find mounted asset VFS nodes - use VFS mounts configuration
+				// The backend VFS's mounts array defines which VFS nodes are mounted and where
 				const assetMounts = new Map<string, Awaited<ReturnType<typeof getNodeVfs>>>();
-
-				for (const edge of edges) {
-					if (edge.target === loaderId && isLoaderMountpointHandle(edge.targetHandle)) {
-						const mountpointId = getLoaderMountpointId(edge.targetHandle!);
-						const mountpoint = mountpoints.find(mp => mp.id === mountpointId);
-						if (!mountpoint) continue;
-
-						const sourceData = nodeStore.get(edge.source);
-						if (sourceData?.type === 'VFS') {
-							const vfsContent = sourceData.content as VFSContent;
-							const mountVfs = await getNodeVfs(vfsContent.projectId, edge.source);
-							assetMounts.set(mountpoint.path, mountVfs);
-						}
+				
+				// New approach: Use VFS node's mounts configuration
+				const vfsMounts = backendVfsContent.mounts || [];
+				for (const mount of vfsMounts) {
+					const sourceData = nodeStore.get(mount.sourceNodeId);
+					if (sourceData?.type === 'VFS') {
+						const vfsContent = sourceData.content as VFSContent;
+						const mountVfs = await getNodeVfs(vfsContent.projectId, mount.sourceNodeId);
+						assetMounts.set(mount.mountPath, mountVfs);
 					}
 				}
 

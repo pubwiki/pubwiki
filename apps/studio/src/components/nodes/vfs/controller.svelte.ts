@@ -2,13 +2,22 @@
  * VFSNode Controller
  * 
  * Manages VFS node state including:
- * - VFS instance lifecycle
+ * - NodeVfs instance lifecycle (unified interface with file ops + version control)
  * - File tree service (shared between VFSNode and VFSProperties)
  * - Reactive file tree state
  * - VSCode link for remote editing
+ * - VFS-to-VFS mount handling
+ * 
+ * IMPORTANT: All VFS operations go through NodeVfs, which is the unified interface
+ * that includes both file operations and version control. The NodeVfs automatically
+ * handles mount configurations and supports nested mounts.
  */
 
-import { getNodeVfs, VfsFileTreeService, createVSCodeLink, type VersionedVfs, type VSCodeLink } from '$lib/vfs';
+import { getNodeVfs, invalidateNodeVfs, VfsFileTreeService, createVSCodeLink, type VSCodeLink, type NodeVfs } from '$lib/vfs';
+import { onConnection, onEdgeDelete, type ConnectionEvent, type EdgeDeleteEvent } from '$lib/state/flow-events';
+import { HandleId } from '$lib/graph';
+import { nodeStore } from '$lib/persistence';
+import type { VFSNodeData, VFSContent, VfsMountConfig } from '$lib/types';
 import type { FileItem } from '@pubwiki/ui/components';
 
 // ============================================================================
@@ -21,7 +30,11 @@ export interface UploadState {
 }
 
 export interface VfsController {
-	readonly vfs: VersionedVfs;
+	/** 
+	 * The unified VFS interface - includes file operations, mount support, and version control.
+	 * This is the ONLY VFS interface exposed by the controller.
+	 */
+	readonly vfs: NodeVfs;
 	readonly fileTreeService: VfsFileTreeService;
 	readonly fileTree: FileItem[];
 	readonly isLoading: boolean;
@@ -31,6 +44,8 @@ export interface VfsController {
 	/** VSCode link for remote editing */
 	readonly vscodeLink: VSCodeLink;
 	setUploading(uploading: boolean, progress?: { current: number; total: number }): void;
+	/** Reload VFS with updated mount configuration */
+	reloadMounts(): Promise<void>;
 	dispose(): void;
 }
 
@@ -41,7 +56,8 @@ export interface VfsController {
 const controllerCache = new Map<string, VfsControllerImpl>();
 
 class VfsControllerImpl implements VfsController {
-	private _vfs: VersionedVfs;
+	/** The unified NodeVfs - includes file operations, mounts, and version control */
+	private _vfs: NodeVfs;
 	private _fileTreeService: VfsFileTreeService;
 	private _vscodeLink: VSCodeLink;
 	private _fileTree = $state<FileItem[]>([]);
@@ -50,19 +66,79 @@ class VfsControllerImpl implements VfsController {
 	private _refCount = 0;
 	private _disposed = false;
 	private _nodeId: string;
+	private _projectId: string;
 	
 	/** Shared reactive upload state object */
 	uploadState = $state<UploadState>({ isUploading: false, progress: null });
+	
+	/** Event unsubscribers */
+	private _eventUnsubscribers: Array<() => void> = [];
 
-	constructor(vfs: VersionedVfs, nodeId: string) {
+	constructor(vfs: NodeVfs, nodeId: string, projectId: string) {
 		this._vfs = vfs;
 		this._nodeId = nodeId;
-		this._fileTreeService = new VfsFileTreeService(vfs, (newTree) => {
+		this._projectId = projectId;
+		
+		// File tree service uses NodeVfs directly (it's already a Vfs with mount support)
+		this._fileTreeService = new VfsFileTreeService(this._vfs, (newTree) => {
 			if (!this._disposed) {
 				this._fileTree = newTree;
 			}
 		});
-		this._vscodeLink = createVSCodeLink(vfs);
+		
+		// VSCode link uses the NodeVfs for editing
+		this._vscodeLink = createVSCodeLink(this._vfs);
+		
+		// Setup event listeners
+		this.setupEventListeners();
+	}
+	
+	/**
+	 * Setup event listeners for mount updates
+	 */
+	private setupEventListeners(): void {
+		// Listen for mount:moved events to update persistent mount configuration
+		this._eventUnsubscribers.push(
+			this._vfs.events.on('mount:moved', (e) => {
+				this.handleMountMoved(e.fromPath, e.toPath, e.mountedId);
+			})
+		);
+	}
+	
+	/**
+	 * Handle mount:moved event - update persistent mount configuration
+	 */
+	private handleMountMoved(fromPath: string, toPath: string, mountedId?: string): void {
+		if (!mountedId) {
+			console.warn('[VFS:Controller] mount:moved event without mountedId, cannot update config');
+			return;
+		}
+		
+		// Get current node data
+		const nodeData = nodeStore.get(this._nodeId);
+		if (!nodeData || nodeData.type !== 'VFS') {
+			return;
+		}
+		
+		const content = nodeData.content as VFSContent;
+		
+		// Find the mount with matching sourceNodeId
+		const mount = content.mounts.find(m => m.sourceNodeId === mountedId);
+		if (!mount) {
+			console.warn(`[VFS:Controller] No mount found for sourceNodeId: ${mountedId}`);
+			return;
+		}
+		
+		// Update the mount path in nodeStore
+		nodeStore.update(this._nodeId, (data) => {
+			const vfsData = data as VFSNodeData;
+			return {
+				...vfsData,
+				content: vfsData.content.updateMountPath(mount.id, toPath)
+			};
+		});
+		
+		console.log(`[VFS:Controller] Updated mount path: ${fromPath} -> ${toPath} (sourceNodeId: ${mountedId})`);
 	}
 
 	async initialize(): Promise<void> {
@@ -78,8 +154,46 @@ class VfsControllerImpl implements VfsController {
 			this._isLoading = false;
 		}
 	}
+	
+	/**
+	 * Reload VFS with updated mount configuration.
+	 * Call this when mount configuration changes.
+	 */
+	async reloadMounts(): Promise<void> {
+		console.log(`[VFS:Controller] ${this._nodeId} reloading mounts...`);
+		
+		// Clean up old event listeners (they're attached to old VFS)
+		for (const unsub of this._eventUnsubscribers) {
+			unsub();
+		}
+		this._eventUnsubscribers = [];
+		
+		// Invalidate the cached NodeVfs to force recreation with new mounts
+		invalidateNodeVfs(this._projectId, this._nodeId);
+		
+		// Get the updated NodeVfs
+		const newVfs = await getNodeVfs(this._projectId, this._nodeId);
+		this._vfs = newVfs;
+		
+		// Re-setup event listeners for new VFS
+		this.setupEventListeners();
+		
+		// Recreate file tree service with new VFS
+		this._fileTreeService.dispose();
+		this._fileTreeService = new VfsFileTreeService(this._vfs, (newTree) => {
+			if (!this._disposed) {
+				this._fileTree = newTree;
+			}
+		});
+		
+		// Reload file tree
+		await this._fileTreeService.initialize();
+		
+		console.log(`[VFS:Controller] ${this._nodeId} mounts reloaded`);
+	}
 
-	get vfs(): VersionedVfs {
+	/** Get the unified NodeVfs */
+	get vfs(): NodeVfs {
 		return this._vfs;
 	}
 
@@ -123,6 +237,13 @@ class VfsControllerImpl implements VfsController {
 	dispose(): void {
 		if (this._disposed) return;
 		this._disposed = true;
+		
+		// Clean up event listeners
+		for (const unsub of this._eventUnsubscribers) {
+			unsub();
+		}
+		this._eventUnsubscribers = [];
+		
 		this._vscodeLink.disconnect();
 		this._fileTreeService.dispose();
 	}
@@ -175,10 +296,11 @@ export async function getVfsController(
 	// Create new controller with promise caching to prevent race conditions
 	const createPromise = (async () => {
 		const vfsStart = performance.now();
+		// Get the complete NodeVfs with all mounts
 		const vfs = await getNodeVfs(projectId, nodeId);
 		console.log(`[VFS:Controller] ${nodeId} getNodeVfs took ${(performance.now() - vfsStart).toFixed(2)}ms`);
 		
-		const newController = new VfsControllerImpl(vfs, nodeId);
+		const newController = new VfsControllerImpl(vfs, nodeId, projectId);
 		controllerCache.set(nodeId, newController);
 		newController.addRef();
 		
@@ -210,4 +332,183 @@ export function releaseVfsController(nodeId: string): void {
 	if (controller) {
 		controller.release();
 	}
+}
+
+// ============================================================================
+// VFS Mount Event Handlers
+// ============================================================================
+
+/**
+ * Check if a mount path conflicts with existing paths in the target VFS.
+ * This is an async check that validates against the actual file system.
+ */
+async function checkMountPathConflict(
+	targetNodeId: string,
+	mountPath: string,
+	targetContent: VFSContent
+): Promise<string | null> {
+	// Check if it conflicts with another mount path
+	const existingMountConflict = targetContent.mounts.find(m => m.mountPath === mountPath);
+	if (existingMountConflict) {
+		return `Mount path "${mountPath}" is already used by another mounted VFS`;
+	}
+	
+	// Check if the path exists in the target VFS (file or folder)
+	const controller = controllerCache.get(targetNodeId);
+	if (controller) {
+		try {
+			const exists = await controller.vfs.exists(mountPath);
+			if (exists) {
+				return `Path "${mountPath}" already exists in the VFS`;
+			}
+		} catch {
+			// Path doesn't exist, no conflict
+		}
+	}
+	
+	return null;
+}
+
+/**
+ * Handle VFS-to-VFS mount connection
+ * When a VFS connects to another VFS's VFS_MOUNT handle, create a mount configuration
+ */
+function handleVfsMountConnection(event: ConnectionEvent): boolean {
+	// Only handle VFS_MOUNT target handle
+	if (event.targetHandle !== HandleId.VFS_MOUNT) {
+		return false;
+	}
+
+	// Get source node data (the VFS being mounted)
+	const sourceData = nodeStore.get(event.source);
+	if (!sourceData || sourceData.type !== 'VFS') {
+		return false;
+	}
+
+	// Get target node data (the VFS receiving the mount)
+	const targetData = nodeStore.get(event.target);
+	if (!targetData || targetData.type !== 'VFS') {
+		return false;
+	}
+
+	const targetContent = targetData.content as VFSContent;
+
+	// Use source VFS node name as the mount folder name
+	const mountName = sourceData.name || 'mounted';
+	let mountPath = `/${mountName}`;
+
+	// Check if this VFS is already mounted
+	const existingMount = targetContent.mounts.find(m => m.sourceNodeId === event.source);
+	if (existingMount) {
+		console.log(`[VFS:Mount] ${event.source} is already mounted to ${event.target}`);
+		return false; // Allow default edge creation, mount already exists
+	}
+
+	// Check for mount path conflicts asynchronously and create mount
+	(async () => {
+		// Check if path conflicts with existing files/folders or other mounts
+		const conflict = await checkMountPathConflict(event.target, mountPath, targetContent);
+		if (conflict) {
+			// If there's a conflict, generate a unique path by appending a number
+			let counter = 1;
+			let uniquePath = `${mountPath}_${counter}`;
+			while (await checkMountPathConflict(event.target, uniquePath, targetContent)) {
+				counter++;
+				uniquePath = `${mountPath}_${counter}`;
+			}
+			mountPath = uniquePath;
+			console.warn(`[VFS:Mount] Original path had conflict, using "${mountPath}": ${conflict}`);
+		}
+
+		// Create mount configuration
+		const mount: VfsMountConfig = {
+			id: crypto.randomUUID(),
+			sourceNodeId: event.source,
+			mountPath,
+			sourceCommit: undefined // Will be set when target VFS commits
+		};
+
+		// Update target VFS content with new mount
+		nodeStore.update(event.target, (data) => {
+			const vfsData = data as VFSNodeData;
+			return {
+				...vfsData,
+				content: vfsData.content.addMount(mount)
+			};
+		});
+
+		console.log(`[VFS:Mount] Mounted ${event.source} (${mountName}) to ${event.target} at ${mountPath}`);
+		
+		// Refresh the target controller's mounts if it exists
+		const targetController = controllerCache.get(event.target);
+		if (targetController) {
+			await targetController.reloadMounts();
+		}
+	})();
+
+	// Allow default edge creation
+	return false;
+}
+
+/**
+ * Handle VFS mount edge deletion
+ * When an edge to VFS_MOUNT is deleted, remove the mount configuration
+ */
+function handleVfsMountEdgeDelete(event: EdgeDeleteEvent): void {
+	// Only handle VFS_MOUNT target handle
+	if (event.edge.targetHandle !== HandleId.VFS_MOUNT) {
+		return;
+	}
+
+	const sourceNodeId = event.edge.source;
+	const targetNodeId = event.edge.target;
+
+	// Get target node data
+	const targetData = nodeStore.get(targetNodeId);
+	if (!targetData || targetData.type !== 'VFS') {
+		return;
+	}
+
+	const targetContent = targetData.content as VFSContent;
+
+	// Find and remove the mount for this source
+	const mount = targetContent.mounts.find(m => m.sourceNodeId === sourceNodeId);
+	if (!mount) {
+		return;
+	}
+
+	// Update target VFS content to remove mount
+	nodeStore.update(targetNodeId, (data) => {
+		const vfsData = data as VFSNodeData;
+		return {
+			...vfsData,
+			content: vfsData.content.removeMount(mount.id)
+		};
+	});
+
+	console.log(`[VFS:Mount] Unmounted ${sourceNodeId} from ${targetNodeId}`);
+	
+	// Refresh the target controller's mounts if it exists
+	const targetController = controllerCache.get(targetNodeId);
+	if (targetController) {
+		targetController.reloadMounts();
+	}
+}
+
+// ============================================================================
+// Event Handler Registration
+// ============================================================================
+
+/**
+ * Register VFS node event handlers
+ * Should be called once during app initialization
+ */
+export function registerVfsNodeHandlers(): () => void {
+	const unsubConnection = onConnection(handleVfsMountConnection);
+	const unsubEdgeDelete = onEdgeDelete(handleVfsMountEdgeDelete);
+
+	return () => {
+		unsubConnection();
+		unsubEdgeDelete();
+	};
 }

@@ -7,11 +7,13 @@
 	 * - File editing via sidebar properties panel
 	 * - Uses BaseNode for consistent styling
 	 * - Shares VfsController with VFSProperties for single event subscription
+	 * - Node name is the VFS name (edited via BaseNode header)
 	 */
 	import { Handle, Position, type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import type { VFSNodeData, FlowNodeData } from '$lib/types';
-	import { countFiles, countFolders } from '$lib/vfs';
+	import type { VFSNodeData, FlowNodeData, VFSContent } from '$lib/types';
+	import { countFiles, countFolders, validateVfsName } from '$lib/vfs';
+	import { HandleId } from '$lib/graph';
 	import { getStudioContext } from '$lib/state';
 	import { nodeStore } from '$lib/persistence';
 	import { getVfsController, releaseVfsController, type VfsController } from './controller.svelte';
@@ -32,6 +34,10 @@
 	// ============================================================================
 
 	const nodeData = $derived(nodeStore.get(id) as VFSNodeData | undefined);
+	const vfsContent = $derived(nodeData?.content as VFSContent | undefined);
+	const projectId = $derived(vfsContent?.projectId ?? '');
+	// VFS name is now the node name, not displayName
+	const vfsName = $derived(nodeData?.name ?? '');
 
 	// ============================================================================
 	// State
@@ -52,6 +58,7 @@
 	const fileCount = $derived(countFiles(fileTree));
 	const folderCount = $derived(countFolders(fileTree));
 	const uploadState = $derived(controller?.uploadState);
+	const mountCount = $derived(vfsContent?.mounts?.length ?? 0);
 
 	// ============================================================================
 	// Initialization
@@ -66,6 +73,11 @@
 			isLoading = false;
 			console.log(`[VFSNode] ${id} missing projectId, aborting`);
 			return;
+		}
+		
+		// If this is a new node (no name set), trigger BaseNode's name editing
+		if (!vfsName) {
+			ctx.setEditingNameNodeId(id);
 		}
 		
 		try {
@@ -105,6 +117,11 @@
 		}
 		expandedFolders = newExpanded;
 	}
+	
+	// VFS name validation callback for BaseNode
+	function handleValidateName(name: string, nodeId: string): string | null {
+		return validateVfsName(name, projectId, nodeId);
+	}
 
 	// Action to capture wheel events and prevent canvas zoom/pan
 	function captureWheel(node: HTMLElement) {
@@ -139,7 +156,19 @@
 	nodeType="VFS"
 	headerBgClass="bg-indigo-500"
 	handleBgClass="bg-indigo-400!"
+	validateName={handleValidateName}
 >
+	{#snippet leftHandles()}
+		<!-- VFS Mount Input Handle -->
+		<Handle 
+			id={HandleId.VFS_MOUNT} 
+			type="target" 
+			position={Position.Left} 
+			{isConnectable} 
+			class="w-3! h-3! bg-indigo-400! border-2! border-white!" 
+		/>
+	{/snippet}
+
 	{#snippet headerIcon()}
 		<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -179,6 +208,9 @@
 		<div class="px-3 py-1.5 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center gap-3">
 			<span>{fileCount} file{fileCount !== 1 ? 's' : ''}</span>
 			<span>{folderCount} folder{folderCount !== 1 ? 's' : ''}</span>
+			{#if mountCount > 0}
+				<span class="text-indigo-500">{mountCount} mount{mountCount !== 1 ? 's' : ''}</span>
+			{/if}
 		</div>
 	{/snippet}
 </BaseNode>
@@ -193,13 +225,26 @@
 		onclick={() => item.type === 'folder' && toggleFolder(item.path)}
 	>
 		{#if item.type === 'folder'}
-			<svg class="w-3 h-3 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				{#if expandedFolders.has(item.path)}
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
-				{:else}
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-				{/if}
-			</svg>
+			{#if item.isMounted}
+				<!-- Mounted folder icon (purple) -->
+				<svg class="w-3 h-3 text-purple-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					{#if expandedFolders.has(item.path)}
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 15.5l2-2m0 0l2 2m-2-2v4" />
+					{:else}
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 12.5l2-2m0 0l2 2m-2-2v4" />
+					{/if}
+				</svg>
+			{:else}
+				<svg class="w-3 h-3 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					{#if expandedFolders.has(item.path)}
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+					{:else}
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+					{/if}
+				</svg>
+			{/if}
 		{:else}
 			<svg class="w-3 h-3 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

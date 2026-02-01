@@ -36,6 +36,8 @@ export interface VfsFolder {
   updatedAt: string
   /** 子项（可选，递归列出时使用） */
   children?: Array<VfsFile | VfsFolder>
+  /** 如果此文件夹是挂载点，表示挂载的ID标识 */
+  mountedId?: string
 }
 
 /**

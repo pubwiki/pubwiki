@@ -5,7 +5,7 @@
  */
 
 import { VfsBrowserClient, type VfsConnectionOptions } from '@pubwiki/vscode-bridge';
-import type { VersionedVfs } from './store';
+import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
 // ============================================================================
 // Types
@@ -32,7 +32,7 @@ class VSCodeLinkImpl implements VSCodeLink {
 	private client: VfsBrowserClient | null = null;
 	private _state = $state<VSCodeLinkState>({ status: 'disconnected', error: null });
 
-	constructor(private vfs: VersionedVfs) {}
+	constructor(private vfs: Vfs<VfsProvider>) {}
 
 	get state(): VSCodeLinkState {
 		return this._state;
@@ -54,9 +54,6 @@ class VSCodeLinkImpl implements VSCodeLink {
 			}
 
 			// Create the client
-			// Note: VfsBrowserClient expects a Vfs instance, but our VersionedVfs
-			// wraps a Vfs internally. We need to access the underlying vfs.
-			// For now, we'll cast it - the interface should be compatible.
 			this.client = new VfsBrowserClient(this.vfs as any);
 
 			// Set up event handlers
@@ -101,6 +98,6 @@ class VSCodeLinkImpl implements VSCodeLink {
  * Create a VSCode link manager for a VFS instance.
  * The link allows VS Code to remotely edit files in the VFS.
  */
-export function createVSCodeLink(vfs: VersionedVfs): VSCodeLink {
+export function createVSCodeLink(vfs: Vfs<VfsProvider>): VSCodeLink {
 	return new VSCodeLinkImpl(vfs);
 }
