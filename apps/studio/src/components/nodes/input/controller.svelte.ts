@@ -25,7 +25,7 @@ import { prepareForGeneration, syncNode, getIncomingEdges } from '$lib/version';
 import { positionNewNodesFromSources } from '$lib/graph';
 import { getNodeVfs } from '$lib/vfs';
 import { getVfsController } from '../vfs/controller.svelte';
-import { createMountedVfs, getMountedProvider, MountedVfsProvider, Vfs } from '@pubwiki/vfs';
+import { Vfs } from '@pubwiki/vfs';
 import { generateBlockId, blocksToContent } from '@pubwiki/chat';
 import { generateCommitHash } from '$lib/version';
 import { 
@@ -116,7 +116,7 @@ export async function createPendingVfsNode(
 		source: generatedNodeId,
 		sourceHandle: HandleId.VFS_OUTPUT,
 		target: vfsNodeData.id,
-		targetHandle: HandleId.DEFAULT,
+		targetHandle: HandleId.VFS_GENERATOR_INPUT,
 	};
 	
 	// Pre-initialize the VFS so it's ready for tool calls
@@ -144,43 +144,43 @@ export async function createPendingVfsNode(
 // ============================================================================
 
 /**
- * Find VFS nodes connected to an input node via the VFS_MOUNT handle.
+ * Find VFS nodes connected to an input node.
  * Returns a Map of mount path -> source VFS node ID.
  * 
- * With the new VFS mount system, mounts are configured via VFSContent.mounts array.
- * The edge connects to VFS_MOUNT handle, and the VFSContent on the target node 
- * specifies the mount configuration.
+ * NOTE: The VFS_MOUNT handle has been removed in favor of drag-to-folder mounting.
+ * This function currently returns an empty Map. VFS context for generation 
+ * may need to be provided through a different mechanism in the future.
+ * 
+ * @deprecated VFS_MOUNT handle removed. Consider using VFSContent.mounts on VFS nodes.
  */
-export function findConnectedVfsNodes(
+/**
+ * Find the VFS node connected to an input node's VFS_INPUT handle.
+ * Input node can only connect to a single VFS node.
+ * 
+ * @returns The VFS node ID if connected, null otherwise
+ */
+export function findConnectedVfsNode(
 	inputNodeId: string,
 	nodes: Node<FlowNodeData>[],
 	edges: Edge[]
-): Map<string, string> {
-	const result = new Map<string, string>();
-	
-	// Find edges connecting to the VFS_MOUNT handle
-	const vfsMountEdge = edges.find(
-		e => e.target === inputNodeId && e.targetHandle === HandleId.VFS_MOUNT
+): string | null {
+	// Find edge connected to the VFS_INPUT handle
+	const vfsEdge = edges.find(e => 
+		e.target === inputNodeId && 
+		e.targetHandle === HandleId.VFS_INPUT
 	);
 	
-	if (!vfsMountEdge) {
-		return result;
+	if (!vfsEdge) {
+		return null;
 	}
 	
-	// Get the source VFS node
-	const sourceNodeId = vfsMountEdge.source;
-	const sourceNode = nodes.find(n => n.id === sourceNodeId);
-	if (!sourceNode || sourceNode.data.type !== 'VFS') {
-		return result;
+	const sourceNode = nodes.find(n => n.id === vfsEdge.source);
+	if (sourceNode && sourceNode.type === 'VFS') {
+		console.log('[findConnectedVfsNode] Found VFS node:', vfsEdge.source);
+		return vfsEdge.source;
 	}
 	
-	// Use the VFS node's name or a default path
-	const vfsData = sourceNode.data as VFSNodeData;
-	const mountPath = vfsData.name ? `/${vfsData.name}` : '/assets';
-	
-	result.set(mountPath, sourceNodeId);
-	
-	return result;
+	return null;
 }
 
 /**
@@ -287,55 +287,46 @@ export async function generate(
 	// Create PubChat on-demand so user settings changes take effect immediately
 	const pubchat = createPubChat(config);
 
-	// Check if there are VFS nodes connected to this input node via VFS_MOUNT handle
-	const vfsNodeIds = findConnectedVfsNodes(inputNodeId, nodes, edges);
+	// Check if a VFS node is connected to this input node
+	const vfsNodeId = findConnectedVfsNode(inputNodeId, nodes, edges);
 	
 	// Track input VFS ref for file modification scenario
 	let inputVfsRef: VfsRef | null = null;
 	let outputVfsId: string | null = null;
 	
-	// If VFS nodes exist, set up mounted VFS for the generation
-	let mountedVfs: Vfs<MountedVfsProvider> | null = null;
-	if (vfsNodeIds.size > 0) {
-		console.log("vfs", vfsNodeIds)
-		mountedVfs = createMountedVfs();
-		const provider = mountedVfs.getProvider()
+	// If VFS node exists, set up VFS for the generation
+	if (vfsNodeId) {
+		console.log('[Generate] Connected VFS node:', vfsNodeId);
+		const vfsData = nodeStore.get(vfsNodeId) as VFSNodeData | undefined;
 		
-		// For file modification scenario: commit the VFS and record inputVfsRef
-		// Use the first VFS as the primary input/output VFS
-		const [firstMountPath, firstVfsNodeId] = vfsNodeIds.entries().next().value as [string, string];
-		const firstVfsData = nodeStore.get(firstVfsNodeId) as VFSNodeData | undefined;
-		
-		if (firstVfsData) {
-			const vfsController = await getVfsController(firstVfsData.content.projectId, firstVfsNodeId);
+		if (vfsData) {
+			const vfsController = await getVfsController(vfsData.content.projectId, vfsNodeId);
+			
+			// For file modification scenario: commit the VFS and record inputVfsRef
 			try {
 				// Commit current VFS state as base for modifications
 				const baseCommit = await vfsController.vfs.commit('Pre-generation snapshot');
-				inputVfsRef = { nodeId: firstVfsNodeId, commit: baseCommit.hash };
-				outputVfsId = firstVfsNodeId;  // Output to the same VFS
+				inputVfsRef = { nodeId: vfsNodeId, commit: baseCommit.hash };
+				outputVfsId = vfsNodeId;  // Output to the same VFS
 				console.log('[Generate] Recorded input VFS ref:', inputVfsRef);
 			} catch (e) {
 				// May fail if no changes to commit - get HEAD instead
 				try {
 					const head = await vfsController.vfs.getHead();
-					inputVfsRef = { nodeId: firstVfsNodeId, commit: head.hash };
-					outputVfsId = firstVfsNodeId;
+					inputVfsRef = { nodeId: vfsNodeId, commit: head.hash };
+					outputVfsId = vfsNodeId;
 					console.log('[Generate] Using existing HEAD as input VFS ref:', inputVfsRef);
 				} catch {
 					// No commits yet, that's OK
 					console.log('[Generate] No existing commits in VFS');
+					outputVfsId = vfsNodeId;
 				}
 			}
+			
+			// Set VFS directly for pubchat
+			const vfs = await getNodeVfs(vfsData.content.projectId, vfsNodeId);
+			pubchat.setVFS(vfs);
 		}
-		
-		for (const [mountPath, vfsNodeId] of vfsNodeIds) {
-			const vfsData = nodeStore.get(vfsNodeId);
-			if (!vfsData || vfsData.type !== 'VFS') continue;
-			const vfs = await getNodeVfs((vfsData as VFSNodeData).content.projectId, vfsNodeId);
-			provider.mount(mountPath, vfs);
-		}
-	
-		pubchat.setVFS(mountedVfs);
 	}
 
 	// Prepare for generation - creates snapshots, gets refs, and resolves tags
@@ -427,7 +418,7 @@ export async function generate(
 	let pendingVfs: PendingVfsNode | null = null;
 	let vfsShown = false;
 	
-	if (vfsNodeIds.size === 0) {
+	if (!vfsNodeId) {
 		// No existing VFS connected - pre-create one for potential file operations
 		const vfsProjectId = projectId ?? crypto.randomUUID();
 		pendingVfs = await createPendingVfsNode(newGeneratedData.id, vfsProjectId);
@@ -484,7 +475,7 @@ export async function generate(
 						source: nodeId,
 						sourceHandle: HandleId.VFS_OUTPUT,
 						target: outputVfsId,
-						targetHandle: HandleId.DEFAULT,
+						targetHandle: HandleId.VFS_GENERATOR_INPUT,
 					};
 					callbacks.updateEdges(edges => [...edges, vfsOutputEdge]);
 					vfsOutputEdgeCreated = true;
@@ -588,7 +579,7 @@ export async function generate(
 			}
 			
 			// Clear VFS after generation completes
-			if (mountedVfs || pendingVfs) {
+			if (vfsNodeId || pendingVfs) {
 				pubchat.clearVFS();
 			}
 			callbacks.onComplete?.();
@@ -603,7 +594,7 @@ export async function generate(
 			}
 			
 			// Clear VFS on error too
-			if (mountedVfs || pendingVfs) {
+			if (vfsNodeId || pendingVfs) {
 				pubchat.clearVFS();
 			}
 		}

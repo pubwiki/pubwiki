@@ -127,11 +127,21 @@ export interface StreamGenerationCallbacks {
 registerVersionHandler<GeneratedNodeData>('GENERATED', {
 	getVersionRefs: (data) => {
 		const content = data.content as GeneratedContent;
-		return [
+		const refs = [
 			content.inputRef,
 			...content.promptRefs,
 			...(content.indirectPromptRefs || [])
 		];
+		
+		// Include inputVfsRef if present (for file modification scenarios)
+		if (content.inputVfsRef) {
+			refs.push({
+				id: content.inputVfsRef.nodeId,
+				commit: content.inputVfsRef.commit
+			});
+		}
+		
+		return refs;
 	}
 });
 

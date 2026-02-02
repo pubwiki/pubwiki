@@ -77,6 +77,10 @@ export const HandleId = {
   LOADER_DOCS_OUTPUT: 'loader-docs-output',
   /** Generated Node: VFS output (for file creation/modification) */
   VFS_OUTPUT: 'vfs-output',
+  /** VFS mount handle prefix for dynamic mount handles (similar to reftag) */
+  VFS_MOUNT_PREFIX: 'vfs-mount-',
+  /** VFS generator input - receives connection from loader/generated node that created this VFS */
+  VFS_GENERATOR_INPUT: 'vfs-generator',
 } as const;
 
 // ============================================================================
@@ -168,6 +172,13 @@ export const NodeRegistry: Record<string, NodeSpec> = {
     label: 'Input',
     inputs: [
       {
+        id: HandleId.VFS_INPUT,
+        label: 'VFS',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.OPTIONAL,
+        colorClass: 'bg-indigo-400',
+      },
+      {
         id: HandleId.SYSTEM_TAG,
         label: 'System Prompt',
         dataType: DataType.STRING,
@@ -230,11 +241,19 @@ export const NodeRegistry: Record<string, NodeSpec> = {
     label: 'VFS',
     inputs: [
       {
-        id: HandleId.VFS_MOUNT,
+        id: HandleId.VFS_GENERATOR_INPUT,
+        label: 'Generator',
+        dataType: DataType.VFS,
+        cardinality: Cardinality.OPTIONAL,
+        colorClass: 'bg-green-400',
+      },
+      {
+        id: HandleId.VFS_MOUNT_PREFIX,
         label: 'Mount',
         dataType: DataType.VFS,
-        cardinality: Cardinality.MANY,
-        colorClass: 'bg-indigo-400',
+        cardinality: Cardinality.OPTIONAL,
+        dynamic: true,
+        colorClass: 'bg-purple-400',
       },
     ],
     outputs: [
@@ -439,6 +458,31 @@ export function getTagName(handleId: string): string {
  */
 export function createTagHandleId(tagName: string): string {
   return `${HandleId.TAG_PREFIX}${tagName}`;
+}
+
+// ============================================================================
+// VFS Mount Handle Helpers
+// ============================================================================
+
+/**
+ * Check if a handle ID is a VFS mount handle
+ */
+export function isVfsMountHandle(handleId: string | null | undefined): boolean {
+  return typeof handleId === 'string' && handleId.startsWith(HandleId.VFS_MOUNT_PREFIX);
+}
+
+/**
+ * Extract mount ID from handle ID (e.g., 'vfs-mount-abc123' -> 'abc123')
+ */
+export function getMountIdFromHandle(handleId: string): string {
+  return handleId.slice(HandleId.VFS_MOUNT_PREFIX.length);
+}
+
+/**
+ * Create VFS mount handle ID from mount ID
+ */
+export function createVfsMountHandleId(mountId: string): string {
+  return `${HandleId.VFS_MOUNT_PREFIX}${mountId}`;
 }
 
 // ============================================================================

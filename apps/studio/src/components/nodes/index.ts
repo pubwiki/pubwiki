@@ -23,7 +23,7 @@ export {
 	type GenerationConfig,
 	type StreamGenerationCallbacks
 } from './generated';
-export { VFSNode, VFSFileEditor, registerVfsNodeHandlers } from './vfs';
+export { VFSNode, VFSFileEditor, registerVfsNodeHandlers, createMountToFolder } from './vfs';
 export { SandboxNode, SandboxPreviewView } from './sandbox';
 export { 
 	LoaderNode, 

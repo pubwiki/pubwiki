@@ -15,7 +15,8 @@
 		StateNode, 
 		registerGeneratedNodeHandlers,
 		registerLoaderNodeHandlers,
-		registerVfsNodeHandlers
+		registerVfsNodeHandlers,
+		createMountToFolder
 	} from '$components/nodes';
 	import VFSFileEditor from '$components/nodes/vfs/VFSFileEditor.svelte';
 	import FlowController from '$components/FlowController.svelte';
@@ -39,14 +40,14 @@
 		createPreviewController,
 		type NodeRef
 	} from '$lib/version';
-	import { validateConnection } from '$lib/graph';
+	import { validateConnection, HandleId, createVfsMountHandleId } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
 	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$components/pubwiki';
 	import VfsDeleteConfirmDialog from '$components/dialogs/VfsDeleteConfirmDialog.svelte';
-	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers } from '$lib/state';
+	import { dispatchConnection, dispatchEdgeDeletes, dispatchNodeDeletes, clearAllHandlers, getVfsDropTarget } from '$lib/state';
 	import { 
 		nodeStore, 
 		layoutStore, 
@@ -390,6 +391,70 @@
 		
 		// If no handler handled it, the default SvelteFlow behavior creates the edge
 		// (which is fine for normal connections)
+	}
+
+	/**
+	 * Handle connection end - detect drag-to-folder mount gesture.
+	 * Called when a user stops dragging a connection line (whether connected or not).
+	 * Uses state-driven approach: VFSNode updates vfsDropTarget state on hover,
+	 * and we read it here instead of querying DOM.
+	 */
+	async function handleConnectEnd(event: MouseEvent | TouchEvent, connectionState: { toHandle: unknown; fromNode?: { id: string } | null }) {
+		// If the connection was successful (connected to a handle), do nothing extra
+		if (connectionState.toHandle) {
+			return;
+		}
+
+		// Get source node info from connection state
+		const sourceNodeId = connectionState.fromNode?.id;
+		if (!sourceNodeId) return;
+
+		// Check if source is a VFS node
+		const sourceNode = nodes.find(n => n.id === sourceNodeId);
+		if (!sourceNode || sourceNode.data.type !== 'VFS') {
+			return;
+		}
+
+		// Get current drop target from state (set by VFSNode on hover)
+		const dropTarget = getVfsDropTarget();
+		if (!dropTarget) return;
+
+		const { nodeId: targetNodeId, folder, folderPath: targetFolderPath } = dropTarget;
+		
+		// Cannot drop on an already mounted folder
+		if (folder?.isMounted) {
+			console.warn('[VFS:Mount] Cannot mount to an already mounted folder');
+			return;
+		}
+
+		// Cannot drop on self
+		if (targetNodeId === sourceNodeId) {
+			return;
+		}
+
+		if (targetNodeId && targetFolderPath) {
+			// Create mount to the target folder
+			const mount = await createMountToFolder(sourceNodeId, targetNodeId, targetFolderPath);
+			
+			if (mount) {
+				// Create visual edge to represent the mount relationship
+				// Use the mount's dynamic handle ID (similar to reftag)
+				const targetHandleId = createVfsMountHandleId(mount.id);
+				const newEdge: Edge = {
+					id: `${sourceNodeId}-${targetNodeId}-${mount.id}`,
+					source: sourceNodeId,
+					target: targetNodeId,
+					sourceHandle: HandleId.DEFAULT,
+					targetHandle: targetHandleId,
+				};
+				
+				// Check if edge already exists
+				if (!edges.some(e => e.id === newEdge.id)) {
+					edges = [...edges, newEdge];
+					scheduleEdgeSave();
+				}
+			}
+		}
 	}
 
 	// ============================================================================
@@ -1319,6 +1384,7 @@
 			onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
 			onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
 			onconnect={(connection) => handleConnect(connection)}
+			onconnectend={(event, connectionState) => handleConnectEnd(event, connectionState)}
 			onbeforedelete={handleBeforeDelete}
 			ondelete={handleDelete}
 			onnodedragstop={handleNodeDragStop}

@@ -26,12 +26,16 @@
 		selectedPath?: string;
 		/** Set of focused paths for multi-select */
 		focusedPaths?: Set<string>;
+		/** Path to view and scroll into view. When set, expands all parent folders and highlights the item temporarily */
+		viewingPath?: string;
 		/** Enable drag-and-drop (requires operations.onMove) */
 		draggable?: boolean;
 		/** Enable context menu (requires operations for rename/delete) */
 		contextMenuEnabled?: boolean;
 		/** Show quick action buttons at bottom */
 		showQuickActions?: boolean;
+		/** Use compact mode for node cards (smaller icons, less padding) */
+		compact?: boolean;
 		/** File operations handlers */
 		operations?: FileOperations;
 		/** Called when a file is clicked */
@@ -44,6 +48,8 @@
 		onSelectionChange?: (path: string | undefined) => void;
 		/** Called when focused paths change (multi-select) */
 		onFocusedChange?: (paths: Set<string>) => void;
+		/** Called when mouse enters/leaves an item (null when leaving) */
+		onItemHover?: (item: FileItem | null) => void;
 		/** Called after any file operation completes (for refreshing tree) */
 		onRefresh?: () => Promise<void>;
 		/** Custom class for the container */
@@ -55,15 +61,18 @@
 		expandedFolders = new Set(),
 		selectedPath,
 		focusedPaths = new Set(),
+		viewingPath,
 		draggable = false,
 		contextMenuEnabled = false,
 		showQuickActions = false,
+		compact = false,
 		operations,
 		onFileClick,
 		onFolderToggle,
 		onExpandedChange,
 		onSelectionChange,
 		onFocusedChange,
+		onItemHover,
 		onRefresh,
 		class: className = ''
 	}: Props = $props();
@@ -98,12 +107,84 @@
 	// Multi-select
 	let lastClickedPath = $state<string | null>(null);
 
+	// Focus path - temporarily highlighted item after focusPath is set
+	let highlightedPath = $state<string | null>(null);
+	let highlightTimeout: ReturnType<typeof setTimeout> | null = null;
+
+	// Container ref for scrolling
+	let containerRef = $state<HTMLElement | null>(null);
+
 	// File upload input references and dropdown state
 	let fileInput: HTMLInputElement | undefined = $state();
 	let folderInput: HTMLInputElement | undefined = $state();
 	let showUploadMenu = $state(false);
 	let uploadButtonRef: HTMLButtonElement | undefined = $state();
 	let uploadMenuPosition = $state({ x: 0, y: 0 });
+
+	// ============================================================================
+	// Viewing Path Logic
+	// ============================================================================
+
+	/**
+	 * Get all parent folder paths for a given path
+	 * e.g., '/a/b/c' -> ['/a', '/a/b']
+	 */
+	function getParentPaths(path: string): string[] {
+		const parts = path.split('/').filter(Boolean);
+		const parents: string[] = [];
+		for (let i = 1; i < parts.length; i++) {
+			parents.push('/' + parts.slice(0, i).join('/'));
+		}
+		return parents;
+	}
+
+	// Effect to handle viewingPath changes
+	$effect(() => {
+		if (!viewingPath) {
+			// Clear highlight when viewingPath is cleared
+			highlightedPath = null;
+			return;
+		}
+
+		// Expand all parent folders
+		const parents = getParentPaths(viewingPath);
+		if (parents.length > 0) {
+			const newExpanded = new Set(expandedFolders);
+			let changed = false;
+			for (const parent of parents) {
+				if (!newExpanded.has(parent)) {
+					newExpanded.add(parent);
+					changed = true;
+				}
+			}
+			if (changed) {
+				onExpandedChange?.(newExpanded);
+			}
+		}
+
+		// Set highlight
+		highlightedPath = viewingPath;
+
+		// Clear highlight after animation
+		if (highlightTimeout) {
+			clearTimeout(highlightTimeout);
+		}
+		highlightTimeout = setTimeout(() => {
+			highlightedPath = null;
+		}, 2000);
+
+		// Scroll to the item after a tick (to allow expansion to render)
+		setTimeout(() => {
+			const itemEl = containerRef?.querySelector(`[data-path="${CSS.escape(viewingPath)}"]`);
+			if (itemEl) {
+				itemEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			}
+		}, 50);
+	});
+
+	// ============================================================================
+	// Upload Menu Position
+	// ============================================================================
 
 	// Computed upload menu position based on button ref
 	function updateUploadMenuPosition() {
@@ -605,13 +686,14 @@
 <!-- File Tree Container -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+	bind:this={containerRef}
 	class="flex flex-col {className}"
 	oncontextmenu={(e) => handleContextMenu(e, null)}
 	ondragover={(e) => handleDragOver(e, null)}
 	ondragleave={handleDragLeave}
 	ondrop={(e) => handleDrop(e, null)}
 >
-	<div class="flex-1 overflow-y-auto p-2 {dragOverRoot ? 'bg-indigo-100' : ''}">
+	<div class="flex-1 overflow-y-auto {compact ? 'p-1' : 'p-2'} {dragOverRoot ? 'bg-indigo-100' : ''}">
 		{#if inlineEdit.active && inlineEdit.type !== 'rename' && inlineEdit.parentPath === '/'}
 			{@render inlineNewItemInput(0)}
 		{/if}
@@ -805,12 +887,14 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div
-			class="flex items-center gap-1.5 py-1 px-2 rounded cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors
+			class="{compact ? 'py-0.5 px-1 gap-1.5' : 'py-1 px-2 gap-1.5'} flex items-center rounded cursor-pointer text-gray-700 hover:bg-gray-200 transition-colors
 				{selectedPath === item.path ? 'bg-indigo-100 text-indigo-700' : ''}
 				{focusedPaths.has(item.path) ? 'bg-indigo-50 ring-1 ring-indigo-300' : ''}
+				{highlightedPath === item.path ? 'bg-amber-100 ring-1 ring-amber-400' : ''}
 				{dragOverItem?.path === item.path ? 'bg-indigo-200 ring-2 ring-indigo-400' : ''}
 				{draggedItems.some(i => i.path === item.path) ? 'opacity-50' : ''}"
-			style="padding-left: {depth * 14 + 8}px"
+			style="padding-left: {depth * (compact ? 10 : 14) + (compact ? 4 : 8)}px"
+			data-path={item.path}
 			draggable={draggable ? 'true' : 'false'}
 			ondragstart={(e) => handleDragStart(e, item)}
 			ondragover={(e) => handleDragOver(e, item)}
@@ -819,11 +903,13 @@
 			ondrop={(e) => handleDrop(e, item)}
 			onclick={(e) => handleItemClick(item, e)}
 			oncontextmenu={(e) => handleContextMenu(e, item)}
+			onmouseenter={() => onItemHover?.(item)}
+			onmouseleave={() => onItemHover?.(null)}
 		>
 			{#if item.type === 'folder'}
 				{#if item.isMounted}
 					<!-- Mounted folder icon (folder with link symbol) -->
-					<svg class="w-4 h-4 text-purple-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="{compact ? 'w-3 h-3' : 'w-4 h-4'} text-purple-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						{#if expandedFolders.has(item.path)}
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 15.5l2-2m0 0l2 2m-2-2v4" />
@@ -833,7 +919,7 @@
 						{/if}
 					</svg>
 				{:else}
-					<svg class="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class="{compact ? 'w-3 h-3' : 'w-4 h-4'} text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						{#if expandedFolders.has(item.path)}
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
 						{:else}
@@ -842,11 +928,11 @@
 					</svg>
 				{/if}
 			{:else}
-				<svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+				<svg class="{compact ? 'w-3 h-3' : 'w-4 h-4'} text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
 				</svg>
 			{/if}
-			<span class="truncate text-sm">{item.name}</span>
+			<span class="{compact ? 'text-xs' : 'text-sm'} truncate">{item.name}</span>
 		</div>
 	{/if}
 	{#if item.type === 'folder' && expandedFolders.has(item.path)}

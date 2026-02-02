@@ -84,6 +84,20 @@
 		handle: 'bg-gray-400'
 	};
 
+	const VFS_CONNECTED: HandleColorScheme = {
+		bg: '#eef2ff',
+		border: '#818cf8',
+		text: 'text-indigo-600',
+		handle: 'bg-indigo-500'
+	};
+
+	const VFS_DISCONNECTED: HandleColorScheme = {
+		bg: '#f5f3ff',
+		border: '#c7d2fe',
+		text: 'text-indigo-500',
+		handle: 'bg-indigo-400'
+	};
+
 	// ============================================================================
 	// Derived
 	// ============================================================================
@@ -109,6 +123,15 @@
 		return edge?.source ?? null;
 	});
 
+	const vfsConnection = $derived.by(() => {
+		if (previewState?.incomingEdges) {
+			const edge = previewState.incomingEdges.find(e => e.targetHandle === HandleId.VFS_INPUT);
+			return edge?.source ?? null;
+		}
+		const edge = allEdges.current.find(e => e.target === id && e.targetHandle === HandleId.VFS_INPUT);
+		return edge?.source ?? null;
+	});
+
 	const tagConnections = $derived.by(() => {
 		if (previewState?.incomingEdges) {
 			return getInputTagConnectionsFromSnapshotEdges(previewState.incomingEdges);
@@ -128,6 +151,14 @@
 		disconnectedColor: SYSTEM_TAG_DISCONNECTED
 	});
 
+	const vfsHandle = $derived<TaggedHandle>({
+		id: HandleId.VFS_INPUT,
+		label: 'files',
+		isConnected: vfsConnection !== null,
+		connectedColor: VFS_CONNECTED,
+		disconnectedColor: VFS_DISCONNECTED
+	});
+
 	const tagHandles = $derived.by(() => {
 		return contentTags.map((tagName): TaggedHandle => ({
 			id: createTagHandleId(tagName),
@@ -138,11 +169,17 @@
 		}));
 	});
 
-	const allHandles = $derived([systemHandle, ...tagHandles]);
+	const allHandles = $derived([systemHandle, vfsHandle, ...tagHandles]);
 
 	// ============================================================================
 	// Effects
 	// ============================================================================
+
+	$effect(() => {
+		console.log('[InputNode] allHandles:', allHandles);
+		console.log('[InputNode] vfsHandle:', vfsHandle);
+		console.log('[InputNode] vfsConnection:', vfsConnection);
+	});
 
 	$effect(() => {
 		contentTags;

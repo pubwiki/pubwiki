@@ -10,5 +10,6 @@ export {
 	getVfsController, 
 	releaseVfsController, 
 	registerVfsNodeHandlers,
+	createMountToFolder,
 	type VfsController 
 } from './controller.svelte';

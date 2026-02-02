@@ -19,6 +19,9 @@ export {
   createTagHandleId,
   isTagHandle,
   getTagName,
+  createVfsMountHandleId,
+  isVfsMountHandle,
+  getMountIdFromHandle,
   type HandleSpec,
   type NodeSpec
 } from './connection';

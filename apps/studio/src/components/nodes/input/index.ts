@@ -6,7 +6,7 @@
 
 export { default as InputNode } from './InputNode.svelte';
 export { 
-	findConnectedVfsNodes,
+	findConnectedVfsNode,
 	generate,
 	type GenerationCallbacks
 } from './controller.svelte';

@@ -33,3 +33,10 @@ export {
   type FormComponentProps,
   type PendingConfirmation
 } from './pubwiki-confirm.svelte';
+
+export {
+  getVfsDropTarget,
+  setVfsDropTarget,
+  clearVfsDropTarget,
+  type VfsDropTarget
+} from './vfs-drop-target.svelte';

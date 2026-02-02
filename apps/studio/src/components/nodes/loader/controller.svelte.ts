@@ -506,12 +506,12 @@ export function createLoaderInterface(nodeId: string): LoaderInterface {
  * Register Loader Node event handlers
  * Should be called once when the Studio component mounts
  * 
- * Note: VFS mount connections are now handled by VFSNode controller via VFS_MOUNT handle.
+ * Note: VFS mounting is now handled via drag-to-folder gesture in VFSNode.
  * This function is kept for future Loader-specific event handling.
  */
 export function registerLoaderNodeHandlers(): () => void {
 	// Currently no Loader-specific event handlers needed
-	// VFS mount connections are handled by VFSNode via VFS_MOUNT handle
+	// VFS mounting is done via drag-to-folder gesture
 	return () => {};
 }
 
@@ -600,10 +600,11 @@ export async function generateDocs(
 				source: loaderId,
 				sourceHandle: HandleId.LOADER_DOCS_OUTPUT,
 				target: vfsNodeId,
-				targetHandle: HandleId.DEFAULT,
+				targetHandle: HandleId.VFS_GENERATOR_INPUT,
 			};
+			console.log('[LoaderController] Creating VFS edge:', vfsEdge);
 
-			// 7. Add to flow
+			// 7. Add node and edge to flow
 			callbacks.updateNodes(nodes => [...nodes, vfsFlowNode]);
 			callbacks.updateEdges(edges => [...edges, vfsEdge]);
 		}

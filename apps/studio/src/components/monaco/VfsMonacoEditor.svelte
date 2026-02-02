@@ -36,7 +36,8 @@
 	
 	// Capture instanceId at mount time to avoid null access during destroy
 	// This is needed because parent may set state to null before onDestroy runs
-	let capturedInstanceId: string = instanceId;
+	// svelte-ignore state_referenced_locally
+	const capturedInstanceId: string = instanceId;
 	
 	// Track dirty state
 	let lastSavedVersionId = $state(0);

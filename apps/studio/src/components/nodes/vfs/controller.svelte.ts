@@ -6,7 +6,7 @@
  * - File tree service (shared between VFSNode and VFSProperties)
  * - Reactive file tree state
  * - VSCode link for remote editing
- * - VFS-to-VFS mount handling
+ * - VFS-to-VFS mount handling via drag-to-folder gesture
  * 
  * IMPORTANT: All VFS operations go through NodeVfs, which is the unified interface
  * that includes both file operations and version control. The NodeVfs automatically
@@ -14,9 +14,9 @@
  */
 
 import { getNodeVfs, invalidateNodeVfs, VfsFileTreeService, createVSCodeLink, type VSCodeLink, type NodeVfs } from '$lib/vfs';
-import { onConnection, onEdgeDelete, type ConnectionEvent, type EdgeDeleteEvent } from '$lib/state/flow-events';
-import { HandleId } from '$lib/graph';
 import { nodeStore } from '$lib/persistence';
+import { onEdgeDelete } from '$lib/state';
+import { isVfsMountHandle, getMountIdFromHandle } from '$lib/graph';
 import type { VFSNodeData, VFSContent, VfsMountConfig } from '$lib/types';
 import type { FileItem } from '@pubwiki/ui/components';
 
@@ -369,146 +369,177 @@ async function checkMountPathConflict(
 	return null;
 }
 
-/**
- * Handle VFS-to-VFS mount connection
- * When a VFS connects to another VFS's VFS_MOUNT handle, create a mount configuration
- */
-function handleVfsMountConnection(event: ConnectionEvent): boolean {
-	// Only handle VFS_MOUNT target handle
-	if (event.targetHandle !== HandleId.VFS_MOUNT) {
-		return false;
-	}
+// ============================================================================
+// VFS Mount Event Handlers (Deprecated - edge-based mounting removed)
+// ============================================================================
 
-	// Get source node data (the VFS being mounted)
-	const sourceData = nodeStore.get(event.source);
-	if (!sourceData || sourceData.type !== 'VFS') {
-		return false;
-	}
-
-	// Get target node data (the VFS receiving the mount)
-	const targetData = nodeStore.get(event.target);
-	if (!targetData || targetData.type !== 'VFS') {
-		return false;
-	}
-
-	const targetContent = targetData.content as VFSContent;
-
-	// Use source VFS node name as the mount folder name
-	const mountName = sourceData.name || 'mounted';
-	let mountPath = `/${mountName}`;
-
-	// Check if this VFS is already mounted
-	const existingMount = targetContent.mounts.find(m => m.sourceNodeId === event.source);
-	if (existingMount) {
-		console.log(`[VFS:Mount] ${event.source} is already mounted to ${event.target}`);
-		return false; // Allow default edge creation, mount already exists
-	}
-
-	// Check for mount path conflicts asynchronously and create mount
-	(async () => {
-		// Check if path conflicts with existing files/folders or other mounts
-		const conflict = await checkMountPathConflict(event.target, mountPath, targetContent);
-		if (conflict) {
-			// If there's a conflict, generate a unique path by appending a number
-			let counter = 1;
-			let uniquePath = `${mountPath}_${counter}`;
-			while (await checkMountPathConflict(event.target, uniquePath, targetContent)) {
-				counter++;
-				uniquePath = `${mountPath}_${counter}`;
-			}
-			mountPath = uniquePath;
-			console.warn(`[VFS:Mount] Original path had conflict, using "${mountPath}": ${conflict}`);
-		}
-
-		// Create mount configuration
-		const mount: VfsMountConfig = {
-			id: crypto.randomUUID(),
-			sourceNodeId: event.source,
-			mountPath,
-			sourceCommit: undefined // Will be set when target VFS commits
-		};
-
-		// Update target VFS content with new mount
-		nodeStore.update(event.target, (data) => {
-			const vfsData = data as VFSNodeData;
-			return {
-				...vfsData,
-				content: vfsData.content.addMount(mount)
-			};
-		});
-
-		console.log(`[VFS:Mount] Mounted ${event.source} (${mountName}) to ${event.target} at ${mountPath}`);
-		
-		// Refresh the target controller's mounts if it exists
-		const targetController = controllerCache.get(event.target);
-		if (targetController) {
-			await targetController.reloadMounts();
-		}
-	})();
-
-	// Allow default edge creation
-	return false;
-}
-
-/**
- * Handle VFS mount edge deletion
- * When an edge to VFS_MOUNT is deleted, remove the mount configuration
- */
-function handleVfsMountEdgeDelete(event: EdgeDeleteEvent): void {
-	// Only handle VFS_MOUNT target handle
-	if (event.edge.targetHandle !== HandleId.VFS_MOUNT) {
-		return;
-	}
-
-	const sourceNodeId = event.edge.source;
-	const targetNodeId = event.edge.target;
-
-	// Get target node data
-	const targetData = nodeStore.get(targetNodeId);
-	if (!targetData || targetData.type !== 'VFS') {
-		return;
-	}
-
-	const targetContent = targetData.content as VFSContent;
-
-	// Find and remove the mount for this source
-	const mount = targetContent.mounts.find(m => m.sourceNodeId === sourceNodeId);
-	if (!mount) {
-		return;
-	}
-
-	// Update target VFS content to remove mount
-	nodeStore.update(targetNodeId, (data) => {
-		const vfsData = data as VFSNodeData;
-		return {
-			...vfsData,
-			content: vfsData.content.removeMount(mount.id)
-		};
-	});
-
-	console.log(`[VFS:Mount] Unmounted ${sourceNodeId} from ${targetNodeId}`);
-	
-	// Refresh the target controller's mounts if it exists
-	const targetController = controllerCache.get(targetNodeId);
-	if (targetController) {
-		targetController.reloadMounts();
-	}
-}
+// Note: VFS-to-VFS mounting is now done via drag-to-folder gesture.
+// The createMountToFolder() function handles mount creation.
+// Edge-based mount handling (handleVfsMountConnection, handleVfsMountEdgeDelete) has been removed.
 
 // ============================================================================
 // Event Handler Registration
 // ============================================================================
 
 /**
+ * Handle VFS mount edge deletion.
+ * When an edge connecting to a VFS mount handle is deleted, remove the mount configuration.
+ */
+function handleVfsMountEdgeDelete(event: { edge: { target: string; targetHandle?: string | null } }): void {
+	const { edge } = event;
+	
+	// Only handle VFS mount handle edges
+	if (!isVfsMountHandle(edge.targetHandle)) {
+		return;
+	}
+	
+	const mountId = getMountIdFromHandle(edge.targetHandle!);
+	const targetNodeId = edge.target;
+	
+	// Get target node data
+	const targetData = nodeStore.get(targetNodeId);
+	if (!targetData || targetData.type !== 'VFS') {
+		return;
+	}
+	
+	const content = targetData.content as VFSContent;
+	
+	// Check if mount exists
+	const mount = content.mounts.find(m => m.id === mountId);
+	if (!mount) {
+		console.warn(`[VFS:EdgeDelete] Mount ${mountId} not found in node ${targetNodeId}`);
+		return;
+	}
+	
+	// Remove mount from persistent config
+	nodeStore.update(targetNodeId, (data) => {
+		const vfsData = data as VFSNodeData;
+		return {
+			...vfsData,
+			content: vfsData.content.removeMount(mountId)
+		};
+	});
+	
+	// Trigger VFS controller reload if it exists
+	const controller = controllerCache.get(targetNodeId);
+	if (controller) {
+		// Reload mounts to unmount the removed VFS
+		controller.reloadMounts().catch(err => {
+			console.error(`[VFS:EdgeDelete] Failed to reload mounts for ${targetNodeId}:`, err);
+		});
+	}
+	
+	console.log(`[VFS:EdgeDelete] Removed mount ${mountId} (path: ${mount.mountPath}) from node ${targetNodeId}`);
+}
+
+/**
  * Register VFS node event handlers
  * Should be called once during app initialization
+ * 
+ * Handles:
+ * - Edge delete: When a VFS mount edge is deleted, remove the mount configuration
  */
 export function registerVfsNodeHandlers(): () => void {
-	const unsubConnection = onConnection(handleVfsMountConnection);
-	const unsubEdgeDelete = onEdgeDelete(handleVfsMountEdgeDelete);
-
+	// Register edge delete handler for VFS mount edges
+	const unsubscribeEdgeDelete = onEdgeDelete(handleVfsMountEdgeDelete);
+	
 	return () => {
-		unsubConnection();
-		unsubEdgeDelete();
+		unsubscribeEdgeDelete();
 	};
+}
+
+// ============================================================================
+// Drag-to-Folder Mount API
+// ============================================================================
+
+/**
+ * Create a VFS mount by dragging to a folder.
+ * Called when user drags from a VFS node's output handle and drops on a folder in another VFS.
+ * 
+ * @param sourceNodeId - The VFS node being mounted (source of the drag)
+ * @param targetNodeId - The VFS node receiving the mount (contains the drop target folder)
+ * @param targetFolderPath - The folder path where the mount should be created
+ * @returns Promise that resolves with mount config when created, or null if failed
+ */
+export async function createMountToFolder(
+	sourceNodeId: string,
+	targetNodeId: string,
+	targetFolderPath: string
+): Promise<VfsMountConfig | null> {
+	// Prevent self-mount
+	if (sourceNodeId === targetNodeId) {
+		console.warn('[VFS:Mount] Cannot mount a VFS to itself');
+		return null;
+	}
+
+	// Get source node data (the VFS being mounted)
+	const sourceData = nodeStore.get(sourceNodeId);
+	if (!sourceData || sourceData.type !== 'VFS') {
+		console.warn('[VFS:Mount] Source node is not a VFS node');
+		return null;
+	}
+
+	// Get target node data (the VFS receiving the mount)
+	const targetData = nodeStore.get(targetNodeId);
+	if (!targetData || targetData.type !== 'VFS') {
+		console.warn('[VFS:Mount] Target node is not a VFS node');
+		return null;
+	}
+
+	const targetContent = targetData.content as VFSContent;
+
+	// Check if this VFS is already mounted to the target - return existing mount
+	const existingMount = targetContent.mounts.find(m => m.sourceNodeId === sourceNodeId);
+	if (existingMount) {
+		console.log(`[VFS:Mount] ${sourceNodeId} is already mounted to ${targetNodeId}`);
+		return existingMount;
+	}
+
+	// Use source VFS node name as the mount folder name
+	const mountName = sourceData.name || 'mounted';
+	
+	// Calculate the mount path - if dropping on root, use /{name}, otherwise {folderPath}/{name}
+	const basePath = targetFolderPath === '/' ? '' : targetFolderPath;
+	let mountPath = `${basePath}/${mountName}`;
+
+	// Check for mount path conflicts
+	const conflict = await checkMountPathConflict(targetNodeId, mountPath, targetContent);
+	if (conflict) {
+		// Generate unique path by appending a number
+		let counter = 1;
+		let uniquePath = `${mountPath}_${counter}`;
+		while (await checkMountPathConflict(targetNodeId, uniquePath, targetContent)) {
+			counter++;
+			uniquePath = `${mountPath}_${counter}`;
+		}
+		mountPath = uniquePath;
+		console.warn(`[VFS:Mount] Original path had conflict, using "${mountPath}": ${conflict}`);
+	}
+
+	// Create mount configuration
+	const mount: VfsMountConfig = {
+		id: crypto.randomUUID(),
+		sourceNodeId,
+		mountPath,
+		sourceCommit: undefined
+	};
+
+	// Update target VFS content with new mount
+	nodeStore.update(targetNodeId, (data) => {
+		const vfsData = data as VFSNodeData;
+		return {
+			...vfsData,
+			content: vfsData.content.addMount(mount)
+		};
+	});
+
+	console.log(`[VFS:Mount] Mounted ${sourceNodeId} (${mountName}) to ${targetNodeId} at ${mountPath}`);
+
+	// Refresh the target controller's mounts
+	const targetController = controllerCache.get(targetNodeId);
+	if (targetController) {
+		await targetController.reloadMounts();
+	}
+
+	return mount;
 }

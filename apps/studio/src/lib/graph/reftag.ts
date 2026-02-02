@@ -4,7 +4,7 @@
  * Provides utilities for parsing and resolving reftag references in prompt content.
  * reftag format: @name - Creates a named input slot for prompt composition (e.g., @system, @context)
  * 
- * Note: VFS mounts are now managed via VFSContent.mounts array and the VFS_MOUNT / LOADER_ASSET_VFS handles.
+ * Note: VFS mounts are now managed via VFSContent.mounts array and drag-to-folder mounting.
  */
 
 import type { Node, Edge } from '@xyflow/svelte';

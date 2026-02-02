@@ -82,6 +82,8 @@
 		validateLabel?: (handleId: string, label: string, data?: Record<string, unknown>) => string | null;
 		/** Callback when user clicks to start editing */
 		onStartEdit?: (handleId: string, data?: Record<string, unknown>) => void;
+		/** Callback when a handle tag is clicked (not in edit mode) */
+		onClick?: (handleId: string, data?: Record<string, unknown>) => void;
 	}
 
 	const DEFAULT_CONNECTED_COLOR: HandleColorScheme = {
@@ -110,7 +112,8 @@
 		onLabelChange,
 		onEditComplete,
 		validateLabel,
-		onStartEdit
+		onStartEdit,
+		onClick
 	}: Props = $props();
 
 	// ============================================================================
@@ -343,8 +346,14 @@
 							<!-- svelte-ignore a11y_click_events_have_key_events -->
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
 							<span 
-								class={handle.editable ? 'cursor-text hover:underline' : ''}
-								onclick={() => handle.editable && onStartEdit?.(handle.id, handle.data)}
+								class="{handle.editable ? 'cursor-text hover:underline' : ''} {onClick ? 'cursor-pointer' : ''}"
+								onclick={() => {
+									if (handle.editable) {
+										onStartEdit?.(handle.id, handle.data);
+									} else if (onClick) {
+										onClick(handle.id, handle.data);
+									}
+								}}
 							>
 								{handle.label}
 							</span>
