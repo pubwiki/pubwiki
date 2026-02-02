@@ -27,6 +27,14 @@ interface CacheEntry<T = unknown> {
 }
 
 /**
+ * HTTP cache entry with content and content-type
+ */
+export interface HttpCacheEntry {
+  content: string
+  contentType: string
+}
+
+/**
  * Bundle Cache Manager
  */
 export class BundleCache {
@@ -35,7 +43,7 @@ export class BundleCache {
 
   // Memory caches for frequently accessed items
   private transformMemCache = new Map<string, unknown>()
-  private httpMemCache = new Map<string, string>()
+  private httpMemCache = new Map<string, HttpCacheEntry>()
 
   // Cache limits
   private readonly maxMemCacheSize = 100
@@ -164,14 +172,14 @@ export class BundleCache {
   /**
    * Get from HTTP cache
    */
-  async getHttp(url: string): Promise<string | null> {
+  async getHttp(url: string): Promise<HttpCacheEntry | null> {
     // Check memory cache
     if (this.httpMemCache.has(url)) {
       return this.httpMemCache.get(url)!
     }
 
     await this.init()
-    const entry = await this.get<string>(STORES.HTTP, url)
+    const entry = await this.get<HttpCacheEntry>(STORES.HTTP, url)
 
     if (entry) {
       // Check expiration
@@ -192,12 +200,13 @@ export class BundleCache {
   /**
    * Set HTTP cache
    */
-  async setHttp(url: string, content: string): Promise<void> {
+  async setHttp(url: string, content: string, contentType: string): Promise<void> {
     await this.init()
 
-    const entry: CacheEntry<string> = {
+    const httpEntry: HttpCacheEntry = { content, contentType }
+    const entry: CacheEntry<HttpCacheEntry> = {
       key: url,
-      value: content,
+      value: httpEntry,
       timestamp: Date.now(),
       expiresAt: Date.now() + this.httpCacheTTL,
       size: content.length
@@ -206,7 +215,7 @@ export class BundleCache {
     await this.set(STORES.HTTP, entry)
 
     // Update memory cache
-    this.httpMemCache.set(url, content)
+    this.httpMemCache.set(url, httpEntry)
     this.trimMemCache(this.httpMemCache)
   }
 

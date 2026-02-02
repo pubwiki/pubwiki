@@ -47,19 +47,43 @@ export class ESBuildEngine {
   // File loader (injected from VFS adapter)
   private fileLoader?: (path: string) => Promise<string>
 
-  // HTTP loader with caching
-  private async httpLoader(url: string): Promise<string> {
+  // HTTP loader with caching - returns content and content-type
+  private async httpLoader(url: string): Promise<{ content: string; contentType: string }> {
     const cached = await this.cache.getHttp(url)
-    if (cached) return cached
+    if (cached) {
+      return cached
+    }
 
     const response = await fetch(url)
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
     }
 
+    const contentType = response.headers.get('content-type') || ''
     const content = await response.text()
-    await this.cache.setHttp(url, content)
-    return content
+    await this.cache.setHttp(url, content, contentType)
+    return { content, contentType }
+  }
+
+  // Get Content-Type for HTTP resource (uses cache or HEAD request)
+  private async getHttpContentType(url: string): Promise<string> {
+    // Check cache first
+    const cached = await this.cache.getHttp(url)
+    if (cached) {
+      return cached.contentType
+    }
+
+    // Use HEAD request to check content-type without downloading full content
+    try {
+      const response = await fetch(url, { method: 'HEAD' })
+      if (response.ok) {
+        return response.headers.get('content-type') || ''
+      }
+    } catch {
+      // Ignore HEAD request errors, will be handled during actual load
+    }
+    
+    return ''
   }
 
   constructor(resolver: DependencyResolver, cache: BundleCache) {
@@ -147,6 +171,67 @@ export class ESBuildEngine {
   }
 
   /**
+   * Get loader type based on Content-Type header
+   * Returns 'binary' for resources that should be kept as external URLs
+   */
+  private getLoaderFromContentType(contentType: string): LoaderType | 'binary' {
+    // Normalize content-type (remove charset and other params)
+    const mimeType = contentType.split(';')[0].trim().toLowerCase()
+
+    // CSS
+    if (mimeType === 'text/css') {
+      return 'css'
+    }
+
+    // JavaScript
+    if (mimeType === 'text/javascript' || 
+        mimeType === 'application/javascript' ||
+        mimeType === 'application/x-javascript') {
+      return 'js'
+    }
+
+    // JSON
+    if (mimeType === 'application/json' || mimeType === 'text/json') {
+      return 'json'
+    }
+
+    // TypeScript (rare from HTTP but possible)
+    if (mimeType === 'text/typescript' ||
+        mimeType === 'application/typescript') {
+      return 'ts'
+    }
+
+    // Binary types - images
+    if (mimeType.startsWith('image/')) {
+      return 'binary'
+    }
+
+    // Binary types - fonts
+    if (mimeType.startsWith('font/') ||
+        mimeType === 'application/font-woff' ||
+        mimeType === 'application/font-woff2' ||
+        mimeType === 'application/x-font-ttf' ||
+        mimeType === 'application/x-font-opentype') {
+      return 'binary'
+    }
+
+    // Binary types - audio/video
+    if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
+      return 'binary'
+    }
+
+    // Binary types - other
+    if (mimeType === 'application/octet-stream' ||
+        mimeType === 'application/pdf' ||
+        mimeType === 'application/zip') {
+      return 'binary'
+    }
+
+    // Default to JS for text/* and unknown types
+    return 'binary'
+  }
+
+  /**
    * Build a project with multiple entry files
    */
   async build(request: ProjectBuildRequest): Promise<ProjectBuildResult> {
@@ -191,10 +276,27 @@ export class ESBuildEngine {
                 currentEntry = args.importer || args.path
               }
 
+              // For CSS url() tokens referencing external URLs, mark as external
+              // This keeps the original URL in the CSS output
+              if (args.kind === 'url-token' && 
+                  (args.path.startsWith('http://') || args.path.startsWith('https://'))) {
+                return { path: args.path, external: true }
+              }
+
               const resolved = await this.resolver.resolve(
                 args.path,
                 args.importer || currentEntry || entryFiles[0]
               )
+
+              // For HTTP resources that are binary (images, fonts, etc.), mark as external
+              // This applies to both CSS url() and JS imports of remote assets
+              if (resolved.namespace === 'http') {
+                const contentType = await this.getHttpContentType(resolved.path)
+                const loader = this.getLoaderFromContentType(contentType)
+                if (loader === 'binary') {
+                  return { path: resolved.path, external: true }
+                }
+              }
 
               // Track VFS dependencies directly in dependencyGraph
               if (resolved.namespace === 'vfs' && currentEntry) {
@@ -217,22 +319,6 @@ export class ESBuildEngine {
               const contents = await this.fileLoader!(args.path)
               const loader = this.getLoader(args.path)
 
-              // CSS injection
-              if (args.path.endsWith('.css')) {
-                const cssInjectionCode = `
-const css = ${JSON.stringify(contents)};
-const styleId = 'css-' + ${JSON.stringify(args.path.replace(/[^a-zA-Z0-9]/g, '-'))};
-if (!document.getElementById(styleId)) {
-  const style = document.createElement('style');
-  style.id = styleId;
-  style.textContent = css;
-  document.head.appendChild(style);
-}
-export default css;
-`
-                return { contents: cssInjectionCode, loader: 'js' }
-              }
-
               return { contents, loader }
             } catch (error) {
               console.error(`[ESBuildEngine] Load failed for ${args.path}:`, error)
@@ -240,11 +326,16 @@ export default css;
             }
           })
 
-          // Load HTTP resources
+          // Load HTTP resources (binary resources are already marked external in onResolve)
           build.onLoad({ filter: /.*/, namespace: 'http' }, async (args) => {
             try {
-              const contents = await this.httpLoader(args.path)
-              return { contents, loader: 'js' }
+              const { content, contentType } = await this.httpLoader(args.path)
+              const loader = this.getLoaderFromContentType(contentType)
+              
+              console.log(`[ESBuildEngine] HTTP load: ${args.path}`)
+              console.log(`[ESBuildEngine]   Content-Type: "${contentType}" -> loader: "${loader}"`)
+
+              return { contents: content, loader }
             } catch (error) {
               console.error(`[ESBuildEngine] HTTP load failed for ${args.path}:`, error)
               throw error
@@ -307,6 +398,7 @@ export default css;
         }
       }
       console.log("[BundlerWorker] dep graph is", this.dependencyGraph, allProjectDeps)
+      console.log("[BundlerWorker] result is ", result)
 
       // Process output files into per-entry results
       const outputs = new Map<string, FileBuildResult>()
@@ -321,14 +413,26 @@ export default css;
         const mapFile = result.outputFiles?.find(f => 
           f.path.includes(outputName) && f.path.endsWith('.js.map')
         )
+        const cssFile = result.outputFiles?.find(f => 
+          f.path.includes(outputName) && f.path.endsWith('.css')
+        )
 
         const entryDeps = this.dependencyGraph.get(entryPath)
         const depsArray = entryDeps ? Array.from(entryDeps) : []
 
         if (outputFile) {
+          // If there's CSS output, inject it into the JS code at runtime
+          let finalCode = outputFile.text
+          if (cssFile?.text) {
+            const cssInjectionCode = this.generateCssInjectionCode(cssFile.text, entryPath)
+            // Prepend CSS injection to JS so styles are applied before script runs
+            finalCode = cssInjectionCode + '\n' + finalCode
+          }
+
           outputs.set(entryPath, {
             success: true,
-            code: outputFile.text,
+            code: finalCode,
+            css: cssFile?.text,
             map: mapFile?.text,
             dependencies: depsArray,
             errors: [],
@@ -403,6 +507,29 @@ export default css;
   private getOutputName(entryPath: string): string {
     const basename = entryPath.split('/').pop() || 'output'
     return basename.replace(/\.(tsx?|jsx?)$/, '')
+  }
+
+  /**
+   * Generate CSS injection code that will inject styles at runtime
+   * This is used to inline CSS into JS bundle so users don't need to add <link> tags
+   */
+  private generateCssInjectionCode(css: string, entryPath: string): string {
+    // Create a unique style ID based on entry path to avoid duplicate injection
+    const styleId = 'css-' + entryPath.replace(/[^a-zA-Z0-9]/g, '-')
+    
+    return `
+// Injected CSS from bundler
+(function() {
+  var css = ${JSON.stringify(css)};
+  var styleId = ${JSON.stringify(styleId)};
+  if (typeof document !== 'undefined' && !document.getElementById(styleId)) {
+    var style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = css;
+    document.head.appendChild(style);
+  }
+})();
+`
   }
 
   /**
