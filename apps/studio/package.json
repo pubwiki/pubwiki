@@ -65,6 +65,7 @@
 		"n3": "catalog:",
 		"quickjs-emscripten": "^0.31.0",
 		"quickjs-emscripten-core": "^0.31.0",
-		"svelte-lexical": "catalog:"
+		"svelte-lexical": "catalog:",
+		"zod": "^4.0.0"
 	}
 }

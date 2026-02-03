@@ -8,7 +8,7 @@
 -->
 <script lang="ts">
   import type { DisplayMessage } from '../stores/messages.svelte'
-  import type { UIMessageBlock } from '../types'
+  import type { UIMessageBlock, ToolCallRenderer } from '../types'
   import Message from './Message.svelte'
 
   interface Props {
@@ -23,6 +23,9 @@
     isLoading?: boolean
     showAvatars?: boolean
     showActions?: boolean
+    showEmptyState?: boolean
+    /** Custom renderer for tool call blocks */
+    toolCallRenderer?: ToolCallRenderer
     onCopy?: (content: string) => void
     onEdit?: (id: string) => void
     onRegenerate?: (id: string) => void
@@ -37,6 +40,8 @@
     isLoading = false,
     showAvatars = true,
     showActions = true,
+    showEmptyState = true,
+    toolCallRenderer,
     onCopy,
     onEdit,
     onRegenerate,
@@ -147,7 +152,7 @@
   <!-- Messages list -->
   <div class="min-h-full flex flex-col">
     <!-- Empty state - shown when no content -->
-    {#if messages.length === 0 && !streamingMessage && !isLoading}
+    {#if showEmptyState && messages.length === 0 && !streamingMessage && !isLoading}
       <div class="flex flex-1 items-center justify-center">
         <div class="text-center text-zinc-500 dark:text-zinc-400">
           <svg class="mx-auto h-12 w-12 text-zinc-300 dark:text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -159,7 +164,7 @@
       </div>
     {:else}
       <!-- Content area -->
-      <div class="space-y-2 pb-4">
+      <div class="space-y-0 pb-4">
         {#each messages as message (message.id)}
           <Message
             id={message.id}
@@ -170,6 +175,7 @@
             timestamp={message.timestamp}
             showAvatar={showAvatars}
             showActions={showActions}
+            {toolCallRenderer}
             {onCopy}
             {onEdit}
             {onRegenerate}
@@ -189,6 +195,7 @@
             isStreaming={true}
             showAvatar={showAvatars}
             showActions={false}
+            {toolCallRenderer}
           />
         {/if}
 

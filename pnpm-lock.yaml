@@ -170,11 +170,6 @@ catalogs:
       specifier: ^3.2.4
       version: 3.2.4
 
-patchedDependencies:
-  modern-monaco@0.3.7:
-    hash: fe1b045c96c8bd63ffe677c8346809dac26779666e34e7da9e098e3607b84aee
-    path: patches/modern-monaco@0.3.7.patch
-
 importers:
 
   .:
@@ -525,7 +520,7 @@ importers:
         version: 17.0.1
       modern-monaco:
         specifier: ^0.3.7
-        version: 0.3.7(patch_hash=fe1b045c96c8bd63ffe677c8346809dac26779666e34e7da9e098e3607b84aee)(typescript@5.9.3)
+        version: 0.3.7(typescript@5.9.3)
       n3:
         specifier: 'catalog:'
         version: 2.0.1
@@ -538,6 +533,9 @@ importers:
       svelte-lexical:
         specifier: 'catalog:'
         version: 0.6.3(svelte@5.46.1)
+      zod:
+        specifier: ^4.0.0
+        version: 4.2.0
     devDependencies:
       '@inlang/paraglide-js':
         specifier: 'catalog:'
@@ -8512,7 +8510,7 @@ snapshots:
   mkdirp-classic@0.5.3:
     optional: true
 
-  modern-monaco@0.3.7(patch_hash=fe1b045c96c8bd63ffe677c8346809dac26779666e34e7da9e098e3607b84aee)(typescript@5.9.3):
+  modern-monaco@0.3.7(typescript@5.9.3):
     dependencies:
       typescript: 5.9.3
 

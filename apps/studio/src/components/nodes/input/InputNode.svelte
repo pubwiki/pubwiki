@@ -14,6 +14,7 @@
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { nodeStore } from '$lib/persistence';
+	import { validateNodeName } from '$lib/validation';
 	import * as m from '$lib/paraglide/messages';
 	import { 
 		HandleId,
@@ -240,6 +241,11 @@
 		};
 		await generate(id, ctx.nodes, ctx.edges, settings, callbacks);
 	}
+
+	// Node name validation callback for BaseNode
+	function handleValidateName(name: string, nodeId: string): string | null {
+		return validateNodeName(name, nodeId);
+	}
 </script>
 
 <BaseNode
@@ -250,6 +256,7 @@
 	headerBgClass="bg-purple-500"
 	handleBgClass="bg-purple-400!"
 	showLeftHandle={false}
+	validateName={handleValidateName}
 >
 	{#snippet leftHandles()}
 		<TaggedHandlePanel

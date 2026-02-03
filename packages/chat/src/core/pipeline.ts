@@ -193,9 +193,9 @@ export class ChatStreamPipeline {
   }
 
   /**
-   * Execute a single tool call
+   * Prepare a tool call block before execution
    */
-  private async executeToolCall(toolCall: ToolCall): Promise<ToolExecutionResult> {
+  private prepareToolCall(toolCall: ToolCall): MessageBlock {
     const { id, function: func } = toolCall
     const name = func.name
     let args: unknown
@@ -206,7 +206,7 @@ export class ChatStreamPipeline {
       args = {}
     }
     
-    const toolCallBlock: MessageBlock = {
+    return {
       id: generateBlockId(),
       type: 'tool_call',
       content: '',
@@ -215,6 +215,15 @@ export class ChatStreamPipeline {
       toolArgs: args,
       toolStatus: 'running'
     }
+  }
+
+  /**
+   * Execute a prepared tool call
+   */
+  private async executeToolCall(toolCallBlock: MessageBlock): Promise<ToolExecutionResult> {
+    const id = toolCallBlock.toolCallId!
+    const name = toolCallBlock.toolName!
+    const args = toolCallBlock.toolArgs
     
     try {
       const result = await this.config.tools!.execute(name, args)
@@ -402,10 +411,14 @@ export class ChatStreamPipeline {
       
       // Execute tools
       for (const toolCall of toolCalls) {
-        const result = await this.executeToolCall(toolCall)
+        // Prepare tool call block first and yield immediately (shows UI loading state)
+        const toolCallBlock = this.prepareToolCall(toolCall)
+        yield { type: 'tool_call_start', block: toolCallBlock }
+        
+        // Now execute the tool (may take a long time for execute_input, etc.)
+        const result = await this.executeToolCall(toolCallBlock)
         toolCallCount++
         
-        yield { type: 'tool_call_start', block: result.toolCallBlock }
         yield {
           type: 'tool_call_complete',
           toolCallId: result.toolCallBlock.id,
@@ -504,7 +517,8 @@ export class ChatStreamPipeline {
       
       // Execute tools
       for (const toolCall of toolCalls) {
-        const result = await this.executeToolCall(toolCall)
+        const toolCallBlock = this.prepareToolCall(toolCall)
+        const result = await this.executeToolCall(toolCallBlock)
         toolCallCount++
         
         allBlocks.push(result.toolCallBlock)

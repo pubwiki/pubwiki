@@ -130,6 +130,7 @@ export async function detectProject(
     normalizePath(projectRoot, file)
   )
 
+  console.log("Entry files", entryFiles, tsconfigContent)
   return {
     tsconfigPath,
     projectRoot,

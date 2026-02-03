@@ -66,6 +66,8 @@ export {
   type RenderGroup,
   type PreprocessParams,
   type PreprocessFn,
+  type ToolCallRendererProps,
+  type ToolCallRenderer,
   groupBlocksForRender,
   createImageBlock,
   blocksToContent,

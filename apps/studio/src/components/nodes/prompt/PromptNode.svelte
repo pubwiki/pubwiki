@@ -15,6 +15,7 @@
 	import { PromptContent, type PromptNodeData, type ContentBlock, getRefTagNamesFromBlocks } from '$lib/types';
 	import { nodeStore } from '$lib/persistence';
 	import { getStudioContext } from '$lib/state';
+	import { validateNodeName } from '$lib/validation';
 	import { getRefTagConnectionsFromSnapshotEdges, isRefTagHandle } from '$lib/graph';
 	import { createRefTagHandleId } from '$lib/graph';
 	import BaseNode from '../BaseNode.svelte';
@@ -156,6 +157,11 @@
 			};
 		});
 	}
+
+	// Node name validation callback for BaseNode
+	function handleValidateName(name: string, nodeId: string): string | null {
+		return validateNodeName(name, nodeId);
+	}
 </script>
 
 <BaseNode
@@ -167,6 +173,7 @@
 	headerBgClass="bg-blue-500"
 	handleBgClass="bg-blue-400!"
 	showLeftHandle={false}
+	validateName={handleValidateName}
 >
 	{#snippet headerIcon()}
 		<div class="w-2 h-2 rounded-full {isEditing ? 'bg-green-300 shadow-[0_0_8px_rgba(134,239,172,0.8)]' : 'bg-gray-50'} transition-colors duration-300"></div>

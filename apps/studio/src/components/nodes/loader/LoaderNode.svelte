@@ -20,6 +20,7 @@
 	import { getNodeVfs } from '$lib/vfs';
 	import { getNodeRDFStore } from '$lib/rdf';
 	import { nodeStore } from '$lib/persistence';
+	import { validateNodeName } from '$lib/validation';
 	import BaseNode from '../BaseNode.svelte';
 	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -393,6 +394,11 @@
 			isGeneratingDocs = false;
 		}
 	}
+
+	// Node name validation callback for BaseNode
+	function handleValidateName(name: string, nodeId: string): string | null {
+		return validateNodeName(name, nodeId);
+	}
 </script>
 
 <BaseNode
@@ -404,6 +410,7 @@
 	handleBgClass="bg-purple-400!"
 	showLeftHandle={false}
 	showRightHandle={false}
+	validateName={handleValidateName}
 >
 	{#snippet leftHandles()}
 		<TaggedHandlePanel

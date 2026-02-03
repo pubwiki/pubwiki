@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import type { MessageRole } from '@pubwiki/chat'
-  import type { UIMessageBlock } from '../types'
+  import type { UIMessageBlock, ToolCallRenderer } from '../types'
   import { BlockRenderer } from '../blocks'
   import ReasoningBlock from '../blocks/ReasoningBlock.svelte'
 
@@ -23,6 +23,8 @@
     isStreaming?: boolean
     showAvatar?: boolean
     showActions?: boolean
+    /** Custom renderer for tool call blocks */
+    toolCallRenderer?: ToolCallRenderer
     onCopy?: (content: string) => void
     onEdit?: (id: string) => void
     onRegenerate?: (id: string) => void
@@ -41,6 +43,7 @@
     isStreaming = false,
     showAvatar = true,
     showActions = true,
+    toolCallRenderer,
     onCopy,
     onEdit,
     onRegenerate,
@@ -84,10 +87,10 @@
   onmouseenter={() => isHovering = true}
   onmouseleave={() => isHovering = false}
 >
-  <div class="relative flex w-full max-w-3xl flex-col p-6">
+  <div class="relative flex w-full max-w-3xl flex-col px-4 py-3">
     <!-- Actions (top right) -->
     {#if showActions}
-      <div class="absolute right-4 top-6">
+      <div class="absolute right-2 top-3">
         <div class="flex items-center gap-1 opacity-0 transition-opacity {isHovering ? 'opacity-100' : ''}">
           <button
             type="button"
@@ -129,7 +132,7 @@
 
     <div class="space-y-3">
       <!-- Header with icon and name -->
-      <div class="flex items-center space-x-3">
+      <div class="flex items-center gap-3">
         {#if showAvatar}
           {#if isAssistant}
             <!-- Assistant icon -->
@@ -182,6 +185,7 @@
       <div class="message-content">
         <BlockRenderer 
           {blocks} 
+          {toolCallRenderer}
           {onIterationContinue}
           {onIterationStop}
         />

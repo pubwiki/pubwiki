@@ -14,7 +14,8 @@
 	import { type NodeProps, type Node, useConnection, useEdges, useUpdateNodeInternals, Position, Handle } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import type { VFSNodeData, FlowNodeData, VFSContent } from '$lib/types';
-	import { countFiles, countFolders, validateVfsName } from '$lib/vfs';
+	import { countFiles, countFolders } from '$lib/vfs';
+	import { validateNodeName } from '$lib/validation';
 	import { getStudioContext, setVfsDropTarget, clearVfsDropTarget } from '$lib/state';
 	import { nodeStore } from '$lib/persistence';
 	import { getVfsController, releaseVfsController, type VfsController } from './controller.svelte';
@@ -345,7 +346,7 @@
 	
 	// VFS name validation callback for BaseNode
 	function handleValidateName(name: string, nodeId: string): string | null {
-		return validateVfsName(name, projectId, nodeId);
+		return validateNodeName(name, nodeId);
 	}
 
 	// Action to portal an element to document.body (avoids transform issues with fixed positioning)

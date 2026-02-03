@@ -5,6 +5,24 @@
  */
 
 import type { MessageBlock as CoreMessageBlock, MessageBlockType as CoreMessageBlockType } from '@pubwiki/chat'
+import type { Component } from 'svelte'
+
+// ===== Custom Renderer Types =====
+
+/**
+ * Props for custom ToolCallBlock renderer
+ */
+export interface ToolCallRendererProps {
+  toolCallBlock: UIMessageBlock
+  toolResultBlock?: UIMessageBlock
+  class?: string
+}
+
+/**
+ * Custom renderer component type for tool calls
+ * Allows consumers to provide their own UI for displaying tool calls
+ */
+export type ToolCallRenderer = Component<ToolCallRendererProps>
 
 // ===== Preprocess Types =====
 

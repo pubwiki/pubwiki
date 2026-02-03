@@ -6,12 +6,12 @@
   - Multiple block types
 -->
 <script lang="ts">
-  import type { UIMessageBlock, RenderGroup } from '../types'
+  import type { UIMessageBlock, RenderGroup, ToolCallRenderer } from '../types'
   import { groupBlocksForRender } from '../types'
   
   import MarkdownBlock from './MarkdownBlock.svelte'
   import CodeBlock from './CodeBlock.svelte'
-  import ToolCallBlock from './ToolCallBlock.svelte'
+  import DefaultToolCallBlock from './ToolCallBlock.svelte'
   import ReasoningBlock from './ReasoningBlock.svelte'
   import TableBlock from './TableBlock.svelte'
   import ListBlock from './ListBlock.svelte'
@@ -22,6 +22,8 @@
 
   interface Props {
     blocks: UIMessageBlock[]
+    /** Custom renderer for tool call blocks */
+    toolCallRenderer?: ToolCallRenderer
     /** Callback for iteration limit continue action */
     onIterationContinue?: (blockId: string) => void
     /** Callback for iteration limit stop action */
@@ -31,10 +33,14 @@
 
   let { 
     blocks, 
+    toolCallRenderer,
     onIterationContinue,
     onIterationStop,
     class: className = '' 
   }: Props = $props()
+
+  // Use custom renderer if provided, otherwise use default
+  let ToolCallBlock = $derived(toolCallRenderer ?? DefaultToolCallBlock)
 
   /**
    * Group blocks for rendering (merge tool_call + tool_result)

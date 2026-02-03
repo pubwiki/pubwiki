@@ -21,6 +21,7 @@
 	import VFSFileEditor from '$components/nodes/vfs/VFSFileEditor.svelte';
 	import FlowController from '$components/FlowController.svelte';
 	import { StudioSidebar } from '$components/sidebar';
+	import { CopilotPanel } from '$components/copilot';
 	import { 
 		type StudioNodeData, 
 		type GeneratedNodeData,
@@ -59,6 +60,7 @@
 		getProject
 	} from '$lib/persistence';
 	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type NodeVfs } from '$lib/vfs';
+	import { generateUniqueNodeName } from '$lib/validation';
 	import { requestVfsDeleteConfirmation } from '$lib/state/vfs-delete-confirm.svelte';
 	import { syncStateNodesFromCloud } from '$lib/gamesave/state-sync';
 	import { useAuth } from '@pubwiki/ui/stores';
@@ -668,7 +670,8 @@
 	}
 	
 	async function addPromptNode() {
-		const newPromptData = await createPromptNodeData('');
+		const uniqueName = generateUniqueNodeName('PROMPT');
+		const newPromptData = await createPromptNodeData('', [], uniqueName);
 		const position = getNewNodePosition();
 		await addNode({
 			id: newPromptData.id,
@@ -680,11 +683,14 @@
 			content: newPromptData.content,
 			external: newPromptData.external
 		}, position);
+		// Auto-trigger name editing for new nodes
+		editingNameNodeId = newPromptData.id;
 		closeContextMenu();
 	}
 
 	async function addInputNode() {
-		const newInputData = await createInputNodeData('');
+		const uniqueName = generateUniqueNodeName('INPUT');
+		const newInputData = await createInputNodeData('', [], uniqueName);
 		const position = getNewNodePosition();
 		await addNode({
 			id: newInputData.id,
@@ -696,12 +702,15 @@
 			content: newInputData.content,
 			external: newInputData.external
 		}, position);
+		// Auto-trigger name editing for new nodes
+		editingNameNodeId = newInputData.id;
 		closeContextMenu();
 	}
 
 	async function addVFSNode() {
-		// Create new VFS node - will trigger auto-edit mode for the node name
-		const newVFSData = await createVFSNodeData(currentProjectId, m.studio_default_files());
+		// Create new VFS node with unique name - will trigger auto-edit mode
+		const uniqueName = generateUniqueNodeName('VFS');
+		const newVFSData = await createVFSNodeData(currentProjectId, uniqueName);
 		const position = getNewNodePosition();
 		await addNode({
 			id: newVFSData.id,
@@ -719,7 +728,8 @@
 	}
 
 	async function addSandboxNode() {
-		const newSandboxData = await createSandboxNodeData(m.studio_default_preview());
+		const uniqueName = generateUniqueNodeName('SANDBOX');
+		const newSandboxData = await createSandboxNodeData(uniqueName);
 		const position = getNewNodePosition();
 		await addNode({
 			id: newSandboxData.id,
@@ -731,11 +741,14 @@
 			content: newSandboxData.content,
 			external: newSandboxData.external
 		}, position);
+		// Auto-trigger name editing for new nodes
+		editingNameNodeId = newSandboxData.id;
 		closeContextMenu();
 	}
 
 	async function addLoaderNode() {
-		const newLoaderData = await createLoaderNodeData(m.studio_default_service());
+		const uniqueName = generateUniqueNodeName('LOADER');
+		const newLoaderData = await createLoaderNodeData(uniqueName);
 		const position = getNewNodePosition();
 		await addNode({
 			id: newLoaderData.id,
@@ -747,11 +760,14 @@
 			content: newLoaderData.content,
 			external: newLoaderData.external
 		}, position);
+		// Auto-trigger name editing for new nodes
+		editingNameNodeId = newLoaderData.id;
 		closeContextMenu();
 	}
 
 	async function addStateNode() {
-		const newStateData = await createStateNodeData(m.studio_default_state());
+		const uniqueName = generateUniqueNodeName('STATE');
+		const newStateData = await createStateNodeData(uniqueName);
 		const position = getNewNodePosition();
 		await addNode({
 			id: newStateData.id,
@@ -763,6 +779,8 @@
 			content: newStateData.content,
 			external: newStateData.external
 		}, position);
+		// Auto-trigger name editing for new nodes
+		editingNameNodeId = newStateData.id;
 		closeContextMenu();
 	}
 
@@ -1422,6 +1440,9 @@
 			onClose={handleCloseVfsEditor}
 		/>
 	{/if}
+	
+	<!-- Copilot Panel (Right side chat panel) -->
+	<CopilotPanel projectId={currentProjectId} initialCollapsed={true} />
 	
 	<!-- Context Menu -->
 	{#if contextMenu}

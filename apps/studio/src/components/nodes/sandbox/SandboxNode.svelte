@@ -18,6 +18,7 @@
 	import { getNodeVfs, type NodeVfs } from '$lib/vfs';
 	import { getStudioContext } from '$lib/state';
 	import { nodeStore } from '$lib/persistence';
+	import { validateNodeName } from '$lib/validation';
 	import { HandleId } from '$lib/graph';
 	import BaseNode from '../BaseNode.svelte';
 	import SandboxPreviewView from './SandboxPreviewView.svelte';
@@ -181,6 +182,11 @@
 	function closePreview() {
 		showPreview = false;
 	}
+
+	// Node name validation callback for BaseNode
+	function handleValidateName(name: string, nodeId: string): string | null {
+		return validateNodeName(name, nodeId);
+	}
 </script>
 
 <BaseNode
@@ -192,6 +198,7 @@
 	handleBgClass="bg-orange-400!"
 	showRightHandle={false}
 	showLeftHandle={false}
+	validateName={handleValidateName}
 >
 	{#snippet leftHandles()}
 		<!-- VFS Input Handle (top) -->

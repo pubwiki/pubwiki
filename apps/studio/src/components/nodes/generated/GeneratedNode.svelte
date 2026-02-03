@@ -20,6 +20,7 @@
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { nodeStore } from '$lib/persistence';
+	import { validateNodeName } from '$lib/validation';
 	import { HandleId } from '$lib/graph';
 	import { onStreamingChange, regenerate, abortGeneration } from './controller.svelte';
 	import { marked } from 'marked';
@@ -123,6 +124,11 @@
 			error: undefined
 		};
 	}
+
+	// Node name validation callback for BaseNode
+	function handleValidateName(name: string, nodeId: string): string | null {
+		return validateNodeName(name, nodeId);
+	}
 </script>
 
 <BaseNode
@@ -132,6 +138,7 @@
 	nodeType="GENERATED"
 	headerBgClass="bg-green-500"
 	handleBgClass="bg-green-400!"
+	validateName={handleValidateName}
 >
 	{#snippet headerIcon()}
 		<svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">

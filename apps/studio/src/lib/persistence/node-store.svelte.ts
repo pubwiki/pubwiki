@@ -83,6 +83,9 @@ class NodeStore {
   // Incrementing versions.set(nodeId, n+1) notifies only subscribers of that node
   private versions = new SvelteMap<string, number>();
   
+  // Name-to-ID index for fast lookup by name
+  private nameIndex = new Map<string, string>();
+  
   private projectId: string = '';
   private dirty = new Set<string>();
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -100,6 +103,20 @@ class NodeStore {
   }
   
   /**
+   * Update the name index when a node's name changes
+   */
+  private updateNameIndex(nodeId: string, oldName: string | undefined, newName: string | undefined): void {
+    // Remove old name from index
+    if (oldName && this.nameIndex.get(oldName) === nodeId) {
+      this.nameIndex.delete(oldName);
+    }
+    // Add new name to index
+    if (newName) {
+      this.nameIndex.set(newName, nodeId);
+    }
+  }
+  
+  /**
    * Initialize the store with a project's data
    * 
    * @param projectId - The project ID to load data for
@@ -113,6 +130,7 @@ class NodeStore {
     this.projectId = projectId;
     this.data.clear();
     this.versions.clear();
+    this.nameIndex.clear();
     this.dirty.clear();
     this.versionCache.clear();  // Clear version cache on project change
     
@@ -124,6 +142,10 @@ class NodeStore {
       const nodeData = this.deserialize(stored);
       this.data.set(stored.nodeId, nodeData);
       this.versions.set(stored.nodeId, 0);
+      // Build name index
+      if (nodeData.name) {
+        this.nameIndex.set(nodeData.name, nodeData.id);
+      }
     }
     
     this.initialized = true;
@@ -286,6 +308,50 @@ class NodeStore {
     return this.data.has(nodeId);
   }
   
+  // ============================================================================
+  // Name-based Lookup Methods
+  // ============================================================================
+  
+  /**
+   * Get node data by name
+   * 
+   * @param name - The node name to look up
+   * @returns The node data if found, undefined otherwise
+   */
+  getByName(name: string): StudioNodeData | undefined {
+    const nodeId = this.nameIndex.get(name);
+    if (!nodeId) return undefined;
+    return this.get(nodeId);
+  }
+  
+  /**
+   * Get node ID by name
+   * 
+   * @param name - The node name to look up
+   * @returns The node ID if found, undefined otherwise
+   */
+  getIdByName(name: string): string | undefined {
+    return this.nameIndex.get(name);
+  }
+  
+  /**
+   * Check if a name is already taken
+   * 
+   * @param name - The name to check
+   * @param excludeNodeId - Optional node ID to exclude (for editing existing nodes)
+   * @returns true if the name is taken, false otherwise
+   */
+  isNameTaken(name: string, excludeNodeId?: string): boolean {
+    const existingId = this.nameIndex.get(name);
+    if (!existingId) return false;
+    if (excludeNodeId && existingId === excludeNodeId) return false;
+    return true;
+  }
+  
+  // ============================================================================
+  // Mutation Methods
+  // ============================================================================
+  
   /**
    * Update node data with an updater function
    * 
@@ -300,6 +366,12 @@ class NodeStore {
     }
     
     const updated = updater(current);
+    
+    // Update name index if name changed
+    if (current.name !== updated.name) {
+      this.updateNameIndex(nodeId, current.name, updated.name);
+    }
+    
     this.data.set(nodeId, updated);
     this.dirty.add(nodeId);
     // Notify only this node's subscribers
@@ -314,6 +386,13 @@ class NodeStore {
    * @param data - The node data to set
    */
   set(nodeId: string, data: StudioNodeData): void {
+    const existing = this.data.get(nodeId);
+    
+    // Update name index
+    if (existing?.name !== data.name) {
+      this.updateNameIndex(nodeId, existing?.name, data.name);
+    }
+    
     this.data.set(nodeId, data);
     this.dirty.add(nodeId);
     // Notify this node's subscribers
@@ -329,6 +408,13 @@ class NodeStore {
    * @param data - The node data to set
    */
   setTransient(nodeId: string, data: StudioNodeData): void {
+    const existing = this.data.get(nodeId);
+    
+    // Update name index
+    if (existing?.name !== data.name) {
+      this.updateNameIndex(nodeId, existing?.name, data.name);
+    }
+    
     this.data.set(nodeId, data);
     // Notify this node's subscribers
     this.notifyNode(nodeId);
@@ -347,6 +433,12 @@ class NodeStore {
     }
     
     console.log('[NodeStore] Creating node:', data.id, data.type);
+    
+    // Add to name index
+    if (data.name) {
+      this.nameIndex.set(data.name, data.id);
+    }
+    
     this.data.set(data.id, data);
     this.dirty.add(data.id);
     // Notify this node's subscribers (also triggers global due to new key)
@@ -360,12 +452,19 @@ class NodeStore {
    * @param nodeId - The node ID to delete
    */
   delete(nodeId: string): void {
-    if (!this.data.has(nodeId)) {
+    const existing = this.data.get(nodeId);
+    if (!existing) {
       console.warn('[NodeStore] Cannot delete non-existent node:', nodeId);
       return;
     }
     
     console.log('[NodeStore] Deleting node:', nodeId);
+    
+    // Remove from name index
+    if (existing.name && this.nameIndex.get(existing.name) === nodeId) {
+      this.nameIndex.delete(existing.name);
+    }
+    
     this.data.delete(nodeId);
     this.dirty.delete(nodeId);
     // Remove version entry and notify (triggers global due to key removal)

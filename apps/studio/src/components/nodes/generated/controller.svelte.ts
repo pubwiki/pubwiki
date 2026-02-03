@@ -35,11 +35,12 @@ import {
 // ============================================================================
 
 /**
- * Simple event system for streaming state changes.
- * Components register callbacks, controllers notify them.
+ * Event system for streaming state changes.
+ * Supports multiple subscribers per node - critical for both UI components
+ * and awaitGeneration to receive notifications.
  */
 type StreamingCallback = (streaming: boolean) => void;
-const streamingCallbacks = new Map<string, StreamingCallback>();
+const streamingCallbacks = new Map<string, Set<StreamingCallback>>();
 const pendingStreaming = new Set<string>();
 const abortCallbacks = new Map<string, () => void>();
 
@@ -47,21 +48,38 @@ const abortCallbacks = new Map<string, () => void>();
  * Register a callback for streaming state changes.
  * If the node is already streaming, callback is called immediately with true.
  * Returns unsubscribe function.
+ * 
+ * Note: Multiple callbacks can be registered per node. This is required because
+ * both the UI component (GeneratedNode.svelte) and awaitGeneration() may
+ * subscribe to the same node's streaming state simultaneously.
  */
 export function onStreamingChange(nodeId: string, callback: StreamingCallback): () => void {
-	streamingCallbacks.set(nodeId, callback);
+	let callbacks = streamingCallbacks.get(nodeId);
+	if (!callbacks) {
+		callbacks = new Set();
+		streamingCallbacks.set(nodeId, callbacks);
+	}
+	callbacks.add(callback);
+	
 	// If already streaming when registered, notify immediately
 	if (pendingStreaming.has(nodeId)) {
 		callback(true);
 	}
 	return () => {
-		streamingCallbacks.delete(nodeId);
+		const cbs = streamingCallbacks.get(nodeId);
+		if (cbs) {
+			cbs.delete(callback);
+			if (cbs.size === 0) {
+				streamingCallbacks.delete(nodeId);
+			}
+		}
 	};
 }
 
 /**
  * Notify streaming state change for a node.
  * Called by controllers when streaming starts/ends.
+ * Notifies all registered callbacks for this node.
  */
 export function notifyStreamingChange(nodeId: string, streaming: boolean): void {
 	if (streaming) {
@@ -70,7 +88,12 @@ export function notifyStreamingChange(nodeId: string, streaming: boolean): void 
 		pendingStreaming.delete(nodeId);
 		abortCallbacks.delete(nodeId);
 	}
-	streamingCallbacks.get(nodeId)?.(streaming);
+	const callbacks = streamingCallbacks.get(nodeId);
+	if (callbacks) {
+		for (const callback of callbacks) {
+			callback(streaming);
+		}
+	}
 }
 
 /**
@@ -92,6 +115,13 @@ export function abortGeneration(nodeId: string): boolean {
 		return true;
 	}
 	return false;
+}
+
+/**
+ * Check if a node is currently streaming.
+ */
+export function isNodeStreaming(nodeId: string): boolean {
+	return pendingStreaming.has(nodeId);
 }
 
 // ============================================================================

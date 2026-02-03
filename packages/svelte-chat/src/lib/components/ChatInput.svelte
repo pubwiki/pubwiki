@@ -149,7 +149,7 @@
   {/if}
 
   <!-- Input area -->
-  <div class="relative flex min-h-[60px] w-full items-center justify-center rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-800/50">
+  <div class="chat-input-area relative flex min-h-[60px] w-full items-center justify-center rounded-xl">
     <!-- Attachment buttons (left side) -->
     {#if showAttachments}
       <div class="absolute bottom-2 left-3 flex gap-1">
@@ -189,7 +189,7 @@
       {placeholder}
       disabled={disabled || isGenerating}
       rows="1"
-      class="flex w-full resize-none rounded-md border-none bg-transparent py-4 text-base outline-none placeholder:text-zinc-400 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 {showAttachments ? 'pl-14' : 'pl-6'} pr-14 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+      class="flex w-full resize-none rounded-md border-none bg-transparent py-4 text-base outline-none placeholder:text-zinc-400 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 {showAttachments ? 'pl-14' : 'pl-4'} pr-14 dark:text-zinc-100 dark:placeholder:text-zinc-500"
     ></textarea>
 
     <!-- Send/Abort button (right side) -->
@@ -223,6 +223,13 @@
 </div>
 
 <style>
+  .chat-input-area {
+    background-color: #f4f4f5;
+  }
+  :global(.dark) .chat-input-area {
+    background-color: #27272a;
+  }
+
   textarea {
     max-height: 24rem;
     scrollbar-width: thin;

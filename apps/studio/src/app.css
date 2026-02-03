@@ -1,3 +1,7 @@
 @import 'tailwindcss';
 
 @plugin '@tailwindcss/typography';
+
+/* Include classes from external packages */
+@source "../../packages/svelte-chat/src/**/*.svelte";
+@source "../../packages/ui/src/**/*.svelte";
