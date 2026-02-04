@@ -198,13 +198,5 @@ describe('DependencyResolver', () => {
         expect(result.path).not.toContain('?bundle')
       }
     })
-
-    it('should add custom no-bundle packages', () => {
-      resolver.addNoBundlePackages(['my-custom-lib'])
-      
-      // The package should now be in the no-bundle list
-      const stats = resolver.getCacheStats()
-      expect(stats).toBeDefined()
-    })
   })
 })

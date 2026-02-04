@@ -23,21 +23,6 @@ export class DependencyResolver {
   // File existence checker (injected from VFS adapter)
   private fileExistsChecker?: (path: string) => Promise<boolean>
 
-  // Packages that should not be bundled (global singleton libraries)
-  private noBundlePackages = new Set([
-    'react',
-    'react-dom',
-    'react/jsx-runtime',
-    'react/jsx-dev-runtime',
-    'vue',
-    'vue/dist/vue.esm-bundler.js',
-    '@vue/runtime-core',
-    '@vue/runtime-dom',
-    'solid-js',
-    'svelte',
-    'preact',
-    'preact/hooks',
-  ])
 
   constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean> }) {
     this.fileExistsChecker = options?.fileExistsChecker
@@ -47,11 +32,7 @@ export class DependencyResolver {
       {
         name: 'esm.sh',
         url: (pkg) => {
-          // esm.sh supports ?bundle parameter to inline dependencies
-          const shouldBundle = !this.shouldSkipBundle(pkg)
-          return shouldBundle
-            ? `https://esm.sh/${pkg}?bundle`
-            : `https://esm.sh/${pkg}`
+          return `https://esm.sh/${pkg}`
         },
         priority: 1
       },
@@ -73,22 +54,6 @@ export class DependencyResolver {
    */
   setFileExistsChecker(checker: (path: string) => Promise<boolean>): void {
     this.fileExistsChecker = checker
-  }
-
-  /**
-   * Check if package should skip bundling
-   */
-  private shouldSkipBundle(packageName: string): boolean {
-    if (this.noBundlePackages.has(packageName)) {
-      return true
-    }
-
-    // Extract base package name (handle @scope/package and package/subpath)
-    const baseName = packageName.startsWith('@')
-      ? packageName.split('/').slice(0, 2).join('/')
-      : packageName.split('/')[0]
-
-    return this.noBundlePackages.has(baseName)
   }
 
   /**
@@ -275,12 +240,5 @@ export class DependencyResolver {
       resolveCache: this.resolveCache.size,
       cdnCache: this.cdnCache.size
     }
-  }
-
-  /**
-   * Add packages to the no-bundle list
-   */
-  addNoBundlePackages(packageNames: string[]): void {
-    packageNames.forEach(pkg => this.noBundlePackages.add(pkg))
   }
 }
