@@ -50,3 +50,8 @@ export {
   syncMountsToSubmodules,
   type SubmoduleInfo
 } from './submodule';
+
+export {
+  vfsVersionStore,
+  type VfsVersionState
+} from './version-store.svelte';

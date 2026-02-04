@@ -226,10 +226,11 @@ export async function createGeneratedNodeData(
   parents: NodeRef[] = [],
   name: string = '',
   inputVfsRef: import('./content').VfsRef | null = null,
-  outputVfsId: string | null = null
+  outputVfsId: string | null = null,
+  postGenerationCommit: string | null = null
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
-  const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs, inputVfsRef, outputVfsId)
+  const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs, inputVfsRef, outputVfsId, postGenerationCommit)
   const commit = await generateCommitHash(content.serialize())
   return {
     id,

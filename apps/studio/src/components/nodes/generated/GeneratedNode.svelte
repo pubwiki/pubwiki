@@ -7,13 +7,13 @@
 	 * - Streaming indicator during generation
 	 * - Tool call display during streaming (inline with content)
 	 * - Regenerate button
-	 * - VFS Output Handle for file creation scenarios
+	 * - VFS reference footbar showing modification/creation status
 	 * 
 	 * Runtime state (isStreaming) is component-local, managed via event callbacks.
 	 */
 	import { onMount } from 'svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import { Handle, Position } from '@xyflow/svelte';
+	import { useSvelteFlow } from '@xyflow/svelte';
 	import type { GeneratedNodeData, FlowNodeData } from '$lib/types';
 	import type { MessageBlock } from '@pubwiki/chat';
 	import { blocksToContent } from '@pubwiki/chat';
@@ -21,7 +21,6 @@
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { nodeStore } from '$lib/persistence';
 	import { validateNodeName } from '$lib/validation';
-	import { HandleId } from '$lib/graph';
 	import { onStreamingChange, regenerate, abortGeneration } from './controller.svelte';
 	import { marked } from 'marked';
 	import BaseNode from '../BaseNode.svelte';
@@ -76,10 +75,27 @@
 	
 	// VFS Output state - check if this generated node has an associated output VFS
 	const hasOutputVfs = $derived(!!nodeData?.content?.outputVfsId);
+	
+	// VFS reference data for footbar
+	const inputVfsRef = $derived(nodeData?.content?.inputVfsRef);
+	const outputVfsId = $derived(nodeData?.content?.outputVfsId);
+	const postGenerationCommit = $derived(nodeData?.content?.postGenerationCommit);
 
 	// ============================================================================
 	// Event Handlers
 	// ============================================================================
+	
+	// Node navigation
+	const { fitView } = useSvelteFlow();
+	
+	function focusNode(nodeId: string) {
+		fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
+	}
+	
+	function getVfsNodeName(nodeId: string): string {
+		const data = nodeStore.get(nodeId);
+		return data?.name || 'VFS';
+	}
 
 	async function handleRegenerate() {
 		const callbacks = {
@@ -206,29 +222,48 @@
 			{/if}
 		</div>
 		
-		<!-- VFS Output indicator footer -->
-		{#if hasOutputVfs}
-			<div class="px-3 py-1.5 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center gap-2">
-				<svg class="w-3 h-3 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-				</svg>
-				<span>Files attached</span>
+		<!-- VFS Reference footbar -->
+		{#if inputVfsRef}
+			<!-- File Modification scenario: shows modified VFS with version transition -->
+			<div class="border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
+				<div class="px-3 py-1.5 flex items-center gap-2 flex-wrap">
+					<!-- Edit icon -->
+					<svg class="w-3 h-3 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+					</svg>
+					<span class="text-gray-400">Modified</span>
+					<button 
+						class="text-indigo-600 hover:underline font-medium"
+						onclick={() => focusNode(inputVfsRef.nodeId)}
+					>
+						{getVfsNodeName(inputVfsRef.nodeId)}
+					</button>
+					<span class="text-gray-400">:</span>
+					<span class="font-mono">{inputVfsRef.commit.slice(0, 7)}</span>
+					<span class="text-gray-400">→</span>
+					<span class="font-mono text-green-600">{postGenerationCommit?.slice(0, 7) || 'pending'}</span>
+				</div>
+			</div>
+		{:else if outputVfsId}
+			<!-- File Creation scenario: shows created VFS -->
+			<div class="border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
+				<div class="px-3 py-1.5 flex items-center gap-2">
+					<!-- Plus icon -->
+					<svg class="w-3 h-3 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+					</svg>
+					<span class="text-gray-400">Created</span>
+					<button 
+						class="text-indigo-600 hover:underline font-medium"
+						onclick={() => focusNode(outputVfsId)}
+					>
+						{getVfsNodeName(outputVfsId)}
+					</button>
+				</div>
 			</div>
 		{/if}
 	{/snippet}
 </BaseNode>
-
-<!-- VFS Output Handle - positioned at bottom center -->
-{#if hasOutputVfs}
-	<Handle 
-		type="source" 
-		id={HandleId.VFS_OUTPUT}
-		position={Position.Bottom} 
-		{isConnectable}
-		class="w-3! h-3! bg-indigo-400! border-2! border-white!"
-		style="left: 50%; bottom: -6px;"
-	/>
-{/if}
 
 <style>
 	/* Generated content - enable text selection and wrap code blocks */

@@ -165,6 +165,10 @@ GeneratedNodeContent:
       type: string
       format: uuid
       nullable: true
+    postGenerationCommit:
+      type: string
+      description: Post-generation commit hash - recorded after file modifications are complete
+      nullable: true
 
 # SANDBOX 节点内容
 SandboxNodeContent:

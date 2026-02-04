@@ -66,7 +66,6 @@ export function isFileWriteTool(toolName: string): boolean {
 interface PendingVfsNode {
 	nodeData: VFSNodeData;
 	flowNode: Node<FlowNodeData>;
-	edge: Edge;
 	vfs: Vfs<any>;
 }
 
@@ -110,15 +109,6 @@ export async function createPendingVfsNode(
 		targetPosition: Position.Left,
 	};
 	
-	// Create edge from Generated VFS_OUTPUT to VFS (not added yet)
-	const vfsEdge: Edge = {
-		id: `e-${generatedNodeId}-${vfsNodeData.id}-vfs`,
-		source: generatedNodeId,
-		sourceHandle: HandleId.VFS_OUTPUT,
-		target: vfsNodeData.id,
-		targetHandle: HandleId.VFS_GENERATOR_INPUT,
-	};
-	
 	// Pre-initialize the VFS so it's ready for tool calls
 	const vfs = await getNodeVfs(projectId, vfsNodeData.id);
 	
@@ -134,7 +124,6 @@ export async function createPendingVfsNode(
 	return {
 		nodeData: vfsNodeData,
 		flowNode: vfsFlowNode,
-		edge: vfsEdge,
 		vfs
 	};
 }
@@ -191,7 +180,6 @@ export function showPendingVfsNode(
 	callbacks: GenerationCallbacks
 ): void {
 	callbacks.updateNodes(nodes => [...nodes, pendingVfs.flowNode]);
-	callbacks.updateEdges(edges => [...edges, pendingVfs.edge]);
 }
 
 /**
@@ -395,8 +383,8 @@ export async function generate(
 	// Add the edge
 	callbacks.updateEdges(edges => [...edges, newEdge]);
 	
-	// Track whether VFS output edge has been created (for file modification scenario)
-	let vfsOutputEdgeCreated = false;
+	// Track whether VFS node has been shown (for file creation scenario)
+	let vfsShown = false;
 
 	// Helper to update blocks in a generated node
 	const updateBlocks = (nodeId: string, updater: (blocks: MessageBlock[]) => MessageBlock[]) => {
@@ -416,7 +404,6 @@ export async function generate(
 	// Pre-create VFS node for file creation scenario (if no existing VFS connection)
 	// The node is created but not shown until a file write operation occurs
 	let pendingVfs: PendingVfsNode | null = null;
-	let vfsShown = false;
 	
 	if (!vfsNodeId) {
 		// No existing VFS connected - pre-create one for potential file operations
@@ -466,20 +453,6 @@ export async function generate(
 					showPendingVfsNode(pendingVfs, callbacks);
 					vfsShown = true;
 					console.log('[Generate] Showed pending VFS for file operation:', pendingVfs.nodeData.id);
-				}
-				
-				// For file modification scenario: create edge from Generated to VFS
-				if (outputVfsId && !vfsOutputEdgeCreated) {
-					const vfsOutputEdge: Edge = {
-						id: `e-${nodeId}-${outputVfsId}-vfs`,
-						source: nodeId,
-						sourceHandle: HandleId.VFS_OUTPUT,
-						target: outputVfsId,
-						targetHandle: HandleId.VFS_GENERATOR_INPUT,
-					};
-					callbacks.updateEdges(edges => [...edges, vfsOutputEdge]);
-					vfsOutputEdgeCreated = true;
-					console.log('[Generate] Created VFS output edge for file modification:', vfsOutputEdge.id);
 				}
 			}
 			
@@ -561,6 +534,7 @@ export async function generate(
 				}
 			} else {
 				// Auto-commit VFS if we have an existing output VFS (file modification scenario)
+				// and record the postGenerationCommit
 				const genDataFinal = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
 				if (genDataFinal?.content.outputVfsId) {
 					const vfsNodeId = genDataFinal.content.outputVfsId;
@@ -568,11 +542,33 @@ export async function generate(
 					if (vfsData) {
 						try {
 							const vfsController = await getVfsController(vfsData.content.projectId, vfsNodeId);
-							await vfsController.vfs.commit('AI generated files');
-							console.log('[Generate] Auto-committed VFS:', vfsNodeId);
+							const postCommit = await vfsController.vfs.commit('AI generated files');
+							console.log('[Generate] Auto-committed VFS:', vfsNodeId, 'commit:', postCommit.hash);
+							
+							// Record postGenerationCommit in GeneratedContent
+							nodeStore.update(nodeId, (data) => {
+								const genData = data as GeneratedNodeData;
+								return {
+									...genData,
+									content: genData.content.withPostGenerationCommit(postCommit.hash)
+								};
+							});
 						} catch (e) {
-							// May fail if no changes to commit
+							// May fail if no changes to commit - get current HEAD as postGenerationCommit
 							console.log('[Generate] No changes to commit in VFS:', e);
+							try {
+								const vfsController = await getVfsController(vfsData.content.projectId, vfsNodeId);
+								const head = await vfsController.vfs.getHead();
+								nodeStore.update(nodeId, (data) => {
+									const genData = data as GeneratedNodeData;
+									return {
+										...genData,
+										content: genData.content.withPostGenerationCommit(head.hash)
+									};
+								});
+							} catch {
+								// No commits at all, that's fine
+							}
 						}
 					}
 				}

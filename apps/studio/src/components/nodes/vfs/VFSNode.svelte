@@ -10,11 +10,12 @@
 	 * - Node name is the VFS name (edited via BaseNode header)
 	 * - Drag-to-folder mounting with visual feedback
 	 * - Dynamic mount handles (similar to reftag handles)
+	 * - Version info in footbar with clickable commit history
 	 */
-	import { type NodeProps, type Node, useConnection, useEdges, useUpdateNodeInternals, Position, Handle } from '@xyflow/svelte';
+	import { type NodeProps, type Node, useConnection, useEdges, useUpdateNodeInternals, Position, Handle, useSvelteFlow } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
-	import type { VFSNodeData, FlowNodeData, VFSContent } from '$lib/types';
-	import { countFiles, countFolders } from '$lib/vfs';
+	import type { VFSNodeData, FlowNodeData, VFSContent, GeneratedNodeData } from '$lib/types';
+	import { countFiles, countFolders, vfsVersionStore, type VfsVersionState } from '$lib/vfs';
 	import { validateNodeName } from '$lib/validation';
 	import { getStudioContext, setVfsDropTarget, clearVfsDropTarget } from '$lib/state';
 	import { nodeStore } from '$lib/persistence';
@@ -63,6 +64,14 @@
 	
 	// Current hovered folder path for tooltip
 	let hoveredFolderPath = $state<string | null>(null);
+	
+	// Version history popup state
+	let showVersionPopup = $state(false);
+	let footbarEl = $state<HTMLElement | null>(null);
+	let popupPosition = $state<{ top: number; left: number; width: number } | null>(null);
+	
+	// Version store subscription cleanup
+	let versionStoreUnsubscribe: (() => void) | null = null;
 
 	// ============================================================================
 	// Connection State (for drag-to-folder visual feedback)
@@ -89,6 +98,47 @@
 	const folderCount = $derived(countFolders(fileTree));
 	const uploadState = $derived(controller?.uploadState);
 	const mountCount = $derived(vfsContent?.mounts?.length ?? 0);
+	
+	// Version state from shared store
+	const versionState = $derived<VfsVersionState | undefined>(vfsVersionStore.get(id));
+	const headVersion = $derived(versionState?.headHash);
+	const hasPendingChanges = $derived(versionState?.hasPendingChanges ?? false);
+	const commits = $derived(versionState?.commits ?? []);
+	
+	// Find nodes that reference this VFS commit (both pre-generate and post-generate)
+	type CommitLink = {
+		type: 'pre-generate' | 'generated';
+		nodeId: string; // input node for pre-generate, generated node for generated
+		nodeName: string;
+	};
+	const commitLinks = $derived.by(() => {
+		const map = new Map<string, CommitLink[]>(); // commit hash -> links
+		for (const data of nodeStore.getAll()) {
+			if (data.type === 'GENERATED') {
+				const genData = data as GeneratedNodeData;
+				// Check inputVfsRef (pre-generation version) - link to input node
+				if (genData.content.inputVfsRef?.nodeId === id) {
+					const commitHash = genData.content.inputVfsRef.commit;
+					const inputNodeId = genData.content.inputRef?.id;
+					if (inputNodeId) {
+						const inputName = nodeStore.get(inputNodeId)?.name || 'Input';
+						const links = map.get(commitHash) || [];
+						links.push({ type: 'pre-generate', nodeId: inputNodeId, nodeName: inputName });
+						map.set(commitHash, links);
+					}
+				}
+				// Check postGenerationCommit - link to generated node
+				if (genData.content.inputVfsRef?.nodeId === id && genData.content.postGenerationCommit) {
+					const commitHash = genData.content.postGenerationCommit;
+					const genName = data.name || 'Generated';
+					const links = map.get(commitHash) || [];
+					links.push({ type: 'generated', nodeId: data.id, nodeName: genName });
+					map.set(commitHash, links);
+				}
+			}
+		}
+		return map;
+	});
 
 	// ============================================================================
 	// Mount Handles (similar to reftag handles)
@@ -97,18 +147,12 @@
 	const currentEdges = useEdges();
 	const updateNodeInternals = useUpdateNodeInternals();
 
-	// Check if this VFS has a generator connection (from loader/generated node)
+	// Check if this VFS has a generator connection (from loader node for docs output)
 	const hasGeneratorConnection = $derived.by(() => {
 		const edges = currentEdges.current;
-		const result = edges.some(
+		return edges.some(
 			e => e.target === id && e.targetHandle === HandleId.VFS_GENERATOR_INPUT
 		);
-		// Debug log
-		const relevantEdges = edges.filter(e => e.target === id);
-		if (relevantEdges.length > 0) {
-			console.log(`[VFSNode ${id}] hasGeneratorConnection:`, result, 'relevant edges:', relevantEdges.map(e => ({ targetHandle: e.targetHandle })));
-		}
-		return result;
 	});
 
 	// Color scheme for mount handles
@@ -211,6 +255,9 @@
 			});
 			isLoading = controller.isLoading;
 			error = controller.error;
+			
+			// Subscribe to version store for reactive version state
+			versionStoreUnsubscribe = await vfsVersionStore.subscribe(nodeData.content.projectId, id);
 		} catch (err) {
 			console.error('Failed to initialize VFS node:', err);
 			error = err instanceof Error ? err.message : 'Failed to initialize';
@@ -219,6 +266,7 @@
 	});
 	
 	onDestroy(() => {
+		versionStoreUnsubscribe?.();
 		releaseVfsController(id);
 		controller = null;
 	});
@@ -348,6 +396,65 @@
 	function handleValidateName(name: string, nodeId: string): string | null {
 		return validateNodeName(name, nodeId);
 	}
+	
+	// Node navigation
+	const { fitView } = useSvelteFlow();
+	
+	function focusNode(nodeId: string) {
+		fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
+	}
+	
+	function getNodeName(nodeId: string): string {
+		const data = nodeStore.get(nodeId);
+		return data?.name || 'Generated';
+	}
+	
+	function formatDate(timestamp: number): string {
+		const date = new Date(timestamp);
+		const now = new Date();
+		const diffMs = now.getTime() - date.getTime();
+		const diffMins = Math.floor(diffMs / 60000);
+		const diffHours = Math.floor(diffMs / 3600000);
+		const diffDays = Math.floor(diffMs / 86400000);
+		
+		if (diffMins < 1) return 'just now';
+		if (diffMins < 60) return `${diffMins}m ago`;
+		if (diffHours < 24) return `${diffHours}h ago`;
+		if (diffDays < 7) return `${diffDays}d ago`;
+		return date.toLocaleDateString();
+	}
+	
+	function toggleVersionPopup() {
+		showVersionPopup = !showVersionPopup;
+	}
+	
+	// Update popup position continuously when open (follows node during pan/zoom)
+	$effect(() => {
+		if (!showVersionPopup || !footbarEl) {
+			popupPosition = null;
+			return;
+		}
+		
+		let animationId: number;
+		
+		function updatePosition() {
+			if (footbarEl && showVersionPopup) {
+				const rect = footbarEl.getBoundingClientRect();
+				popupPosition = {
+					top: rect.bottom,
+					left: rect.left,
+					width: rect.width
+				};
+				animationId = requestAnimationFrame(updatePosition);
+			}
+		}
+		
+		updatePosition();
+		
+		return () => {
+			cancelAnimationFrame(animationId);
+		};
+	});
 
 	// Action to portal an element to document.body (avoids transform issues with fixed positioning)
 	function portalToBody(node: HTMLElement) {
@@ -355,6 +462,27 @@
 		return {
 			destroy() {
 				node.remove();
+			}
+		};
+	}
+	
+	// Action to detect clicks outside an element
+	function clickOutside(node: HTMLElement, callback: () => void) {
+		function handleClick(event: MouseEvent) {
+			const target = event.target as HTMLElement | null;
+			if (target && !node.contains(target) && !footbarEl?.contains(target)) {
+				callback();
+			}
+		}
+		
+		// Use setTimeout to avoid immediate trigger from the click that opened the popup
+		setTimeout(() => {
+			document.addEventListener('click', handleClick, true);
+		}, 0);
+		
+		return {
+			destroy() {
+				document.removeEventListener('click', handleClick, true);
 			}
 		};
 	}
@@ -443,14 +571,80 @@
 			{/if}
 		</div>
 
-		<!-- Footer stats -->
-		<div class="px-3 py-1.5 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center gap-3">
-			<span>{fileCount} file{fileCount !== 1 ? 's' : ''}</span>
-			<span>{folderCount} folder{folderCount !== 1 ? 's' : ''}</span>
-			{#if mountCount > 0}
-				<span class="text-indigo-500">{mountCount} mount{mountCount !== 1 ? 's' : ''}</span>
-			{/if}
+		<!-- Footer with stats and version info -->
+		<div bind:this={footbarEl} class="border-t border-gray-200 bg-gray-50 text-xs">
+			<!-- Single footbar row with stats and version -->
+			<div class="px-3 py-1.5 flex items-center gap-3 text-gray-500">
+				<span>{fileCount} file{fileCount !== 1 ? 's' : ''}</span>
+				<span>{folderCount} folder{folderCount !== 1 ? 's' : ''}</span>
+				{#if mountCount > 0}
+					<span class="text-indigo-500">{mountCount} mount{mountCount !== 1 ? 's' : ''}</span>
+				{/if}
+				
+				<!-- Spacer -->
+				<span class="flex-1"></span>
+				
+				<!-- Version button -->
+				<button 
+					class="flex items-center gap-1 hover:text-gray-700 transition-colors"
+					onclick={toggleVersionPopup}
+				>
+					<!-- Git commit icon -->
+					<svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<circle cx="12" cy="12" r="3" stroke-width="2"/>
+						<line x1="12" y1="3" x2="12" y2="9" stroke-width="2"/>
+						<line x1="12" y1="15" x2="12" y2="21" stroke-width="2"/>
+					</svg>
+					<span class="font-mono">{headVersion?.slice(0, 7) || '—'}</span>
+					{#if hasPendingChanges}
+						<span class="text-amber-600">•</span>
+					{/if}
+					<!-- Chevron -->
+					<svg class="w-3 h-3 transition-transform" class:rotate-180={showVersionPopup} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+					</svg>
+				</button>
+			</div>
 		</div>
+		
+		<!-- Version history popup (floating below footbar, portaled to body) -->
+		{#if showVersionPopup && commits.length > 0 && popupPosition}
+			<div 
+				use:portalToBody
+				use:clickOutside={() => showVersionPopup = false}
+				class="fixed bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-auto z-10 w-80"
+				style="top: {popupPosition.top}px; left: {popupPosition.left}px;"
+				role="dialog"
+			>
+				{#each commits as commit}
+					<div class="px-3 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
+						<div class="flex items-center gap-2 flex-wrap">
+							<span class="font-mono text-sm text-gray-700">{commit.hash.slice(0, 7)}</span>
+							<span class="text-sm text-gray-400">{formatDate(commit.timestamp.getTime())}</span>
+						</div>
+						<div class="text-sm text-gray-600 truncate mt-1">{commit.message}</div>
+						
+						<!-- Linked nodes -->
+						{#if commitLinks.has(commit.hash)}
+							<div class="mt-2 flex flex-col gap-1">
+								{#each commitLinks.get(commit.hash)! as link}
+									<button 
+										class="text-sm px-2 py-1 rounded flex items-center gap-2 transition-colors w-full text-left {link.type === 'pre-generate' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : 'bg-green-50 text-green-700 hover:bg-green-100'}"
+										onclick={(e) => { e.stopPropagation(); focusNode(link.nodeId); showVersionPopup = false; }}
+									>
+										<span class="font-medium truncate">{link.nodeName}</span>
+										<span class="text-xs opacity-75 shrink-0">{link.type === 'pre-generate' ? 'pre generate' : 'generated'}</span>
+										<svg class="w-3.5 h-3.5 ml-auto shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+											<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+										</svg>
+									</button>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
 	{/snippet}
 
 	{#snippet leftHandles()}
@@ -468,7 +662,7 @@
 	{/snippet}
 </BaseNode>
 
-<!-- Generator Input Handle - positioned at top center, flat bar style -->
+<!-- Loader Docs Input Handle - positioned at top center, flat bar style -->
 {#if hasGeneratorConnection}
 	<Handle 
 		type="target" 
@@ -484,7 +678,7 @@
 {#if isReceivingVfsDrag && hoveredFolderPath && mousePos}
 	<div 
 		use:portalToBody
-		class="fixed z-[10000] px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none whitespace-nowrap"
+		class="fixed z-10000 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none whitespace-nowrap"
 		style="left: {mousePos.x + 12}px; top: {mousePos.y + 12}px;"
 	>
 		mount to <span class="font-mono text-indigo-300">{hoveredFolderPath}</span>

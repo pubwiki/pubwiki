@@ -159,8 +159,7 @@ export function createGraphMutation(
   };
   
   // Helper: Get source handle for connection type
-  // Note: VFS nodes use HandleId.DEFAULT for their output, not VFS_OUTPUT
-  // VFS_OUTPUT is only used by GENERATED nodes for file output
+  // VFS nodes use HandleId.DEFAULT for their output
   const getSourceHandle = (connType: ConnectionType): string | undefined => {
     switch (connType) {
       case 'vfs':

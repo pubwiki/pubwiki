@@ -221,14 +221,6 @@ export const NodeRegistry: Record<string, NodeSpec> = {
         cardinality: Cardinality.MANY,
         colorClass: 'bg-green-400',
       },
-      // VFS Output Handle - for file creation/modification scenarios
-      {
-        id: HandleId.VFS_OUTPUT,
-        label: 'Files',
-        dataType: DataType.VFS,
-        cardinality: Cardinality.OPTIONAL,
-        colorClass: 'bg-indigo-400',
-      },
     ],
     manualInput: false, // Input is automatic
     manualOutput: true,
@@ -242,7 +234,7 @@ export const NodeRegistry: Record<string, NodeSpec> = {
     inputs: [
       {
         id: HandleId.VFS_GENERATOR_INPUT,
-        label: 'Generator',
+        label: 'Loader',
         dataType: DataType.VFS,
         cardinality: Cardinality.OPTIONAL,
         colorClass: 'bg-green-400',

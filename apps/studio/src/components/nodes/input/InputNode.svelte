@@ -7,14 +7,17 @@
 	 * - System tag handle (always visible, amber color)
 	 * - Dynamic tag handles from @tag references in content
 	 * - Generate button to trigger LLM generation
+	 * - Conditional VFS footbar when connected to a VFS node
 	 */
-	import { useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
+	import { useEdges, useUpdateNodeInternals, useSvelteFlow } from '@xyflow/svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { InputNodeData, FlowNodeData } from '$lib/types';
+	import type { InputNodeData, FlowNodeData, VFSNodeData } from '$lib/types';
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
 	import { nodeStore } from '$lib/persistence';
 	import { validateNodeName } from '$lib/validation';
+	import { vfsVersionStore, type VfsVersionState } from '$lib/vfs';
 	import * as m from '$lib/paraglide/messages';
 	import { 
 		HandleId,
@@ -171,10 +174,47 @@
 	});
 
 	const allHandles = $derived([systemHandle, vfsHandle, ...tagHandles]);
+	
+	// VFS version state for footbar
+	const vfsVersionState = $derived<VfsVersionState | undefined>(
+		vfsConnection ? vfsVersionStore.get(vfsConnection) : undefined
+	);
+	const vfsHeadVersion = $derived(vfsVersionState?.headHash ?? null);
+	const vfsHasPendingChanges = $derived(vfsVersionState?.hasPendingChanges ?? false);
+
+	// ============================================================================
+	// State
+	// ============================================================================
+	
+	let versionStoreUnsubscribe: (() => void) | null = null;
 
 	// ============================================================================
 	// Effects
 	// ============================================================================
+	
+	// Subscribe to VFS version store when connected
+	$effect(() => {
+		const vfsNodeId = vfsConnection;
+		
+		// Cleanup previous subscription
+		if (versionStoreUnsubscribe) {
+			versionStoreUnsubscribe();
+			versionStoreUnsubscribe = null;
+		}
+		
+		if (vfsNodeId) {
+			const vfsData = nodeStore.get(vfsNodeId) as VFSNodeData | undefined;
+			if (vfsData?.content?.projectId) {
+				vfsVersionStore.subscribe(vfsData.content.projectId, vfsNodeId)
+					.then(unsub => { versionStoreUnsubscribe = unsub; });
+			}
+		}
+		
+		return () => {
+			versionStoreUnsubscribe?.();
+			versionStoreUnsubscribe = null;
+		};
+	});
 
 	$effect(() => {
 		console.log('[InputNode] allHandles:', allHandles);
@@ -212,6 +252,18 @@
 	// ============================================================================
 	// Event Handlers
 	// ============================================================================
+	
+	// Node navigation
+	const { fitView } = useSvelteFlow();
+	
+	function focusNode(nodeId: string) {
+		fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
+	}
+	
+	function getVfsNodeName(nodeId: string): string {
+		const data = nodeStore.get(nodeId);
+		return data?.name || 'VFS';
+	}
 
 	function handleFocus() {
 		ctx.setEditingNodeId(id);
@@ -299,5 +351,33 @@
 			onfocus={handleFocus}
 			onblur={handleBlur}
 		/>
+		
+		<!-- VFS Connection Footbar (conditional) -->
+		{#if vfsConnection}
+			<div class="border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
+				<div class="px-3 py-1.5 flex items-center gap-2">
+					<!-- Folder icon -->
+					<svg class="w-3 h-3 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+					</svg>
+					<button 
+						class="text-indigo-600 hover:underline font-medium"
+						onclick={() => focusNode(vfsConnection!)}
+					>
+						{getVfsNodeName(vfsConnection)}
+					</button>
+					<span class="text-gray-400">@</span>
+					<span class="font-mono">
+						{#if vfsHasPendingChanges}
+							<span class="text-amber-600">current (pending)</span>
+						{:else if vfsHeadVersion}
+							{vfsHeadVersion.slice(0, 7)}
+						{:else}
+							<span class="text-gray-400">(empty)</span>
+						{/if}
+					</span>
+				</div>
+			</div>
+		{/if}
 	{/snippet}
 </BaseNode>

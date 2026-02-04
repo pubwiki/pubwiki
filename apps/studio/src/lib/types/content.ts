@@ -223,7 +223,9 @@ export class GeneratedContent implements NodeContent {
     /** Input VFS version reference - for file modification scenarios */
     public inputVfsRef: VfsRef | null = null,
     /** Output VFS node ID - for file creation scenarios or modification output */
-    public outputVfsId: string | null = null
+    public outputVfsId: string | null = null,
+    /** Post-generation commit hash - recorded after file modifications are complete */
+    public postGenerationCommit: string | null = null
   ) {}
 
   getText(): string {
@@ -241,7 +243,8 @@ export class GeneratedContent implements NodeContent {
       this.promptRefs.map(ref => ({ ...ref })),
       this.indirectPromptRefs.map(ref => ({ ...ref })),
       this.inputVfsRef ? { ...this.inputVfsRef } : null,
-      this.outputVfsId
+      this.outputVfsId,
+      this.postGenerationCommit
     )
   }
 
@@ -253,7 +256,8 @@ export class GeneratedContent implements NodeContent {
       this.promptRefs.map(ref => ({ ...ref })),
       this.indirectPromptRefs.map(ref => ({ ...ref })),
       this.inputVfsRef ? { ...this.inputVfsRef } : null,
-      this.outputVfsId
+      this.outputVfsId,
+      this.postGenerationCommit
     )
   }
 
@@ -265,7 +269,8 @@ export class GeneratedContent implements NodeContent {
       this.promptRefs.map(ref => ({ ...ref })),
       this.indirectPromptRefs.map(ref => ({ ...ref })),
       ref,
-      this.outputVfsId
+      this.outputVfsId,
+      this.postGenerationCommit
     )
   }
 
@@ -277,7 +282,21 @@ export class GeneratedContent implements NodeContent {
       this.promptRefs.map(ref => ({ ...ref })),
       this.indirectPromptRefs.map(ref => ({ ...ref })),
       this.inputVfsRef ? { ...this.inputVfsRef } : null,
-      vfsId
+      vfsId,
+      this.postGenerationCommit
+    )
+  }
+
+  /** Create a copy with updated postGenerationCommit */
+  withPostGenerationCommit(commit: string | null): GeneratedContent {
+    return new GeneratedContent(
+      structuredClone(this.blocks),
+      { ...this.inputRef },
+      this.promptRefs.map(ref => ({ ...ref })),
+      this.indirectPromptRefs.map(ref => ({ ...ref })),
+      this.inputVfsRef ? { ...this.inputVfsRef } : null,
+      this.outputVfsId,
+      commit
     )
   }
 
@@ -288,7 +307,8 @@ export class GeneratedContent implements NodeContent {
       promptRefs: this.promptRefs,
       indirectPromptRefs: this.indirectPromptRefs,
       inputVfsRef: this.inputVfsRef,
-      outputVfsId: this.outputVfsId
+      outputVfsId: this.outputVfsId,
+      postGenerationCommit: this.postGenerationCommit
     }
   }
 
@@ -299,6 +319,7 @@ export class GeneratedContent implements NodeContent {
     indirectPromptRefs?: NodeRef[]
     inputVfsRef?: VfsRef | null
     outputVfsId?: string | null
+    postGenerationCommit?: string | null
   }): GeneratedContent {
     return new GeneratedContent(
       data.blocks ?? [],
@@ -306,7 +327,8 @@ export class GeneratedContent implements NodeContent {
       data.promptRefs ?? [],
       data.indirectPromptRefs ?? [],
       data.inputVfsRef ?? null,
-      data.outputVfsId ?? null
+      data.outputVfsId ?? null,
+      data.postGenerationCommit ?? null
     )
   }
 }
