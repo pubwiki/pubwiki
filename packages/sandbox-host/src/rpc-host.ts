@@ -69,7 +69,9 @@ export function createVfsRpcHost(
   }
 
   const vfsService = new VfsServiceImpl(vfsServiceConfig)
-  newMessagePortRpcSession(port, vfsService)
+  
+  // Initial binding
+  vfsService.rebindPort(port)
 
   console.log(`[VfsRpcHost:${id}] Created for basePath: ${config.basePath}`)
 
@@ -78,10 +80,25 @@ export function createVfsRpcHost(
     get isConnected() {
       return connected
     },
+    getBundlerService() {
+      return vfsService.getBundlerService()
+    },
+    createNewPort() {
+      // Create new channel
+      const channel = new MessageChannel()
+      
+      // Rebind service to new port
+      vfsService.rebindPort(channel.port1)
+      
+      console.log(`[VfsRpcHost:${id}] Created new port for reconnection`)
+      
+      // Return client port to send to SW
+      return channel.port2
+    },
     disconnect() {
       if (!connected) return
       connected = false
-      port.close()
+      // vfsService.rebindPort handles port cleanup
       console.log(`[VfsRpcHost:${id}] Disconnected`)
     }
   }

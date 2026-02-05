@@ -359,7 +359,7 @@ export class VfsBrowserClient {
    */
   static parseCallbackUrl(callbackUrl: string): VfsConnectionOptions {
     const url = new URL(callbackUrl);
-    const websocketUrl = url.searchParams.get('vscode_ws');
+    const websocketUrl = url.searchParams.get('ws');
     const token = url.searchParams.get('token');
 
     if (!websocketUrl) {

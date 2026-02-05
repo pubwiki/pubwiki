@@ -6,48 +6,6 @@ settings:
 
 catalogs:
   default:
-    '@cloudflare/vitest-pool-workers':
-      specifier: ^0.12.4
-      version: 0.12.4
-    '@cloudflare/workers-types':
-      specifier: ^4.20260114.0
-      version: 4.20260116.0
-    '@eslint/js':
-      specifier: ^9.39.2
-      version: 9.39.2
-    '@inlang/paraglide-js':
-      specifier: ^2.9.0
-      version: 2.9.0
-    '@lexical/rich-text':
-      specifier: ^0.33.1
-      version: 0.33.1
-    '@lexical/utils':
-      specifier: ^0.33.1
-      version: 0.33.1
-    '@sveltejs/adapter-auto':
-      specifier: ^7.0.0
-      version: 7.0.0
-    '@sveltejs/adapter-cloudflare':
-      specifier: ^7.2.5
-      version: 7.2.5
-    '@sveltejs/kit':
-      specifier: ^2.49.5
-      version: 2.49.5
-    '@sveltejs/package':
-      specifier: ^2.5.7
-      version: 2.5.7
-    '@sveltejs/vite-plugin-svelte':
-      specifier: ^6.2.4
-      version: 6.2.4
-    '@tailwindcss/typography':
-      specifier: ^0.5.19
-      version: 0.5.19
-    '@tailwindcss/vite':
-      specifier: ^4.1.18
-      version: 4.1.18
-    '@types/n3':
-      specifier: ^1.26.1
-      version: 1.26.1
     '@types/node':
       specifier: 22.19.5
       version: 22.19.5
@@ -57,90 +15,15 @@ catalogs:
     '@vitest/browser-playwright':
       specifier: ^4.0.17
       version: 4.0.17
-    '@vitest/ui':
-      specifier: ^4.0.17
-      version: 4.0.17
     '@vitest/web-worker':
       specifier: ^4.0.17
       version: 4.0.17
-    '@xyflow/svelte':
-      specifier: ^1.5.0
-      version: 1.5.0
-    abstract-level:
-      specifier: ^3.1.1
-      version: 3.1.1
-    browser-level:
-      specifier: ^3.0.0
-      version: 3.0.0
-    capnweb:
-      specifier: ^0.4.0
-      version: 0.4.0
-    dexie:
-      specifier: ^4.2.1
-      version: 4.2.1
-    eslint:
-      specifier: ^9.39.2
-      version: 9.39.2
-    eslint-config-prettier:
-      specifier: ^10.1.8
-      version: 10.1.8
-    eslint-plugin-svelte:
-      specifier: ^3.14.0
-      version: 3.14.0
-    flowbite-svelte:
-      specifier: ^1.31.0
-      version: 1.31.0
-    globals:
-      specifier: ^17.0.0
-      version: 17.0.0
-    lexical:
-      specifier: ^0.33.1
-      version: 0.33.1
-    memory-level:
-      specifier: ^3.1.0
-      version: 3.1.0
-    n3:
-      specifier: ^2.0.1
-      version: 2.0.1
     playwright:
       specifier: ^1.57.0
       version: 1.57.0
-    prettier:
-      specifier: ^3.8.0
-      version: 3.8.0
-    prettier-plugin-svelte:
-      specifier: ^3.4.1
-      version: 3.4.1
-    prettier-plugin-tailwindcss:
-      specifier: ^0.7.2
-      version: 0.7.2
-    quadstore:
-      specifier: ^15.4.1
-      version: 15.4.1
-    quadstore-comunica:
-      specifier: ^6.3.1
-      version: 6.3.1
-    svelte:
-      specifier: ^5.46.1
-      version: 5.46.1
-    svelte-check:
-      specifier: ^4.3.5
-      version: 4.3.5
-    svelte-lexical:
-      specifier: ^0.6.3
-      version: 0.6.3
-    tailwindcss:
-      specifier: ^4.1.18
-      version: 4.1.18
     typescript:
       specifier: ^5.9.3
       version: 5.9.3
-    typescript-eslint:
-      specifier: ^8.53.0
-      version: 8.53.0
-    vite:
-      specifier: ^7.3.1
-      version: 7.3.1
     vite-plugin-top-level-await:
       specifier: ^1.6.0
       version: 1.6.0
@@ -150,25 +33,6 @@ catalogs:
     vitest:
       specifier: ^4.0.17
       version: 4.0.17
-    vitest-browser-svelte:
-      specifier: ^2.0.1
-      version: 2.0.1
-    wrangler:
-      specifier: ^4.59.2
-      version: 4.59.2
-  vitest3:
-    '@vitest/runner':
-      specifier: ^3.2.4
-      version: 3.2.4
-    '@vitest/snapshot':
-      specifier: ^3.2.4
-      version: 3.2.4
-    '@vitest/ui':
-      specifier: ^3.2.4
-      version: 3.2.4
-    vitest:
-      specifier: ^3.2.4
-      version: 3.2.4
 
 importers:
 
@@ -610,9 +474,6 @@ importers:
       '@pubwiki/vfs':
         specifier: workspace:*
         version: link:../vfs
-      comlink:
-        specifier: ^4.4.1
-        version: 4.4.2
       esbuild-wasm:
         specifier: ^0.27.2
         version: 0.27.2
@@ -3287,9 +3148,6 @@ packages:
 
   colorette@1.4.0:
     resolution: {integrity: sha512-Y2oEozpomLn7Q3HFP7dpww7AtMJplbM9lGZP6RDfHqmbeRjiwRg4n6VM6j4KLmRke85uWEI7JqF17f3pqdRA0g==}
-
-  comlink@4.4.2:
-    resolution: {integrity: sha512-OxGdvBmJuNKSCMO4NTl1L47VRp6xn2wG4F/2hYzB6tiCb709otOxtEYCSvK80PtjODfXXZu8ds+Nw5kVCjqd2g==}
 
   comma-separated-tokens@2.0.3:
     resolution: {integrity: sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==}
@@ -7477,8 +7335,6 @@ snapshots:
   color-name@1.1.4: {}
 
   colorette@1.4.0: {}
-
-  comlink@4.4.2: {}
 
   comma-separated-tokens@2.0.3: {}
 

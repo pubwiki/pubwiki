@@ -45,7 +45,6 @@
   "license": "MIT",
   "dependencies": {
     "@pubwiki/vfs": "workspace:*",
-    "comlink": "^4.4.1",
     "esbuild-wasm": "^0.27.2"
   },
   "devDependencies": {

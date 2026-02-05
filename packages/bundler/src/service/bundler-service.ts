@@ -1,21 +1,20 @@
 /**
  * Bundler Service
  *
- * Main thread service layer for the bundler worker.
+ * Single-project bundler service that directly uses esbuild.
+ * No Worker layer - esbuild manages its own worker internally.
  * 
- * 主线程负责:
- * - Worker 生命周期管理
- * - 读取 tsconfig.json
- * - 文件监听，变更时调用 worker.invalidate()
- * - 构建进度回调
- * 
- * Worker 负责:
- * - 项目构建
+ * 职责:
+ * - 单项目构建 (多入口)
  * - 依赖跟踪和缓存
+ * - 文件监听，变更时重新构建
+ * - 构建进度回调
  */
 
 import type { Vfs } from '@pubwiki/vfs'
-import { wrap, proxy, type Remote } from 'comlink'
+import { ESBuildEngine } from '../core/esbuild-engine'
+import { DependencyResolver } from '../core/dependency-resolver'
+import { BundleCache } from '../core/bundle-cache'
 import type {
   BundleRequest,
   DirectBuildRequest,
@@ -25,35 +24,60 @@ import type {
   BuildProgressEvent,
   WatchOptions,
   BundlerOptions,
-  BundlerWorkerAPI
 } from '../types'
 import { getDirectory } from '../utils'
 import { getEntryFilesFromTsConfig } from './project-detector'
-// Import worker entry directly - bundler will handle this
-import BundlerWorker from '../worker?worker'
 
 /**
  * Bundler Service Class
  * 
- * Main API for the bundler, manages worker lifecycle and file watching.
+ * Single-project bundler. One BundlerService instance = one project.
  */
+// Global counter for debugging multiple instances
+let instanceCounter = 0
+
 export class BundlerService {
-  private worker: Worker | null = null
-  private workerAPI: Remote<BundlerWorkerAPI> | null = null
   private isInitialized = false
   private initPromise: Promise<void> | null = null
+  
+  // Instance ID for debugging
+  private readonly instanceId: number
 
   // VFS instance
   private vfs: Vfs
 
+  // Core components
+  private cache: BundleCache
+  private resolver: DependencyResolver
+  private engine: ESBuildEngine
+
+  // Single project state
+  private lastBuildOutput: ProjectBuildResult | null = null
+
   // Build progress subscribers
   private progressSubscribers = new Set<BuildProgressCallback>()
 
-  // File watch unsubscribers (keyed by tsconfigPath)
-  private fileWatchUnsubscribers = new Map<string, () => void>()
+  // File watching state (single watcher)
+  private fileWatchUnsubscriber: (() => void) | null = null
+  
+  // Track ongoing build to avoid duplicates
+  private ongoingBuild: Promise<ProjectBuildResult> | null = null
+  
+  // Debounce state for file watching
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingChangedPaths = new Set<string>()
+  private isRebuilding = false
+  private readonly DEBOUNCE_MS = 100
 
   constructor(options: BundlerOptions) {
+    this.instanceId = ++instanceCounter
+    console.log(`[BundlerService #${this.instanceId}] Created`)
+    console.trace(`[BundlerService #${this.instanceId}] Creation stack trace`)
+    
     this.vfs = options.vfs
+    this.cache = new BundleCache()
+    this.resolver = new DependencyResolver()
+    this.engine = new ESBuildEngine(this.resolver, this.cache)
   }
 
   /**
@@ -69,30 +93,57 @@ export class BundlerService {
 
   private async doInitialize(): Promise<void> {
     try {
-      // Create worker using bundled worker entry
-      this.worker = new BundlerWorker()
+      console.log('[BundlerService] Initializing...')
 
-      this.workerAPI = wrap<BundlerWorkerAPI>(this.worker)
-      // Pass VFS as Comlink proxy to worker
-      await this.workerAPI!.initialize(proxy(this.vfs))
+      // Setup file loader from VFS
+      const fileLoader = this.createFileLoader()
+      const fileExistsChecker = this.createFileExistsChecker()
+
+      this.engine.setFileLoader(fileLoader)
+      this.resolver.setFileExistsChecker(fileExistsChecker)
+
+      // Initialize cache and engine
+      await this.cache.init()
+      await this.engine.initialize()
 
       this.isInitialized = true
       console.log('[BundlerService] Initialized successfully')
     } catch (error) {
       console.error('[BundlerService] Initialization failed:', error)
-      this.cleanup()
+      this.initPromise = null
       throw error
     }
   }
 
   /**
    * Build a project from tsconfig.json
+   * If a build is already in progress, returns that promise.
    */
   async build(request: BundleRequest): Promise<ProjectBuildResult> {
     await this.ensureInitialized()
 
     const { tsconfigPath, options = {} } = request
 
+    // Check if build is already in progress
+    if (this.ongoingBuild) {
+      console.log(`[BundlerService] Build already in progress, waiting...`)
+      return this.ongoingBuild
+    }
+
+    // Create and track the build promise
+    this.ongoingBuild = this.doBuild(tsconfigPath, options)
+
+    try {
+      return await this.ongoingBuild
+    } finally {
+      this.ongoingBuild = null
+    }
+  }
+
+  /**
+   * Internal build implementation
+   */
+  private async doBuild(tsconfigPath: string, options: BundleRequest['options'] = {}): Promise<ProjectBuildResult> {
     this.notifyProgress({
       type: 'start',
       path: tsconfigPath,
@@ -110,8 +161,11 @@ export class BundlerService {
       // Get project root
       const projectRoot = getDirectory(tsconfigPath)
 
-      // Call worker to build
-      const buildResult = await this.workerAPI!.build({ projectRoot, entryFiles, options })
+      // Build directly
+      const buildResult = await this.engine.build({ projectRoot, entryFiles, options })
+
+      // Cache the result
+      this.lastBuildOutput = buildResult
 
       this.notifyProgress({
         type: 'complete',
@@ -145,6 +199,26 @@ export class BundlerService {
 
     const { projectRoot, entryFiles, options = {} } = request
 
+    // Check if build is already in progress
+    if (this.ongoingBuild) {
+      console.log(`[BundlerService] Build already in progress, waiting...`)
+      return this.ongoingBuild
+    }
+
+    this.ongoingBuild = this.doBuildEntries(projectRoot, entryFiles, options)
+
+    try {
+      return await this.ongoingBuild
+    } finally {
+      this.ongoingBuild = null
+    }
+  }
+
+  private async doBuildEntries(
+    projectRoot: string,
+    entryFiles: string[],
+    options: DirectBuildRequest['options'] = {}
+  ): Promise<ProjectBuildResult> {
     this.notifyProgress({
       type: 'start',
       path: projectRoot,
@@ -152,7 +226,10 @@ export class BundlerService {
     })
 
     try {
-      const buildResult = await this.workerAPI!.build({ projectRoot, entryFiles, options })
+      const buildResult = await this.engine.build({ projectRoot, entryFiles, options })
+
+      // Cache the result
+      this.lastBuildOutput = buildResult
 
       this.notifyProgress({
         type: 'complete',
@@ -179,18 +256,26 @@ export class BundlerService {
   }
 
   /**
-   * Setup file watching for automatic rebuild
+   * Setup file watching for automatic rebuild.
+   * Only one watcher can be active at a time.
    */
   watch(options: WatchOptions): () => void {
     const { tsconfigPath, onRebuild, onFileChange } = options
 
-    // Cancel previous watching for this tsconfig
-    const previousUnsub = this.fileWatchUnsubscribers.get(tsconfigPath)
-    if (previousUnsub) {
-      previousUnsub()
+    // Cancel previous watching
+    if (this.fileWatchUnsubscriber) {
+      this.fileWatchUnsubscriber()
+      this.fileWatchUnsubscriber = null
     }
 
-    // First build to get dependencies
+    // Reset debounce state
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer)
+      this.debounceTimer = null
+    }
+    this.pendingChangedPaths.clear()
+    this.isRebuilding = false
+
     let dependencies: string[] = []
     let isWatching = true
 
@@ -204,12 +289,60 @@ export class BundlerService {
         // Watch dependencies + tsconfig itself
         const pathsToWatch = new Set([...dependencies, tsconfigPath])
 
-        const handleFileChange = async (changedPath: string) => {
+        // Debounced rebuild function
+        const debouncedRebuild = async () => {
+          if (!isWatching) return
+          if (this.isRebuilding) {
+            // If already rebuilding, schedule another rebuild after current one
+            this.debounceTimer = setTimeout(debouncedRebuild, this.DEBOUNCE_MS)
+            return
+          }
+          
+          this.isRebuilding = true
+          const changedPaths = [...this.pendingChangedPaths]
+          this.pendingChangedPaths.clear()
+          
+          console.log(`[BundlerService] Rebuilding after ${changedPaths.length} file change(s)`)
+          
+          try {
+            // Invalidate all changed files
+            for (const changedPath of changedPaths) {
+              await this.invalidate(changedPath)
+            }
+            
+            // Rebuild once
+            const newResult = await this.build({ tsconfigPath })
+            
+            // Update watched dependencies
+            dependencies = newResult.dependencies
+            pathsToWatch.clear()
+            for (const dep of dependencies) pathsToWatch.add(dep)
+            pathsToWatch.add(tsconfigPath)
+            
+            // Notify rebuild
+            if (onRebuild) {
+              try {
+                onRebuild(newResult)
+              } catch (error) {
+                console.error('[BundlerService] onRebuild callback error:', error)
+              }
+            }
+          } finally {
+            this.isRebuilding = false
+            
+            // If more changes accumulated during rebuild, schedule another
+            if (this.pendingChangedPaths.size > 0) {
+              this.debounceTimer = setTimeout(debouncedRebuild, this.DEBOUNCE_MS)
+            }
+          }
+        }
+
+        const handleFileChange = (changedPath: string) => {
           if (!pathsToWatch.has(changedPath)) return
           
-          console.log(`[BundlerService] File changed: ${changedPath}`)
+          console.log(`[BundlerService #${this.instanceId}] File changed: ${changedPath}`)
           
-          // Notify file change
+          // Notify file change immediately (for HMR notification)
           if (onFileChange) {
             try {
               onFileChange(changedPath)
@@ -218,26 +351,14 @@ export class BundlerService {
             }
           }
           
-          // Invalidate worker cache
-          await this.workerAPI?.invalidate(changedPath)
+          // Queue for debounced rebuild
+          this.pendingChangedPaths.add(changedPath)
           
-          // Rebuild
-          const newResult = await this.build({ tsconfigPath })
-          
-          // Update watched dependencies
-          dependencies = newResult.dependencies
-          pathsToWatch.clear()
-          for (const dep of dependencies) pathsToWatch.add(dep)
-          pathsToWatch.add(tsconfigPath)
-          
-          // Notify rebuild
-          if (onRebuild) {
-            try {
-              onRebuild(newResult)
-            } catch (error) {
-              console.error('[BundlerService] onRebuild callback error:', error)
-            }
+          // Reset debounce timer
+          if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer)
           }
+          this.debounceTimer = setTimeout(debouncedRebuild, this.DEBOUNCE_MS)
         }
 
         // Subscribe to file events
@@ -248,12 +369,10 @@ export class BundlerService {
           handleFileChange(event.path)
         })
 
-        const unsub = () => {
+        this.fileWatchUnsubscriber = () => {
           unsubUpdate()
           unsubDelete()
         }
-
-        this.fileWatchUnsubscribers.set(tsconfigPath, unsub)
       } catch (error) {
         console.error('[BundlerService] Watch setup failed:', error)
       }
@@ -265,10 +384,16 @@ export class BundlerService {
     // Return unwatch function
     return () => {
       isWatching = false
-      const unsub = this.fileWatchUnsubscribers.get(tsconfigPath)
-      if (unsub) {
-        unsub()
-        this.fileWatchUnsubscribers.delete(tsconfigPath)
+      
+      // Clear debounce timer
+      if (this.debounceTimer) {
+        clearTimeout(this.debounceTimer)
+        this.debounceTimer = null
+      }
+      
+      if (this.fileWatchUnsubscriber) {
+        this.fileWatchUnsubscriber()
+        this.fileWatchUnsubscriber = null
       }
     }
   }
@@ -278,7 +403,17 @@ export class BundlerService {
    */
   async invalidate(path: string): Promise<void> {
     await this.ensureInitialized()
-    await this.workerAPI!.invalidate(path)
+    
+    console.log(`[BundlerService] Invalidating: ${path}`)
+    
+    // Clear transform cache for the changed file
+    await this.cache.deleteTransform(path)
+    
+    // Clear lastBuildOutput if the file is a dependency
+    if (this.lastBuildOutput?.dependencies.includes(path)) {
+      console.log(`[BundlerService] Clearing cached build output`)
+      this.lastBuildOutput = null
+    }
   }
 
   /**
@@ -287,29 +422,68 @@ export class BundlerService {
   async invalidateAll(): Promise<void> {
     await this.ensureInitialized()
     
-    // Cancel all file watching
-    for (const unsub of this.fileWatchUnsubscribers.values()) {
-      unsub()
-    }
-    this.fileWatchUnsubscribers.clear()
+    console.log('[BundlerService] Invalidating all')
     
-    await this.workerAPI!.invalidateAll()
+    // Cancel file watching
+    if (this.fileWatchUnsubscriber) {
+      this.fileWatchUnsubscriber()
+      this.fileWatchUnsubscriber = null
+    }
+    
+    // Clear debounce state
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer)
+      this.debounceTimer = null
+    }
+    this.pendingChangedPaths.clear()
+    
+    // Clear all caches
+    await this.cache.clearTransformCache()
+    await this.engine.invalidateAllContexts()
+    this.resolver.clearCache()
+    this.lastBuildOutput = null
   }
 
   /**
    * Get the dependency graph
    */
-  async getDependencyGraph(): Promise<Map<string, DependencyEntry>> {
-    await this.ensureInitialized()
-    return this.workerAPI!.getDependencyGraph()
+  getDependencyGraph(): Map<string, DependencyEntry> {
+    const graph = this.engine.getDependencyGraph()
+    const result = new Map<string, DependencyEntry>()
+    
+    for (const [path, entry] of graph.entries()) {
+      result.set(path, {
+        path,
+        dependencies: entry.dependencies,
+        dependents: entry.dependents
+      })
+    }
+    
+    return result
   }
 
   /**
-   * Get cached build output for a project
+   * Get cached build output
    */
-  async getLastBuildOutput(projectRoot: string): Promise<ProjectBuildResult | null> {
-    await this.ensureInitialized()
-    return this.workerAPI!.getLastBuildOutput(projectRoot)
+  getLastBuildOutput(): ProjectBuildResult | null {
+    return this.lastBuildOutput
+  }
+
+  /**
+   * Check if a build is currently in progress
+   */
+  isBuildInProgress(): boolean {
+    return this.ongoingBuild !== null
+  }
+
+  /**
+   * Wait for any ongoing build to complete
+   */
+  async waitForBuild(): Promise<ProjectBuildResult | null> {
+    if (this.ongoingBuild) {
+      return this.ongoingBuild
+    }
+    return this.lastBuildOutput
   }
 
   /**
@@ -321,14 +495,22 @@ export class BundlerService {
   }
 
   /**
-   * Terminate the bundler worker
+   * Terminate the bundler and release resources
    */
-  terminate(): void {
-    for (const unsub of this.fileWatchUnsubscribers.values()) {
-      unsub()
+  async terminate(): Promise<void> {
+    if (this.fileWatchUnsubscriber) {
+      this.fileWatchUnsubscriber()
+      this.fileWatchUnsubscriber = null
     }
-    this.fileWatchUnsubscribers.clear()
-    this.cleanup()
+    
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer)
+      this.debounceTimer = null
+    }
+    
+    await this.engine.dispose()
+    this.isInitialized = false
+    this.initPromise = null
   }
 
   /**
@@ -346,16 +528,6 @@ export class BundlerService {
     }
   }
 
-  private cleanup(): void {
-    if (this.worker) {
-      this.worker.terminate()
-      this.worker = null
-    }
-    this.workerAPI = null
-    this.isInitialized = false
-    this.initPromise = null
-  }
-
   private notifyProgress(event: BuildProgressEvent): void {
     for (const subscriber of this.progressSubscribers) {
       try {
@@ -363,6 +535,31 @@ export class BundlerService {
       } catch (error) {
         console.error('[BundlerService] Progress callback error:', error)
       }
+    }
+  }
+
+  /**
+   * Create a file loader function from VFS
+   */
+  private createFileLoader() {
+    return async (path: string): Promise<string> => {
+      const file = await this.vfs.readFile(path)
+      if (file.content === null) {
+        throw new Error(`File not found: ${path}`)
+      }
+      if (file.content instanceof ArrayBuffer) {
+        return new TextDecoder().decode(file.content)
+      }
+      return file.content as string
+    }
+  }
+
+  /**
+   * Create a file exists checker from VFS
+   */
+  private createFileExistsChecker() {
+    return async (path: string): Promise<boolean> => {
+      return this.vfs.exists(path)
     }
   }
 }

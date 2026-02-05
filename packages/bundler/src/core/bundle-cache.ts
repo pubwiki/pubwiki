@@ -6,7 +6,8 @@
  * - HTTP/CDN content (npm packages)
  * - TypeScript definitions (.d.ts)
  *
- * Uses IndexedDB for persistent storage.
+ * Uses IndexedDB for persistent storage when available,
+ * falls back to memory-only cache in environments without IndexedDB.
  */
 
 const DB_NAME = 'bundler-worker-cache'
@@ -40,6 +41,7 @@ export interface HttpCacheEntry {
 export class BundleCache {
   private db: IDBDatabase | null = null
   private initPromise: Promise<void> | null = null
+  private useMemoryOnly = false
 
   // Memory caches for frequently accessed items
   private transformMemCache = new Map<string, unknown>()
@@ -50,10 +52,10 @@ export class BundleCache {
   private readonly httpCacheTTL = 24 * 60 * 60 * 1000 // 24 hours
 
   /**
-   * Initialize IndexedDB
+   * Initialize IndexedDB (falls back to memory-only if unavailable)
    */
   async init(): Promise<void> {
-    if (this.db) {
+    if (this.db || this.useMemoryOnly) {
       return
     }
 
@@ -61,15 +63,24 @@ export class BundleCache {
       return this.initPromise
     }
 
+    // Check if IndexedDB is available
+    if (typeof indexedDB === 'undefined') {
+      console.log('[BundleCache] IndexedDB not available, using memory-only cache')
+      this.useMemoryOnly = true
+      return
+    }
+
     console.log('[BundleCache] Initializing IndexedDB...')
 
-    this.initPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME, DB_VERSION)
+    this.initPromise = new Promise((resolve) => {
+      try {
+        const request = indexedDB.open(DB_NAME, DB_VERSION)
 
       request.onerror = () => {
-        console.error('[BundleCache] Failed to open database:', request.error)
+        console.warn('[BundleCache] Failed to open database, using memory-only cache:', request.error)
+        this.useMemoryOnly = true
         this.initPromise = null
-        reject(request.error)
+        resolve() // Don't reject, just fall back to memory cache
       }
 
       request.onsuccess = () => {
@@ -100,6 +111,11 @@ export class BundleCache {
           db.createObjectStore(STORES.METADATA, { keyPath: 'key' })
         }
       }
+      } catch (error) {
+        console.warn('[BundleCache] Error initializing IndexedDB, using memory-only cache:', error)
+        this.useMemoryOnly = true
+        resolve()
+      }
     })
 
     return this.initPromise
@@ -114,6 +130,11 @@ export class BundleCache {
     // Check memory cache first
     if (this.transformMemCache.has(key)) {
       return this.transformMemCache.get(key)!
+    }
+
+    // If memory-only mode, nothing more to check
+    if (this.useMemoryOnly) {
+      return null
     }
 
     await this.init()
@@ -133,6 +154,15 @@ export class BundleCache {
    * Set transform cache
    */
   async setTransform(key: string, value: unknown): Promise<void> {
+    // Update memory cache
+    this.transformMemCache.set(key, value)
+    this.trimMemCache(this.transformMemCache)
+
+    // If memory-only mode, done
+    if (this.useMemoryOnly) {
+      return
+    }
+
     await this.init()
 
     const entry: CacheEntry = {
@@ -143,28 +173,34 @@ export class BundleCache {
     }
 
     await this.set(STORES.TRANSFORM, entry)
-
-    // Update memory cache
-    this.transformMemCache.set(key, value)
-    this.trimMemCache(this.transformMemCache)
   }
 
   /**
    * Delete from transform cache
    */
   async deleteTransform(key: string): Promise<void> {
+    this.transformMemCache.delete(key)
+
+    if (this.useMemoryOnly) {
+      return
+    }
+
     await this.init()
     await this.delete(STORES.TRANSFORM, key)
-    this.transformMemCache.delete(key)
   }
 
   /**
    * Clear all transform cache
    */
   async clearTransformCache(): Promise<void> {
+    this.transformMemCache.clear()
+
+    if (this.useMemoryOnly) {
+      return
+    }
+
     await this.init()
     await this.clearStore(STORES.TRANSFORM)
-    this.transformMemCache.clear()
   }
 
   // ================== HTTP Cache ==================
@@ -176,6 +212,11 @@ export class BundleCache {
     // Check memory cache
     if (this.httpMemCache.has(url)) {
       return this.httpMemCache.get(url)!
+    }
+
+    // If memory-only mode, nothing more to check
+    if (this.useMemoryOnly) {
+      return null
     }
 
     await this.init()
@@ -201,9 +242,19 @@ export class BundleCache {
    * Set HTTP cache
    */
   async setHttp(url: string, content: string, contentType: string): Promise<void> {
+    const httpEntry: HttpCacheEntry = { content, contentType }
+
+    // Update memory cache
+    this.httpMemCache.set(url, httpEntry)
+    this.trimMemCache(this.httpMemCache)
+
+    // If memory-only mode, done
+    if (this.useMemoryOnly) {
+      return
+    }
+
     await this.init()
 
-    const httpEntry: HttpCacheEntry = { content, contentType }
     const entry: CacheEntry<HttpCacheEntry> = {
       key: url,
       value: httpEntry,
@@ -213,10 +264,6 @@ export class BundleCache {
     }
 
     await this.set(STORES.HTTP, entry)
-
-    // Update memory cache
-    this.httpMemCache.set(url, httpEntry)
-    this.trimMemCache(this.httpMemCache)
   }
 
   // ================== Statistics ==================
@@ -229,6 +276,15 @@ export class BundleCache {
     httpCache: number
     totalSize: number
   }> {
+    // If memory-only mode, return memory stats
+    if (this.useMemoryOnly) {
+      return {
+        transformCache: this.transformMemCache.size,
+        httpCache: this.httpMemCache.size,
+        totalSize: 0 // Can't easily compute
+      }
+    }
+
     await this.init()
 
     const transformCount = await this.count(STORES.TRANSFORM)

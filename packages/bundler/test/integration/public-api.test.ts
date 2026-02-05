@@ -51,7 +51,7 @@ import {
 } from '../helpers/fixtures'
 
 // Import worker classes separately since they're not re-exported from main index
-import { DependencyResolver } from '../../src/worker/dependency-resolver'
+import { DependencyResolver } from '../../src/core/dependency-resolver'
 
 describe('Public API', () => {
   describe('Factory Function', () => {

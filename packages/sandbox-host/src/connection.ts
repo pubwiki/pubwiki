@@ -16,8 +16,8 @@ import type { ICustomService } from '@pubwiki/sandbox-service'
 import type {
   SandboxConnectionConfig,
   SandboxConnection,
-  VfsRpcHost,
-  MainRpcHost
+  MainRpcHost,
+  VfsRpcHost
 } from './types'
 import type { Vfs } from '@pubwiki/vfs'
 import {
@@ -74,9 +74,6 @@ export function createSandboxConnection(
   // Pending onLog callback (set before mainRpcHost is ready)
   let pendingOnLogCallback = onLog ?? null
 
-  // Additional VFS hosts for SW reconnection
-  const additionalVfsHosts: VfsRpcHost[] = []
-
   // File watching cleanup
   let stopFileWatching: (() => void) | null = null
 
@@ -88,31 +85,18 @@ export function createSandboxConnection(
     if (event.data?.type === 'REQUEST_VFS_PORT') {
       console.log(`[SandboxConnection:${id}] SW requesting new VFS port for reconnection`)
 
-      if (!iframe.contentWindow) {
-        console.warn(`[SandboxConnection:${id}] Cannot send VFS port: no contentWindow`)
+      if (!iframe.contentWindow || !vfsRpcHost) {
+        console.warn(`[SandboxConnection:${id}] Cannot send VFS port: not ready`)
         return
       }
 
-      if (!mainRpcHost) {
-        console.warn(`[SandboxConnection:${id}] Main RPC Host not ready`)
-        return
-      }
-
-      // Create a new VFS channel for the reconnecting SW
-      const vfsConfig: VfsRpcHostConfigExt = {
-        basePath,
-        projectConfig,
-        hmrService: mainRpcHost.getHmrService(),
-        vfs
-      }
-
-      const newVfsChannel = createVfsRpcChannel(vfsConfig)
-      additionalVfsHosts.push(newVfsChannel.host)
+      // VfsRpcHost handles port creation and rebinding internally
+      const clientPort = vfsRpcHost.createNewPort()
 
       iframe.contentWindow.postMessage(
         { type: 'VFS_PORT_RESPONSE' },
         targetOrigin,
-        [newVfsChannel.clientPort]
+        [clientPort]
       )
 
       console.log(`[SandboxConnection:${id}] Sent new VFS port to sandbox`)
@@ -292,12 +276,6 @@ export function createSandboxConnection(
         mainRpcHost.disconnect()
         mainRpcHost = null
       }
-
-      // Disconnect additional VFS hosts
-      for (const host of additionalVfsHosts) {
-        host.disconnect()
-      }
-      additionalVfsHosts.length = 0
 
       connected = false
 

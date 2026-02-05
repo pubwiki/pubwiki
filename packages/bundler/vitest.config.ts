@@ -12,7 +12,10 @@ export default defineConfig({
     // Use node for unit tests, browser tests go in separate config
     environment: 'node',
     include: ['test/**/*.test.ts'],
-    exclude: ['test/integration/e2e-build.test.ts'],
+    // These tests require browser environment (esbuild-wasm)
+    exclude: [
+      'test/integration/e2e-build.test.ts'
+    ],
     coverage: {
       reporter: ['text', 'json', 'html'],
     },

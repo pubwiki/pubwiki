@@ -8,9 +8,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { Vfs } from '@pubwiki/vfs'
-import { ESBuildEngine } from '../../src/worker/esbuild-engine'
-import { DependencyResolver } from '../../src/worker/dependency-resolver'
-import { BundleCache } from '../../src/worker/bundle-cache'
+import { ESBuildEngine } from '../../src/core/esbuild-engine'
+import { DependencyResolver } from '../../src/core/dependency-resolver'
+import { BundleCache } from '../../src/core/bundle-cache'
 import { createTestVfs } from '../helpers'
 import {
   createComplexDependencyProject,

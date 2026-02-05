@@ -37,10 +37,7 @@ import { BundlerService } from './service'
  * const vfs = new Vfs(myProvider)
  * await vfs.initialize()
  *
- * const bundler = await createBundler({
- *   vfs,
- *   workerUrl: new URL('./worker/index.js', import.meta.url)
- * })
+ * const bundler = await createBundler({ vfs })
  *
  * const result = await bundler.build({
  *   tsconfigPath: '/project/tsconfig.json'
@@ -52,8 +49,3 @@ export async function createBundler(options: BundlerOptions): Promise<BundlerSer
   await bundler.initialize()
   return bundler
 }
-
-/**
- * Re-export worker types for consumers who want to create their own worker
- */
-export type { BundlerWorkerAPI, WorkerBuildRequest } from './types'

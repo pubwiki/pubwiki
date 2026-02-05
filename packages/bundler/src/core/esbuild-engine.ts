@@ -113,7 +113,7 @@ export class ESBuildEngine {
         // The version should match the package.json dependency
         await esbuild.initialize({
           wasmURL: 'https://unpkg.com/esbuild-wasm@0.27.2/esbuild.wasm',
-          worker: false // Web Worker cannot create sub-workers
+          worker: true // Let esbuild use its own worker for parallel compilation
         })
         this.initialized = true
         console.log('[ESBuildEngine] esbuild-wasm initialized')
@@ -332,9 +332,6 @@ export class ESBuildEngine {
               const { content, contentType } = await this.httpLoader(args.path)
               const loader = this.getLoaderFromContentType(contentType)
               
-              console.log(`[ESBuildEngine] HTTP load: ${args.path}`)
-              console.log(`[ESBuildEngine]   Content-Type: "${contentType}" -> loader: "${loader}"`)
-
               return { contents: content, loader }
             } catch (error) {
               console.error(`[ESBuildEngine] HTTP load failed for ${args.path}:`, error)
@@ -380,6 +377,7 @@ export class ESBuildEngine {
       }
 
       if (context) {
+        console.log("Trigger incremental rebuild")
         result = await context.rebuild()
       } else {
         context = await esbuild.context(buildOptions)

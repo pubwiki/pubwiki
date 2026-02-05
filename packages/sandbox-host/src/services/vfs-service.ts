@@ -9,7 +9,7 @@
  * 3. Direct VFS access without intermediate layer
  */
 
-import { RpcTarget } from '@pubwiki/sandbox-service'
+import { RpcTarget, newMessagePortRpcSession } from '@pubwiki/sandbox-service'
 import type {
   IVfsService,
   FileInfo,
@@ -46,6 +46,9 @@ export interface VfsServiceConfig {
   vfs: Vfs
 }
 
+// Global counter for debugging multiple instances
+let vfsServiceInstanceCounter = 0
+
 /**
  * VFS Service Implementation
  *
@@ -59,16 +62,25 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
 
   // File watching cleanup
   private fileWatchUnsub: (() => void) | null = null
+  
+  // Instance ID for debugging
+  private readonly instanceId: number
+  
+  // Current MessagePort for RPC (managed internally for reconnection)
+  private currentPort: MessagePort | null = null
 
   constructor(
     private config: VfsServiceConfig
   ) {
     super()
     
-    // Create BundlerService using the VFS instance
+    this.instanceId = ++vfsServiceInstanceCounter
+    
+    // Create BundlerService
+    console.log(`[VfsServiceImpl #${this.instanceId}] Creating BundlerService`)
     this.bundlerService = new BundlerService({ vfs: config.vfs })
     
-    console.log(`[VfsServiceImpl] Created for basePath: ${config.basePath}`, {
+    console.log(`[VfsServiceImpl #${this.instanceId}] Created for basePath: ${config.basePath}`, {
       projectConfig: config.projectConfig ? {
         tsconfigPath: config.projectConfig.tsconfigPath,
         isBuildable: config.projectConfig.isBuildable,
@@ -78,6 +90,30 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
 
     // Async initialization
     this.initPromise = this.initialize()
+  }
+  
+  /**
+   * Get the bundler service for reuse
+   */
+  getBundlerService(): BundlerService {
+    return this.bundlerService
+  }
+  
+  /**
+   * Rebind this service to a new MessagePort (for SW reconnection)
+   * Closes the old port if exists and binds to the new one
+   */
+  rebindPort(port: MessagePort): void {
+    // Close old port if exists
+    if (this.currentPort) {
+      console.log(`[VfsServiceImpl #${this.instanceId}] Closing old port for rebind`)
+      this.currentPort.close()
+    }
+    
+    // Bind to new port
+    this.currentPort = port
+    newMessagePortRpcSession(port, this)
+    console.log(`[VfsServiceImpl #${this.instanceId}] Rebound to new port`)
   }
 
   /**
@@ -197,7 +233,7 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
       this.fileWatchUnsub = this.bundlerService.watch({
         tsconfigPath: this.config.projectConfig.tsconfigPath,
         onFileChange: (changedPath: string) => {
-          console.log(`[VfsServiceImpl] File changed: ${changedPath}`)
+          console.log(`[VfsServiceImpl #${this.instanceId}] File changed: ${changedPath}`)
           // Trigger HMR update notification
           this.config.hmrService.notifyUpdate({
             type: 'update',
@@ -231,14 +267,14 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
       console.log('[VfsServiceImpl] Bundler initialized with file watching')
     }
 
-    // Get project root directory
-    const projectRoot = this.config.projectConfig.projectRoot
-    if (!projectRoot) {
-      throw new Error('[VfsServiceImpl] No project root found')
+    // If a build is in progress, wait for it using the bundler's API
+    if (this.bundlerService.isBuildInProgress()) {
+      console.log('[VfsServiceImpl] Build in progress, waiting...')
+      await this.bundlerService.waitForBuild()
     }
 
-    // Try to get last build result first
-    let result: ProjectBuildResult | null = await this.bundlerService.getLastBuildOutput(projectRoot)
+    // Try to get last build result first (API simplified - no projectRoot needed)
+    let result: ProjectBuildResult | null = this.bundlerService.getLastBuildOutput()
 
     // If no cache, trigger build
     if (!result) {

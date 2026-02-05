@@ -5,6 +5,7 @@
  */
 
 import type { ICustomService, ConsoleLogEntry } from '@pubwiki/sandbox-service'
+import type { BundlerService } from '@pubwiki/bundler'
 
 // Re-export types from @pubwiki/bundler
 export type {
@@ -63,6 +64,10 @@ export interface VfsRpcHost {
   id: string
   /** Check if host is connected */
   isConnected: boolean
+  /** Get the bundler service for reuse */
+  getBundlerService: () => BundlerService
+  /** Create a new MessagePort for SW reconnection, rebinding the service */
+  createNewPort: () => MessagePort
   /** Disconnect and cleanup */
   disconnect: () => void
 }

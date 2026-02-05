@@ -1,7 +1,7 @@
 /**
- * Worker Types
+ * Core Types
  *
- * Type definitions specific to the bundler web worker.
+ * Type definitions for the bundler core modules.
  */
 
 // Re-export shared types for convenience
@@ -12,9 +12,6 @@ export type {
   BuildError,
   BuildWarning,
   DependencyEntry,
-  // Worker API types
-  BundlerWorkerAPI,
-  WorkerBuildRequest
 } from '../types'
 
 /**
