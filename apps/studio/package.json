@@ -47,7 +47,6 @@
 		"@pubwiki/svelte-chat": "workspace:*",
 		"@pubwiki/ui": "workspace:*",
 		"@pubwiki/vfs": "workspace:*",
-		"@pubwiki/vscode-bridge": "workspace:*",
 		"@xyflow/svelte": "catalog:",
 		"@zenfs/core": "^2.4.4",
 		"@zenfs/dom": "^1.2.6",

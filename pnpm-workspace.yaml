@@ -15,7 +15,6 @@ packages:
   - packages/api
   - packages/ui
   - packages/reader
-  - packages/vscode-bridge
   - apps/hub
   - apps/studio
   - apps/sandbox

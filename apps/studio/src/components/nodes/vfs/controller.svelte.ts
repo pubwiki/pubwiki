@@ -5,7 +5,7 @@
  * - NodeVfs instance lifecycle (unified interface with file ops + version control)
  * - File tree service (shared between VFSNode and VFSProperties)
  * - Reactive file tree state
- * - VSCode link for remote editing
+ * - Local sync for syncing with local filesystem
  * - VFS-to-VFS mount handling via drag-to-folder gesture
  * 
  * IMPORTANT: All VFS operations go through NodeVfs, which is the unified interface
@@ -13,7 +13,7 @@
  * handles mount configurations and supports nested mounts.
  */
 
-import { getNodeVfs, invalidateNodeVfs, VfsFileTreeService, createVSCodeLink, type VSCodeLink, type NodeVfs } from '$lib/vfs';
+import { getNodeVfs, invalidateNodeVfs, VfsFileTreeService, createLocalSync, type LocalSync, type NodeVfs } from '$lib/vfs';
 import { nodeStore } from '$lib/persistence';
 import { onEdgeDelete } from '$lib/state';
 import { isVfsMountHandle, getMountIdFromHandle } from '$lib/graph';
@@ -41,8 +41,8 @@ export interface VfsController {
 	readonly error: string | null;
 	/** Shared reactive upload state - access .isUploading and .progress directly */
 	readonly uploadState: UploadState;
-	/** VSCode link for remote editing */
-	readonly vscodeLink: VSCodeLink;
+	/** Local sync for syncing with local filesystem */
+	readonly localSync: LocalSync;
 	setUploading(uploading: boolean, progress?: { current: number; total: number }): void;
 	/** Reload VFS with updated mount configuration */
 	reloadMounts(): Promise<void>;
@@ -59,7 +59,7 @@ class VfsControllerImpl implements VfsController {
 	/** The unified NodeVfs - includes file operations, mounts, and version control */
 	private _vfs: NodeVfs;
 	private _fileTreeService: VfsFileTreeService;
-	private _vscodeLink: VSCodeLink;
+	private _localSync: LocalSync;
 	private _fileTree = $state<FileItem[]>([]);
 	private _isLoading = $state(true);
 	private _error = $state<string | null>(null);
@@ -86,8 +86,8 @@ class VfsControllerImpl implements VfsController {
 			}
 		});
 		
-		// VSCode link uses the NodeVfs for editing
-		this._vscodeLink = createVSCodeLink(this._vfs);
+		// Local sync uses the NodeVfs for syncing with local filesystem
+		this._localSync = createLocalSync(this._vfs, nodeId);
 		
 		// Setup event listeners
 		this.setupEventListeners();
@@ -213,8 +213,8 @@ class VfsControllerImpl implements VfsController {
 		return this._error;
 	}
 
-	get vscodeLink(): VSCodeLink {
-		return this._vscodeLink;
+	get localSync(): LocalSync {
+		return this._localSync;
 	}
 
 	setUploading(uploading: boolean, progress?: { current: number; total: number }): void {
@@ -244,7 +244,7 @@ class VfsControllerImpl implements VfsController {
 		}
 		this._eventUnsubscribers = [];
 		
-		this._vscodeLink.disconnect();
+		this._localSync.disconnect();
 		this._fileTreeService.dispose();
 	}
 }

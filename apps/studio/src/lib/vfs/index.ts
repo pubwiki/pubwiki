@@ -26,11 +26,11 @@ export {
 } from './file-tree-service';
 
 export {
-  createVSCodeLink,
-  type VSCodeLink,
-  type VSCodeLinkStatus,
-  type VSCodeLinkState
-} from './vscode-link.svelte';
+  createLocalSync,
+  type LocalSync,
+  type LocalSyncStatus,
+  type LocalSyncState
+} from './local-sync.svelte';
 
 export { VfsMonacoAdapter } from './monaco-adapter';
 
