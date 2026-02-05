@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "pubwiki-hub",
+  "name": "pubwiki",
   "compatibility_date": "2026-01-04",
   "compatibility_flags": [
     "nodejs_compat"
@@ -12,7 +12,7 @@
 	},
   "routes": [
     {
-      "pattern": "hub.pub.wiki",
+      "pattern": "pub.wiki",
       "custom_domain": true
     }
   ]

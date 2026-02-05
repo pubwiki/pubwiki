@@ -15,24 +15,24 @@
 	},
 	"devDependencies": {
 		"@eslint/js": "catalog:",
-		"eslint": "catalog:",
-		"eslint-config-prettier": "catalog:",
-		"eslint-plugin-svelte": "catalog:",
-		"svelte": "catalog:",
-		"svelte-check": "catalog:",
-		"@sveltejs/adapter-static": "^3.0.8",
+		"@sveltejs/adapter-cloudflare": "catalog:",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/typography": "catalog:",
 		"@tailwindcss/vite": "catalog:",
 		"@types/node": "catalog:",
+		"eslint": "catalog:",
+		"eslint-config-prettier": "catalog:",
+		"eslint-plugin-svelte": "catalog:",
 		"prettier": "catalog:",
 		"prettier-plugin-svelte": "catalog:",
 		"prettier-plugin-tailwindcss": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
 		"typescript-eslint": "catalog:",
-		"vite": "catalog:"
-	},
-	"dependencies": {}
+		"vite": "catalog:",
+		"wrangler": "catalog:"
+	}
 }
