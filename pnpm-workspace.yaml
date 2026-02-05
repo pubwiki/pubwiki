@@ -21,6 +21,7 @@ packages:
   - apps/sandbox
   - apps/homepage
   - apps/docs
+  - apps/coming-soon
   - services/hub
   - services/gamesave
 

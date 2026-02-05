@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pubwiki-welcome",
+  "compatibility_date": "2026-01-04",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": ".svelte-kit/cloudflare/_worker.js",
+  "assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+  "routes": [
+    {
+      "pattern": "welcome.pub.wiki",
+      "custom_domain": true
+    }
+  ]
+}
