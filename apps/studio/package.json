@@ -55,6 +55,7 @@
 		"dagre": "^0.8.5",
 		"dexie": "^4.2.1",
 		"flowbite-svelte": "catalog:",
+		"ignore": "^7.0.5",
 		"isomorphic-git": "^1.36.1",
 		"jsonrepair": "^3.13.2",
 		"jszip": "^3.10.1",

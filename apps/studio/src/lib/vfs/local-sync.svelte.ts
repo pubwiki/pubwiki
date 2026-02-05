@@ -5,9 +5,11 @@
  * Uses FileSystemObserver for real-time sync when available, falls back to manual sync.
  * 
  * The local directory is the authoritative data source - changes flow from local to VFS.
+ * Respects .gitignore files to filter out ignored files.
  */
 
 import type { Vfs, VfsProvider } from '@pubwiki/vfs';
+import ignore, { type Ignore } from 'ignore';
 
 // ============================================================================
 // Types
@@ -160,6 +162,8 @@ class LocalSyncImpl implements LocalSync {
 	private observer: FileSystemObserver | null = null;
 	private vfs: Vfs<VfsProvider>;
 	private nodeId: string;
+	/** Gitignore filter instance */
+	private gitignore: Ignore | null = null;
 	
 	_state = $state<LocalSyncState>({
 		status: 'disconnected',
@@ -182,6 +186,44 @@ class LocalSyncImpl implements LocalSync {
 	}
 
 	/**
+	 * Load and parse .gitignore file from the directory
+	 */
+	private async loadGitignore(dirHandle: FileSystemDirectoryHandle): Promise<void> {
+		this.gitignore = ignore();
+		
+		// Always ignore .git directory
+		this.gitignore.add('.git');
+		
+		try {
+			const gitignoreHandle = await dirHandle.getFileHandle('.gitignore');
+			const file = await gitignoreHandle.getFile();
+			const content = await file.text();
+			this.gitignore.add(content);
+			console.log('[LocalSync] Loaded .gitignore rules');
+		} catch {
+			// No .gitignore file, that's fine
+			console.log('[LocalSync] No .gitignore file found');
+		}
+	}
+
+	/**
+	 * Check if a path should be ignored based on gitignore rules
+	 * @param relativePath - Path relative to the root directory (without leading slash)
+	 * @param isDirectory - Whether the path is a directory
+	 */
+	private isIgnored(relativePath: string, isDirectory: boolean = false): boolean {
+		if (!this.gitignore) return false;
+		
+		// Remove leading slash for ignore check
+		const path = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath;
+		if (!path) return false;
+		
+		// For directories, append trailing slash as per gitignore spec
+		const checkPath = isDirectory ? `${path}/` : path;
+		return this.gitignore.ignores(checkPath);
+	}
+
+	/**
 	 * Try to restore a previously saved directory handle
 	 */
 	private async tryRestoreConnection(): Promise<void> {
@@ -200,6 +242,9 @@ class LocalSyncImpl implements LocalSync {
 			this.directoryHandle = handle;
 			this._state.directoryName = handle.name;
 			this._state.status = 'synced';
+			
+			// Load gitignore rules
+			await this.loadGitignore(handle);
 			
 			// Setup observer if supported
 			if (this._state.observerSupported) {
@@ -235,6 +280,9 @@ class LocalSyncImpl implements LocalSync {
 			// Save handle for persistence
 			await saveDirectoryHandle(this.nodeId, handle);
 			
+			// Load gitignore rules
+			await this.loadGitignore(handle);
+			
 			// Setup observer if supported
 			if (this._state.observerSupported) {
 				this.setupObserver();
@@ -268,6 +316,7 @@ class LocalSyncImpl implements LocalSync {
 		}
 		
 		this.directoryHandle = null;
+		this.gitignore = null;
 		
 		// Clear persisted handle
 		clearDirectoryHandle(this.nodeId);
@@ -340,6 +389,12 @@ class LocalSyncImpl implements LocalSync {
 	 */
 	private async handleFileChange(record: FileSystemChangeRecord): Promise<void> {
 		const relativePath = '/' + record.relativePathComponents.join('/');
+		
+		// Skip ignored files based on gitignore rules
+		const isDir = record.changedHandle?.kind === 'directory';
+		if (this.isIgnored(relativePath, isDir)) {
+			return;
+		}
 		
 		switch (record.type) {
 			case 'appeared': {
@@ -469,10 +524,13 @@ class LocalSyncImpl implements LocalSync {
 	): Promise<void> {
 		const dirHandleExt = dirHandle as FileSystemDirectoryHandleExt;
 		for await (const [name, handle] of dirHandleExt.entries()) {
-			// Skip hidden files/folders
-			if (name.startsWith('.')) continue;
-			
 			const fullPath = basePath === '/' ? `/${name}` : `${basePath}/${name}`;
+			
+			// Skip ignored files/folders based on gitignore rules
+			if (this.isIgnored(fullPath, handle.kind === 'directory')) {
+				continue;
+			}
+			
 			localPaths.add(fullPath);
 			
 			if (handle.kind === 'file') {
