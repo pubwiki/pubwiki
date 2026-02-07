@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, inArray, lt, or } from 'drizzle-orm';
 import type { Database } from '../client';
 import { nodeVersions, nodeVersionRefs, type NodeVersion, type NewNodeVersion, type NewNodeVersionRef, type NodeVersionRefType } from '../schema/node-versions';
 import { inputContents, promptContents, generatedContents, vfsContents, sandboxContents, loaderContents, stateContents, saveContents } from '../schema/node-contents';
@@ -93,18 +93,56 @@ export class NodeVersionService {
   // Query operations
   // ──────────────────────────────────────────
 
-  /** Get all versions for a node (ordered by authored_at desc) */
-  async getVersions(nodeId: string): Promise<ServiceResult<NodeVersionSummary[]>> {
+  /** Get versions for a node with cursor-based pagination (ordered by authored_at desc) */
+  async getVersions(
+    nodeId: string,
+    options?: { cursor?: string; limit?: number }
+  ): Promise<ServiceResult<{ versions: NodeVersionSummary[]; nextCursor: string | null }>> {
     try {
+      const limit = Math.min(Math.max(options?.limit ?? 20, 1), 100);
+
+      const conditions = [eq(nodeVersions.nodeId, nodeId)];
+
+      // Decode cursor: "authoredAt|commit" for stable ordering
+      if (options?.cursor) {
+        const sep = options.cursor.indexOf('|');
+        if (sep > 0) {
+          const cursorAt = options.cursor.slice(0, sep);
+          const cursorCommit = options.cursor.slice(sep + 1);
+          // authoredAt < cursorAt OR (authoredAt = cursorAt AND commit < cursorCommit)
+          conditions.push(
+            or(
+              lt(nodeVersions.authoredAt, cursorAt),
+              and(
+                eq(nodeVersions.authoredAt, cursorAt),
+                lt(nodeVersions.commit, cursorCommit)
+              )
+            )!
+          );
+        }
+      }
+
+      // Fetch one extra to determine if there's a next page
       const versions = await this.db
         .select()
         .from(nodeVersions)
-        .where(eq(nodeVersions.nodeId, nodeId))
-        .orderBy(desc(nodeVersions.authoredAt));
+        .where(and(...conditions))
+        .orderBy(desc(nodeVersions.authoredAt), desc(nodeVersions.commit))
+        .limit(limit + 1);
+
+      let nextCursor: string | null = null;
+      if (versions.length > limit) {
+        versions.pop();
+        const last = versions[versions.length - 1];
+        nextCursor = `${last.authoredAt}|${last.commit}`;
+      }
 
       return {
         success: true,
-        data: versions.map(this.toSummary),
+        data: {
+          versions: versions.map(this.toSummary),
+          nextCursor,
+        },
       };
     } catch (error) {
       return {

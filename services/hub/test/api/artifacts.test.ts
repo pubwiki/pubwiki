@@ -1188,46 +1188,8 @@ describe('Artifacts API', () => {
         expect(updatedVersionNodes[0].nodeId).toBe(nodeId);
       });
 
-      it('should return 409 when using node ID that belongs to another artifact', async () => {
-        // 创建第一个 artifact，带有节点
-        const nodeId = crypto.randomUUID();
-        const nodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles.set(nodeId, [{ name: 'node.json', content: 'content' }]);
-
-        const createFormData1 = await createCustomFormData(
-          { name: 'First Artifact' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'shared-node', content: { blocks: [] } }], edges: [] },
-          nodeFiles
-        );
-
-        const createRequest1 = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: createFormData1,
-        });
-        const createResponse1 = await sendRequest(createRequest1);
-        expect(createResponse1.status).toBe(200);
-
-        // 尝试创建第二个 artifact，使用相同的 node ID（应该失败）
-        const nodeFiles2 = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles2.set(nodeId, [{ name: 'node.json', content: 'different content' }]);
-
-        const createFormData2 = await createCustomFormData(
-          { name: 'Second Artifact' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'stolen-node', content: { blocks: [] } }], edges: [] },
-          nodeFiles2
-        );
-
-        const createRequest2 = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: createFormData2,
-        });
-        const createResponse2 = await sendRequest(createRequest2);
-        expect(createResponse2.status).toBe(409);
-        const errorData = await createResponse2.json<ApiError>();
-        expect(errorData.error).toContain('Node IDs already exist in other artifacts');
-      });
+      // nodeId 全局唯一标识节点实体，不同 artifact 可以各自为同一节点创建新版本（fork 语义），
+      // 因此不存在"node ID 被其他 artifact 占用"的冲突。
     });
   });
 

@@ -3,8 +3,8 @@
 /nodes/{nodeId}/versions:
   get:
     operationId: getNodeVersions
-    summary: Get all versions for a node
-    description: Returns the complete version tree for a node, ordered by authored_at descending.
+    summary: Get versions for a node
+    description: Returns versions for a node, ordered by authored_at descending. Supports cursor-based pagination.
     tags: [nodes]
     security:
       - cookieAuth: []
@@ -15,6 +15,21 @@
         schema:
           type: string
         description: Node UUID
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Pagination cursor (nextCursor from previous response)
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+        description: Number of versions per page
     responses:
       '200':
         description: Version list
@@ -28,6 +43,10 @@
                   type: array
                   items:
                     $ref: '../schemas/node-version.yaml#/NodeVersionSummary'
+                nextCursor:
+                  type: string
+                  nullable: true
+                  description: Cursor for the next page, null if no more data
       '401':
         description: Unauthorized
         content:

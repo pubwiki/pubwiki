@@ -7,7 +7,6 @@ import { user } from '../schema/auth';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArticleDetail,
-  ArticleAuthor,
   ReaderContent,
   Pagination,
 } from '@pubwiki/api';

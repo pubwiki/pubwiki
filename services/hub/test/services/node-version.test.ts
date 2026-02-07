@@ -379,18 +379,78 @@ describe('NodeVersionService', () => {
       expect(result.success).toBe(true);
       if (!result.success) return;
 
-      expect(result.data).toHaveLength(3);
+      expect(result.data.versions).toHaveLength(3);
       // Should be newest first
-      expect(result.data[0].commit).toBe(v3.commit);
-      expect(result.data[1].commit).toBe(v2.commit);
-      expect(result.data[2].commit).toBe(v1.commit);
+      expect(result.data.versions[0].commit).toBe(v3.commit);
+      expect(result.data.versions[1].commit).toBe(v2.commit);
+      expect(result.data.versions[2].commit).toBe(v1.commit);
     });
 
     it('should return empty array for non-existent node', async () => {
       const result = await service.getVersions('non-existent-node');
       expect(result.success).toBe(true);
       if (!result.success) return;
-      expect(result.data).toHaveLength(0);
+      expect(result.data.versions).toHaveLength(0);
+    });
+
+    it('should paginate with limit', async () => {
+      const nodeId = crypto.randomUUID();
+      const v1 = await inputVersion({ nodeId, contentHash: makeContentHash('p01'), authoredAt: '2024-01-01T00:00:00Z' });
+      const v2 = await inputVersion({ nodeId, parent: v1.commit, contentHash: makeContentHash('p02'), authoredAt: '2024-01-02T00:00:00Z' });
+      const v3 = await inputVersion({ nodeId, parent: v2.commit, contentHash: makeContentHash('p03'), authoredAt: '2024-01-03T00:00:00Z' });
+      const v4 = await inputVersion({ nodeId, parent: v3.commit, contentHash: makeContentHash('p04'), authoredAt: '2024-01-04T00:00:00Z' });
+      const v5 = await inputVersion({ nodeId, parent: v4.commit, contentHash: makeContentHash('p05'), authoredAt: '2024-01-05T00:00:00Z' });
+
+      await service.syncVersions([v1, v2, v3, v4, v5]);
+
+      // First page: limit 2
+      const page1 = await service.getVersions(nodeId, { limit: 2 });
+      expect(page1.success).toBe(true);
+      if (!page1.success) return;
+      expect(page1.data.versions).toHaveLength(2);
+      expect(page1.data.versions[0].commit).toBe(v5.commit); // newest
+      expect(page1.data.versions[1].commit).toBe(v4.commit);
+      expect(page1.data.nextCursor).not.toBeNull();
+
+      // Second page
+      const page2 = await service.getVersions(nodeId, { limit: 2, cursor: page1.data.nextCursor! });
+      expect(page2.success).toBe(true);
+      if (!page2.success) return;
+      expect(page2.data.versions).toHaveLength(2);
+      expect(page2.data.versions[0].commit).toBe(v3.commit);
+      expect(page2.data.versions[1].commit).toBe(v2.commit);
+      expect(page2.data.nextCursor).not.toBeNull();
+
+      // Third page (last)
+      const page3 = await service.getVersions(nodeId, { limit: 2, cursor: page2.data.nextCursor! });
+      expect(page3.success).toBe(true);
+      if (!page3.success) return;
+      expect(page3.data.versions).toHaveLength(1);
+      expect(page3.data.versions[0].commit).toBe(v1.commit);
+      expect(page3.data.nextCursor).toBeNull(); // no more pages
+    });
+
+    it('should return nextCursor null when all results fit in one page', async () => {
+      const nodeId = crypto.randomUUID();
+      const v1 = await inputVersion({ nodeId, contentHash: makeContentHash('fit1'), authoredAt: '2024-01-01T00:00:00Z' });
+      const v2 = await inputVersion({ nodeId, parent: v1.commit, contentHash: makeContentHash('fit2'), authoredAt: '2024-01-02T00:00:00Z' });
+
+      await service.syncVersions([v1, v2]);
+
+      const result = await service.getVersions(nodeId, { limit: 10 });
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.versions).toHaveLength(2);
+      expect(result.data.nextCursor).toBeNull();
+    });
+
+    it('should default limit to 20 when not specified', async () => {
+      const nodeId = crypto.randomUUID();
+      // No cursor/limit specified → uses default
+      const result = await service.getVersions(nodeId);
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.nextCursor).toBeNull();
     });
   });
 
@@ -625,7 +685,7 @@ describe('NodeVersionService', () => {
       // Root has parent null
       const allVersions = await service.getVersions(nodeId);
       if (allVersions.success) {
-        const root = allVersions.data.find(v => v.commit === versions[0].commit);
+        const root = allVersions.data.versions.find(v => v.commit === versions[0].commit);
         expect(root?.parent).toBeNull();
       }
     });

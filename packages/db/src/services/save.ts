@@ -163,7 +163,7 @@ export class SaveService {
       ];
       if (params.saveId) {
         conditions.push(eq(nodeVersions.nodeId, params.saveId));
-      } else {
+      } else if (params.stateNodeId && params.stateNodeCommit) {
         conditions.push(eq(saveContents.stateNodeId, params.stateNodeId));
         conditions.push(eq(saveContents.stateNodeCommit, params.stateNodeCommit));
       }

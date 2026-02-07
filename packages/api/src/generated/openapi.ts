@@ -679,8 +679,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get all versions for a node
-         * @description Returns the complete version tree for a node, ordered by authored_at descending.
+         * Get versions for a node
+         * @description Returns versions for a node, ordered by authored_at descending. Supports cursor-based pagination.
          */
         get: operations["getNodeVersions"];
         put?: never;
@@ -3974,7 +3974,12 @@ export interface operations {
     };
     getNodeVersions: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Pagination cursor (nextCursor from previous response) */
+                cursor?: string;
+                /** @description Number of versions per page */
+                limit?: number;
+            };
             header?: never;
             path: {
                 /** @description Node UUID */
@@ -3992,6 +3997,8 @@ export interface operations {
                 content: {
                     "application/json": {
                         versions: components["schemas"]["NodeVersionSummary"][];
+                        /** @description Cursor for the next page, null if no more data */
+                        nextCursor?: string | null;
                     };
                 };
             };
