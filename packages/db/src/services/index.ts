@@ -1,7 +1,10 @@
 export { UserService, type PublicUser, type ServiceError, type ServiceResult } from './user';
-export { ArtifactService, type ArtifactListItem, type PaginationInfo, type ListArtifactsParams, type ListArtifactsResult, type ArtifactVersionItem, type ArtifactLineageItem, type GetLineageParams, type CreateArtifactInput, type CreateArtifactResult, type ListUserArtifactsParams, type CreateArtifactNodeContent } from './artifact';
+export { ArtifactService, type ArtifactListItem, type PaginationInfo, type ListArtifactsParams, type ListArtifactsResult, type ArtifactVersionItem, type ArtifactLineageItem, type GetLineageParams, type CreateArtifactInput, type CreateArtifactResult, type PatchArtifactResult, type PatchArtifactInput, type CreateSaveInput, type ListUserArtifactsParams, type CreateArtifactNode } from './artifact';
 export { ProjectService, type ProjectListItem, type ListProjectsParams, type ListProjectsResult, type ProjectDetail, type ProjectArtifactItem, type UserProjectListItem, type UserProjectRole, type ListUserProjectsParams, type ListUserProjectsResult, type CreateProjectParams, type CreateProjectMetadata, type ListProjectArtifactsParams, type ListProjectArtifactsResult, type LinkArtifactToProjectParams } from './project';
-export { NodeService, type GetArtifactGraphResult, type GetNodeDetailResult, type CreateNodeInput, type CreateNodeVersionInput, type ArtifactNodeSummary, type ArtifactEdge, type NodeVersionInfo, type NodeFileInfo } from './node';
 export { DiscussionService, type DiscussionTarget, type ListDiscussionsParams, type ListDiscussionsResult, type ListRepliesParams, type ListRepliesResult, type DiscussionListItem, type DiscussionDetail, type DiscussionReplyItem } from './discussion';
 export { PostService, type PostListItem, type PostDetail, type ListPostsParams, type ListPostsResult, type CreatePostParams, type UpdatePostParams } from './post';
-export { ArticleService, type ArticleDetail, type UpsertArticleParams, type ListArticlesBySandboxParams, type ListArticlesBySandboxResult } from './article';
+export { ArticleService, type ArticleDetail, type UpsertArticleParams, type ListArticlesByArtifactParams, type ListArticlesByArtifactResult } from './article';
+
+// Version Control First-Class Citizen
+export { NodeVersionService, type NodeVersionSummary, type NodeVersionDetail, type SyncNodeVersionInput, type SyncResult } from './node-version';
+export { SaveService, type SaveDetail, type CreateSaveParams, type ListSavesParams, type ListSavesResult } from './save';

@@ -47,7 +47,6 @@ export const discussionReplies = sqliteTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     parentReplyId: text('parent_reply_id'), // 嵌套回复，自引用稍后处理
     content: text('content').notNull(),
-    isAccepted: integer('is_accepted', { mode: 'boolean' }).default(false).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   },

@@ -1,7 +1,6 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
-import { artifactNodes } from './nodes';
 import type { VisibilityType } from './enums';
 import type { ReaderContent } from '@pubwiki/api';
 
@@ -16,10 +15,9 @@ export const articles = sqliteTable(
     authorId: text('author_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    sandboxNodeId: text('sandbox_node_id')
-      .notNull()
-      .references(() => artifactNodes.id, { onDelete: 'cascade' }),
-    saveId: text('save_id').notNull(),
+    // 关联的 artifact 和版本
+    artifactId: text('artifact_id').notNull(),
+    artifactCommit: text('artifact_commit').notNull(),
     title: text('title', { length: 200 }).notNull(),
     content: text('content', { mode: 'json' }).$type<ReaderContent>().notNull(),
     visibility: text('visibility').$type<VisibilityType>().default('PUBLIC').notNull(),
@@ -30,8 +28,8 @@ export const articles = sqliteTable(
   },
   (table) => [
     index('idx_articles_author').on(table.authorId),
-    index('idx_articles_sandbox').on(table.sandboxNodeId),
-    index('idx_articles_save').on(table.saveId),
+    index('idx_articles_artifact').on(table.artifactId),
+    index('idx_articles_artifact_commit').on(table.artifactId, table.artifactCommit),
     index('idx_articles_visibility').on(table.visibility),
     index('idx_articles_created').on(table.createdAt),
   ]

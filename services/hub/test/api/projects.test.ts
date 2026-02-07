@@ -58,9 +58,7 @@ describe('Projects API', () => {
     async function createTestArtifact(authorId: string, name: string): Promise<string> {
       const [artifact] = await db.insert(artifacts).values({
         authorId,
-        type: 'RECIPE',
         name,
-        slug: name.toLowerCase().replace(/\s+/g, '-'),
         visibility: 'PUBLIC',
       }).returning();
       return artifact.id;
@@ -193,9 +191,7 @@ describe('Projects API', () => {
     async function createTestArtifact(authorId: string, name: string): Promise<string> {
       const [artifact] = await db.insert(artifacts).values({
         authorId,
-        type: 'RECIPE',
         name,
-        slug: name.toLowerCase().replace(/\s+/g, '-'),
         visibility: 'PUBLIC',
       }).returning();
       return artifact.id;
@@ -391,9 +387,7 @@ describe('Projects API', () => {
     async function createTestArtifact(authorId: string, name: string): Promise<string> {
       const [artifact] = await db.insert(artifacts).values({
         authorId,
-        type: 'RECIPE',
         name,
-        slug: name.toLowerCase().replace(/\s+/g, '-'),
         visibility: 'PUBLIC',
       }).returning();
       return artifact.id;

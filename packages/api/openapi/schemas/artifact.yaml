@@ -1,9 +1,5 @@
 # Artifact-related schemas
 
-ArtifactType:
-  type: string
-  enum: [RECIPE, GAME, ASSET_PACK, PROMPT]
-
 Tag:
   type: object
   required:
@@ -34,10 +30,8 @@ CreateArtifactMetadata:
   type: object
   required:
     - artifactId
-    - type
+    - commit
     - name
-    - slug
-    - version
   properties:
     artifactId:
       type: string
@@ -48,18 +42,23 @@ CreateArtifactMetadata:
         - 不存在：创建新 artifact
         - 存在且 owner 是当前用户：更新已有 artifact
         - 存在但 owner 不是当前用户：返回 403 Forbidden
-    type:
-      $ref: './artifact.yaml#/ArtifactType'
+    commit:
+      type: string
+      description: |
+        Artifact version 的 commit hash，由客户端基于内容确定性计算。
+        客户端应对 (artifactId + parentCommit + sorted nodes + sorted edges) 取 hash。
+        通过包含 artifactId 和 parentCommit 形成链状结构，保证全局唯一性。
+    parentCommit:
+      type: string
+      nullable: true
+      description: |
+        上一个版本的 commit hash，用于形成链状结构保证 commit 全局唯一性。
+        创建新 artifact 时为 null，更新已有 artifact 时为当前版本的 commit hash。
+        客户端在计算 commit 时必须包含此字段。
     name:
       type: string
       minLength: 1
       maxLength: 100
-    slug:
-      type: string
-      minLength: 1
-      maxLength: 100
-      pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
-      description: URL-friendly 标识符
     description:
       type: string
     visibility:
@@ -82,67 +81,79 @@ CreateArtifactMetadata:
       description: Semver 版本号
     changelog:
       type: string
-    isPrerelease:
-      type: boolean
-      default: false
     tags:
       type: array
       items:
         type: string
       description: Tag slugs 数组
-
-ArtifactNodeDescriptor:
-  type: object
-  required:
-    - id
-  properties:
-    id:
-      type: string
-      format: uuid
-    external:
-      type: boolean
-      default: false
-    type:
-      $ref: './artifact.yaml#/ArtifactNodeType'
-    name:
-      type: string
-    position:
-      type: object
-      properties:
-        x:
-          type: integer
-        y:
-          type: integer
-    # 节点内容（非 VFS 节点的结构化数据）
-    content:
-      $ref: './node-content.yaml#/ArtifactNodeContent'
-      description: 节点内容。非 VFS 节点必须包含此字段。
-    # VFS 节点的文件摘要
-    filesSummary:
+    entrypoint:
+      $ref: './artifact.yaml#/ArtifactEntrypoint'
+      description: 可选入口点，指定启动流图时的初始程序状态
+    commitTags:
       type: array
       items:
-        type: object
-        required:
-          - path
-        properties:
-          path:
-            type: string
-          size:
-            type: integer
-          mimeType:
-            type: string
-      description: VFS 节点的文件摘要列表
-    originalRef:
-      type: object
-      description: Fork 来源信息（当节点是从外部节点 Fork 而来时）
-      properties:
-        nodeId:
-          type: string
-          format: uuid
-          description: 原始节点 ID
-        commit:
-          type: string
-          description: 原始节点的 commit hash
+        type: string
+      description: |
+        用户可分配的版本标签列表（如 ["stable", "beta", "v1.0"]）。
+        同一 artifact 内每个 tag 唯一，一个 commit 可以有多个 tag。
+        如果某个 tag 已被其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
+    saves:
+      type: array
+      items:
+        $ref: './artifact.yaml#/CreateSaveInput'
+      description: |
+        和 artifact 同时创建的 save 列表（解决 save 和 artifact 的循环依赖）。
+        Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
+        服务端会先创建 save，然后再验证 STATE 节点内容的合法性。
+
+ArtifactEntrypoint:
+  type: object
+  required:
+    - saveCommit
+    - sandboxNodeId
+  properties:
+    saveCommit:
+      type: string
+      description: Save 的 commit hash，指定启动时加载的存档
+    sandboxNodeId:
+      type: string
+      format: uuid
+      description: 沙箱节点 ID
+
+CreateSaveInput:
+  type: object
+  description: |
+    和 artifact 一起创建的 save 数据。
+    服务端会从 artifact 的 nodes 数组中自动获取 stateNodeCommit，
+    并使用 artifact 的 commit 作为 sourceArtifactCommit。
+  required:
+    - stateNodeId
+    - commit
+    - contentHash
+  properties:
+    stateNodeId:
+      type: string
+      format: uuid
+      description: 关联的 STATE 节点 ID
+    commit:
+      type: string
+      description: Save 版本的 commit hash
+    contentHash:
+      type: string
+      description: Save 内容的指纹
+    parent:
+      type: string
+      nullable: true
+      description: 父 save 的 commit hash
+    title:
+      type: string
+      description: Save 标题
+    description:
+      type: string
+      description: Save 描述
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+      default: PRIVATE
 
 ArtifactEdgeDescriptor:
   type: object
@@ -161,40 +172,83 @@ ArtifactEdgeDescriptor:
     targetHandle:
       type: string
 
-ArtifactDescriptor:
+# ============================================================================
+# Create Artifact API 专用类型
+# ============================================================================
+
+CreateArtifactNode:
   type: object
+  description: |
+    完整的 node version 数据，用于在创建 artifact 时一并同步节点版本。
+    所有节点的版本数据将通过 artifact 创建接口一次性提交。
   required:
-    - version
-    - exportedAt
-    - nodes
-    - edges
+    - nodeId
+    - commit
+    - type
+    - contentHash
+    - content
   properties:
-    version:
-      type: integer
-    exportedAt:
+    nodeId:
       type: string
-      format: date-time
-    nodes:
+      format: uuid
+      description: 节点 ID
+    commit:
+      type: string
+      description: 版本 hash
+    parent:
+      type: string
+      nullable: true
+      description: 父版本 commit hash
+    type:
+      $ref: './artifact.yaml#/ArtifactNodeType'
+    name:
+      type: string
+    contentHash:
+      type: string
+      description: 内容指纹
+    content:
+      $ref: './node-content.yaml#/ArtifactNodeContent'
+      description: 节点内容（结构取决于 type）
+    message:
+      type: string
+      description: Commit 消息
+    tag:
+      type: string
+      description: Semver 标签
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    refs:
       type: array
+      description: 血统引用（主要用于 GENERATED 节点）
       items:
-        $ref: './artifact.yaml#/ArtifactNodeDescriptor'
-    edges:
-      type: array
-      items:
-        $ref: './artifact.yaml#/ArtifactEdgeDescriptor'
+        $ref: '../schemas/node-version.yaml#/NodeVersionRef'
+    position:
+      type: object
+      properties:
+        x:
+          type: integer
+        y:
+          type: integer
 
 ArtifactNodeSummary:
   type: object
   required:
     - id
     - type
-    - external
+    - commit
+    - contentHash
   properties:
     id:
       type: string
       format: uuid
     type:
       $ref: './artifact.yaml#/ArtifactNodeType'
+    commit:
+      type: string
+      description: 节点版本的 commit hash
+    contentHash:
+      type: string
+      description: 节点内容的指纹
     name:
       type: string
       nullable: true
@@ -205,16 +259,9 @@ ArtifactNodeSummary:
           type: integer
         y:
           type: integer
-    external:
-      type: boolean
-    externalArtifactId:
-      type: string
-      format: uuid
-      description: 外部引用时，被引用的 artifact ID
-    # 节点内容（非 VFS 节点包含完整内容，VFS 节点包含文件摘要）
     content:
       $ref: './node-content.yaml#/ArtifactNodeContent'
-      description: 节点内容。对于内部节点，包含完整的结构化数据；对于外部节点，此字段可能为空。
+      description: 节点内容（结构化数据）
 
 ArtifactEdge:
   type: object
@@ -232,28 +279,6 @@ ArtifactEdge:
       type: string
     targetHandle:
       type: string
-
-NodeVersionInfo:
-  type: object
-  required:
-    - id
-    - commitHash
-    - createdAt
-  properties:
-    id:
-      type: string
-      format: uuid
-    commitHash:
-      type: string
-      description: SHA-256 前8位
-    contentHash:
-      type: string
-    message:
-      type: string
-      nullable: true
-    createdAt:
-      type: string
-      format: date-time
 
 NodeFileInfo:
   type: object
@@ -288,11 +313,14 @@ ArtifactVersion:
     commitHash:
       type: string
       description: SHA-256 前8位
+    commitTags:
+      type: array
+      items:
+        type: string
+      description: 该版本上的所有标签
     changelog:
       type: string
       nullable: true
-    isPrerelease:
-      type: boolean
     publishedAt:
       type: string
       format: date-time
@@ -301,84 +329,48 @@ ArtifactVersion:
       type: string
       format: date-time
 
-LineageType:
-  type: string
-  enum: [DEPENDS_ON, FORKED_FROM, INSPIRED_BY, GENERATED_BY]
-
 ArtifactLineageItem:
   type: object
   required:
-    - id
-    - lineageType
-    - createdAt
-    - artifact
+    - artifactId
+    - name
+    - visibility
   properties:
-    id:
+    artifactId:
       type: string
       format: uuid
-    lineageType:
-      $ref: './artifact.yaml#/LineageType'
-    description:
+    name:
       type: string
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    thumbnailUrl:
+      type: string
+      format: uri
       nullable: true
-    parentId:
-      type: string
-      format: uuid
-      nullable: true
-      description: 在父谱系中表示此节点的父节点ID，在子谱系中表示此节点的子节点来源ID（用于构建树结构）
-    createdAt:
-      type: string
-      format: date-time
-    artifact:
+    author:
       type: object
       required:
         - id
-        - name
-        - slug
-        - type
-        - visibility
+        - username
       properties:
         id:
           type: string
           format: uuid
-        name:
+        username:
           type: string
-        slug:
+        displayName:
           type: string
-        type:
-          $ref: './artifact.yaml#/ArtifactType'
-        visibility:
-          $ref: './common.yaml#/VisibilityType'
-        thumbnailUrl:
+          nullable: true
+        avatarUrl:
           type: string
           format: uri
           nullable: true
-        author:
-          type: object
-          required:
-            - id
-            - username
-          properties:
-            id:
-              type: string
-              format: uuid
-            username:
-              type: string
-            displayName:
-              type: string
-              nullable: true
-            avatarUrl:
-              type: string
-              format: uri
-              nullable: true
 
 ArtifactListItem:
   type: object
   required:
     - id
-    - type
     - name
-    - slug
     - visibility
     - isArchived
     - createdAt
@@ -388,11 +380,7 @@ ArtifactListItem:
     id:
       type: string
       format: uuid
-    type:
-      $ref: './artifact.yaml#/ArtifactType'
     name:
-      type: string
-    slug:
       type: string
     description:
       type: string
@@ -448,3 +436,108 @@ ArtifactListItem:
           type: integer
         downloadCount:
           type: integer
+
+# ============================================================================
+# Patch Artifact API 专用类型
+# ============================================================================
+
+PatchArtifactRequest:
+  type: object
+  description: |
+    基于已有的 commit 和增量补丁创建新的 artifact 版本。
+    客户端提交 baseCommit（基准版本）和需要变更的 nodes/edges，
+    服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
+
+    如果没有 graph 变更（addNodes/removeNodeIds/addEdges/removeEdges 全部为空或不传），
+    且不传 commit，则为 metadata-only 更新：直接修改 baseCommit 版本的元数据，不创建新版本。
+  required:
+    - artifactId
+    - baseCommit
+  properties:
+    artifactId:
+      type: string
+      format: uuid
+      description: 要更新的 Artifact ID
+    baseCommit:
+      type: string
+      description: 基准版本的 commit hash
+    commit:
+      type: string
+      description: |
+        新版本的 commit hash，由客户端基于合并后的完整 graph 确定性计算。
+        计算方式与 POST /artifacts 一致：hash(artifactId, parentCommit, nodes, edges)
+        其中 parentCommit 为基准版本（即 baseCommit）的 commit hash。
+    name:
+      type: string
+      minLength: 1
+      maxLength: 100
+    description:
+      type: string
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    version:
+      type: string
+      pattern: '^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$'
+      description: Semver 版本号
+    changelog:
+      type: string
+    commitTags:
+      type: array
+      items:
+        type: string
+      description: 可选版本标签列表
+    entrypoint:
+      $ref: './artifact.yaml#/ArtifactEntrypoint'
+      description: 可选入口点
+    addNodes:
+      type: array
+      description: 新增或更新的节点（nodeId 已存在则更新该节点的 commit，否则新增）
+      items:
+        $ref: './artifact.yaml#/CreateArtifactNode'
+    removeNodeIds:
+      type: array
+      description: 需要移除的节点 ID 列表
+      items:
+        type: string
+        format: uuid
+    addEdges:
+      type: array
+      description: 新增的边
+      items:
+        $ref: './artifact.yaml#/ArtifactEdgeDescriptor'
+    removeEdges:
+      type: array
+      description: 需要移除的边（通过 source + target 匹配）
+      items:
+        $ref: './artifact.yaml#/ArtifactEdgeDescriptor'
+    saves:
+      type: array
+      items:
+        $ref: './artifact.yaml#/CreateSaveInput'
+      description: |
+        和 patch 同时创建的 save 列表。
+        Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
+
+UpdateCommitTagsRequest:
+  type: object
+  description: 设置指定 commit 上的标签列表（替换语义）
+  required:
+    - commitHash
+    - commitTags
+  properties:
+    commitHash:
+      type: string
+      description: 目标 commit hash
+    commitTags:
+      type: array
+      items:
+        type: string
+      description: |
+        要设置的标签列表。传空数组表示清除该 commit 上的所有标签。
+        如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除。
+
+MarkVersionWeakRequest:
+  type: object
+  description: |
+    将一个 artifact 版本标记为 weak（不可逆操作）。
+    weak 版本不对 node 产生引用计数，标记后尝试 GC 引用计数归零的 node 内容。

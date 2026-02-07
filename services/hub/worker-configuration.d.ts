@@ -11,7 +11,6 @@ declare namespace Cloudflare {
 		API_BASE_URL: string;
 		R2_BUCKET: R2Bucket;
 		DB: D1Database;
-		GAMESAVE: Fetcher /* pubwiki-gamesave */;
 	}
 }
 interface Env extends Cloudflare.Env {}

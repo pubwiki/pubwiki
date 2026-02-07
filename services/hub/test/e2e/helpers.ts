@@ -4,7 +4,6 @@
  */
 
 import { createAuthClient } from '@pubwiki/api/client';
-import type { Quad } from '@pubwiki/api';
 
 // 存储 cookies 的简单实现
 let storedCookies: Map<string, string> = new Map();
@@ -268,80 +267,4 @@ export async function createVfsTarGz(
   
   const compressedBlob = await new Response(compressedStream).blob();
   return compressedBlob.arrayBuffer();
-}
-
-/**
- * 创建云端存档 (Cloud Save)
- * @param baseUrl API 基础 URL
- * @param sessionCookie session cookie 字符串
- * @param stateNodeId 关联的 STATE node ID
- * @param name 存档名称
- * @returns 创建的 saveId
- */
-export async function createCloudSave(
-  baseUrl: string,
-  sessionCookie: string,
-  stateNodeId: string,
-  name: string = 'Test Save'
-): Promise<string> {
-  const response = await fetch(`${baseUrl}/saves`, {
-    method: 'POST',
-    headers: {
-      Cookie: sessionCookie,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ stateNodeId, name }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to create cloud save: ${response.status} - ${text}`);
-  }
-
-  const data = (await response.json()) as { id: string };
-  return data.id;
-}
-
-/**
- * 创建 checkpoint
- * @param baseUrl API 基础 URL
- * @param sessionCookie session cookie 字符串
- * @param saveId 存档 ID
- * @param quads checkpoint 包含的 quads 数组
- * @param options 可选配置 (id, visibility)
- * @returns 创建的 checkpointId
- */
-export async function createCheckpoint(
-  baseUrl: string,
-  sessionCookie: string,
-  saveId: string,
-  quads: Quad[] = [],
-  options: {
-    id?: string;
-    visibility?: 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
-    name?: string;
-  } = {}
-): Promise<string> {
-  const { id: checkpointId, visibility = 'PUBLIC', name } = options;
-  const response = await fetch(`${baseUrl}/saves/${saveId}/checkpoints`, {
-    method: 'POST',
-    headers: {
-      Cookie: sessionCookie,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      quads,
-      id: checkpointId,
-      name: name ?? `Test Checkpoint ${checkpointId || Date.now()}`,
-      visibility,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to create checkpoint: ${response.status} - ${text}`);
-  }
-
-  const data = (await response.json()) as { id: string };
-  return data.id;
 }

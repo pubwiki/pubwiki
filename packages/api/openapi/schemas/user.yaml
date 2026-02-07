@@ -6,7 +6,6 @@ PublicUser:
     - id
     - username
     - email
-    - isAdmin
     - createdAt
     - updatedAt
   properties:
@@ -37,8 +36,6 @@ PublicUser:
     location:
       type: string
       nullable: true
-    isAdmin:
-      type: boolean
     createdAt:
       type: string
       format: date-time
@@ -65,27 +62,3 @@ UpdateProfileRequest:
     location:
       type: string
       maxLength: 100
-
-JwtPayload:
-  type: object
-  required:
-    - sub
-    - username
-    - email
-    - isAdmin
-  properties:
-    sub:
-      type: string
-      description: 用户 ID
-    username:
-      type: string
-    email:
-      type: string
-    isAdmin:
-      type: boolean
-    iat:
-      type: integer
-      description: 签发时间
-    exp:
-      type: integer
-      description: 过期时间

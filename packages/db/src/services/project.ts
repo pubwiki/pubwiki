@@ -12,7 +12,6 @@ import type {
   ProjectDetail,
   ProjectArtifact as ProjectArtifactItem,
   ArtifactListItem,
-  ArtifactType,
   VisibilityType,
   UserProjectListItem,
   UserProjectRole,
@@ -388,9 +387,7 @@ export class ProjectService {
           relationCreatedAt: projectArtifacts.createdAt,
           // Artifact 基本信息
           id: artifacts.id,
-          type: artifacts.type,
           name: artifacts.name,
-          slug: artifacts.slug,
           description: artifacts.description,
           visibility: artifacts.visibility,
           thumbnailUrl: artifacts.thumbnailUrl,
@@ -466,9 +463,7 @@ export class ProjectService {
       const projectArtifactItems: ProjectArtifactItem[] = artifactRelations.map(a => ({
         artifact: {
           id: a.id,
-          type: a.type as ArtifactType,
           name: a.name,
-          slug: a.slug,
           description: a.description,
           visibility: a.visibility as VisibilityType,
           thumbnailUrl: a.thumbnailUrl,
@@ -1088,9 +1083,7 @@ export class ProjectService {
           relationCreatedAt: projectArtifacts.createdAt,
           // Artifact 基本信息
           id: artifacts.id,
-          type: artifacts.type,
           name: artifacts.name,
-          slug: artifacts.slug,
           description: artifacts.description,
           visibility: artifacts.visibility,
           thumbnailUrl: artifacts.thumbnailUrl,
@@ -1179,9 +1172,7 @@ export class ProjectService {
       const projectArtifactItems: ProjectArtifactItem[] = artifactRelations.map(a => ({
         artifact: {
           id: a.id,
-          type: a.type as ArtifactType,
           name: a.name,
-          slug: a.slug,
           description: a.description,
           visibility: a.visibility as VisibilityType,
           thumbnailUrl: a.thumbnailUrl,
@@ -1264,9 +1255,7 @@ export class ProjectService {
       const [artifact] = await this.db
         .select({
           id: artifacts.id,
-          type: artifacts.type,
           name: artifacts.name,
-          slug: artifacts.slug,
           description: artifacts.description,
           visibility: artifacts.visibility,
           thumbnailUrl: artifacts.thumbnailUrl,
@@ -1417,9 +1406,7 @@ export class ProjectService {
       const result: ProjectArtifactItem = {
         artifact: {
           id: artifact.id,
-          type: artifact.type as ArtifactType,
           name: artifact.name,
-          slug: artifact.slug,
           description: artifact.description,
           visibility: artifact.visibility as VisibilityType,
           thumbnailUrl: artifact.thumbnailUrl,

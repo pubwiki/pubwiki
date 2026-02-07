@@ -21,60 +21,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/register": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 用户注册 (已废弃)
-         * @deprecated
-         * @description **已废弃**: 请使用 better-auth/client 进行注册。
-         *
-         *     ```typescript
-         *     import { createAuthClient } from 'better-auth/client';
-         *     const authClient = createAuthClient({ baseURL: 'https://api.pubwiki.com' });
-         *     await authClient.signUp.email({ email, password, name, username });
-         *     ```
-         */
-        post: operations["register"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/auth/login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 用户登录 (已废弃)
-         * @deprecated
-         * @description **已废弃**: 请使用 better-auth/client 进行登录。
-         *
-         *     ```typescript
-         *     import { createAuthClient } from 'better-auth/client';
-         *     const authClient = createAuthClient({ baseURL: 'https://api.pubwiki.com' });
-         *     await authClient.signIn.email({ email, password });
-         *     ```
-         */
-        post: operations["login"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/me": {
         parameters: {
             query?: never;
@@ -157,23 +103,39 @@ export interface paths {
         get: operations["listArtifacts"];
         put?: never;
         /**
-         * 创建或更新 Artifact
-         * @description 创建新的 Artifact 或更新已存在的 Artifact，支持同时上传多个节点文件。
+         * 创建或更新 Artifact（包含完整的 Node Version 数据）
+         * @description 一步发布：提交完整的 node version 数据 + artifact 元数据，服务端内部同步 node versions 并创建 artifact version。
          *
-         *     **更新模式：** 如果 metadata 中包含 artifactId 字段，则为更新操作：
-         *     - 验证 artifact 是否存在且 owner 是当前用户
-         *     - 覆写之前的数据
+         *     **创建/更新模式：** 通过 metadata.artifactId 判断：
+         *     - 该 ID 不存在于数据库中：创建新 artifact
+         *     - 该 ID 存在且 owner 是当前用户：追加新版本（append-only）
+         *     - 该 ID 存在但 owner 不是当前用户：返回 403 Forbidden
          *
          *     使用 multipart/form-data 格式：
-         *     - metadata 字段包含 JSON 格式的 artifact 基本信息
-         *     - descriptor 字段包含 JSON 格式的 pubwiki.artifact.json 内容（节点和边定义）
-         *     - nodes[{node_id}] 字段包含各节点对应的文件
+         *     - metadata: JSON 格式的 artifact 基本信息
+         *     - nodes: JSON 数组，包含完整的 node version 数据（仅 ARTIFACT_NODE_TYPES，不含 SAVE）
+         *     - edges: JSON 数组，节点间连接关系
+         *     - vfs[{commit}]: VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
+         *     - save[{commit}]: Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
+         *     - homepage: 可选的主页 Markdown 文件
          */
         post: operations["createArtifact"];
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * 基于已有版本和增量补丁创建新 Artifact 版本
+         * @description 增量更新：客户端提交 baseCommit 和变更内容（新增/删除 nodes/edges），
+         *     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
+         *
+         *     适用于只修改了部分节点的场景，避免重新提交所有节点数据。
+         *     注意：新增的节点需要包含完整的 node version 数据。
+         *
+         *     如果没有 graph 变更且不传 commit，则为 metadata-only 更新：
+         *     直接修改 baseCommit 版本的元数据（version, changelog, commitTags, entrypoint 等），
+         *     不创建新版本。
+         */
+        patch: operations["patchArtifact"];
         trace?: never;
     };
     "/artifacts/{artifactId}/homepage": {
@@ -248,22 +210,21 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/artifacts/{artifactId}/nodes/{nodeId}": {
+    "/artifacts/{artifactId}/commit-tag": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
+        get?: never;
         /**
-         * 获取节点详情
-         * @description 获取单个节点的详细信息（不含文件内容）。
-         *     - PUBLIC artifact: 所有人可访问
-         *     - UNLISTED artifact: 仅注册用户可访问
-         *     - PRIVATE artifact: 仅 owner 可访问
+         * 设置 commit 上的标签列表
+         * @description 设置指定 commit 上的 commitTags 列表（替换语义）。
+         *     如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
+         *     传空数组可清除该 commit 上的所有标签。
          */
-        get: operations["getNodeDetail"];
-        put?: never;
+        put: operations["updateCommitTags"];
         post?: never;
         delete?: never;
         options?: never;
@@ -271,46 +232,21 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/artifacts/{artifactId}/nodes/{nodeId}/archive": {
+    "/artifacts/{artifactId}/versions/{commitHash}/weak": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
+        get?: never;
         /**
-         * 下载 VFS 节点的打包文件
-         * @description 返回 tar.gz 格式的 VFS 内容压缩包。
-         *     仅支持 VFS 类型节点。
-         *     - PUBLIC artifact: 所有人可访问
-         *     - UNLISTED artifact: 仅注册用户可访问
-         *     - PRIVATE artifact: 仅 owner 可访问
+         * 标记版本为 weak（不可逆）
+         * @description 将指定版本标记为 weak 版本（不可逆操作）。weak 版本不会对其关联的 node 产生引用计数。
+         *     标记为 weak 后，会尝试 GC 掉引用计数归零的 node 内容。
+         *     已经标记为 weak 的版本不能取消标记。
          */
-        get: operations["getNodeArchive"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/artifacts/{artifactId}/nodes/{nodeId}/files/{filePath}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 获取节点文件内容
-         * @description 获取节点关联的文件内容（二进制流）。
-         *     - PUBLIC artifact: 所有人可访问
-         *     - UNLISTED artifact: 仅注册用户可访问
-         *     - PRIVATE artifact: 仅 owner 可访问
-         */
-        get: operations["getNodeFileContent"];
-        put?: never;
+        put: operations["markVersionWeak"];
         post?: never;
         delete?: never;
         options?: never;
@@ -613,26 +549,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/discussions/replies/{replyId}/accept": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 采纳回复为答案
-         * @description 只有讨论作者可以采纳答案。同一讨论只能有一个被采纳的答案。
-         */
-        post: operations["acceptDiscussionReply"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/articles/{articleId}": {
         parameters: {
             query?: never;
@@ -661,7 +577,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/articles/by-sandbox/{sandboxNodeId}": {
+    "/articles/by-artifact/{artifactId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -669,10 +585,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 获取与 sandbox 关联的文章列表
-         * @description 获取与指定 sandbox node 关联的所有公开文章，支持分页。
+         * 获取与 artifact 关联的文章列表
+         * @description 获取与指定 artifact 关联的所有公开文章，支持分页。
          */
-        get: operations["listArticlesBySandbox"];
+        get: operations["listArticlesByArtifact"];
         put?: never;
         post?: never;
         delete?: never;
@@ -688,10 +604,21 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 获取用户的所有存档列表 */
+        /**
+         * 获取存档列表
+         * @description 查询存档列表，支持两种查询方式（二选一）：
+         *     1. 按 STATE 节点版本查询：同时提供 stateNodeId + stateNodeCommit
+         *     2. 按 Save 节点 ID 查询：提供 saveId
+         *
+         *     两组参数必须提供其中一组，不能同时提供或都不提供。
+         */
         get: operations["listSaves"];
         put?: never;
-        /** 创建新存档 */
+        /**
+         * 创建存档
+         * @description 创建一个新的存档。使用 multipart/form-data 上传元数据和 quads.bin 二进制文件。
+         *     元数据通过 JSON 字符串的 `metadata` 字段传递，二进制数据通过 `data` 字段传递。
+         */
         post: operations["createSave"];
         delete?: never;
         options?: never;
@@ -699,7 +626,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/saves/by-state/{stateNodeId}": {
+    "/saves/{commit}": {
         parameters: {
             query?: never;
             header?: never;
@@ -707,36 +634,24 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 通过 stateNodeId 获取存档
-         * @description 根据关联的 state node ID 查找存档，用于恢复本地未保存的 saveId
+         * 获取存档详情
+         * @description 通过 commit hash 获取指定存档的详细信息。commit 是全局唯一的。
          */
-        get: operations["getSaveByStateNode"];
+        get: operations["getSave"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/saves/{saveId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** 删除存档 */
+        /**
+         * 删除存档
+         * @description 通过 commit hash 删除指定存档。仅作者可执行此操作。
+         *     同时清理 R2 中的 quads.bin 二进制数据。
+         */
         delete: operations["deleteSave"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/saves/{saveId}/checkpoints": {
+    "/saves/{commit}/data": {
         parameters: {
             query?: never;
             header?: never;
@@ -744,52 +659,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 获取所有 checkpoints
-         * @description 获取存档的所有 checkpoints。非 owner 只能看到 PUBLIC 的 checkpoints
+         * 下载存档数据
+         * @description 通过 commit hash 下载存档的 quads.bin 二进制数据。
          */
-        get: operations["listSaveCheckpoints"];
-        put?: never;
-        /**
-         * 创建 checkpoint
-         * @description 直接传入完整的 RDF quad 快照创建 checkpoint
-         */
-        post: operations["createSaveCheckpoint"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/saves/{saveId}/checkpoints/{checkpointId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** 获取单个 checkpoint 信息 */
-        get: operations["getSaveCheckpoint"];
-        put?: never;
-        post?: never;
-        /** 删除 checkpoint */
-        delete: operations["deleteSaveCheckpoint"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/saves/{saveId}/checkpoints/{checkpointId}/export": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 导出 checkpoint 数据
-         * @description 导出指定 checkpoint 的完整 RDF quads
-         */
-        get: operations["exportCheckpoint"];
+        get: operations["getSaveData"];
         put?: never;
         post?: never;
         delete?: never;
@@ -798,21 +671,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/saves/{saveId}/checkpoints/{checkpointId}/visibility": {
+    "/nodes/{nodeId}/versions": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get all versions for a node
+         * @description Returns the complete version tree for a node, ordered by authored_at descending.
+         */
+        get: operations["getNodeVersions"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /** 更新 checkpoint 可见性 */
-        patch: operations["updateCheckpointVisibility"];
+        patch?: never;
+        trace?: never;
+    };
+    "/versions/{commit}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a specific version detail
+         * @description Returns the full version detail including content from the typed content table.
+         *     commit 是全局唯一主键，无需额外的 nodeId。
+         */
+        get: operations["getNodeVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/versions/{commit}/children": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get child versions
+         * @description Returns versions whose parent is the given commit.
+         *     commit 是全局唯一主键，无需额外的 nodeId。
+         */
+        get: operations["getNodeVersionChildren"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/versions/{commit}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 下载节点版本的 VFS 归档文件
+         * @description 下载指定版本的 tar.gz 归档文件（VFS 节点的二进制内容）。
+         *     commit 是全局唯一主键，无需额外的 nodeId。
+         */
+        get: operations["getNodeVersionArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -844,7 +783,6 @@ export interface components {
             /** Format: uri */
             website?: string | null;
             location?: string | null;
-            isAdmin: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -859,19 +797,6 @@ export interface components {
             website?: string;
             location?: string;
         };
-        JwtPayload: {
-            /** @description 用户 ID */
-            sub: string;
-            username: string;
-            email: string;
-            isAdmin: boolean;
-            /** @description 签发时间 */
-            iat?: number;
-            /** @description 过期时间 */
-            exp?: number;
-        };
-        /** @enum {string} */
-        ArtifactType: "RECIPE" | "GAME" | "ASSET_PACK" | "PROMPT";
         Tag: {
             /** Format: uuid */
             id: string;
@@ -893,10 +818,19 @@ export interface components {
              *     - 存在但 owner 不是当前用户：返回 403 Forbidden
              */
             artifactId: string;
-            type: components["schemas"]["ArtifactType"];
+            /**
+             * @description Artifact version 的 commit hash，由客户端基于内容确定性计算。
+             *     客户端应对 (artifactId + parentCommit + sorted nodes + sorted edges) 取 hash。
+             *     通过包含 artifactId 和 parentCommit 形成链状结构，保证全局唯一性。
+             */
+            commit: string;
+            /**
+             * @description 上一个版本的 commit hash，用于形成链状结构保证 commit 全局唯一性。
+             *     创建新 artifact 时为 null，更新已有 artifact 时为当前版本的 commit hash。
+             *     客户端在计算 commit 时必须包含此字段。
+             */
+            parentCommit?: string | null;
             name: string;
-            /** @description URL-friendly 标识符 */
-            slug: string;
             description?: string;
             /** @default PUBLIC */
             visibility: components["schemas"]["VisibilityType"];
@@ -906,42 +840,24 @@ export interface components {
             /** Format: uri */
             repositoryUrl?: string;
             /** @description Semver 版本号 */
-            version: string;
+            version?: string;
             changelog?: string;
-            /** @default false */
-            isPrerelease: boolean;
             /** @description Tag slugs 数组 */
             tags?: string[];
-        };
-        ArtifactNodeDescriptor: {
-            /** Format: uuid */
-            id: string;
-            /** @default false */
-            external: boolean;
-            type?: components["schemas"]["ArtifactNodeType"];
-            name?: string;
-            position?: {
-                x?: number;
-                y?: number;
-            };
-            /** @description 节点内容。非 VFS 节点必须包含此字段。 */
-            content?: components["schemas"]["ArtifactNodeContent"];
-            /** @description VFS 节点的文件摘要列表 */
-            filesSummary?: {
-                path: string;
-                size?: number;
-                mimeType?: string;
-            }[];
-            /** @description Fork 来源信息（当节点是从外部节点 Fork 而来时） */
-            originalRef?: {
-                /**
-                 * Format: uuid
-                 * @description 原始节点 ID
-                 */
-                nodeId?: string;
-                /** @description 原始节点的 commit hash */
-                commit?: string;
-            };
+            /** @description 可选入口点，指定启动流图时的初始程序状态 */
+            entrypoint?: components["schemas"]["ArtifactEntrypoint"];
+            /**
+             * @description 用户可分配的版本标签列表（如 ["stable", "beta", "v1.0"]）。
+             *     同一 artifact 内每个 tag 唯一，一个 commit 可以有多个 tag。
+             *     如果某个 tag 已被其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
+             */
+            commitTags?: string[];
+            /**
+             * @description 和 artifact 同时创建的 save 列表（解决 save 和 artifact 的循环依赖）。
+             *     Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
+             *     服务端会先创建 save，然后再验证 STATE 节点内容的合法性。
+             */
+            saves?: components["schemas"]["CreateSaveInput"][];
         };
         ArtifactEdgeDescriptor: {
             /** Format: uuid */
@@ -951,29 +867,52 @@ export interface components {
             sourceHandle?: string;
             targetHandle?: string;
         };
-        ArtifactDescriptor: {
-            version: number;
-            /** Format: date-time */
-            exportedAt: string;
-            nodes: components["schemas"]["ArtifactNodeDescriptor"][];
-            edges: components["schemas"]["ArtifactEdgeDescriptor"][];
+        /**
+         * @description 完整的 node version 数据，用于在创建 artifact 时一并同步节点版本。
+         *     所有节点的版本数据将通过 artifact 创建接口一次性提交。
+         */
+        CreateArtifactNode: {
+            /**
+             * Format: uuid
+             * @description 节点 ID
+             */
+            nodeId: string;
+            /** @description 版本 hash */
+            commit: string;
+            /** @description 父版本 commit hash */
+            parent?: string | null;
+            type: components["schemas"]["ArtifactNodeType"];
+            name?: string;
+            /** @description 内容指纹 */
+            contentHash: string;
+            /** @description 节点内容（结构取决于 type） */
+            content: components["schemas"]["ArtifactNodeContent"];
+            /** @description Commit 消息 */
+            message?: string;
+            /** @description Semver 标签 */
+            tag?: string;
+            visibility?: components["schemas"]["VisibilityType"];
+            /** @description 血统引用（主要用于 GENERATED 节点） */
+            refs?: components["schemas"]["NodeVersionRef"][];
+            position?: {
+                x?: number;
+                y?: number;
+            };
         };
         ArtifactNodeSummary: {
             /** Format: uuid */
             id: string;
             type: components["schemas"]["ArtifactNodeType"];
+            /** @description 节点版本的 commit hash */
+            commit: string;
+            /** @description 节点内容的指纹 */
+            contentHash: string;
             name?: string | null;
             position?: {
                 x?: number;
                 y?: number;
             };
-            external: boolean;
-            /**
-             * Format: uuid
-             * @description 外部引用时，被引用的 artifact ID
-             */
-            externalArtifactId?: string;
-            /** @description 节点内容。对于内部节点，包含完整的结构化数据；对于外部节点，此字段可能为空。 */
+            /** @description 节点内容（结构化数据） */
             content?: components["schemas"]["ArtifactNodeContent"];
         };
         ArtifactEdge: {
@@ -983,16 +922,6 @@ export interface components {
             target: string;
             sourceHandle?: string;
             targetHandle?: string;
-        };
-        NodeVersionInfo: {
-            /** Format: uuid */
-            id: string;
-            /** @description SHA-256 前8位 */
-            commitHash: string;
-            contentHash?: string;
-            message?: string | null;
-            /** Format: date-time */
-            createdAt: string;
         };
         NodeFileInfo: {
             filepath: string;
@@ -1006,52 +935,34 @@ export interface components {
             version: string;
             /** @description SHA-256 前8位 */
             commitHash: string;
+            /** @description 该版本上的所有标签 */
+            commitTags?: string[];
             changelog?: string | null;
-            isPrerelease?: boolean;
             /** Format: date-time */
             publishedAt?: string | null;
             /** Format: date-time */
             createdAt: string;
         };
-        /** @enum {string} */
-        LineageType: "DEPENDS_ON" | "FORKED_FROM" | "INSPIRED_BY" | "GENERATED_BY";
         ArtifactLineageItem: {
             /** Format: uuid */
-            id: string;
-            lineageType: components["schemas"]["LineageType"];
-            description?: string | null;
-            /**
-             * Format: uuid
-             * @description 在父谱系中表示此节点的父节点ID，在子谱系中表示此节点的子节点来源ID（用于构建树结构）
-             */
-            parentId?: string | null;
-            /** Format: date-time */
-            createdAt: string;
-            artifact: {
+            artifactId: string;
+            name: string;
+            visibility: components["schemas"]["VisibilityType"];
+            /** Format: uri */
+            thumbnailUrl?: string | null;
+            author?: {
                 /** Format: uuid */
                 id: string;
-                name: string;
-                slug: string;
-                type: components["schemas"]["ArtifactType"];
-                visibility: components["schemas"]["VisibilityType"];
+                username: string;
+                displayName?: string | null;
                 /** Format: uri */
-                thumbnailUrl?: string | null;
-                author?: {
-                    /** Format: uuid */
-                    id: string;
-                    username: string;
-                    displayName?: string | null;
-                    /** Format: uri */
-                    avatarUrl?: string | null;
-                };
+                avatarUrl?: string | null;
             };
         };
         ArtifactListItem: {
             /** Format: uuid */
             id: string;
-            type: components["schemas"]["ArtifactType"];
             name: string;
-            slug: string;
             description?: string | null;
             /** @enum {string} */
             visibility: "PUBLIC" | "PRIVATE" | "UNLISTED";
@@ -1105,14 +1016,29 @@ export interface components {
         };
         ContentBlock: components["schemas"]["TextBlock"] | components["schemas"]["RefTagBlock"];
         InputNodeContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "INPUT";
             blocks: components["schemas"]["ContentBlock"][];
             mountpoints?: components["schemas"]["Mountpoint"][];
             generationConfig?: components["schemas"]["InputGenerationConfig"];
         };
         PromptNodeContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "PROMPT";
             blocks: components["schemas"]["ContentBlock"][];
         };
         GeneratedNodeContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "GENERATED";
             blocks: Record<string, never>[];
             inputRef: components["schemas"]["NodeRef"];
             promptRefs?: components["schemas"]["NodeRef"][];
@@ -1120,21 +1046,45 @@ export interface components {
             inputVfsRef?: components["schemas"]["VfsRef"];
             /** Format: uuid */
             outputVfsId?: string | null;
+            /** @description Post-generation commit hash - recorded after file modifications are complete */
+            postGenerationCommit?: string | null;
         };
         SandboxNodeContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "SANDBOX";
             /** @default index.html */
             entryFile: string;
         };
         LoaderNodeContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "LOADER";
             mountpoints?: components["schemas"]["Mountpoint"][];
         };
         StateNodeContent: {
-            /** Format: uuid */
-            saveId?: string | null;
-            checkpointId?: string | null;
-            checkpointRef?: string | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "STATE";
+            /**
+             * @description 引用的 SAVE 版本 commit hash 列表。
+             *     STATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。
+             *     作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。
+             */
+            saves?: string[];
         };
         VfsNodeContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "VFS";
             files?: {
                 path: string;
                 size?: number;
@@ -1446,8 +1396,6 @@ export interface components {
              */
             parentReplyId?: string;
             content: string;
-            /** @description 是否被采纳为答案 */
-            isAccepted: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1490,8 +1438,8 @@ export interface components {
             type: "game_ref";
             /** @description 关联的文本块 ID */
             textId: string;
-            /** @description 存档检查点 ID */
-            checkpointId: string;
+            /** @description Save 版本 commit hash（可唯一索引到对应的 save node version） */
+            saveCommit: string;
         };
         ReaderContentBlock: components["schemas"]["TextContent"] | components["schemas"]["GameRef"];
         ArticleAuthor: {
@@ -1510,19 +1458,11 @@ export interface components {
             author: components["schemas"]["ArticleAuthor"];
             /**
              * Format: uuid
-             * @description Sandbox 节点 ID
-             */
-            sandboxNodeId: string;
-            /**
-             * Format: uuid
-             * @description Artifact ID（通过 sandboxNodeId 获取）
+             * @description Artifact ID
              */
             artifactId: string;
-            /**
-             * Format: uuid
-             * @description 云存档 ID（文章关联的游戏存档）
-             */
-            saveId: string;
+            /** @description Artifact 版本 commit hash */
+            artifactCommit: string;
             visibility: components["schemas"]["VisibilityType"];
             likes: number;
             collections: number;
@@ -1535,84 +1475,155 @@ export interface components {
             title: string;
             /**
              * Format: uuid
-             * @description Sandbox 节点 ID（用于游戏回放）
+             * @description Artifact ID
              */
-            sandboxNodeId: string;
-            /**
-             * Format: uuid
-             * @description 云存档 ID（文章关联的游戏存档）
-             */
-            saveId: string;
+            artifactId: string;
+            /** @description Artifact 版本 commit hash */
+            artifactCommit: string;
             content: components["schemas"]["ReaderContentBlock"][];
             /** @default PUBLIC */
             visibility: components["schemas"]["VisibilityType"];
         };
-        CloudSave: {
+        SaveDetail: {
+            /** @description Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)） */
+            saveId: string;
+            /** @description Save 版本 commit hash */
+            commit: string;
+            /** @description 父版本 commit hash */
+            parent?: string | null;
             /** Format: uuid */
-            id: string;
-            /** Format: uuid */
-            userId: string;
-            /** Format: uuid */
-            stateNodeId?: string | null;
-            name: string;
+            authorId: string;
+            /** Format: date-time */
+            authoredAt: string;
+            /**
+             * Format: uuid
+             * @description 关联的 STATE 节点 ID
+             */
+            stateNodeId: string;
+            /** @description 关联的 STATE 节点版本 commit hash */
+            stateNodeCommit: string;
+            /**
+             * Format: uuid
+             * @description 创建此 Save 的 artifact ID
+             */
+            sourceArtifactId: string;
+            /** @description 创建此 Save 的 artifact 版本 commit hash */
+            sourceArtifactCommit: string;
+            title?: string | null;
             description?: string | null;
+            visibility: components["schemas"]["VisibilityType"];
             /** Format: date-time */
             createdAt: string;
-            /** Format: date-time */
-            updatedAt: string;
-            /** Format: date-time */
-            lastSyncedAt?: string | null;
         };
         CreateSaveRequest: {
-            name: string;
-            description?: string;
-            /** Format: uuid */
-            stateNodeId: string;
-        };
-        Quad: {
-            /** @description N3 格式的 subject (e.g., '<http://example.org/s>' 或 '_:blank1') */
-            subject: string;
-            /** @description N3 格式的 predicate (e.g., '<http://example.org/p>') */
-            predicate: string;
-            /** @description N3 格式的 object (e.g., '"value"' 或 '<http://example.org/o>') */
-            object: string;
             /**
-             * @description 图名称，默认为空字符串
-             * @default
+             * Format: uuid
+             * @description 关联的 STATE 节点 ID
              */
-            graph: string;
-        };
-        /** @enum {string} */
-        CheckpointVisibility: "PRIVATE" | "UNLISTED" | "PUBLIC";
-        CheckpointInfo: {
-            /** @description Checkpoint unique ID */
-            id: string;
-            /** @description 创建时间戳 (Unix ms) */
-            timestamp: number;
-            /** @description Quad 数量 */
-            quadCount: number;
-            name?: string | null;
-            description?: string | null;
-            visibility: components["schemas"]["CheckpointVisibility"];
-        };
-        CreateCheckpointRequest: {
-            /** @description Optional custom checkpoint ID (UUID format) */
-            id?: string;
-            name?: string;
+            stateNodeId: string;
+            /** @description 关联的 STATE 节点版本 commit hash */
+            stateNodeCommit: string;
+            /** @description Save 版本 commit hash（客户端计算） */
+            commit: string;
+            /** @description 父版本 commit hash（可选） */
+            parent?: string | null;
+            /**
+             * Format: uuid
+             * @description 关联的 artifact ID
+             */
+            sourceArtifactId: string;
+            /** @description 关联的 artifact 版本 commit hash */
+            sourceArtifactCommit: string;
+            /** @description 内容指纹 */
+            contentHash: string;
+            /** @description 存档标题 */
+            title?: string;
+            /** @description 存档描述 */
             description?: string;
-            visibility?: components["schemas"]["CheckpointVisibility"];
-            /** @description 完整的 RDF quad 快照数据 */
-            quads: components["schemas"]["Quad"][];
+            /** @default PRIVATE */
+            visibility: components["schemas"]["VisibilityType"];
         };
-        CreateCheckpointResponse: {
-            success: boolean;
-            /** @description Created checkpoint ID */
-            id: string;
+        /**
+         * @description Type of reference between node versions (lineage tracking).
+         *     - input: GENERATED's trigger input (INPUT node version)
+         *     - prompt: GENERATED's direct prompt reference (PROMPT node version)
+         *     - indirect_prompt: GENERATED's indirect prompt reference
+         *     - input_vfs: Pre-generation VFS snapshot reference
+         *     - output_vfs: Post-generation associated VFS node version
+         * @enum {string}
+         */
+        NodeVersionRefType: "input" | "prompt" | "indirect_prompt" | "input_vfs" | "output_vfs";
+        NodeVersionSummary: {
+            /** @description Node UUID (globally unique, cross-artifact persistent) */
+            nodeId: string;
+            /** @description Version hash (SHA-256 first 40 chars) */
+            commit: string;
+            /** @description Parent commit hash (null for root version) */
+            parent?: string | null;
+            /** @description Author user ID */
+            authorId: string;
+            /**
+             * Format: date-time
+             * @description Version creation timestamp
+             */
+            authoredAt: string;
+            /**
+             * @description Node type (including SAVE for save nodes)
+             * @enum {string}
+             */
+            type: "PROMPT" | "INPUT" | "GENERATED" | "VFS" | "STATE" | "LOADER" | "SANDBOX" | "SAVE";
+            name?: string | null;
+            /** @description Content fingerprint (determines which content table to query) */
+            contentHash: string;
+            /** @description Commit message */
+            message?: string | null;
+            /** @description Semver tag (e.g. v1.0.0) */
+            tag?: string | null;
+            visibility: components["schemas"]["VisibilityType"];
         };
-        ExportCheckpointResponse: {
-            /** @description Checkpoint 中存储的所有 quads */
-            quads: components["schemas"]["Quad"][];
-            quadCount: number;
+        NodeVersionDetail: components["schemas"]["NodeVersionSummary"] & {
+            /** @description Full content from the typed content table */
+            content?: components["schemas"]["ArtifactNodeContent"];
+            /** @description Lineage references (for GENERATED nodes) */
+            refs?: components["schemas"]["NodeVersionRef"][];
+        };
+        NodeVersionRef: {
+            targetNodeId: string;
+            targetCommit: string;
+            refType: components["schemas"]["NodeVersionRefType"];
+        };
+        ArtifactEntrypoint: {
+            /** @description Save 的 commit hash，指定启动时加载的存档 */
+            saveCommit: string;
+            /**
+             * Format: uuid
+             * @description 沙箱节点 ID
+             */
+            sandboxNodeId: string;
+        };
+        /**
+         * @description 和 artifact 一起创建的 save 数据。
+         *     服务端会从 artifact 的 nodes 数组中自动获取 stateNodeCommit，
+         *     并使用 artifact 的 commit 作为 sourceArtifactCommit。
+         */
+        CreateSaveInput: {
+            /**
+             * Format: uuid
+             * @description 关联的 STATE 节点 ID
+             */
+            stateNodeId: string;
+            /** @description Save 版本的 commit hash */
+            commit: string;
+            /** @description Save 内容的指纹 */
+            contentHash: string;
+            /** @description 父 save 的 commit hash */
+            parent?: string | null;
+            /** @description Save 标题 */
+            title?: string;
+            /** @description Save 描述 */
+            description?: string;
+            /** @default PRIVATE */
+            visibility: components["schemas"]["VisibilityType"];
         };
         TextBlock: {
             /**
@@ -1639,6 +1650,67 @@ export interface components {
             /** @description 结构化输出的 JSON Schema */
             schema?: string;
         };
+        /**
+         * @description 基于已有的 commit 和增量补丁创建新的 artifact 版本。
+         *     客户端提交 baseCommit（基准版本）和需要变更的 nodes/edges，
+         *     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
+         *
+         *     如果没有 graph 变更（addNodes/removeNodeIds/addEdges/removeEdges 全部为空或不传），
+         *     且不传 commit，则为 metadata-only 更新：直接修改 baseCommit 版本的元数据，不创建新版本。
+         */
+        PatchArtifactRequest: {
+            /**
+             * Format: uuid
+             * @description 要更新的 Artifact ID
+             */
+            artifactId: string;
+            /** @description 基准版本的 commit hash */
+            baseCommit: string;
+            /**
+             * @description 新版本的 commit hash，由客户端基于合并后的完整 graph 确定性计算。
+             *     计算方式与 POST /artifacts 一致：hash(artifactId, parentCommit, nodes, edges)
+             *     其中 parentCommit 为基准版本（即 baseCommit）的 commit hash。
+             */
+            commit?: string;
+            name?: string;
+            description?: string;
+            visibility?: components["schemas"]["VisibilityType"];
+            /** @description Semver 版本号 */
+            version?: string;
+            changelog?: string;
+            /** @description 可选版本标签列表 */
+            commitTags?: string[];
+            /** @description 可选入口点 */
+            entrypoint?: components["schemas"]["ArtifactEntrypoint"];
+            /** @description 新增或更新的节点（nodeId 已存在则更新该节点的 commit，否则新增） */
+            addNodes?: components["schemas"]["CreateArtifactNode"][];
+            /** @description 需要移除的节点 ID 列表 */
+            removeNodeIds?: string[];
+            /** @description 新增的边 */
+            addEdges?: components["schemas"]["ArtifactEdgeDescriptor"][];
+            /** @description 需要移除的边（通过 source + target 匹配） */
+            removeEdges?: components["schemas"]["ArtifactEdgeDescriptor"][];
+            /**
+             * @description 和 patch 同时创建的 save 列表。
+             *     Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
+             */
+            saves?: components["schemas"]["CreateSaveInput"][];
+        };
+        /** @description 设置指定 commit 上的标签列表（替换语义） */
+        UpdateCommitTagsRequest: {
+            /** @description 目标 commit hash */
+            commitHash: string;
+            /**
+             * @description 要设置的标签列表。传空数组表示清除该 commit 上的所有标签。
+             *     如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除。
+             */
+            commitTags: string[];
+        };
+        /**
+         * @description 将一个 artifact 版本标记为 weak（不可逆操作）。
+         *     weak 版本不对 node 产生引用计数，标记后尝试 GC 引用计数归零的 node 内容。
+         */
+        MarkVersionWeakRequest: Record<string, never>;
     };
     responses: never;
     parameters: never;
@@ -1669,103 +1741,6 @@ export interface operations {
                         /** @example 1.0.0 */
                         version: string;
                     };
-                };
-            };
-        };
-    };
-    register: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    username: string;
-                    /** Format: email */
-                    email: string;
-                    password: string;
-                    displayName?: string;
-                };
-            };
-        };
-        responses: {
-            /** @description 注册成功 */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @example Registration successful */
-                        message: string;
-                        user: components["schemas"]["PublicUser"];
-                        /** @description JWT token */
-                        token: string;
-                    };
-                };
-            };
-            /** @description 请求参数错误 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 用户已存在 */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    login: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description 用户名或邮箱 */
-                    usernameOrEmail: string;
-                    password: string;
-                };
-            };
-        };
-        responses: {
-            /** @description 登录成功 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @example Login successful */
-                        message: string;
-                        user: components["schemas"]["PublicUser"];
-                        /** @description JWT token */
-                        token: string;
-                    };
-                };
-            };
-            /** @description 认证失败 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
                 };
             };
         };
@@ -1854,10 +1829,6 @@ export interface operations {
                 page?: number;
                 /** @description 每页数量 */
                 limit?: number;
-                /** @description 包含的类型列表 */
-                "type.include"?: components["schemas"]["ArtifactType"][];
-                /** @description 排除的类型列表 */
-                "type.exclude"?: components["schemas"]["ArtifactType"][];
                 /** @description 排序字段 */
                 sortBy?: "createdAt" | "updatedAt" | "viewCount" | "starCount";
                 /** @description 排序方向 */
@@ -1966,10 +1937,6 @@ export interface operations {
                 page?: number;
                 /** @description 每页数量 */
                 limit?: number;
-                /** @description 包含的类型列表 */
-                "type.include"?: components["schemas"]["ArtifactType"][];
-                /** @description 排除的类型列表 */
-                "type.exclude"?: components["schemas"]["ArtifactType"][];
                 /** @description 包含的标签 slug 列表（AND 逻辑） */
                 "tag.include"?: string[];
                 /** @description 排除的标签 slug 列表 */
@@ -2018,36 +1985,24 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": {
+                    metadata: components["schemas"]["CreateArtifactMetadata"];
+                    nodes: components["schemas"]["CreateArtifactNode"][];
+                    edges: components["schemas"]["ArtifactEdgeDescriptor"][];
                     /**
-                     * @description JSON 格式的 artifact 元数据，包含以下字段：
-                     *     - artifactId: string (可选，如提供则为更新模式)
-                     *     - type: ArtifactType (必填)
-                     *     - name: string (必填)
-                     *     - slug: string (必填)
-                     *     - description: string (可选)
-                     *     - visibility: VisibilityType (可选，默认 PUBLIC)
-                     *     - thumbnailUrl: string (可选)
-                     *     - license: string (可选)
-                     *     - repositoryUrl: string (可选)
-                     *     - version: string (必填，semver 格式如 1.0.0)
-                     *     - changelog: string (可选)
-                     *     - isPrerelease: boolean (可选，默认 false)
-                     *     - tags: string[] (可选，tag slugs 数组)
+                     * Format: binary
+                     * @description VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
                      */
-                    metadata: string;
+                    "vfs[{commit}]"?: string;
+                    /**
+                     * Format: binary
+                     * @description Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
+                     */
+                    "save[{commit}]"?: string;
                     /**
                      * Format: binary
                      * @description 可选的主页 Markdown 文件，将被渲染为 HTML 后存储。
                      */
                     homepage?: string;
-                    /**
-                     * @description JSON 格式的 pubwiki.artifact.json 内容，包含：
-                     *     - version: number (descriptor 格式版本)
-                     *     - exportedAt: string (ISO 时间戳)
-                     *     - nodes: ArtifactNodeDescriptor[] (节点列表)
-                     *     - edges: ArtifactEdgeDescriptor[] (节点间关系)
-                     */
-                    descriptor: string;
                 };
             };
         };
@@ -2105,7 +2060,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 指定的 artifactId 不存在（更新模式） */
+            /** @description 引用的 node version 不存在（nodeId + commit 未在 node_versions 中找到） */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2114,7 +2069,90 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Slug 已存在 */
+        };
+    };
+    patchArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    metadata: components["schemas"]["PatchArtifactRequest"];
+                    /**
+                     * Format: binary
+                     * @description 新增 VFS 节点的 tar.gz 归档文件
+                     */
+                    "vfs[{commit}]"?: string;
+                    /**
+                     * Format: binary
+                     * @description Save 的二进制数据
+                     */
+                    "save[{commit}]"?: string;
+                    /**
+                     * Format: binary
+                     * @description 可选的主页 Markdown 文件
+                     */
+                    homepage?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 补丁应用成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example Artifact patched successfully */
+                        message: string;
+                        artifact: components["schemas"]["ArtifactListItem"];
+                        /** @description 是否创建了新版本（false 表示仅更新了 metadata） */
+                        versionCreated: boolean;
+                    };
+                };
+            };
+            /** @description 请求参数错误（如 baseCommit 不存在） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权限更新该 artifact */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Artifact 或 baseCommit 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Commit hash 冲突（该版本已存在） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -2180,6 +2218,11 @@ export interface operations {
             query?: {
                 /** @description 向上追溯父代的深度（1=直接父代，2=父代+祖父代...）。不指定则无限递归。 */
                 parentDepth?: number;
+                /**
+                 * @description 指定要查询谱系的版本 commit hash。
+                 *     不指定则使用 artifact 的当前版本（currentVersionId）。
+                 */
+                commit?: string;
                 /** @description 向下追溯子代的深度（1=直接子代，2=子代+孙代...）。不指定则无限递归。 */
                 childDepth?: number;
             };
@@ -2238,7 +2281,7 @@ export interface operations {
     getArtifactGraph: {
         parameters: {
             query?: {
-                /** @description artifact 版本哈希或 "latest" */
+                /** @description artifact 版本哈希、commitTag 或 "latest" */
                 version?: string;
             };
             header?: never;
@@ -2262,7 +2305,11 @@ export interface operations {
                             /** Format: uuid */
                             id: string;
                             commitHash: string;
+                            /** @description 该版本上的所有标签 */
+                            commitTags?: string[];
                             version: string;
+                            /** @description 该版本的入口点（如有） */
+                            entrypoint?: components["schemas"]["ArtifactEntrypoint"];
                             /** Format: date-time */
                             createdAt: string;
                         };
@@ -2298,103 +2345,36 @@ export interface operations {
             };
         };
     };
-    getNodeDetail: {
+    updateCommitTags: {
         parameters: {
-            query?: {
-                /** @description node 版本哈希或 "latest" */
-                version?: string;
-            };
+            query?: never;
             header?: never;
             path: {
+                /** @description Artifact ID */
                 artifactId: string;
-                nodeId: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCommitTagsRequest"];
+            };
+        };
         responses: {
-            /** @description 成功 */
+            /** @description commitTags 更新成功 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        /** Format: uuid */
-                        id: string;
-                        type: components["schemas"]["ArtifactNodeType"];
-                        name?: string | null;
-                        external: boolean;
-                        externalArtifact?: {
-                            /** Format: uuid */
-                            id?: string;
-                            name?: string;
-                            slug?: string;
-                            author?: {
-                                /** Format: uuid */
-                                id: string;
-                                username: string;
-                            };
-                        };
-                        version: components["schemas"]["NodeVersionInfo"];
-                        /** @description 节点内容，VFS 类型时包含 files 数组 */
-                        content?: components["schemas"]["ArtifactNodeContent"];
+                        /** @example Commit tag updated successfully */
+                        message: string;
+                        version: components["schemas"]["ArtifactVersion"];
                     };
                 };
             };
-            /** @description 需要认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Node 不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    getNodeArchive: {
-        parameters: {
-            query?: {
-                version?: string;
-            };
-            header?: never;
-            path: {
-                artifactId: string;
-                nodeId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 成功 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/gzip": string;
-                };
-            };
-            /** @description 非 VFS 类型节点不支持此接口 */
+            /** @description 请求参数错误 */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -2403,7 +2383,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 需要认证 */
+            /** @description 未认证 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2412,7 +2392,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 无权访问 */
+            /** @description 无权限 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2421,7 +2401,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Node 不存在或归档文件不存在 */
+            /** @description Artifact 或 commit 不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2432,32 +2412,52 @@ export interface operations {
             };
         };
     };
-    getNodeFileContent: {
+    markVersionWeak: {
         parameters: {
-            query?: {
-                version?: string;
-            };
+            query?: never;
             header?: never;
             path: {
+                /** @description Artifact ID */
                 artifactId: string;
-                nodeId: string;
-                /** @description 文件路径（支持嵌套路径如 subdir/file.txt） */
-                filePath: string;
+                /** @description 版本的 commit hash */
+                commitHash: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkVersionWeakRequest"];
+            };
+        };
         responses: {
-            /** @description 成功 */
+            /** @description 标记成功 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/octet-stream": string;
+                    "application/json": {
+                        /** @example Version marked as weak */
+                        message: string;
+                        gcResult: {
+                            /** @description 引用计数被减少的内容数量 */
+                            decremented?: number;
+                            /** @description 引用计数归零被删除的内容数量 */
+                            deleted?: number;
+                        };
+                    };
                 };
             };
-            /** @description 需要认证 */
+            /** @description 请求参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未认证 */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -2466,7 +2466,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 无权访问 */
+            /** @description 无权限 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2475,7 +2475,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 文件不存在 */
+            /** @description Artifact 或版本不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3645,59 +3645,6 @@ export interface operations {
             };
         };
     };
-    acceptDiscussionReply: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description 回复 ID */
-                replyId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 成功采纳回复 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        message: string;
-                        reply: components["schemas"]["DiscussionReplyItem"];
-                    };
-                };
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 只有讨论作者可以采纳答案 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 回复不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     getArticle: {
         parameters: {
             query?: never;
@@ -3773,7 +3720,7 @@ export interface operations {
             };
         };
     };
-    listArticlesBySandbox: {
+    listArticlesByArtifact: {
         parameters: {
             query?: {
                 /** @description 页码（从1开始） */
@@ -3783,8 +3730,8 @@ export interface operations {
             };
             header?: never;
             path: {
-                /** @description Sandbox 节点 ID */
-                sandboxNodeId: string;
+                /** @description Artifact ID */
+                artifactId: string;
             };
             cookie?: never;
         };
@@ -3811,7 +3758,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Sandbox 节点不存在 */
+            /** @description Artifact 不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3824,7 +3771,20 @@ export interface operations {
     };
     listSaves: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description STATE 节点 ID（与 stateNodeCommit 一起使用） */
+                stateNodeId?: string;
+                /** @description STATE 节点的 commit hash（与 stateNodeId 一起使用） */
+                stateNodeCommit?: string;
+                /** @description Save 节点 ID（单独使用，与 stateNodeId/stateNodeCommit 互斥） */
+                saveId?: string;
+                /** @description 按作者 ID 过滤 */
+                author?: string;
+                /** @description 页码（从1开始） */
+                page?: number;
+                /** @description 每页数量 */
+                limit?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3838,12 +3798,13 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        saves: components["schemas"]["CloudSave"][];
+                        saves: components["schemas"]["SaveDetail"][];
+                        pagination: components["schemas"]["Pagination"];
                     };
                 };
             };
-            /** @description 未认证 */
-            401: {
+            /** @description 请求参数错误 */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3862,17 +3823,24 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateSaveRequest"];
+                "multipart/form-data": {
+                    metadata: components["schemas"]["CreateSaveRequest"];
+                    /**
+                     * Format: binary
+                     * @description quads.bin 二进制数据
+                     */
+                    data: string;
+                };
             };
         };
         responses: {
-            /** @description 创建成功 */
+            /** @description 存档创建成功 */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CloudSave"];
+                    "application/json": components["schemas"]["SaveDetail"];
                 };
             };
             /** @description 请求参数错误 */
@@ -3893,54 +3861,29 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 存档已存在 */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
         };
     };
-    getSaveByStateNode: {
+    getSave: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description State node ID */
-                stateNodeId: string;
+                commit: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description 存档信息 */
+            /** @description 存档详情 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /**
-                         * Format: uuid
-                         * @description 存档 ID
-                         */
-                        id: string;
-                    };
+                    "application/json": components["schemas"]["SaveDetail"];
                 };
             };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 未找到关联的存档 */
+            /** @description 存档不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3956,7 +3899,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                saveId: string;
+                commit: string;
             };
             cookie?: never;
         };
@@ -3978,7 +3921,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 无权访问 */
+            /** @description 无权限 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3998,26 +3941,24 @@ export interface operations {
             };
         };
     };
-    listSaveCheckpoints: {
+    getSaveData: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                saveId: string;
+                commit: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Checkpoint 列表 */
+            /** @description 二进制数据 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        checkpoints: components["schemas"]["CheckpointInfo"][];
-                    };
+                    "application/octet-stream": string;
                 };
             };
             /** @description 存档不存在 */
@@ -4031,31 +3972,114 @@ export interface operations {
             };
         };
     };
-    createSaveCheckpoint: {
+    getNodeVersions: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                saveId: string;
+                /** @description Node UUID */
+                nodeId: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCheckpointRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Checkpoint 创建成功 */
-            201: {
+            /** @description Version list */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreateCheckpointResponse"];
+                    "application/json": {
+                        versions: components["schemas"]["NodeVersionSummary"][];
+                    };
                 };
             };
-            /** @description 无效的请求 */
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Node not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getNodeVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Version commit hash */
+                commit: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Version detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeVersionDetail"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Version not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getNodeVersionChildren: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Parent commit hash */
+                commit: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Child versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        versions: components["schemas"]["NodeVersionSummary"][];
+                    };
+                };
+            };
+            /** @description Invalid request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -4064,7 +4088,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 未认证 */
+            /** @description Unauthorized */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -4073,213 +4097,30 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 存档不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
         };
     };
-    getSaveCheckpoint: {
+    getNodeVersionArchive: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                saveId: string;
-                checkpointId: string;
+                /** @description 节点版本 commit hash */
+                commit: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Checkpoint 信息 */
+            /** @description tar.gz 归档二进制数据 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CheckpointInfo"];
+                    "application/gzip": string;
                 };
             };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Checkpoint 不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    deleteSaveCheckpoint: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                saveId: string;
-                checkpointId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Checkpoint 已删除 */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 存档或 checkpoint 不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    exportCheckpoint: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                saveId: string;
-                checkpointId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 导出成功 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ExportCheckpointResponse"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Checkpoint 不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
-    updateCheckpointVisibility: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                saveId: string;
-                checkpointId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    visibility: components["schemas"]["CheckpointVisibility"];
-                };
-            };
-        };
-        responses: {
-            /** @description 更新成功 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        success: boolean;
-                    };
-                };
-            };
-            /** @description 无效的可见性值 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Checkpoint 不存在 */
+            /** @description 节点版本或归档文件不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;

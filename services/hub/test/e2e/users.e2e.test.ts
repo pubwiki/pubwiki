@@ -100,7 +100,8 @@ describe('E2E: Users API', () => {
         params: {
           path: { userId },
           query: {
-            'type.include': ['RECIPE'],
+            sortBy: 'createdAt',
+            sortOrder: 'desc',
           },
         },
       });

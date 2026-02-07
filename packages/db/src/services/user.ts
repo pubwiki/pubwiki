@@ -13,7 +13,6 @@ export interface PublicUser {
   bio: string | null;
   website: string | null;
   location: string | null;
-  isAdmin: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -45,7 +44,6 @@ function toPublicUser(userData: User): PublicUser {
     bio: userData.bio,
     website: userData.website,
     location: userData.location,
-    isAdmin: userData.isAdmin,
     createdAt: userData.createdAt.toISOString(),
     updatedAt: userData.updatedAt.toISOString(),
   };

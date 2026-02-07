@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, ArtifactService, NodeService, cloudSaves, eq, and, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNodeContent } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, ArtifactType, CreateArtifactMetadata, CreateArtifactResponse, ArtifactDescriptor, GetArtifactGraphResponse, GetNodeDetailResponse, ArtifactNodeDescriptor } from '@pubwiki/api';
+import { createDb, ArtifactService, NodeVersionService, artifactVersions, artifactVersionNodes, artifactVersionEdges, artifactCommitTags, eq, and, desc, inArray, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNode, type PatchArtifactInput, type CreateSaveInput } from '@pubwiki/db';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactMetadata, CreateArtifactResponse, GetArtifactGraphResponse, ArtifactEdgeDescriptor, ArtifactNodeContent, ArtifactNodeType, PatchArtifactRequest, PatchArtifactResponse, UpdateCommitTagsRequest, ArtifactVersion as ArtifactVersionType } from '@pubwiki/api';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { marked } from 'marked';
 
@@ -22,16 +22,12 @@ artifactsRoute.get('/', async (c) => {
   
   // 解析数组参数（URL query 中的重复参数）
   const url = new URL(c.req.url);
-  const typeInclude = url.searchParams.getAll('type.include') as ArtifactType[];
-  const typeExclude = url.searchParams.getAll('type.exclude') as ArtifactType[];
   const tagInclude = url.searchParams.getAll('tag.include');
   const tagExclude = url.searchParams.getAll('tag.exclude');
 
   const params: ListArtifactsParams = {
     page: query.page ? parseInt(query.page, 10) : undefined,
     limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    typeInclude: typeInclude.length > 0 ? typeInclude : undefined,
-    typeExclude: typeExclude.length > 0 ? typeExclude : undefined,
     tagInclude: tagInclude.length > 0 ? tagInclude : undefined,
     tagExclude: tagExclude.length > 0 ? tagExclude : undefined,
     sortBy: query.sortBy as ListArtifactsParams['sortBy'],
@@ -47,23 +43,6 @@ artifactsRoute.get('/', async (c) => {
   }
   if (params.sortOrder && !validSortOrder.includes(params.sortOrder)) {
     return c.json<ApiError>({ error: `Invalid sortOrder value. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
-
-  // 验证类型参数
-  const validTypes = ['RECIPE', 'GAME', 'ASSET_PACK', 'PROMPT'];
-  if (params.typeInclude) {
-    for (const type of params.typeInclude) {
-      if (!validTypes.includes(type)) {
-        return c.json<ApiError>({ error: `Invalid type value: ${type}. Must be one of: ${validTypes.join(', ')}` }, 400);
-      }
-    }
-  }
-  if (params.typeExclude) {
-    for (const type of params.typeExclude) {
-      if (!validTypes.includes(type)) {
-        return c.json<ApiError>({ error: `Invalid type value: ${type}. Must be one of: ${validTypes.join(', ')}` }, 400);
-      }
-    }
   }
 
   const result = await artifactService.listPublicArtifacts(params);
@@ -106,9 +85,13 @@ artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, async (c) => 
     }
   }
 
-  // 解析深度参数
+  // 解析查询参数
   const query = c.req.query();
   const lineageParams: GetLineageParams = {};
+
+  if (query.commit) {
+    lineageParams.commit = query.commit;
+  }
   
   if (query.parentDepth) {
     const depth = parseInt(query.parentDepth, 10);
@@ -182,96 +165,8 @@ artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, async (c) =>
   return c.html(html);
 });
 
-// 验证 descriptor 中的节点内容
-interface DescriptorValidationResult {
-  valid: boolean;
-  error?: string;
-}
-
-// 验证节点 content 结构是否符合其类型要求
-function validateNodeContent(nodeId: string, nodeType: string, content: unknown): DescriptorValidationResult {
-  if (!content || typeof content !== 'object') {
-    return { valid: false, error: `Node ${nodeId} (type: ${nodeType}) content must be an object` };
-  }
-
-  const c = content as Record<string, unknown>;
-
-  switch (nodeType) {
-    case 'VFS':
-      // VFS 节点必须有 files 数组
-      if (!c.files || !Array.isArray(c.files)) {
-        return { valid: false, error: `VFS node ${nodeId} content must have a 'files' array` };
-      }
-      // 每个 file 必须有 path 字段
-      for (let i = 0; i < c.files.length; i++) {
-        const file = c.files[i] as Record<string, unknown>;
-        if (!file || typeof file !== 'object' || typeof file.path !== 'string') {
-          return { valid: false, error: `VFS node ${nodeId} files[${i}] must have a 'path' string` };
-        }
-      }
-      break;
-
-    case 'INPUT':
-    case 'PROMPT':
-      // INPUT/PROMPT 节点必须有 blocks 数组
-      if (!c.blocks || !Array.isArray(c.blocks)) {
-        return { valid: false, error: `${nodeType} node ${nodeId} content must have a 'blocks' array` };
-      }
-      break;
-
-    case 'GENERATED':
-      // GENERATED 节点必须有 blocks 数组和 inputRef
-      if (!c.blocks || !Array.isArray(c.blocks)) {
-        return { valid: false, error: `GENERATED node ${nodeId} content must have a 'blocks' array` };
-      }
-      if (!c.inputRef || typeof c.inputRef !== 'object') {
-        return { valid: false, error: `GENERATED node ${nodeId} content must have an 'inputRef' object` };
-      }
-      break;
-
-    case 'SANDBOX':
-      // SANDBOX 节点的 content 可以是空对象或包含 entryFile
-      // 没有必填字段，所以不需要额外校验
-      break;
-
-    case 'LOADER':
-      // LOADER 节点的 content 可以是空对象或包含 mountpoints
-      // 没有必填字段，所以不需要额外校验
-      break;
-
-    case 'STATE':
-      // STATE 节点的 content 可以是空对象或包含 saveId, checkpointId 等
-      // 没有必填字段，所以不需要额外校验
-      break;
-
-    default:
-      return { valid: false, error: `Unknown node type: ${nodeType}` };
-  }
-
-  return { valid: true };
-}
-
-function validateDescriptor(descriptor: ArtifactDescriptor): DescriptorValidationResult {
-  for (const node of descriptor.nodes) {
-    if (!node.external) {
-      if (!node.type) {
-        return { valid: false, error: `Internal node ${node.id} must have a type` };
-      }
-      // 非外部节点必须有 content
-      if (!node.content) {
-        return { valid: false, error: `Internal node ${node.id} (type: ${node.type}) must have content in descriptor` };
-      }
-      // 验证 content 结构
-      const contentValidation = validateNodeContent(node.id, node.type, node.content);
-      if (!contentValidation.valid) {
-        return contentValidation;
-      }
-    }
-  }
-  return { valid: true };
-}
-
-// 创建 artifact（新架构：内容在 descriptor 中，VFS 文件单独上传为 tar.gz）
+// 创建 artifact（两步流程的第二步：引用已同步的 node versions）
+// 前置条件：所有引用的 node versions 必须已通过 POST /nodes/:nodeId/sync 同步
 artifactsRoute.post('/', authMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
@@ -298,45 +193,95 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'Invalid JSON in metadata field' }, 400);
   }
 
-  // 获取并解析 descriptor
-  const descriptorStr = formData.get('descriptor');
-  if (!descriptorStr || typeof descriptorStr !== 'string') {
-    return c.json<ApiError>({ error: 'descriptor field is required and must be a JSON string' }, 400);
+  // 获取并解析 nodes（完整的 node version 数据）
+  const nodesStr = formData.get('nodes');
+  if (!nodesStr || typeof nodesStr !== 'string') {
+    return c.json<ApiError>({ error: 'nodes field is required and must be a JSON string' }, 400);
   }
 
-  let descriptor: ArtifactDescriptor;
+  let nodes: CreateArtifactNode[];
   try {
-    descriptor = JSON.parse(descriptorStr);
+    nodes = JSON.parse(nodesStr);
   } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON in descriptor field' }, 400);
+    return c.json<ApiError>({ error: 'Invalid JSON in nodes field' }, 400);
   }
 
-  // 验证 descriptor
-  if (!descriptor.version || !descriptor.nodes || !descriptor.edges) {
-    return c.json<ApiError>({ error: 'descriptor must contain version, nodes, and edges' }, 400);
+  if (!Array.isArray(nodes)) {
+    return c.json<ApiError>({ error: 'nodes must be an array' }, 400);
+  }
+
+  // 验证每个 node 的必填字段
+  for (const node of nodes) {
+    if (!node.nodeId || !node.commit || !node.type || !node.contentHash) {
+      return c.json<ApiError>({ error: 'Each node must have nodeId, commit, type, and contentHash fields' }, 400);
+    }
+  }
+
+  // 收集 VFS 二进制文件: vfs[{commit}] 和 save 二进制文件: save[{commit}]
+  const vfsArchives = new Map<string, ArrayBuffer>();
+  const saveArchives = new Map<string, ArrayBuffer>();
+  for (const [key, value] of formData.entries()) {
+    if (value instanceof File) {
+      const vfsMatch = key.match(/^vfs\[([^\]]+)\]$/);
+      if (vfsMatch) {
+        const commit = vfsMatch[1];
+        const arrayBuffer = await value.arrayBuffer();
+        vfsArchives.set(commit, arrayBuffer);
+        continue;
+      }
+      const saveMatch = key.match(/^save\[([^\]]+)\]$/);
+      if (saveMatch) {
+        const commit = saveMatch[1];
+        const arrayBuffer = await value.arrayBuffer();
+        saveArchives.set(commit, arrayBuffer);
+      }
+    }
+  }
+
+  // 获取并解析 edges
+  const edgesStr = formData.get('edges');
+  if (!edgesStr || typeof edgesStr !== 'string') {
+    return c.json<ApiError>({ error: 'edges field is required and must be a JSON string' }, 400);
+  }
+
+  let edges: ArtifactEdgeDescriptor[];
+  try {
+    edges = JSON.parse(edgesStr);
+  } catch {
+    return c.json<ApiError>({ error: 'Invalid JSON in edges field' }, 400);
+  }
+
+  if (!Array.isArray(edges)) {
+    return c.json<ApiError>({ error: 'edges must be an array' }, 400);
   }
 
   // 验证必填字段
-  if (!metadata.type || !metadata.name || !metadata.slug || !metadata.version) {
-    return c.json<ApiError>({ error: 'type, name, slug, and version are required in metadata' }, 400);
+  if (!metadata.name) {
+    return c.json<ApiError>({ error: 'name is required in metadata' }, 400);
   }
 
-  // 验证 type
-  const validTypes = ['RECIPE', 'GAME', 'ASSET_PACK', 'PROMPT'];
-  if (!validTypes.includes(metadata.type)) {
-    return c.json<ApiError>({ error: `Invalid type. Must be one of: ${validTypes.join(', ')}` }, 400);
+  // 验证 artifactId
+  if (!metadata.artifactId) {
+    return c.json<ApiError>({ error: 'artifactId is required in metadata' }, 400);
   }
 
-  // 验证 slug 格式
-  const slugPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-  if (!slugPattern.test(metadata.slug)) {
-    return c.json<ApiError>({ error: 'slug must be URL-friendly (lowercase letters, numbers, and hyphens only)' }, 400);
+  // 验证 commit
+  if (!metadata.commit) {
+    return c.json<ApiError>({ error: 'commit is required in metadata' }, 400);
   }
 
-  // 验证 version 格式 (semver)
-  const versionPattern = /^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$/;
-  if (!versionPattern.test(metadata.version)) {
-    return c.json<ApiError>({ error: 'version must be in semver format (e.g., 1.0.0 or 1.0.0-beta)' }, 400);
+  // 解析可选的 saves（和 nodes、edges 平级）
+  let saves: CreateSaveInput[] | undefined;
+  const savesStr = formData.get('saves');
+  if (savesStr && typeof savesStr === 'string') {
+    try {
+      saves = JSON.parse(savesStr);
+      if (!Array.isArray(saves)) {
+        return c.json<ApiError>({ error: 'saves must be an array' }, 400);
+      }
+    } catch {
+      return c.json<ApiError>({ error: 'Invalid JSON in saves field' }, 400);
+    }
   }
 
   // 处理可选的主页 markdown
@@ -351,118 +296,13 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
-  // 验证 descriptor 中的节点 content（新架构）
-  const validationResult = validateDescriptor(descriptor);
-  if (!validationResult.valid) {
-    return c.json<ApiError>({ error: validationResult.error! }, 400);
-  }
-
-  // 收集 VFS 节点的 tar.gz 文件
-  // 文件 key 格式: vfs[{nodeId}]
-  const vfsArchives = new Map<string, ArrayBuffer>();
-
-  for (const [key, value] of formData.entries()) {
-    const match = key.match(/^vfs\[([^\]]+)\]$/);
-    if (match && value instanceof File) {
-      const nodeId = match[1];
-      const arrayBuffer = await value.arrayBuffer();
-      vfsArchives.set(nodeId, arrayBuffer);
-    }
-  }
-
-  // 验证 VFS 节点必须有对应的 tar.gz 文件（非 external 的）
-  for (const node of descriptor.nodes) {
-    if (node.type === 'VFS' && !node.external) {
-      if (!vfsArchives.has(node.id)) {
-        return c.json<ApiError>({ 
-          error: `VFS node ${node.id} requires a tar.gz archive (vfs[${node.id}])` 
-        }, 400);
-      }
-    }
-  }
-
-  // 构建 nodeContents Map（从 descriptor 中提取）
-  const nodeContents = new Map<string, CreateArtifactNodeContent>();
-
-  for (const node of descriptor.nodes) {
-    if (node.external) continue;
-
-    const content = node.content;
-    if (content === undefined || content === null) {
-      return c.json<ApiError>({ 
-        error: `Node ${node.id} is missing content in descriptor` 
-      }, 400);
-    }
-
-    // 计算 content hash
-    const contentStr = JSON.stringify(content);
-    const encoder = new TextEncoder();
-    const data = encoder.encode(contentStr);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const contentHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
-
-    nodeContents.set(node.id, {
-      content,
-      contentHash,
-    });
-  }
-
-  // 验证 STATE 节点必须指定有效的 saveId 和 checkpointId
-  for (const node of descriptor.nodes) {
-    if (node.type === 'STATE' && !node.external) {
-      const nodeContentEntry = nodeContents.get(node.id);
-      const nodeContent = nodeContentEntry?.content as Record<string, unknown> | undefined;
-      
-      if (!nodeContent?.saveId || !nodeContent?.checkpointId) {
-        return c.json<ApiError>({ 
-          error: `STATE node ${node.id} must specify saveId and checkpointId in content` 
-        }, 400);
-      }
-
-      const saveId = nodeContent.saveId as string;
-      const checkpointId = nodeContent.checkpointId as string;
-
-      // 验证 save 存在且属于当前用户
-      const [save] = await db.select().from(cloudSaves)
-        .where(and(
-          eq(cloudSaves.id, saveId),
-          eq(cloudSaves.userId, user.id)
-        ))
-        .limit(1);
-
-      if (!save) {
-        return c.json<ApiError>({ 
-          error: `Save ${saveId} not found or access denied for STATE node ${node.id}` 
-        }, 400);
-      }
-
-      // 验证 checkpoint 存在
-      const checkpoint = await c.env.GAMESAVE.getCheckpoint(saveId, checkpointId);
-      if (!checkpoint) {
-        return c.json<ApiError>({ 
-          error: `Checkpoint ${checkpointId} not found in save ${saveId} for STATE node ${node.id}` 
-        }, 400);
-      }
-
-      // 发布时将 checkpoint visibility 设置为 max(checkpoint_visibility, artifact_visibility)
-      const visibilityOrder = { 'PRIVATE': 0, 'UNLISTED': 1, 'PUBLIC': 2 } as const;
-      const artifactVisibility = metadata.visibility || 'PUBLIC'; // 默认 PUBLIC
-      const checkpointVisLevel = visibilityOrder[checkpoint.visibility];
-      const artifactVisLevel = visibilityOrder[artifactVisibility as keyof typeof visibilityOrder] ?? 2;
-      
-      if (checkpointVisLevel < artifactVisLevel) {
-        await c.env.GAMESAVE.updateCheckpointVisibility(saveId, checkpointId, artifactVisibility as 'PRIVATE' | 'UNLISTED' | 'PUBLIC');
-      }
-    }
-  }
-
-  // 创建 artifact
+  // 创建 artifact（内部同步 node versions + 创建 saves + 创建 artifact version）
   const result = await artifactService.createArtifact({
     authorId: user.id,
     metadata,
-    descriptor,
-    nodeContents,
+    nodes,
+    edges,
+    saves,
   });
 
   if (!result.success) {
@@ -484,18 +324,19 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   const { artifact: createdArtifact } = result.data;
   const artifactId = createdArtifact.id;
 
-  // 上传 VFS 节点的 tar.gz 到 R2
-  const nodeService = new NodeService(db);
-
-  for (const [nodeId, archiveBuffer] of vfsArchives.entries()) {
-    const archiveKeyResult = await nodeService.getVfsArchiveKey(artifactId, nodeId);
-    if (!archiveKeyResult.success) continue;
-
-    const r2Key = archiveKeyResult.data.key;
+  // 上传 VFS 归档到 R2（commit 全局唯一，作为 key）
+  for (const [commit, archiveBuffer] of vfsArchives.entries()) {
+    const r2Key = `archives/${commit}.tar.gz`;
     await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
-      httpMetadata: {
-        contentType: 'application/gzip',
-      },
+      httpMetadata: { contentType: 'application/gzip' },
+    });
+  }
+
+  // 上传 save 数据到 R2（commit 全局唯一，作为 key）
+  for (const [commit, saveBuffer] of saveArchives.entries()) {
+    const r2Key = `saves/${commit}.bin`;
+    await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
+      httpMetadata: { contentType: 'application/octet-stream' },
     });
   }
 
@@ -518,14 +359,14 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   );
 });
 
-// 获取 artifact 节点图结构
+// 获取 artifact 节点图结构（使用新 artifact_version_nodes/edges + node_versions）
 artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
-  const nodeService = new NodeService(db);
+  const nodeVersionService = new NodeVersionService(db);
   const artifactId = c.req.param('artifactId');
   const user = c.get('user');
-  const version = c.req.query('version');
+  const versionQuery = c.req.query('version');
 
   // 获取 artifact 信息进行权限检查
   const artifactResult = await artifactService.getArtifactById(artifactId);
@@ -551,141 +392,326 @@ artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, async (c) => {
     }
   }
 
-  // 获取图结构
-  const graphResult = await nodeService.getArtifactGraph(artifactId, version);
-  if (!graphResult.success) {
-    if (graphResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: graphResult.error.message }, 404);
+  // 获取指定版本或最新版本
+  let versionResult;
+  if (versionQuery && versionQuery !== 'latest') {
+    // 先尝试按 commitHash 查询
+    versionResult = await db
+      .select()
+      .from(artifactVersions)
+      .where(
+        and(
+          eq(artifactVersions.artifactId, artifactId),
+          eq(artifactVersions.commitHash, versionQuery)
+        )
+      )
+      .limit(1);
+
+    // 如果找不到，再尝试按 commitTag 查询（通过关联表）
+    if (versionResult.length === 0) {
+      const tagResult = await artifactService.getVersionByTag(artifactId, versionQuery);
+      if (tagResult.success) {
+        versionResult = [tagResult.data.version];
+      }
     }
-    return c.json<ApiError>({ error: graphResult.error.message }, 500);
+  } else {
+    versionResult = await db
+      .select()
+      .from(artifactVersions)
+      .where(eq(artifactVersions.artifactId, artifactId))
+      .orderBy(desc(artifactVersions.createdAt))
+      .limit(1);
   }
 
-  return c.json<GetArtifactGraphResponse>(graphResult.data);
+  if (versionResult.length === 0) {
+    return c.json<ApiError>({ error: 'Artifact version not found' }, 404);
+  }
+
+  const version = versionResult[0];
+
+  // 获取 artifact_version_nodes
+  const versionNodes = await db
+    .select()
+    .from(artifactVersionNodes)
+    .where(eq(artifactVersionNodes.commitHash, version.commitHash));
+
+  // 获取每个节点的版本信息和内容
+  const nodes = [];
+  for (const vn of versionNodes) {
+    const versionDetail = await nodeVersionService.getVersion(vn.nodeCommit);
+    if (versionDetail.success) {
+      const v = versionDetail.data;
+      nodes.push({
+        id: vn.nodeId,
+        type: v.type as ArtifactNodeType,
+        commit: v.commit,
+        contentHash: v.contentHash,
+        name: v.name,
+        position: vn.positionX != null && vn.positionY != null
+          ? { x: vn.positionX, y: vn.positionY }
+          : undefined,
+        content: v.content as ArtifactNodeContent,
+      });
+    }
+  }
+
+  // 获取 artifact_version_edges
+  const versionEdges = await db
+    .select()
+    .from(artifactVersionEdges)
+    .where(eq(artifactVersionEdges.commitHash, version.commitHash));
+
+  const edges = versionEdges.map(e => ({
+    source: e.sourceNodeId,
+    target: e.targetNodeId,
+    sourceHandle: e.sourceHandle ?? undefined,
+    targetHandle: e.targetHandle ?? undefined,
+  }));
+
+  // 查询该版本的 commitTags
+  const versionCommitTags = await db
+    .select({ tag: artifactCommitTags.tag })
+    .from(artifactCommitTags)
+    .where(eq(artifactCommitTags.commitHash, version.commitHash));
+
+  return c.json<GetArtifactGraphResponse>({
+    nodes,
+    edges,
+    version: {
+      id: version.id,
+      commitHash: version.commitHash,
+      commitTags: versionCommitTags.map(t => t.tag),
+      version: version.version ?? '',
+      createdAt: version.createdAt,
+      entrypoint: version.entrypoint ?? null,
+    },
+  });
 });
 
-// 获取节点详情
-artifactsRoute.get('/:artifactId/nodes/:nodeId', optionalAuthMiddleware, async (c) => {
+// PATCH: 基于已有版本和增量补丁创建新 Artifact 版本
+artifactsRoute.patch('/', authMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
-  const nodeService = new NodeService(db);
-  const artifactId = c.req.param('artifactId');
-  const nodeId = c.req.param('nodeId');
   const user = c.get('user');
-  const version = c.req.query('version');
 
-  // 获取 artifact 信息进行权限检查
-  const artifactResult = await artifactService.getArtifactById(artifactId);
-  if (!artifactResult.success) {
-    if (artifactResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Artifact not found' }, 404);
-    }
-    return c.json<ApiError>({ error: artifactResult.error.message }, 500);
+  // 解析 multipart/form-data
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json<ApiError>({ error: 'Invalid form data' }, 400);
   }
 
-  const { artifact } = artifactResult.data;
-
-  // 权限检查
-  if (artifact.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted artifact' }, 401);
-  }
-  if (artifact.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
-    }
-    if (user.id !== artifact.authorId) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
-    }
+  // 获取并解析 metadata
+  const metadataStr = formData.get('metadata');
+  if (!metadataStr || typeof metadataStr !== 'string') {
+    return c.json<ApiError>({ error: 'metadata field is required and must be a JSON string' }, 400);
   }
 
-  // 获取节点详情
-  const nodeResult = await nodeService.getNodeDetail(artifactId, nodeId, version);
-  if (!nodeResult.success) {
-    if (nodeResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: nodeResult.error.message }, 404);
-    }
-    return c.json<ApiError>({ error: nodeResult.error.message }, 500);
+  let metadata: PatchArtifactRequest;
+  try {
+    metadata = JSON.parse(metadataStr);
+  } catch {
+    return c.json<ApiError>({ error: 'Invalid JSON in metadata field' }, 400);
   }
 
-  return c.json<GetNodeDetailResponse>(nodeResult.data);
+  // 验证必填字段
+  if (!metadata.artifactId) {
+    return c.json<ApiError>({ error: 'artifactId is required' }, 400);
+  }
+  if (!metadata.baseCommit) {
+    return c.json<ApiError>({ error: 'baseCommit is required' }, 400);
+  }
+  // commit 仅在有 graph 变更时必须（service 层会校验）
+
+  // 收集 VFS 二进制文件: vfs[{commit}] 和 save 二进制文件: save[{commit}]
+  const vfsArchives = new Map<string, ArrayBuffer>();
+  const saveArchives = new Map<string, ArrayBuffer>();
+  for (const [key, value] of formData.entries()) {
+    if (value instanceof File) {
+      const vfsMatch = key.match(/^vfs\[([^\]]+)\]$/);
+      if (vfsMatch) {
+        const commit = vfsMatch[1];
+        const arrayBuffer = await value.arrayBuffer();
+        vfsArchives.set(commit, arrayBuffer);
+        continue;
+      }
+      const saveMatch = key.match(/^save\[([^\]]+)\]$/);
+      if (saveMatch) {
+        const commit = saveMatch[1];
+        const arrayBuffer = await value.arrayBuffer();
+        saveArchives.set(commit, arrayBuffer);
+      }
+    }
+  }
+
+  // 解析可选的 saves
+  let saves: CreateSaveInput[] | undefined;
+  const savesStr = formData.get('saves');
+  if (savesStr && typeof savesStr === 'string') {
+    try {
+      saves = JSON.parse(savesStr);
+      if (!Array.isArray(saves)) {
+        return c.json<ApiError>({ error: 'saves must be an array' }, 400);
+      }
+    } catch {
+      return c.json<ApiError>({ error: 'Invalid JSON in saves field' }, 400);
+    }
+  }
+
+  // 处理可选的主页 markdown
+  let homepageHtml: string | null = null;
+  const homepageFile = formData.get('homepage');
+  if (homepageFile) {
+    if (homepageFile instanceof File) {
+      const markdownContent = await homepageFile.text();
+      homepageHtml = await marked.parse(markdownContent);
+    } else if (typeof homepageFile === 'string') {
+      homepageHtml = await marked.parse(homepageFile);
+    }
+  }
+
+  // 执行 patch
+  const result = await artifactService.patchArtifact({
+    authorId: user.id,
+    metadata: {
+      ...metadata,
+      addNodes: metadata.addNodes as CreateArtifactNode[] | undefined,
+    },
+    saves,
+  });
+
+  if (!result.success) {
+    if (result.error.code === 'CONFLICT') {
+      return c.json<ApiError>({ error: result.error.message }, 409);
+    }
+    if (result.error.code === 'FORBIDDEN') {
+      return c.json<ApiError>({ error: result.error.message }, 403);
+    }
+    if (result.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: result.error.message }, 404);
+    }
+    if (result.error.code === 'BAD_REQUEST') {
+      return c.json<ApiError>({ error: result.error.message }, 400);
+    }
+    return c.json<ApiError>({ error: result.error.message }, 500);
+  }
+
+  const { artifact: patchedArtifact, versionCreated } = result.data;
+  const artifactId = patchedArtifact.id;
+
+  // 上传 VFS 归档到 R2（commit 全局唯一，作为 key）
+  if (versionCreated) {
+    for (const [commit, archiveBuffer] of vfsArchives.entries()) {
+      const r2Key = `archives/${commit}.tar.gz`;
+      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+        httpMetadata: { contentType: 'application/gzip' },
+      });
+    }
+  }
+
+  // 上传 save 数据到 R2（commit 全局唯一，作为 key）
+  for (const [commit, saveBuffer] of saveArchives.entries()) {
+    const r2Key = `saves/${commit}.bin`;
+    await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
+      httpMetadata: { contentType: 'application/octet-stream' },
+    });
+  }
+
+  // 上传主页 HTML 到 R2
+  if (homepageHtml) {
+    const homepageKey = getArtifactHomepageKey(artifactId);
+    await c.env.R2_BUCKET.put(homepageKey, homepageHtml, {
+      httpMetadata: { contentType: 'text/html; charset=utf-8' },
+    });
+  }
+
+  return c.json<PatchArtifactResponse>(
+    {
+      message: 'Artifact patched successfully',
+      artifact: patchedArtifact,
+      versionCreated,
+    },
+    200
+  );
 });
 
-// 获取 VFS 节点的 tar.gz 归档文件
-artifactsRoute.get('/:artifactId/nodes/:nodeId/archive', optionalAuthMiddleware, async (c) => {
+// PUT: 设置 commit 上的标签列表
+artifactsRoute.put('/:artifactId/commit-tag', authMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
-  const nodeService = new NodeService(db);
-  const artifactId = c.req.param('artifactId');
-  const nodeId = c.req.param('nodeId');
   const user = c.get('user');
-  const version = c.req.query('version');
+  const artifactId = c.req.param('artifactId');
 
-  // 获取 artifact 信息进行权限检查
-  const artifactResult = await artifactService.getArtifactById(artifactId);
-  if (!artifactResult.success) {
-    if (artifactResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Artifact not found' }, 404);
+  let body: UpdateCommitTagsRequest;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
+  }
+
+  if (!body.commitHash) {
+    return c.json<ApiError>({ error: 'commitHash is required' }, 400);
+  }
+
+  if (!Array.isArray(body.commitTags)) {
+    return c.json<ApiError>({ error: 'commitTags must be an array' }, 400);
+  }
+
+  const result = await artifactService.updateCommitTags(
+    artifactId,
+    user.id,
+    body.commitHash,
+    body.commitTags,
+  );
+
+  if (!result.success) {
+    if (result.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: result.error.message }, 404);
     }
-    return c.json<ApiError>({ error: artifactResult.error.message }, 500);
-  }
-
-  const { artifact } = artifactResult.data;
-
-  // 权限检查
-  if (artifact.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted artifact' }, 401);
-  }
-  if (artifact.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
+    if (result.error.code === 'FORBIDDEN') {
+      return c.json<ApiError>({ error: result.error.message }, 403);
     }
-    if (user.id !== artifact.authorId) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
+    return c.json<ApiError>({ error: result.error.message }, 500);
+  }
+
+  return c.json({
+    message: 'Commit tags updated successfully',
+    version: result.data.version,
+  }, 200);
+});
+
+// PUT: 标记版本为 weak（不可逆）
+artifactsRoute.put('/:artifactId/versions/:commitHash/weak', authMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const artifactService = new ArtifactService(db);
+  const user = c.get('user');
+  const artifactId = c.req.param('artifactId');
+  const commitHash = c.req.param('commitHash');
+
+  const result = await artifactService.markVersionWeak(
+    artifactId,
+    user.id,
+    commitHash,
+  );
+
+  if (!result.success) {
+    if (result.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: result.error.message }, 404);
     }
-  }
-
-  // 获取节点详情以检查类型
-  const nodeResult = await nodeService.getNodeDetail(artifactId, nodeId, version);
-  if (!nodeResult.success) {
-    if (nodeResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: nodeResult.error.message }, 404);
+    if (result.error.code === 'FORBIDDEN') {
+      return c.json<ApiError>({ error: result.error.message }, 403);
     }
-    return c.json<ApiError>({ error: nodeResult.error.message }, 500);
-  }
-
-  const node = nodeResult.data;
-
-  // 只有 VFS 类型节点支持 archive 端点
-  if (node.type !== 'VFS') {
-    return c.json<ApiError>({ error: 'Only VFS type nodes support the archive endpoint. Use node detail for content.' }, 400);
-  }
-
-  // 获取 archive key
-  const archiveKeyResult = await nodeService.getVfsArchiveKey(artifactId, nodeId, version);
-  if (!archiveKeyResult.success) {
-    if (archiveKeyResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: archiveKeyResult.error.message }, 404);
+    if (result.error.code === 'BAD_REQUEST') {
+      return c.json<ApiError>({ error: result.error.message }, 400);
     }
-    return c.json<ApiError>({ error: archiveKeyResult.error.message }, 500);
+    return c.json<ApiError>({ error: result.error.message }, 500);
   }
 
-  // 从 R2 获取 archive
-  const object = await c.env.R2_BUCKET.get(archiveKeyResult.data.key);
-  if (!object) {
-    return c.json<ApiError>({ error: 'Archive not found in storage' }, 404);
-  }
-
-  // 返回 tar.gz 文件
-  const headers = new Headers();
-  headers.set('Content-Type', 'application/gzip');
-  if (object.size) {
-    headers.set('Content-Length', object.size.toString());
-  }
-  if (object.etag) {
-    headers.set('ETag', object.etag);
-  }
-  headers.set('Content-Disposition', `attachment; filename="${nodeId}.tar.gz"`);
-
-  return new Response(object.body, { headers });
+  return c.json({
+    message: 'Version marked as weak',
+    gcResult: result.data.gcResult,
+  }, 200);
 });
 
 export { artifactsRoute };

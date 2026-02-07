@@ -1,0 +1,101 @@
+# Save-related schemas
+
+SaveDetail:
+  type: object
+  required:
+    - saveId
+    - commit
+    - authorId
+    - authoredAt
+    - stateNodeId
+    - stateNodeCommit
+    - sourceArtifactId
+    - sourceArtifactCommit
+    - visibility
+    - createdAt
+  properties:
+    saveId:
+      type: string
+      description: Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)）
+    commit:
+      type: string
+      description: Save 版本 commit hash
+    parent:
+      type: string
+      nullable: true
+      description: 父版本 commit hash
+    authorId:
+      type: string
+      format: uuid
+    authoredAt:
+      type: string
+      format: date-time
+    stateNodeId:
+      type: string
+      format: uuid
+      description: 关联的 STATE 节点 ID
+    stateNodeCommit:
+      type: string
+      description: 关联的 STATE 节点版本 commit hash
+    sourceArtifactId:
+      type: string
+      format: uuid
+      description: 创建此 Save 的 artifact ID
+    sourceArtifactCommit:
+      type: string
+      description: 创建此 Save 的 artifact 版本 commit hash
+    title:
+      type: string
+      nullable: true
+    description:
+      type: string
+      nullable: true
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+    createdAt:
+      type: string
+      format: date-time
+
+CreateSaveRequest:
+  type: object
+  required:
+    - stateNodeId
+    - stateNodeCommit
+    - commit
+    - sourceArtifactId
+    - sourceArtifactCommit
+    - contentHash
+  properties:
+    stateNodeId:
+      type: string
+      format: uuid
+      description: 关联的 STATE 节点 ID
+    stateNodeCommit:
+      type: string
+      description: 关联的 STATE 节点版本 commit hash
+    commit:
+      type: string
+      description: Save 版本 commit hash（客户端计算）
+    parent:
+      type: string
+      nullable: true
+      description: 父版本 commit hash（可选）
+    sourceArtifactId:
+      type: string
+      format: uuid
+      description: 关联的 artifact ID
+    sourceArtifactCommit:
+      type: string
+      description: 关联的 artifact 版本 commit hash
+    contentHash:
+      type: string
+      description: 内容指纹
+    title:
+      type: string
+      description: 存档标题
+    description:
+      type: string
+      description: 存档描述
+    visibility:
+      $ref: './common.yaml#/VisibilityType'
+      default: PRIVATE

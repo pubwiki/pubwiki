@@ -112,8 +112,12 @@ InputGenerationConfig:
 InputNodeContent:
   type: object
   required:
+    - type
     - blocks
   properties:
+    type:
+      type: string
+      const: INPUT
     blocks:
       type: array
       items:
@@ -129,8 +133,12 @@ InputNodeContent:
 PromptNodeContent:
   type: object
   required:
+    - type
     - blocks
   properties:
+    type:
+      type: string
+      const: PROMPT
     blocks:
       type: array
       items:
@@ -140,9 +148,13 @@ PromptNodeContent:
 GeneratedNodeContent:
   type: object
   required:
+    - type
     - blocks
     - inputRef
   properties:
+    type:
+      type: string
+      const: GENERATED
     blocks:
       type: array
       items:
@@ -173,7 +185,12 @@ GeneratedNodeContent:
 # SANDBOX 节点内容
 SandboxNodeContent:
   type: object
+  required:
+    - type
   properties:
+    type:
+      type: string
+      const: SANDBOX
     entryFile:
       type: string
       default: index.html
@@ -181,31 +198,45 @@ SandboxNodeContent:
 # LOADER 节点内容
 LoaderNodeContent:
   type: object
+  required:
+    - type
   properties:
+    type:
+      type: string
+      const: LOADER
     mountpoints:
       type: array
       items:
         $ref: '#/Mountpoint'
 
-# STATE 节点内容
+# STATE 节点内容（仅存储 SAVE 版本引用列表）
+# 实际存档元数据（title, description）存储在 SaveNodeContent / save_contents 中
 StateNodeContent:
   type: object
+  required:
+    - type
   properties:
-    saveId:
+    type:
       type: string
-      format: uuid
-      nullable: true
-    checkpointId:
-      type: string
-      nullable: true
-    checkpointRef:
-      type: string
-      nullable: true
+      const: STATE
+    saves:
+      type: array
+      items:
+        type: string
+      description: |
+        引用的 SAVE 版本 commit hash 列表。
+        STATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。
+        作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。
 
 # VFS 节点内容（仅文件摘要信息）
 VfsNodeContent:
   type: object
+  required:
+    - type
   properties:
+    type:
+      type: string
+      const: VFS
     files:
       type: array
       items:
@@ -233,3 +264,13 @@ ArtifactNodeContent:
     - $ref: '#/LoaderNodeContent'
     - $ref: '#/StateNodeContent'
     - $ref: '#/VfsNodeContent'
+  discriminator:
+    propertyName: type
+    mapping:
+      INPUT: '#/InputNodeContent'
+      PROMPT: '#/PromptNodeContent'
+      GENERATED: '#/GeneratedNodeContent'
+      SANDBOX: '#/SandboxNodeContent'
+      LOADER: '#/LoaderNodeContent'
+      STATE: '#/StateNodeContent'
+      VFS: '#/VfsNodeContent'

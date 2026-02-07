@@ -125,7 +125,6 @@ export class DiscussionService {
       },
       parentReplyId: reply.parentReplyId ?? undefined,
       content: reply.content,
-      isAccepted: reply.isAccepted,
       createdAt: reply.createdAt,
       updatedAt: reply.updatedAt,
     };
@@ -374,7 +373,7 @@ export class DiscussionService {
   }
 
   // 删除讨论
-  async deleteDiscussion(id: string, userId: string, isAdmin: boolean = false): Promise<ServiceResult<void>> {
+  async deleteDiscussion(id: string, userId: string): Promise<ServiceResult<void>> {
     try {
       // 获取讨论
       const [discussion] = await this.db
@@ -390,8 +389,8 @@ export class DiscussionService {
         };
       }
 
-      // 检查权限（作者或管理员）
-      if (discussion.authorId !== userId && !isAdmin) {
+      // 检查权限（仅作者）
+      if (discussion.authorId !== userId) {
         return {
           success: false,
           error: { code: 'FORBIDDEN', message: 'Not authorized to delete this discussion' },
@@ -676,7 +675,7 @@ export class DiscussionService {
   }
 
   // 删除回复
-  async deleteReply(replyId: string, userId: string, isAdmin: boolean = false): Promise<ServiceResult<void>> {
+  async deleteReply(replyId: string, userId: string): Promise<ServiceResult<void>> {
     try {
       // 获取回复
       const [reply] = await this.db
@@ -692,8 +691,8 @@ export class DiscussionService {
         };
       }
 
-      // 检查权限（作者或管理员）
-      if (reply.authorId !== userId && !isAdmin) {
+      // 检查权限（仅作者）
+      if (reply.authorId !== userId) {
         return {
           success: false,
           error: { code: 'FORBIDDEN', message: 'Not authorized to delete this reply' },
@@ -733,83 +732,4 @@ export class DiscussionService {
     }
   }
 
-  // 采纳回复作为答案
-  async acceptReply(replyId: string, discussionAuthorId: string): Promise<ServiceResult<DiscussionReplyItem>> {
-    try {
-      // 获取回复
-      const [reply] = await this.db
-        .select()
-        .from(discussionReplies)
-        .where(eq(discussionReplies.id, replyId))
-        .limit(1);
-
-      if (!reply) {
-        return {
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Reply not found' },
-        };
-      }
-
-      // 获取讨论，验证权限
-      const [discussion] = await this.db
-        .select()
-        .from(discussions)
-        .where(eq(discussions.id, reply.discussionId))
-        .limit(1);
-
-      if (!discussion) {
-        return {
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Discussion not found' },
-        };
-      }
-
-      // 只有讨论作者可以采纳答案
-      if (discussion.authorId !== discussionAuthorId) {
-        return {
-          success: false,
-          error: { code: 'FORBIDDEN', message: 'Only discussion author can accept answers' },
-        };
-      }
-
-      const now = new Date().toISOString();
-
-      // 使用 batch 保证原子性：取消其他回复的采纳状态 + 采纳当前回复
-      await this.db.batch([
-        // 取消其他已采纳的回复
-        this.db
-          .update(discussionReplies)
-          .set({ isAccepted: false })
-          .where(and(
-            eq(discussionReplies.discussionId, reply.discussionId),
-            eq(discussionReplies.isAccepted, true)
-          )),
-        // 采纳当前回复
-        this.db
-          .update(discussionReplies)
-          .set({ isAccepted: true, updatedAt: now })
-          .where(eq(discussionReplies.id, replyId)),
-      ]);
-
-      // 获取更新后的回复
-      const [updated] = await this.db
-        .select()
-        .from(discussionReplies)
-        .where(eq(discussionReplies.id, replyId))
-        .limit(1);
-
-      const author = await this.getAuthor(updated.authorId);
-
-      return {
-        success: true,
-        data: this.toReplyItem(updated, author!),
-      };
-    } catch (error) {
-      console.error('Error accepting reply:', error);
-      return {
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: 'Failed to accept reply' },
-      };
-    }
-  }
 }

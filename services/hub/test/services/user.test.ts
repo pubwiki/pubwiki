@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { createDb, UserService, user, account, session, artifacts, artifactTags, artifactStats, artifactVersions, artifactLineage, artifactNodes, artifactNodeVersions, artifactNodeRefs, eq } from '@pubwiki/db';
+import { createDb, UserService, user, account, session, artifacts, artifactTags, artifactStats, artifactVersions, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, eq } from '@pubwiki/db';
 
 describe('UserService', () => {
   let db: ReturnType<typeof createDb>;
@@ -28,7 +28,6 @@ describe('UserService', () => {
       bio: null,
       website: null,
       location: null,
-      isAdmin: false,
       isVerified: false,
     });
     return userId;
@@ -39,13 +38,13 @@ describe('UserService', () => {
     userService = new UserService(db);
     
     // 清空数据库（按外键顺序）
-    await db.delete(artifactLineage);
-    await db.delete(artifactNodeVersions);
-    await db.delete(artifactNodeRefs);
-    await db.delete(artifactNodes);
+    await db.delete(nodeVersionRefs);
+    await db.delete(artifactVersionNodes);
+    await db.delete(artifactVersionEdges);
     await db.delete(artifactVersions);
     await db.delete(artifactTags);
     await db.delete(artifactStats);
+    await db.delete(nodeVersions);
     await db.delete(artifacts);
     await db.delete(session);
     await db.delete(account);
@@ -94,7 +93,6 @@ describe('UserService', () => {
         expect(result.data).toHaveProperty('bio');
         expect(result.data).toHaveProperty('website');
         expect(result.data).toHaveProperty('location');
-        expect(result.data).toHaveProperty('isAdmin');
         expect(result.data).toHaveProperty('createdAt');
         expect(result.data).toHaveProperty('updatedAt');
       }

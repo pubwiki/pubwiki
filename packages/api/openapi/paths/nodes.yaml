@@ -1,0 +1,154 @@
+# Node Version API paths
+
+/nodes/{nodeId}/versions:
+  get:
+    operationId: getNodeVersions
+    summary: Get all versions for a node
+    description: Returns the complete version tree for a node, ordered by authored_at descending.
+    tags: [nodes]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: nodeId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Node UUID
+    responses:
+      '200':
+        description: Version list
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [versions]
+              properties:
+                versions:
+                  type: array
+                  items:
+                    $ref: '../schemas/node-version.yaml#/NodeVersionSummary'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Node not found
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/versions/{commit}:
+  get:
+    operationId: getNodeVersion
+    summary: Get a specific version detail
+    description: |
+      Returns the full version detail including content from the typed content table.
+      commit 是全局唯一主键，无需额外的 nodeId。
+    tags: [nodes]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: commit
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Version commit hash
+    responses:
+      '200':
+        description: Version detail
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/node-version.yaml#/NodeVersionDetail'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Version not found
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/versions/{commit}/children:
+  get:
+    operationId: getNodeVersionChildren
+    summary: Get child versions
+    description: |
+      Returns versions whose parent is the given commit.
+      commit 是全局唯一主键，无需额外的 nodeId。
+    tags: [nodes]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: commit
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Parent commit hash
+    responses:
+      '200':
+        description: Child versions
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [versions]
+              properties:
+                versions:
+                  type: array
+                  items:
+                    $ref: '../schemas/node-version.yaml#/NodeVersionSummary'
+      '401':
+        description: Unauthorized
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+
+      '400':
+        description: Invalid request
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/versions/{commit}/archive:
+  get:
+    operationId: getNodeVersionArchive
+    summary: 下载节点版本的 VFS 归档文件
+    description: |
+      下载指定版本的 tar.gz 归档文件（VFS 节点的二进制内容）。
+      commit 是全局唯一主键，无需额外的 nodeId。
+    tags: [nodes]
+    parameters:
+      - name: commit
+        in: path
+        required: true
+        schema:
+          type: string
+        description: 节点版本 commit hash
+    responses:
+      '200':
+        description: tar.gz 归档二进制数据
+        content:
+          application/gzip:
+            schema:
+              type: string
+              format: binary
+      '404':
+        description: 节点版本或归档文件不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

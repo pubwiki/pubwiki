@@ -1,13 +1,13 @@
-import { eq, sql, desc, count, and } from 'drizzle-orm';
+import { eq, sql, desc, count, and, inArray } from 'drizzle-orm';
 import type { Database } from '../client';
 import { articles, type Article, type NewArticle } from '../schema/articles';
-import { artifactNodes } from '../schema/nodes';
+import { artifactVersions } from '../schema/artifacts';
+import { nodeVersions } from '../schema/node-versions';
 import { user } from '../schema/auth';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArticleDetail,
   ArticleAuthor,
-  UpsertArticleRequest,
   ReaderContent,
   Pagination,
 } from '@pubwiki/api';
@@ -27,18 +27,24 @@ interface AuthorInfo {
 export interface UpsertArticleParams {
   articleId: string;
   authorId: string;
-  data: UpsertArticleRequest;
+  data: {
+    title: string;
+    artifactId: string;
+    artifactCommit: string;
+    content: ReaderContent;
+    visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+  };
 }
 
 // 列表查询参数
-export interface ListArticlesBySandboxParams {
-  sandboxNodeId: string;
+export interface ListArticlesByArtifactParams {
+  artifactId: string;
   page?: number;
   limit?: number;
 }
 
 // 列表响应类型
-export interface ListArticlesBySandboxResult {
+export interface ListArticlesByArtifactResult {
   articles: ArticleDetail[];
   pagination: Pagination;
 }
@@ -62,30 +68,10 @@ export class ArticleService {
     return result[0] ?? null;
   }
 
-  // 通过 sandboxNodeId 获取 artifactId，同时验证 node 类型为 SANDBOX
-  async getArtifactIdBySandboxNodeId(sandboxNodeId: string): Promise<{ artifactId: string } | { error: 'NOT_FOUND' | 'NOT_SANDBOX' }> {
-    const result = await this.db
-      .select({ artifactId: artifactNodes.artifactId, type: artifactNodes.type })
-      .from(artifactNodes)
-      .where(eq(artifactNodes.id, sandboxNodeId))
-      .limit(1);
-
-    if (!result[0]) {
-      return { error: 'NOT_FOUND' };
-    }
-
-    if (result[0].type !== 'SANDBOX') {
-      return { error: 'NOT_SANDBOX' };
-    }
-
-    return { artifactId: result[0].artifactId };
-  }
-
   // 转换为 ArticleDetail
   private toDetail(
     article: Article,
-    author: AuthorInfo,
-    artifactId: string
+    author: AuthorInfo
   ): ArticleDetail {
     return {
       id: article.id,
@@ -97,9 +83,8 @@ export class ArticleService {
         displayName: author.displayName ?? undefined,
         avatarUrl: author.avatarUrl ?? undefined,
       },
-      sandboxNodeId: article.sandboxNodeId,
-      artifactId,
-      saveId: article.saveId,
+      artifactId: article.artifactId,
+      artifactCommit: article.artifactCommit,
       visibility: article.visibility,
       likes: article.likes,
       collections: article.collections,
@@ -133,18 +118,9 @@ export class ArticleService {
         };
       }
 
-      // 获取 artifactId
-      const sandboxResult = await this.getArtifactIdBySandboxNodeId(article.sandboxNodeId);
-      if ('error' in sandboxResult) {
-        return {
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Artifact not found' },
-        };
-      }
-
       return {
         success: true,
-        data: this.toDetail(article, author, sandboxResult.artifactId),
+        data: this.toDetail(article, author),
       };
     } catch (error) {
       console.error('Failed to get article:', error);
@@ -160,21 +136,56 @@ export class ArticleService {
     const { articleId, authorId, data } = params;
 
     try {
-      // 验证 sandboxNodeId 是否存在且类型为 SANDBOX
-      const sandboxResult = await this.getArtifactIdBySandboxNodeId(data.sandboxNodeId);
-      if ('error' in sandboxResult) {
-        if (sandboxResult.error === 'NOT_FOUND') {
-          return {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Sandbox node not found' },
-          };
-        }
+      // 验证 (artifactId, artifactCommit) 对应的 artifact 版本存在
+      const [version] = await this.db
+        .select({ id: artifactVersions.id })
+        .from(artifactVersions)
+        .where(
+          and(
+            eq(artifactVersions.artifactId, data.artifactId),
+            eq(artifactVersions.commitHash, data.artifactCommit)
+          )
+        )
+        .limit(1);
+
+      if (!version) {
         return {
           success: false,
-          error: { code: 'BAD_REQUEST', message: 'Node is not a sandbox node' },
+          error: { code: 'NOT_FOUND', message: 'Artifact version not found' },
         };
       }
-      const artifactId = sandboxResult.artifactId;
+
+      // 验证 content 中所有 game_ref 引用的 saveCommit 存在
+      const gameRefs = data.content.filter(
+        (block): block is Extract<typeof block, { type: 'game_ref' }> =>
+          block.type === 'game_ref'
+      );
+
+      if (gameRefs.length > 0) {
+        const saveCommits = [...new Set(gameRefs.map(ref => ref.saveCommit))];
+        const existingSaves = await this.db
+          .select({ commit: nodeVersions.commit })
+          .from(nodeVersions)
+          .where(
+            and(
+              inArray(nodeVersions.commit, saveCommits),
+              eq(nodeVersions.type, 'SAVE')
+            )
+          );
+
+        const existingCommits = new Set(existingSaves.map(s => s.commit));
+        const missingCommits = saveCommits.filter(c => !existingCommits.has(c));
+
+        if (missingCommits.length > 0) {
+          return {
+            success: false,
+            error: {
+              code: 'BAD_REQUEST',
+              message: `Referenced save commits do not exist: ${missingCommits.join(', ')}`,
+            },
+          };
+        }
+      }
 
       // 检查文章是否存在
       const [existing] = await this.db
@@ -197,8 +208,8 @@ export class ArticleService {
           .update(articles)
           .set({
             title: data.title,
-            sandboxNodeId: data.sandboxNodeId,
-            saveId: data.saveId,
+            artifactId: data.artifactId,
+            artifactCommit: data.artifactCommit,
             content: data.content as ReaderContent,
             visibility: data.visibility ?? 'PUBLIC',
             updatedAt: sql`(datetime('now'))`,
@@ -210,8 +221,8 @@ export class ArticleService {
           id: articleId,
           authorId,
           title: data.title,
-          sandboxNodeId: data.sandboxNodeId,
-          saveId: data.saveId,
+          artifactId: data.artifactId,
+          artifactCommit: data.artifactCommit,
           content: data.content as ReaderContent,
           visibility: data.visibility ?? 'PUBLIC',
         });
@@ -228,11 +239,11 @@ export class ArticleService {
     }
   }
 
-  // 获取与 sandboxNodeId 关联的所有文章（分页）
-  async listArticlesBySandboxNodeId(
-    params: ListArticlesBySandboxParams
-  ): Promise<ServiceResult<ListArticlesBySandboxResult>> {
-    const { sandboxNodeId, page = 1, limit = 20 } = params;
+  // 获取与 artifactId 关联的所有文章（分页）
+  async listArticlesByArtifactId(
+    params: ListArticlesByArtifactParams
+  ): Promise<ServiceResult<ListArticlesByArtifactResult>> {
+    const { artifactId, page = 1, limit = 20 } = params;
 
     // 验证分页参数
     const validPage = Math.max(1, page);
@@ -240,29 +251,13 @@ export class ArticleService {
     const offset = (validPage - 1) * validLimit;
 
     try {
-      // 首先验证 sandboxNodeId 存在且类型为 SANDBOX
-      const sandboxResult = await this.getArtifactIdBySandboxNodeId(sandboxNodeId);
-      if ('error' in sandboxResult) {
-        if (sandboxResult.error === 'NOT_FOUND') {
-          return {
-            success: false,
-            error: { code: 'NOT_FOUND', message: 'Sandbox node not found' },
-          };
-        }
-        return {
-          success: false,
-          error: { code: 'BAD_REQUEST', message: 'Node is not a sandbox node' },
-        };
-      }
-      const artifactId = sandboxResult.artifactId;
-
       // 获取总数
       const [countResult] = await this.db
         .select({ count: count() })
         .from(articles)
         .where(
           and(
-            eq(articles.sandboxNodeId, sandboxNodeId),
+            eq(articles.artifactId, artifactId),
             eq(articles.visibility, 'PUBLIC')
           )
         );
@@ -276,7 +271,7 @@ export class ArticleService {
         .from(articles)
         .where(
           and(
-            eq(articles.sandboxNodeId, sandboxNodeId),
+            eq(articles.artifactId, artifactId),
             eq(articles.visibility, 'PUBLIC')
           )
         )
@@ -289,7 +284,7 @@ export class ArticleService {
       for (const article of articleList) {
         const author = await this.getAuthor(article.authorId);
         if (author) {
-          articleDetails.push(this.toDetail(article, author, artifactId));
+          articleDetails.push(this.toDetail(article, author));
         }
       }
 
@@ -306,7 +301,7 @@ export class ArticleService {
         },
       };
     } catch (error) {
-      console.error('Failed to list articles by sandbox node:', error);
+      console.error('Failed to list articles by artifact:', error);
       return {
         success: false,
         error: { code: 'INTERNAL_ERROR', message: 'Failed to list articles' },

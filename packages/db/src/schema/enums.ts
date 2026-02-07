@@ -1,17 +1,9 @@
 // D1 (SQLite) 不支持原生枚举类型，使用 text 字段配合 TypeScript 类型
 // 这些类型用于类型检查，实际存储为字符串
 
-// Artifact 类型
-export const ARTIFACT_TYPES = ['RECIPE', 'GAME', 'ASSET_PACK', 'PROMPT'] as const;
-export type ArtifactType = (typeof ARTIFACT_TYPES)[number];
-
 // 可见性类型
 export const VISIBILITY_TYPES = ['PUBLIC', 'PRIVATE', 'UNLISTED'] as const;
 export type VisibilityType = (typeof VISIBILITY_TYPES)[number];
-
-// Lineage 类型
-export const LINEAGE_TYPES = ['DEPENDS_ON', 'FORKED_FROM', 'INSPIRED_BY', 'GENERATED_BY'] as const;
-export type LineageType = (typeof LINEAGE_TYPES)[number];
 
 // 讨论分类
 export const DISCUSSION_CATEGORIES = ['QUESTION', 'FEEDBACK', 'BUG_REPORT', 'FEATURE_REQUEST', 'GENERAL'] as const;
@@ -33,6 +25,10 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const COLLABORATOR_ROLES = ['OWNER', 'EDITOR', 'VIEWER'] as const;
 export type CollaboratorRole = (typeof COLLABORATOR_ROLES)[number];
 
-// Artifact Node 类型
+// Artifact Node 类型（仅用于 artifact 创建时的类型校验）
 export const ARTIFACT_NODE_TYPES = ['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'STATE', 'LOADER', 'SANDBOX'] as const;
 export type ArtifactNodeType = (typeof ARTIFACT_NODE_TYPES)[number];
+
+// Node 类型（node_versions.type 字段的类型约束，包含 SAVE）
+export const NODE_TYPES = [...ARTIFACT_NODE_TYPES, 'SAVE'] as const;
+export type NodeType = (typeof NODE_TYPES)[number];

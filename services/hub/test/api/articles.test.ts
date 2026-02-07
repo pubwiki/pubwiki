@@ -4,13 +4,16 @@ import type {
   ApiError,
   UpsertArticleRequest,
 } from '@pubwiki/api';
+import { computeNodeCommit } from '@pubwiki/api';
 import {
   getTestDb,
   clearDatabase,
   sendRequest,
   registerUser,
   artifacts,
-  artifactNodes,
+  artifactVersions,
+  artifactVersionNodes,
+  nodeVersions,
   eq,
   type TestDb,
 } from './helpers';
@@ -28,32 +31,83 @@ describe('Articles API', () => {
   async function createTestArtifact(ownerId: string, name: string = 'Test Artifact'): Promise<string> {
     const [artifact] = await db.insert(artifacts).values({
       name,
-      slug: name.toLowerCase().replace(/\s+/g, '-'),
       authorId: ownerId,
-      type: 'GAME',
       visibility: 'PUBLIC',
     }).returning();
     return artifact.id;
   }
 
-  // Helper: 创建测试 sandbox node
+  // Helper: 创建测试 sandbox node（使用新 node_versions 架构，并创建 artifact_version_nodes 关联）
   async function createTestSandboxNode(artifactId: string, name: string = 'Test Node'): Promise<string> {
-    const [node] = await db.insert(artifactNodes).values({
-      artifactId,
+    const nodeId = crypto.randomUUID();
+    const contentHash = crypto.randomUUID().substring(0, 16);
+    const commit = await computeNodeCommit(nodeId, null, contentHash, 'SANDBOX');
+    const [artifact] = await db.select().from(artifacts).where(eq(artifacts.id, artifactId)).limit(1);
+    
+    // 创建 node version
+    await db.insert(nodeVersions).values({
+      nodeId,
+      commit,
+      authorId: artifact.authorId,
       type: 'SANDBOX',
       name,
+      contentHash,
+      visibility: 'PUBLIC',
+      sourceArtifactId: artifactId,
+    });
+
+    // 创建 artifact version
+    const [version] = await db.insert(artifactVersions).values({
+      artifactId,
+      version: '1.0.0',
+      commitHash: crypto.randomUUID().substring(0, 8),
     }).returning();
-    return node.id;
+
+    // 关联 node 到 artifact version
+    await db.insert(artifactVersionNodes).values({
+      commitHash: version.commitHash,
+      nodeId,
+      nodeCommit: commit,
+    });
+
+    // 设置 artifact 的 currentVersionId
+    await db.update(artifacts).set({ currentVersionId: version.id }).where(eq(artifacts.id, artifactId));
+
+    return nodeId;
   }
 
   // Helper: 创建测试非 sandbox node
   async function createTestNonSandboxNode(artifactId: string, name: string = 'Test Non-Sandbox Node'): Promise<string> {
-    const [node] = await db.insert(artifactNodes).values({
-      artifactId,
+    const nodeId = crypto.randomUUID();
+    const contentHash = crypto.randomUUID().substring(0, 16);
+    const commit = await computeNodeCommit(nodeId, null, contentHash, 'GENERATED');
+    const [artifact] = await db.select().from(artifacts).where(eq(artifacts.id, artifactId)).limit(1);
+
+    await db.insert(nodeVersions).values({
+      nodeId,
+      commit,
+      authorId: artifact.authorId,
       type: 'GENERATED',
       name,
+      contentHash,
+      visibility: 'PUBLIC',
+      sourceArtifactId: artifactId,
+    });
+
+    // 创建 artifact version 并关联
+    const [version] = await db.insert(artifactVersions).values({
+      artifactId,
+      version: '1.0.0',
+      commitHash: crypto.randomUUID().substring(0, 8),
     }).returning();
-    return node.id;
+
+    await db.insert(artifactVersionNodes).values({
+      commitHash: version.commitHash,
+      nodeId,
+      nodeCommit: commit,
+    });
+
+    return nodeId;
   }
 
   // Helper: 创建有效的 article content
@@ -67,14 +121,9 @@ describe('Articles API', () => {
       {
         type: 'game_ref',
         textId: 'text-1',
-        checkpointId: 'checkpoint-1',
+        saveCommit: crypto.randomUUID().substring(0, 8),
       },
     ];
-  }
-
-  // Helper: 创建测试用 saveId
-  function createTestSaveId(): string {
-    return crypto.randomUUID();
   }
 
   describe('GET /api/articles/:articleId', () => {
@@ -103,12 +152,12 @@ describe('Articles API', () => {
 
       // 直接创建文章
       const articleId = crypto.randomUUID();
-      const saveId = createTestSaveId();
+      const artifactCommit = crypto.randomUUID().substring(0, 8);
       await db.insert(articles).values({
         id: articleId,
         authorId: userId,
-        sandboxNodeId,
-        saveId,
+        artifactId,
+        artifactCommit,
         title: 'Test Article',
         content: createTestContent(),
         visibility: 'PUBLIC',
@@ -121,7 +170,6 @@ describe('Articles API', () => {
       const data = await response.json<ArticleDetail>();
       expect(data.id).toBe(articleId);
       expect(data.title).toBe('Test Article');
-      expect(data.sandboxNodeId).toBe(sandboxNodeId);
       expect(data.artifactId).toBe(artifactId);
       expect(data.visibility).toBe('PUBLIC');
       expect(data.author.id).toBe(userId);
@@ -137,7 +185,8 @@ describe('Articles API', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: 'Test',
-          sandboxNodeId: 'test',
+          artifactId: 'test',
+          artifactCommit: 'test',
           content: [],
         }),
       });
@@ -157,7 +206,8 @@ describe('Articles API', () => {
         },
         body: JSON.stringify({
           title: 'Test',
-          sandboxNodeId: 'test',
+          artifactId: 'test',
+          artifactCommit: 'test',
           content: [],
         }),
       });
@@ -180,14 +230,15 @@ describe('Articles API', () => {
           Cookie: sessionCookie,
         },
         body: JSON.stringify({
-          sandboxNodeId: 'test',
+          artifactId: 'test',
+          artifactCommit: 'test',
           content: [],
         }),
       });
       const response1 = await sendRequest(request1);
       expect(response1.status).toBe(400);
 
-      // Missing sandboxNodeId
+      // Missing artifactId
       const request2 = new Request(`http://localhost/api/articles/${articleId}`, {
         method: 'PUT',
         headers: {
@@ -211,7 +262,8 @@ describe('Articles API', () => {
         },
         body: JSON.stringify({
           title: 'Test',
-          sandboxNodeId: 'test',
+          artifactId: 'test',
+          artifactCommit: 'test',
         }),
       });
       const response3 = await sendRequest(request3);
@@ -223,6 +275,7 @@ describe('Articles API', () => {
       const artifactId = await createTestArtifact(userId);
       const sandboxNodeId = await createTestSandboxNode(artifactId);
       const articleId = crypto.randomUUID();
+      const artifactCommit = crypto.randomUUID().substring(0, 8);
 
       // Empty title
       const request1 = new Request(`http://localhost/api/articles/${articleId}`, {
@@ -233,7 +286,8 @@ describe('Articles API', () => {
         },
         body: JSON.stringify({
           title: '',
-          sandboxNodeId,
+          artifactId,
+          artifactCommit,
           content: [],
         }),
       });
@@ -249,7 +303,8 @@ describe('Articles API', () => {
         },
         body: JSON.stringify({
           title: 'a'.repeat(201),
-          sandboxNodeId,
+          artifactId,
+          artifactCommit,
           content: [],
         }),
       });
@@ -262,6 +317,7 @@ describe('Articles API', () => {
       const artifactId = await createTestArtifact(userId);
       const sandboxNodeId = await createTestSandboxNode(artifactId);
       const articleId = crypto.randomUUID();
+      const artifactCommit = crypto.randomUUID().substring(0, 8);
 
       const request = new Request(`http://localhost/api/articles/${articleId}`, {
         method: 'PUT',
@@ -271,8 +327,8 @@ describe('Articles API', () => {
         },
         body: JSON.stringify({
           title: 'Test Article',
-          sandboxNodeId,
-          saveId: createTestSaveId(),
+          artifactId,
+          artifactCommit,
           content: createTestContent(),
           visibility: 'INVALID',
         }),
@@ -285,44 +341,31 @@ describe('Articles API', () => {
     });
   });
 
-  describe('GET /api/articles/by-sandbox/:sandboxNodeId', () => {
-    it('should return 400 for invalid sandbox node ID format', async () => {
-      const request = new Request('http://localhost/api/articles/by-sandbox/invalid-id');
+  describe('GET /api/articles/by-artifact/:artifactId', () => {
+    it('should return 400 for invalid artifact ID format', async () => {
+      const request = new Request('http://localhost/api/articles/by-artifact/invalid-id');
       const response = await sendRequest(request);
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Invalid sandbox node ID format');
+      expect(data.error).toBe('Invalid artifact ID format');
     });
 
-    it('should return 404 for non-existent sandbox node', async () => {
-      const request = new Request('http://localhost/api/articles/by-sandbox/00000000-0000-0000-0000-000000000000');
+    it('should return empty list for non-existent artifact', async () => {
+      const request = new Request('http://localhost/api/articles/by-artifact/00000000-0000-0000-0000-000000000000');
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(404);
-      const data = await response.json<ApiError>();
-      expect(data.error).toBe('Sandbox node not found');
+      expect(response.status).toBe(200);
+      const data = await response.json<{ articles: ArticleDetail[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>();
+      expect(data.articles).toEqual([]);
+      expect(data.pagination.total).toBe(0);
     });
 
-    it('should return 400 for non-sandbox node type', async () => {
+    it('should return empty list for artifact with no articles', async () => {
       const { userId } = await registerUser('owner');
       const artifactId = await createTestArtifact(userId);
-      const nonSandboxNodeId = await createTestNonSandboxNode(artifactId);
 
-      const request = new Request(`http://localhost/api/articles/by-sandbox/${nonSandboxNodeId}`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(400);
-      const data = await response.json<ApiError>();
-      expect(data.error).toBe('Node is not a sandbox node');
-    });
-
-    it('should return empty list for sandbox with no articles', async () => {
-      const { userId } = await registerUser('owner');
-      const artifactId = await createTestArtifact(userId);
-      const sandboxNodeId = await createTestSandboxNode(artifactId);
-
-      const request = new Request(`http://localhost/api/articles/by-sandbox/${sandboxNodeId}`);
+      const request = new Request(`http://localhost/api/articles/by-artifact/${artifactId}`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
@@ -332,18 +375,19 @@ describe('Articles API', () => {
       expect(data.pagination.page).toBe(1);
     });
 
-    it('should return articles for a sandbox node', async () => {
+    it('should return articles for an artifact', async () => {
       const { userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
-      const sandboxNodeId = await createTestSandboxNode(artifactId);
+      const artifactCommit1 = crypto.randomUUID().substring(0, 8);
+      const artifactCommit2 = crypto.randomUUID().substring(0, 8);
 
-      // Create articles directly in database (bypassing GAMESAVE validation)
+      // Create articles directly in database
       const articleId1 = crypto.randomUUID();
       await db.insert(articles).values({
         id: articleId1,
         authorId: userId,
-        sandboxNodeId,
-        saveId: createTestSaveId(),
+        artifactId,
+        artifactCommit: artifactCommit1,
         title: 'Article 1',
         content: createTestContent(),
         visibility: 'PUBLIC',
@@ -353,14 +397,14 @@ describe('Articles API', () => {
       await db.insert(articles).values({
         id: articleId2,
         authorId: userId,
-        sandboxNodeId,
-        saveId: createTestSaveId(),
+        artifactId,
+        artifactCommit: artifactCommit2,
         title: 'Article 2',
         content: createTestContent(),
         visibility: 'PUBLIC',
       });
 
-      const request = new Request(`http://localhost/api/articles/by-sandbox/${sandboxNodeId}`);
+      const request = new Request(`http://localhost/api/articles/by-artifact/${artifactId}`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
@@ -373,7 +417,6 @@ describe('Articles API', () => {
     it('should support pagination', async () => {
       const { userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
-      const sandboxNodeId = await createTestSandboxNode(artifactId);
 
       // Create 3 articles directly in database
       for (let i = 0; i < 3; i++) {
@@ -381,8 +424,8 @@ describe('Articles API', () => {
         await db.insert(articles).values({
           id: articleId,
           authorId: userId,
-          sandboxNodeId,
-          saveId: createTestSaveId(),
+          artifactId,
+          artifactCommit: crypto.randomUUID().substring(0, 8),
           title: `Article ${i + 1}`,
           content: createTestContent(),
           visibility: 'PUBLIC',
@@ -390,7 +433,7 @@ describe('Articles API', () => {
       }
 
       // Get first page with limit 2
-      const request = new Request(`http://localhost/api/articles/by-sandbox/${sandboxNodeId}?page=1&limit=2`);
+      const request = new Request(`http://localhost/api/articles/by-artifact/${artifactId}?page=1&limit=2`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
@@ -402,7 +445,7 @@ describe('Articles API', () => {
       expect(data.pagination.totalPages).toBe(2);
 
       // Get second page
-      const request2 = new Request(`http://localhost/api/articles/by-sandbox/${sandboxNodeId}?page=2&limit=2`);
+      const request2 = new Request(`http://localhost/api/articles/by-artifact/${artifactId}?page=2&limit=2`);
       const response2 = await sendRequest(request2);
 
       expect(response2.status).toBe(200);
@@ -414,15 +457,14 @@ describe('Articles API', () => {
     it('should only return public articles', async () => {
       const { userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
-      const sandboxNodeId = await createTestSandboxNode(artifactId);
 
       // Create public article directly in database
       const publicArticleId = crypto.randomUUID();
       await db.insert(articles).values({
         id: publicArticleId,
         authorId: userId,
-        sandboxNodeId,
-        saveId: createTestSaveId(),
+        artifactId,
+        artifactCommit: crypto.randomUUID().substring(0, 8),
         title: 'Public Article',
         content: createTestContent(),
         visibility: 'PUBLIC',
@@ -433,14 +475,14 @@ describe('Articles API', () => {
       await db.insert(articles).values({
         id: privateArticleId,
         authorId: userId,
-        sandboxNodeId,
-        saveId: createTestSaveId(),
+        artifactId,
+        artifactCommit: crypto.randomUUID().substring(0, 8),
         title: 'Private Article',
         content: createTestContent(),
         visibility: 'PRIVATE',
       });
 
-      const request = new Request(`http://localhost/api/articles/by-sandbox/${sandboxNodeId}`);
+      const request = new Request(`http://localhost/api/articles/by-artifact/${artifactId}`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);

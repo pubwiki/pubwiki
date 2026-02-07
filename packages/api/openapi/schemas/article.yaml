@@ -22,7 +22,7 @@ GameRef:
   required:
     - type
     - textId
-    - checkpointId
+    - saveCommit
   properties:
     type:
       type: string
@@ -30,9 +30,9 @@ GameRef:
     textId:
       type: string
       description: 关联的文本块 ID
-    checkpointId:
+    saveCommit:
       type: string
-      description: 存档检查点 ID
+      description: Save 版本 commit hash（可唯一索引到对应的 save node version）
 
 ReaderContentBlock:
   oneOf:
@@ -70,9 +70,8 @@ ArticleDetail:
     - title
     - content
     - author
-    - sandboxNodeId
     - artifactId
-    - saveId
+    - artifactCommit
     - visibility
     - likes
     - collections
@@ -90,18 +89,13 @@ ArticleDetail:
         $ref: './article.yaml#/ReaderContentBlock'
     author:
       $ref: './article.yaml#/ArticleAuthor'
-    sandboxNodeId:
-      type: string
-      format: uuid
-      description: Sandbox 节点 ID
     artifactId:
       type: string
       format: uuid
-      description: Artifact ID（通过 sandboxNodeId 获取）
-    saveId:
+      description: Artifact ID
+    artifactCommit:
       type: string
-      format: uuid
-      description: 云存档 ID（文章关联的游戏存档）
+      description: Artifact 版本 commit hash
     visibility:
       $ref: './common.yaml#/VisibilityType'
     likes:
@@ -119,22 +113,21 @@ UpsertArticleRequest:
   type: object
   required:
     - title
-    - sandboxNodeId
-    - saveId
+    - artifactId
+    - artifactCommit
     - content
   properties:
     title:
       type: string
       minLength: 1
       maxLength: 200
-    sandboxNodeId:
+    artifactId:
       type: string
       format: uuid
-      description: Sandbox 节点 ID（用于游戏回放）
-    saveId:
+      description: Artifact ID
+    artifactCommit:
       type: string
-      format: uuid
-      description: 云存档 ID（文章关联的游戏存档）
+      description: Artifact 版本 commit hash
     content:
       type: array
       items:

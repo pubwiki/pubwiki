@@ -5,21 +5,22 @@ export type { paths, components, operations } from './generated/openapi';
 // 自定义类型（非自动生成）
 export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from './types/content';
 
+// 共享工具函数（客户端 & 服务端通用）
+export { computeNodeCommit, computeArtifactCommit, computeSaveId } from './utils';
+export type { ArtifactCommitNode, ArtifactCommitEdge } from './utils';
+
 // 便捷类型别名
 import type { components, operations } from './generated/openapi';
 
 // Schema 类型
 export type ApiError = components['schemas']['ApiError'];
 export type PublicUser = components['schemas']['PublicUser'];
-export type JwtPayload = components['schemas']['JwtPayload'];
 export type UpdateProfileRequest = components['schemas']['UpdateProfileRequest'];
-export type ArtifactType = components['schemas']['ArtifactType'];
 export type Tag = components['schemas']['Tag'];
 export type ArtifactListItem = components['schemas']['ArtifactListItem'];
 export type Pagination = components['schemas']['Pagination'];
 export type VisibilityType = components['schemas']['VisibilityType'];
 export type ArtifactVersion = components['schemas']['ArtifactVersion'];
-export type LineageType = components['schemas']['LineageType'];
 export type ArtifactLineageItem = components['schemas']['ArtifactLineageItem'];
 export type ProjectRole = components['schemas']['ProjectRole'];
 export type CreateProjectRole = components['schemas']['CreateProjectRole'];
@@ -35,12 +36,9 @@ export type ProjectPageDetail = components['schemas']['ProjectPageDetail'];
 
 // Node 相关类型
 export type ArtifactNodeType = components['schemas']['ArtifactNodeType'];
-export type ArtifactNodeDescriptor = components['schemas']['ArtifactNodeDescriptor'];
 export type ArtifactEdgeDescriptor = components['schemas']['ArtifactEdgeDescriptor'];
-export type ArtifactDescriptor = components['schemas']['ArtifactDescriptor'];
 export type ArtifactNodeSummary = components['schemas']['ArtifactNodeSummary'];
 export type ArtifactEdge = components['schemas']['ArtifactEdge'];
-export type NodeVersionInfo = components['schemas']['NodeVersionInfo'];
 export type NodeFileInfo = components['schemas']['NodeFileInfo'];
 export type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 
@@ -67,24 +65,20 @@ export type ArticleAuthor = components['schemas']['ArticleAuthor'];
 export type ArticleDetail = components['schemas']['ArticleDetail'];
 export type UpsertArticleRequest = components['schemas']['UpsertArticleRequest'];
 
-// Cloud Saves 相关类型 (纯 Checkpoint 存储模式)
-export type CloudSave = components['schemas']['CloudSave'];
+// Save 相关类型
+export type SaveDetail = components['schemas']['SaveDetail'];
 export type CreateSaveRequest = components['schemas']['CreateSaveRequest'];
-export type Quad = components['schemas']['Quad'];
-export type CheckpointVisibility = components['schemas']['CheckpointVisibility'];
-export type CheckpointInfo = components['schemas']['CheckpointInfo'];
-export type CreateCheckpointRequest = components['schemas']['CreateCheckpointRequest'];
-export type CreateCheckpointResponse = components['schemas']['CreateCheckpointResponse'];
-export type ExportCheckpointResponse = components['schemas']['ExportCheckpointResponse'];
+
+// Node Version 相关类型 (Version Control First-Class Citizen)
+export type NodeVersionRefType = components['schemas']['NodeVersionRefType'];
+export type NodeVersionSummary = components['schemas']['NodeVersionSummary'];
+export type NodeVersionDetail = components['schemas']['NodeVersionDetail'];
+export type NodeVersionRef = components['schemas']['NodeVersionRef'];
 
 // 请求类型
-export type RegisterRequest = operations['register']['requestBody']['content']['application/json'];
-export type LoginRequest = operations['login']['requestBody']['content']['application/json'];
 
 // 响应类型
 export type HealthCheckResponse = operations['healthCheck']['responses']['200']['content']['application/json'];
-export type RegisterResponse = operations['register']['responses']['201']['content']['application/json'];
-export type LoginResponse = operations['login']['responses']['200']['content']['application/json'];
 export type GetMeResponse = operations['getMe']['responses']['200']['content']['application/json'];
 export type UpdateProfileResponse = operations['updateProfile']['responses']['200']['content']['application/json'];
 export type ListArtifactsResponse = operations['listArtifacts']['responses']['200']['content']['application/json'];
@@ -94,13 +88,14 @@ export type GetProjectDetailResponse = operations['getProjectDetail']['responses
 export type GetProjectPageResponse = operations['getProjectPage']['responses']['200']['content']['application/json'];
 export type GetArtifactHomepageResponse = operations['getArtifactHomepage']['responses']['200']['content']['text/html'];
 export type CreateArtifactResponse = operations['createArtifact']['responses']['201']['content']['application/json'];
+export type PatchArtifactResponse = operations['patchArtifact']['responses']['200']['content']['application/json'];
+export type UpdateCommitTagResponse = operations['updateCommitTags']['responses']['200']['content']['application/json'];
 export type GetUserArtifactsResponse = operations['getUserArtifacts']['responses']['200']['content']['application/json'];
 export type GetUserProjectsResponse = operations['getUserProjects']['responses']['200']['content']['application/json'];
 export type CreateProjectResponse = operations['createProject']['responses']['201']['content']['application/json'];
 
 // Node 响应类型
 export type GetArtifactGraphResponse = operations['getArtifactGraph']['responses']['200']['content']['application/json'];
-export type GetNodeDetailResponse = operations['getNodeDetail']['responses']['200']['content']['application/json'];
 
 // Discussion 响应类型
 export type ListDiscussionsResponse = operations['listDiscussions']['responses']['200']['content']['application/json'];
@@ -120,10 +115,24 @@ export type DeleteProjectPostResponse = operations['deleteProjectPost']['respons
 // Article 响应类型
 export type GetArticleResponse = operations['getArticle']['responses']['200']['content']['application/json'];
 export type UpsertArticleResponse = operations['upsertArticle']['responses']['200']['content']['application/json'];
-export type ListArticlesBySandboxResponse = operations['listArticlesBySandbox']['responses']['200']['content']['application/json'];
+export type ListArticlesByArtifactResponse = operations['listArticlesByArtifact']['responses']['200']['content']['application/json'];
+
+// Save 响应类型
+export type CreateSaveResponse = operations['createSave']['responses']['201']['content']['application/json'];
+export type ListSavesResponse = operations['listSaves']['responses']['200']['content']['application/json'];
+export type GetSaveResponse = operations['getSave']['responses']['200']['content']['application/json'];
+
+// Node Version 响应类型 (Version Control First-Class Citizen)
+export type GetNodeVersionsResponse = operations['getNodeVersions']['responses']['200']['content']['application/json'];
+export type GetNodeVersionResponse = operations['getNodeVersion']['responses']['200']['content']['application/json'];
+export type GetNodeVersionChildrenResponse = operations['getNodeVersionChildren']['responses']['200']['content']['application/json'];
 
 // Schema 类型（用于请求体）
 export type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
+export type CreateArtifactNode = components['schemas']['CreateArtifactNode'];
+export type PatchArtifactRequest = components['schemas']['PatchArtifactRequest'];
+export type UpdateCommitTagsRequest = components['schemas']['UpdateCommitTagsRequest'];
+export type MarkVersionWeakRequest = components['schemas']['MarkVersionWeakRequest'];
 
 // 查询参数类型
 export type ListArtifactsQuery = operations['listArtifacts']['parameters']['query'];
@@ -133,4 +142,5 @@ export type GetUserProjectsQuery = operations['getUserProjects']['parameters']['
 export type ListDiscussionsQuery = operations['listDiscussions']['parameters']['query'];
 export type ListDiscussionRepliesQuery = operations['listDiscussionReplies']['parameters']['query'];
 export type ListProjectPostsQuery = operations['listProjectPosts']['parameters']['query'];
-export type ListArticlesBySandboxQuery = operations['listArticlesBySandbox']['parameters']['query'];
+export type ListArticlesByArtifactQuery = operations['listArticlesByArtifact']['parameters']['query'];
+export type ListSavesQuery = operations['listSaves']['parameters']['query'];

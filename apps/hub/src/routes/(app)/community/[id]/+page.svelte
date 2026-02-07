@@ -741,11 +741,6 @@
 														<span class="text-xs text-gray-400">
 															{formatDateTime(reply.createdAt)}
 														</span>
-													{#if reply.isAccepted}
-														<span class="px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-															{m.project_accepted()}
-														</span>
-													{/if}
 													</div>
 													<div class="text-sm text-gray-700 prose-content">
 														{@html reply.content}

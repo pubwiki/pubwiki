@@ -16,7 +16,6 @@ type SessionUser = {
   bio: string | null;
   website: string | null;
   location: string | null;
-  isAdmin: boolean;
   isVerified: boolean;
 };
 
@@ -72,17 +71,3 @@ export const optionalAuthMiddleware = createMiddleware<{ Bindings: Env }>(async 
   await next();
 });
 
-// 管理员中间件 - 必须是管理员
-export const adminMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next) => {
-  const user = c.get('user');
-  
-  if (!user) {
-    return c.json<ApiError>({ error: 'Authorization required' }, 401);
-  }
-  
-  if (!user.isAdmin) {
-    return c.json<ApiError>({ error: 'Admin access required' }, 403);
-  }
-  
-  await next();
-});

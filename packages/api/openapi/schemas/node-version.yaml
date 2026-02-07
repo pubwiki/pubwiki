@@ -1,0 +1,81 @@
+# Node Version API schemas
+
+NodeVersionRefType:
+  type: string
+  enum: [input, prompt, indirect_prompt, input_vfs, output_vfs]
+  description: |
+    Type of reference between node versions (lineage tracking).
+    - input: GENERATED's trigger input (INPUT node version)
+    - prompt: GENERATED's direct prompt reference (PROMPT node version)
+    - indirect_prompt: GENERATED's indirect prompt reference
+    - input_vfs: Pre-generation VFS snapshot reference
+    - output_vfs: Post-generation associated VFS node version
+
+NodeVersionSummary:
+  type: object
+  required: [nodeId, commit, authorId, authoredAt, type, contentHash, visibility]
+  properties:
+    nodeId:
+      type: string
+      description: Node UUID (globally unique, cross-artifact persistent)
+    commit:
+      type: string
+      description: Version hash (SHA-256 first 40 chars)
+    parent:
+      type: string
+      nullable: true
+      description: Parent commit hash (null for root version)
+    authorId:
+      type: string
+      description: Author user ID
+    authoredAt:
+      type: string
+      format: date-time
+      description: Version creation timestamp
+    type:
+      type: string
+      enum: [PROMPT, INPUT, GENERATED, VFS, STATE, LOADER, SANDBOX, SAVE]
+      description: Node type (including SAVE for save nodes)
+    name:
+      type: string
+      nullable: true
+    contentHash:
+      type: string
+      description: Content fingerprint (determines which content table to query)
+    message:
+      type: string
+      nullable: true
+      description: Commit message
+    tag:
+      type: string
+      nullable: true
+      description: Semver tag (e.g. v1.0.0)
+    visibility:
+      $ref: '../schemas/common.yaml#/VisibilityType'
+
+NodeVersionDetail:
+  allOf:
+    - $ref: '#/NodeVersionSummary'
+    - type: object
+      properties:
+        content:
+          description: Full content from the typed content table
+          $ref: '../schemas/node-content.yaml#/ArtifactNodeContent'
+        refs:
+          type: array
+          description: Lineage references (for GENERATED nodes)
+          items:
+            $ref: '#/NodeVersionRef'
+
+NodeVersionRef:
+  type: object
+  required: [targetNodeId, targetCommit, refType]
+  properties:
+    targetNodeId:
+      type: string
+    targetCommit:
+      type: string
+    refType:
+      $ref: '#/NodeVersionRefType'
+
+

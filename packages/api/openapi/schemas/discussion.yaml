@@ -83,7 +83,6 @@ DiscussionReplyItem:
     - discussionId
     - author
     - content
-    - isAccepted
     - createdAt
     - updatedAt
   properties:
@@ -101,9 +100,6 @@ DiscussionReplyItem:
       description: 父回复 ID，用于嵌套回复
     content:
       type: string
-    isAccepted:
-      type: boolean
-      description: 是否被采纳为答案
     createdAt:
       type: string
       format: date-time

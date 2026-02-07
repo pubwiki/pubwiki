@@ -1,8 +1,6 @@
 import { relations } from 'drizzle-orm';
 import { user, session, account, userFollows } from './schema/auth';
 import { artifacts, artifactVersions, tags, artifactTags } from './schema/artifacts';
-import { artifactNodes, artifactNodeVersions, artifactNodeRefs } from './schema/nodes';
-import { artifactLineage, artifactGenerationParams } from './schema/lineage';
 import { artifactStats, artifactStars, artifactViews } from './schema/stats';
 import { discussions, discussionReplies } from './schema/discussions';
 import { artifactRuns } from './schema/runs';
@@ -11,6 +9,8 @@ import { artifactCollaborators, collections, collectionItems } from './schema/co
 import { projects, projectRoles, projectMaintainers, projectArtifacts, projectPages } from './schema/projects';
 import { projectPosts } from './schema/posts';
 import { articles } from './schema/articles';
+import { nodeVersions, nodeVersionRefs } from './schema/node-versions';
+import { artifactVersionNodes, artifactVersionEdges } from './schema/artifact-version-graph';
 
 // User relations (Better-Auth)
 export const userRelations = relations(user, ({ many }) => ({
@@ -30,6 +30,7 @@ export const userRelations = relations(user, ({ many }) => ({
   ownedProjects: many(projects),
   maintainedProjects: many(projectMaintainers),
   articles: many(articles),
+  nodeVersions: many(nodeVersions),
 }));
 
 // Session relations (Better-Auth)
@@ -73,7 +74,6 @@ export const artifactsRelations = relations(artifacts, ({ one, many }) => ({
     references: [artifactVersions.id],
   }),
   versions: many(artifactVersions),
-  nodes: many(artifactNodes),
   tags: many(artifactTags),
   stats: one(artifactStats),
   stars: many(artifactStars),
@@ -81,10 +81,7 @@ export const artifactsRelations = relations(artifacts, ({ one, many }) => ({
   runs: many(artifactRuns),
   collaborators: many(artifactCollaborators),
   collectionItems: many(collectionItems),
-  childLineage: many(artifactLineage, { relationName: 'child' }),
-  parentLineage: many(artifactLineage, { relationName: 'parent' }),
   projectArtifacts: many(projectArtifacts),
-  nodeRefs: many(artifactNodeRefs, { relationName: 'externalArtifact' }),
 }));
 
 // Artifact versions relations
@@ -93,40 +90,10 @@ export const artifactVersionsRelations = relations(artifactVersions, ({ one, man
     fields: [artifactVersions.artifactId],
     references: [artifacts.id],
   }),
-  generationParams: one(artifactGenerationParams),
   runs: many(artifactRuns),
-  nodeRefs: many(artifactNodeRefs),
-}));
-
-// Artifact nodes relations
-export const artifactNodesRelations = relations(artifactNodes, ({ one, many }) => ({
-  artifact: one(artifacts, {
-    fields: [artifactNodes.artifactId],
-    references: [artifacts.id],
-  }),
-  versions: many(artifactNodeVersions),
-  articles: many(articles),
-}));
-
-// Artifact node versions relations
-export const artifactNodeVersionsRelations = relations(artifactNodeVersions, ({ one }) => ({
-  node: one(artifactNodes, {
-    fields: [artifactNodeVersions.nodeId],
-    references: [artifactNodes.id],
-  }),
-}));
-
-// Artifact node refs relations
-export const artifactNodeRefsRelations = relations(artifactNodeRefs, ({ one }) => ({
-  artifactVersion: one(artifactVersions, {
-    fields: [artifactNodeRefs.artifactVersionId],
-    references: [artifactVersions.id],
-  }),
-  externalArtifact: one(artifacts, {
-    fields: [artifactNodeRefs.externalArtifactId],
-    references: [artifacts.id],
-    relationName: 'externalArtifact',
-  }),
+  // Version graph composition (new architecture)
+  versionNodes: many(artifactVersionNodes),
+  versionEdges: many(artifactVersionEdges),
 }));
 
 // Tags relations
@@ -143,28 +110,6 @@ export const artifactTagsRelations = relations(artifactTags, ({ one }) => ({
   tag: one(tags, {
     fields: [artifactTags.tagId],
     references: [tags.id],
-  }),
-}));
-
-// Artifact lineage relations
-export const artifactLineageRelations = relations(artifactLineage, ({ one }) => ({
-  child: one(artifacts, {
-    fields: [artifactLineage.childArtifactId],
-    references: [artifacts.id],
-    relationName: 'child',
-  }),
-  parent: one(artifacts, {
-    fields: [artifactLineage.parentArtifactId],
-    references: [artifacts.id],
-    relationName: 'parent',
-  }),
-}));
-
-// Artifact generation params relations
-export const artifactGenerationParamsRelations = relations(artifactGenerationParams, ({ one }) => ({
-  version: one(artifactVersions, {
-    fields: [artifactGenerationParams.versionId],
-    references: [artifactVersions.id],
   }),
 }));
 
@@ -368,8 +313,56 @@ export const articlesRelations = relations(articles, ({ one }) => ({
     fields: [articles.authorId],
     references: [user.id],
   }),
-  sandboxNode: one(artifactNodes, {
-    fields: [articles.sandboxNodeId],
-    references: [artifactNodes.id],
+}));
+
+// ========================================================================
+// Version Control First-Class Citizen Relations
+// ========================================================================
+
+// Node versions relations
+export const nodeVersionsRelations = relations(nodeVersions, ({ one, many }) => ({
+  author: one(user, {
+    fields: [nodeVersions.authorId],
+    references: [user.id],
+  }),
+  // 版本发出的引用（作为 source）
+  outgoingRefs: many(nodeVersionRefs, { relationName: 'source' }),
+  // 版本被引用（作为 target）
+  incomingRefs: many(nodeVersionRefs, { relationName: 'target' }),
+  // 该版本出现在哪些 artifact version 中
+  artifactVersionNodes: many(artifactVersionNodes),
+}));
+
+// Node version refs relations
+export const nodeVersionRefsRelations = relations(nodeVersionRefs, ({ one }) => ({
+  source: one(nodeVersions, {
+    fields: [nodeVersionRefs.sourceCommit],
+    references: [nodeVersions.commit],
+    relationName: 'source',
+  }),
+  target: one(nodeVersions, {
+    fields: [nodeVersionRefs.targetCommit],
+    references: [nodeVersions.commit],
+    relationName: 'target',
+  }),
+}));
+
+// Artifact version nodes relations
+export const artifactVersionNodesRelations = relations(artifactVersionNodes, ({ one }) => ({
+  artifactVersion: one(artifactVersions, {
+    fields: [artifactVersionNodes.commitHash],
+    references: [artifactVersions.commitHash],
+  }),
+  nodeVersion: one(nodeVersions, {
+    fields: [artifactVersionNodes.nodeCommit],
+    references: [nodeVersions.commit],
+  }),
+}));
+
+// Artifact version edges relations
+export const artifactVersionEdgesRelations = relations(artifactVersionEdges, ({ one }) => ({
+  artifactVersion: one(artifactVersions, {
+    fields: [artifactVersionEdges.commitHash],
+    references: [artifactVersions.commitHash],
   }),
 }));

@@ -8,9 +8,10 @@ import { projectsRoute } from './routes/projects';
 import { usersRoute } from './routes/users';
 import { discussionsRoute } from './routes/discussions';
 import { articlesRoute } from './routes/articles';
+import { nodesRoute } from './routes/nodes';
 import { savesRoute } from './routes/saves';
-import { authMiddleware } from './middleware/auth';
-import { createDb, eq, user as userTable } from '@pubwiki/db';
+import { authMiddleware, optionalAuthMiddleware } from './middleware/auth';
+import { createDb, eq, NodeVersionService, user as userTable } from '@pubwiki/db';
 import type { HealthCheckResponse, GetMeResponse, UpdateProfileRequest, UpdateProfileResponse, ApiError } from '@pubwiki/api';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -55,8 +56,74 @@ app.route('/api/discussions', discussionsRoute);
 // Articles 路由（文章）
 app.route('/api/articles', articlesRoute);
 
-// Saves 路由（云端存档）
+// Nodes 路由（版本控制一等公民）
+app.route('/api/nodes', nodesRoute);
+
+// Saves 路由（存档）
 app.route('/api/saves', savesRoute);
+
+// GET /api/versions/:commit - 获取特定版本详情（commit 全局唯一）
+app.get('/api/versions/:commit', authMiddleware, async (c) => {
+  const commit = c.req.param('commit');
+  const db = createDb(c.env.DB);
+  const nodeVersionService = new NodeVersionService(db);
+
+  const result = await nodeVersionService.getVersion(commit);
+
+  if (!result.success) {
+    if (result.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: result.error.message }, 404);
+    }
+    return c.json<ApiError>({ error: result.error.message }, 500);
+  }
+
+  return c.json(result.data);
+});
+
+// GET /api/versions/:commit/children - 获取子版本（commit 全局唯一）
+app.get('/api/versions/:commit/children', authMiddleware, async (c) => {
+  const commit = c.req.param('commit');
+  const db = createDb(c.env.DB);
+  const nodeVersionService = new NodeVersionService(db);
+
+  const result = await nodeVersionService.getChildren(commit);
+
+  if (!result.success) {
+    return c.json<ApiError>({ error: result.error.message }, 500);
+  }
+
+  return c.json({ versions: result.data });
+});
+
+// GET /api/versions/:commit/archive - 下载 VFS 归档文件（commit 全局唯一）
+app.get('/api/versions/:commit/archive', optionalAuthMiddleware, async (c) => {
+  const commit = c.req.param('commit');
+
+  const db = createDb(c.env.DB);
+  const nodeVersionService = new NodeVersionService(db);
+  const versionResult = await nodeVersionService.getVersion(commit);
+
+  if (!versionResult.success) {
+    if (versionResult.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: 'Node version not found' }, 404);
+    }
+    return c.json<ApiError>({ error: versionResult.error.message }, 500);
+  }
+
+  const r2Key = `archives/${commit}.tar.gz`;
+  const object = await c.env.R2_BUCKET.get(r2Key);
+
+  if (!object) {
+    return c.json<ApiError>({ error: 'Archive not found in storage' }, 404);
+  }
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'application/gzip',
+      'Content-Length': String(object.size),
+    },
+  });
+});
 
 // 需要认证的路由 - 获取当前用户信息
 app.get('/api/me', authMiddleware, async (c) => {
@@ -79,7 +146,6 @@ app.get('/api/me', authMiddleware, async (c) => {
       bio: userData.bio,
       website: userData.website,
       location: userData.location,
-      isAdmin: userData.isAdmin,
       createdAt: userData.createdAt.toISOString(),
       updatedAt: userData.updatedAt.toISOString(),
     },
@@ -131,7 +197,6 @@ app.patch('/api/me', authMiddleware, async (c) => {
       bio: updated.bio,
       website: updated.website,
       location: updated.location,
-      isAdmin: updated.isAdmin,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     },

@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { Hono } from 'hono';
-import { authMiddleware, optionalAuthMiddleware, adminMiddleware } from '../../src/middleware/auth';
-import { createDb, user, session, account, verification, eq } from '@pubwiki/db';
-import { sendRequest, clearDatabase, getTestDb, registerAndGetSession } from '../api/helpers';
+import { authMiddleware, optionalAuthMiddleware } from '../../src/middleware/auth';
+import { createDb, user, session, account, verification } from '@pubwiki/db';
+import { clearDatabase, getTestDb, registerAndGetSession } from '../api/helpers';
 import type { ApiError } from '@pubwiki/api';
 
 // 受保护路由的响应类型
@@ -13,7 +13,6 @@ interface ProtectedResponse {
     id: string;
     username: string;
     email: string;
-    isAdmin: boolean;
   };
 }
 
@@ -24,10 +23,6 @@ interface OptionalAuthResponse {
     username: string;
     email: string;
   } | null;
-}
-
-interface AdminResponse {
-  message: string;
 }
 
 // 创建测试应用
@@ -46,17 +41,11 @@ function createTestApp() {
     return c.json({ message: 'success', user: userData || null });
   });
 
-  // 需要管理员的路由
-  app.get('/admin', authMiddleware, adminMiddleware, (c) => {
-    return c.json({ message: 'admin access granted' });
-  });
-
   return app;
 }
 
 describe('Auth Middleware', () => {
   let testSessionCookie: string;
-  let adminSessionCookie: string;
   let app: ReturnType<typeof createTestApp>;
   let db: ReturnType<typeof getTestDb>;
 
@@ -69,13 +58,6 @@ describe('Auth Middleware', () => {
     
     // 创建普通用户 via Better-Auth API
     testSessionCookie = await registerAndGetSession('testuser');
-
-    // 创建管理员用户 via Better-Auth API
-    adminSessionCookie = await registerAndGetSession('adminuser');
-    // 将管理员用户设置为 admin
-    await db.update(user)
-      .set({ isAdmin: true, isVerified: true })
-      .where(eq(user.username, 'adminuser'));
   });
 
   describe('authMiddleware', () => {
@@ -127,7 +109,6 @@ describe('Auth Middleware', () => {
         username: 'expireduser',
         email: 'expired@example.com',
         emailVerified: true,
-        isAdmin: false,
         isVerified: false,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -194,40 +175,4 @@ describe('Auth Middleware', () => {
     });
   });
 
-  describe('adminMiddleware', () => {
-    it('should allow access for admin user', async () => {
-      const request = new Request('http://localhost/admin', {
-        headers: { Cookie: adminSessionCookie },
-      });
-      const ctx = createExecutionContext();
-      const response = await app.fetch(request, env, ctx);
-      await waitOnExecutionContext(ctx);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<AdminResponse>();
-      expect(data.message).toBe('admin access granted');
-    });
-
-    it('should return 403 for non-admin user', async () => {
-      const request = new Request('http://localhost/admin', {
-        headers: { Cookie: testSessionCookie },
-      });
-      const ctx = createExecutionContext();
-      const response = await app.fetch(request, env, ctx);
-      await waitOnExecutionContext(ctx);
-
-      expect(response.status).toBe(403);
-      const data = await response.json<ApiError>();
-      expect(data.error).toBe('Admin access required');
-    });
-
-    it('should return 401 without cookie', async () => {
-      const request = new Request('http://localhost/admin');
-      const ctx = createExecutionContext();
-      const response = await app.fetch(request, env, ctx);
-      await waitOnExecutionContext(ctx);
-
-      expect(response.status).toBe(401);
-    });
-  });
 });

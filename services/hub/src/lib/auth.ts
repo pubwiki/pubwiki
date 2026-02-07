@@ -63,11 +63,6 @@ export const createAuth = (env: Env) => {
           required: false,
           input: true,
         },
-        isAdmin: {
-          type: 'boolean',
-          defaultValue: false,
-          input: false, // 不允许用户设置
-        },
         isVerified: {
           type: 'boolean',
           defaultValue: false,

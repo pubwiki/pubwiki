@@ -22,7 +22,6 @@ packages:
   - apps/docs
   - apps/coming-soon
   - services/hub
-  - services/gamesave
 
 catalog:
   '@cloudflare/vitest-pool-workers': ^0.12.4

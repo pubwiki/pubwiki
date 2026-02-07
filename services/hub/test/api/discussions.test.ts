@@ -32,9 +32,7 @@ describe('Discussions API', () => {
   async function createTestArtifact(authorId: string, name: string = 'Test Artifact'): Promise<string> {
     const [artifact] = await db.insert(artifacts).values({
       authorId,
-      type: 'RECIPE',
       name,
-      slug: name.toLowerCase().replace(/\s+/g, '-'),
       visibility: 'PUBLIC',
     }).returning();
     return artifact.id;
@@ -431,41 +429,4 @@ describe('Discussions API', () => {
     });
   });
 
-  describe('POST /api/discussions/replies/:replyId/accept', () => {
-    it('should accept reply by discussion author', async () => {
-      const { sessionCookie, userId: authorId } = await registerUser('discussionAuthor');
-
-      const artifactId = await createTestArtifact(authorId);
-      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, authorId);
-      
-      const replierId = await createTestUser(db, 'replier');
-      const replyId = await createTestReply(discussionId, replierId, 'Great answer');
-
-      const request = new Request(`http://localhost/api/discussions/replies/${replyId}/accept`, {
-        method: 'POST',
-        headers: { Cookie: sessionCookie },
-      });
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<{ message: string; reply: DiscussionReplyItem }>();
-      expect(data.reply.isAccepted).toBe(true);
-    });
-
-    it('should return 403 when non-author tries to accept', async () => {
-      const { sessionCookie } = await registerUser('randomUser');
-      const ownerId = await createTestUser(db, 'owner');
-      const artifactId = await createTestArtifact(ownerId);
-      const discussionId = await createTestDiscussion('ARTIFACT', artifactId, ownerId);
-      const replyId = await createTestReply(discussionId, ownerId);
-
-      const request = new Request(`http://localhost/api/discussions/replies/${replyId}/accept`, {
-        method: 'POST',
-        headers: { Cookie: sessionCookie },
-      });
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(403);
-    });
-  });
 });

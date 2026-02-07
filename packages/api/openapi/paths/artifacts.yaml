@@ -23,24 +23,6 @@
           minimum: 1
           maximum: 100
           default: 20
-      - name: type.include
-        in: query
-        description: 包含的类型列表
-        schema:
-          type: array
-          items:
-            $ref: '../schemas/artifact.yaml#/ArtifactType'
-        style: form
-        explode: true
-      - name: type.exclude
-        in: query
-        description: 排除的类型列表
-        schema:
-          type: array
-          items:
-            $ref: '../schemas/artifact.yaml#/ArtifactType'
-        style: form
-        explode: true
       - name: tag.include
         in: query
         description: 包含的标签 slug 列表（AND 逻辑）
@@ -98,18 +80,22 @@
               $ref: '../schemas/common.yaml#/ApiError'
 
   post:
-    summary: 创建或更新 Artifact
+    summary: 创建或更新 Artifact（包含完整的 Node Version 数据）
     description: |
-      创建新的 Artifact 或更新已存在的 Artifact，支持同时上传多个节点文件。
+      一步发布：提交完整的 node version 数据 + artifact 元数据，服务端内部同步 node versions 并创建 artifact version。
       
-      **更新模式：** 如果 metadata 中包含 artifactId 字段，则为更新操作：
-      - 验证 artifact 是否存在且 owner 是当前用户
-      - 覆写之前的数据
+      **创建/更新模式：** 通过 metadata.artifactId 判断：
+      - 该 ID 不存在于数据库中：创建新 artifact
+      - 该 ID 存在且 owner 是当前用户：追加新版本（append-only）
+      - 该 ID 存在但 owner 不是当前用户：返回 403 Forbidden
       
       使用 multipart/form-data 格式：
-      - metadata 字段包含 JSON 格式的 artifact 基本信息
-      - descriptor 字段包含 JSON 格式的 pubwiki.artifact.json 内容（节点和边定义）
-      - nodes[{node_id}] 字段包含各节点对应的文件
+      - metadata: JSON 格式的 artifact 基本信息
+      - nodes: JSON 数组，包含完整的 node version 数据（仅 ARTIFACT_NODE_TYPES，不含 SAVE）
+      - edges: JSON 数组，节点间连接关系
+      - vfs[{commit}]: VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
+      - save[{commit}]: Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
+      - homepage: 可选的主页 Markdown 文件
     operationId: createArtifact
     tags:
       - Artifacts
@@ -123,38 +109,38 @@
             type: object
             required:
               - metadata
-              - descriptor
+              - nodes
+              - edges
             properties:
               metadata:
+                $ref: '../schemas/artifact.yaml#/CreateArtifactMetadata'
+              nodes:
+                type: array
+                items:
+                  $ref: '../schemas/artifact.yaml#/CreateArtifactNode'
+              edges:
+                type: array
+                items:
+                  $ref: '../schemas/artifact.yaml#/ArtifactEdgeDescriptor'
+              vfs[{commit}]:
                 type: string
-                description: |
-                  JSON 格式的 artifact 元数据，包含以下字段：
-                  - artifactId: string (可选，如提供则为更新模式)
-                  - type: ArtifactType (必填)
-                  - name: string (必填)
-                  - slug: string (必填)
-                  - description: string (可选)
-                  - visibility: VisibilityType (可选，默认 PUBLIC)
-                  - thumbnailUrl: string (可选)
-                  - license: string (可选)
-                  - repositoryUrl: string (可选)
-                  - version: string (必填，semver 格式如 1.0.0)
-                  - changelog: string (可选)
-                  - isPrerelease: boolean (可选，默认 false)
-                  - tags: string[] (可选，tag slugs 数组)
+                format: binary
+                description: VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
+              save[{commit}]:
+                type: string
+                format: binary
+                description: Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
               homepage:
                 type: string
                 format: binary
-                description: |
-                  可选的主页 Markdown 文件，将被渲染为 HTML 后存储。
-              descriptor:
-                type: string
-                description: |
-                  JSON 格式的 pubwiki.artifact.json 内容，包含：
-                  - version: number (descriptor 格式版本)
-                  - exportedAt: string (ISO 时间戳)
-                  - nodes: ArtifactNodeDescriptor[] (节点列表)
-                  - edges: ArtifactEdgeDescriptor[] (节点间关系)
+                description: 可选的主页 Markdown 文件，将被渲染为 HTML 后存储。
+          encoding:
+            metadata:
+              contentType: application/json
+            nodes:
+              contentType: application/json
+            edges:
+              contentType: application/json
     responses:
       '201':
         description: 创建成功
@@ -205,13 +191,101 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
       '404':
-        description: 指定的 artifactId 不存在（更新模式）
+        description: 引用的 node version 不存在（nodeId + commit 未在 node_versions 中找到）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+  patch:
+    summary: 基于已有版本和增量补丁创建新 Artifact 版本
+    description: |
+      增量更新：客户端提交 baseCommit 和变更内容（新增/删除 nodes/edges），
+      服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
+      
+      适用于只修改了部分节点的场景，避免重新提交所有节点数据。
+      注意：新增的节点需要包含完整的 node version 数据。
+
+      如果没有 graph 变更且不传 commit，则为 metadata-only 更新：
+      直接修改 baseCommit 版本的元数据（version, changelog, commitTags, entrypoint 等），
+      不创建新版本。
+    operationId: patchArtifact
+    tags:
+      - Artifacts
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required:
+              - metadata
+            properties:
+              metadata:
+                $ref: '../schemas/artifact.yaml#/PatchArtifactRequest'
+              vfs[{commit}]:
+                type: string
+                format: binary
+                description: 新增 VFS 节点的 tar.gz 归档文件
+              save[{commit}]:
+                type: string
+                format: binary
+                description: Save 的二进制数据
+              homepage:
+                type: string
+                format: binary
+                description: 可选的主页 Markdown 文件
+          encoding:
+            metadata:
+              contentType: application/json
+    responses:
+      '200':
+        description: 补丁应用成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - artifact
+                - versionCreated
+              properties:
+                message:
+                  type: string
+                  example: Artifact patched successfully
+                artifact:
+                  $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+                versionCreated:
+                  type: boolean
+                  description: 是否创建了新版本（false 表示仅更新了 metadata）
+      '400':
+        description: 请求参数错误（如 baseCommit 不存在）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限更新该 artifact
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Artifact 或 baseCommit 不存在
         content:
           application/json:
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
       '409':
-        description: Slug 已存在
+        description: Commit hash 冲突（该版本已存在）
         content:
           application/json:
             schema:
@@ -292,6 +366,14 @@
         schema:
           type: integer
           minimum: 1
+      - name: commit
+        in: query
+        required: false
+        description: |
+          指定要查询谱系的版本 commit hash。
+          不指定则使用 artifact 的当前版本（currentVersionId）。
+        schema:
+          type: string
       - name: childDepth
         in: query
         required: false
@@ -362,7 +444,7 @@
         schema:
           type: string
           default: latest
-        description: artifact 版本哈希或 "latest"
+        description: artifact 版本哈希、commitTag 或 "latest"
     responses:
       '200':
         description: 成功
@@ -396,8 +478,17 @@
                       format: uuid
                     commitHash:
                       type: string
+                    commitTags:
+                      type: array
+                      items:
+                        type: string
+                      description: 该版本上的所有标签
                     version:
                       type: string
+                    entrypoint:
+                      $ref: '../schemas/artifact.yaml#/ArtifactEntrypoint'
+                      nullable: true
+                      description: 该版本的入口点（如有）
                     createdAt:
                       type: string
                       format: date-time
@@ -420,224 +511,148 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
-/artifacts/{artifactId}/nodes/{nodeId}:
-  get:
-    summary: 获取节点详情
+/artifacts/{artifactId}/commit-tag:
+  put:
+    summary: 设置 commit 上的标签列表
     description: |
-      获取单个节点的详细信息（不含文件内容）。
-      - PUBLIC artifact: 所有人可访问
-      - UNLISTED artifact: 仅注册用户可访问
-      - PRIVATE artifact: 仅 owner 可访问
-    operationId: getNodeDetail
+      设置指定 commit 上的 commitTags 列表（替换语义）。
+      如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
+      传空数组可清除该 commit 上的所有标签。
+    operationId: updateCommitTags
     tags:
-      - Nodes
+      - Artifacts
+    security:
+      - cookieAuth: []
     parameters:
       - name: artifactId
         in: path
         required: true
+        description: Artifact ID
         schema:
           type: string
           format: uuid
-      - name: nodeId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: version
-        in: query
-        schema:
-          type: string
-          default: latest
-        description: node 版本哈希或 "latest"
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/artifact.yaml#/UpdateCommitTagsRequest'
     responses:
       '200':
-        description: 成功
+        description: commitTags 更新成功
         content:
           application/json:
             schema:
               type: object
               required:
-                - id
-                - type
-                - external
+                - message
                 - version
               properties:
-                id:
+                message:
                   type: string
-                  format: uuid
-                type:
-                  $ref: '../schemas/artifact.yaml#/ArtifactNodeType'
-                name:
+                  example: Commit tag updated successfully
+                version:
+                  $ref: '../schemas/artifact.yaml#/ArtifactVersion'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Artifact 或 commit 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/versions/{commitHash}/weak:
+  put:
+    summary: 标记版本为 weak（不可逆）
+    description: |
+      将指定版本标记为 weak 版本（不可逆操作）。weak 版本不会对其关联的 node 产生引用计数。
+      标记为 weak 后，会尝试 GC 掉引用计数归零的 node 内容。
+      已经标记为 weak 的版本不能取消标记。
+    operationId: markVersionWeak
+    tags:
+      - Artifacts
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        description: Artifact ID
+        schema:
+          type: string
+          format: uuid
+      - name: commitHash
+        in: path
+        required: true
+        description: 版本的 commit hash
+        schema:
+          type: string
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/artifact.yaml#/MarkVersionWeakRequest'
+    responses:
+      '200':
+        description: 标记成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - message
+                - gcResult
+              properties:
+                message:
                   type: string
-                  nullable: true
-                external:
-                  type: boolean
-                externalArtifact:
+                  example: Version marked as weak
+                gcResult:
                   type: object
                   properties:
-                    id:
-                      type: string
-                      format: uuid
-                    name:
-                      type: string
-                    slug:
-                      type: string
-                    author:
-                      type: object
-                      required:
-                        - id
-                        - username
-                      properties:
-                        id:
-                          type: string
-                          format: uuid
-                        username:
-                          type: string
-                version:
-                  $ref: '../schemas/artifact.yaml#/NodeVersionInfo'
-                content:
-                  $ref: '../schemas/node-content.yaml#/ArtifactNodeContent'
-                  description: 节点内容，VFS 类型时包含 files 数组
-      '401':
-        description: 需要认证
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-      '403':
-        description: 无权访问
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-      '404':
-        description: Node 不存在
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-
-/artifacts/{artifactId}/nodes/{nodeId}/archive:
-  get:
-    summary: 下载 VFS 节点的打包文件
-    description: |
-      返回 tar.gz 格式的 VFS 内容压缩包。
-      仅支持 VFS 类型节点。
-      - PUBLIC artifact: 所有人可访问
-      - UNLISTED artifact: 仅注册用户可访问
-      - PRIVATE artifact: 仅 owner 可访问
-    operationId: getNodeArchive
-    tags:
-      - Nodes
-    parameters:
-      - name: artifactId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: nodeId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: version
-        in: query
-        schema:
-          type: string
-          default: latest
-    responses:
-      '200':
-        description: 成功
-        content:
-          application/gzip:
-            schema:
-              type: string
-              format: binary
+                    decremented:
+                      type: integer
+                      description: 引用计数被减少的内容数量
+                    deleted:
+                      type: integer
+                      description: 引用计数归零被删除的内容数量
       '400':
-        description: 非 VFS 类型节点不支持此接口
+        description: 请求参数错误
         content:
           application/json:
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
       '401':
-        description: 需要认证
+        description: 未认证
         content:
           application/json:
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
       '403':
-        description: 无权访问
+        description: 无权限
         content:
           application/json:
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
       '404':
-        description: Node 不存在或归档文件不存在
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-
-/artifacts/{artifactId}/nodes/{nodeId}/files/{filePath}:
-  get:
-    summary: 获取节点文件内容
-    description: |
-      获取节点关联的文件内容（二进制流）。
-      - PUBLIC artifact: 所有人可访问
-      - UNLISTED artifact: 仅注册用户可访问
-      - PRIVATE artifact: 仅 owner 可访问
-    operationId: getNodeFileContent
-    tags:
-      - Nodes
-    parameters:
-      - name: artifactId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: nodeId
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-      - name: filePath
-        in: path
-        required: true
-        schema:
-          type: string
-        description: 文件路径（支持嵌套路径如 subdir/file.txt）
-      - name: version
-        in: query
-        schema:
-          type: string
-          default: latest
-    responses:
-      '200':
-        description: 成功
-        content:
-          application/octet-stream:
-            schema:
-              type: string
-              format: binary
-      '401':
-        description: 需要认证
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-      '403':
-        description: 无权访问
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-      '404':
-        description: 文件不存在
+        description: Artifact 或版本不存在
         content:
           application/json:
             schema:

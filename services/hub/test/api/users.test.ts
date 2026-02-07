@@ -32,16 +32,13 @@ describe('Users API', () => {
 
     async function createTestArtifact(
       authorId: string,
-      type: 'RECIPE' | 'GAME' | 'ASSET_PACK' | 'PROMPT',
       name: string,
       visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC',
       isArchived: boolean = false
     ): Promise<string> {
       const [artifact] = await db.insert(artifacts).values({
         authorId,
-        type,
         name,
-        slug: name.toLowerCase().replace(/\s+/g, '-'),
         visibility,
         isArchived,
       }).returning();
@@ -83,9 +80,9 @@ describe('Users API', () => {
     });
 
     it('should return only public artifacts for unauthenticated user', async () => {
-      await createTestArtifact(testUserId, 'RECIPE', 'Public Recipe', 'PUBLIC');
-      await createTestArtifact(testUserId, 'GAME', 'Private Game', 'PRIVATE');
-      await createTestArtifact(testUserId, 'ASSET_PACK', 'Unlisted Pack', 'UNLISTED');
+      await createTestArtifact(testUserId, 'Public Recipe', 'PUBLIC');
+      await createTestArtifact(testUserId, 'Private Game', 'PRIVATE');
+      await createTestArtifact(testUserId, 'Unlisted Pack', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts`);
       const response = await sendRequest(request);
@@ -99,9 +96,9 @@ describe('Users API', () => {
     it('should return public and unlisted artifacts for authenticated user viewing others', async () => {
       const { sessionCookie } = await registerUser('viewer');
       
-      await createTestArtifact(testUserId, 'RECIPE', 'Public Recipe', 'PUBLIC');
-      await createTestArtifact(testUserId, 'GAME', 'Private Game', 'PRIVATE');
-      await createTestArtifact(testUserId, 'ASSET_PACK', 'Unlisted Pack', 'UNLISTED');
+      await createTestArtifact(testUserId, 'Public Recipe', 'PUBLIC');
+      await createTestArtifact(testUserId, 'Private Game', 'PRIVATE');
+      await createTestArtifact(testUserId, 'Unlisted Pack', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts`, {
         headers: { Cookie: sessionCookie },
@@ -119,9 +116,9 @@ describe('Users API', () => {
     it('should return all artifacts for authenticated user viewing self', async () => {
       const { sessionCookie, userId: ownerId } = await registerUser('owner');
       
-      await createTestArtifact(ownerId, 'RECIPE', 'Public Recipe', 'PUBLIC');
-      await createTestArtifact(ownerId, 'GAME', 'Private Game', 'PRIVATE');
-      await createTestArtifact(ownerId, 'ASSET_PACK', 'Unlisted Pack', 'UNLISTED');
+      await createTestArtifact(ownerId, 'Public Recipe', 'PUBLIC');
+      await createTestArtifact(ownerId, 'Private Game', 'PRIVATE');
+      await createTestArtifact(ownerId, 'Unlisted Pack', 'UNLISTED');
 
       const request = new Request(`http://localhost/api/users/${ownerId}/artifacts`, {
         headers: { Cookie: sessionCookie },
@@ -134,8 +131,8 @@ describe('Users API', () => {
     });
 
     it('should exclude archived artifacts', async () => {
-      await createTestArtifact(testUserId, 'RECIPE', 'Active Artifact', 'PUBLIC', false);
-      await createTestArtifact(testUserId, 'GAME', 'Archived Artifact', 'PUBLIC', true);
+      await createTestArtifact(testUserId, 'Active Artifact', 'PUBLIC', false);
+      await createTestArtifact(testUserId, 'Archived Artifact', 'PUBLIC', true);
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts`);
       const response = await sendRequest(request);
@@ -146,35 +143,11 @@ describe('Users API', () => {
       expect(data.artifacts[0].name).toBe('Active Artifact');
     });
 
-    it('should filter by type.include', async () => {
-      await createTestArtifact(testUserId, 'RECIPE', 'My Recipe', 'PUBLIC');
-      await createTestArtifact(testUserId, 'GAME', 'My Game', 'PUBLIC');
 
-      const request = new Request(`http://localhost/api/users/${testUserId}/artifacts?type.include=RECIPE`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<GetUserArtifactsResponse>();
-      expect(data.artifacts).toHaveLength(1);
-      expect(data.artifacts[0].type).toBe('RECIPE');
-    });
-
-    it('should filter by type.exclude', async () => {
-      await createTestArtifact(testUserId, 'RECIPE', 'My Recipe', 'PUBLIC');
-      await createTestArtifact(testUserId, 'GAME', 'My Game', 'PUBLIC');
-
-      const request = new Request(`http://localhost/api/users/${testUserId}/artifacts?type.exclude=RECIPE`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<GetUserArtifactsResponse>();
-      expect(data.artifacts).toHaveLength(1);
-      expect(data.artifacts[0].type).toBe('GAME');
-    });
 
     it('should paginate correctly', async () => {
       for (let i = 1; i <= 5; i++) {
-        await createTestArtifact(testUserId, 'RECIPE', `Artifact ${i}`, 'PUBLIC');
+        await createTestArtifact(testUserId, `Artifact ${i}`, 'PUBLIC');
       }
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts?page=1&limit=2`);
@@ -191,9 +164,9 @@ describe('Users API', () => {
 
     it('should sort by sortBy and sortOrder parameters', async () => {
       // 创建 artifacts 时加入少量延迟以确保 createdAt 不同
-      await createTestArtifact(testUserId, 'RECIPE', 'First', 'PUBLIC');
+      await createTestArtifact(testUserId, 'First', 'PUBLIC');
       // 使用不同的 createdAt
-      await createTestArtifact(testUserId, 'GAME', 'Second', 'PUBLIC');
+      await createTestArtifact(testUserId, 'Second', 'PUBLIC');
 
       // 测试升序排列
       const requestAsc = new Request(`http://localhost/api/users/${testUserId}/artifacts?sortBy=createdAt&sortOrder=asc`);
@@ -222,14 +195,7 @@ describe('Users API', () => {
       expect(data.error).toContain('Invalid sortBy value');
     });
 
-    it('should reject invalid type parameter', async () => {
-      const request = new Request(`http://localhost/api/users/${testUserId}/artifacts?type.include=INVALID`);
-      const response = await sendRequest(request);
 
-      expect(response.status).toBe(400);
-      const data = await response.json<ApiError>();
-      expect(data.error).toContain('Invalid type value');
-    });
   });
 
   describe('GET /api/users/:userId/projects', () => {

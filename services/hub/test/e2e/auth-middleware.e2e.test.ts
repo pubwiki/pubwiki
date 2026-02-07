@@ -88,7 +88,7 @@ describe('E2E: Auth Middleware - User Validation', () => {
         version: 1,
         exportedAt: new Date().toISOString(),
         nodes: [
-          { id: crypto.randomUUID(), type: 'PROMPT', name: 'Test Node', external: false },
+          { id: crypto.randomUUID(), type: 'PROMPT', name: 'Test Node' },
         ],
         edges: [],
       }));

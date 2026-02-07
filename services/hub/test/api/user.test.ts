@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { RegisterResponse, GetMeResponse, UpdateProfileResponse, ApiError } from '@pubwiki/api';
+import type { GetMeResponse, UpdateProfileResponse, ApiError } from '@pubwiki/api';
 import { getTestDb, clearDatabase, sendRequest, registerAndGetSession, user, eq, type TestDb } from './helpers';
 
 describe('User API', () => {

@@ -104,24 +104,6 @@
           minimum: 1
           maximum: 100
           default: 20
-      - name: type.include
-        in: query
-        description: 包含的类型列表
-        schema:
-          type: array
-          items:
-            $ref: '../schemas/artifact.yaml#/ArtifactType'
-        style: form
-        explode: true
-      - name: type.exclude
-        in: query
-        description: 排除的类型列表
-        schema:
-          type: array
-          items:
-            $ref: '../schemas/artifact.yaml#/ArtifactType'
-        style: form
-        explode: true
       - name: sortBy
         in: query
         description: 排序字段

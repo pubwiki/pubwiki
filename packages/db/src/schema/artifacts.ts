@@ -1,19 +1,16 @@
 import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
-import type { ArtifactType, VisibilityType } from './enums';
-
-// Stored edge 类型定义
-export interface StoredEdge {
-  source: string;        // 源节点 ID
-  target: string;        // 目标节点 ID
-  sourceHandle?: string; // 源节点连接点
-  targetHandle?: string; // 目标节点连接点
-}
-
+import type { VisibilityType } from './enums';
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
+
+// Entrypoint 类型：指定启动流图时的初始程序状态
+export interface ArtifactEntrypoint {
+  saveCommit: string;
+  sandboxNodeId: string;
+}
 
 // artifacts - 主内容表
 export const artifacts = sqliteTable(
@@ -23,9 +20,7 @@ export const artifacts = sqliteTable(
     authorId: text('author_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    type: text('type').$type<ArtifactType>().notNull(), // RECIPE, GAME, ASSET_PACK, PROMPT
     name: text('name', { length: 100 }).notNull(),
-    slug: text('slug', { length: 100 }).notNull(),
     description: text('description'),
     visibility: text('visibility').$type<VisibilityType>().default('PUBLIC').notNull(),
     currentVersionId: text('current_version_id'), // 稍后设置引用
@@ -38,8 +33,6 @@ export const artifacts = sqliteTable(
   },
   (table) => [
     index('idx_artifacts_author').on(table.authorId),
-    index('idx_artifacts_type').on(table.type),
-    index('idx_artifacts_slug').on(table.authorId, table.slug),
     index('idx_artifacts_visibility').on(table.visibility),
   ]
 );
@@ -52,21 +45,44 @@ export const artifactVersions = sqliteTable(
     artifactId: text('artifact_id')
       .notNull()
       .references(() => artifacts.id, { onDelete: 'cascade' }),
-    version: text('version', { length: 50 }).notNull(), // semver: 1.0.0
+    version: text('version', { length: 50 }), // optional semver
     commitHash: text('commit_hash').notNull(), // SHA-256 前8位
     changelog: text('changelog'),
-    isPrerelease: integer('is_prerelease', { mode: 'boolean' }).default(false).notNull(),
     publishedAt: text('published_at'),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     // JSON 字段存储为文本
     metadata: text('metadata', { mode: 'json' }).$type<Record<string, unknown>>(),
-    edges: text('edges', { mode: 'json' }).$type<StoredEdge[]>(), // 节点间的边关系
     checksum: text('checksum', { length: 64 }),
+    // 入口点：指定启动流图时的初始程序状态
+    entrypoint: text('entrypoint', { mode: 'json' }).$type<ArtifactEntrypoint>(),
+    // 弱版本标记：weak 版本不对 node 产生引用计数
+    isWeak: integer('is_weak', { mode: 'boolean' }).default(false).notNull(),
   },
   (table) => [
     index('idx_artifact_versions_artifact').on(table.artifactId),
     index('idx_artifact_versions_version').on(table.artifactId, table.version),
     uniqueIndex('idx_artifact_versions_commit').on(table.artifactId, table.commitHash),
+  ]
+);
+
+// artifact_commit_tags - commitTag 多对一关联表
+// 一个 commit 可以有多个 tag，但每个 tag 在同一 artifact 内唯一
+export const artifactCommitTags = sqliteTable(
+  'artifact_commit_tags',
+  {
+    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    artifactId: text('artifact_id')
+      .notNull()
+      .references(() => artifacts.id, { onDelete: 'cascade' }),
+    commitHash: text('commit_hash')
+      .notNull(),
+    tag: text('tag').notNull(),
+    createdAt: text('created_at').default(currentTimestamp).notNull(),
+  },
+  (table) => [
+    // 同一 artifact 内 tag 名唯一（tag 只能指向一个版本）
+    uniqueIndex('idx_artifact_commit_tags_unique').on(table.artifactId, table.tag),
+    index('idx_artifact_commit_tags_version').on(table.commitHash),
   ]
 );
 
@@ -116,3 +132,5 @@ export type Tag = typeof tags.$inferSelect;
 export type NewTag = typeof tags.$inferInsert;
 export type ArtifactTag = typeof artifactTags.$inferSelect;
 export type NewArtifactTag = typeof artifactTags.$inferInsert;
+export type ArtifactCommitTag = typeof artifactCommitTags.$inferSelect;
+export type NewArtifactCommitTag = typeof artifactCommitTags.$inferInsert;

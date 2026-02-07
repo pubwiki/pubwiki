@@ -16,7 +16,7 @@ import type {
   UpdateDiscussionRequest,
   CreateDiscussionReplyRequest,
 } from '@pubwiki/api';
-import { authMiddleware, adminMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 
 const discussionsRoute = new Hono<{ Bindings: Env }>();
 
@@ -194,7 +194,7 @@ discussionsRoute.delete('/:discussionId', authMiddleware, async (c) => {
 
   const discussionId = c.req.param('discussionId');
 
-  const result = await discussionService.deleteDiscussion(discussionId, user.id, user.isAdmin);
+  const result = await discussionService.deleteDiscussion(discussionId, user.id);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
@@ -203,70 +203,6 @@ discussionsRoute.delete('/:discussionId', authMiddleware, async (c) => {
   }
 
   return c.json({ message: 'Discussion deleted successfully' });
-});
-
-// 置顶/取消置顶讨论（管理员功能）
-discussionsRoute.post('/:discussionId/pin', adminMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
-
-  const discussionId = c.req.param('discussionId');
-
-  // 解析请求体
-  let body: { isPinned: boolean };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
-
-  if (typeof body.isPinned !== 'boolean') {
-    return c.json<ApiError>({ error: 'isPinned is required and must be a boolean' }, 400);
-  }
-
-  const result = await discussionService.pinDiscussion(discussionId, body.isPinned);
-
-  if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
-  }
-
-  return c.json({
-    message: body.isPinned ? 'Discussion pinned successfully' : 'Discussion unpinned successfully',
-    discussion: result.data,
-  });
-});
-
-// 锁定/解锁讨论（管理员功能）
-discussionsRoute.post('/:discussionId/lock', adminMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
-
-  const discussionId = c.req.param('discussionId');
-
-  // 解析请求体
-  let body: { isLocked: boolean };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
-
-  if (typeof body.isLocked !== 'boolean') {
-    return c.json<ApiError>({ error: 'isLocked is required and must be a boolean' }, 400);
-  }
-
-  const result = await discussionService.lockDiscussion(discussionId, body.isLocked);
-
-  if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
-  }
-
-  return c.json({
-    message: body.isLocked ? 'Discussion locked successfully' : 'Discussion unlocked successfully',
-    discussion: result.data,
-  });
 });
 
 // ========== 回复相关路由 ==========
@@ -344,7 +280,7 @@ discussionsRoute.delete('/replies/:replyId', authMiddleware, async (c) => {
 
   const replyId = c.req.param('replyId');
 
-  const result = await discussionService.deleteReply(replyId, user.id, user.isAdmin);
+  const result = await discussionService.deleteReply(replyId, user.id);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
@@ -353,28 +289,6 @@ discussionsRoute.delete('/replies/:replyId', authMiddleware, async (c) => {
   }
 
   return c.json({ message: 'Reply deleted successfully' });
-});
-
-// 采纳回复为答案
-discussionsRoute.post('/replies/:replyId/accept', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
-  const user = c.get('user');
-
-  const replyId = c.req.param('replyId');
-
-  const result = await discussionService.acceptReply(replyId, user.id);
-
-  if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
-                       result.error.code === 'FORBIDDEN' ? 403 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
-  }
-
-  return c.json({
-    message: 'Reply accepted as answer',
-    reply: result.data,
-  });
 });
 
 export { discussionsRoute };

@@ -138,18 +138,17 @@ function parseTar(data: Uint8Array): { path: string; content: Uint8Array }[] {
 }
 
 /**
- * Fetch and extract VFS archive from API
+ * Fetch and extract VFS archive from API (commit is globally unique key)
  */
 async function fetchAndExtractVfsArchive(
-  artifactId: string, 
-  nodeId: string
+  commit: string
 ): Promise<{ path: string; content: Uint8Array }[]> {
   try {
     const response = await fetch(
-      `${API_BASE_URL}/artifacts/${artifactId}/nodes/${nodeId}/archive`
+      `${API_BASE_URL}/versions/${commit}/archive`
     );
     if (!response.ok) {
-      console.warn(`Failed to fetch VFS archive for node ${nodeId}: ${response.status}`);
+      console.warn(`Failed to fetch VFS archive for commit ${commit}: ${response.status}`);
       return [];
     }
     
@@ -157,7 +156,7 @@ async function fetchAndExtractVfsArchive(
     const tarData = await gzipDecompress(gzippedData);
     return parseTar(tarData);
   } catch (error) {
-    console.error(`Error fetching VFS archive for node ${nodeId}:`, error);
+    console.error(`Error fetching VFS archive for commit ${commit}:`, error);
     return [];
   }
 }
@@ -197,7 +196,7 @@ export async function convertArtifactToStudioGraph(
     
     const downloadResults = await Promise.all(
       vfsNodes.map(async (vfsNode, index) => {
-        const files = await fetchAndExtractVfsArchive(artifactId, vfsNode.id);
+        const files = await fetchAndExtractVfsArchive(vfsNode.commit);
         onProgress?.({ 
           phase: 'downloading-vfs', 
           current: index + 1, 

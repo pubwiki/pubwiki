@@ -59,7 +59,7 @@ describe('E2E: Artifacts API', () => {
       const { data, error, response } = await client.GET('/artifacts', {
         params: {
           query: {
-            'type.include': ['RECIPE', 'GAME'],
+            'tag.include': ['recipe'],
           },
         },
       });
@@ -67,17 +67,13 @@ describe('E2E: Artifacts API', () => {
       expect(response.status).toBe(200);
       expect(error).toBeUndefined();
       expect(data).toBeDefined();
-      // 所有返回的 artifact 应该是 RECIPE 或 GAME 类型
-      for (const artifact of data!.artifacts) {
-        expect(['RECIPE', 'GAME']).toContain(artifact.type);
-      }
     });
 
     it('should accept type exclude parameters', async () => {
       const { data, error, response } = await client.GET('/artifacts', {
         params: {
           query: {
-            'type.exclude': ['PROMPT'],
+            'tag.exclude': ['prompt'],
           },
         },
       });
@@ -85,10 +81,6 @@ describe('E2E: Artifacts API', () => {
       expect(response.status).toBe(200);
       expect(error).toBeUndefined();
       expect(data).toBeDefined();
-      // 所有返回的 artifact 不应该是 PROMPT 类型
-      for (const artifact of data!.artifacts) {
-        expect(artifact.type).not.toBe('PROMPT');
-      }
     });
 
     it('should accept tag filter parameters', async () => {
@@ -160,9 +152,7 @@ describe('E2E: Artifacts API', () => {
       // 检查每个 artifact 都有必要的字段
       for (const artifact of data!.artifacts) {
         expect(artifact.id).toBeDefined();
-        expect(artifact.type).toBeDefined();
         expect(artifact.name).toBeDefined();
-        expect(artifact.slug).toBeDefined();
         expect(artifact.visibility).toBe('PUBLIC');
         expect(artifact.isArchived).toBe(false);
         expect(artifact.createdAt).toBeDefined();
@@ -181,7 +171,6 @@ describe('E2E: Artifacts API', () => {
           query: {
             page: 1,
             limit: 5,
-            'type.include': ['RECIPE'],
             sortBy: 'createdAt',
             sortOrder: 'desc',
           },
@@ -192,11 +181,6 @@ describe('E2E: Artifacts API', () => {
       expect(error).toBeUndefined();
       expect(data).toBeDefined();
       expect(data!.pagination.limit).toBeLessThanOrEqual(5);
-      
-      // 所有返回的应该是 RECIPE 类型
-      for (const artifact of data!.artifacts) {
-        expect(artifact.type).toBe('RECIPE');
-      }
     });
   });
 
@@ -255,21 +239,14 @@ describe('E2E: Artifacts API', () => {
         if (lineageData) {
           // Validate that each parent/child has required fields
           for (const parent of lineageData.parents) {
-            expect(parent.id).toBeDefined();
-            expect(parent.lineageType).toBeDefined();
-            expect(parent.createdAt).toBeDefined();
-            expect(parent.artifact).toBeDefined();
-            expect(parent.artifact.id).toBeDefined();
-            expect(parent.artifact.name).toBeDefined();
-            expect(parent.artifact.slug).toBeDefined();
-            expect(parent.artifact.type).toBeDefined();
-            expect(parent.artifact.visibility).toBeDefined();
+            expect(parent.artifactId).toBeDefined();
+            expect(parent.name).toBeDefined();
+            expect(parent.visibility).toBeDefined();
           }
           for (const child of lineageData.children) {
-            expect(child.id).toBeDefined();
-            expect(child.lineageType).toBeDefined();
-            expect(child.createdAt).toBeDefined();
-            expect(child.artifact).toBeDefined();
+            expect(child.artifactId).toBeDefined();
+            expect(child.name).toBeDefined();
+            expect(child.visibility).toBeDefined();
           }
         }
       }
@@ -280,7 +257,7 @@ describe('E2E: Artifacts API', () => {
   function createFormData(
     metadata: Record<string, unknown>, 
     vfsFiles?: { name: string; content: string }[],
-    customDescriptor?: { version: number; nodes: { id: string; type?: string; name?: string; external?: boolean; content?: unknown }[]; edges: { source: string; target: string }[]; exportedAt?: string }
+    customDescriptor?: { version: number; nodes: { id: string; type?: string; name?: string; content?: unknown }[]; edges: { source: string; target: string }[]; exportedAt?: string }
   ): FormData {
     const formData = new FormData();
     // 如果未提供 artifactId，则自动生成一个
@@ -313,7 +290,7 @@ describe('E2E: Artifacts API', () => {
   async function createFormDataWithVfs(
     metadata: Record<string, unknown>, 
     vfsFiles?: { name: string; content: string }[],
-    customDescriptor?: { version: number; nodes: { id: string; type?: string; name?: string; external?: boolean; content?: unknown }[]; edges: { source: string; target: string }[]; exportedAt?: string }
+    customDescriptor?: { version: number; nodes: { id: string; type?: string; name?: string; content?: unknown }[]; edges: { source: string; target: string }[]; exportedAt?: string }
   ): Promise<FormData> {
     const formData = new FormData();
     // 如果未提供 artifactId，则自动生成一个
@@ -737,7 +714,6 @@ describe('E2E: Artifacts API', () => {
         license: 'MIT',
         repositoryUrl: 'https://github.com/example/repo',
         changelog: 'Initial release',
-        isPrerelease: true,
         tags: ['test', 'e2e'],
       });
 
@@ -1130,23 +1106,18 @@ describe('E2E: Artifacts API', () => {
       const createData = await createResponse.json() as { artifact: { id: string } };
 
       // Fetch node detail
-      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
-        params: {
-          path: { artifactId: createData.artifact.id, nodeId: vfsNodeId },
-          query: { version: 'latest' },
-        },
-      });
+      const nodeDetailResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/${vfsNodeId}?version=latest`
+      );
       
-      expect(nodeDetailResponse.response.status).toBe(200);
-      expect(nodeDetailResponse.data).toBeDefined();
+      expect(nodeDetailResponse.status).toBe(200);
       
-      const nodeDetail = nodeDetailResponse.data!;
+      const nodeDetail = await nodeDetailResponse.json() as Record<string, unknown>;
       expect(nodeDetail.id).toBe(vfsNodeId);
       expect(nodeDetail.type).toBe('VFS');
       expect(nodeDetail.name).toBe('test-vfs');
-      expect(nodeDetail.external).toBe(false);
       expect(nodeDetail.version).toBeDefined();
-      expect(nodeDetail.version.commitHash).toBeDefined();
+      expect((nodeDetail.version as Record<string, unknown>).commitHash).toBeDefined();
       
       // VFS node should have content with files array
       expect(nodeDetail.content).toBeDefined();
@@ -1197,21 +1168,16 @@ describe('E2E: Artifacts API', () => {
       const createData = await createResponse.json() as { artifact: { id: string } };
 
       // Fetch node detail
-      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
-        params: {
-          path: { artifactId: createData.artifact.id, nodeId: inputNodeId },
-          query: { version: 'latest' },
-        },
-      });
+      const nodeDetailResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/${inputNodeId}?version=latest`
+      );
       
-      expect(nodeDetailResponse.response.status).toBe(200);
-      expect(nodeDetailResponse.data).toBeDefined();
+      expect(nodeDetailResponse.status).toBe(200);
       
-      const nodeDetail = nodeDetailResponse.data!;
+      const nodeDetail = await nodeDetailResponse.json() as Record<string, unknown>;
       expect(nodeDetail.id).toBe(inputNodeId);
       expect(nodeDetail.type).toBe('INPUT');
       expect(nodeDetail.name).toBe('test-input');
-      expect(nodeDetail.external).toBe(false);
       expect(nodeDetail.content).toBeDefined();
     });
 
@@ -1243,25 +1209,22 @@ describe('E2E: Artifacts API', () => {
       const createData = await createResponse.json() as { artifact: { id: string } };
 
       // Fetch non-existent node
-      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
-        params: {
-          path: { artifactId: createData.artifact.id, nodeId: crypto.randomUUID() },
-          query: { version: 'latest' },
-        },
-      });
+      const nonExistentNodeId = crypto.randomUUID();
+      const nodeDetailResponse = await fetch(
+        `${baseUrl}/artifacts/${createData.artifact.id}/nodes/${nonExistentNodeId}?version=latest`
+      );
       
-      expect(nodeDetailResponse.response.status).toBe(404);
+      expect(nodeDetailResponse.status).toBe(404);
     });
 
     it('should return 404 for non-existent artifact', async () => {
-      const nodeDetailResponse = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
-        params: {
-          path: { artifactId: crypto.randomUUID(), nodeId: crypto.randomUUID() },
-          query: { version: 'latest' },
-        },
-      });
+      const fakeArtifactId = crypto.randomUUID();
+      const fakeNodeId = crypto.randomUUID();
+      const nodeDetailResponse = await fetch(
+        `${baseUrl}/artifacts/${fakeArtifactId}/nodes/${fakeNodeId}?version=latest`
+      );
       
-      expect(nodeDetailResponse.response.status).toBe(404);
+      expect(nodeDetailResponse.status).toBe(404);
     });
   });
 

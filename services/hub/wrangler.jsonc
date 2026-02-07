@@ -38,13 +38,6 @@
 			"binding": "R2_BUCKET",
 			"bucket_name": "pubwiki-storage"
 		}
-	],
-	// Service Binding 到 gamesave Worker
-	"services": [
-		{
-			"binding": "GAMESAVE",
-			"service": "pubwiki-gamesave"
-		}
 	]
 	// "kv_namespaces": [
 	//   {

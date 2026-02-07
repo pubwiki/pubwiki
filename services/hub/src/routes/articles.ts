@@ -4,28 +4,27 @@ import { createDb, ArticleService } from '@pubwiki/db';
 import type {
   ApiError,
   ArticleDetail,
-  UpsertArticleRequest,
   Pagination,
 } from '@pubwiki/api';
 import { authMiddleware } from '../middleware/auth';
 
 export const articlesRoute = new Hono<{ Bindings: Env }>();
 
-// 获取与 sandbox node 关联的所有文章（分页）
-articlesRoute.get('/by-sandbox/:sandboxNodeId', async (c) => {
+// 获取与 artifact 关联的所有文章（分页）
+articlesRoute.get('/by-artifact/:artifactId', async (c) => {
   const db = createDb(c.env.DB);
   const articleService = new ArticleService(db);
 
-  const sandboxNodeId = c.req.param('sandboxNodeId');
+  const artifactId = c.req.param('artifactId');
   const query = c.req.query();
 
   // 验证 UUID 格式
-  if (!sandboxNodeId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-    return c.json<ApiError>({ error: 'Invalid sandbox node ID format' }, 400);
+  if (!artifactId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return c.json<ApiError>({ error: 'Invalid artifact ID format' }, 400);
   }
 
-  const result = await articleService.listArticlesBySandboxNodeId({
-    sandboxNodeId,
+  const result = await articleService.listArticlesByArtifactId({
+    artifactId,
     page: query.page ? parseInt(query.page, 10) : undefined,
     limit: query.limit ? parseInt(query.limit, 10) : undefined,
   });
@@ -33,9 +32,6 @@ articlesRoute.get('/by-sandbox/:sandboxNodeId', async (c) => {
   if (!result.success) {
     if (result.error.code === 'NOT_FOUND') {
       return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    if (result.error.code === 'BAD_REQUEST') {
-      return c.json<ApiError>({ error: result.error.message }, 400);
     }
     return c.json<ApiError>({ error: result.error.message }, 500);
   }
@@ -80,9 +76,9 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'Invalid article ID format' }, 400);
   }
 
-  let body: UpsertArticleRequest;
+  let body: Record<string, unknown>;
   try {
-    body = await c.req.json<UpsertArticleRequest>();
+    body = await c.req.json();
   } catch {
     return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
   }
@@ -91,14 +87,14 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
   if (!body.title || typeof body.title !== 'string') {
     return c.json<ApiError>({ error: 'title is required and must be a string' }, 400);
   }
-  if (body.title.length < 1 || body.title.length > 200) {
+  if ((body.title as string).length < 1 || (body.title as string).length > 200) {
     return c.json<ApiError>({ error: 'title must be between 1 and 200 characters' }, 400);
   }
-  if (!body.sandboxNodeId || typeof body.sandboxNodeId !== 'string') {
-    return c.json<ApiError>({ error: 'sandboxNodeId is required and must be a string' }, 400);
+  if (!body.artifactId || typeof body.artifactId !== 'string') {
+    return c.json<ApiError>({ error: 'artifactId is required and must be a string' }, 400);
   }
-  if (!body.saveId || typeof body.saveId !== 'string') {
-    return c.json<ApiError>({ error: 'saveId is required and must be a string' }, 400);
+  if (!body.artifactCommit || typeof body.artifactCommit !== 'string') {
+    return c.json<ApiError>({ error: 'artifactCommit is required and must be a string' }, 400);
   }
   if (!body.content || !Array.isArray(body.content)) {
     return c.json<ApiError>({ error: 'content is required and must be an array' }, 400);
@@ -115,8 +111,8 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
         return c.json<ApiError>({ error: 'TextContent requires id (string) and text (string)' }, 400);
       }
     } else if (b.type === 'game_ref') {
-      if (typeof b.textId !== 'string' || typeof b.checkpointId !== 'string') {
-        return c.json<ApiError>({ error: 'GameRef requires textId (string) and checkpointId (string)' }, 400);
+      if (typeof b.textId !== 'string' || typeof b.saveCommit !== 'string') {
+        return c.json<ApiError>({ error: 'GameRef requires textId (string) and saveCommit (string)' }, 400);
       }
     } else {
       return c.json<ApiError>({ error: `Invalid content block type: ${b.type}` }, 400);
@@ -124,46 +120,20 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
   }
 
   // 验证 visibility
-  if (body.visibility && !['PUBLIC', 'PRIVATE', 'UNLISTED'].includes(body.visibility)) {
+  if (body.visibility && !['PUBLIC', 'PRIVATE', 'UNLISTED'].includes(body.visibility as string)) {
     return c.json<ApiError>({ error: 'Invalid visibility value' }, 400);
-  }
-
-  const articleVisibility = body.visibility || 'PUBLIC';
-  const visibilityOrder = { 'PRIVATE': 0, 'UNLISTED': 1, 'PUBLIC': 2 } as const;
-  const articleVisibilityLevel = visibilityOrder[articleVisibility];
-
-  // 验证 saveId 存在
-  const saveMetadata = await c.env.GAMESAVE.getMetadata(body.saveId);
-  if (!saveMetadata) {
-    return c.json<ApiError>({ error: `Save ${body.saveId} not found` }, 400);
-  }
-
-  // 验证每个 game_ref 的 checkpointId
-  const gameRefs = body.content.filter((b): b is { type: 'game_ref'; textId: string; checkpointId: string } => 
-    (b as Record<string, unknown>).type === 'game_ref'
-  );
-
-  for (const gameRef of gameRefs) {
-    const checkpoint = await c.env.GAMESAVE.getCheckpoint(body.saveId, gameRef.checkpointId);
-    if (!checkpoint) {
-      return c.json<ApiError>({ 
-        error: `Checkpoint ${gameRef.checkpointId} not found in save ${body.saveId}` 
-      }, 400);
-    }
-
-    // 验证 checkpoint visibility 不低于 article visibility
-    const checkpointVisibilityLevel = visibilityOrder[checkpoint.visibility];
-    if (checkpointVisibilityLevel < articleVisibilityLevel) {
-      return c.json<ApiError>({ 
-        error: `Checkpoint ${gameRef.checkpointId} visibility (${checkpoint.visibility}) is lower than article visibility (${articleVisibility}). Checkpoint must be at least ${articleVisibility}.` 
-      }, 400);
-    }
   }
 
   const result = await articleService.upsertArticle({
     articleId,
     authorId: user.id,
-    data: body,
+    data: {
+      title: body.title as string,
+      artifactId: body.artifactId as string,
+      artifactCommit: body.artifactCommit as string,
+      content: body.content as any,
+      visibility: body.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED' | undefined,
+    },
   });
 
   if (!result.success) {

@@ -22,7 +22,6 @@ export const user = sqliteTable(
     bio: text('bio'),
     website: text('website', { length: 255 }),
     location: text('location', { length: 100 }),
-    isAdmin: integer('is_admin', { mode: 'boolean' }).default(false).notNull(),
     isVerified: integer('is_verified', { mode: 'boolean' }).default(false).notNull(),
   },
   (table) => [

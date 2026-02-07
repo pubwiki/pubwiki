@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, ArtifactService, ProjectService, UserService, type ListUserArtifactsParams, type ListUserProjectsParams } from '@pubwiki/db';
-import type { GetUserArtifactsResponse, GetUserProjectsResponse, ApiError, ArtifactType, UserProjectRole, VisibilityType } from '@pubwiki/api';
+import type { GetUserArtifactsResponse, GetUserProjectsResponse, ApiError, UserProjectRole, VisibilityType } from '@pubwiki/api';
 import { optionalAuthMiddleware } from '../middleware/auth';
 
 const usersRoute = new Hono<{ Bindings: Env }>();
@@ -22,28 +22,6 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
 
   // 解析查询参数
   const query = c.req.query();
-  
-  // 解析数组参数（URL query 中的重复参数）
-  const url = new URL(c.req.url);
-  const typeInclude = url.searchParams.getAll('type.include') as ArtifactType[];
-  const typeExclude = url.searchParams.getAll('type.exclude') as ArtifactType[];
-
-  // 验证类型参数
-  const validTypes = ['RECIPE', 'GAME', 'ASSET_PACK', 'PROMPT'];
-  if (typeInclude.length > 0) {
-    for (const type of typeInclude) {
-      if (!validTypes.includes(type)) {
-        return c.json<ApiError>({ error: `Invalid type value: ${type}. Must be one of: ${validTypes.join(', ')}` }, 400);
-      }
-    }
-  }
-  if (typeExclude.length > 0) {
-    for (const type of typeExclude) {
-      if (!validTypes.includes(type)) {
-        return c.json<ApiError>({ error: `Invalid type value: ${type}. Must be one of: ${validTypes.join(', ')}` }, 400);
-      }
-    }
-  }
 
   // 验证排序参数
   const validSortBy = ['createdAt', 'updatedAt', 'viewCount', 'starCount'];
@@ -72,8 +50,6 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
   const params: ListUserArtifactsParams = {
     page: query.page ? parseInt(query.page, 10) : undefined,
     limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    typeInclude: typeInclude.length > 0 ? typeInclude : undefined,
-    typeExclude: typeExclude.length > 0 ? typeExclude : undefined,
     sortBy: query.sortBy as ListUserArtifactsParams['sortBy'],
     sortOrder: query.sortOrder as ListUserArtifactsParams['sortOrder'],
     visibilityFilter,

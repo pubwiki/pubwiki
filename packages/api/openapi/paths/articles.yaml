@@ -73,18 +73,18 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
-/articles/by-sandbox/{sandboxNodeId}:
+/articles/by-artifact/{artifactId}:
   get:
-    operationId: listArticlesBySandbox
-    summary: 获取与 sandbox 关联的文章列表
+    operationId: listArticlesByArtifact
+    summary: 获取与 artifact 关联的文章列表
     description: |
-      获取与指定 sandbox node 关联的所有公开文章，支持分页。
+      获取与指定 artifact 关联的所有公开文章，支持分页。
     tags: [Articles]
     parameters:
-      - name: sandboxNodeId
+      - name: artifactId
         in: path
         required: true
-        description: Sandbox 节点 ID
+        description: Artifact ID
         schema:
           type: string
           format: uuid
@@ -127,7 +127,7 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
       '404':
-        description: Sandbox 节点不存在
+        description: Artifact 不存在
         content:
           application/json:
             schema:

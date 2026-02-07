@@ -67,36 +67,26 @@ components:
       $ref: './openapi/schemas/user.yaml#/PublicUser'
     UpdateProfileRequest:
       $ref: './openapi/schemas/user.yaml#/UpdateProfileRequest'
-    JwtPayload:
-      $ref: './openapi/schemas/user.yaml#/JwtPayload'
 
     # Artifact schemas
-    ArtifactType:
-      $ref: './openapi/schemas/artifact.yaml#/ArtifactType'
     Tag:
       $ref: './openapi/schemas/artifact.yaml#/Tag'
     ArtifactNodeType:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactNodeType'
     CreateArtifactMetadata:
       $ref: './openapi/schemas/artifact.yaml#/CreateArtifactMetadata'
-    ArtifactNodeDescriptor:
-      $ref: './openapi/schemas/artifact.yaml#/ArtifactNodeDescriptor'
     ArtifactEdgeDescriptor:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactEdgeDescriptor'
-    ArtifactDescriptor:
-      $ref: './openapi/schemas/artifact.yaml#/ArtifactDescriptor'
+    CreateArtifactNode:
+      $ref: './openapi/schemas/artifact.yaml#/CreateArtifactNode'
     ArtifactNodeSummary:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactNodeSummary'
     ArtifactEdge:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactEdge'
-    NodeVersionInfo:
-      $ref: './openapi/schemas/artifact.yaml#/NodeVersionInfo'
     NodeFileInfo:
       $ref: './openapi/schemas/artifact.yaml#/NodeFileInfo'
     ArtifactVersion:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactVersion'
-    LineageType:
-      $ref: './openapi/schemas/artifact.yaml#/LineageType'
     ArtifactLineageItem:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactLineageItem'
     ArtifactListItem:
@@ -200,34 +190,28 @@ components:
     UpsertArticleRequest:
       $ref: './openapi/schemas/article.yaml#/UpsertArticleRequest'
 
-    # Cloud Saves schemas (纯 Checkpoint 存储模式)
-    CloudSave:
-      $ref: './openapi/schemas/saves.yaml#/CloudSave'
+    # Save schemas
+    SaveDetail:
+      $ref: './openapi/schemas/save.yaml#/SaveDetail'
     CreateSaveRequest:
-      $ref: './openapi/schemas/saves.yaml#/CreateSaveRequest'
-    Quad:
-      $ref: './openapi/schemas/saves.yaml#/Quad'
-    CheckpointVisibility:
-      $ref: './openapi/schemas/saves.yaml#/CheckpointVisibility'
-    CheckpointInfo:
-      $ref: './openapi/schemas/saves.yaml#/CheckpointInfo'
-    CreateCheckpointRequest:
-      $ref: './openapi/schemas/saves.yaml#/CreateCheckpointRequest'
-    CreateCheckpointResponse:
-      $ref: './openapi/schemas/saves.yaml#/CreateCheckpointResponse'
-    ExportCheckpointResponse:
-      $ref: './openapi/schemas/saves.yaml#/ExportCheckpointResponse'
+      $ref: './openapi/schemas/save.yaml#/CreateSaveRequest'
+
+    # Node Version schemas (Version Control First-Class Citizen)
+    NodeVersionRefType:
+      $ref: './openapi/schemas/node-version.yaml#/NodeVersionRefType'
+    NodeVersionSummary:
+      $ref: './openapi/schemas/node-version.yaml#/NodeVersionSummary'
+    NodeVersionDetail:
+      $ref: './openapi/schemas/node-version.yaml#/NodeVersionDetail'
+    NodeVersionRef:
+      $ref: './openapi/schemas/node-version.yaml#/NodeVersionRef'
+
+
 
 paths:
   # Health
   /:
     $ref: './openapi/paths/health.yaml#/~1'
-
-  # Auth (deprecated)
-  /auth/register:
-    $ref: './openapi/paths/auth.yaml#/~1auth~1register'
-  /auth/login:
-    $ref: './openapi/paths/auth.yaml#/~1auth~1login'
 
   # User
   /me:
@@ -246,12 +230,10 @@ paths:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1lineage'
   /artifacts/{artifactId}/graph:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1graph'
-  /artifacts/{artifactId}/nodes/{nodeId}:
-    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1nodes~1{nodeId}'
-  /artifacts/{artifactId}/nodes/{nodeId}/archive:
-    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1nodes~1{nodeId}~1archive'
-  /artifacts/{artifactId}/nodes/{nodeId}/files/{filePath}:
-    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1nodes~1{nodeId}~1files~1{filePath}'
+  /artifacts/{artifactId}/commit-tag:
+    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1commit-tag'
+  /artifacts/{artifactId}/versions/{commitHash}/weak:
+    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1versions~1{commitHash}~1weak'
 
   # Projects
   /projects:
@@ -280,27 +262,29 @@ paths:
     $ref: './openapi/paths/discussions.yaml#/~1discussions~1{discussionId}~1replies'
   /discussions/replies/{replyId}:
     $ref: './openapi/paths/discussions.yaml#/~1discussions~1replies~1{replyId}'
-  /discussions/replies/{replyId}/accept:
-    $ref: './openapi/paths/discussions.yaml#/~1discussions~1replies~1{replyId}~1accept'
 
   # Articles
   /articles/{articleId}:
     $ref: './openapi/paths/articles.yaml#/~1articles~1{articleId}'
-  /articles/by-sandbox/{sandboxNodeId}:
-    $ref: './openapi/paths/articles.yaml#/~1articles~1by-sandbox~1{sandboxNodeId}'
+  /articles/by-artifact/{artifactId}:
+    $ref: './openapi/paths/articles.yaml#/~1articles~1by-artifact~1{artifactId}'
 
-  # Cloud Saves (纯 Checkpoint 存储模式)
+  # Saves (存档)
   /saves:
     $ref: './openapi/paths/saves.yaml#/~1saves'
-  /saves/by-state/{stateNodeId}:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1by-state~1{stateNodeId}'
-  /saves/{saveId}:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}'
-  /saves/{saveId}/checkpoints:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints'
-  /saves/{saveId}/checkpoints/{checkpointId}:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{checkpointId}'
-  /saves/{saveId}/checkpoints/{checkpointId}/export:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{checkpointId}~1export'
-  /saves/{saveId}/checkpoints/{checkpointId}/visibility:
-    $ref: './openapi/paths/saves.yaml#/~1saves~1{saveId}~1checkpoints~1{checkpointId}~1visibility'
+  /saves/{commit}:
+    $ref: './openapi/paths/saves.yaml#/~1saves~1{commit}'
+  /saves/{commit}/data:
+    $ref: './openapi/paths/saves.yaml#/~1saves~1{commit}~1data'
+
+  # Node Versions (Version Control First-Class Citizen)
+  /nodes/{nodeId}/versions:
+    $ref: './openapi/paths/nodes.yaml#/~1nodes~1{nodeId}~1versions'
+  /versions/{commit}:
+    $ref: './openapi/paths/nodes.yaml#/~1versions~1{commit}'
+  /versions/{commit}/children:
+    $ref: './openapi/paths/nodes.yaml#/~1versions~1{commit}~1children'
+  /versions/{commit}/archive:
+    $ref: './openapi/paths/nodes.yaml#/~1versions~1{commit}~1archive'
+
+

@@ -1,6 +1,6 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import app from '../../src/index';
-import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, artifactLineage, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, artifactNodes, artifactNodeVersions, artifactNodeRefs, discussions, discussionReplies, articles, eq } from '@pubwiki/db';
+import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, eq } from '@pubwiki/db';
 
 export type TestDb = ReturnType<typeof createDb>;
 
@@ -25,10 +25,9 @@ export async function clearDatabase(db: TestDb): Promise<void> {
   await db.delete(discussionReplies);
   await db.delete(discussions);
   await db.delete(articles);
-  await db.delete(artifactLineage);
-  await db.delete(artifactNodeVersions);
-  await db.delete(artifactNodeRefs);
-  await db.delete(artifactNodes);
+  await db.delete(nodeVersionRefs);
+  await db.delete(artifactVersionNodes);
+  await db.delete(artifactVersionEdges);
   await db.delete(artifactVersions);
   await db.delete(artifactTags);
   await db.delete(artifactStats);
@@ -40,6 +39,7 @@ export async function clearDatabase(db: TestDb): Promise<void> {
   // 更新 projects 表清除 homepageId 引用后再删除（因为有循环引用）
   await db.update(projects).set({ homepageId: null });
   await db.delete(projects);
+  await db.delete(nodeVersions);
   await db.delete(artifacts);
   await db.delete(tags);
   // Better-Auth 相关表 (按外键顺序)
@@ -146,7 +146,6 @@ export async function createTestUser(db: TestDb, username: string = 'testuser'):
     createdAt: now,
     updatedAt: now,
     displayUsername: username,
-    isAdmin: false,
     isVerified: false,
   }).returning();
   return createdUser.id;
@@ -244,4 +243,4 @@ export async function createVfsTarGz(
 
 // 导出数据库表和eq操作符，方便测试文件使用
 // 注意: 'user' 是正确的表名，'users' 是别名保持向后兼容
-export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, artifactLineage, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, artifactNodes, artifactNodeVersions, artifactNodeRefs, discussions, discussionReplies, articles, eq };
+export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, eq };

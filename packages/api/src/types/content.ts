@@ -15,15 +15,15 @@ export interface TextContent extends ContentBlock {
 }
 
 /**
- * Game reference - links text to a game checkpoint
- * saveId 从文章 metadata 中获取，这里只存储 checkpointId
+ * Game reference - links text to a specific Save node version
+ * 使用 saveCommit 唯一定位到具体的存档版本
  */
 export interface GameRef extends ContentBlock {
   type: 'game_ref';
   /** ID of the text block this reference is attached to */
   textId: string;
-  /** Checkpoint ID to load (within the article's saveId) */
-  checkpointId: string;
+  /** Save version commit hash */
+  saveCommit: string;
 }
 
 /** Union type for all content blocks */
