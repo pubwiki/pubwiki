@@ -331,7 +331,7 @@ function ServiceRegistry.exportDocByNamespace(namespace)
             table.insert(lines, "```lua")
             local the_usage = spec.usage
             if type(spec.usage) == "function" then
-                the_usage = spec.usage()
+                the_usage = spec:usage()
             end
             table.insert(lines, the_usage)
             table.insert(lines, "```")
