@@ -11,8 +11,11 @@ export {
 
 export {
   publishArtifact,
-  selectCheckpointsForVisibility,
-  type PublishMetadata
+  patchArtifact,
+  type PublishMetadata,
+  type PatchMetadata,
+  type PublishResult,
+  type PatchResult
 } from './publish';
 
 // Local file import/export

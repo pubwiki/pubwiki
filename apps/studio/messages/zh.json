@@ -19,6 +19,7 @@
 	"common_stars": "收藏",
 	"common_by": "作者：{author}",
 	"common_no_description": "暂无描述",
+	"common_retry": "重试",
 	
 	"nav_hub": "主页",
 	"nav_community": "社区",
@@ -410,6 +411,14 @@
 	"studio_projects_delete_confirm": "确定要删除此项目吗？此操作无法撤销。",
 	"studio_projects_last_updated": "最后更新：{date}",
 	"studio_projects_created": "创建时间：{date}",
+	"studio_projects_importing": "导入中...",
+	"studio_projects_import_failed": "项目导入失败",
+	"studio_projects_already_local": "本地",
+	"studio_projects_visibility_public": "公开",
+	"studio_projects_visibility_private": "私有",
+	"studio_projects_visibility_unlisted": "未列出",
+	"studio_projects_load_more": "加载更多",
+	"studio_projects_load_failed": "加载在线项目失败",
 	
 	"artifact_not_found": "未找到",
 	"artifact_not_found_message": "找不到该作品",

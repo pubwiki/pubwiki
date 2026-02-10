@@ -51,5 +51,5 @@ export {
 // Stores (New Layer Separation)
 // ============================================================================
 
-export { nodeStore, type StudioNodeData } from './node-store.svelte';
+export { nodeStore, type StudioNodeData, generateContentHash } from './node-store.svelte';
 export { layoutStore, type NodeLayout } from './layout-store';

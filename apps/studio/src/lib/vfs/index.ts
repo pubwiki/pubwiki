@@ -42,14 +42,15 @@ export {
 } from './name-validation';
 
 export {
-  addVfsSubmodule,
-  removeVfsSubmodule,
-  updateSubmoduleCommit,
-  updateSubmoduleCommits,
-  listVfsSubmodules,
   syncMountsToSubmodules,
+  updateSubmoduleCommits,
   type SubmoduleInfo
 } from './submodule';
+
+export {
+  createNodeVfs,
+  type GitCapableProvider
+} from './node-vfs.svelte';
 
 export {
   vfsVersionStore,

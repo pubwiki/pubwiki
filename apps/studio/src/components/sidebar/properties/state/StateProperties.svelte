@@ -14,9 +14,10 @@
 	interface Props {
 		nodeId: string;
 		data: StateNodeData;
+		projectId: string;
 	}
 
-	let { nodeId, data }: Props = $props();
+	let { nodeId, data, projectId }: Props = $props();
 
 	// State
 	let quads = $state<Quad[]>([]);
@@ -145,7 +146,7 @@
 
 <div class="space-y-6">
 	<!-- Save Panel -->
-	<SavePanel {nodeId} {data} />
+	<SavePanel {nodeId} {data} {projectId} />
 
 	<!-- Divider -->
 	<div class="border-t border-gray-200"></div>

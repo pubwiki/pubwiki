@@ -3,7 +3,7 @@
 	import type { ArticleDetail } from '@pubwiki/api';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { useArtifactStore, type ArtifactDetails } from '$lib/stores/artifacts.svelte';
+	import { useArtifactStore, type ArtifactDetails, type ArtifactGraphData } from '$lib/stores/artifacts.svelte';
 	import { useArticleStore } from '$lib/stores/articles.svelte';
 	import ArtifactCard from '$lib/components/ArtifactCard.svelte';
 	import ArticleCard from '$lib/components/ArticleCard.svelte';
@@ -23,6 +23,11 @@
 	let details = $state<ArtifactDetails | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	
+	// Version state
+	let currentVersion = $state<string>('latest');
+	let currentGraph = $state<ArtifactGraphData | null>(null);
+	let versionLoading = $state(false);
 	
 	// Articles state
 	let articles = $state<ArticleDetail[]>([]);
@@ -47,15 +52,53 @@
 		window.open(`${studioUrl}?import=${artifact.id}`, '_blank');
 	}
 
+	/**
+	 * Switch to a different version
+	 */
+	async function switchVersion(version: string) {
+		if (version === currentVersion || !artifact) return;
+		
+		versionLoading = true;
+		try {
+			const graph = await artifactStore.fetchGraphByVersion(artifact.id, version);
+			if (graph) {
+				currentGraph = graph;
+				currentVersion = version;
+				// Update URL without navigation
+				const url = new URL(window.location.href);
+				if (version === 'latest') {
+					url.searchParams.delete('version');
+				} else {
+					url.searchParams.set('version', version);
+				}
+				history.replaceState({}, '', url.toString());
+			}
+		} finally {
+			versionLoading = false;
+		}
+	}
+
 	// Fetch artifact details when component mounts or id changes
 	$effect(() => {
 		const artifactId = data.artifactId;
+		const requestedVersion = data.version;
 		loading = true;
 		error = null;
 		
-		artifactStore.fetchArtifactDetails(artifactId).then((result) => {
+		artifactStore.fetchArtifactDetails(artifactId).then(async (result) => {
 			if (result) {
 				details = result;
+				currentGraph = result.graph ?? null;
+				currentVersion = result.graph?.version?.commitHash ?? 'latest';
+				
+				// If a specific version was requested, fetch it
+				if (requestedVersion && requestedVersion !== 'latest' && result.graph?.version?.commitHash !== requestedVersion) {
+					const graph = await artifactStore.fetchGraphByVersion(artifactId, requestedVersion);
+					if (graph) {
+						currentGraph = graph;
+						currentVersion = requestedVersion;
+					}
+				}
 			} else {
 				error = 'Artifact not found';
 			}
@@ -68,9 +111,11 @@
 
 	let artifact = $derived(details?.artifact);
 	let homepage = $derived(details?.homepage);
-	let nodes = $derived(details?.graph?.nodes ?? []);
+	let nodes = $derived(currentGraph?.nodes ?? []);
 	let parents = $derived(details?.parents ?? []);
 	let children = $derived(details?.children ?? []);
+	let versionInfo = $derived(currentGraph?.version);
+	let commitTags = $derived(versionInfo?.commitTags ?? []);
 	
 	// Get sandbox nodes for articles
 	let sandboxNodes = $derived(nodes.filter(n => n.type === 'SANDBOX'));
@@ -141,6 +186,62 @@
 						{artifact.type}
 					</span>
 					<span class="text-xs text-gray-500 ml-2">{artifact.visibility}</span>
+					
+					<!-- Version Selector -->
+					{#if versionInfo}
+						<div class="ml-4 flex items-center gap-2">
+							<span class="text-gray-400">|</span>
+							<div class="relative">
+								<button 
+									class="flex items-center gap-1.5 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border border-gray-300 transition-colors"
+									onclick={(e) => {
+										const menu = e.currentTarget.nextElementSibling as HTMLElement;
+										menu.classList.toggle('hidden');
+									}}
+								>
+									<svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+									</svg>
+									<span class="font-mono">{versionInfo.commitHash.slice(0, 8)}</span>
+									{#if commitTags.length > 0}
+										<span class="text-[#0969da] font-medium">({commitTags[0]})</span>
+									{/if}
+									<svg class="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+									</svg>
+								</button>
+								
+								<!-- Version Dropdown Menu -->
+								<div class="hidden absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[200px]">
+									<div class="py-1">
+										<button
+											onclick={() => switchVersion('latest')}
+											class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between {currentVersion === 'latest' ? 'bg-blue-50 text-blue-700' : ''}"
+										>
+											<span>Latest</span>
+											{#if currentVersion === 'latest'}
+												<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+											{/if}
+										</button>
+										{#each commitTags as tag}
+											<button
+												onclick={() => switchVersion(tag)}
+												class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between {currentVersion === tag ? 'bg-blue-50 text-blue-700' : ''}"
+											>
+												<span>{tag}</span>
+												{#if currentVersion === tag}
+													<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
+												{/if}
+											</button>
+										{/each}
+									</div>
+								</div>
+							</div>
+							{#if versionLoading}
+								<div class="animate-spin rounded-full h-3 w-3 border-b-2 border-[#0969da]"></div>
+							{/if}
+						</div>
+					{/if}
 				</div>
 				
 				<!-- User Profile / Actions placeholder -->

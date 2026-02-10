@@ -27,7 +27,8 @@ import { getNodeVfs } from '$lib/vfs';
 import { getVfsController } from '../vfs/controller.svelte';
 import { Vfs } from '@pubwiki/vfs';
 import { generateBlockId, blocksToContent } from '@pubwiki/chat';
-import { generateCommitHash } from '$lib/version';
+import { generateContentHash } from '$lib/version';
+import { computeNodeCommit } from '@pubwiki/api';
 import { 
 	createPubChat, 
 	streamGeneration, 
@@ -331,12 +332,13 @@ export async function generate(
 
 	// Create streaming generated node with indirect refs (empty blocks to start)
 	// Include inputVfsRef and outputVfsId for file modification scenarios
+	// parent is null for newly created nodes (no version lineage yet)
 	const newGeneratedData = await createGeneratedNodeData(
 		[],
 		prepared.inputRef,
 		prepared.promptRefs,
 		prepared.indirectPromptRefs,
-		prepared.parentRefs,
+		null, // parent - new node has no version lineage
 		'',  // name
 		inputVfsRef,
 		outputVfsId
@@ -496,14 +498,16 @@ export async function generate(
 			const updatedData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
 			const currentBlocks = updatedData?.content?.blocks || [];
 			const contentText = blocksToContent(currentBlocks);
-			const commit = await generateCommitHash(contentText);
+			const contentHash = await generateContentHash(contentText);
+			const commit = await computeNodeCommit(nodeId, updatedData?.parent ?? null, contentHash, 'GENERATED');
 			
-			// Update commit
+			// Update commit and contentHash
 			const finalData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
 			if (finalData) {
 				nodeStore.update(nodeId, (data) => ({
 					...data,
-					commit
+					commit,
+					contentHash
 				}));
 				
 				// Save snapshot with incoming edge information

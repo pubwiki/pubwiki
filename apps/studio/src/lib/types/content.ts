@@ -490,120 +490,36 @@ export class LoaderContent implements NodeContent {
 }
 
 /**
- * Checkpoint visibility type
- */
-export type CheckpointVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC'
-
-/**
- * Checkpoint information
- */
-export interface CheckpointInfo {
-  /** Checkpoint unique ID */
-  id: string
-  /** User-defined checkpoint name */
-  name: string
-  /** Optional description */
-  description?: string
-  /** Creation timestamp */
-  createdAt: number
-  /** Visibility level */
-  visibility: CheckpointVisibility
-}
-
-/**
- * State node content - RDF triple store with GameSave integration
+ * State node content - RDF triple store
  * 
- * The actual RDF data is stored in GameSave service (Durable Object).
- * This content stores the reference to the save and selected checkpoint.
+ * In the new architecture, state/save management is handled separately
+ * from the node content. The actual save data is stored in the backend
+ * and queried via the save API using stateNodeId + stateNodeCommit.
+ * 
+ * StateContent itself is minimal - it may contain configuration or
+ * metadata in the future, but save references are no longer stored here.
  */
 export class StateContent implements NodeContent {
-  constructor(
-    /** GameSave service save ID */
-    public saveId: string | null = null,
-    /** Currently selected checkpoint ID */
-    public checkpointId: string | null = null,
-    /** Currently selected checkpoint ref (hash) */
-    public checkpointRef: string | null = null,
-    /** List of user's checkpoints (local cache) */
-    public checkpoints: CheckpointInfo[] = []
-  ) {}
+  constructor() {}
 
   getText(): string {
     return ''
   }
 
   serialize(): string {
-    return JSON.stringify({ saveId: this.saveId, checkpointId: this.checkpointId, checkpointRef: this.checkpointRef })
+    return JSON.stringify({})
   }
 
   clone(): StateContent {
-    return new StateContent(
-      this.saveId,
-      this.checkpointId,
-      this.checkpointRef,
-      structuredClone(this.checkpoints)
-    )
-  }
-
-  /** Create a copy with updated saveId */
-  withSaveId(saveId: string | null): StateContent {
-    return new StateContent(saveId, this.checkpointId, this.checkpointRef, structuredClone(this.checkpoints))
-  }
-
-  /** Create a copy with updated checkpoint (both id and ref) */
-  withCheckpoint(checkpointId: string | null, checkpointRef: string | null): StateContent {
-    return new StateContent(this.saveId, checkpointId, checkpointRef, structuredClone(this.checkpoints))
-  }
-
-  /** Create a copy with updated checkpoints list */
-  withCheckpoints(checkpoints: CheckpointInfo[]): StateContent {
-    return new StateContent(this.saveId, this.checkpointId, this.checkpointRef, structuredClone(checkpoints))
-  }
-
-  /** Add a checkpoint to the list */
-  addCheckpoint(checkpoint: CheckpointInfo): StateContent {
-    return new StateContent(
-      this.saveId,
-      this.checkpointId,
-      this.checkpointRef,
-      [...this.checkpoints, checkpoint]
-    )
-  }
-
-  /** Remove a checkpoint from the list by ID */
-  removeCheckpoint(id: string): StateContent {
-    const isSelected = this.checkpointId === id
-    return new StateContent(
-      this.saveId,
-      // Clear checkpointId if it matches the removed checkpoint
-      isSelected ? null : this.checkpointId,
-      // Clear checkpointRef if it matches the removed checkpoint
-      isSelected ? null : this.checkpointRef,
-      this.checkpoints.filter(c => c.id !== id)
-    )
+    return new StateContent()
   }
 
   toJSON() {
-    return {
-      saveId: this.saveId,
-      checkpointId: this.checkpointId,
-      checkpointRef: this.checkpointRef,
-      checkpoints: this.checkpoints
-    }
+    return {}
   }
 
-  static fromJSON(data: {
-    saveId?: string | null
-    checkpointId?: string | null
-    checkpointRef?: string | null
-    checkpoints?: CheckpointInfo[]
-  }): StateContent {
-    return new StateContent(
-      data.saveId ?? null,
-      data.checkpointId ?? null,
-      data.checkpointRef ?? null,
-      data.checkpoints ?? []
-    )
+  static fromJSON(_data: unknown): StateContent {
+    return new StateContent()
   }
 }
 
@@ -644,11 +560,6 @@ export function restoreContent(type: NodeType, data: unknown): NodeContent {
     case 'LOADER':
       return LoaderContent.fromJSON(json as Record<string, unknown>)
     case 'STATE':
-      return StateContent.fromJSON(json as {
-        saveId?: string | null
-        checkpointId?: string | null
-        checkpointRef?: string | null
-        checkpoints?: CheckpointInfo[]
-      })
+      return StateContent.fromJSON(json)
   }
 }

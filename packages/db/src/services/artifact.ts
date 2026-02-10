@@ -19,6 +19,7 @@ import type {
   VisibilityType,
   CreateArtifactMetadata,
   ArtifactEdgeDescriptor,
+  ArtifactNodeContent,
 } from '@pubwiki/api';
 import { computeArtifactCommit } from '@pubwiki/api';
 
@@ -63,7 +64,7 @@ export interface CreateArtifactNode {
   type: ArtifactNodeType;
   name?: string;
   contentHash: string;
-  content: unknown;
+  content: ArtifactNodeContent;
   message?: string;
   tag?: string;
   visibility?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
@@ -1516,7 +1517,7 @@ export class ArtifactService {
             type: v.type as ArtifactNodeType,
             name: v.name ?? undefined,
             contentHash: v.contentHash,
-            content: v.content,
+            content: v.content!,
             position: bn.positionX != null && bn.positionY != null
               ? { x: bn.positionX, y: bn.positionY }
               : undefined,

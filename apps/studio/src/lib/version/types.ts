@@ -93,9 +93,13 @@ export interface Versionable {
 	type: NodeType
 	/** User-defined node name */
 	name: string
-	/** Current commit hash (content hash) */
+	/** Current commit hash = computeNodeCommit(nodeId, parent, contentHash, type) */
 	commit: string
-	/** References to historical snapshots */
+	/** Content hash = SHA256(JSON.stringify(content))[:16] */
+	contentHash: string
+	/** Parent commit for version lineage (null for root versions) */
+	parent: string | null
+	/** References to historical snapshots (local only) */
 	snapshotRefs: NodeRef[]
 	/** Node content - implements NodeContent interface */
 	content: NodeContent

@@ -1,4 +1,4 @@
-import { eq, and, desc, count } from 'drizzle-orm';
+import { eq, and, desc, count, sql } from 'drizzle-orm';
 import type { Database } from '../client';
 import { nodeVersions } from '../schema/node-versions';
 import { saveContents } from '../schema/node-contents';
@@ -120,6 +120,7 @@ export class SaveService {
         type: 'SAVE',
         contentHash,
         content: {
+          type: 'SAVE',
           stateNodeId,
           stateNodeCommit,
           sourceArtifactCommit,
@@ -353,18 +354,18 @@ export class SaveService {
         };
       }
 
-      // 删除 node version 记录
-      await this.db
-        .delete(nodeVersions)
-        .where(eq(nodeVersions.commit, commit));
-
-      // 减少 save_contents 引用计数
-      await this.db
-        .update(saveContents)
-        .set({
-          refCount: saveContents.refCount,
-        })
-        .where(eq(saveContents.contentHash, save.contentHash));
+      // 使用 batch 保证原子性：删除 node version + 减少 save_contents 引用计数
+      await this.db.batch([
+        this.db
+          .delete(nodeVersions)
+          .where(eq(nodeVersions.commit, commit)),
+        this.db
+          .update(saveContents)
+          .set({
+            refCount: sql`CASE WHEN ${saveContents.refCount} > 0 THEN ${saveContents.refCount} - 1 ELSE 0 END`,
+          })
+          .where(eq(saveContents.contentHash, save.contentHash)),
+      ]);
 
       const r2Key = `saves/${commit}.bin`;
 

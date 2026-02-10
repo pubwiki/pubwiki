@@ -4,30 +4,35 @@
  * Creates a JS module definition for PubWiki API access in Lua/TypeScript backends.
  * The module exposes:
  * - pubwiki.publish(metadata) -> {success: bool, artifactId?: string, error?: string}
- * - pubwiki.uploadArticle(data) -> {success: bool, articleId?: string, error?: string}
- * - pubwiki.uploadCheckpoint(checkpointId, visibility?) -> {success: bool, checkpointId?: string, error?: string}
- * - pubwiki.uploadCheckpoints(checkpointIds[], defaultVisibility?) -> {success: bool, checkpointIds?: string[], error?: string}
+ * - pubwiki.uploadCheckpoint(data) -> {success: bool, checkpointId?: string, error?: string}
+ * - pubwiki.uploadCheckpoints(data) -> {success: bool, checkpointIds?: string[], error?: string}
+ * 
+ * Cloud saves require:
+ * - Project to be published (artifactId available)
+ * - User to be authenticated (userId available)
+ * - Artifact commit (fetched from backend)
+ * - STATE node commit (from nodeStore)
  * 
  * Each method requests user confirmation before executing API calls.
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { FlowNodeData } from '$lib/types/flow';
-import type { StateNodeData } from '$lib/types/node-data';
 import type { JsModuleDefinition } from '$lib/loader';
 import type { ReaderContent } from '@pubwiki/reader';
-import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
-import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
-import { uploadCheckpointToCloud } from '$lib/gamesave/checkpoint';
-import { ensureCloudSave } from '$lib/gamesave/state-sync';
-import { getNodeRDFStore } from '$lib/rdf';
-import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 import { HandleId } from '$lib/graph';
+import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
+import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
+import { getNodeRDFStore } from '$lib/rdf';
 import { nodeStore } from '$lib/persistence';
-import { StateContent } from '$lib/types';
+import { 
+	getArtifactContext, 
+	clearArtifactContext,
+	createSaveCheckpoint, 
+	computeSaveCommit 
+} from '$lib/gamesave';
 import PublishForm from '$components/pubwiki/PublishForm.svelte';
-import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
 import UploadCheckpointForm from '$components/pubwiki/UploadCheckpointForm.svelte';
 import UploadCheckpointsForm from '$components/pubwiki/UploadCheckpointsForm.svelte';
 
@@ -49,6 +54,8 @@ export interface PubWikiModuleContext {
 	getEdges: () => Edge[];
 	/** API base URL */
 	apiBaseUrl: string;
+	/** Function to get current user ID (returns null if not authenticated) */
+	getCurrentUserId?: () => string | null;
 }
 
 /**
@@ -147,7 +154,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 			// Build final metadata from user-edited values
 			const finalMetadata: PublishMetadata = {
 				artifactId: crypto.randomUUID(),
-				type: 'GAME', // Default type for Loader-based projects
 				name: editedValues.name as string,
 				slug: editedValues.slug as string,
 				description: (editedValues.description as string) || '',
@@ -180,166 +186,135 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 
 		/**
 		 * Upload an article
+		 * 
+		 * Note: This feature is temporarily disabled pending the new save API architecture
+		 * which requires sourceArtifactId and sourceArtifactCommit for referencing saves.
 		 */
-		async uploadArticle(data: UploadArticleInput): Promise<PubWikiResult> {
-			// Find connected Sandbox node
-			const sandboxNodeId = findConnectedSandboxNode(
-				context.loaderNodeId,
-				context.getNodes(),
-				context.getEdges()
-			);
-
-			if (!sandboxNodeId) {
-				return {
-					success: false,
-					error: 'No Sandbox node connected to this Loader. Please connect a Sandbox node via the service output.'
-				};
-			}
-
-			// Find connected State node and get saveId
-			const stateInfo = findConnectedStateNode(
-				context.loaderNodeId,
-				context.getNodes(),
-				context.getEdges()
-			);
-
-			if (!stateInfo) {
-				return {
-					success: false,
-					error: 'No State node connected to this Loader. Please connect a State node via the state input.'
-				};
-			}
-
-			if (!stateInfo.saveId) {
-				return {
-					success: false,
-					error: 'Connected State node has no cloud save configured. Please set up cloud save first.'
-				};
-			}
-
-			// Build initial values for confirmation dialog
-			const initialValues = {
-				title: data.title || '',
-				visibility: data.visibility || 'PUBLIC'
+		async uploadArticle(_data: UploadArticleInput): Promise<PubWikiResult> {
+			return {
+				success: false,
+				error: 'Article upload is temporarily disabled. The new save API requires the project to be published first.'
 			};
-
-			// Request user confirmation with editable form
-			const editedValues = await requestConfirmation('uploadArticle', UploadArticleForm, initialValues);
-
-			if (editedValues === null) {
-				return {
-					success: false,
-					error: 'User cancelled the operation'
-				};
-			}
-
-			// Build final data from user-edited values
-			const articleId = data.articleId || crypto.randomUUID();
-			const visibility = (editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED') || 'PUBLIC';
-
-			try {
-				const apiClient = createApiClient(context.apiBaseUrl);
-				const { data: result, error } = await apiClient.PUT('/articles/{articleId}', {
-					params: { path: { articleId } },
-					body: {
-						title: editedValues.title as string,
-						sandboxNodeId,
-						saveId: stateInfo.saveId,
-						content: data.content,
-						visibility
-					}
-				});
-
-				if (error) {
-					return {
-						success: false,
-						error: error.error || 'Failed to upload article'
-					};
-				}
-
-				return {
-					success: true,
-					articleId: result.id || articleId
-				};
-			} catch (err) {
-				return {
-					success: false,
-					error: err instanceof Error ? err.message : String(err)
-				};
-			}
 		},
 
 		/**
 		 * Upload an existing local checkpoint to cloud
+		 * 
+		 * Requires:
+		 * - Project to be published (has artifactId)
+		 * - User to be authenticated
+		 * - STATE node connected to Loader
 		 */
 		async uploadCheckpoint(data: UploadCheckpointInput): Promise<PubWikiResult> {
-			// Find connected State node
-			const stateInfo = findConnectedStateNode(
-				context.loaderNodeId,
-				context.getNodes(),
-				context.getEdges()
-			);
-
-			if (!stateInfo) {
+			// Find connected STATE node
+			const nodes = context.getNodes();
+			const edges = context.getEdges();
+			const stateNodeId = findConnectedStateNode(context.loaderNodeId, nodes, edges);
+			
+			if (!stateNodeId) {
 				return {
 					success: false,
 					error: 'No State node connected to this Loader. Please connect a State node via the state input.'
 				};
 			}
-
+			
+			// Get artifact context
+			const artifactCtx = await getArtifactContext(context.projectId);
+			if (!artifactCtx.isPublished || !artifactCtx.artifactId || !artifactCtx.artifactCommit) {
+				return {
+					success: false,
+					error: 'Project must be published before uploading checkpoints to cloud.'
+				};
+			}
+			
+			// Get user ID
+			const userId = context.getCurrentUserId?.();
+			if (!userId) {
+				return {
+					success: false,
+					error: 'Please log in to upload checkpoints to cloud.'
+				};
+			}
+			
+			// Get STATE node commit
+			const stateNodeData = nodeStore.get(stateNodeId);
+			const stateNodeCommit = stateNodeData?.commit;
+			if (!stateNodeCommit) {
+				return {
+					success: false,
+					error: 'Cannot get STATE node version information.'
+				};
+			}
+			
 			try {
-				// Get RDF store for the state node
-				const store = await getNodeRDFStore(stateInfo.stateNodeId);
-
-				// Get checkpoint info from local store
+				const store = await getNodeRDFStore(stateNodeId);
 				const checkpoint = await store.getCheckpoint(data.checkpointId);
+				
 				if (!checkpoint) {
 					return {
 						success: false,
-						error: `Checkpoint "${data.checkpointId}" not found in local store`
+						error: `Checkpoint "${data.checkpointId}" not found in local store.`
 					};
 				}
-
-				// Build initial values for confirmation dialog
+				
+				// Show confirmation dialog
 				const initialValues = {
 					name: checkpoint.title,
 					description: checkpoint.description || '',
 					visibility: data.visibility || 'PRIVATE'
 				};
-
-				// Request user confirmation with editable form
+				
 				const editedValues = await requestConfirmation('uploadCheckpoint', UploadCheckpointForm, initialValues);
-
+				
 				if (editedValues === null) {
 					return {
 						success: false,
 						error: 'User cancelled the operation'
 					};
 				}
-
-				// Ensure cloud save exists (creates if needed)
-				const { saveId: targetSaveId } = await ensureCloudSave(stateInfo.stateNodeId);
-
-				const visibility = editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
-
-				// Upload checkpoint to cloud
-				const result = await uploadCheckpointToCloud(store, targetSaveId, {
-					id: data.checkpointId,
-					name: checkpoint.title,
-					description: checkpoint.description,
-					visibility
+				
+				// Compute save commit
+				const commit = await computeSaveCommit(
+					stateNodeId,
+					stateNodeCommit,
+					userId,
+					artifactCtx.artifactId,
+					artifactCtx.artifactCommit
+				);
+				
+				// Compute content hash
+				const quads = await store.getAllQuads();
+				const quadsJson = JSON.stringify(quads);
+				const contentHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(quadsJson));
+				const contentHashArray = Array.from(new Uint8Array(contentHashBuffer));
+				const contentHash = contentHashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
+				
+				// Load checkpoint state temporarily to upload
+				await store.loadCheckpoint(data.checkpointId);
+				
+				// Create cloud save
+				const result = await createSaveCheckpoint(store, {
+					stateNodeId,
+					stateNodeCommit,
+					commit,
+					sourceArtifactId: artifactCtx.artifactId,
+					sourceArtifactCommit: artifactCtx.artifactCommit,
+					contentHash,
+					title: editedValues.name as string,
+					description: editedValues.description as string || undefined,
+					visibility: editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED'
 				});
-
+				
 				if (!result.success) {
 					return {
 						success: false,
-						error: result.error || 'Failed to upload checkpoint'
+						error: result.error || 'Failed to upload checkpoint to cloud.'
 					};
 				}
-
+				
 				return {
 					success: true,
-					checkpointId: result.checkpointId
+					checkpointId: result.save?.commit
 				};
 			} catch (err) {
 				return {
@@ -351,93 +326,144 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 
 		/**
 		 * Upload multiple existing local checkpoints to cloud
+		 * 
+		 * Requires:
+		 * - Project to be published (has artifactId)
+		 * - User to be authenticated
+		 * - STATE node connected to Loader
 		 */
 		async uploadCheckpoints(data: UploadCheckpointsInput): Promise<PubWikiResult> {
-			// Find connected State node
-			const stateInfo = findConnectedStateNode(
-				context.loaderNodeId,
-				context.getNodes(),
-				context.getEdges()
-			);
-
-			if (!stateInfo) {
+			// Find connected STATE node
+			const nodes = context.getNodes();
+			const edges = context.getEdges();
+			const stateNodeId = findConnectedStateNode(context.loaderNodeId, nodes, edges);
+			
+			if (!stateNodeId) {
 				return {
 					success: false,
 					error: 'No State node connected to this Loader. Please connect a State node via the state input.'
 				};
 			}
-
+			
 			if (!data.checkpointIds || data.checkpointIds.length === 0) {
 				return {
 					success: false,
-					error: 'No checkpoint IDs provided'
+					error: 'No checkpoint IDs provided.'
 				};
 			}
-
+			
+			// Get artifact context
+			const artifactCtx = await getArtifactContext(context.projectId);
+			if (!artifactCtx.isPublished || !artifactCtx.artifactId || !artifactCtx.artifactCommit) {
+				return {
+					success: false,
+					error: 'Project must be published before uploading checkpoints to cloud.'
+				};
+			}
+			
+			// Get user ID
+			const userId = context.getCurrentUserId?.();
+			if (!userId) {
+				return {
+					success: false,
+					error: 'Please log in to upload checkpoints to cloud.'
+				};
+			}
+			
+			// Get STATE node commit
+			const stateNodeData = nodeStore.get(stateNodeId);
+			const stateNodeCommit = stateNodeData?.commit;
+			if (!stateNodeCommit) {
+				return {
+					success: false,
+					error: 'Cannot get STATE node version information.'
+				};
+			}
+			
 			try {
-				// Get RDF store for the state node
-				const store = await getNodeRDFStore(stateInfo.stateNodeId);
-
-				// Validate all checkpoints exist and collect their info
-				const checkpoints: Array<{ id: string; title: string; description?: string }> = [];
+				const store = await getNodeRDFStore(stateNodeId);
+				
+				// Validate all checkpoints exist
+				const checkpointsToUpload: { id: string; title: string; description?: string }[] = [];
 				for (const checkpointId of data.checkpointIds) {
 					const checkpoint = await store.getCheckpoint(checkpointId);
 					if (!checkpoint) {
 						return {
 							success: false,
-							error: `Checkpoint "${checkpointId}" not found in local store`
+							error: `Checkpoint "${checkpointId}" not found in local store.`
 						};
 					}
-					checkpoints.push({
+					checkpointsToUpload.push({
 						id: checkpoint.id,
 						title: checkpoint.title,
 						description: checkpoint.description
 					});
 				}
-
-				// Build initial values for confirmation dialog
+				
+				// Show confirmation dialog
 				const initialValues = {
-					count: checkpoints.length,
-					names: checkpoints.map(c => c.title).join(', '),
+					count: checkpointsToUpload.length,
+					names: checkpointsToUpload.map(c => c.title).join(', '),
 					visibility: data.defaultVisibility || 'PRIVATE'
 				};
-
-				// Request user confirmation with editable form
+				
 				const editedValues = await requestConfirmation('uploadCheckpoints', UploadCheckpointsForm, initialValues);
-
+				
 				if (editedValues === null) {
 					return {
 						success: false,
 						error: 'User cancelled the operation'
 					};
 				}
-
-				// Ensure cloud save exists (creates if needed)
-				const { saveId: targetSaveId } = await ensureCloudSave(stateInfo.stateNodeId);
-
+				
 				const visibility = editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
 				const uploadedIds: string[] = [];
-
+				
 				// Upload each checkpoint
-				for (const checkpoint of checkpoints) {
-					const result = await uploadCheckpointToCloud(store, targetSaveId, {
-						id: checkpoint.id,
-						name: checkpoint.title,
-						description: checkpoint.description,
+				for (const cp of checkpointsToUpload) {
+					// Load checkpoint state
+					await store.loadCheckpoint(cp.id);
+					
+					// Compute save commit
+					const commit = await computeSaveCommit(
+						stateNodeId,
+						stateNodeCommit,
+						userId,
+						artifactCtx.artifactId!,
+						artifactCtx.artifactCommit!
+					);
+					
+					// Compute content hash
+					const quads = await store.getAllQuads();
+					const quadsJson = JSON.stringify(quads);
+					const contentHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(quadsJson));
+					const contentHashArray = Array.from(new Uint8Array(contentHashBuffer));
+					const contentHash = contentHashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
+					
+					// Create cloud save
+					const result = await createSaveCheckpoint(store, {
+						stateNodeId,
+						stateNodeCommit,
+						commit,
+						sourceArtifactId: artifactCtx.artifactId!,
+						sourceArtifactCommit: artifactCtx.artifactCommit!,
+						contentHash,
+						title: cp.title,
+						description: cp.description,
 						visibility
 					});
-
+					
 					if (!result.success) {
 						return {
 							success: false,
 							checkpointIds: uploadedIds,
-							error: `Failed to upload checkpoint "${checkpoint.title}": ${result.error}`
+							error: `Failed to upload checkpoint "${cp.title}": ${result.error}`
 						};
 					}
-
-					uploadedIds.push(checkpoint.id);
+					
+					uploadedIds.push(cp.id);
 				}
-
+				
 				return {
 					success: true,
 					checkpointIds: uploadedIds
@@ -454,19 +480,27 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 
 /**
  * Create PubWiki module context from flow state getters
+ * 
+ * @param projectId - The project ID
+ * @param loaderNodeId - The Loader node ID
+ * @param getNodes - Function to get current flow nodes
+ * @param getEdges - Function to get current flow edges
+ * @param getCurrentUserId - Optional function to get current user ID (for cloud saves)
  */
 export function createPubWikiContext(
 	projectId: string,
 	loaderNodeId: string,
 	getNodes: () => Node<FlowNodeData>[],
-	getEdges: () => Edge[]
+	getEdges: () => Edge[],
+	getCurrentUserId?: () => string | null
 ): PubWikiModuleContext {
 	return {
 		projectId,
 		loaderNodeId,
 		getNodes,
 		getEdges,
-		apiBaseUrl: API_BASE_URL
+		apiBaseUrl: API_BASE_URL,
+		getCurrentUserId
 	};
 }
 
@@ -475,62 +509,31 @@ export function createPubWikiContext(
 // ============================================================================
 
 /**
- * Find the Sandbox node connected to a Loader node via the service output.
- * Loader's LOADER_OUTPUT connects to Sandbox's SERVICE_INPUT.
- */
-function findConnectedSandboxNode(
-	loaderNodeId: string,
-	nodes: Node<FlowNodeData>[],
-	edges: Edge[]
-): string | null {
-	// Find edges where this Loader is the source and the sourceHandle is LOADER_OUTPUT
-	const outgoingEdges = edges.filter(
-		e => e.source === loaderNodeId && e.sourceHandle === HandleId.LOADER_OUTPUT
-	);
-
-	for (const edge of outgoingEdges) {
-		// Check if target is a Sandbox node
-		const targetNode = nodes.find(n => n.id === edge.target);
-		if (!targetNode) continue;
-
-		const targetData = nodeStore.get(targetNode.id);
-		if (targetData?.type === 'SANDBOX') {
-			return targetNode.id;
-		}
-	}
-
-	return null;
-}
-
-/**
- * Find the State node connected to a Loader node via the state input.
- * State node connects to Loader's LOADER_STATE handle.
- * Returns the state node id and saveId if found.
+ * Find the State node connected to a Loader node via the state handle
+ * 
+ * @param loaderNodeId - The Loader node ID
+ * @param nodes - Current flow nodes
+ * @param edges - Current flow edges
+ * @returns State node ID or null if not found
  */
 function findConnectedStateNode(
 	loaderNodeId: string,
 	nodes: Node<FlowNodeData>[],
 	edges: Edge[]
-): { stateNodeId: string; saveId: string | null } | null {
-	// Find edges where this Loader is the target and the targetHandle is LOADER_STATE
-	const incomingEdges = edges.filter(
+): string | null {
+	const stateEdge = edges.find(
 		e => e.target === loaderNodeId && e.targetHandle === HandleId.LOADER_STATE
 	);
-
-	for (const edge of incomingEdges) {
-		// Check if source is a State node
-		const sourceNode = nodes.find(n => n.id === edge.source);
-		if (!sourceNode) continue;
-
-		const sourceData = nodeStore.get(sourceNode.id) as StateNodeData | undefined;
-		if (sourceData?.type === 'STATE') {
-			const content = sourceData.content as StateContent;
-			return {
-				stateNodeId: sourceNode.id,
-				saveId: content.saveId
-			};
-		}
+	
+	if (!stateEdge) return null;
+	
+	const sourceNode = nodes.find(n => n.id === stateEdge.source);
+	if (!sourceNode) return null;
+	
+	const sourceData = nodeStore.get(sourceNode.id);
+	if (sourceData?.type === 'STATE') {
+		return sourceNode.id;
 	}
-
+	
 	return null;
 }

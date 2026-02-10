@@ -11,8 +11,7 @@
  * 简化为纯 Checkpoint 快照导出
  */
 
-import type { Quad as SyncQuad } from '@pubwiki/api'
-import { fromRdfQuad, toRdfQuad } from '../convert.js'
+import { fromRdfQuad, toRdfQuad, type SerializedQuad } from '../convert.js';
 import type { CheckpointStore } from '../version/store.js'
 import type { StoreBackend } from '../backend/quadstore.js'
 
@@ -36,7 +35,7 @@ interface ExportedCheckpoint {
  */
 interface ExportedCheckpointData {
   id: string
-  quads: SyncQuad[]
+  quads: SerializedQuad[]
 }
 
 /**
@@ -48,7 +47,7 @@ export interface FullStateExport {
   /** Export timestamp */
   exportedAt: string
   /** Current quads snapshot */
-  currentQuads: SyncQuad[]
+  currentQuads: SerializedQuad[]
   /** All checkpoints */
   checkpoints: ExportedCheckpoint[]
   /** Checkpoint data (full quad snapshots) */

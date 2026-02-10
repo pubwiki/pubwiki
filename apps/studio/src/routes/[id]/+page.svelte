@@ -43,7 +43,8 @@
 	} from '$lib/version';
 	import { validateConnection, HandleId, createVfsMountHandleId } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
-	import { publishArtifact, type PublishMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
+	import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
+	import { createDraftSyncService, type DraftSyncService, type DraftSyncState } from '$lib/sync';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$components/pubwiki';
@@ -62,7 +63,6 @@
 	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type NodeVfs } from '$lib/vfs';
 	import { generateUniqueNodeName } from '$lib/validation';
 	import { requestVfsDeleteConfirmation } from '$lib/state/vfs-delete-confirm.svelte';
-	import { syncStateNodesFromCloud } from '$lib/gamesave/state-sync';
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { createApiClient } from '@pubwiki/api/client';
 	import { API_BASE_URL } from '$lib/config';
@@ -143,6 +143,44 @@
 	
 	// Project name
 	let projectName = $state('');
+
+	// Last cloud commit hash for Draft-Latest workflow
+	let lastCloudCommit = $state<string | undefined>(undefined);
+	
+	// Draft Sync Service
+	let syncService = $state<DraftSyncService | null>(null);
+	const defaultSyncState: DraftSyncState = {
+		status: 'idle',
+		hasUnsyncedChanges: false,
+		hasVfsChanges: false,
+		lastSyncedAt: null,
+		lastSyncedCommit: null,
+		error: null,
+		enabled: false,
+		backendValidated: false,
+		diverged: undefined
+	};
+	let syncState = $derived(syncService !== null ? syncService.state : defaultSyncState);
+	
+	// Track initial modificationCount to avoid marking dirty on init
+	let initialModificationCount = $state<number | null>(null);
+	
+	// Watch nodeStore modifications and mark syncService as dirty when changes occur
+	$effect(() => {
+		const currentCount = nodeStore.modificationCount;
+		// Skip if syncService not initialized or this is the initial read
+		if (syncService && initialModificationCount !== null && currentCount > initialModificationCount) {
+			syncService.markDirty();
+		}
+	});
+	
+	// Update tracked VFS nodes when nodes array changes
+	$effect(() => {
+		if (syncService && loaded) {
+			// This will track new VFS nodes and untrack removed ones
+			syncService.updateTrackedVfsNodes(nodes);
+		}
+	});
 	
 	// Current project ID (from URL params)
 	let currentProjectId = $derived(data.projectId);
@@ -368,6 +406,9 @@
 		unregisterLoaderNode?.();
 		unregisterVfsNode?.();
 		clearAllHandlers();
+		
+		// Cleanup VFS tracking in sync service
+		syncService?.cleanupVfsTracking();
 	});
 
 	// ============================================================================
@@ -468,9 +509,9 @@
 	 * Returns false to cancel deletion, true to proceed.
 	 */
 	async function handleBeforeDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }): Promise<boolean> {
-		// Separate VFS nodes from other nodes
-		const vfsNodes = deletedNodes.filter(n => n.data.type === 'VFS' && !n.data.external);
-		const otherNodes = deletedNodes.filter(n => n.data.type !== 'VFS' || n.data.external);
+		// Separate VFS nodes from other nodes (all VFS nodes require confirmation)
+		const vfsNodes = deletedNodes.filter(n => n.data.type === 'VFS');
+		const otherNodes = deletedNodes.filter(n => n.data.type !== 'VFS');
 		
 		// If there are VFS nodes being deleted, request confirmation
 		if (vfsNodes.length > 0) {
@@ -491,8 +532,8 @@
 	 * Called after onbeforedelete returns true.
 	 */
 	async function handleDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }) {
-		// Delete VFS data from OPFS for VFS nodes
-		const vfsNodes = deletedNodes.filter(n => n.data.type === 'VFS' && !n.data.external);
+		// Delete VFS data from OPFS for all VFS nodes
+		const vfsNodes = deletedNodes.filter(n => n.data.type === 'VFS');
 		if (vfsNodes.length > 0) {
 			const factory = getVfsFactory();
 			for (const node of vfsNodes) {
@@ -514,6 +555,7 @@
 		);
 		
 		// Delete from stores
+		// VFS change tracking cleanup is automatic via the $effect
 		for (const node of deletedNodes) {
 			nodeStore.delete(node.id);
 			layoutStore.delete(node.id);
@@ -671,18 +713,9 @@
 	
 	async function addPromptNode() {
 		const uniqueName = generateUniqueNodeName('PROMPT');
-		const newPromptData = await createPromptNodeData('', [], uniqueName);
+		const newPromptData = await createPromptNodeData('', null, uniqueName);
 		const position = getNewNodePosition();
-		await addNode({
-			id: newPromptData.id,
-			type: 'PROMPT',
-			name: newPromptData.name,
-			commit: newPromptData.commit,
-			snapshotRefs: newPromptData.snapshotRefs,
-			parents: newPromptData.parents,
-			content: newPromptData.content,
-			external: newPromptData.external
-		}, position);
+		await addNode(newPromptData, position);
 		// Auto-trigger name editing for new nodes
 		editingNameNodeId = newPromptData.id;
 		closeContextMenu();
@@ -690,18 +723,9 @@
 
 	async function addInputNode() {
 		const uniqueName = generateUniqueNodeName('INPUT');
-		const newInputData = await createInputNodeData('', [], uniqueName);
+		const newInputData = await createInputNodeData('', null, uniqueName);
 		const position = getNewNodePosition();
-		await addNode({
-			id: newInputData.id,
-			type: 'INPUT',
-			name: newInputData.name,
-			commit: newInputData.commit,
-			snapshotRefs: newInputData.snapshotRefs,
-			parents: newInputData.parents,
-			content: newInputData.content,
-			external: newInputData.external
-		}, position);
+		await addNode(newInputData, position);
 		// Auto-trigger name editing for new nodes
 		editingNameNodeId = newInputData.id;
 		closeContextMenu();
@@ -712,16 +736,8 @@
 		const uniqueName = generateUniqueNodeName('VFS');
 		const newVFSData = await createVFSNodeData(currentProjectId, uniqueName);
 		const position = getNewNodePosition();
-		await addNode({
-			id: newVFSData.id,
-			type: 'VFS',
-			name: newVFSData.name,
-			commit: newVFSData.commit,
-			snapshotRefs: newVFSData.snapshotRefs,
-			parents: newVFSData.parents,
-			content: newVFSData.content,
-			external: newVFSData.external
-		}, position);
+		await addNode(newVFSData, position);
+		// VFS change tracking is automatically setup by the $effect
 		// Auto-trigger name editing for new VFS nodes
 		editingNameNodeId = newVFSData.id;
 		closeContextMenu();
@@ -731,16 +747,7 @@
 		const uniqueName = generateUniqueNodeName('SANDBOX');
 		const newSandboxData = await createSandboxNodeData(uniqueName);
 		const position = getNewNodePosition();
-		await addNode({
-			id: newSandboxData.id,
-			type: 'SANDBOX',
-			name: newSandboxData.name,
-			commit: newSandboxData.commit,
-			snapshotRefs: newSandboxData.snapshotRefs,
-			parents: newSandboxData.parents,
-			content: newSandboxData.content,
-			external: newSandboxData.external
-		}, position);
+		await addNode(newSandboxData, position);
 		// Auto-trigger name editing for new nodes
 		editingNameNodeId = newSandboxData.id;
 		closeContextMenu();
@@ -750,16 +757,7 @@
 		const uniqueName = generateUniqueNodeName('LOADER');
 		const newLoaderData = await createLoaderNodeData(uniqueName);
 		const position = getNewNodePosition();
-		await addNode({
-			id: newLoaderData.id,
-			type: 'LOADER',
-			name: newLoaderData.name,
-			commit: newLoaderData.commit,
-			snapshotRefs: newLoaderData.snapshotRefs,
-			parents: newLoaderData.parents,
-			content: newLoaderData.content,
-			external: newLoaderData.external
-		}, position);
+		await addNode(newLoaderData, position);
 		// Auto-trigger name editing for new nodes
 		editingNameNodeId = newLoaderData.id;
 		closeContextMenu();
@@ -769,16 +767,7 @@
 		const uniqueName = generateUniqueNodeName('STATE');
 		const newStateData = await createStateNodeData(uniqueName);
 		const position = getNewNodePosition();
-		await addNode({
-			id: newStateData.id,
-			type: 'STATE',
-			name: newStateData.name,
-			commit: newStateData.commit,
-			snapshotRefs: newStateData.snapshotRefs,
-			parents: newStateData.parents,
-			content: newStateData.content,
-			external: newStateData.external
-		}, position);
+		await addNode(newStateData, position);
 		// Auto-trigger name editing for new nodes
 		editingNameNodeId = newStateData.id;
 		closeContextMenu();
@@ -946,6 +935,9 @@
 			
 			console.log('[Studio] View refreshed, nodes:', nodes.length, 'edges:', edges.length);
 			
+			// VFS change tracking is automatically setup by the $effect
+			// when the nodes array is updated
+			
 			// Clear import parameter from URL to prevent re-import on refresh
 			await goto(`/${currentProjectId}`, { replaceState: true });
 		} catch (err) {
@@ -970,6 +962,7 @@
 					// Set initial state from local project
 					projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
 					isDraft = localProject?.isDraft ?? true;
+					lastCloudCommit = localProject?.lastCloudCommit;
 					
 					// Create local project record if not exists
 					if (!localProject) {
@@ -1021,16 +1014,7 @@
 						const position = { x: 0, y: 0 };
 						
 						// Add to stores
-						nodeStore.create({
-							id: initialPromptData.id,
-							type: 'PROMPT',
-							name: initialPromptData.name,
-							commit: initialPromptData.commit,
-							snapshotRefs: initialPromptData.snapshotRefs,
-							parents: initialPromptData.parents,
-							content: initialPromptData.content,
-							external: initialPromptData.external
-						});
+						nodeStore.create(initialPromptData);
 						layoutStore.add(initialPromptData.id, position.x, position.y);
 						
 						// Add flow node
@@ -1047,21 +1031,23 @@
 					loaded = true;
 					console.log('[Studio] Graph loading complete, loaded set to:', loaded);
 					
+					// Initialize Draft Sync Service
+					syncService = createDraftSyncService();
+					await syncService.init(currentProjectId);
+					console.log('[Studio] Draft Sync Service initialized');
+					
+					// VFS change tracking is automatically setup by the $effect
+					// when syncService becomes available
+					
+					// Capture initial modification count after initialization
+					// This prevents marking as dirty during initial load
+					initialModificationCount = nodeStore.modificationCount;
+					
 					// Handle import if artifactId is provided in URL
 					if (importArtifactId) {
 						console.log('[Studio] Import artifact requested:', importArtifactId);
 						await handleArtifactImport(importArtifactId);
 					}
-					
-					// Sync STATE nodes' cloud save info asynchronously (non-blocking)
-					// This fetches latest checkpoints from the cloud and updates local state
-					syncStateNodesFromCloud().then((syncResult) => {
-						if (syncResult.totalNodes > 0) {
-							console.log('[Studio] STATE nodes sync complete:', syncResult);
-						}
-					}).catch((err) => {
-						console.warn('[Studio] Failed to sync STATE nodes:', err);
-					});
 					
 					// Check backend status asynchronously (non-blocking)
 					// This only affects the publish button text (Publish vs Update)
@@ -1087,16 +1073,7 @@
 					await layoutStore.init(currentProjectId);
 					
 					// Add to stores
-					nodeStore.create({
-						id: initialPromptData.id,
-						type: 'PROMPT',
-						name: initialPromptData.name,
-						commit: initialPromptData.commit,
-						snapshotRefs: initialPromptData.snapshotRefs,
-						parents: initialPromptData.parents,
-						content: initialPromptData.content,
-						external: initialPromptData.external
-					});
+					nodeStore.create(initialPromptData);
 					layoutStore.add(initialPromptData.id, position.x, position.y);
 					
 					nodes = [{
@@ -1188,6 +1165,71 @@
 		setTimeout(() => focusNode(node.id), 100);
 	}
 
+	// ============================================================================
+	// Draft Sync Handlers
+	// ============================================================================
+	
+	async function handleSync() {
+		if (!syncService || !auth.isAuthenticated) return;
+		
+		// Flush any pending changes first
+		await nodeStore.flush();
+		await layoutStore.flush();
+		await saveEdges(edges, currentProjectId);
+		
+		// Perform sync
+		const result = await syncService.sync(nodes, edges, projectName);
+		if (result.success) {
+			// Update initial modification count after successful sync
+			// This ensures subsequent modifications are tracked correctly
+			initialModificationCount = nodeStore.modificationCount;
+		} else if (result.error) {
+			console.error('[Studio] Sync failed:', result.error);
+		}
+	}
+	
+	async function handleEnableSync() {
+		if (!syncService || !auth.isAuthenticated) return;
+		
+		// Enable sync
+		syncService.enable();
+		
+		// Immediately perform first sync
+		await handleSync();
+	}
+
+	/**
+	 * Handle accepting cloud state when local and cloud histories diverge.
+	 * This updates local references to match cloud, allowing normal sync to resume.
+	 */
+	async function handleAcceptCloud() {
+		if (!syncService) return;
+		
+		await syncService.acceptCloudState();
+		console.log('[Studio] Accepted cloud state, local references updated');
+	}
+
+	/**
+	 * Handle force pushing local state to cloud when diverged.
+	 * This creates a new commit based on current cloud commit.
+	 */
+	async function handleForcePushLocal() {
+		if (!syncService || !auth.isAuthenticated) return;
+		
+		// Flush any pending changes first
+		await nodeStore.flush();
+		await layoutStore.flush();
+		await saveEdges(edges, currentProjectId);
+		
+		const result = await syncService.forcePushLocal(nodes, edges, projectName);
+		if (result.success) {
+			initialModificationCount = nodeStore.modificationCount;
+			console.log('[Studio] Force pushed local state to cloud');
+		} else if (result.error) {
+			console.error('[Studio] Force push failed:', result.error);
+		}
+	}
+
 	function handleNewProject() {
 		// Generate a new project ID and open in a new tab
 		const newId = crypto.randomUUID();
@@ -1221,10 +1263,41 @@
 		nodesToPublish: Node<FlowNodeData>[],
 		edgesToPublish: Edge[]
 	) {
-		const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish);
-		
-		if (!result.success) {
-			throw new Error(result.error || 'Failed to publish');
+		let newCommit: string | undefined;
+
+		// Try incremental update if we have a previous commit and artifact is not new
+		if (!isDraft && lastCloudCommit && metadata.artifactId) {
+			const patchMetadata: PatchMetadata = {
+				artifactId: metadata.artifactId,
+				baseCommit: lastCloudCommit,
+				version: metadata.version,
+				visibility: metadata.visibility,
+				name: metadata.name,
+				description: metadata.description || undefined,
+				// Tag as draft-latest for incremental sync
+				commitTags: ['draft-latest']
+			};
+
+			const patchResult = await patchArtifact(patchMetadata, nodesToPublish, edgesToPublish);
+			
+			if (patchResult.success) {
+				newCommit = patchResult.newCommit;
+			} else {
+				// Fall back to full publish if patch fails
+				console.warn('[Studio] PATCH failed, falling back to full publish:', patchResult.error);
+				const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish);
+				if (!result.success) {
+					throw new Error(result.error || 'Failed to publish');
+				}
+				newCommit = result.latestCommit;
+			}
+		} else {
+			// Full publish for new artifacts or first-time publish
+			const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish);
+			if (!result.success) {
+				throw new Error(result.error || 'Failed to publish');
+			}
+			newCommit = result.latestCommit;
 		}
 		
 		// Flush pending changes to IndexedDB
@@ -1232,18 +1305,20 @@
 		await layoutStore.flush();
 		await saveEdges(edges, currentProjectId);
 		
-		// Update project metadata (same projectId, just mark as published)
+		// Update project metadata with lastCloudCommit for future incremental updates
 		await saveProject({
 			id: currentProjectId,
 			name: metadata.name,
 			artifactId: metadata.artifactId,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-			isDraft: false
+			isDraft: false,
+			lastCloudCommit: newCommit
 		});
 		
 		// Update local state
 		isDraft = false;
+		lastCloudCommit = newCommit;
 		projectName = metadata.name;
 	}
 
@@ -1423,12 +1498,18 @@
 		{projectName}
 		{isDraft}
 		isAuthenticated={auth.isAuthenticated}
+		{lastCloudCommit}
 		onFocusNode={handleFocusNode}
 		onPublish={handlePublish}
 		onOpenVfsFile={handleOpenVfsFile}
 		onNewProject={handleNewProject}
 		onExport={handleExport}
 		onImport={handleImport}
+		{syncState}
+		onSync={handleSync}
+		onEnableSync={handleEnableSync}
+		onAcceptCloud={handleAcceptCloud}
+		onForcePushLocal={handleForcePushLocal}
 	/>
 
 	<!-- VFS File Editor (Right side floating panel) -->

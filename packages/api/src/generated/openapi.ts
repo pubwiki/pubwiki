@@ -118,6 +118,8 @@ export interface paths {
          *     - vfs[{commit}]: VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
          *     - save[{commit}]: Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
          *     - homepage: 可选的主页 Markdown 文件
+         *
+         *     注意：vfs[xxx] 和 save[xxx] 是动态 key，在 OpenAPI 中通过 additionalProperties 描述。
          */
         post: operations["createArtifact"];
         delete?: never;
@@ -1039,7 +1041,7 @@ export interface components {
              * @enum {string}
              */
             type: "GENERATED";
-            blocks: Record<string, never>[];
+            blocks: components["schemas"]["MessageBlock"][];
             inputRef: components["schemas"]["NodeRef"];
             promptRefs?: components["schemas"]["NodeRef"][];
             indirectPromptRefs?: components["schemas"]["NodeRef"][];
@@ -1085,11 +1087,18 @@ export interface components {
              * @enum {string}
              */
             type: "VFS";
-            files?: {
-                path: string;
-                size?: number;
-                mimeType?: string;
-            }[];
+            /** @description 所属项目 ID */
+            projectId: string;
+            /** @description VfsMountConfig[] 挂载配置 */
+            mounts?: components["schemas"]["VfsMountConfig"][];
+            /** @description 文件总数 */
+            fileCount?: number;
+            /** @description 总大小 (bytes) */
+            totalSize?: number;
+            /** @description 文件目录树 */
+            fileTree?: components["schemas"]["VfsFileInfo"][];
+            /** @description 文件列表（用于 API 验证） */
+            files?: components["schemas"]["VfsFileInfo"][];
         };
         ArtifactNodeContent: components["schemas"]["InputNodeContent"] | components["schemas"]["PromptNodeContent"] | components["schemas"]["GeneratedNodeContent"] | components["schemas"]["SandboxNodeContent"] | components["schemas"]["LoaderNodeContent"] | components["schemas"]["StateNodeContent"] | components["schemas"]["VfsNodeContent"];
         ProjectRole: {
@@ -1651,6 +1660,62 @@ export interface components {
             schema?: string;
         };
         /**
+         * @description Message block types:
+         *     - text: Plain text
+         *     - markdown: Markdown content
+         *     - code: Code block
+         *     - tool_call: Tool call request
+         *     - tool_result: Tool call result
+         *     - image: Image (reserved for future)
+         *     - reasoning: Reasoning content
+         * @enum {string}
+         */
+        MessageBlockType: "text" | "markdown" | "code" | "tool_call" | "tool_result" | "image" | "reasoning";
+        /**
+         * @description Tool call execution status
+         * @enum {string}
+         */
+        ToolCallStatus: "pending" | "running" | "completed" | "error";
+        MessageBlock: {
+            /** @description Unique block ID */
+            id: string;
+            type: components["schemas"]["MessageBlockType"];
+            /** @description Block content */
+            content: string;
+            /** @description Additional metadata */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /** @description Tool call ID (for tool_call and tool_result types) */
+            toolCallId?: string;
+            /** @description Tool name (for tool_call type) */
+            toolName?: string;
+            /** @description Tool arguments (for tool_call type) */
+            toolArgs?: unknown;
+            toolStatus?: components["schemas"]["ToolCallStatus"];
+        };
+        VfsMountConfig: {
+            /** @description 挂载点唯一标识符 */
+            id: string;
+            /**
+             * Format: uuid
+             * @description 源 VFS 节点 ID
+             */
+            sourceNodeId: string;
+            /** @description 挂载路径 */
+            mountPath: string;
+            /** @description 源 VFS 版本 commit hash */
+            sourceCommit?: string;
+        };
+        VfsFileInfo: {
+            /** @description 文件路径 */
+            path: string;
+            /** @description 文件大小 (bytes) */
+            size?: number;
+            /** @description MIME 类型 */
+            mimeType?: string;
+        };
+        /**
          * @description 基于已有的 commit 和增量补丁创建新的 artifact 版本。
          *     客户端提交 baseCommit（基准版本）和需要变更的 nodes/edges，
          *     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
@@ -1990,19 +2055,11 @@ export interface operations {
                     edges: components["schemas"]["ArtifactEdgeDescriptor"][];
                     /**
                      * Format: binary
-                     * @description VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
-                     */
-                    "vfs[{commit}]"?: string;
-                    /**
-                     * Format: binary
-                     * @description Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
-                     */
-                    "save[{commit}]"?: string;
-                    /**
-                     * Format: binary
                      * @description 可选的主页 Markdown 文件，将被渲染为 HTML 后存储。
                      */
                     homepage?: string;
+                } & {
+                    [key: string]: unknown;
                 };
             };
         };
@@ -2084,19 +2141,11 @@ export interface operations {
                     metadata: components["schemas"]["PatchArtifactRequest"];
                     /**
                      * Format: binary
-                     * @description 新增 VFS 节点的 tar.gz 归档文件
-                     */
-                    "vfs[{commit}]"?: string;
-                    /**
-                     * Format: binary
-                     * @description Save 的二进制数据
-                     */
-                    "save[{commit}]"?: string;
-                    /**
-                     * Format: binary
                      * @description 可选的主页 Markdown 文件
                      */
                     homepage?: string;
+                } & {
+                    [key: string]: unknown;
                 };
             };
         };

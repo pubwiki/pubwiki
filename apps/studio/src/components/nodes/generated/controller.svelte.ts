@@ -18,7 +18,8 @@ import type {
 import type { FlowNodeData } from '$lib/types/flow';
 import type { GeneratedContent, InputContent } from '$lib/types';
 import type { MessageBlock } from '@pubwiki/chat';
-import { generateCommitHash, registerVersionHandler, type NodeRef } from '$lib/version';
+import { generateContentHash, registerVersionHandler, type NodeRef } from '$lib/version';
+import { computeNodeCommit } from '@pubwiki/api';
 import { resolvePromptContentFromRefs } from '$lib/graph';
 import { nodeStore, layoutStore } from '$lib/persistence';
 import { getVfsController } from '../vfs/controller.svelte';
@@ -278,8 +279,9 @@ export async function streamGeneration(
 			} else if (event.type === 'tool_result') {
 				callbacks.onToolResult(nodeId, event.id, event.result);
 			} else if (event.type === 'done') {
-				const finalCommit = await generateCommitHash(accumulatedContent);
-				callbacks.onDone(nodeId, accumulatedContent, finalCommit);
+				// Note: finalCommit here is just contentHash, actual commit will be computed later
+				const finalContentHash = await generateContentHash(accumulatedContent);
+				callbacks.onDone(nodeId, accumulatedContent, finalContentHash);
 			} else if (event.type === 'error') {
 				console.error('Generation error:', event.error);
 				callbacks.onError(nodeId, event.error);
@@ -519,10 +521,12 @@ export async function regenerate(
 			const updatedData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
 			if (updatedData && updatedData.type === 'GENERATED') {
 				const blocksJson = JSON.stringify(updatedData.content.blocks || []);
-				const commit = await generateCommitHash(blocksJson);
+				const contentHash = await generateContentHash(blocksJson);
+				const commit = await computeNodeCommit(nodeId, updatedData.parent, contentHash, 'GENERATED');
 				nodeStore.update(nodeId, (data) => ({
 					...data,
-					commit
+					commit,
+					contentHash
 				}));
 			}
 			

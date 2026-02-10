@@ -2,6 +2,7 @@
 	import type { ArtifactNodeSummary } from '$lib/types';
 	import { useArtifactStore, type ArtifactNodeDetail } from '$lib/stores/artifacts.svelte';
 	import { FileTree, buildTreeFromPaths } from './FileTree';
+	import NodeVersionHistory from './NodeVersionHistory.svelte';
 
 	type Props = {
 		node: ArtifactNodeSummary;
@@ -17,11 +18,12 @@
 	let nodeDetail = $state<ArtifactNodeDetail | null>(null);
 	let loadingContent = $state(false);
 	let expanded = $state(false);
+	let showVersionHistory = $state(false);
 	let vfsExpandedFolders = $state(new Set<string>());
 
 	// Load file list for VFS nodes only
 	async function loadVfsDetail() {
-		if (node.external || node.type !== 'VFS') return;
+		if (node.type !== 'VFS') return;
 		
 		loadingContent = true;
 		try {
@@ -77,22 +79,17 @@
 				<span class="text-xs px-2 py-0.5 rounded-full {getNodeTypeBadgeColor(node.type)}">
 					{node.type}
 				</span>
-				{#if node.external}
-					<span class="text-xs px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">
-						External
-					</span>
-				{/if}
 			</div>
 			
-			<p class="text-xs text-gray-500 mt-1 font-mono truncate">
-				ID: {node.id.substring(0, 8)}...
-			</p>
-			
-			{#if node.external && node.externalArtifactId}
-				<p class="text-xs text-gray-500 mt-1">
-					References artifact: {node.externalArtifactId.substring(0, 8)}...
+			<div class="flex items-center gap-2 mt-1">
+				<p class="text-xs text-gray-500 font-mono truncate">
+					ID: {node.id.substring(0, 8)}...
 				</p>
-			{/if}
+				<span class="text-gray-300">|</span>
+				<p class="text-xs text-gray-500 font-mono">
+					commit: {node.commit.substring(0, 8)}
+				</p>
+			</div>
 		</div>
 
 		<!-- Expand indicator -->
@@ -106,7 +103,29 @@
 	<!-- Expanded content -->
 	{#if expanded}
 		<div class="mt-4 pt-4 border-t border-gray-200" role="region">
-			{#if node.type === 'VFS'}
+			<!-- Tab buttons -->
+			<div class="flex gap-2 mb-3">
+				<button
+					onclick={() => showVersionHistory = false}
+					class="text-xs px-3 py-1 rounded-full transition-colors {!showVersionHistory 
+						? 'bg-gray-800 text-white' 
+						: 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+				>
+					Content
+				</button>
+				<button
+					onclick={() => showVersionHistory = true}
+					class="text-xs px-3 py-1 rounded-full transition-colors {showVersionHistory 
+						? 'bg-gray-800 text-white' 
+						: 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+				>
+					Version History
+				</button>
+			</div>
+
+			{#if showVersionHistory}
+				<NodeVersionHistory nodeId={node.id} currentCommit={node.commit} />
+			{:else if node.type === 'VFS'}
 				{#if loadingContent}
 					<div class="flex items-center gap-2 text-sm text-gray-500">
 						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
@@ -122,21 +141,6 @@
 					<p class="text-sm text-gray-500 italic">
 						No files in this VFS node.
 					</p>
-				{/if}
-			{:else if node.external}
-				<p class="text-sm text-gray-600">
-					This is an external reference to another artifact's node.
-				</p>
-				{#if node.externalArtifactId}
-					<a 
-						href="/artifact/{node.externalArtifactId}" 
-						class="inline-flex items-center gap-1 mt-2 text-sm text-[#0969da] hover:underline"
-					>
-						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-						</svg>
-						View source artifact
-					</a>
 				{/if}
 			{:else if content}
 				<div class="bg-white rounded-md p-3 overflow-x-auto border border-gray-100">

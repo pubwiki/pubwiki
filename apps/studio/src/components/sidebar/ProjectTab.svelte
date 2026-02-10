@@ -5,11 +5,10 @@
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
-	import type { GeneratedNodeData, StateNodeData } from '$lib/types';
+	import type { GeneratedNodeData } from '$lib/types';
 	import type { StudioNodeData } from '$lib/types';
 	import type { NodeRef } from '$lib/version';
-	import { selectCheckpointsForVisibility, type PublishMetadata } from '$lib/io';
-	import { StateContent } from '$lib/types';
+	import { type PublishMetadata } from '$lib/io';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -20,17 +19,18 @@
 		projectName: string;
 		isDraft: boolean;
 		isAuthenticated: boolean;
+		/** Last cloud commit hash for version lineage tracking */
+		lastCloudCommit?: string;
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
 	}
 
-	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, onPublish }: Props = $props();
+	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish }: Props = $props();
 
 	// Form state - initialized from props but managed locally
 	let name = $state('');
 	let slug = $state('');
 	let description = $state('');
 	let homepage = $state('');
-	let artifactType: PublishMetadata['type'] = $state('RECIPE');
 	let visibility: PublishMetadata['visibility'] = $state('PUBLIC');
 	let version = $state('1.0.0');
 	let tagsInput = $state('');
@@ -59,17 +59,6 @@
 		}
 	});
 
-	// Auto-select checkpoints for STATE nodes when visibility changes
-	$effect(() => {
-		// Only run after nodes are available
-		if (nodes.length > 0) {
-			const result = selectCheckpointsForVisibility(nodes, visibility);
-			if (result.updatedCount > 0) {
-				console.log('[ProjectTab] Auto-selected checkpoints for', result.updatedCount, 'STATE nodes');
-			}
-		}
-	});
-
 	// Check if a NodeRef references a historical version
 	function isHistoricalRef(ref: NodeRef, getNodeData: (id: string) => StudioNodeData | undefined): boolean {
 		const targetNodeData = getNodeData(ref.id);
@@ -92,14 +81,13 @@
 		return false;
 	}
 
-	// Get nodes that will be published (including external nodes for references)
+	// Get nodes that will be published
+	// In the new architecture, all nodes are local and can be published
 	let nodesToPublish = $derived.by(() => {
 		const getNodeData = (id: string) => nodeStore.get(id);
 		return nodes.filter((node) => {
 			const nodeData = getNodeData(node.id);
 			if (!nodeData) return false;
-			// Include external nodes - they will be published as references
-			if (nodeData.external) return true;
 			if (nodeData.type === 'GENERATED') {
 				if (referencesHistoricalVersions(nodeData as GeneratedNodeData, getNodeData)) {
 					return false;
@@ -192,14 +180,15 @@
 			// Draft projects already have a UUID as their projectId
 			const metadata: PublishMetadata = {
 				artifactId: projectId,
-				type: artifactType,
 				name: name.trim(),
 				slug: slug.trim(),
 				description: description.trim(),
 				visibility,
 				version: version.trim(),
 				tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
-				homepage: homepage.trim() || undefined
+				homepage: homepage.trim() || undefined,
+				// Track version lineage for updates
+				parentCommit: lastCloudCommit ?? null
 			};
 
 			await onPublish(metadata, nodesToPublish, edgesToPublish);
@@ -218,19 +207,14 @@
 
 	/**
 	 * Get the selected checkpoint name for a STATE node
+	 * 
+	 * NOTE: Cloud checkpoint display is temporarily disabled pending new Save API migration.
+	 * STATE nodes use local checkpoints which are not displayed in the publish preview.
 	 */
-	function getStateCheckpointName(node: Node<FlowNodeData>): string | null {
-		const nodeData = nodeStore.get(node.id);
-		if (!nodeData || nodeData.type !== 'STATE') return null;
-		
-		const stateData = nodeData as StateNodeData;
-		const stateContent = stateData.content as StateContent;
-		
-		if (!stateContent.checkpointId) return null;
-		
-		// Find the checkpoint name from the checkpoints list
-		const checkpoint = stateContent.checkpoints.find(cp => cp.id === stateContent.checkpointId);
-		return checkpoint?.name || stateContent.checkpointId.slice(0, 8);
+	function getStateCheckpointName(_node: Node<FlowNodeData>): string | null {
+		// Cloud checkpoint display is temporarily disabled
+		// Local checkpoints are stored in RDFStore and don't have named references in StateContent
+		return null;
 	}
 
 	function getCategoryLabel(type: string): string {
@@ -330,19 +314,6 @@
 			</div>
 
 			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<label for="type" class="block text-xs font-medium text-gray-500 mb-1">{m.studio_form_type()}</label>
-					<select
-						id="type"
-						bind:value={artifactType}
-						class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					>
-						<option value="RECIPE">{m.studio_form_type_recipe()}</option>
-						<option value="GAME">{m.studio_form_type_game()}</option>
-						<option value="ASSET_PACK">{m.studio_form_type_asset_pack()}</option>
-						<option value="PROMPT">{m.studio_form_type_prompt()}</option>
-					</select>
-				</div>
 
 				<div>
 					<label for="visibility" class="block text-xs font-medium text-gray-500 mb-1">{m.studio_form_visibility()}</label>

@@ -13,7 +13,6 @@
 	import type { PageData } from './$types';
 	import { createApiClient } from '@pubwiki/api/client';
 	import { API_BASE_URL } from '$lib/config';
-	import { toRdfQuad } from '@pubwiki/rdfstore';
 	import { 
 		nodeStore, 
 		layoutStore, 
@@ -120,20 +119,18 @@
 		isLoggedIn: boolean;
 		userId: string | null;
 		username: string | null;
-		sourceSaveId: string | null;
-		sourceCheckpointId: string | null;
-		userSaveId: string | null;
-		userCheckpointId: string | null;
+		/** The save commit hash loaded from URL param */
+		sourceSaveCommit: string | null;
+		/** User's own save commit (if any) */
+		userSaveCommit: string | null;
 	}
 
 	let userInfo = $state<UserInfo>({
 		isLoggedIn: false,
 		userId: null,
 		username: null,
-		sourceSaveId: null,
-		sourceCheckpointId: null,
-		userSaveId: null,
-		userCheckpointId: null
+		sourceSaveCommit: null,
+		userSaveCommit: null
 	});
 
 	// ============================================================================
@@ -275,8 +272,8 @@
 			}
 			rdfStore = await getNodeRDFStore(stateNodeId);
 
-			// Load checkpoint data if saveId is provided
-			if (data.saveId) {
+			// Load save data if save commit is provided
+			if (data.saveCommit) {
 				await loadCheckpointData();
 			}
 
@@ -285,10 +282,8 @@
 				isLoggedIn: auth.isAuthenticated,
 				userId: auth.user?.id ?? null,
 				username: auth.user?.displayName ?? auth.user?.username ?? null,
-				sourceSaveId: data.saveId,
-				sourceCheckpointId: data.checkpointId,
-				userSaveId: null, // TODO: Create user save if logged in
-				userCheckpointId: null
+				sourceSaveCommit: data.saveCommit,
+				userSaveCommit: null // TODO: Create user save if logged in
 			};
 
 			// Stage 4.5: Initialize Loader nodes
@@ -400,55 +395,35 @@
 	}
 
 	/**
-	 * Find the remapped state node ID from originalRef
-	 * After import, all node IDs are remapped. We need to find the new ID via originalRef.
+	 * Verify that a node exists in the store
+	 * In the new architecture, node IDs are preserved during import,
+	 * so we just need to verify the node exists.
 	 */
-	function findRemappedStateNodeId(originalStateNodeId: string): string | null {
-		// Iterate through all nodes to find the one with matching originalRef
-		const allNodeIds = nodeStore.getAllIds();
-		for (const nodeId of allNodeIds) {
-			const nodeData = nodeStore.get(nodeId);
-			if (nodeData?.type === 'STATE' && nodeData.originalRef?.nodeId === originalStateNodeId) {
-				return nodeId;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Find the remapped sandbox node ID from originalRef
-	 */
-	function findRemappedSandboxNodeId(originalSandboxNodeId: string): string | null {
-		const allNodeIds = nodeStore.getAllIds();
-		for (const nodeId of allNodeIds) {
-			const nodeData = nodeStore.get(nodeId);
-			if (nodeData?.type === 'SANDBOX' && nodeData.originalRef?.nodeId === originalSandboxNodeId) {
-				return nodeId;
-			}
-		}
-		return null;
+	function verifyNodeExists(nodeId: string, expectedType: string): boolean {
+		const nodeData = nodeStore.get(nodeId);
+		return nodeData?.type === expectedType;
 	}
 
 	/**
 	 * Find connected nodes from edges
-	 * Uses originalRef to map from original artifact IDs to remapped IDs
+	 * Node IDs are preserved during import, so we use them directly
 	 */
 	function findNodes(edges: Edge[]) {
-		const originalSandboxNodeId = data.sandboxNodeId;
-		if (!originalSandboxNodeId) return;
+		const targetSandboxNodeId = data.sandboxNodeId;
+		if (!targetSandboxNodeId) return;
 
-		// Find the remapped sandbox node ID
-		const remappedSandboxId = findRemappedSandboxNodeId(originalSandboxNodeId);
-		if (!remappedSandboxId) {
-			console.error('[Play] Could not find remapped sandbox node for original ID:', originalSandboxNodeId);
+		// In the new architecture, node IDs are preserved during import
+		// So we use the ID directly from the URL params
+		if (!verifyNodeExists(targetSandboxNodeId, 'SANDBOX')) {
+			console.error('[Play] Sandbox node not found:', targetSandboxNodeId);
 			return;
 		}
-		sandboxNodeId = remappedSandboxId;
+		sandboxNodeId = targetSandboxNodeId;
 
 		// Find Loaders connected to Sandbox via service-input
 		const loaders: string[] = [];
 		for (const edge of edges) {
-			if (edge.target === remappedSandboxId && edge.targetHandle === 'service-input') {
+			if (edge.target === sandboxNodeId && edge.targetHandle === 'service-input') {
 				const nodeData = nodeStore.get(edge.source);
 				if (nodeData?.type === 'LOADER') {
 					loaders.push(edge.source);
@@ -478,7 +453,7 @@
 
 		// Find VFS connected to Sandbox via vfs-input
 		for (const edge of edges) {
-			if (edge.target === remappedSandboxId && edge.targetHandle === 'vfs-input') {
+			if (edge.target === sandboxNodeId && edge.targetHandle === 'vfs-input') {
 				const nodeData = nodeStore.get(edge.source);
 				if (nodeData?.type === 'VFS') {
 					vfsNodeId = edge.source;
@@ -488,8 +463,7 @@
 		}
 
 		console.log('[Play] Found nodes:', { 
-			originalSandboxNodeId,
-			remappedSandboxId,
+			sandboxNodeId,
 			stateNodeId,
 			vfsNodeId, 
 			loaderNodeIds 
@@ -592,58 +566,39 @@
 	}
 
 	/**
-	 * Load checkpoint data from cloud
+	 * Load save data from cloud using the new Save API.
+	 * 
+	 * Uses GET /saves/{commit}/data to download save data as quads.
+	 * The save commit is provided via URL parameter ?save={commit}
 	 */
 	async function loadCheckpointData() {
-		if (!data.saveId || !rdfStore) return;
+		if (!data.saveCommit || !rdfStore) return;
 
 		try {
-			// First get checkpoints to find the right one
-			const { data: checkpointsData } = await apiClient.GET('/saves/{saveId}/checkpoints', {
-				params: { path: { saveId: data.saveId } }
+			console.log('[Play] Loading save data for commit:', data.saveCommit);
+
+			// Download save data using new Save API
+			const response = await fetch(`${API_BASE_URL}/saves/${data.saveCommit}/data`, {
+				credentials: 'include'
 			});
 
-			if (!checkpointsData?.checkpoints?.length) {
-				console.log('[Play] No checkpoints found, starting fresh');
+			if (!response.ok) {
+				console.warn('[Play] Failed to download save data:', response.status);
 				return;
 			}
 
-			// Find target checkpoint ID
-			let targetCheckpointId: string;
-			if (data.checkpointId) {
-				const checkpoint = checkpointsData.checkpoints.find(cp => cp.id === data.checkpointId);
-				if (checkpoint) {
-					targetCheckpointId = checkpoint.id;
-				} else {
-					// Fallback to latest
-					targetCheckpointId = checkpointsData.checkpoints[0].id;
-				}
-			} else {
-				// Use latest checkpoint
-				targetCheckpointId = checkpointsData.checkpoints[0].id;
-			}
+			// Parse quads from response
+			const quadsJson = await response.text();
+			const apiQuads = JSON.parse(quadsJson);
+			const { toRdfQuad } = await import('@pubwiki/rdfstore');
+			const rdfQuads = apiQuads.map(toRdfQuad);
 
-			// Export checkpoint data by ID
-			const { data: exportData, error: exportError } = await apiClient.GET('/saves/{saveId}/checkpoints/{checkpointId}/export', {
-				params: { path: { saveId: data.saveId, checkpointId: targetCheckpointId } }
-			});
-
-			if (exportError || !exportData) {
-				console.warn('[Play] Failed to export checkpoint data:', exportError);
-				return;
-			}
-
-			// Import the quads into local RDF store
-			if (exportData.quads && exportData.quads.length > 0) {
-				// Convert API Quads to RDF.js Quads using toRdfQuad
-				await rdfStore.clear();
-				const rdfQuads = exportData.quads.map(toRdfQuad);
-				await rdfStore.batchInsert(rdfQuads);
-				console.log('[Play] Imported checkpoint data:', exportData.quadCount, 'quads');
-			}
-
+			// Replace local store contents
+			await rdfStore.clear();
+			await rdfStore.batchInsert(rdfQuads);
+			console.log('[Play] Imported save data:', rdfQuads.length, 'quads');
 		} catch (error) {
-			console.error('[Play] Failed to load checkpoint:', error);
+			console.error('[Play] Failed to load save:', error);
 		}
 	}
 

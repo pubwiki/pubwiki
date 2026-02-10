@@ -27,13 +27,11 @@ import type {
 	HistoricalTreeResult
 } from './types'
 import type { FlowNodeData } from '../types/flow'
-import { nodeStore, generateCommitHash } from '../persistence/node-store.svelte'
+import { nodeStore, generateContentHash } from '../persistence/node-store.svelte'
+import { computeNodeCommit } from '@pubwiki/api';
 import { db } from '../persistence/db'
 import type { NodeContent } from '../types/content'
 import type { StudioNodeData } from '../types'
-
-// Re-export generateCommitHash for convenience
-export { generateCommitHash }
 
 // ============================================================================
 // Version Sync Functions
@@ -99,6 +97,11 @@ async function saveCurrentVersion(
  * 2. If content has changed, updates the commit hash
  * 
  * @param node - The full node object (including position)
+/**
+ * Sync a node - detect content changes, save snapshots, and update commit hash.
+ * Used as general-purpose sync hook in NodeController.onDataChange.
+ * 
+ * @param node - The node to sync
  * @param edges - All edges in the graph (to save incoming connections)
  */
 export async function syncNode<T extends Versionable>(
@@ -111,10 +114,13 @@ export async function syncNode<T extends Versionable>(
 		: undefined
 
 	// Get content hash using polymorphic serialize() method
-	const currentContentHash = await generateCommitHash(nodeData.content.serialize())
+	const currentContentHash = await generateContentHash(nodeData.content.serialize())
+	
+	// Compute what the commit should be for this content
+	const expectedCommit = await computeNodeCommit(nodeData.id, nodeData.parent, currentContentHash, nodeData.type)
 
-	// If commit matches current content, save snapshot with current commit and return
-	if (currentContentHash === nodeData.commit) {
+	// If commit matches expected commit for current content, save snapshot with current commit and return
+	if (expectedCommit === nodeData.commit) {
 		// Save current version (idempotent - won't save if already exists)
 		await saveCurrentVersion(nodeData, edges, position)
 		return nodeData
@@ -131,9 +137,12 @@ export async function syncNode<T extends Versionable>(
 	}
 
 	// Create updated node data with new commit matching current content
+	// Update parent to point to the old commit (version lineage)
 	const updatedNodeData: T = {
 		...nodeData,
-		commit: currentContentHash,
+		commit: expectedCommit,
+		contentHash: currentContentHash,
+		parent: nodeData.commit, // Old commit becomes the parent
 		snapshotRefs: [...nodeData.snapshotRefs, snapshotRef]
 	}
 
@@ -293,7 +302,7 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 			// The stored commit might be stale if user edited but didn't regenerate
 			const serialized = nodeData?.content?.serialize()
 			const currentContentHash = serialized 
-				? await generateCommitHash(serialized)
+				? await generateContentHash(serialized)
 				: nodeData?.commit
 			
 			console.log(`[rebuildHistoricalTree] Existing node ${ref.id} commit check:`, {

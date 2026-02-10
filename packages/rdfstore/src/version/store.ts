@@ -9,7 +9,7 @@
  */
 
 import Dexie, { type Table } from 'dexie'
-import type { Quad as SyncQuad } from '@pubwiki/api'
+import type { SerializedQuad } from '../convert.js'
 import type { Checkpoint } from '../types.js'
 
 // ============ Database Records ============
@@ -31,7 +31,7 @@ export interface CheckpointDataRecord {
   /** Primary key - checkpoint ID */
   id: string
   /** Quad array stored directly (no serialization needed) */
-  data: SyncQuad[]
+  data: SerializedQuad[]
 }
 
 // ============ Dexie Database ============
@@ -155,14 +155,14 @@ export class CheckpointStore {
   /**
    * Save checkpoint quad data
    */
-  async saveCheckpointData(id: string, data: SyncQuad[]): Promise<void> {
+  async saveCheckpointData(id: string, data: SerializedQuad[]): Promise<void> {
     await this.db.checkpointData.put({ id, data })
   }
 
   /**
    * Get checkpoint quad data
    */
-  async getCheckpointData(id: string): Promise<SyncQuad[] | null> {
+  async getCheckpointData(id: string): Promise<SerializedQuad[] | null> {
     const record = await this.db.checkpointData.get(id)
     return record?.data ?? null
   }

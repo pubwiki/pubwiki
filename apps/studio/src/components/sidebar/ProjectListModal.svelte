@@ -5,14 +5,17 @@
 	 * Features:
 	 * - Two tabs: Local Projects, Online Projects
 	 * - Local projects from IndexedDB
-	 * - Online projects from API (requires auth)
+	 * - Online projects from user's artifacts API
 	 * - Open/Delete actions for local projects
+	 * - Import online projects into local studio
 	 */
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import { getAllProjects, deleteProject, setCurrentProject, type StoredProject } from '$lib/persistence';
 	import { useAuth } from '@pubwiki/ui/stores';
+	import { createApiClient } from '@pubwiki/api/client';
+	import { API_BASE_URL } from '$lib/config';
+	import { importArtifactToNewProject } from '$lib/io';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -28,14 +31,30 @@
 
 	// Auth state
 	const auth = useAuth();
+	const apiClient = createApiClient(API_BASE_URL);
 
 	// Local projects
 	let localProjects = $state<StoredProject[]>([]);
 	let loadingLocal = $state(true);
 
 	// Online projects
-	let onlineProjects = $state<any[]>([]);
+	interface OnlineProject {
+		id: string;
+		name: string;
+		description?: string | null;
+		visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+		updatedAt: string;
+		createdAt: string;
+		isArchived: boolean;
+		/** Local project ID if already imported */
+		localProjectId?: string;
+	}
+	let onlineProjects = $state<OnlineProject[]>([]);
 	let loadingOnline = $state(false);
+	let onlineError = $state<string | null>(null);
+	let onlinePage = $state(1);
+	let onlineHasMore = $state(false);
+	let importingId = $state<string | null>(null);
 
 	// Load local projects
 	async function loadLocalProjects() {
@@ -50,20 +69,110 @@
 		}
 	}
 
-	// Load online projects (placeholder - would use API)
-	async function loadOnlineProjects() {
-		if (!auth.isAuthenticated) return;
+	// Build a map of artifactId -> local project for quick lookup
+	function getLocalArtifactMap(): Map<string, StoredProject> {
+		const map = new Map<string, StoredProject>();
+		for (const p of localProjects) {
+			if (p.artifactId) {
+				map.set(p.artifactId, p);
+			}
+		}
+		return map;
+	}
+
+	// Load online projects from API
+	async function loadOnlineProjects(page = 1) {
+		if (!auth.isAuthenticated || !auth.user) return;
 		
-		loadingOnline = true;
+		if (page === 1) {
+			loadingOnline = true;
+			onlineError = null;
+		}
+		
 		try {
-			// TODO: Implement API call to fetch user's online projects
-			// For now, just show empty list
-			onlineProjects = [];
+			const { data, error } = await apiClient.GET('/users/{userId}/artifacts', {
+				params: {
+					path: { userId: auth.user.id },
+					query: {
+						page,
+						limit: 20,
+						sortBy: 'updatedAt',
+						sortOrder: 'desc'
+					}
+				}
+			});
+
+			if (error) {
+				onlineError = m.studio_projects_load_failed();
+				return;
+			}
+			
+			if (!data) {
+				onlineError = m.studio_projects_load_failed();
+				return;
+			}
+
+			// Ensure local projects are loaded for cross-referencing
+			if (localProjects.length === 0 && !loadingLocal) {
+				await loadLocalProjects();
+			}
+			const localMap = getLocalArtifactMap();
+
+			const fetched: OnlineProject[] = (data.artifacts ?? []).map((a: any) => ({
+				id: a.id,
+				name: a.name,
+				description: a.description,
+				visibility: a.visibility,
+				updatedAt: a.updatedAt,
+				createdAt: a.createdAt,
+				isArchived: a.isArchived ?? false,
+				localProjectId: localMap.get(a.id)?.id
+			}));
+
+			if (page === 1) {
+				onlineProjects = fetched;
+			} else {
+				onlineProjects = [...onlineProjects, ...fetched];
+			}
+
+			onlinePage = page;
+			const pagination = data.pagination;
+			onlineHasMore = pagination ? pagination.page < pagination.totalPages : false;
 		} catch (err) {
 			console.error('Failed to load online projects:', err);
-			onlineProjects = [];
+			onlineError = m.studio_projects_load_failed();
 		} finally {
 			loadingOnline = false;
+		}
+	}
+
+	// Import an online artifact into a new local project
+	async function importOnlineProject(artifact: OnlineProject) {
+		if (importingId) return;
+		importingId = artifact.id;
+
+		try {
+			// Fetch artifact graph data
+			const { data, error } = await apiClient.GET('/artifacts/{artifactId}/graph', {
+				params: { path: { artifactId: artifact.id } }
+			});
+
+			if (error || !data) {
+				alert(m.studio_projects_import_failed());
+				return;
+			}
+
+			// Import into a new project
+			const newProjectId = await importArtifactToNewProject(data, artifact.id);
+
+			// Navigate to the new project
+			setCurrentProject(newProjectId);
+			window.location.href = `/${newProjectId}`;
+		} catch (err) {
+			console.error('Failed to import project:', err);
+			alert(m.studio_projects_import_failed());
+		} finally {
+			importingId = null;
 		}
 	}
 
@@ -107,7 +216,7 @@
 		window.location.href = `${hubUrl}/login`;
 	}
 
-	// Format date
+	// Format date (for local projects - epoch ms)
 	function formatDate(timestamp: number): string {
 		return new Date(timestamp).toLocaleDateString(undefined, {
 			year: 'numeric',
@@ -116,6 +225,31 @@
 			hour: '2-digit',
 			minute: '2-digit'
 		});
+	}
+
+	// Format ISO date string (for online projects)
+	function formatISODate(dateStr: string): string {
+		return new Date(dateStr).toLocaleDateString(undefined, {
+			year: 'numeric',
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
+
+	// Visibility badge config
+	function getVisibilityConfig(visibility: string) {
+		switch (visibility) {
+			case 'PUBLIC':
+				return { label: m.studio_projects_visibility_public(), class: 'bg-green-100 text-green-700' };
+			case 'PRIVATE':
+				return { label: m.studio_projects_visibility_private(), class: 'bg-gray-100 text-gray-600' };
+			case 'UNLISTED':
+				return { label: m.studio_projects_visibility_unlisted(), class: 'bg-yellow-100 text-yellow-700' };
+			default:
+				return { label: visibility, class: 'bg-gray-100 text-gray-600' };
+		}
 	}
 
 	// Load data on mount
@@ -265,7 +399,26 @@
 						</div>
 					{:else if loadingOnline}
 						<div class="flex items-center justify-center h-32">
-							<div class="text-gray-500">{m.common_loading()}</div>
+							<div class="flex items-center gap-2 text-gray-500">
+								<svg class="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+								</svg>
+								{m.common_loading()}
+							</div>
+						</div>
+					{:else if onlineError}
+						<div class="flex flex-col items-center justify-center h-32 text-red-500">
+							<svg class="w-12 h-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+							</svg>
+							<p>{onlineError}</p>
+							<button
+								class="mt-3 px-4 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded transition-colors"
+								onclick={() => loadOnlineProjects()}
+							>
+								{m.common_retry()}
+							</button>
 						</div>
 					{:else if onlineProjects.length === 0}
 						<div class="flex flex-col items-center justify-center h-32 text-gray-500">
@@ -277,24 +430,81 @@
 					{:else}
 						<div class="space-y-2">
 							{#each onlineProjects as project}
-								<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+								{@const visCfg = getVisibilityConfig(project.visibility)}
+								<div
+									class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+								>
 									<div class="flex-1 min-w-0">
-										<h3 class="font-medium text-gray-900 truncate">{project.name}</h3>
-										<p class="text-xs text-gray-500 mt-1">
-											{m.studio_projects_last_updated({ date: formatDate(project.updatedAt) })}
+										<div class="flex items-center gap-2">
+											<h3 class="font-medium text-gray-900 truncate">{project.name}</h3>
+											<span class="px-1.5 py-0.5 text-xs font-medium rounded {visCfg.class}">
+												{visCfg.label}
+											</span>
+											{#if project.localProjectId}
+												<span class="px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+													{m.studio_projects_already_local()}
+												</span>
+											{/if}
+											{#if project.isArchived}
+												<span class="px-1.5 py-0.5 text-xs font-medium bg-gray-200 text-gray-500 rounded">
+													Archived
+												</span>
+											{/if}
+										</div>
+										{#if project.description}
+											<p class="text-xs text-gray-500 mt-0.5 truncate">{project.description}</p>
+										{/if}
+										<p class="text-xs text-gray-400 mt-1">
+											{m.studio_projects_last_updated({ date: formatISODate(project.updatedAt) })}
 										</p>
 									</div>
-									<div class="flex items-center gap-2 ml-4">
-										<button
-											class="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
-											onclick={() => openProject(project.id)}
-										>
-											{m.studio_projects_open()}
-										</button>
+									<div class="flex items-center gap-2 ml-4 shrink-0">
+										{#if project.localProjectId}
+											<!-- Already imported - open the local project -->
+											<button
+												class="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors"
+												onclick={() => openProject(project.localProjectId!)}
+											>
+												{m.studio_projects_open()}
+											</button>
+										{:else}
+											<!-- Not imported - download and import -->
+											<button
+												class="px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+												disabled={importingId !== null}
+												onclick={() => importOnlineProject(project)}
+											>
+												{#if importingId === project.id}
+													<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+														<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+														<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+													</svg>
+													{m.studio_projects_importing()}
+												{:else}
+													<!-- Download icon -->
+													<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+													</svg>
+													{m.studio_projects_open()}
+												{/if}
+											</button>
+										{/if}
 									</div>
 								</div>
 							{/each}
 						</div>
+
+						<!-- Load More -->
+						{#if onlineHasMore}
+							<div class="flex justify-center mt-4">
+								<button
+									class="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+									onclick={() => loadOnlineProjects(onlinePage + 1)}
+								>
+									{m.studio_projects_load_more()}
+								</button>
+							</div>
+						{/if}
 					{/if}
 				{/if}
 			</div>

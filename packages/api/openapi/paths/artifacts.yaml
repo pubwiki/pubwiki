@@ -96,6 +96,8 @@
       - vfs[{commit}]: VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
       - save[{commit}]: Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
       - homepage: 可选的主页 Markdown 文件
+      
+      注意：vfs[xxx] 和 save[xxx] 是动态 key，在 OpenAPI 中通过 additionalProperties 描述。
     operationId: createArtifact
     tags:
       - Artifacts
@@ -122,18 +124,13 @@
                 type: array
                 items:
                   $ref: '../schemas/artifact.yaml#/ArtifactEdgeDescriptor'
-              vfs[{commit}]:
-                type: string
-                format: binary
-                description: VFS 节点的 tar.gz 归档文件，key 中 commit 对应 nodes 中的 VFS 节点版本
-              save[{commit}]:
-                type: string
-                format: binary
-                description: Save 的二进制数据，key 中 commit 对应 saves 中的 save 版本
               homepage:
                 type: string
                 format: binary
                 description: 可选的主页 Markdown 文件，将被渲染为 HTML 后存储。
+            # 动态 key 的二进制文件（vfs[{commit}] 和 save[{commit}]）
+            # 使用 additionalProperties: true 生成 unknown 类型，避免与其他属性的类型冲突
+            additionalProperties: true
           encoding:
             metadata:
               contentType: application/json
@@ -225,18 +222,13 @@
             properties:
               metadata:
                 $ref: '../schemas/artifact.yaml#/PatchArtifactRequest'
-              vfs[{commit}]:
-                type: string
-                format: binary
-                description: 新增 VFS 节点的 tar.gz 归档文件
-              save[{commit}]:
-                type: string
-                format: binary
-                description: Save 的二进制数据
               homepage:
                 type: string
                 format: binary
                 description: 可选的主页 Markdown 文件
+            # 动态 key 的二进制文件（vfs[{commit}] 和 save[{commit}]）
+            # 使用 additionalProperties: true 生成 unknown 类型，避免与其他属性的类型冲突
+            additionalProperties: true
           encoding:
             metadata:
               contentType: application/json

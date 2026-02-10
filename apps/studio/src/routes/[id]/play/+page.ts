@@ -5,28 +5,24 @@ export interface PlayPageData {
 	artifactId: string;
 	/** Sandbox node ID for the play session (original artifact ID) */
 	sandboxNodeId: string | null;
-	/** Optional save ID to load from */
-	saveId: string | null;
-	/** Optional checkpoint ID to load */
-	checkpointId: string | null;
+	/** Optional save commit hash to load from (new Save API) */
+	saveCommit: string | null;
 }
 
 export const load: PageLoad = ({ params, url }): PlayPageData => {
 	const sandboxNodeId = url.searchParams.get('sandbox_id');
-	const saveId = url.searchParams.get('saveid');
-	const checkpointId = url.searchParams.get('checkpoint');
+	// New Save API uses commit hash directly
+	const saveCommit = url.searchParams.get('save');
 	
 	console.log('[Play +page.ts] Load params:', { 
 		artifactId: params.id, 
 		sandboxNodeId, 
-		saveId, 
-		checkpointId 
+		saveCommit 
 	});
 	
 	return {
 		artifactId: params.id,
 		sandboxNodeId,
-		saveId,
-		checkpointId
+		saveCommit
 	};
 };

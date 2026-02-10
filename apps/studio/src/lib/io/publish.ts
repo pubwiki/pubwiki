@@ -3,28 +3,33 @@
  *
  * Functions to publish workspace nodes as an artifact to the backend.
  * 
- * After artifact storage refactoring:
- * - Non-VFS nodes: content is stored in descriptor, no separate file uploads
+ * After version control refactoring:
+ * - Node IDs are globally unique UUIDs, preserved on publish
+ * - No Fork-on-Write: editing creates new commits, not new nodes
+ * - parent commit tracks version lineage
  * - VFS nodes: files are packaged as tar.gz and uploaded separately
- * - Simplified upload: just descriptor with content + VFS tar.gz archives
- * 
- * After layer separation:
- * - FlowNodeData for flow layer
- * - nodeStore for business data
+ * - Non-VFS nodes: content is stored in descriptor
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, VFSNodeData, StateNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
-import type { ArtifactType, VisibilityType } from '$lib/types';
+import type { VisibilityType } from '$lib/types';
 import { StateContent } from '../types';
-import { createApiClient } from '@pubwiki/api/client';
+import { createApiClient, type paths } from '@pubwiki/api/client';
+import { type components, computeArtifactCommit, computeNodeCommit } from '@pubwiki/api';
 import { API_BASE_URL } from '$lib/config';
 import { getNodeVfs } from '../vfs';
-import { nodeStore } from '../persistence';
+import { nodeStore, generateContentHash } from '../persistence';
 
 // Create a singleton API client
 const apiClient = createApiClient(API_BASE_URL);
+
+// API types from OpenAPI schema
+type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
+type CreateArtifactNode = components['schemas']['CreateArtifactNode'];
+type ArtifactEdgeDescriptor = components['schemas']['ArtifactEdgeDescriptor'];
+type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 
 // ============================================================================
 // Simple TAR Implementation
@@ -159,7 +164,6 @@ async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
 export interface PublishMetadata {
 	/** Artifact ID - client-generated UUID, used for both create and update */
 	artifactId: string;
-	type: ArtifactType;
 	name: string;
 	slug: string;
 	description: string;
@@ -168,61 +172,16 @@ export interface PublishMetadata {
 	tags: string[];
 	/** Optional homepage content in Markdown format */
 	homepage?: string;
+	/** Optional commit tags (e.g., ["draft-latest"]) */
+	commitTags?: string[];
+	/** Parent commit hash for updates (null for initial publish) */
+	parentCommit?: string | null;
 }
 
 /**
  * Node type for API - all studio node types are publishable
  */
-type ApiNodeType = 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'LOADER' | 'SANDBOX' | 'STATE';
-
-/**
- * Reference to the original external node that was forked
- */
-interface OriginalRefDescriptor {
-	nodeId: string;
-	commit: string;
-}
-
-/**
- * Artifact descriptor for API
- * After artifact storage refactoring:
- * - content field contains the serialized node content (for non-external nodes)
- * - VFS nodes include filesSummary instead of files array
- */
-interface ArtifactNodeDescriptor {
-	id: string;
-	external?: boolean;
-	type: ApiNodeType;
-	name?: string;
-	position: { x: number, y: number }
-	/** Serialized node content (included for non-external nodes) */
-	content?: unknown;
-	/** Summary of files for VFS nodes (count, size, etc.) */
-	filesSummary?: {
-		totalFiles: number;
-		totalSize: number;
-	};
-	/** Reference to the original external node (for Fork-on-Write) */
-	originalRef?: OriginalRefDescriptor;
-}
-
-interface ArtifactEdgeDescriptor {
-	source: string;
-	target: string;
-	sourceHandle?: string | null;
-	targetHandle?: string | null;
-}
-
-interface ArtifactDescriptor {
-	version: number;
-	exportedAt: string;
-	nodes: ArtifactNodeDescriptor[];
-	edges: ArtifactEdgeDescriptor[];
-}
-
-// ============================================================================
-// VFS File Collection and Packaging Helpers
-// ============================================================================
+type ApiNodeType = components['schemas']['ArtifactNodeType'];
 
 /**
  * File info for VFS packaging
@@ -354,348 +313,118 @@ function guessMimeType(path: string): string {
 // ============================================================================
 
 /**
- * Check if an external node has been modified since import
- * A node is considered modified if its current commit differs from the original commit
- */
-function isExternalNodeModified(node: StudioNodeData): boolean {
-	if (!node.external) return false;
-	if (!node.originalRef) return false;
-	// Compare current commit with original commit
-	return node.commit !== node.originalRef.commit;
-}
-
-/**
- * Result of preparing nodes for publish with Fork-on-Write applied
+ * Result of preparing nodes for publish
  */
 interface PreparedNodes {
-	/** Node descriptors for the API (includes content) */
-	descriptors: ArtifactNodeDescriptor[];
-	/** Map from original node ID to forked node ID (for edge remapping) */
-	idMapping: Map<string, string>;
+	/** Node descriptors for the API */
+	nodes: CreateArtifactNode[];
 	/** VFS nodes that need tar.gz archives uploaded (nodeId -> archive data) */
 	vfsArchives: Map<string, Uint8Array>;
 }
 
 /**
- * Prepare nodes for publish, applying Fork-on-Write for modified external nodes
+ * Prepare nodes for publish
  * 
- * After artifact storage refactoring:
- * - Non-VFS nodes: content is serialized directly into descriptor
- * - VFS nodes: files are packaged as tar.gz, only filesSummary in descriptor
- * 
- * Fork-on-Write: When an external node has been modified (commit != originalRef.commit),
- * it is "forked" into a new internal node with a new ID, preserving the originalRef
- * to maintain lineage tracking.
+ * In the new version control architecture:
+ * - All nodes are published with their content
+ * - nodeId is preserved (globally unique UUID)
+ * - parent tracks version lineage
+ * - No Fork-on-Write needed
  */
 async function prepareNodesForPublish(
 	nodes: Node<StudioNodeData>[]
 ): Promise<PreparedNodes> {
-	const descriptors: ArtifactNodeDescriptor[] = [];
-	const idMapping = new Map<string, string>();
+	const apiNodes: CreateArtifactNode[] = [];
 	const vfsArchives = new Map<string, Uint8Array>();
 
 	for (const node of nodes) {
-		const isModifiedExternal = isExternalNodeModified(node.data);
-
-		if (isModifiedExternal) {
-			// Fork-on-Write: Create a new internal node
-			const newId = crypto.randomUUID();
-			idMapping.set(node.data.id, newId);
-
-			const descriptor: ArtifactNodeDescriptor = {
-				id: newId,
-				external: false, // Forked node is now internal
-				type: node.data.type as ApiNodeType,
-				name: node.data.name || undefined,
-				position: { x: node.position.x, y: node.position.y },
-				// Preserve original reference for lineage tracking
-				originalRef: node.data.originalRef
+		// Get parent commit from the node's parent field
+		const parentCommit = node.data.parent;
+		
+		// Content from toJSON() matches ArtifactNodeContent structure
+		let nodeContent = node.data.content.toJSON() as ArtifactNodeContent;
+		
+		// Compute contentHash from the serialized content
+		// IMPORTANT: contentHash must be computed from the EXACT same content that will be sent to the API
+		// This ensures commit = computeNodeCommit(nodeId, parent, contentHash, type) matches
+		let contentHash: string;
+		
+		// Add content based on node type
+		if (node.data.type === 'VFS') {
+			const vfsData = node.data as VFSNodeData;
+			const { archive, files, totalFiles, totalSize } = await packageVfsAsTarGz(
+				vfsData.content.projectId,
+				node.data.id
+			);
+			vfsArchives.set(node.data.id, archive);
+			// VFS content includes projectId, mounts, file metadata, and files list
+			nodeContent = { 
+				type: 'VFS' as const, 
+				projectId: vfsData.content.projectId,
+				mounts: vfsData.content.mounts,
+				fileCount: totalFiles,
+				totalSize,
+				fileTree: files,
+				files // For API validation
 			};
-
-			// Add content based on node type
-			if (node.data.type === 'VFS') {
-				const vfsData = node.data as VFSNodeData;
-				const { archive, totalFiles, totalSize } = await packageVfsAsTarGz(
-					vfsData.content.projectId, 
-					node.data.id  // Use original ID to access VFS
-				);
-				vfsArchives.set(newId, archive);  // Use new ID for upload
-				descriptor.content = vfsData.content.toJSON();
-				descriptor.filesSummary = { totalFiles, totalSize };
-			} else {
-				descriptor.content = node.data.content.toJSON();
-			}
-
-			descriptors.push(descriptor);
-		} else if (node.data.external) {
-			// Unmodified external node - just reference it (no content)
-			descriptors.push({
-				id: node.data.id,
-				external: true,
-				type: node.data.type as ApiNodeType,
-				name: node.data.name || undefined,
-				position: { x: node.position.x, y: node.position.y }
-			});
-			// External nodes don't need content uploaded
+			// For VFS, contentHash is based on the files list (same as what's sent to API)
+			contentHash = await generateContentHash(JSON.stringify(nodeContent));
 		} else {
-			// Regular internal node
-			const descriptor: ArtifactNodeDescriptor = {
-				id: node.data.id,
-				external: false,
-				type: node.data.type as ApiNodeType,
-				name: node.data.name || undefined,
-				position: { x: node.position.x, y: node.position.y }
-			};
-
-			// Add content based on node type
-			if (node.data.type === 'VFS') {
-				const vfsData = node.data as VFSNodeData;
-				const { archive, totalFiles, totalSize, files } = await packageVfsAsTarGz(
-					vfsData.content.projectId,
-					node.data.id
-				);
-				vfsArchives.set(node.data.id, archive);
-				// VFS content must have files array for backend validation
-				descriptor.content = { files };
-				descriptor.filesSummary = { totalFiles, totalSize };
-			} else {
-				descriptor.content = node.data.content.toJSON();
-			}
-
-			descriptors.push(descriptor);
+			// For other nodes, contentHash is based on the API content (toJSON)
+			contentHash = await generateContentHash(JSON.stringify(nodeContent));
 		}
+		
+		// CRITICAL: Compute commit hash using the SAME formula as the backend
+		// commit = computeNodeCommit(nodeId, parent, contentHash, type)
+		// This ensures the backend validation will pass
+		const commit = await computeNodeCommit(node.data.id, parentCommit, contentHash, node.data.type);
+
+		const apiNode: CreateArtifactNode = {
+			nodeId: node.data.id,
+			commit,
+			parent: parentCommit ?? undefined,
+			type: node.data.type as ApiNodeType,
+			name: node.data.name || undefined,
+			position: { x: node.position.x, y: node.position.y },
+			content: nodeContent,
+			contentHash
+		};
+
+		apiNodes.push(apiNode);
 	}
 
-	return { descriptors, idMapping, vfsArchives };
-}
-
-/**
- * Prepare artifact descriptor from nodes and edges
- * 
- * After artifact storage refactoring:
- * - Descriptors include content for non-external nodes
- * - VFS nodes have their files packaged separately as tar.gz
- * 
- * Applies Fork-on-Write for modified external nodes
- */
-async function createDescriptor(
-	nodes: Node<StudioNodeData>[],
-	edges: Edge[]
-): Promise<{ descriptor: ArtifactDescriptor; vfsArchives: Map<string, Uint8Array> }> {
-	const { descriptors, idMapping, vfsArchives } = await prepareNodesForPublish(nodes);
-
-	// Remap edge source/target IDs for forked nodes
-	const edgeDescriptors: ArtifactEdgeDescriptor[] = edges.map((edge) => ({
-		source: idMapping.get(edge.source) ?? edge.source,
-		target: idMapping.get(edge.target) ?? edge.target,
-		sourceHandle: edge.sourceHandle,
-		targetHandle: edge.targetHandle
-	}));
-
-	const descriptor: ArtifactDescriptor = {
-		version: 1,
-		exportedAt: new Date().toISOString(),
-		nodes: descriptors,
-		edges: edgeDescriptors
-	};
-
-	return { descriptor, vfsArchives };
-}
-
-/**
- * Create form data for multipart upload
- * 
- * After artifact storage refactoring:
- * - Descriptor contains all node content (no separate node.json uploads)
- * - Only VFS nodes need separate file uploads (as tar.gz archives)
- * 
- * @param metadata - Artifact metadata
- * @param descriptor - Artifact descriptor (includes node content)
- * @param vfsArchives - Map of VFS node ID to tar.gz archive data
- */
-function createFormData(
-	metadata: PublishMetadata,
-	descriptor: ArtifactDescriptor,
-	vfsArchives: Map<string, Uint8Array>
-): FormData {
-	const formData = new FormData();
-
-	// Add metadata as JSON string
-	const metadataJson = JSON.stringify({
-		artifactId: metadata.artifactId,
-		type: metadata.type,
-		name: metadata.name,
-		slug: metadata.slug,
-		description: metadata.description || undefined,
-		visibility: metadata.visibility,
-		version: metadata.version,
-		tags: metadata.tags.length > 0 ? metadata.tags : undefined
-	});
-	formData.append('metadata', metadataJson);
-
-	// Add descriptor as JSON string (includes all node content)
-	formData.append('descriptor', JSON.stringify(descriptor));
-
-	// Add VFS tar.gz archives
-	for (const [nodeId, archive] of vfsArchives.entries()) {
-		// Create a new Uint8Array to ensure proper ArrayBuffer type
-		const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
-		formData.append(`vfs[${nodeId}]`, blob, `${nodeId}.tar.gz`);
-	}
-
-	// Add homepage markdown if provided
-	if (metadata.homepage && metadata.homepage.trim().length > 0) {
-		const homepageBlob = new Blob([metadata.homepage], { type: 'text/markdown' });
-		formData.append('homepage', homepageBlob, 'homepage.md');
-	}
-
-	return formData;
+	return { nodes: apiNodes, vfsArchives };
 }
 
 export interface PublishResult {
 	success: boolean;
 	artifactId?: string;
+	/** Latest commit hash after publish */
+	latestCommit?: string;
 	error?: string;
 }
 
-// Visibility order for comparison
-const visibilityOrder: Record<string, number> = {
-	'PRIVATE': 0,
-	'UNLISTED': 1,
-	'PUBLIC': 2
-};
-
 /**
- * Auto-select cloud checkpoint for STATE nodes based on artifact visibility
+ * Validate STATE nodes before publish
  * 
- * For each STATE node, finds the most recent cloud checkpoint with visibility >= artifact visibility
- * and automatically selects it. This updates the nodeStore directly.
- * 
- * @param nodes - Nodes to check
- * @param artifactVisibility - The artifact's visibility level
- * @returns Object with updated node count and any errors
+ * NOTE: Cloud checkpoint validation is temporarily disabled pending new Save API migration.
+ * STATE nodes can be published without cloud checkpoints. Local state data will be included
+ * in the published artifact, but cloud save sync features are not available until the
+ * new Save API is fully implemented.
  */
-function autoSelectStateCheckpoints(
-	nodes: Node<StudioNodeData>[],
-	artifactVisibility: VisibilityType
-): { updatedCount: number; errors: string[] } {
-	const result = { updatedCount: 0, errors: [] as string[] };
-	const requiredVisibilityLevel = visibilityOrder[artifactVisibility];
-
-	for (const node of nodes) {
-		if (node.data.type !== 'STATE' || node.data.external) continue;
-		
-		const stateData = node.data as StateNodeData;
-		const stateContent = stateData.content as StateContent;
-		
-		// Skip if no cloud save configured
-		if (!stateContent.saveId) {
-			continue;
-		}
-		
-		// Get cloud checkpoints (stored in StateContent.checkpoints)
-		const cloudCheckpoints = stateContent.checkpoints.filter(cp => {
-			const cpVisibilityLevel = visibilityOrder[cp.visibility] ?? 0;
-			return cpVisibilityLevel >= requiredVisibilityLevel;
-		});
-		
-		if (cloudCheckpoints.length === 0) {
-			continue;
-		}
-		
-		// Find the most recent checkpoint by timestamp
-		const latestCheckpoint = cloudCheckpoints.reduce((latest, cp) => {
-			return cp.createdAt > latest.createdAt ? cp : latest;
-		});
-		
-		// Check if we need to update
-		const currentCheckpointVisibility = stateContent.checkpointId
-			? stateContent.checkpoints.find(cp => cp.id === stateContent.checkpointId)?.visibility
-			: null;
-		
-		const currentVisibilityLevel = currentCheckpointVisibility 
-			? visibilityOrder[currentCheckpointVisibility] ?? 0 
-			: -1;
-		
-		// Update if:
-		// 1. No checkpoint selected, or
-		// 2. Current checkpoint visibility is insufficient
-		if (!stateContent.checkpointId || currentVisibilityLevel < requiredVisibilityLevel) {
-			// Note: ref is deprecated in the new snapshot model, use checkpoint ID only
-			const updatedContent = stateContent.withCheckpoint(latestCheckpoint.id, latestCheckpoint.id);
-			nodeStore.update(node.id, (prev) => ({
-				...prev,
-				content: updatedContent
-			}) as StateNodeData);
-			result.updatedCount++;
-		}
-	}
-
-	return result;
-}
-
-/**
- * Select appropriate cloud checkpoints for STATE nodes based on visibility requirement.
- * This is the public API that works with FlowNodeData and nodeStore.
- * 
- * Call this when visibility changes in the UI to update checkpoint selections.
- * 
- * @param flowNodes - FlowNodeData nodes from the flow layer
- * @param artifactVisibility - The artifact's visibility level
- * @returns Object with updated node count and any errors
- */
-export function selectCheckpointsForVisibility(
-	flowNodes: Node<FlowNodeData>[],
-	artifactVisibility: VisibilityType
-): { updatedCount: number; errors: string[] } {
-	// Reconstruct full nodes with business data from nodeStore
-	const nodes: Node<StudioNodeData>[] = flowNodes
-		.map(n => {
-			const data = nodeStore.get(n.id);
-			if (!data) return null;
-			return {
-				...n,
-				data: data as StudioNodeData
-			};
-		})
-		.filter((n): n is Node<StudioNodeData> => n !== null);
-
-	return autoSelectStateCheckpoints(nodes, artifactVisibility);
-}
-
-/**
- * Validate STATE nodes have required checkpoint before publish
- * STATE nodes must have a saveId and checkpointId to be published
- */
-function validateStateNodes(nodes: Node<StudioNodeData>[]): { valid: boolean; error?: string } {
-	for (const node of nodes) {
-		if (node.data.type === 'STATE' && !node.data.external) {
-			const stateContent = node.data.content as StateContent;
-			if (!stateContent.saveId || !stateContent.checkpointId) {
-				return {
-					valid: false,
-					error: `STATE node "${node.data.name || node.data.id}" must have a saved checkpoint before publish. Use "Save to Cloud" to create a checkpoint first.`
-				};
-			}
-		}
-	}
+function validateStateNodes(_nodes: Node<StudioNodeData>[]): { valid: boolean; error?: string } {
+	// Cloud checkpoint validation is temporarily disabled
+	// STATE nodes can be published with local data only
 	return { valid: true };
 }
 
 /**
  * Publish nodes as an artifact to the backend
  * 
- * After artifact storage refactoring:
- * - Descriptor includes all node content (no separate file uploads)
- * - Only VFS nodes need separate tar.gz archive uploads
- * 
- * After layer separation:
- * - Takes FlowNodeData nodes from flow layer
- * - Gets business data from nodeStore
- * 
- * Implements Fork-on-Write:
- * - Modified external nodes are forked into new internal nodes
- * - Original reference is preserved for lineage tracking
+ * In the new version control architecture:
+ * - All nodes are published with their original nodeId
+ * - No Fork-on-Write - editing creates new commits, not new nodes
+ * - parent commit tracks version lineage
  * 
  * Authentication is handled via session cookie (credentials: 'include')
  */
@@ -715,9 +444,6 @@ export async function publishArtifact(
 			};
 		})
 		.filter((n): n is Node<StudioNodeData> => n !== null);
-
-	// Auto-select appropriate checkpoints for STATE nodes based on artifact visibility
-	autoSelectStateCheckpoints(nodes, metadata.visibility);
 
 	// Re-fetch node data after auto-selection (since nodeStore was updated)
 	nodes = flowNodes
@@ -740,16 +466,82 @@ export async function publishArtifact(
 		};
 	}
 
-	// Create descriptor with content and VFS archives
-	const { descriptor, vfsArchives } = await createDescriptor(nodes, edges);
-	const formData = createFormData(metadata, descriptor, vfsArchives);
+	// Prepare nodes and VFS archives
+	const { nodes: apiNodes, vfsArchives } = await prepareNodesForPublish(nodes);
+
+	// Convert edges to API format
+	const apiEdges: ArtifactEdgeDescriptor[] = edges.map((edge) => ({
+		source: edge.source,
+		target: edge.target,
+		sourceHandle: edge.sourceHandle ?? undefined,
+		targetHandle: edge.targetHandle ?? undefined
+	}));
+
+	// Compute the artifact version commit hash
+	// For new artifacts, parentCommit is null; for updates, it should be the previous version
+	const commitNodes = apiNodes.map(n => ({ nodeId: n.nodeId, commit: n.commit }));
+	const commitEdges = apiEdges.map(e => ({
+		source: e.source,
+		target: e.target,
+		sourceHandle: e.sourceHandle ?? null,
+		targetHandle: e.targetHandle ?? null
+	}));
+	const commit = await computeArtifactCommit(
+		metadata.artifactId,
+		metadata.parentCommit ?? null,
+		commitNodes,
+		commitEdges
+	);
 
 	try {
-		// Use openapi-fetch with custom bodySerializer for FormData
+		// Use openapi-fetch with bodySerializer for multipart/form-data
+		// See: https://openapi-ts.dev/openapi-fetch/api#bodyserializer
 		const { data, error, response } = await apiClient.POST('/artifacts', {
-			// @ts-expect-error FormData body requires special handling for multipart uploads
-			body: formData,
-			bodySerializer: (body) => body
+			body: {
+				metadata: {
+					artifactId: metadata.artifactId,
+					commit,
+					parentCommit: metadata.parentCommit ?? null,
+					name: metadata.name,
+					description: metadata.description || undefined,
+					visibility: metadata.visibility,
+					version: metadata.version,
+					tags: metadata.tags.length > 0 ? metadata.tags : undefined,
+					commitTags: metadata.commitTags && metadata.commitTags.length > 0 ? metadata.commitTags : undefined
+				},
+				nodes: apiNodes,
+				edges: apiEdges,
+				// VFS archives will be added in bodySerializer
+				_vfsArchives: vfsArchives,
+				// Homepage markdown if provided
+				_homepage: metadata.homepage
+			},
+			bodySerializer: (body) => {
+				const formData = new FormData();
+				
+				// Add metadata as JSON string
+				formData.append('metadata', JSON.stringify(body.metadata));
+				
+				// Add nodes and edges as JSON strings
+				formData.append('nodes', JSON.stringify(body.nodes));
+				formData.append('edges', JSON.stringify(body.edges));
+				
+				// Add VFS tar.gz archives with dynamic keys
+				const archives = body._vfsArchives as Map<string, Uint8Array>;
+				for (const [nodeId, archive] of archives.entries()) {
+					const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
+					formData.append(`vfs[${nodeId}]`, blob, `${nodeId}.tar.gz`);
+				}
+				
+				// Add homepage markdown if provided
+				const homepage = body._homepage as string | undefined;
+				if (homepage && homepage.trim().length > 0) {
+					const homepageBlob = new Blob([homepage], { type: 'text/markdown' });
+					formData.append('homepage', homepageBlob, 'homepage.md');
+				}
+				
+				return formData;
+			}
 		});
 
 		if (error) {
@@ -759,9 +551,366 @@ export async function publishArtifact(
 			};
 		}
 
+		const artifactId = data?.artifact?.id;
+
+		// Fetch the latest commit hash
+		let latestCommit: string | undefined;
+		if (artifactId) {
+			try {
+				const graphResponse = await apiClient.GET('/artifacts/{artifactId}/graph', {
+					params: {
+						path: { artifactId },
+						query: { version: 'latest' }
+					}
+				});
+				latestCommit = graphResponse.data?.version?.commitHash;
+			} catch {
+				// Non-fatal: continue without commit hash
+				console.warn('Failed to fetch latest commit hash after publish');
+			}
+		}
+
 		return {
 			success: true,
-			artifactId: data?.artifact?.id
+			artifactId,
+			latestCommit
+		};
+	} catch (err) {
+		return {
+			success: false,
+			error: err instanceof Error ? err.message : 'Network error'
+		};
+	}
+}
+
+// ============================================================================
+// PATCH Artifact - Incremental Update
+// ============================================================================
+
+/**
+ * Metadata for patching an existing artifact
+ */
+export interface PatchMetadata {
+	/** Artifact ID to patch */
+	artifactId: string;
+	/** Base commit hash to apply patch on */
+	baseCommit: string;
+	/** Optional new version string */
+	version?: string;
+	/** Optional changelog */
+	changelog?: string;
+	/** Optional commit tags (e.g., ["draft-latest"]) */
+	commitTags?: string[];
+	/** Optional visibility change */
+	visibility?: VisibilityType;
+	/** Optional name change */
+	name?: string;
+	/** Optional description change */
+	description?: string;
+}
+
+/**
+ * Graph data from backend for computing diff
+ */
+interface BaseGraph {
+	nodes: Array<{
+		id: string;
+		type: string;
+		commit: string;
+		contentHash: string;
+		name?: string | null;
+		position?: { x?: number; y?: number };
+		content?: unknown;
+	}>;
+	edges: Array<{
+		source: string;
+		target: string;
+		sourceHandle?: string;
+		targetHandle?: string;
+	}>;
+}
+
+/**
+ * Fetch the graph of a specific artifact version
+ */
+async function fetchBaseGraph(artifactId: string, commit: string): Promise<BaseGraph | null> {
+	try {
+		const { data, error } = await apiClient.GET('/artifacts/{artifactId}/graph', {
+			params: {
+				path: { artifactId },
+				query: { version: commit }
+			}
+		});
+
+		if (error || !data) {
+			console.error('Failed to fetch base graph:', error);
+			return null;
+		}
+
+		return {
+			nodes: data.nodes.map(n => ({
+				id: n.id,
+				type: n.type,
+				commit: n.commit,
+				contentHash: n.contentHash,
+				name: n.name,
+				position: n.position,
+				content: n.content
+			})),
+			edges: data.edges.map(e => ({
+				source: e.source,
+				target: e.target,
+				sourceHandle: e.sourceHandle,
+				targetHandle: e.targetHandle
+			}))
+		};
+	} catch (err) {
+		console.error('Error fetching base graph:', err);
+		return null;
+	}
+}
+
+/**
+ * Compute the diff between current nodes/edges and base graph
+ */
+function computeGraphDiff(
+	currentNodes: CreateArtifactNode[],
+	currentEdges: ArtifactEdgeDescriptor[],
+	baseGraph: BaseGraph
+): {
+	addNodes: CreateArtifactNode[];
+	removeNodeIds: string[];
+	addEdges: ArtifactEdgeDescriptor[];
+	removeEdges: ArtifactEdgeDescriptor[];
+} {
+	const baseNodeMap = new Map(baseGraph.nodes.map(n => [n.id, n]));
+	const currentNodeMap = new Map(currentNodes.map(n => [n.nodeId, n]));
+
+	// Find added/modified nodes
+	const addNodes: CreateArtifactNode[] = [];
+	for (const node of currentNodes) {
+		const baseNode = baseNodeMap.get(node.nodeId);
+		if (!baseNode) {
+			// New node
+			addNodes.push(node);
+		} else if (baseNode.commit !== node.commit) {
+			// Modified node (different commit)
+			addNodes.push(node);
+		}
+	}
+
+	// Find removed nodes
+	const removeNodeIds: string[] = [];
+	for (const baseNode of baseGraph.nodes) {
+		if (!currentNodeMap.has(baseNode.id)) {
+			removeNodeIds.push(baseNode.id);
+		}
+	}
+
+	// Edge comparison helper
+	const edgeKey = (e: { source: string; target: string; sourceHandle?: string | null; targetHandle?: string | null }) =>
+		`${e.source}|${e.target}|${e.sourceHandle ?? ''}|${e.targetHandle ?? ''}`;
+
+	const baseEdgeSet = new Set(baseGraph.edges.map(edgeKey));
+	const currentEdgeSet = new Set(currentEdges.map(edgeKey));
+
+	// Find added edges
+	const addEdges: ArtifactEdgeDescriptor[] = currentEdges.filter(e => !baseEdgeSet.has(edgeKey(e)));
+
+	// Find removed edges
+	const removeEdges: ArtifactEdgeDescriptor[] = baseGraph.edges
+		.filter(e => !currentEdgeSet.has(edgeKey(e)))
+		.map(e => ({
+			source: e.source,
+			target: e.target,
+			sourceHandle: e.sourceHandle,
+			targetHandle: e.targetHandle
+		}));
+
+	return { addNodes, removeNodeIds, addEdges, removeEdges };
+}
+
+export interface PatchResult {
+	success: boolean;
+	/** New commit hash if a new version was created */
+	newCommit?: string;
+	/** Whether a new version was created (false = metadata-only update) */
+	versionCreated?: boolean;
+	error?: string;
+}
+
+/**
+ * Patch an existing artifact with incremental changes
+ * 
+ * This is more efficient than full publish when only a few nodes changed.
+ * The backend merges the base version with the patch to create a new version.
+ * 
+ * @param metadata - Patch metadata including artifactId and baseCommit
+ * @param flowNodes - Current nodes in the workspace
+ * @param edges - Current edges in the workspace
+ */
+export async function patchArtifact(
+	metadata: PatchMetadata,
+	flowNodes: Node<FlowNodeData>[],
+	edges: Edge[]
+): Promise<PatchResult> {
+	// Reconstruct full nodes with business data from nodeStore
+	const nodes: Node<StudioNodeData>[] = flowNodes
+		.map(n => {
+			const data = nodeStore.get(n.id);
+			if (!data) return null;
+			return {
+				...n,
+				data: data as StudioNodeData
+			};
+		})
+		.filter((n): n is Node<StudioNodeData> => n !== null);
+
+	// Fetch base graph for diff computation
+	const baseGraph = await fetchBaseGraph(metadata.artifactId, metadata.baseCommit);
+	if (!baseGraph) {
+		return {
+			success: false,
+			error: 'Failed to fetch base version graph. Please try a full publish instead.'
+		};
+	}
+
+	// Prepare current nodes
+	const { nodes: currentNodes, vfsArchives } = await prepareNodesForPublish(nodes);
+	// Convert null handles to undefined for API compatibility
+	const currentEdges: ArtifactEdgeDescriptor[] = edges.map(edge => ({
+		source: edge.source,
+		target: edge.target,
+		sourceHandle: edge.sourceHandle ?? undefined,
+		targetHandle: edge.targetHandle ?? undefined
+	}));
+
+	// Compute diff
+	const { addNodes, removeNodeIds, addEdges, removeEdges } = computeGraphDiff(
+		currentNodes,
+		currentEdges,
+		baseGraph
+	);
+
+	// Check if there are any changes
+	const hasChanges = addNodes.length > 0 || removeNodeIds.length > 0 || 
+					   addEdges.length > 0 || removeEdges.length > 0;
+
+	// Build patch request metadata
+	const patchMetadata: components['schemas']['PatchArtifactRequest'] = {
+		artifactId: metadata.artifactId,
+		baseCommit: metadata.baseCommit
+	};
+
+	// Add optional metadata fields
+	if (metadata.version) patchMetadata.version = metadata.version;
+	if (metadata.changelog) patchMetadata.changelog = metadata.changelog;
+	if (metadata.commitTags) patchMetadata.commitTags = metadata.commitTags;
+	if (metadata.visibility) patchMetadata.visibility = metadata.visibility;
+	if (metadata.name) patchMetadata.name = metadata.name;
+	if (metadata.description) patchMetadata.description = metadata.description;
+
+	// Add graph changes if any
+	if (hasChanges) {
+		// addNodes is already CreateArtifactNode[]
+		patchMetadata.addNodes = addNodes;
+		if (removeNodeIds.length > 0) patchMetadata.removeNodeIds = removeNodeIds;
+		if (addEdges.length > 0) patchMetadata.addEdges = addEdges;
+		if (removeEdges.length > 0) patchMetadata.removeEdges = removeEdges;
+
+		// Compute commit hash for the patched version
+		// Merge base graph with changes
+		// Note: addNodes may include both new nodes and modified nodes (nodes with different commits)
+		// We need to exclude modified nodes from baseGraph to avoid duplicates
+		const addNodeIds = new Set(addNodes.map(n => n.nodeId));
+		const patchedNodes = [
+			...baseGraph.nodes.filter(n => !removeNodeIds.includes(n.id) && !addNodeIds.has(n.id)),
+			...addNodes
+		];
+		const patchedEdges = [
+			...baseGraph.edges.filter(e => !removeEdges.some(re => re.source === e.source && re.target === e.target)),
+			...addEdges
+		];
+		const commitNodes = patchedNodes.map(n => ({
+			nodeId: 'nodeId' in n ? n.nodeId : n.id,
+			commit: n.commit
+		}));
+		const commitEdges = patchedEdges.map(e => ({
+			source: e.source,
+			target: e.target,
+			sourceHandle: e.sourceHandle ?? null,
+			targetHandle: e.targetHandle ?? null
+		}));
+		patchMetadata.commit = await computeArtifactCommit(
+			metadata.artifactId,
+			metadata.baseCommit,
+			commitNodes,
+			commitEdges
+		);
+	}
+
+	// Collect VFS archives for new/modified VFS nodes
+	const vfsAddNodeIds = new Set(addNodes.map(n => n.nodeId));
+	const patchVfsArchives = new Map<string, Uint8Array>();
+	for (const [nodeId, archive] of vfsArchives.entries()) {
+		if (vfsAddNodeIds.has(nodeId)) {
+			patchVfsArchives.set(nodeId, archive);
+		}
+	}
+
+	try {
+		// Use openapi-fetch with bodySerializer for multipart/form-data
+		// See: https://openapi-ts.dev/openapi-fetch/api#bodyserializer
+		const { data, error, response } = await apiClient.PATCH('/artifacts', {
+			body: {
+				metadata: patchMetadata,
+				// VFS archives will be added in bodySerializer
+				_vfsArchives: patchVfsArchives
+			},
+			bodySerializer: (body) => {
+				const formData = new FormData();
+				
+				// Add metadata as JSON string
+				formData.append('metadata', JSON.stringify(body.metadata));
+				
+				// Add VFS tar.gz archives with dynamic keys
+				const archives = body._vfsArchives as Map<string, Uint8Array>;
+				for (const [nodeId, archive] of archives.entries()) {
+					const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
+					formData.append(`vfs[${nodeId}]`, blob, `${nodeId}.tar.gz`);
+				}
+				
+				return formData;
+			}
+		});
+
+		if (error) {
+			return {
+				success: false,
+				error: error.error || `HTTP ${response.status}: ${response.statusText}`
+			};
+		}
+
+		// Fetch the new commit hash (ArtifactListItem doesn't include it directly)
+		let newCommit: string | undefined;
+		if (data?.versionCreated) {
+			try {
+				const graphResponse = await apiClient.GET('/artifacts/{artifactId}/graph', {
+					params: {
+						path: { artifactId: metadata.artifactId },
+						query: { version: 'latest' }
+					}
+				});
+				newCommit = graphResponse.data?.version?.commitHash;
+			} catch {
+				console.warn('Failed to fetch new commit hash after patch');
+			}
+		}
+
+		return {
+			success: true,
+			newCommit,
+			versionCreated: data?.versionCreated
 		};
 	} catch (err) {
 		return {

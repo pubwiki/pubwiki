@@ -4,7 +4,7 @@ import { nodeVersions, nodeVersionRefs, type NodeVersion, type NewNodeVersion, t
 import { inputContents, promptContents, generatedContents, vfsContents, sandboxContents, loaderContents, stateContents, saveContents } from '../schema/node-contents';
 import type { NodeType, VisibilityType } from '../schema/enums';
 import type { ServiceError, ServiceResult } from './user';
-import type { ArtifactNodeContent } from '@pubwiki/api';
+import type { ArtifactNodeContent, ContentBlock, VfsMountConfig, VfsFileInfo } from '@pubwiki/api';
 import { computeNodeCommit } from '@pubwiki/api';
 
 // ========================================================================
@@ -33,6 +33,19 @@ export interface NodeVersionDetail extends NodeVersionSummary {
   content?: ArtifactNodeContent;
 }
 
+/** SAVE node content (internal type, not exposed via public API) */
+export interface SaveNodeContent {
+  type: 'SAVE';
+  stateNodeId: string;
+  stateNodeCommit: string;
+  sourceArtifactCommit: string;
+  title?: string | null;
+  description?: string | null;
+}
+
+/** All node content types (ArtifactNodeContent + SaveNodeContent) */
+export type AllNodeContent = ArtifactNodeContent | SaveNodeContent;
+
 /** Input for creating/syncing a node version */
 export interface SyncNodeVersionInput {
   nodeId: string;
@@ -43,7 +56,7 @@ export interface SyncNodeVersionInput {
   type: NodeType;
   name?: string;
   contentHash: string;
-  content: unknown;          // The actual content to store in the typed content table
+  content: AllNodeContent;  // The actual content to store in the typed content table
   message?: string;
   tag?: string;
   visibility?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
@@ -65,6 +78,21 @@ export interface SyncResult {
 // ========================================================================
 // Content table helpers
 // ========================================================================
+
+/** Extract plain text from content blocks (for full-text search indexing) */
+function extractPlainText(blocks: ContentBlock[]): string {
+  return blocks
+    .filter((b): b is { type: 'TextBlock'; value: string } => b.type === 'TextBlock')
+    .map(b => b.value)
+    .join('\n');
+}
+
+/** Extract reftag names from content blocks (for reference tracking) */
+function extractReftagNames(blocks: ContentBlock[]): string[] {
+  return blocks
+    .filter((b): b is { type: 'RefTagBlock'; name: string } => b.type === 'RefTagBlock')
+    .map(b => b.name);
+}
 
 /** Map node type to its content table */
 function getContentTable(type: NodeType) {
@@ -381,17 +409,21 @@ export class NodeVersionService {
             visibility: input.visibility ?? 'PRIVATE',
           };
 
-          await this.db.insert(nodeVersions).values(newVersion);
-
           // Insert lineage refs
-          if (input.refs && input.refs.length > 0) {
-            const refValues: NewNodeVersionRef[] = input.refs.map(ref => ({
-              sourceCommit: input.commit,
-              targetCommit: ref.targetCommit,
-              refType: ref.refType,
-            }));
+          const refValues: NewNodeVersionRef[] = (input.refs ?? []).map(ref => ({
+            sourceCommit: input.commit,
+            targetCommit: ref.targetCommit,
+            refType: ref.refType,
+          }));
 
-            await this.db.insert(nodeVersionRefs).values(refValues);
+          // Use batch for atomicity: insert node version + refs together
+          if (refValues.length > 0) {
+            await this.db.batch([
+              this.db.insert(nodeVersions).values(newVersion),
+              this.db.insert(nodeVersionRefs).values(refValues),
+            ]);
+          } else {
+            await this.db.insert(nodeVersions).values(newVersion);
           }
 
           result.created++;
@@ -492,9 +524,8 @@ export class NodeVersionService {
    * If content_hash already exists, increment ref_count.
    * Otherwise insert new row.
    */
-  private async upsertContent(type: NodeType, contentHash: string, content: unknown): Promise<void> {
+  private async upsertContent(type: NodeType, contentHash: string, content: AllNodeContent): Promise<void> {
     const table = getContentTable(type);
-    const data = content as Record<string, unknown>;
 
     // Check if already exists
     const existing = await this.db
@@ -513,49 +544,55 @@ export class NodeVersionService {
     }
 
     // Insert new content based on type
-    switch (type) {
-      case 'INPUT':
+    // Using type narrowing via the discriminated union's `type` field
+    switch (content.type) {
+      case 'INPUT': {
+        const blocks = content.blocks;
         await this.db.insert(inputContents).values({
           contentHash,
-          blocks: data.blocks as unknown[],
-          generationConfig: data.generationConfig as Record<string, unknown> | undefined,
-          plainText: data.plainText as string | undefined,
-          reftagNames: data.reftagNames as string[] | undefined,
+          blocks,
+          generationConfig: content.generationConfig,
+          plainText: extractPlainText(blocks),
+          reftagNames: extractReftagNames(blocks),
         });
         break;
+      }
 
-      case 'PROMPT':
+      case 'PROMPT': {
+        const blocks = content.blocks;
         await this.db.insert(promptContents).values({
           contentHash,
-          blocks: data.blocks as unknown[],
-          plainText: data.plainText as string | undefined,
-          reftagNames: data.reftagNames as string[] | undefined,
+          blocks,
+          plainText: extractPlainText(blocks),
+          reftagNames: extractReftagNames(blocks),
         });
         break;
+      }
 
       case 'GENERATED':
         await this.db.insert(generatedContents).values({
           contentHash,
-          blocks: data.blocks as unknown[],
-          plainText: data.plainText as string | undefined,
+          blocks: content.blocks,
+          // GENERATED blocks are MessageBlock[], not ContentBlock[], so no plainText extraction
+          plainText: undefined,
         });
         break;
 
       case 'VFS':
         await this.db.insert(vfsContents).values({
           contentHash,
-          projectId: data.projectId as string,
-          mounts: data.mounts as unknown[] | undefined,
-          fileCount: data.fileCount as number | undefined,
-          totalSize: data.totalSize as number | undefined,
-          fileTree: data.fileTree as Array<{ path: string; size: number; mimeType?: string }> | undefined,
+          projectId: content.projectId,
+          mounts: content.mounts,
+          fileCount: content.fileCount,
+          totalSize: content.totalSize,
+          fileTree: content.fileTree,
         });
         break;
 
       case 'SANDBOX':
         await this.db.insert(sandboxContents).values({
           contentHash,
-          entryFile: data.entryFile as string | undefined,
+          entryFile: content.entryFile,
         });
         break;
 
@@ -568,18 +605,18 @@ export class NodeVersionService {
       case 'STATE':
         await this.db.insert(stateContents).values({
           contentHash,
-          saves: data.saves as string[] | undefined,
+          saves: content.saves,
         });
         break;
 
       case 'SAVE':
         await this.db.insert(saveContents).values({
           contentHash,
-          stateNodeId: data.stateNodeId as string,
-          stateNodeCommit: data.stateNodeCommit as string,
-          sourceArtifactCommit: data.sourceArtifactCommit as string,
-          title: data.title as string | undefined,
-          description: data.description as string | undefined,
+          stateNodeId: content.stateNodeId,
+          stateNodeCommit: content.stateNodeCommit,
+          sourceArtifactCommit: content.sourceArtifactCommit,
+          title: content.title,
+          description: content.description,
         });
         break;
     }

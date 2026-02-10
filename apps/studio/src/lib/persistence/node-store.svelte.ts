@@ -34,8 +34,12 @@ import type { StudioNodeData } from '../types';
 /**
  * Generate a content hash for version control using SHA-256
  * Returns first 16 hex characters of the hash for brevity
+ * 
+ * NOTE: This is the **contentHash**, not the **commit**!
+ * The commit must be computed using computeNodeCommit(nodeId, parent, contentHash, type)
+ * from @pubwiki/api to ensure consistency with the backend.
  */
-export async function generateCommitHash(content: unknown): Promise<string> {
+export async function generateContentHash(content: unknown): Promise<string> {
   const str = typeof content === 'string' ? content : JSON.stringify(content);
   const encoder = new TextEncoder();
   const data = encoder.encode(str);
@@ -93,6 +97,26 @@ class NodeStore {
   
   // Historical version cache (key: `${nodeId}:${commit}`)
   private versionCache = new Map<string, StudioNodeData>();
+  
+  // Reactive modification counter - increments whenever any node is modified
+  // Components can use $derived to react to changes
+  private _modificationCount = $state(0);
+  
+  /**
+   * Get the current modification count (reactive)
+   * Use this to subscribe to any node store changes.
+   * Example: $derived(nodeStore.modificationCount && nodeStore.getAll())
+   */
+  get modificationCount(): number {
+    return this._modificationCount;
+  }
+  
+  /**
+   * Notify that a modification has occurred
+   */
+  private notifyModification(): void {
+    this._modificationCount++;
+  }
   
   /**
    * Notify subscribers of a specific node
@@ -230,9 +254,10 @@ class NodeStore {
       projectId: '',  // Snapshots are global, not project-specific
       nodeId: nodeData.id,
       commit: nodeData.commit,
+      contentHash: nodeData.contentHash,
       type: nodeData.type,
       name: nodeData.name,
-      parents: [],
+      parent: nodeData.parent,
       content: nodeData.content.toJSON(),
       timestamp: Date.now(),
       incomingEdges: options?.incomingEdges?.map(e => ({
@@ -376,6 +401,7 @@ class NodeStore {
     this.dirty.add(nodeId);
     // Notify only this node's subscribers
     this.notifyNode(nodeId);
+    this.notifyModification();
     this.scheduleSave();
   }
   
@@ -397,6 +423,7 @@ class NodeStore {
     this.dirty.add(nodeId);
     // Notify this node's subscribers
     this.notifyNode(nodeId);
+    this.notifyModification();
     this.scheduleSave();
   }
   
@@ -443,6 +470,7 @@ class NodeStore {
     this.dirty.add(data.id);
     // Notify this node's subscribers (also triggers global due to new key)
     this.notifyNode(data.id);
+    this.notifyModification();
     this.scheduleSave();
   }
   
@@ -469,6 +497,7 @@ class NodeStore {
     this.dirty.delete(nodeId);
     // Remove version entry and notify (triggers global due to key removal)
     this.versions.delete(nodeId);
+    this.notifyModification();
     
     // Immediately delete from database
     db.nodeData.where({ projectId: this.projectId, nodeId }).delete().catch(err => {
@@ -516,6 +545,12 @@ class NodeStore {
   
   /**
    * Serialize node data to storage format
+   * 
+   * In the new version control architecture:
+   * - No more external/originalRef fields
+   * - nodeId is globally unique and preserved on import
+   * - parent is single commit string (matches cloud schema)
+   * - contentHash is stored for validation
    */
   private serialize(data: StudioNodeData): StoredNodeData {
     return {
@@ -524,16 +559,16 @@ class NodeStore {
       type: data.type,
       name: data.name,
       commit: data.commit,
-      parents: data.parents,
+      contentHash: data.contentHash,
+      parent: data.parent,
       content: data.content.toJSON(),
-      external: data.external,
-      originalRef: data.originalRef,
       timestamp: Date.now()
     };
   }
   
   /**
    * Deserialize storage format to node data
+   * 
    * Note: Type assertion is needed because restoreContent returns NodeContent base type,
    * but the specific content type is determined by nodeType. TypeScript can't narrow this automatically.
    * Use 'as unknown as StudioNodeData' because restoreContent returns the correct runtime type.
@@ -545,11 +580,10 @@ class NodeStore {
       type: nodeType,
       name: stored.name,
       commit: stored.commit,
+      contentHash: stored.contentHash,
       snapshotRefs: [],  // snapshotRefs managed separately, not persisted
-      parents: stored.parents ?? [],
-      content: restoreContent(nodeType, stored.content),
-      external: stored.external ?? false,
-      originalRef: stored.originalRef
+      parent: stored.parent,
+      content: restoreContent(nodeType, stored.content)
     } as unknown as StudioNodeData;
   }
   

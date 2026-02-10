@@ -16,7 +16,7 @@
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { LoaderNodeData, VFSNodeData, StateNodeData, FlowNodeData, VFSContent } from '$lib/types';
 	import { getStudioContext } from '$lib/state';
-	import { getSettingsStore } from '@pubwiki/ui/stores';
+	import { getSettingsStore, useAuth } from '@pubwiki/ui/stores';
 	import { getNodeVfs } from '$lib/vfs';
 	import { getNodeRDFStore } from '$lib/rdf';
 	import { nodeStore } from '$lib/persistence';
@@ -46,6 +46,7 @@
 	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'loader'>> = $props();
 	const ctx = getStudioContext();
 	const settings = getSettingsStore();
+	const auth = useAuth();
 	const allEdges = useEdges();
 	const updateNodeInternals = useUpdateNodeInternals();
 
@@ -322,7 +323,8 @@
 				backendVfsContent.projectId,
 				id,
 				() => ctx.nodes,
-				() => ctx.edges
+				() => ctx.edges,
+				() => auth.user?.id ?? null
 			);
 			
 			// Initialize loader and get result

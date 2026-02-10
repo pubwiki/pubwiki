@@ -7,15 +7,18 @@
 	 * - Three tabs: Overview, Properties, Project
 	 * - Float above the flow editor
 	 * - Project menu with settings, project list, etc.
+	 * - Cloud sync status indicator
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
 	import type { PublishMetadata } from '$lib/io';
+	import type { DraftSyncState } from '$lib/sync';
 	import OverviewTab from './OverviewTab.svelte';
 	import PropertiesTab from './PropertiesTab.svelte';
 	import ProjectTab from './ProjectTab.svelte';
 	import ProjectMenu from './ProjectMenu.svelte';
 	import ProjectListModal from './ProjectListModal.svelte';
+	import SyncStatusIndicator from './SyncStatusIndicator.svelte';
 	import { SettingsModal } from '../settings';
 	import { persist } from '@pubwiki/ui/utils';
 	import * as m from '$lib/paraglide/messages';
@@ -28,12 +31,22 @@
 		projectName: string;
 		isDraft: boolean;
 		isAuthenticated: boolean;
+		/** Last cloud commit hash for version lineage tracking */
+		lastCloudCommit?: string;
 		onFocusNode: (node: Node<FlowNodeData>) => void;
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
 		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 		onNewProject: () => void;
 		onExport: () => void;
 		onImport: () => Promise<void>;
+		// Sync props
+		syncState?: DraftSyncState;
+		onSync?: () => void;
+		onEnableSync?: () => void;
+		/** Called when user chooses to accept cloud state (discard local divergence) */
+		onAcceptCloud?: () => void;
+		/** Called when user chooses to force push local state to cloud */
+		onForcePushLocal?: () => void;
 	}
 
 	let { 
@@ -44,13 +57,34 @@
 		projectName,
 		isDraft,
 		isAuthenticated,
+		lastCloudCommit,
 		onFocusNode,
 		onPublish,
 		onOpenVfsFile,
 		onNewProject,
 		onExport,
-		onImport
+		onImport,
+		syncState,
+		onSync,
+		onEnableSync,
+		onAcceptCloud,
+		onForcePushLocal
 	}: Props = $props();
+
+	// Default sync state if not provided
+	const defaultSyncState: DraftSyncState = {
+		status: 'idle',
+		hasUnsyncedChanges: false,
+		hasVfsChanges: false,
+		lastSyncedAt: null,
+		lastSyncedCommit: null,
+		error: null,
+		enabled: false,
+		backendValidated: false,
+		diverged: undefined
+	};
+	
+	let effectiveSyncState = $derived(syncState ?? defaultSyncState);
 
 	// Sidebar state
 	let collapsed = $state(false);
@@ -217,6 +251,18 @@
 			</div>
 		</div>
 
+		<!-- Sync Status Indicator -->
+		<div class="px-4 py-2 border-b border-gray-100 bg-white">
+			<SyncStatusIndicator
+				state={effectiveSyncState}
+				{isAuthenticated}
+				onSync={() => onSync?.()}
+				onEnable={() => onEnableSync?.()}
+				onAcceptCloud={onAcceptCloud ? () => onAcceptCloud?.() : undefined}
+				onForcePushLocal={onForcePushLocal ? () => onForcePushLocal?.() : undefined}
+			/>
+		</div>
+
 		<!-- Tab Navigation -->
 		<div class="flex border-b border-gray-200 bg-white">
 			{#each tabs as tab}
@@ -240,7 +286,7 @@
 			{#if activeTab === 'overview'}
 				<OverviewTab {nodes} {edges} {onFocusNode} />
 			{:else if activeTab === 'properties'}
-				<PropertiesTab {selectedNodes} {onOpenVfsFile} />
+				<PropertiesTab {selectedNodes} {projectId} {onOpenVfsFile} />
 			{:else if activeTab === 'project'}
 				<ProjectTab 
 					{nodes} 
@@ -249,6 +295,7 @@
 					{projectName}
 					{isDraft}
 					{isAuthenticated}
+					{lastCloudCommit}
 					{onPublish}
 				/>
 			{/if}

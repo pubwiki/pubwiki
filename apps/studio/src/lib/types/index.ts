@@ -5,7 +5,6 @@
 // Node data types
 export type {
   BaseNodeData,
-  OriginalRef,
   InputNodeData,
   PromptNodeData,
   GeneratedNodeData,
@@ -51,7 +50,7 @@ export {
 } from './content';
 
 // ContentBlock types (for structured reftag storage)
-export type { ContentBlock, TextBlock, RefTagBlock, InputGenerationConfig, CheckpointInfo, CheckpointVisibility } from './content';
+export type { ContentBlock, TextBlock, RefTagBlock, InputGenerationConfig } from './content';
 export { blocksToText, getRefTagNamesFromBlocks } from './content';
 
 // Flow types (for SvelteFlow rendering layer)
@@ -61,14 +60,12 @@ export { createFlowNode, getFlowNodeType } from './flow';
 // API types (re-exports from @pubwiki/api plus local types)
 export type {
   ArtifactListItem,
-  ArtifactType,
   ArtifactVersion,
   ArtifactLineageItem,
   ArtifactNodeSummary,
   ArtifactEdge,
   ArtifactNodeType,
   NodeFileInfo,
-  LineageType,
   VisibilityType,
   Tag,
   Pagination,

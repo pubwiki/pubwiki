@@ -44,26 +44,30 @@ export interface StoredLayout {
  * - snapshots table: historical versions (key: [nodeId, commit])
  * 
  * For snapshots table, projectId is empty string since snapshots are global.
+ * 
+ * In the new version control architecture:
+ * - nodeId is globally unique (UUID), preserved on import
+ * - parent tracks version lineage (single parent commit, matches cloud schema)
+ * - contentHash is stored for validation
+ * - No more external/originalRef distinction
  */
 export interface StoredNodeData {
   /** Project ID (empty for snapshots) */
   projectId: string;
-  /** Node ID */
+  /** Node ID (globally unique UUID) */
   nodeId: string;
   /** Node type: 'PROMPT' | 'INPUT' | 'GENERATED' | 'VFS' | 'SANDBOX' | 'LOADER' | 'STATE' */
   type: NodeType;
   /** User-defined node name */
   name: string;
-  /** Current commit hash (content hash) */
+  /** Current commit hash = computeNodeCommit(nodeId, parent, contentHash, type) */
   commit: string;
-  /** Parent nodes that contributed to this node's creation */
-  parents: NodeRef[];
+  /** Content hash = SHA256(JSON.stringify(content))[:16] */
+  contentHash: string;
+  /** Parent commit for version lineage (null for root versions) */
+  parent: string | null;
   /** Node content (JSON serialized) */
   content: unknown;
-  /** Whether this node references external artifact */
-  external?: boolean;
-  /** Reference to the original external node (for Fork-on-Write tracking) */
-  originalRef?: { nodeId: string; commit: string };
   /** Timestamp when this version was created */
   timestamp?: number;
   /** Incoming edges at time of snapshot */
@@ -131,6 +135,19 @@ export interface StoredProject {
   playSandboxNodeId?: string;
   /** State node ID for Play mode (original artifact ID) */
   playStateNodeId?: string;
+  /** 
+   * Last cloud commit hash for Draft-Latest workflow.
+   * Used as baseCommit for incremental PATCH updates.
+   */
+  lastCloudCommit?: string;
+  
+  // ========== Draft Cloud Sync ==========
+  /** Last successful draft sync commit (for draft-latest tag) */
+  lastDraftSyncCommit?: string;
+  /** Last draft sync timestamp */
+  lastDraftSyncAt?: number;
+  /** Whether draft cloud sync is enabled for this project */
+  draftSyncEnabled?: boolean;
 }
 
 // ============================================================================

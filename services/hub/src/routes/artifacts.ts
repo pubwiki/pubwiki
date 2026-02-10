@@ -483,7 +483,7 @@ artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, async (c) => {
       commitTags: versionCommitTags.map(t => t.tag),
       version: version.version ?? '',
       createdAt: version.createdAt,
-      entrypoint: version.entrypoint ?? null,
+      entrypoint: version.entrypoint ?? undefined,
     },
   });
 });

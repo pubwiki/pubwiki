@@ -1,13 +1,29 @@
 /**
- * Conversion utilities between @rdfjs/types Quad and API Quad (N3 string format)
+ * Conversion utilities between @rdfjs/types Quad and SerializedQuad (N3 string format)
  * 
- * API Quad uses N3 format strings for all fields, while @rdfjs/types Quad
+ * SerializedQuad uses N3 format strings for all fields, while @rdfjs/types Quad
  * uses structured Term objects.
  */
 
 import type * as RDF from '@rdfjs/types'
-import type { Quad as ApiQuad } from '@pubwiki/api'
 import { DataFactory as DF } from 'n3'
+
+// ============================================================================
+// SerializedQuad Type (N3 string format for serialization)
+// ============================================================================
+
+/**
+ * Quad type using N3 string format for all fields.
+ * This is a serialization format used for JSON storage/transfer.
+ * Unlike RDF.js Quad which uses structured Term objects, this uses
+ * plain strings in N3 notation.
+ */
+export interface SerializedQuad {
+  subject: string
+  predicate: string
+  object: string
+  graph?: string
+}
 
 // ============================================================================
 // Term Serialization (to N3 string format)
@@ -122,9 +138,9 @@ function n3ToGraphTerm(n3: string): RDF.DefaultGraph | RDF.NamedNode | RDF.Blank
 // ============================================================================
 
 /**
- * Convert an @rdfjs/types Quad to API Quad (N3 string format)
+ * Convert an @rdfjs/types Quad to SerializedQuad (N3 string format)
  */
-export function fromRdfQuad(quad: RDF.Quad): ApiQuad {
+export function fromRdfQuad(quad: RDF.Quad): SerializedQuad {
   return {
     subject: termToN3(quad.subject),
     predicate: termToN3(quad.predicate),
@@ -134,13 +150,13 @@ export function fromRdfQuad(quad: RDF.Quad): ApiQuad {
 }
 
 /**
- * Convert an API Quad (N3 string format) to @rdfjs/types Quad
+ * Convert a SerializedQuad (N3 string format) to @rdfjs/types Quad
  */
-export function toRdfQuad(apiQuad: ApiQuad): RDF.Quad {
+export function toRdfQuad(serializedQuad: SerializedQuad): RDF.Quad {
   return DF.quad(
-    n3ToTerm(apiQuad.subject) as RDF.Quad['subject'],
-    n3ToTerm(apiQuad.predicate) as RDF.NamedNode,
-    n3ToTerm(apiQuad.object) as RDF.Quad['object'],
-    n3ToGraphTerm(apiQuad.graph ?? ''),
+    n3ToTerm(serializedQuad.subject) as RDF.Quad['subject'],
+    n3ToTerm(serializedQuad.predicate) as RDF.NamedNode,
+    n3ToTerm(serializedQuad.object) as RDF.Quad['object'],
+    n3ToGraphTerm(serializedQuad.graph ?? ''),
   )
 }

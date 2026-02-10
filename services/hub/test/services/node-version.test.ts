@@ -67,7 +67,7 @@ describe('NodeVersionService', () => {
       sourceArtifactId: overrides.sourceArtifactId ?? crypto.randomUUID(),
       type,
       contentHash,
-      content: overrides.content ?? { blocks: [{ type: 'text', text: 'hello' }] },
+      content: overrides.content ?? { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'hello' }] },
       visibility: overrides.visibility ?? 'PUBLIC',
       name: overrides.name ?? 'test-node',
       message: overrides.message,
@@ -178,7 +178,7 @@ describe('NodeVersionService', () => {
         await inputVersion({
           nodeId: nodeId1,
           contentHash: sharedHash,
-          content: { blocks: [{ type: 'text', text: 'shared content' }] },
+          content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'shared content' }] },
         }),
       ]);
 
@@ -195,7 +195,7 @@ describe('NodeVersionService', () => {
         await inputVersion({
           nodeId: nodeId2,
           contentHash: sharedHash,
-          content: { blocks: [{ type: 'text', text: 'shared content' }] },
+          content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'shared content' }] },
         }),
       ]);
 
@@ -277,7 +277,7 @@ describe('NodeVersionService', () => {
         nodeId: genNodeId,
         type: 'GENERATED',
         contentHash: makeContentHash('gen'),
-        content: { blocks: [{ type: 'text', text: 'generated' }] },
+        content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'generated' }], inputRef: { id: inputV.nodeId, commit: inputV.commit } },
         refs: [
           {
             targetCommit: inputV.commit,
@@ -299,13 +299,13 @@ describe('NodeVersionService', () => {
 
     it('should store content in the correct typed table for each node type', async () => {
       const types: Array<{ type: SyncNodeVersionInput['type']; table: any; content: unknown }> = [
-        { type: 'INPUT', table: inputContents, content: { blocks: [{ type: 'text', text: 'in' }] } },
-        { type: 'PROMPT', table: promptContents, content: { blocks: [{ type: 'text', text: 'pr' }] } },
-        { type: 'GENERATED', table: generatedContents, content: { blocks: [{ type: 'text', text: 'gen' }] } },
-        { type: 'VFS', table: vfsContents, content: { projectId: 'proj1' } },
-        { type: 'SANDBOX', table: sandboxContents, content: { entryFile: 'index.html' } },
-        { type: 'LOADER', table: loaderContents, content: {} },
-        { type: 'STATE', table: stateContents, content: { saves: ['commit1'] } },
+        { type: 'INPUT', table: inputContents, content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'in' }] } },
+        { type: 'PROMPT', table: promptContents, content: { type: 'PROMPT', blocks: [{ type: 'TextBlock', value: 'pr' }] } },
+        { type: 'GENERATED', table: generatedContents, content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'gen' }], inputRef: { id: 'x', commit: 'y' } } },
+        { type: 'VFS', table: vfsContents, content: { type: 'VFS', projectId: 'proj1' } },
+        { type: 'SANDBOX', table: sandboxContents, content: { type: 'SANDBOX', entryFile: 'index.html' } },
+        { type: 'LOADER', table: loaderContents, content: { type: 'LOADER' } },
+        { type: 'STATE', table: stateContents, content: { type: 'STATE', saves: ['commit1'] } },
       ];
 
       for (const { type, table, content } of types) {
@@ -314,7 +314,7 @@ describe('NodeVersionService', () => {
           nodeId: crypto.randomUUID(),
           type,
           contentHash: hash,
-          content,
+          content: content as SyncNodeVersionInput['content'],
         });
         await service.syncVersions([v]);
 
@@ -349,7 +349,7 @@ describe('NodeVersionService', () => {
           sourceArtifactId: crypto.randomUUID(),
           type: 'INPUT',
           contentHash,
-          content: { blocks: [] },
+          content: { type: 'INPUT', blocks: [] },
           // No visibility specified
         },
       ]);
@@ -461,8 +461,8 @@ describe('NodeVersionService', () => {
     it('should return version detail with content', async () => {
       const nodeId = crypto.randomUUID();
       const contentHash = makeContentHash('det');
-      const blocks = [{ type: 'text', text: 'hello world' }];
-      const v = await inputVersion({ nodeId, contentHash, content: { blocks } });
+      const blocks = [{ type: 'TextBlock' as const, value: 'hello world' }];
+      const v = await inputVersion({ nodeId, contentHash, content: { type: 'INPUT', blocks } });
 
       await service.syncVersions([v]);
 
@@ -571,7 +571,7 @@ describe('NodeVersionService', () => {
         nodeId: promptNodeId,
         type: 'PROMPT',
         contentHash: makeContentHash('rp1'),
-        content: { blocks: [{ type: 'text', text: 'prompt' }] },
+        content: { type: 'PROMPT', blocks: [{ type: 'TextBlock', value: 'prompt' }] },
       });
 
       // Create input and prompt first
@@ -582,7 +582,7 @@ describe('NodeVersionService', () => {
         nodeId: genNodeId,
         type: 'GENERATED',
         contentHash: makeContentHash('rg1'),
-        content: { blocks: [{ type: 'text', text: 'output' }] },
+        content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'output' }], inputRef: { id: inputV.nodeId, commit: inputV.commit } },
         refs: [
           { targetCommit: inputV.commit, refType: 'input' },
           { targetCommit: promptV.commit, refType: 'prompt' },
@@ -717,9 +717,9 @@ describe('NodeVersionService', () => {
         contentHash: hash,
         type: 'INPUT',
         content: {
-          blocks: [{ type: 'text', text: 'test input' }],
+          type: 'INPUT',
+          blocks: [{ type: 'TextBlock', value: 'test input' }],
           generationConfig: { model: 'gpt-4', temperature: 0.7 },
-          plainText: 'test input',
         },
       });
       await service.syncVersions([v]);
@@ -729,7 +729,7 @@ describe('NodeVersionService', () => {
         .from(inputContents)
         .where(eq(inputContents.contentHash, hash));
       expect(rows).toHaveLength(1);
-      expect(rows[0].blocks).toEqual([{ type: 'text', text: 'test input' }]);
+      expect(rows[0].blocks).toEqual([{ type: 'TextBlock', value: 'test input' }]);
       expect(rows[0].generationConfig).toEqual({ model: 'gpt-4', temperature: 0.7 });
       expect(rows[0].plainText).toBe('test input');
     });
@@ -741,6 +741,7 @@ describe('NodeVersionService', () => {
         contentHash: hash,
         type: 'VFS',
         content: {
+          type: 'VFS',
           projectId: 'proj-123',
           fileCount: 10,
           totalSize: 4096,
@@ -770,6 +771,7 @@ describe('NodeVersionService', () => {
         contentHash: hash,
         type: 'STATE',
         content: {
+          type: 'STATE',
           saves: ['abc12345', 'def67890'],
         },
       });
@@ -790,8 +792,9 @@ describe('NodeVersionService', () => {
         contentHash: hash,
         type: 'GENERATED',
         content: {
-          blocks: [{ type: 'text', text: 'AI response' }],
-          plainText: 'AI response',
+          type: 'GENERATED',
+          blocks: [{ id: '1', type: 'text', content: 'AI response' }],
+          inputRef: { id: crypto.randomUUID(), commit: 'test-commit' },
         },
       });
       await service.syncVersions([v]);
@@ -801,8 +804,9 @@ describe('NodeVersionService', () => {
         .from(generatedContents)
         .where(eq(generatedContents.contentHash, hash));
       expect(rows).toHaveLength(1);
-      expect(rows[0].blocks).toEqual([{ type: 'text', text: 'AI response' }]);
-      expect(rows[0].plainText).toBe('AI response');
+      expect(rows[0].blocks).toEqual([{ type: 'TextBlock', value: 'AI response' }]);
+      // GENERATED blocks are MessageBlock[], not ContentBlock[], so plainText is not extracted
+      expect(rows[0].plainText).toBeNull();
     });
   });
 
@@ -842,7 +846,7 @@ describe('NodeVersionService', () => {
         nodeId: nodeB,
         type: 'GENERATED',
         contentHash: makeContentHash('xrb'),
-        content: { blocks: [{ type: 'text', text: 'gen' }] },
+        content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'gen' }], inputRef: { id: vA.nodeId, commit: vA.commit } },
         refs: [{ targetCommit: vA.commit, refType: 'input' }],
       });
       await service.syncVersions([vB]);

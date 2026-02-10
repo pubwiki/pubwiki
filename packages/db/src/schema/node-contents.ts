@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
+import type { ContentBlock, InputGenerationConfig, VfsMountConfig, VfsFileInfo, MessageBlock } from '@pubwiki/api';
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
@@ -23,8 +24,8 @@ export const inputContents = sqliteTable('input_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
 
   // 结构化内容
-  blocks: text('blocks', { mode: 'json' }).$type<unknown[]>().notNull(),  // ContentBlock[] (TextBlock | RefTagBlock)
-  generationConfig: text('generation_config', { mode: 'json' }).$type<Record<string, unknown>>(), // { model?, temperature?, schema? }
+  blocks: text('blocks', { mode: 'json' }).$type<ContentBlock[]>().notNull(),  // ContentBlock[] (TextBlock | RefTagBlock)
+  generationConfig: text('generation_config', { mode: 'json' }).$type<InputGenerationConfig>(), // { model?, temperature?, schema? }
 
   // 索引辅助字段（从 blocks 中提取，便于搜索）
   plainText: text('plain_text'),                               // 纯文本内容（从 blocks 提取，用于全文搜索）
@@ -42,7 +43,7 @@ export const inputContents = sqliteTable('input_contents', {
 export const promptContents = sqliteTable('prompt_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
 
-  blocks: text('blocks', { mode: 'json' }).$type<unknown[]>().notNull(),  // ContentBlock[]
+  blocks: text('blocks', { mode: 'json' }).$type<ContentBlock[]>().notNull(),  // ContentBlock[]
 
   // 索引辅助字段
   plainText: text('plain_text'),                               // 纯文本（全文搜索）
@@ -59,11 +60,12 @@ export const promptContents = sqliteTable('prompt_contents', {
 // 存储在 node_version_refs 表中，不在内容表里。
 // 这与 serialize() 一致：content_hash 只基于文本内容。
 // ────────────────────────────────────────────────────────────
+
 export const generatedContents = sqliteTable('generated_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
 
   // AI 生成内容
-  blocks: text('blocks', { mode: 'json' }).$type<unknown[]>().notNull(),  // MessageBlock[] (from @pubwiki/chat)
+  blocks: text('blocks', { mode: 'json' }).$type<MessageBlock[]>().notNull(),  // MessageBlock[] (from @pubwiki/chat)
 
   // 索引辅助字段
   plainText: text('plain_text'),                               // 纯文本（全文搜索）
@@ -77,23 +79,18 @@ export const generatedContents = sqliteTable('generated_contents', {
 // 内容：虚拟文件系统配置 + 挂载信息
 // 实际文件存储在 R2: r2://vfs/{content_hash}/files.tar.gz
 // ────────────────────────────────────────────────────────────
-export interface VfsFileEntry {
-  path: string;
-  size: number;
-  mimeType?: string;
-}
 
 export const vfsContents = sqliteTable('vfs_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
 
   // VFS 配置
   projectId: text('project_id').notNull(),                     // 所属项目 ID
-  mounts: text('mounts', { mode: 'json' }).$type<unknown[]>(), // VfsMountConfig[] 挂载配置
+  mounts: text('mounts', { mode: 'json' }).$type<VfsMountConfig[]>(), // VfsMountConfig[] 挂载配置
 
   // 文件目录信息（从 tar.gz 中提取，便于展示和搜索）
   fileCount: integer('file_count'),                            // 文件总数
   totalSize: integer('total_size'),                            // 总大小 (bytes)
-  fileTree: text('file_tree', { mode: 'json' }).$type<VfsFileEntry[]>(), // 文件目录树
+  fileTree: text('file_tree', { mode: 'json' }).$type<VfsFileInfo[]>(), // 文件目录树
 
   refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),

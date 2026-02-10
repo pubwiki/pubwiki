@@ -6,7 +6,8 @@
  * 
  * After version-store-unification:
  * - snapshotStore removed, version access through nodeStore
- * - generateCommitHash moved to node-store.svelte
+ * - generateContentHash in node-store.svelte computes content hash
+ * - Actual commit must be computed using computeNodeCommit from @pubwiki/api
  */
 
 // Types
@@ -28,8 +29,8 @@ export {
 	getVersionHandler
 } from './types'
 
-// Re-export generateCommitHash from node-store for backwards compatibility
-export { generateCommitHash } from '../persistence/node-store.svelte'
+// Re-export hash function from node-store
+export { generateContentHash } from '../persistence/node-store.svelte'
 
 // Version Service
 export {
@@ -49,6 +50,13 @@ export {
 	createPreviewController,
 	type PreviewController
 } from './preview-controller.svelte'
+
+// Version List Store (for version history UI)
+export {
+	createVersionListStore,
+	type VersionListStore,
+	type VersionEntry
+} from './version-list-store.svelte'
 
 // Version Preparation (for generation)
 export {

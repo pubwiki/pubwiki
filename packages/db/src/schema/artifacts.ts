@@ -2,15 +2,10 @@ import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from 'driz
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
 import type { VisibilityType } from './enums';
+import type { ArtifactEntrypoint } from '@pubwiki/api'
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
-
-// Entrypoint 类型：指定启动流图时的初始程序状态
-export interface ArtifactEntrypoint {
-  saveCommit: string;
-  sandboxNodeId: string;
-}
 
 // artifacts - 主内容表
 export const artifacts = sqliteTable(

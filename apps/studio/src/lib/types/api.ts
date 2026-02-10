@@ -1,14 +1,12 @@
 // Re-export types from @pubwiki/api for studio use
 export type {
 	ArtifactListItem,
-	ArtifactType,
 	ArtifactVersion,
 	ArtifactLineageItem,
 	ArtifactNodeSummary,
 	ArtifactEdge,
 	ArtifactNodeType,
 	NodeFileInfo,
-	LineageType,
 	VisibilityType,
 	Tag,
 	Pagination,
@@ -22,18 +20,16 @@ import type { ArtifactNodeSummary, ArtifactEdge, NodeFileInfo } from '@pubwiki/a
 
 /**
  * Node detail as returned by the API
+ * 
+ * Note: In the new version control architecture:
+ * - No more external/originalRef distinction
+ * - All nodes are identified by globally unique nodeId
+ * - Version lineage is tracked via parent commit
  */
 export interface ArtifactNodeDetail {
 	id: string;
 	type: string;
 	name?: string | null;
-	external: boolean;
-	externalArtifact?: {
-		id?: string;
-		name?: string;
-		slug?: string;
-		author?: { id: string; username: string };
-	};
 	version: { 
 		id: string; 
 		commitHash: string; 

@@ -9,10 +9,32 @@
  * 1. All file operations go through MountedVfsProvider (supports mounts)
  * 2. Version control operations are proxied to the base VersionedVfs
  * 3. When mounting child VFS, use their NodeVfs (not raw VersionedVfs) to support nested mounts
+ * 4. Git submodule operations are encapsulated within this class
+ * 5. Reactive dirty state tracking via Svelte 5 runes
  */
 
-import type { VfsCommit, VfsDiff, VersionedVfs, VfsFile, VfsFolder } from '@pubwiki/vfs';
+import * as git from 'isomorphic-git';
+import type { VfsCommit, VfsDiff, VersionedVfs, VfsFile, VfsFolder, VersionedVfsProvider } from '@pubwiki/vfs';
 import { Vfs, MountedVfsProvider, normalizePath } from '@pubwiki/vfs';
+
+/**
+ * Interface for providers that support low-level git operations
+ */
+export interface GitCapableProvider extends VersionedVfsProvider {
+  getFs(): git.FsClient;
+  getDir(): string;
+  getNodeId(): string;
+}
+
+/**
+ * Submodule information parsed from .gitmodules
+ */
+export interface SubmoduleInfo {
+  /** Mount path in the target VFS */
+  path: string;
+  /** Source VFS Node ID (from vfs:// URL) */
+  nodeId: string;
+}
 
 /**
  * NodeVfs - The unified VFS interface for VFS nodes
@@ -21,6 +43,7 @@ import { Vfs, MountedVfsProvider, normalizePath } from '@pubwiki/vfs';
  * - File operations (inherited from Vfs) - routed through MountedVfsProvider
  * - Version control operations - proxied to base VersionedVfs
  * - Mount management - via MountedVfsProvider
+ * - Reactive dirty state tracking
  */
 export class NodeVfs extends Vfs<MountedVfsProvider> {
   /** The underlying VersionedVfs for version control operations */
@@ -28,6 +51,18 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
   
   /** Event unsubscribers for each mounted VFS (keyed by mount path) */
   private readonly _mountEventUnsubscribers: Map<string, Array<() => void>> = new Map();
+  
+  /** Event unsubscribers for dirty state tracking */
+  private readonly _dirtyTrackingUnsubscribers: Array<() => void> = [];
+  
+  /** Debounce timer for dirty state refresh */
+  private _dirtyRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  
+  /** 
+   * Reactive dirty state - true if there are uncommitted changes.
+   * This is automatically updated when files change (debounced).
+   */
+  isDirty = $state(false);
   
   constructor(baseVfs: VersionedVfs) {
     // Create MountedVfsProvider with baseVfs as root mount
@@ -37,6 +72,30 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     
     // Forward version control events from base VFS
     this.setupEventForwarding();
+    
+    // Setup dirty state tracking
+    this.setupDirtyTracking();
+  }
+  
+  // ========== Internal Git Access ==========
+  
+  private get _gitProvider(): GitCapableProvider {
+    return this._baseVfs.getProvider() as GitCapableProvider;
+  }
+  
+  private get _fs(): git.FsClient {
+    return this._gitProvider.getFs();
+  }
+  
+  private get _dir(): string {
+    return this._gitProvider.getDir();
+  }
+  
+  /**
+   * Get the node ID for this VFS.
+   */
+  getNodeId(): string {
+    return this._gitProvider.getNodeId();
   }
   
   /**
@@ -53,6 +112,267 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     this._baseVfs.events.on('version:revert', (e) => {
       this.events.emit(e);
     });
+  }
+  
+  // ========== Dirty State Tracking ==========
+  
+  /**
+   * Setup event listeners to track dirty state.
+   * When files change, we schedule a debounced status refresh.
+   */
+  private setupDirtyTracking(): void {
+    console.log('[NodeVfs] setupDirtyTracking for node:', this.getNodeId());
+    
+    const scheduleRefresh = (eventName: string) => () => {
+      console.log('[NodeVfs] Event triggered:', eventName, 'for node:', this.getNodeId());
+      this.scheduleDirtyRefresh();
+    };
+    
+    // Track file changes
+    this._dirtyTrackingUnsubscribers.push(
+      this.events.on('file:created', scheduleRefresh('file:created')),
+      this.events.on('file:updated', scheduleRefresh('file:updated')),
+      this.events.on('file:deleted', scheduleRefresh('file:deleted')),
+      this.events.on('file:moved', scheduleRefresh('file:moved')),
+      this.events.on('folder:created', scheduleRefresh('folder:created')),
+      this.events.on('folder:deleted', scheduleRefresh('folder:deleted')),
+      this.events.on('folder:moved', scheduleRefresh('folder:moved')),
+      // Also track commits (status should be cleared after commit)
+      this.events.on('version:commit', scheduleRefresh('version:commit')),
+      this.events.on('version:checkout', scheduleRefresh('version:checkout')),
+      this.events.on('version:revert', scheduleRefresh('version:revert'))
+    );
+  }
+  
+  /**
+   * Schedule a debounced dirty state refresh.
+   */
+  private scheduleDirtyRefresh(): void {
+    console.log('[NodeVfs] scheduleDirtyRefresh called for node:', this.getNodeId());
+    
+    // Clear existing timer
+    if (this._dirtyRefreshTimer) {
+      clearTimeout(this._dirtyRefreshTimer);
+    }
+    
+    // Schedule new refresh with 300ms debounce
+    this._dirtyRefreshTimer = setTimeout(async () => {
+      this._dirtyRefreshTimer = null;
+      console.log('[NodeVfs] Debounce timer fired, refreshing dirty state for node:', this.getNodeId());
+      await this.refreshDirtyState();
+    }, 300);
+  }
+  
+  /**
+   * Refresh the dirty state by checking actual git status.
+   */
+  async refreshDirtyState(): Promise<void> {
+    try {
+      const status = await this.getStatus();
+      const wasDirty = this.isDirty;
+      this.isDirty = status.length > 0;
+      console.log('[NodeVfs] refreshDirtyState for node:', this.getNodeId(), '- status count:', status.length, '- isDirty:', wasDirty, '->', this.isDirty);
+    } catch (err) {
+      // On error, assume dirty to be safe
+      console.warn('[NodeVfs] Failed to refresh dirty state:', err);
+      this.isDirty = true;
+    }
+  }
+  
+  /**
+   * Cleanup dirty tracking resources
+   */
+  private cleanupDirtyTracking(): void {
+    // Clear timer
+    if (this._dirtyRefreshTimer) {
+      clearTimeout(this._dirtyRefreshTimer);
+      this._dirtyRefreshTimer = null;
+    }
+    
+    // Unsubscribe event listeners
+    for (const unsub of this._dirtyTrackingUnsubscribers) {
+      unsub();
+    }
+    this._dirtyTrackingUnsubscribers.length = 0;
+  }
+  
+  // ========== Git Submodule Operations ==========
+  
+  /**
+   * Add a git submodule entry for a mounted VFS.
+   * This records the mount in .gitmodules and creates a gitlink in the index.
+   * 
+   * @param mountPath - Path where the source VFS is mounted
+   * @param sourceVfs - The mounted VFS (must be a NodeVfs)
+   */
+  async addSubmodule(mountPath: string, sourceVfs: NodeVfs): Promise<void> {
+    const fs = this._fs;
+    const dir = this._dir;
+
+    // Get source VFS's current HEAD commit
+    const sourceHead = await sourceVfs.getHead();
+    const sourceNodeId = sourceVfs.getNodeId();
+
+    // Read or create .gitmodules
+    let gitmodules = '';
+    try {
+      const content = await (fs as any).promises.readFile(`${dir}/.gitmodules`, 'utf8');
+      gitmodules = content as string;
+    } catch {
+      // File doesn't exist, create new
+    }
+
+    // Normalize mount path (remove leading slash for gitmodules)
+    const normalizedPath = mountPath.startsWith('/') ? mountPath.slice(1) : mountPath;
+
+    // Check if submodule already exists
+    if (gitmodules.includes(`[submodule "${normalizedPath}"]`)) {
+      console.log(`[VFS:Submodule] Submodule ${normalizedPath} already exists, skipping add`);
+      return;
+    }
+
+    // Add submodule configuration using vfs:// URL format
+    const submoduleConfig = `
+[submodule "${normalizedPath}"]
+	path = ${normalizedPath}
+	url = vfs://${sourceNodeId}
+`;
+    gitmodules += submoduleConfig;
+
+    await (fs as any).promises.writeFile(`${dir}/.gitmodules`, gitmodules);
+
+    // Create gitlink (special tree entry pointing to submodule commit)
+    await git.updateIndex({
+      fs,
+      dir,
+      filepath: normalizedPath,
+      oid: sourceHead.hash,
+      mode: 0o160000 // gitlink mode
+    });
+
+    console.log(`[VFS:Submodule] Added submodule ${sourceNodeId} at ${normalizedPath} (commit: ${sourceHead.hash.slice(0, 7)})`);
+  }
+
+  /**
+   * Remove a git submodule entry.
+   * 
+   * @param mountPath - Path of the submodule to remove
+   */
+  async removeSubmodule(mountPath: string): Promise<void> {
+    const fs = this._fs;
+    const dir = this._dir;
+
+    // Normalize mount path
+    const normalizedPath = mountPath.startsWith('/') ? mountPath.slice(1) : mountPath;
+
+    // Read and update .gitmodules
+    try {
+      const content = await (fs as any).promises.readFile(`${dir}/.gitmodules`, 'utf8');
+      const gitmodules = content as string;
+
+      // Remove the submodule section
+      const lines = gitmodules.split('\n');
+      const newLines: string[] = [];
+      let inRemoveSection = false;
+
+      for (const line of lines) {
+        if (line.match(new RegExp(`^\\[submodule "${normalizedPath}"\\]`))) {
+          inRemoveSection = true;
+          continue;
+        }
+        if (inRemoveSection && line.match(/^\[/)) {
+          inRemoveSection = false;
+        }
+        if (!inRemoveSection) {
+          newLines.push(line);
+        }
+      }
+
+      const newContent = newLines.join('\n').trim();
+      if (newContent) {
+        await (fs as any).promises.writeFile(`${dir}/.gitmodules`, newContent + '\n');
+      } else {
+        // Remove empty .gitmodules file
+        await (fs as any).promises.unlink(`${dir}/.gitmodules`);
+      }
+    } catch {
+      // .gitmodules doesn't exist, nothing to remove
+    }
+
+    // Remove from git index
+    try {
+      await git.remove({
+        fs,
+        dir,
+        filepath: normalizedPath
+      });
+    } catch {
+      // Entry might not exist in index
+    }
+
+    console.log(`[VFS:Submodule] Removed submodule at ${normalizedPath}`);
+  }
+
+  /**
+   * Update a submodule's commit reference.
+   * 
+   * @param mountPath - Path of the submodule
+   * @param commitHash - New commit hash to reference
+   */
+  async updateSubmoduleCommit(mountPath: string, commitHash: string): Promise<void> {
+    const fs = this._fs;
+    const dir = this._dir;
+
+    // Normalize mount path
+    const normalizedPath = mountPath.startsWith('/') ? mountPath.slice(1) : mountPath;
+
+    // Update gitlink to new commit
+    await git.updateIndex({
+      fs,
+      dir,
+      filepath: normalizedPath,
+      oid: commitHash,
+      mode: 0o160000 // gitlink mode
+    });
+
+    console.log(`[VFS:Submodule] Updated ${normalizedPath} to commit ${commitHash.slice(0, 7)}`);
+  }
+
+  /**
+   * List all submodules from .gitmodules
+   */
+  async listSubmodules(): Promise<SubmoduleInfo[]> {
+    const fs = this._fs;
+    const dir = this._dir;
+
+    try {
+      const content = await (fs as any).promises.readFile(`${dir}/.gitmodules`, 'utf8');
+      return this.parseGitmodules(content as string);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Parse .gitmodules INI format
+   */
+  private parseGitmodules(content: string): SubmoduleInfo[] {
+    const result: SubmoduleInfo[] = [];
+    const lines = content.split('\n');
+
+    let currentPath = '';
+    for (const line of lines) {
+      const pathMatch = line.match(/^\s*path\s*=\s*(.+)$/);
+      const urlMatch = line.match(/^\s*url\s*=\s*vfs:\/\/(.+)$/);
+
+      if (pathMatch) currentPath = pathMatch[1].trim();
+      if (urlMatch && currentPath) {
+        result.push({ path: currentPath, nodeId: urlMatch[1].trim() });
+        currentPath = '';
+      }
+    }
+
+    return result;
   }
   
   // ========== Mount Management ==========
@@ -415,6 +735,9 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
    * Dispose the NodeVfs and its resources
    */
   async dispose(): Promise<void> {
+    // Clean up dirty tracking
+    this.cleanupDirtyTracking();
+    
     // Clean up all mount event listeners
     for (const mountPath of this._mountEventUnsubscribers.keys()) {
       this.cleanupMountEventForwarding(mountPath);

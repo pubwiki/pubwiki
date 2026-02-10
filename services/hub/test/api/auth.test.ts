@@ -50,45 +50,6 @@ describe('Better-Auth API', () => {
       expect(dbUsers).toHaveLength(1);
       expect(dbUsers[0].email).toBe('test@example.com');
     });
-
-    // skip because the test framework doest not properly handle the thrown error
-    // this case is taken care in the e2e test
-    it.skip('should return error for duplicate email', async () => {
-      // 第一次注册
-      const firstRequest = new Request('http://localhost/api/auth/sign-up/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'First User',
-          username: 'firstuser',
-          email: 'duplicate@example.com',
-          password: 'password123',
-        }),
-      });
-      await sendRequest(firstRequest);
-
-      // 第二次用相同邮箱注册
-      const secondRequest = new Request('http://localhost/api/auth/sign-up/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Second User',
-          username: 'seconduser',
-          email: 'duplicate@example.com',
-          password: 'password123',
-        }),
-      });
-      const response = await sendRequest(secondRequest);
-
-      // Better-Auth 对重复邮箱返回错误
-      expect(response.ok).toBe(false);
-      expect(response.status).toBe(422);
-
-      // 验证数据库状态 - 只有第一个用户被创建
-      const dbUsers = await db.select().from(user);
-      expect(dbUsers).toHaveLength(1);
-      expect(dbUsers[0].username).toBe('firstuser');
-    });
   });
 
   describe('POST /api/auth/sign-in/email', () => {
@@ -127,37 +88,6 @@ describe('Better-Auth API', () => {
       // 验证创建了 session
       const sessions = await db.select().from(session);
       expect(sessions.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it.skip('should return error for wrong password', async () => {
-      const request = new Request('http://localhost/api/auth/sign-in/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: 'login@example.com',
-          password: 'wrongpassword',
-        }),
-      });
-      const response = await sendRequest(request);
-
-      expect(response.ok).toBe(false);
-      expect(response.status).toBe(401);
-      
-    });
-
-    it.skip('should return error for non-existent user', async () => {
-      const request = new Request('http://localhost/api/auth/sign-in/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: 'nonexistent@example.com',
-          password: 'password123',
-        }),
-      });
-      const response = await sendRequest(request);
-
-      expect(response.ok).toBe(false);
-      expect(response.status).toBe(401);
     });
   });
 

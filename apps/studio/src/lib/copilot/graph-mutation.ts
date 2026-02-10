@@ -211,13 +211,14 @@ export function createGraphMutation(
       let nodeData: StudioNodeData;
       
       // Create node data based on type (using uniqueName)
+      // parent is null for newly created nodes (no version lineage)
       const nodeName = uniqueName;
       switch (params.type) {
         case 'INPUT':
-          nodeData = await createInputNodeData(params.content || '', [], nodeName);
+          nodeData = await createInputNodeData(params.content || '', null, nodeName);
           break;
         case 'PROMPT':
-          nodeData = await createPromptNodeData(params.content || '', [], nodeName);
+          nodeData = await createPromptNodeData(params.content || '', null, nodeName);
           break;
         case 'VFS':
           nodeData = await createVFSNodeData(projectId, nodeName);

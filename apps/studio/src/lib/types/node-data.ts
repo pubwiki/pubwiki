@@ -17,8 +17,9 @@
 import { 
   type NodeRef, 
   type SnapshotPosition,
-  generateCommitHash
+  generateContentHash
 } from '../version'
+import { computeNodeCommit } from '@pubwiki/api'
 import type { Edge, Node } from '@xyflow/svelte'
 
 // Import content classes for use in factory functions
@@ -54,16 +55,6 @@ export {
 // ============================================================================
 
 /**
- * Reference to the original external node that was forked
- */
-export interface OriginalRef {
-  /** Original node ID in the external artifact */
-  nodeId: string
-  /** Commit hash of the original node when it was imported */
-  commit: string
-}
-
-/**
  * Base node data interface with version control
  * 
  * Contains ONLY persistent data that should be:
@@ -73,25 +64,29 @@ export interface OriginalRef {
  * 
  * Runtime/UI states should be managed in the component's local state.
  * 
+ * In the new version control architecture:
+ * - nodeId is globally unique (UUID)
+ * - Importing nodes preserves original nodeId
+ * - parent commit tracks version lineage
+ * - No more external/originalRef distinction
+ * 
  * @template T - Content type (must implement NodeContent interface)
  */
 export interface BaseNodeData<T extends NodeContent> {
-  /** Unique node identifier */
+  /** Unique node identifier (globally unique UUID, preserved on import) */
   id: string
   /** User-defined node name */
   name: string
-  /** Current commit hash (content hash) */
+  /** Current commit hash = computeNodeCommit(nodeId, parent, contentHash, type) */
   commit: string
-  /** References to historical snapshots */
+  /** Content hash = SHA256(JSON.stringify(content.toJSON()))[:16] */
+  contentHash: string
+  /** Parent commit hash for version lineage (null for root versions) */
+  parent: string | null
+  /** References to historical snapshots (local only, not synced to cloud) */
   snapshotRefs: NodeRef[]
-  /** Parent nodes that contributed to this node's creation */
-  parents: NodeRef[]
   /** Node content - implements NodeContent interface for polymorphic operations */
   content: T
-  /** Whether this node references external artifact (not included in export) */
-  external?: boolean
-  /** Reference to the original external node (for Fork-on-Write tracking) */
-  originalRef?: OriginalRef
   /** Index signature for xyflow compatibility */
   [key: string]: unknown
 }
@@ -176,11 +171,12 @@ export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData 
  */
 export async function createInputNodeData(
   text: string,
-  parents: NodeRef[] = [],
+  parent: string | null = null,
   name: string = ''
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash(text)
+  const contentHash = await generateContentHash(text)
+  const commit = await computeNodeCommit(id, parent, contentHash, 'INPUT')
   // Convert text to blocks format
   const blocks = text ? [{ type: 'text' as const, value: text }] : []
   return {
@@ -188,8 +184,9 @@ export async function createInputNodeData(
     name,
     type: 'INPUT',
     commit,
+    contentHash,
     snapshotRefs: [],
-    parents,
+    parent,
     content: new InputContent(blocks)
   }
 }
@@ -199,18 +196,20 @@ export async function createInputNodeData(
  */
 export async function createPromptNodeData(
   text: string = '',
-  parents: NodeRef[] = [],
+  parent: string | null = null,
   name: string = ''
 ): Promise<PromptNodeData> {
   const id = crypto.randomUUID()
-  const commit = await generateCommitHash(text)
+  const contentHash = await generateContentHash(text)
+  const commit = await computeNodeCommit(id, parent, contentHash, 'PROMPT')
   return {
     id,
     name,
     type: 'PROMPT',
     commit,
+    contentHash,
     snapshotRefs: [],
-    parents,
+    parent,
     content: PromptContent.fromText(text)
   }
 }
@@ -223,7 +222,7 @@ export async function createGeneratedNodeData(
   inputRef: NodeRef,
   promptRefs: NodeRef[],
   indirectPromptRefs: NodeRef[] = [],
-  parents: NodeRef[] = [],
+  parent: string | null = null,
   name: string = '',
   inputVfsRef: import('./content').VfsRef | null = null,
   outputVfsId: string | null = null,
@@ -231,14 +230,16 @@ export async function createGeneratedNodeData(
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
   const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs, inputVfsRef, outputVfsId, postGenerationCommit)
-  const commit = await generateCommitHash(content.serialize())
+  const contentHash = await generateContentHash(content.serialize())
+  const commit = await computeNodeCommit(id, parent, contentHash, 'GENERATED')
   return {
     id,
     name,
     type: 'GENERATED',
     commit,
+    contentHash,
     snapshotRefs: [],
-    parents,
+    parent,
     content
   }
 }
@@ -255,14 +256,16 @@ export async function createVFSNodeData(
 ): Promise<VFSNodeData> {
   const id = crypto.randomUUID()
   const content = new VFSContent(projectId)
-  const commit = await generateCommitHash(content.serialize())
+  const contentHash = await generateContentHash(content.serialize())
+  const commit = await computeNodeCommit(id, null, contentHash, 'VFS')
   return {
     id,
     name,
     type: 'VFS',
     commit,
+    contentHash,
     snapshotRefs: [],
-    parents: [],
+    parent: null,
     content
   }
 }
@@ -275,14 +278,16 @@ export async function createSandboxNodeData(
 ): Promise<SandboxNodeData> {
   const id = crypto.randomUUID()
   const content = new SandboxContent('index.html')
-  const commit = await generateCommitHash(content.serialize())
+  const contentHash = await generateContentHash(content.serialize())
+  const commit = await computeNodeCommit(id, null, contentHash, 'SANDBOX')
   return {
     id,
     name,
     type: 'SANDBOX',
     commit,
+    contentHash,
     snapshotRefs: [],
-    parents: [],
+    parent: null,
     content
   }
 }
@@ -295,14 +300,16 @@ export async function createLoaderNodeData(
 ): Promise<LoaderNodeData> {
   const id = crypto.randomUUID()
   const content = new LoaderContent()
-  const commit = await generateCommitHash(content.serialize())
+  const contentHash = await generateContentHash(content.serialize())
+  const commit = await computeNodeCommit(id, null, contentHash, 'LOADER')
   return {
     id,
     name,
     type: 'LOADER',
     commit,
+    contentHash,
     snapshotRefs: [],
-    parents: [],
+    parent: null,
     content
   }
 }
@@ -315,14 +322,16 @@ export async function createStateNodeData(
 ): Promise<StateNodeData> {
   const id = crypto.randomUUID()
   const content = new StateContent()
-  const commit = await generateCommitHash(content.serialize())
+  const contentHash = await generateContentHash(content.serialize())
+  const commit = await computeNodeCommit(id, null, contentHash, 'STATE')
   return {
     id,
     name,
     type: 'STATE',
     commit,
+    contentHash,
     snapshotRefs: [],
-    parents: [],
+    parent: null,
     content
   }
 }

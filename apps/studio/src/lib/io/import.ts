@@ -3,10 +3,12 @@
  * 
  * Functions for importing artifacts into studio projects.
  * 
- * After artifact storage refactoring:
- * - Node content is now included directly in the graph response
- * - VFS nodes need to download and extract tar.gz archives
- * - No separate /content API calls needed
+ * After version control refactoring:
+ * - Node IDs are globally unique UUIDs, preserved on import (no remapping)
+ * - parent commit tracks version lineage
+ * - No more external/originalRef distinction
+ * - Content is included directly in graph response
+ * - VFS nodes: download tar.gz archive and extract to VFS storage
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
@@ -30,11 +32,10 @@ import {
   LoaderContent,
   StateContent
 } from '../types';
-import { generateCommitHash } from '../version';
 import { getNodeVfs } from '../vfs';
 import { ensureProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
+import { generateContentHash } from '../persistence/node-store.svelte';
 import { API_BASE_URL } from '$lib/config';
-import { createIdMapping, remapGeneratedContent, type IdMap } from './remap';
 
 /**
  * Progress callback for import operations
@@ -168,12 +169,13 @@ async function fetchAndExtractVfsArchive(
 /**
  * Convert artifact graph data to studio nodes and edges format.
  * 
- * After artifact storage refactoring:
- * - Node content is directly available in graphData.nodes[].content
- * - VFS nodes: download tar.gz archive and extract to VFS storage
+ * In the new version control architecture:
+ * - Node IDs are preserved (globally unique UUIDs)
+ * - parent commit is set to track version lineage
+ * - No ID remapping needed
+ * - No external/originalRef distinction
  * 
- * All nodes are assigned new UUIDs to avoid ID conflicts with existing nodes.
- * References within node content (e.g., GeneratedContent refs) are remapped accordingly.
+ * For VFS nodes: download tar.gz archive and extract to local VFS storage
  */
 export async function convertArtifactToStudioGraph(
   graphData: ArtifactGraphData,
@@ -183,12 +185,10 @@ export async function convertArtifactToStudioGraph(
 ): Promise<{ nodes: Node<StudioNodeData>[]; edges: Edge[] }> {
   // Cast nodes to extended type that includes content
   const nodesWithContent = graphData.nodes as NodeSummaryWithContent[];
-  
-  // Create ID mapping for all nodes (old ID -> new UUID)
-  const idMap = createIdMapping(graphData.nodes);
 
   // Process VFS nodes: download tar.gz and extract files in parallel
-  const vfsNodes = nodesWithContent.filter((n) => n.type === 'VFS' && !n.external);
+  // Note: We use the original nodeId now (no remapping)
+  const vfsNodes = nodesWithContent.filter((n) => n.type === 'VFS');
   
   if (vfsNodes.length > 0) {
     // Phase 1: Download all VFS archives in parallel
@@ -203,7 +203,7 @@ export async function convertArtifactToStudioGraph(
           total: vfsNodes.length,
           detail: vfsNode.name || `VFS ${index + 1}`
         });
-        return { vfsNode, files, newNodeId: idMap.get(vfsNode.id)! };
+        return { vfsNode, files, nodeId: vfsNode.id };
       })
     );
     
@@ -212,9 +212,9 @@ export async function convertArtifactToStudioGraph(
     const totalFiles = downloadResults.reduce((sum, r) => sum + r.files.length, 0);
     onProgress?.({ phase: 'writing-vfs', current: 0, total: totalFiles });
     
-    for (const { vfsNode, files, newNodeId } of downloadResults) {
+    for (const { vfsNode, files, nodeId } of downloadResults) {
       if (files.length > 0) {
-        const vfs = await getNodeVfs(targetProjectId, newNodeId);
+        const vfs = await getNodeVfs(targetProjectId, nodeId);
         
         for (const file of files) {
           await vfs.createFile(file.path, new Uint8Array(file.content).buffer as ArrayBuffer);
@@ -224,7 +224,7 @@ export async function convertArtifactToStudioGraph(
               phase: 'writing-vfs', 
               current: writtenCount, 
               total: totalFiles,
-              detail: vfsNode.name || newNodeId.substring(0, 8)
+              detail: vfsNode.name || nodeId.substring(0, 8)
             });
           }
         }
@@ -238,8 +238,8 @@ export async function convertArtifactToStudioGraph(
   onProgress?.({ phase: 'processing-nodes', current: 0, total: nodesWithContent.length });
   
   const nodes = await Promise.all(nodesWithContent.map(async (node, index) => {
-    // Get the new ID for this node
-    const newNodeId = idMap.get(node.id)!;
+    // Preserve original node ID (globally unique UUID)
+    const nodeId = node.id;
     
     // Report progress periodically
     if (index % 5 === 0 || index === nodesWithContent.length - 1) {
@@ -251,34 +251,35 @@ export async function convertArtifactToStudioGraph(
     const posY = node.position?.y ?? (Math.floor(index / 3) * 200 + 100);
 
     const nodeType = node.type;
-    const commit = await generateCommitHash(newNodeId);
+    
+    // Use the commit from the artifact (this becomes the parent for local edits)
+    const commit = node.commit;
+    
+    // For imported nodes, parent is null (they are the root of local version history)
+    // When user edits them locally, new commits will have this imported commit as parent
+    const parent: string | null = null;
 
-    // Get content directly from node (new architecture)
-    // Content is already parsed as JSON in the graph response
+    // Get content directly from node (already parsed as JSON in graph response)
     const nodeContent = node.content;
 
     // Handle each node type
     switch (nodeType) {
       case 'VFS': {
-        // VFS content comes from graph, files were already extracted above
         // VFSContent needs projectId, which we set to targetProjectId
         const vfsContent = new VFSContent(targetProjectId);
+        const contentHash = await generateContentHash(vfsContent.serialize());
         const vfsData: VFSNodeData = {
-          id: newNodeId,
+          id: nodeId,
           name: node.name || `Files ${index + 1}`,
           type: nodeType,
           commit,
+          contentHash,
           snapshotRefs: [],
-          parents: [],
-          content: vfsContent,
-          expandedFolders: [],
-          selectedFilePath: undefined,
-          isExpandedViewOpen: false,
-          external: true,
-          originalRef: { nodeId: node.id, commit }
+          parent,
+          content: vfsContent
         };
         return {
-          id: newNodeId,
+          id: nodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: vfsData
@@ -292,21 +293,19 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new SandboxContent();
         }
+        const contentHash = await generateContentHash(parsedContent.serialize());
         const sandboxData: SandboxNodeData = {
-          id: newNodeId,
+          id: nodeId,
           name: node.name || `Sandbox ${index + 1}`,
           type: nodeType,
           commit,
+          contentHash,
           snapshotRefs: [],
-          parents: [],
-          content: parsedContent,
-          external: true,
-          originalRef: { nodeId: node.id, commit },
-          isRunning: false,
-          error: null
+          parent,
+          content: parsedContent
         };
         return {
-          id: newNodeId,
+          id: nodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: sandboxData
@@ -320,21 +319,19 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new LoaderContent();
         }
+        const contentHash = await generateContentHash(parsedContent.serialize());
         const loaderData: LoaderNodeData = {
-          id: newNodeId,
+          id: nodeId,
           name: node.name || `Loader ${index + 1}`,
           type: nodeType,
           commit,
+          contentHash,
           snapshotRefs: [],
-          parents: [],
-          content: parsedContent,
-          external: true,
-          originalRef: { nodeId: node.id, commit },
-          error: null,
-          registeredServices: []
+          parent,
+          content: parsedContent
         };
         return {
-          id: newNodeId,
+          id: nodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: loaderData
@@ -348,22 +345,19 @@ export async function convertArtifactToStudioGraph(
         } else {
           stateContent = new StateContent();
         }
+        const contentHash = await generateContentHash(stateContent.serialize());
         const stateData: StateNodeData = {
-          id: newNodeId,
+          id: nodeId,
           name: node.name || `State ${index + 1}`,
           type: nodeType,
           commit,
+          contentHash,
           snapshotRefs: [],
-          parents: [],
-          content: stateContent,
-          external: true,
-          originalRef: { nodeId: node.id, commit },
-          isReady: false,
-          error: null,
-          tripleCount: 0
+          parent,
+          content: stateContent
         };
         return {
-          id: newNodeId,
+          id: nodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: stateData
@@ -378,19 +372,19 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new InputContent([]);
         }
+        const contentHash = await generateContentHash(parsedContent.serialize());
         const inputData: InputNodeData = {
-          id: newNodeId,
+          id: nodeId,
           name: node.name || `Input ${index + 1}`,
           type: nodeType,
           commit,
+          contentHash,
           snapshotRefs: [],
-          parents: [],
-          content: parsedContent,
-          external: true,
-          originalRef: { nodeId: node.id, commit }
+          parent,
+          content: parsedContent
         };
         return {
-          id: newNodeId,
+          id: nodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: inputData
@@ -405,20 +399,19 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = PromptContent.fromText('');
         }
+        const contentHash = await generateContentHash(parsedContent.serialize());
         const promptData: PromptNodeData = {
-          id: newNodeId,
+          id: nodeId,
           name: node.name || `Prompt ${index + 1}`,
           type: nodeType,
           commit,
+          contentHash,
           snapshotRefs: [],
-          parents: [],
-          content: parsedContent,
-          external: true,
-          originalRef: { nodeId: node.id, commit },
-          isEditing: false
+          parent,
+          content: parsedContent
         };
         return {
-          id: newNodeId,
+          id: nodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: promptData
@@ -431,25 +424,23 @@ export async function convertArtifactToStudioGraph(
         if (nodeContent) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           parsedContent = GeneratedContent.fromJSON(nodeContent as any);
-          // Remap node ID references in GeneratedContent
-          parsedContent = remapGeneratedContent(parsedContent, idMap);
+          // No need to remap - node IDs are preserved
         } else {
           parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
         }
+        const contentHash = await generateContentHash(parsedContent.serialize());
         const generatedData: GeneratedNodeData = {
-          id: newNodeId,
+          id: nodeId,
           name: node.name || `Generated ${index + 1}`,
           type: nodeType,
           commit,
+          contentHash,
           snapshotRefs: [],
-          parents: [],
-          content: parsedContent,
-          external: true,
-          originalRef: { nodeId: node.id, commit },
-          isStreaming: false
+          parent,
+          content: parsedContent
         };
         return {
-          id: newNodeId,
+          id: nodeId,
           type: nodeType,
           position: { x: posX, y: posY },
           data: generatedData
@@ -458,18 +449,14 @@ export async function convertArtifactToStudioGraph(
     }
   }));
 
-  // Remap edge source/target to new node IDs
-  const edges: Edge[] = graphData.edges.map((edge: ArtifactEdge) => {
-    const newSource = idMap.get(edge.source) ?? edge.source;
-    const newTarget = idMap.get(edge.target) ?? edge.target;
-    return {
-      id: `e-${newSource}-${newTarget}`,
-      source: newSource,
-      target: newTarget,
-      sourceHandle: edge.sourceHandle ?? null,
-      targetHandle: edge.targetHandle ?? null
-    };
-  });
+  // Use original edge source/target IDs (no remapping needed)
+  const edges: Edge[] = graphData.edges.map((edge: ArtifactEdge) => ({
+    id: `e-${edge.source}-${edge.target}`,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle ?? null,
+    targetHandle: edge.targetHandle ?? null
+  }));
 
   return { nodes, edges };
 }

@@ -6,8 +6,8 @@ export type { paths, components, operations } from './generated/openapi';
 export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from './types/content';
 
 // 共享工具函数（客户端 & 服务端通用）
-export { computeNodeCommit, computeArtifactCommit, computeSaveId } from './utils';
-export type { ArtifactCommitNode, ArtifactCommitEdge } from './utils';
+export { computeNodeCommit, computeArtifactCommit, computeSaveId } from './utils.ts';
+export type { ArtifactCommitNode, ArtifactCommitEdge } from './utils.ts';
 
 // 便捷类型别名
 import type { components, operations } from './generated/openapi';
@@ -33,6 +33,7 @@ export type CreateProjectMetadata = components['schemas']['CreateProjectMetadata
 export type CreateProjectPage = components['schemas']['CreateProjectPage'];
 export type ProjectPage = components['schemas']['ProjectPage'];
 export type ProjectPageDetail = components['schemas']['ProjectPageDetail'];
+export type ArtifactEntrypoint = components['schemas']['ArtifactEntrypoint']
 
 // Node 相关类型
 export type ArtifactNodeType = components['schemas']['ArtifactNodeType'];
@@ -41,6 +42,17 @@ export type ArtifactNodeSummary = components['schemas']['ArtifactNodeSummary'];
 export type ArtifactEdge = components['schemas']['ArtifactEdge'];
 export type NodeFileInfo = components['schemas']['NodeFileInfo'];
 export type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
+
+// Node Content 相关类型（用于数据库存储）
+export type ContentBlock = components['schemas']['ContentBlock'];
+export type TextBlock = components['schemas']['TextBlock'];
+export type RefTagBlock = components['schemas']['RefTagBlock'];
+export type InputGenerationConfig = components['schemas']['InputGenerationConfig'];
+export type VfsMountConfig = components['schemas']['VfsMountConfig'];
+export type VfsFileInfo = components['schemas']['VfsFileInfo'];
+export type MessageBlock = components['schemas']['MessageBlock'];
+export type MessageBlockType = components['schemas']['MessageBlockType'];
+export type ToolCallStatus = components['schemas']['ToolCallStatus'];
 
 // Discussion 相关类型
 export type DiscussionTargetType = components['schemas']['DiscussionTargetType'];

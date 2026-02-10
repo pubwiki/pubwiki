@@ -23,8 +23,8 @@ export type {
 // Re-export Quad type from @rdfjs/types for RDF operations
 export type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
 
-// Re-export Quad from @pubwiki/api for sync protocol
-export type { Quad as SyncQuad } from '@pubwiki/api'
+// Re-export SerializedQuad for sync/serialization (N3 string format)
+export type { SerializedQuad } from './convert.js'
 
 // Main Store API
 export { RDFStore } from './store.js'

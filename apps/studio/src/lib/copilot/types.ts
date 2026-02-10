@@ -5,7 +5,6 @@
  */
 
 import type { NodeType } from '$lib/types/content';
-import type { NodeRef } from '$lib/version';
 
 // ============================================================================
 // Graph Query Types
@@ -28,7 +27,7 @@ export interface NodeSummary {
 export interface NodeDetail extends NodeSummary {
   fullContent: string;    // Full content
   commit: string;         // Current version
-  parents: NodeRef[];     // Parent node references
+  parent: string | null;  // Parent commit for version lineage
   createdFrom?: string;   // e.g., "Generated from xxx Input"
 }
 

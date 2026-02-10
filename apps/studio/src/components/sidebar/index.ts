@@ -8,6 +8,7 @@ export { default as PropertiesTab } from './PropertiesTab.svelte';
 export { default as ProjectTab } from './ProjectTab.svelte';
 export { default as ProjectMenu } from './ProjectMenu.svelte';
 export { default as ProjectListModal } from './ProjectListModal.svelte';
+export { default as SyncStatusIndicator } from './SyncStatusIndicator.svelte';
 
 // Re-export from properties folder
 export { VFSProperties, VFSGitPanel } from './properties';

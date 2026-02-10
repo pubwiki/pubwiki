@@ -74,7 +74,7 @@ export type {
 
 // Version module
 export {
-  generateCommitHash,
+  generateContentHash,
   syncNode,
   restoreSnapshot,
   hasVersionHistory,

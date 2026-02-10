@@ -5,15 +5,20 @@
  * 
  * Export format (ZIP):
  * - manifest.json: Project metadata and graph structure
- * - nodes/<nodeId>/data.json: Node business data
+ * - nodes/<nodeId>/data.json: Node business data with snapshot history
  * - nodes/<nodeId>/files/*: VFS files (for VFS nodes only)
  * - nodes/<nodeId>/state.json: Full RDF state (for STATE nodes only)
+ * 
+ * After version control refactoring:
+ * - Node IDs are globally unique UUIDs, preserved on export/import
+ * - No more external/originalRef distinction
+ * - Snapshot history is included in export for version continuity
  */
 
 import type { Edge } from '@xyflow/svelte';
 import type { StudioNodeData, VFSNodeData, StateNodeData } from '../types';
-import type { StoredProject, StoredLayout } from '../persistence/db';
-import { nodeStore, layoutStore, getProject, getEdges } from '../persistence';
+import type { StoredProject, StoredLayout, StoredSnapshotEdge, StoredPosition } from '../persistence/db';
+import { db, nodeStore, layoutStore, getProject, getEdges } from '../persistence';
 import { getNodeVfs } from '../vfs';
 import { getNodeRDFStore } from '../rdf';
 import JSZip from 'jszip';
@@ -26,8 +31,8 @@ import JSZip from 'jszip';
  * Export manifest format
  */
 export interface ExportManifest {
-  /** Export format version */
-  version: number;
+  /** Export format identifier */
+  format: 'pubwiki-studio';
   /** Export timestamp */
   exportedAt: string;
   /** Project metadata */
@@ -56,6 +61,20 @@ export interface ExportManifest {
 }
 
 /**
+ * Exported snapshot data
+ */
+export interface ExportedSnapshot {
+  commit: string;
+  contentHash: string;
+  /** Parent commit for version lineage (null for root versions) */
+  parent: string | null;
+  content: unknown;
+  timestamp?: number;
+  incomingEdges?: StoredSnapshotEdge[];
+  position?: StoredPosition;
+}
+
+/**
  * Exported node data format
  */
 export interface ExportedNodeData {
@@ -63,13 +82,16 @@ export interface ExportedNodeData {
   type: string;
   name: string;
   commit: string;
-  parents: Array<{ id: string; commit: string }>;
+  contentHash: string;
+  /** Parent commit for version lineage (null for root versions) */
+  parent: string | null;
   content: unknown;
-  external?: boolean;
   /** For VFS nodes: list of file paths */
   files?: string[];
   /** For STATE nodes: indicates full state is exported separately */
   hasStateExport?: boolean;
+  /** Historical snapshots */
+  snapshots?: ExportedSnapshot[];
 }
 
 // ============================================================================
@@ -151,7 +173,7 @@ export async function exportProjectToZip(projectId: string): Promise<void> {
   
   // Create manifest
   const manifest: ExportManifest = {
-    version: 1,
+    format: 'pubwiki-studio',
     exportedAt: new Date().toISOString(),
     project: {
       id: project.id,
@@ -189,19 +211,32 @@ export async function exportProjectToZip(projectId: string): Promise<void> {
     const nodeFolder = nodesFolder.folder(node.id);
     if (!nodeFolder) continue;
     
+    // Get snapshot history for this node from IndexedDB
+    const snapshots = await db.snapshots.where('nodeId').equals(node.id).toArray();
+    const exportedSnapshots: ExportedSnapshot[] = snapshots.map(s => ({
+      commit: s.commit,
+      contentHash: s.contentHash,
+      parent: s.parent,
+      content: s.content,
+      timestamp: s.timestamp,
+      incomingEdges: s.incomingEdges,
+      position: s.position
+    }));
+    
     // Create node data
     const nodeData: ExportedNodeData = {
       id: node.id,
       type: node.type,
       name: node.name,
       commit: node.commit,
-      parents: node.parents,
+      contentHash: node.contentHash,
+      parent: node.parent,
       content: node.content.toJSON(),
-      external: node.external
+      snapshots: exportedSnapshots.length > 0 ? exportedSnapshots : undefined
     };
     
     // For VFS nodes, collect and add files
-    if (node.type === 'VFS' && !node.external) {
+    if (node.type === 'VFS') {
       const vfsNode = node as VFSNodeData;
       const files = await collectVfsFiles(vfsNode.content.projectId, node.id);
       

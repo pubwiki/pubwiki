@@ -15,13 +15,6 @@ export interface ArtifactNodeDetail {
 	id: string;
 	type: string;
 	name?: string | null;
-	external: boolean;
-	externalArtifact?: {
-		id?: string;
-		name?: string;
-		slug?: string;
-		author?: { id: string; username: string };
-	};
 	version: { 
 		id: string; 
 		commitHash: string; 
@@ -38,6 +31,7 @@ export interface ArtifactGraphData {
 	version: {
 		id: string;
 		commitHash: string;
+		commitTags?: string[];
 		version: string;
 		createdAt: string;
 	};
@@ -135,23 +129,33 @@ export class ArtifactStore {
 		}
 	}
 
-	async fetchGraph(artifactId: string): Promise<ArtifactGraphData | null> {
+	async fetchGraph(artifactId: string, version: string = 'latest'): Promise<ArtifactGraphData | null> {
 		try {
 			const client = this.getClient();
 			const { data } = await client.GET('/artifacts/{artifactId}/graph', {
-				params: { path: { artifactId }, query: { version: 'latest' } }
+				params: { path: { artifactId }, query: { version } }
 			});
 			if (data) {
 				return {
 					nodes: data.nodes,
 					edges: data.edges,
-					version: data.version
+					version: {
+						...data.version,
+						commitTags: data.version.commitTags
+					}
 				};
 			}
 			return null;
 		} catch {
 			return null;
 		}
+	}
+
+	/**
+	 * Fetch graph for a specific version (by commit hash or commit tag)
+	 */
+	async fetchGraphByVersion(artifactId: string, version: string): Promise<ArtifactGraphData | null> {
+		return this.fetchGraph(artifactId, version);
 	}
 
 	async fetchArtifactDetails(artifactId: string): Promise<ArtifactDetails | null> {
@@ -198,6 +202,13 @@ export class ArtifactStore {
 		return details;
 	}
 
+	/**
+	 * Get node detail from cached graph data.
+	 * 
+	 * NOTE: The old `/artifacts/{artifactId}/nodes/{nodeId}` endpoint has been removed.
+	 * Node detail is now retrieved from the graph response which already contains
+	 * ArtifactNodeSummary with content field.
+	 */
 	async fetchNodeDetail(artifactId: string, nodeId: string): Promise<ArtifactNodeDetail | null> {
 		const cacheKey = `${artifactId}:${nodeId}`;
 		
@@ -206,47 +217,57 @@ export class ArtifactStore {
 			return this.nodeDetailCache.get(cacheKey)!;
 		}
 		
-		try {
-			const client = this.getClient();
-			const { data } = await client.GET('/artifacts/{artifactId}/nodes/{nodeId}', {
-				params: { 
-					path: { artifactId, nodeId },
-					query: { version: 'latest' }
-				}
-			});
-			
-			if (data) {
-				// For VFS nodes, extract files from content.files and convert to NodeFileInfo format
-				let files: NodeFileInfo[] | undefined;
-				if (data.type === 'VFS' && data.content) {
-					const vfsContent = data.content as { files?: { path: string; size?: number; mimeType?: string }[] };
-					if (vfsContent.files && Array.isArray(vfsContent.files)) {
-						files = vfsContent.files.map(f => ({
-							filepath: f.path,
-							filename: f.path.split('/').pop() || f.path,
-							mimeType: f.mimeType ?? null,
-							sizeBytes: f.size ?? null,
-						}));
-					}
-				}
-				
-				const detail: ArtifactNodeDetail = {
-					id: data.id,
-					type: data.type,
-					name: data.name,
-					external: data.external,
-					externalArtifact: data.externalArtifact,
-					version: data.version,
-					files
-				};
-				// Cache the result
-				this.nodeDetailCache.set(cacheKey, detail);
-				return detail;
+		// Try to get from details cache (which includes graph)
+		let details = this.detailsCache.get(artifactId);
+		if (!details) {
+			// Fetch artifact details if not cached
+			const fetched = await this.fetchArtifactDetails(artifactId);
+			if (!fetched) {
+				return null;
 			}
-			return null;
-		} catch {
+			details = fetched;
+		}
+		
+		if (!details?.graph) {
 			return null;
 		}
+		
+		// Find the node in the graph
+		const node = details.graph.nodes.find(n => n.id === nodeId);
+		if (!node) {
+			return null;
+		}
+		
+		// Extract files from VFS content if applicable
+		let files: NodeFileInfo[] | undefined;
+		if (node.type === 'VFS' && node.content) {
+			const vfsContent = node.content as { type: 'VFS'; files?: { path: string; size?: number; mimeType?: string }[] };
+			if (vfsContent.files && Array.isArray(vfsContent.files)) {
+				files = vfsContent.files.map(f => ({
+					filepath: f.path,
+					filename: f.path.split('/').pop() || f.path,
+					mimeType: f.mimeType ?? null,
+					sizeBytes: f.size ?? null,
+				}));
+			}
+		}
+		
+		const detail: ArtifactNodeDetail = {
+			id: node.id,
+			type: node.type,
+			name: node.name,
+			version: {
+				id: details.graph.version.id,
+				commitHash: node.commit,
+				contentHash: node.contentHash,
+				createdAt: details.graph.version.createdAt
+			},
+			files
+		};
+		
+		// Cache the result
+		this.nodeDetailCache.set(cacheKey, detail);
+		return detail;
 	}
 
 	clearCache() {

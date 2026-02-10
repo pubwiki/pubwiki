@@ -9,17 +9,18 @@
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
-	import { InputProperties, PromptProperties, GeneratedProperties, DefaultProperties, VFSProperties, StateProperties } from './properties';
+	import { InputProperties, PromptProperties, GeneratedProperties, DefaultProperties, VFSProperties, StateProperties, NodeVersionHistory } from './properties';
 	import { generate } from '../nodes/input/controller.svelte';
 	import { regenerate } from '../nodes/generated/controller.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		selectedNodes: Node<FlowNodeData>[];
+		projectId: string;
 		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 	}
 
-	let { selectedNodes, onOpenVfsFile }: Props = $props();
+	let { selectedNodes, projectId, onOpenVfsFile }: Props = $props();
 
 	const ctx = getStudioContext();
 	const settings = getSettingsStore();
@@ -189,6 +190,7 @@
 					<StateProperties
 						nodeId={selectedNode.id}
 						data={selectedNodeData as StateNodeData}
+						{projectId}
 					/>
 				{:else if selectedNodeData}
 					<DefaultProperties
@@ -196,6 +198,14 @@
 						data={selectedNodeData}
 					/>
 				{/if}
+			</div>
+
+			<!-- Version History Section -->
+			<div class="border-t border-gray-100 p-4">
+				<NodeVersionHistory
+					nodeId={selectedNode.id}
+					currentCommit={selectedNodeData?.commit}
+				/>
 			</div>
 		</div>
 

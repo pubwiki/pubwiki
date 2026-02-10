@@ -105,6 +105,69 @@ InputGenerationConfig:
       description: 结构化输出的 JSON Schema
 
 # ============================================================================
+# Message Block Types (用于 Generated 节点，来自 @pubwiki/chat)
+# ============================================================================
+
+MessageBlockType:
+  type: string
+  enum:
+    - text
+    - markdown
+    - code
+    - tool_call
+    - tool_result
+    - image
+    - reasoning
+  description: |
+    Message block types:
+    - text: Plain text
+    - markdown: Markdown content
+    - code: Code block
+    - tool_call: Tool call request
+    - tool_result: Tool call result
+    - image: Image (reserved for future)
+    - reasoning: Reasoning content
+
+ToolCallStatus:
+  type: string
+  enum:
+    - pending
+    - running
+    - completed
+    - error
+  description: Tool call execution status
+
+MessageBlock:
+  type: object
+  required:
+    - id
+    - type
+    - content
+  properties:
+    id:
+      type: string
+      description: Unique block ID
+    type:
+      $ref: '#/MessageBlockType'
+    content:
+      type: string
+      description: Block content
+    metadata:
+      type: object
+      additionalProperties: true
+      description: Additional metadata
+    toolCallId:
+      type: string
+      description: Tool call ID (for tool_call and tool_result types)
+    toolName:
+      type: string
+      description: Tool name (for tool_call type)
+    toolArgs:
+      description: Tool arguments (for tool_call type)
+    toolStatus:
+      $ref: '#/ToolCallStatus'
+
+# ============================================================================
 # Node Content Types
 # ============================================================================
 
@@ -144,7 +207,7 @@ PromptNodeContent:
       items:
         $ref: '#/ContentBlock'
 
-# GENERATED 节点内容 (MessageBlock 来自 @pubwiki/chat，这里简化定义)
+# GENERATED 节点内容
 GeneratedNodeContent:
   type: object
   required:
@@ -158,8 +221,7 @@ GeneratedNodeContent:
     blocks:
       type: array
       items:
-        type: object
-        description: MessageBlock 来自 @pubwiki/chat
+        $ref: '#/MessageBlock'
     inputRef:
       $ref: '#/NodeRef'
     promptRefs:
@@ -228,28 +290,78 @@ StateNodeContent:
         STATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。
         作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。
 
+# VFS 挂载配置
+VfsMountConfig:
+  type: object
+  required:
+    - id
+    - sourceNodeId
+    - mountPath
+  properties:
+    id:
+      type: string
+      description: 挂载点唯一标识符
+    sourceNodeId:
+      type: string
+      format: uuid
+      description: 源 VFS 节点 ID
+    mountPath:
+      type: string
+      description: 挂载路径
+    sourceCommit:
+      type: string
+      description: 源 VFS 版本 commit hash
+
+# VFS 文件信息
+VfsFileInfo:
+  type: object
+  required:
+    - path
+  properties:
+    path:
+      type: string
+      description: 文件路径
+    size:
+      type: integer
+      description: 文件大小 (bytes)
+    mimeType:
+      type: string
+      description: MIME 类型
+
 # VFS 节点内容（仅文件摘要信息）
 VfsNodeContent:
   type: object
   required:
     - type
+    - projectId
   properties:
     type:
       type: string
       const: VFS
+    projectId:
+      type: string
+      description: 所属项目 ID
+    mounts:
+      type: array
+      description: VfsMountConfig[] 挂载配置
+      items:
+        $ref: '#/VfsMountConfig'
+    fileCount:
+      type: integer
+      description: 文件总数
+    totalSize:
+      type: integer
+      description: 总大小 (bytes)
+    fileTree:
+      type: array
+      description: 文件目录树
+      items:
+        $ref: '#/VfsFileInfo'
     files:
       type: array
+      description: 文件列表（用于 API 验证）
       items:
-        type: object
-        required:
-          - path
-        properties:
-          path:
-            type: string
-          size:
-            type: integer
-          mimeType:
-            type: string
+        $ref: '#/VfsFileInfo'
 
 # ============================================================================
 # Union Type for All Node Contents

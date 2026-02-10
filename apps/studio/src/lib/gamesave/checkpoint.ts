@@ -1,20 +1,20 @@
 /**
- * Checkpoint Sync Service (Simplified)
+ * Save Checkpoint Service
  * 
- * Pure snapshot-based cloud sync:
- * - Export current state to cloud
- * - Create cloud checkpoint with quads directly
- * - Restore from cloud checkpoint
+ * Manages save checkpoints using the new save API:
+ * - POST /saves - Create save with quads.bin data
+ * - GET /saves - List saves by stateNodeId + stateNodeCommit
+ * - GET /saves/{commit} - Get save details
+ * - GET /saves/{commit}/data - Download save data
+ * - DELETE /saves/{commit} - Delete save
  * 
- * Removed blockchain-style operation sync:
- * - No more buildSyncOperations
- * - No more syncOperationsToCloud
- * - No more versionDAG dependencies
+ * Save commit is globally unique and computed from:
+ * hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)
  */
 
 import type { RDFStore } from '@pubwiki/rdfstore';
 import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
-import type { CheckpointInfo, Quad } from '@pubwiki/api';
+import type { SaveDetail, VisibilityType } from '@pubwiki/api';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 
@@ -22,105 +22,127 @@ import { API_BASE_URL } from '$lib/config';
 const apiClient = createApiClient(API_BASE_URL);
 
 /**
- * Options for uploading a checkpoint
+ * Options for creating a save checkpoint
  */
-export interface UploadCheckpointOptions {
-  /** Checkpoint ID (use local checkpoint id for consistency) */
-  id: string;
-  /** Checkpoint title */
-  name: string;
-  /** Optional description */
+export interface CreateSaveOptions {
+  /** STATE node ID */
+  stateNodeId: string;
+  /** STATE node commit hash */
+  stateNodeCommit: string;
+  /** Save commit hash (client-computed) */
+  commit: string;
+  /** Parent save commit (optional) */
+  parent?: string | null;
+  /** Source artifact ID */
+  sourceArtifactId: string;
+  /** Source artifact commit hash */
+  sourceArtifactCommit: string;
+  /** Content hash of the quads data */
+  contentHash: string;
+  /** Save title */
+  title?: string;
+  /** Save description */
   description?: string;
   /** Visibility setting */
-  visibility?: 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
+  visibility?: VisibilityType;
 }
 
 /**
- * Result of uploading a checkpoint
+ * Result of creating a save
  */
-export interface UploadCheckpointResult {
+export interface CreateSaveResult {
   success: boolean;
-  checkpointId?: string;
+  save?: SaveDetail;
   error?: string;
 }
 
 /**
- * Upload current local state as a checkpoint to cloud.
- * This exports the current quads and uploads them directly as a new checkpoint.
+ * Create a save checkpoint by uploading RDF quads to the backend.
  * 
  * @param store - The local RDF store
- * @param saveId - The cloud save ID
- * @param options - Checkpoint options
- * @returns Upload result
+ * @param options - Save options
+ * @returns Create result
  */
-export async function uploadCheckpointToCloud(
+export async function createSaveCheckpoint(
   store: RDFStore,
-  saveId: string,
-  options: UploadCheckpointOptions
-): Promise<UploadCheckpointResult> {
+  options: CreateSaveOptions
+): Promise<CreateSaveResult> {
   try {
     // 1. Export current state as RDF quads
     const rdfQuads = await store.getAllQuads();
     
-    // 2. Convert to API Quad format (N3 strings)
-    const quads: Quad[] = rdfQuads.map(fromRdfQuad);
+    // 2. Serialize quads to binary format
+    const quadsJson = JSON.stringify(rdfQuads.map(fromRdfQuad));
+    const quadsData = new TextEncoder().encode(quadsJson);
 
-    // 3. Create checkpoint directly with quads
-    const { data, error } = await apiClient.POST('/saves/{saveId}/checkpoints', {
-      params: { path: { saveId } },
-      body: {
-        quads,
-        id: options.id,
-        name: options.name,
-        description: options.description,
-        visibility: options.visibility ?? 'PRIVATE'
-      }
+    // 3. Create FormData for multipart upload
+    const formData = new FormData();
+    formData.append('metadata', JSON.stringify({
+      stateNodeId: options.stateNodeId,
+      stateNodeCommit: options.stateNodeCommit,
+      commit: options.commit,
+      parent: options.parent ?? null,
+      sourceArtifactId: options.sourceArtifactId,
+      sourceArtifactCommit: options.sourceArtifactCommit,
+      contentHash: options.contentHash,
+      title: options.title,
+      description: options.description,
+      visibility: options.visibility ?? 'PRIVATE'
+    }));
+    formData.append('data', new Blob([quadsData], { type: 'application/octet-stream' }));
+
+    // 4. POST to /saves
+    const response = await fetch(`${API_BASE_URL}/saves`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include'
     });
 
-    if (error) {
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
       return {
         success: false,
-        error: error.error || '创建云端存档失败'
+        error: errorData.error || `创建存档失败: ${response.status}`
       };
     }
 
-    return {
-      success: true,
-      checkpointId: data!.id
-    };
+    const save: SaveDetail = await response.json();
+    return { success: true, save };
   } catch (e) {
     return {
       success: false,
-      error: e instanceof Error ? e.message : '上传失败'
+      error: e instanceof Error ? e.message : '创建存档失败'
     };
   }
 }
 
 /**
- * Download checkpoint from cloud and import into local store.
+ * Restore save data from the backend into local RDF store.
  * 
  * @param store - The local RDF store
- * @param saveId - The cloud save ID
- * @param checkpointId - The checkpoint ID to restore
+ * @param commit - The save commit hash
  * @returns Whether restore was successful
  */
-export async function restoreFromCloudCheckpoint(
+export async function restoreFromSave(
   store: RDFStore,
-  saveId: string,
-  checkpointId: string
+  commit: string
 ): Promise<boolean> {
   try {
-    // 1. Export checkpoint data from cloud
-    const { data, error } = await apiClient.GET('/saves/{saveId}/checkpoints/{checkpointId}/export', {
-      params: { path: { saveId, checkpointId } }
+    // Download save data
+    const response = await fetch(`${API_BASE_URL}/saves/${commit}/data`, {
+      credentials: 'include'
     });
 
-    if (error || !data) {
+    if (!response.ok) {
       return false;
     }
 
-    // 2. Convert API Quads to RDF.js Quads and replace local store
-    const rdfQuads = data.quads.map(toRdfQuad);
+    // Parse quads from response
+    const quadsJson = await response.text();
+    const apiQuads = JSON.parse(quadsJson);
+    const rdfQuads = apiQuads.map(toRdfQuad);
+
+    // Replace local store contents
     await store.clear();
     await store.batchInsert(rdfQuads);
 
@@ -131,97 +153,93 @@ export async function restoreFromCloudCheckpoint(
 }
 
 /**
- * Fetch cloud checkpoints for a save.
+ * Fetch saves for a STATE node version.
  * 
- * @param saveId - The cloud save ID
- * @returns List of checkpoints, or empty array on error
+ * @param stateNodeId - The STATE node ID
+ * @param stateNodeCommit - The STATE node commit hash
+ * @returns List of saves
  */
-export async function fetchCloudCheckpoints(saveId: string): Promise<CheckpointInfo[]> {
+export async function fetchSaves(
+  stateNodeId: string,
+  stateNodeCommit: string
+): Promise<SaveDetail[]> {
   try {
-    const { data, error } = await apiClient.GET('/saves/{saveId}/checkpoints', {
-      params: { path: { saveId } }
+    const { data, error } = await apiClient.GET('/saves', {
+      params: {
+        query: { stateNodeId, stateNodeCommit }
+      }
     });
 
     if (error || !data) {
       return [];
     }
 
-    return data.checkpoints || [];
+    return data.saves ?? [];
   } catch {
     return [];
   }
 }
 
 /**
- * Get save ID by state node ID.
+ * Get save details by commit.
  * 
- * @param stateNodeId - The state node ID
- * @returns The save ID or null if not found
+ * @param commit - The save commit hash
+ * @returns Save details or null if not found
  */
-export async function getSaveIdByStateNode(stateNodeId: string): Promise<string | null> {
+export async function getSave(commit: string): Promise<SaveDetail | null> {
   try {
-    const { data, error } = await apiClient.GET('/saves/by-state/{stateNodeId}', {
-      params: { path: { stateNodeId } }
+    const { data, error } = await apiClient.GET('/saves/{commit}', {
+      params: { path: { commit } }
     });
 
     if (error || !data) {
       return null;
     }
 
-    return data.id;
+    return data;
   } catch {
     return null;
   }
 }
 
 /**
- * Check if a cloud save exists.
+ * Delete a save by commit.
  * 
- * @param saveId - The cloud save ID
- * @returns true if save exists and is accessible
+ * @param commit - The save commit hash
  */
-export async function cloudSaveExists(saveId: string): Promise<boolean> {
-  try {
-    const { error } = await apiClient.GET('/saves/{saveId}/checkpoints', {
-      params: { path: { saveId } }
-    });
-    return !error;
-  } catch {
-    return false;
+export async function deleteSave(commit: string): Promise<void> {
+  const { error } = await apiClient.DELETE('/saves/{commit}', {
+    params: { path: { commit } }
+  });
+
+  if (error) {
+    throw new Error(error.error || '删除存档失败');
   }
 }
 
 /**
- * Create a new cloud save.
+ * Compute save commit hash.
+ * This should match the backend computation.
  * 
- * @param name - Save name
- * @param stateNodeId - Associated state node ID
- * @returns The created save ID
+ * @param stateNodeId - STATE node ID
+ * @param stateNodeCommit - STATE node commit
+ * @param userId - User ID
+ * @param sourceArtifactId - Source artifact ID
+ * @param sourceArtifactCommit - Source artifact commit
+ * @returns Computed commit hash
  */
-export async function createCloudSave(name: string, stateNodeId: string): Promise<string> {
-  const { data, error } = await apiClient.POST('/saves', {
-    body: { name, stateNodeId }
-  });
-
-  if (error) {
-    throw new Error(error.error || '创建云存档失败');
-  }
-
-  return data!.id;
-}
-
-/**
- * Delete a cloud checkpoint.
- * 
- * @param saveId - The cloud save ID
- * @param checkpointId - The checkpoint ID to delete
- */
-export async function deleteCloudCheckpoint(saveId: string, checkpointId: string): Promise<void> {
-  const { error } = await apiClient.DELETE('/saves/{saveId}/checkpoints/{checkpointId}', {
-    params: { path: { saveId, checkpointId } }
-  });
-
-  if (error) {
-    throw new Error(error.error || '删除失败');
-  }
+export async function computeSaveCommit(
+  stateNodeId: string,
+  stateNodeCommit: string,
+  userId: string,
+  sourceArtifactId: string,
+  sourceArtifactCommit: string
+): Promise<string> {
+  const payload = `${stateNodeId}:${stateNodeCommit}:${userId}:${sourceArtifactId}:${sourceArtifactCommit}`;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(payload);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex.slice(0, 40); // First 40 chars like backend
 }

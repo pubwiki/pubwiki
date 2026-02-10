@@ -159,7 +159,7 @@ export function createGraphQuery(
         preview: getContentPreview(data),
         fullContent: getFullContent(data),
         commit: data.commit,
-        parents: data.parents || [],
+        parent: data.parent,
         hasVersions: (data.snapshotRefs?.length ?? 0) > 0,
         createdFrom,
       };

@@ -29,7 +29,7 @@ import {
   createVfs,
   type VersionedVfs,
 } from '@pubwiki/vfs';
-import { NodeVfs } from './node-vfs';
+import { NodeVfs } from './node-vfs.svelte';
 import { nodeStore } from '$lib/persistence';
 import type { VFSNodeData, VFSContent } from '$lib/types';
 
@@ -87,6 +87,23 @@ async function ensureZenFSConfigured(): Promise<void> {
 export function preInitializeZenFS(): Promise<void> {
   console.log('[VFS:ZenFS] preInitializeZenFS called');
   return ensureZenFSConfigured();
+}
+
+// ============================================================================
+// Git Context for Submodule Operations
+// ============================================================================
+
+/**
+ * Context needed for isomorphic-git operations.
+ * This provides the minimal interface needed without exposing internals.
+ */
+export interface GitContext {
+  /** The file system interface (ZenFS) */
+  fs: typeof zenfs;
+  /** The repository directory path */
+  dir: string;
+  /** The node ID for this VFS */
+  nodeId: string;
 }
 
 // ============================================================================
