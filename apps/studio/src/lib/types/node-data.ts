@@ -16,10 +16,9 @@
 
 import { 
   type NodeRef, 
-  type SnapshotPosition,
-  generateContentHash
+  type SnapshotPosition
 } from '../version'
-import { computeNodeCommit } from '@pubwiki/api'
+import { computeNodeCommit, computeContentHash } from '@pubwiki/api'
 import type { Edge, Node } from '@xyflow/svelte'
 
 // Import content classes for use in factory functions
@@ -175,10 +174,11 @@ export async function createInputNodeData(
   name: string = ''
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
-  const contentHash = await generateContentHash(text)
-  const commit = await computeNodeCommit(id, parent, contentHash, 'INPUT')
   // Convert text to blocks format
-  const blocks = text ? [{ type: 'text' as const, value: text }] : []
+  const blocks = text ? [{ type: 'TextBlock' as const, value: text }] : []
+  const content = new InputContent(blocks)
+  const contentHash = await computeContentHash(content.toJSON())
+  const commit = await computeNodeCommit(id, parent, contentHash, 'INPUT')
   return {
     id,
     name,
@@ -187,7 +187,7 @@ export async function createInputNodeData(
     contentHash,
     snapshotRefs: [],
     parent,
-    content: new InputContent(blocks)
+    content
   }
 }
 
@@ -200,7 +200,8 @@ export async function createPromptNodeData(
   name: string = ''
 ): Promise<PromptNodeData> {
   const id = crypto.randomUUID()
-  const contentHash = await generateContentHash(text)
+  const content = PromptContent.fromText(text)
+  const contentHash = await computeContentHash(content.toJSON())
   const commit = await computeNodeCommit(id, parent, contentHash, 'PROMPT')
   return {
     id,
@@ -210,7 +211,7 @@ export async function createPromptNodeData(
     contentHash,
     snapshotRefs: [],
     parent,
-    content: PromptContent.fromText(text)
+    content
   }
 }
 
@@ -230,7 +231,7 @@ export async function createGeneratedNodeData(
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
   const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs, inputVfsRef, outputVfsId, postGenerationCommit)
-  const contentHash = await generateContentHash(content.serialize())
+  const contentHash = await computeContentHash(content.toJSON())
   const commit = await computeNodeCommit(id, parent, contentHash, 'GENERATED')
   return {
     id,
@@ -256,7 +257,7 @@ export async function createVFSNodeData(
 ): Promise<VFSNodeData> {
   const id = crypto.randomUUID()
   const content = new VFSContent(projectId)
-  const contentHash = await generateContentHash(content.serialize())
+  const contentHash = await computeContentHash(content.toJSON())
   const commit = await computeNodeCommit(id, null, contentHash, 'VFS')
   return {
     id,
@@ -278,7 +279,7 @@ export async function createSandboxNodeData(
 ): Promise<SandboxNodeData> {
   const id = crypto.randomUUID()
   const content = new SandboxContent('index.html')
-  const contentHash = await generateContentHash(content.serialize())
+  const contentHash = await computeContentHash(content.toJSON())
   const commit = await computeNodeCommit(id, null, contentHash, 'SANDBOX')
   return {
     id,
@@ -300,7 +301,7 @@ export async function createLoaderNodeData(
 ): Promise<LoaderNodeData> {
   const id = crypto.randomUUID()
   const content = new LoaderContent()
-  const contentHash = await generateContentHash(content.serialize())
+  const contentHash = await computeContentHash(content.toJSON())
   const commit = await computeNodeCommit(id, null, contentHash, 'LOADER')
   return {
     id,
@@ -322,7 +323,7 @@ export async function createStateNodeData(
 ): Promise<StateNodeData> {
   const id = crypto.randomUUID()
   const content = new StateContent()
-  const contentHash = await generateContentHash(content.serialize())
+  const contentHash = await computeContentHash(content.toJSON())
   const commit = await computeNodeCommit(id, null, contentHash, 'STATE')
   return {
     id,

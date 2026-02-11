@@ -479,7 +479,7 @@ import type { ContentBlock } from '$components/editor';
  */
 export function getRefTagNamesFromBlocks(blocks: ContentBlock[]): string[] {
   const names = blocks
-    .filter((b): b is { type: 'reftag'; name: string } => b.type === 'reftag')
+    .filter((b): b is { type: 'RefTagBlock'; name: string } => b.type === 'RefTagBlock')
     .map(b => b.name);
   return [...new Set(names)];
 }

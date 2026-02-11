@@ -17,10 +17,10 @@ import type { FlowNodeData } from '../types/flow';
 import type { VisibilityType } from '$lib/types';
 import { StateContent } from '../types';
 import { createApiClient, type paths } from '@pubwiki/api/client';
-import { type components, computeArtifactCommit, computeNodeCommit } from '@pubwiki/api';
+import { type components, computeArtifactCommit, computeNodeCommit, computeContentHash } from '@pubwiki/api';
 import { API_BASE_URL } from '$lib/config';
 import { getNodeVfs } from '../vfs';
-import { nodeStore, generateContentHash } from '../persistence';
+import { nodeStore } from '../persistence';
 
 // Create a singleton API client
 const apiClient = createApiClient(API_BASE_URL);
@@ -330,6 +330,11 @@ interface PreparedNodes {
  * - nodeId is preserved (globally unique UUID)
  * - parent tracks version lineage
  * - No Fork-on-Write needed
+ * 
+ * After content-hash-realtime-update refactoring:
+ * - Sync versions first to ensure contentHash/commit are up-to-date
+ * - VFS nodes: content.toJSON() includes complete file info, hash is consistent
+ * - Non-VFS nodes: directly use freshData.contentHash (already up-to-date)
  */
 async function prepareNodesForPublish(
 	nodes: Node<StudioNodeData>[]
@@ -337,57 +342,33 @@ async function prepareNodesForPublish(
 	const apiNodes: CreateArtifactNode[] = [];
 	const vfsArchives = new Map<string, Uint8Array>();
 
+	// Ensure all nodes' versions are up-to-date (contentHash/commit)
+	await nodeStore.ensureVersionsSynced(nodes.map(n => n.id));
+
 	for (const node of nodes) {
-		// Get parent commit from the node's parent field
-		const parentCommit = node.data.parent;
+		const freshData = nodeStore.get(node.id)!;
+		const nodeContent = freshData.content.toJSON() as ArtifactNodeContent;
 		
-		// Content from toJSON() matches ArtifactNodeContent structure
-		let nodeContent = node.data.content.toJSON() as ArtifactNodeContent;
-		
-		// Compute contentHash from the serialized content
-		// IMPORTANT: contentHash must be computed from the EXACT same content that will be sent to the API
-		// This ensures commit = computeNodeCommit(nodeId, parent, contentHash, type) matches
-		let contentHash: string;
-		
-		// Add content based on node type
-		if (node.data.type === 'VFS') {
-			const vfsData = node.data as VFSNodeData;
-			const { archive, files, totalFiles, totalSize } = await packageVfsAsTarGz(
+		// VFS needs to package file archive (but no need to recompute hash,
+		// since local already includes complete info)
+		if (freshData.type === 'VFS') {
+			const vfsData = freshData as VFSNodeData;
+			const { archive } = await packageVfsAsTarGz(
 				vfsData.content.projectId,
-				node.data.id
+				node.id
 			);
-			vfsArchives.set(node.data.id, archive);
-			// VFS content includes projectId, mounts, file metadata, and files list
-			nodeContent = { 
-				type: 'VFS' as const, 
-				projectId: vfsData.content.projectId,
-				mounts: vfsData.content.mounts,
-				fileCount: totalFiles,
-				totalSize,
-				fileTree: files,
-				files // For API validation
-			};
-			// For VFS, contentHash is based on the files list (same as what's sent to API)
-			contentHash = await generateContentHash(JSON.stringify(nodeContent));
-		} else {
-			// For other nodes, contentHash is based on the API content (toJSON)
-			contentHash = await generateContentHash(JSON.stringify(nodeContent));
+			vfsArchives.set(node.id, archive);
 		}
-		
-		// CRITICAL: Compute commit hash using the SAME formula as the backend
-		// commit = computeNodeCommit(nodeId, parent, contentHash, type)
-		// This ensures the backend validation will pass
-		const commit = await computeNodeCommit(node.data.id, parentCommit, contentHash, node.data.type);
 
 		const apiNode: CreateArtifactNode = {
-			nodeId: node.data.id,
-			commit,
-			parent: parentCommit ?? undefined,
-			type: node.data.type as ApiNodeType,
-			name: node.data.name || undefined,
+			nodeId: freshData.id,
+			commit: freshData.commit,
+			parent: freshData.parent ?? undefined,
+			type: freshData.type as ApiNodeType,
+			name: freshData.name || undefined,
 			position: { x: node.position.x, y: node.position.y },
 			content: nodeContent,
-			contentHash
+			contentHash: freshData.contentHash  // Directly use, already up-to-date
 		};
 
 		apiNodes.push(apiNode);

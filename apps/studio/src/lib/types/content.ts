@@ -10,6 +10,7 @@
 
 import { blocksToContent, type MessageBlock } from '@pubwiki/chat'
 import type { NodeRef } from '../version'
+import type { ArtifactNodeContent } from '@pubwiki/api'
 
 // ============================================================================
 // NodeContent Interface
@@ -32,8 +33,11 @@ export interface NodeContent {
   /** Create a deep clone for snapshotting */
   clone(): NodeContent
   
-  /** Get raw data for persistence (JSON-serializable) */
-  toJSON(): unknown
+  /** 
+   * Get raw data for persistence (JSON-serializable)
+   * Must include 'type' field to match ArtifactNodeContent schema
+   */
+  toJSON(): ArtifactNodeContent
 }
 
 // ============================================================================
@@ -95,37 +99,48 @@ export class InputContent implements NodeContent {
     )
   }
 
-  toJSON() {
-    return { blocks: this.blocks, generationConfig: this.generationConfig }
+  toJSON(): ArtifactNodeContent {
+    return { 
+      type: 'INPUT' as const,
+      blocks: this.blocks,
+      generationConfig: this.generationConfig 
+    }
   }
 
-  static fromJSON(data: { blocks: ContentBlock[]; generationConfig?: InputGenerationConfig }): InputContent {
+  static fromJSON(data: { 
+    type?: 'INPUT'
+    blocks?: ContentBlock[]
+    generationConfig?: InputGenerationConfig 
+  }): InputContent {
     return new InputContent(data.blocks ?? [], data.generationConfig ?? {})
   }
 }
 
 // ============================================================================
-// ContentBlock Types (for structured reftag storage)
+// ContentBlock Types (matching API schema)
 // ============================================================================
 
 /**
  * A text block containing plain text
+ * Matches API schema: components['schemas']['TextBlock']
  */
 export interface TextBlock {
-  type: 'text'
+  type: 'TextBlock'
   value: string
 }
 
 /**
  * A reftag block representing an @reference
+ * Matches API schema: components['schemas']['RefTagBlock']
  */
 export interface RefTagBlock {
-  type: 'reftag'
+  type: 'RefTagBlock'
   name: string
 }
 
 /**
  * Union type for all content blocks
+ * Matches API schema: components['schemas']['ContentBlock']
  */
 export type ContentBlock = TextBlock | RefTagBlock
 
@@ -134,7 +149,7 @@ export type ContentBlock = TextBlock | RefTagBlock
  */
 export function blocksToText(blocks: ContentBlock[]): string {
   return blocks.map(block => {
-    if (block.type === 'text') {
+    if (block.type === 'TextBlock') {
       return block.value
     } else {
       return `@${block.name}`
@@ -147,7 +162,7 @@ export function blocksToText(blocks: ContentBlock[]): string {
  */
 export function getRefTagNamesFromBlocks(blocks: ContentBlock[]): string[] {
   const names = blocks
-    .filter((b): b is RefTagBlock => b.type === 'reftag')
+    .filter((b): b is RefTagBlock => b.type === 'RefTagBlock')
     .map(b => b.name)
   return [...new Set(names)]
 }
@@ -176,11 +191,17 @@ export class PromptContent implements NodeContent {
     return new PromptContent(blocks)
   }
 
-  toJSON() {
-    return { blocks: this.blocks }
+  toJSON(): ArtifactNodeContent {
+    return { 
+      type: 'PROMPT' as const,
+      blocks: this.blocks
+    }
   }
 
-  static fromJSON(data: { blocks: ContentBlock[] }): PromptContent {
+  static fromJSON(data: { 
+    type?: 'PROMPT'
+    blocks?: ContentBlock[]
+  }): PromptContent {
     return new PromptContent(data.blocks ?? [])
   }
 
@@ -192,7 +213,7 @@ export class PromptContent implements NodeContent {
     if (!text) {
       return new PromptContent([])
     }
-    return new PromptContent([{ type: 'text', value: text }])
+    return new PromptContent([{ type: 'TextBlock', value: text }])
   }
 }
 
@@ -300,19 +321,21 @@ export class GeneratedContent implements NodeContent {
     )
   }
 
-  toJSON() {
+  toJSON(): ArtifactNodeContent {
     return {
+      type: 'GENERATED' as const,
       blocks: this.blocks,
       inputRef: this.inputRef,
       promptRefs: this.promptRefs,
       indirectPromptRefs: this.indirectPromptRefs,
-      inputVfsRef: this.inputVfsRef,
-      outputVfsId: this.outputVfsId,
-      postGenerationCommit: this.postGenerationCommit
+      inputVfsRef: this.inputVfsRef ?? undefined,
+      outputVfsId: this.outputVfsId ?? undefined,
+      postGenerationCommit: this.postGenerationCommit ?? undefined
     }
   }
 
   static fromJSON(data: {
+    type?: 'GENERATED'
     blocks?: MessageBlock[]
     inputRef: NodeRef
     promptRefs?: NodeRef[]
@@ -414,14 +437,16 @@ export class VFSContent implements NodeContent {
     )
   }
 
-  toJSON() {
+  toJSON(): ArtifactNodeContent {
     return {
+      type: 'VFS' as const,
       projectId: this.projectId,
       mounts: this.mounts
     }
   }
 
   static fromJSON(data: { 
+    type?: 'VFS'
     projectId: string
     mounts?: VfsMountConfig[]
   }): VFSContent {
@@ -452,11 +477,11 @@ export class SandboxContent implements NodeContent {
     return new SandboxContent(this.entryFile)
   }
 
-  toJSON() {
-    return { entryFile: this.entryFile }
+  toJSON(): ArtifactNodeContent {
+    return { type: 'SANDBOX' as const, entryFile: this.entryFile }
   }
 
-  static fromJSON(data: { entryFile?: string; sandboxOrigin?: string }): SandboxContent {
+  static fromJSON(data: { type?: 'SANDBOX'; entryFile?: string }): SandboxContent {
     return new SandboxContent(data.entryFile ?? 'index.html')
   }
 }
@@ -480,11 +505,11 @@ export class LoaderContent implements NodeContent {
     return new LoaderContent()
   }
 
-  toJSON() {
-    return {}
+  toJSON(): ArtifactNodeContent {
+    return { type: 'LOADER' as const }
   }
 
-  static fromJSON(_data: Record<string, unknown>): LoaderContent {
+  static fromJSON(_data: { type?: 'LOADER' }): LoaderContent {
     return new LoaderContent()
   }
 }
@@ -514,11 +539,11 @@ export class StateContent implements NodeContent {
     return new StateContent()
   }
 
-  toJSON() {
-    return {}
+  toJSON(): ArtifactNodeContent {
+    return { type: 'STATE' as const }
   }
 
-  static fromJSON(_data: unknown): StateContent {
+  static fromJSON(_data: { type?: 'STATE' }): StateContent {
     return new StateContent()
   }
 }
@@ -530,36 +555,27 @@ export class StateContent implements NodeContent {
 export type NodeType = 'INPUT' | 'PROMPT' | 'GENERATED' | 'VFS' | 'SANDBOX' | 'LOADER' | 'STATE'
 
 /**
- * Restore content class instance from JSON data
- * Used when loading from IndexedDB/storage
+ * Restore content class instance from ArtifactNodeContent JSON data.
+ * Used when loading from IndexedDB/storage or deserializing API responses.
+ * 
+ * Accepts both API schema format (TextBlock/RefTagBlock) and internal format (text/reftag).
  */
 export function restoreContent(type: NodeType, data: unknown): NodeContent {
-  const json = data as Record<string, unknown>
+  const json = data as ArtifactNodeContent
   switch (type) {
     case 'INPUT':
-      return InputContent.fromJSON(json as { blocks: ContentBlock[]; generationConfig?: InputGenerationConfig })
+      return InputContent.fromJSON(json as Parameters<typeof InputContent.fromJSON>[0])
     case 'PROMPT':
-      return PromptContent.fromJSON(json as { blocks: ContentBlock[] })
+      return PromptContent.fromJSON(json as Parameters<typeof PromptContent.fromJSON>[0])
     case 'GENERATED':
-      return GeneratedContent.fromJSON(json as {
-        blocks?: MessageBlock[]
-        inputRef: NodeRef
-        promptRefs?: NodeRef[]
-        indirectPromptRefs?: NodeRef[]
-        inputVfsRef?: VfsRef | null
-        outputVfsId?: string | null
-      })
+      return GeneratedContent.fromJSON(json as Parameters<typeof GeneratedContent.fromJSON>[0])
     case 'VFS':
-      return VFSContent.fromJSON(json as { 
-        projectId: string
-        displayName?: string
-        mounts?: VfsMountConfig[]
-      })
+      return VFSContent.fromJSON(json as Parameters<typeof VFSContent.fromJSON>[0])
     case 'SANDBOX':
-      return SandboxContent.fromJSON(json as { entryFile?: string; sandboxOrigin?: string })
+      return SandboxContent.fromJSON(json as Parameters<typeof SandboxContent.fromJSON>[0])
     case 'LOADER':
-      return LoaderContent.fromJSON(json as Record<string, unknown>)
+      return LoaderContent.fromJSON(json as Parameters<typeof LoaderContent.fromJSON>[0])
     case 'STATE':
-      return StateContent.fromJSON(json)
+      return StateContent.fromJSON(json as Parameters<typeof StateContent.fromJSON>[0])
   }
 }

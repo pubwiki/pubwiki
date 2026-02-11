@@ -34,7 +34,7 @@ import {
 } from '../types';
 import { getNodeVfs } from '../vfs';
 import { ensureProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
-import { generateContentHash } from '../persistence/node-store.svelte';
+import { computeContentHash } from '@pubwiki/api';
 import { API_BASE_URL } from '$lib/config';
 
 /**
@@ -267,7 +267,7 @@ export async function convertArtifactToStudioGraph(
       case 'VFS': {
         // VFSContent needs projectId, which we set to targetProjectId
         const vfsContent = new VFSContent(targetProjectId);
-        const contentHash = await generateContentHash(vfsContent.serialize());
+        const contentHash = await computeContentHash(vfsContent.toJSON());
         const vfsData: VFSNodeData = {
           id: nodeId,
           name: node.name || `Files ${index + 1}`,
@@ -293,7 +293,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new SandboxContent();
         }
-        const contentHash = await generateContentHash(parsedContent.serialize());
+        const contentHash = await computeContentHash(parsedContent.toJSON());
         const sandboxData: SandboxNodeData = {
           id: nodeId,
           name: node.name || `Sandbox ${index + 1}`,
@@ -319,7 +319,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new LoaderContent();
         }
-        const contentHash = await generateContentHash(parsedContent.serialize());
+        const contentHash = await computeContentHash(parsedContent.toJSON());
         const loaderData: LoaderNodeData = {
           id: nodeId,
           name: node.name || `Loader ${index + 1}`,
@@ -345,7 +345,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           stateContent = new StateContent();
         }
-        const contentHash = await generateContentHash(stateContent.serialize());
+        const contentHash = await computeContentHash(stateContent.toJSON());
         const stateData: StateNodeData = {
           id: nodeId,
           name: node.name || `State ${index + 1}`,
@@ -372,7 +372,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new InputContent([]);
         }
-        const contentHash = await generateContentHash(parsedContent.serialize());
+        const contentHash = await computeContentHash(parsedContent.toJSON());
         const inputData: InputNodeData = {
           id: nodeId,
           name: node.name || `Input ${index + 1}`,
@@ -399,7 +399,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = PromptContent.fromText('');
         }
-        const contentHash = await generateContentHash(parsedContent.serialize());
+        const contentHash = await computeContentHash(parsedContent.toJSON());
         const promptData: PromptNodeData = {
           id: nodeId,
           name: node.name || `Prompt ${index + 1}`,
@@ -428,7 +428,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
         }
-        const contentHash = await generateContentHash(parsedContent.serialize());
+        const contentHash = await computeContentHash(parsedContent.toJSON());
         const generatedData: GeneratedNodeData = {
           id: nodeId,
           name: node.name || `Generated ${index + 1}`,

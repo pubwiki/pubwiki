@@ -37,9 +37,9 @@
 		createFlowNode
 	} from '$lib/types';
 	import {
-		restoreSnapshot,
 		createPreviewController,
-		type NodeRef
+		type NodeRef,
+		type Versionable
 	} from '$lib/version';
 	import { validateConnection, HandleId, createVfsMountHandleId } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
@@ -299,15 +299,29 @@
 		const nodeData = nodeStore.get(id);
 		if (!nodeData) return;
 		
-		// restoreSnapshot works with Versionable data (StudioNodeData implements Versionable)
-		const restored = await restoreSnapshot(nodeData, snapshotRef);
-		if (restored) {
-			// Update nodeStore with restored data
-			nodeStore.set(id, restored);
-			console.log('[Studio] Restored snapshot for node:', id, snapshotRef);
-		} else {
+		// Get historical snapshot
+		const snapshot = await nodeStore.getVersion(snapshotRef.id, snapshotRef.commit);
+		if (!snapshot) {
 			console.warn('[Studio] Failed to restore snapshot for node:', id, snapshotRef);
+			return;
 		}
+
+		// Store current version as snapshot before restoring
+		await nodeStore.saveSnapshot(nodeData.id);
+
+		const currentRef: NodeRef = {
+			id: nodeData.id,
+			commit: nodeData.commit
+		};
+
+		// Update nodeStore with restored data
+		// Use Object.assign to preserve the exact type
+		nodeStore.set(id, Object.assign({}, nodeData, {
+			content: snapshot.content,
+			commit: snapshot.commit,
+			snapshotRefs: [...nodeData.snapshotRefs, currentRef]
+		}));
+		console.log('[Studio] Restored snapshot for node:', id, snapshotRef);
 	}
 
 	// ============================================================================

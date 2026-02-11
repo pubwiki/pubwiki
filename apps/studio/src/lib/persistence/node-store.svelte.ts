@@ -15,6 +15,11 @@
  * - Historical versions accessed via async getVersion(nodeId, commit)
  * - Snapshots saved via saveSnapshot()
  * 
+ * After content-hash-realtime-update refactoring:
+ * - contentHash is tracked in real-time via VersionService
+ * - Content changes automatically mark version as dirty
+ * - Async getters for contentHash/commit guarantee freshness
+ * 
  * Reactivity Design:
  * - Uses SvelteMap from svelte/reactivity for per-key fine-grained updates
  * - map.get(nodeId) only subscribes to that specific node
@@ -26,28 +31,7 @@ import { db, type StoredNodeData, type StoredSnapshotEdge, type StoredPosition }
 import { restoreContent, type NodeType, type NodeContent } from '../types/content';
 import type { NodeRef, SnapshotEdge, SnapshotPosition } from '../version/types';
 import type { StudioNodeData } from '../types';
-
-// ============================================================================
-// Utility Functions
-// ============================================================================
-
-/**
- * Generate a content hash for version control using SHA-256
- * Returns first 16 hex characters of the hash for brevity
- * 
- * NOTE: This is the **contentHash**, not the **commit**!
- * The commit must be computed using computeNodeCommit(nodeId, parent, contentHash, type)
- * from @pubwiki/api to ensure consistency with the backend.
- */
-export async function generateContentHash(content: unknown): Promise<string> {
-  const str = typeof content === 'string' ? content : JSON.stringify(content);
-  const encoder = new TextEncoder();
-  const data = encoder.encode(str);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex.slice(0, 16);
-}
+import { versionService } from '../version/version-service.svelte';
 
 // ============================================================================
 // Types
@@ -101,6 +85,29 @@ class NodeStore {
   // Reactive modification counter - increments whenever any node is modified
   // Components can use $derived to react to changes
   private _modificationCount = $state(0);
+  
+  constructor() {
+    // Inject callbacks into VersionService
+    versionService.setCallbacks(
+      (nodeId, updates) => this.applyVersionUpdates(nodeId, updates),
+      (nodeId) => this.data.get(nodeId)
+    );
+  }
+  
+  /**
+   * Apply version updates from VersionService.
+   * Internal method, does not trigger dirty marking (version already updated).
+   */
+  private applyVersionUpdates(nodeId: string, updates: Partial<StudioNodeData>): void {
+    const current = this.data.get(nodeId);
+    if (!current) return;
+    
+    const updated = { ...current, ...updates } as StudioNodeData;
+    this.data.set(nodeId, updated);
+    this.dirty.add(nodeId);
+    this.notifyNode(nodeId);
+    // Note: scheduleSave() not called here - existing save mechanism handles it
+  }
   
   /**
    * Get the current modification count (reactive)
@@ -237,41 +244,67 @@ class NodeStore {
     return nodeData;
   }
   
+  // ============================================================================
+  // Version Management (via VersionService)
+  // ============================================================================
+  
   /**
-   * Save a snapshot of node data to the snapshots table
+   * Get node's contentHash (guaranteed up-to-date).
    * 
-   * @param nodeData - The node data to snapshot
+   * If content has changed since last sync, this will compute and return
+   * the new contentHash. Use this instead of directly accessing node.contentHash
+   * when you need the authoritative value.
+   */
+  async getContentHash(nodeId: string): Promise<string | undefined> {
+    if (!this.data.has(nodeId)) return undefined;
+    return versionService.getContentHash(nodeId);
+  }
+  
+  /**
+   * Get node's commit (guaranteed up-to-date).
+   * 
+   * Ensures contentHash is up-to-date first, then returns the commit.
+   * Use this instead of directly accessing node.commit when you need
+   * the authoritative value.
+   */
+  async getCommit(nodeId: string): Promise<string | undefined> {
+    if (!this.data.has(nodeId)) return undefined;
+    return versionService.getCommit(nodeId);
+  }
+  
+  /**
+   * Ensure all specified nodes have up-to-date versions.
+   * 
+   * Used by operations that need accurate version info for multiple nodes,
+   * like prepareForGeneration() or publish().
+   */
+  async ensureVersionsSynced(nodeIds: string[]): Promise<void> {
+    await versionService.ensureSynced(nodeIds);
+  }
+  
+  /**
+   * Save a snapshot of node data to the snapshots table.
+   * 
+   * Automatically ensures contentHash/commit are up-to-date before saving.
+   * 
+   * @param nodeId - The node ID to snapshot
    * @param options - Optional position and incoming edges to save with snapshot
    */
   async saveSnapshot(
-    nodeData: StudioNodeData,
+    nodeId: string,
     options?: {
       position?: SnapshotPosition;
       incomingEdges?: SnapshotEdge[];
     }
   ): Promise<void> {
-    const stored: StoredNodeData = {
-      projectId: '',  // Snapshots are global, not project-specific
-      nodeId: nodeData.id,
-      commit: nodeData.commit,
-      contentHash: nodeData.contentHash,
-      type: nodeData.type,
-      name: nodeData.name,
-      parent: nodeData.parent,
-      content: nodeData.content.toJSON(),
-      timestamp: Date.now(),
-      incomingEdges: options?.incomingEdges?.map(e => ({
-        source: e.source,
-        sourceHandle: e.sourceHandle,
-        targetHandle: e.targetHandle
-      })),
-      position: options?.position
-    };
-    await db.snapshots.put(stored);
+    await versionService.saveSnapshot(nodeId, options);
     
-    // Also update version cache
-    const cacheKey = `${nodeData.id}:${nodeData.commit}`;
-    this.versionCache.set(cacheKey, nodeData);
+    // Also update version cache with fresh data
+    const nodeData = this.data.get(nodeId);
+    if (nodeData) {
+      const cacheKey = `${nodeData.id}:${nodeData.commit}`;
+      this.versionCache.set(cacheKey, nodeData);
+    }
   }
   
   /**
@@ -397,12 +430,20 @@ class NodeStore {
       this.updateNameIndex(nodeId, current.name, updated.name);
     }
     
+    // Detect content change (reference comparison)
+    const contentChanged = updated.content !== current.content;
+    
     this.data.set(nodeId, updated);
     this.dirty.add(nodeId);
     // Notify only this node's subscribers
     this.notifyNode(nodeId);
     this.notifyModification();
     this.scheduleSave();
+    
+    // If content changed, mark version as dirty
+    if (contentChanged) {
+      versionService.markDirty(nodeId);
+    }
   }
   
   /**
@@ -419,12 +460,20 @@ class NodeStore {
       this.updateNameIndex(nodeId, existing?.name, data.name);
     }
     
+    // Detect content change
+    const contentChanged = !existing || existing.content !== data.content;
+    
     this.data.set(nodeId, data);
     this.dirty.add(nodeId);
     // Notify this node's subscribers
     this.notifyNode(nodeId);
     this.notifyModification();
     this.scheduleSave();
+    
+    // If content changed, mark version as dirty
+    if (contentChanged) {
+      versionService.markDirty(nodeId);
+    }
   }
   
   /**
@@ -601,6 +650,9 @@ class NodeStore {
     this.versionCache.clear();
     this.projectId = '';
     this.initialized = false;
+    
+    // Clean up version service state
+    versionService.dispose();
   }
 }
 

@@ -21,14 +21,12 @@ import { createGeneratedNodeData, createVFSNodeData } from '$lib/types';
 import { 
 	HandleId
 } from '$lib/graph';
-import { prepareForGeneration, syncNode, getIncomingEdges } from '$lib/version';
+import { prepareForGeneration, type SnapshotEdge } from '$lib/version';
 import { positionNewNodesFromSources } from '$lib/graph';
 import { getNodeVfs } from '$lib/vfs';
 import { getVfsController } from '../vfs/controller.svelte';
 import { Vfs } from '@pubwiki/vfs';
 import { generateBlockId, blocksToContent } from '@pubwiki/chat';
-import { generateContentHash } from '$lib/version';
-import { computeNodeCommit } from '@pubwiki/api';
 import { 
 	createPubChat, 
 	streamGeneration, 
@@ -37,6 +35,23 @@ import {
 	type GenerationConfig
 } from '../generated/controller.svelte';
 import { nodeStore, layoutStore } from '$lib/persistence';
+
+// ============================================================================
+// Edge Helper Functions (local)
+// ============================================================================
+
+/**
+ * Extract incoming edges for a node, converting to SnapshotEdge format
+ */
+function getIncomingEdges(nodeId: string, edges: Edge[]): SnapshotEdge[] {
+	return edges
+		.filter(e => e.target === nodeId)
+		.map(e => ({
+			source: e.source,
+			sourceHandle: e.sourceHandle,
+			targetHandle: e.targetHandle
+		}));
+}
 
 
 // ============================================================================
@@ -490,35 +505,17 @@ export async function generate(
 				return [...updatedBlocks, resultBlock];
 			});
 		},
-		onDone: async (nodeId, _finalContent, _finalCommit) => {
+		onDone: async (nodeId, _finalContent) => {
 			// Notify streaming complete
 			notifyStreamingChange(nodeId, false);
 			
-			// Get the current blocks and compute commit hash
-			const updatedData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
-			const currentBlocks = updatedData?.content?.blocks || [];
-			const contentText = blocksToContent(currentBlocks);
-			const contentHash = await generateContentHash(contentText);
-			const commit = await computeNodeCommit(nodeId, updatedData?.parent ?? null, contentHash, 'GENERATED');
-			
-			// Update commit and contentHash
-			const finalData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
-			if (finalData) {
-				nodeStore.update(nodeId, (data) => ({
-					...data,
-					commit,
-					contentHash
-				}));
-				
-				// Save snapshot with incoming edge information
-				// The incoming edge is from the input node to this generated node
-				const dataWithCommit = nodeStore.get(nodeId) as GeneratedNodeData;
-				const incomingEdges = getIncomingEdges(nodeId, [newEdge]);
-				await nodeStore.saveSnapshot(dataWithCommit, { 
-					incomingEdges, 
-					position 
-				});
-			}
+			// Save snapshot with incoming edge information
+			// saveSnapshot automatically ensures version is up-to-date
+			const incomingEdges = getIncomingEdges(nodeId, [newEdge]);
+			await nodeStore.saveSnapshot(nodeId, { 
+				incomingEdges, 
+				position 
+			});
 			
 			// Handle pending VFS: cleanup if not shown, commit if shown
 			if (pendingVfs) {

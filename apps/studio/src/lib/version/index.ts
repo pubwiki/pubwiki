@@ -4,10 +4,10 @@
  * Unified version control system for studio nodes.
  * Provides version tracking, snapshot management, and preview capabilities.
  * 
- * After version-store-unification:
- * - snapshotStore removed, version access through nodeStore
- * - generateContentHash in node-store.svelte computes content hash
- * - Actual commit must be computed using computeNodeCommit from @pubwiki/api
+ * After content-hash-realtime-update refactoring:
+ * - VersionService class handles dirty tracking and contentHash computation
+ * - syncNode removed - version tracking is implicit and real-time
+ * - computeContentHash from @pubwiki/api is the single source of truth
  */
 
 // Types
@@ -29,21 +29,8 @@ export {
 	getVersionHandler
 } from './types'
 
-// Re-export hash function from node-store
-export { generateContentHash } from '../persistence/node-store.svelte'
-
-// Version Service
-export {
-	syncNode,
-	restoreSnapshot,
-	hasVersionHistory,
-	getVersionCount,
-	getNodeSnapshots,
-	getIncomingEdges,
-	rebuildHistoricalTree,
-	isOldVersionEdge,
-	styleEdgesForVersions
-} from './version-service'
+// VersionService (dirty tracking, contentHash management, snapshot storage)
+export { VersionService, versionService } from './version-service.svelte'
 
 // Preview Controller
 export {

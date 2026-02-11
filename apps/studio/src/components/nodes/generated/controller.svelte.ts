@@ -18,8 +18,7 @@ import type {
 import type { FlowNodeData } from '$lib/types/flow';
 import type { GeneratedContent, InputContent } from '$lib/types';
 import type { MessageBlock } from '@pubwiki/chat';
-import { generateContentHash, registerVersionHandler, type NodeRef } from '$lib/version';
-import { computeNodeCommit } from '@pubwiki/api';
+import { registerVersionHandler, type NodeRef } from '$lib/version';
 import { resolvePromptContentFromRefs } from '$lib/graph';
 import { nodeStore, layoutStore } from '$lib/persistence';
 import { getVfsController } from '../vfs/controller.svelte';
@@ -143,7 +142,7 @@ export interface StreamGenerationCallbacks {
 	onToken: (nodeId: string, accumulatedContent: string) => void;
 	onToolCall: (nodeId: string, toolCallId: string, name: string, args: unknown) => void;
 	onToolResult: (nodeId: string, toolCallId: string, result: unknown) => void;
-	onDone: (nodeId: string, finalContent: string, commit: string) => void;
+	onDone: (nodeId: string, finalContent: string) => void;
 	onError: (nodeId: string, error: Error) => void;
 }
 
@@ -279,9 +278,7 @@ export async function streamGeneration(
 			} else if (event.type === 'tool_result') {
 				callbacks.onToolResult(nodeId, event.id, event.result);
 			} else if (event.type === 'done') {
-				// Note: finalCommit here is just contentHash, actual commit will be computed later
-				const finalContentHash = await generateContentHash(accumulatedContent);
-				callbacks.onDone(nodeId, accumulatedContent, finalContentHash);
+				callbacks.onDone(nodeId, accumulatedContent);
 			} else if (event.type === 'error') {
 				console.error('Generation error:', event.error);
 				callbacks.onError(nodeId, event.error);
@@ -513,22 +510,12 @@ export async function regenerate(
 				return [...updatedBlocks, resultBlock];
 			});
 		},
-		onDone: async (nodeId, _finalContent, _finalCommit) => {
+		onDone: async (nodeId, _finalContent) => {
 			// Notify streaming complete
 			notifyStreamingChange(nodeId, false);
 			
-			// Compute and update commit hash
-			const updatedData = nodeStore.get(nodeId) as GeneratedNodeData | undefined;
-			if (updatedData && updatedData.type === 'GENERATED') {
-				const blocksJson = JSON.stringify(updatedData.content.blocks || []);
-				const contentHash = await generateContentHash(blocksJson);
-				const commit = await computeNodeCommit(nodeId, updatedData.parent, contentHash, 'GENERATED');
-				nodeStore.update(nodeId, (data) => ({
-					...data,
-					commit,
-					contentHash
-				}));
-			}
+			// Version will be computed automatically by VersionService debounce
+			// No manual sync needed - getContentHash() will ensure freshness when needed
 			
 			callbacks.onComplete?.();
 		},

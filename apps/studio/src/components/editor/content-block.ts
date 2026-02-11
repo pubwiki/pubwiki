@@ -8,7 +8,7 @@
  * A text block containing plain text
  */
 export interface TextBlock {
-  type: 'text';
+  type: 'TextBlock';
   value: string;
 }
 
@@ -16,7 +16,7 @@ export interface TextBlock {
  * A reftag block representing an @reference
  */
 export interface RefTagBlock {
-  type: 'reftag';
+  type: 'RefTagBlock';
   name: string;
 }
 
@@ -30,7 +30,7 @@ export type ContentBlock = TextBlock | RefTagBlock;
  */
 export function blocksToText(blocks: ContentBlock[]): string {
   return blocks.map(block => {
-    if (block.type === 'text') {
+    if (block.type === 'TextBlock') {
       return block.value;
     } else {
       return `@${block.name}`;
@@ -43,7 +43,7 @@ export function blocksToText(blocks: ContentBlock[]): string {
  */
 export function getRefTagNamesFromBlocks(blocks: ContentBlock[]): string[] {
   const names = blocks
-    .filter((b): b is RefTagBlock => b.type === 'reftag')
+    .filter((b): b is RefTagBlock => b.type === 'RefTagBlock')
     .map(b => b.name);
   return [...new Set(names)];
 }
@@ -63,16 +63,16 @@ export function textToBlocks(text: string): ContentBlock[] {
   while ((match = REFTAG_PATTERN.exec(text)) !== null) {
     // Add text before reftag
     if (match.index > lastIndex) {
-      blocks.push({ type: 'text', value: text.slice(lastIndex, match.index) });
+      blocks.push({ type: 'TextBlock', value: text.slice(lastIndex, match.index) });
     }
     // Add reftag
-    blocks.push({ type: 'reftag', name: match[1] });
+    blocks.push({ type: 'RefTagBlock', name: match[1] });
     lastIndex = match.index + match[0].length;
   }
   
   // Add remaining text
   if (lastIndex < text.length) {
-    blocks.push({ type: 'text', value: text.slice(lastIndex) });
+    blocks.push({ type: 'TextBlock', value: text.slice(lastIndex) });
   }
   
   return blocks;

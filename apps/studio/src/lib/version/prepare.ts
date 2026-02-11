@@ -3,16 +3,18 @@
  * 
  * Handles version preparation for content generation.
  * Core version control functionality is in the version module.
+ * 
+ * After content-hash-realtime-update refactoring:
+ * - No longer calls syncNode (version is tracked in real-time)
+ * - Uses ensureVersionsSynced to ensure all involved nodes are up-to-date
+ * - Directly uses node.commit as ref (already up-to-date)
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
-import { 
-  syncNode,
-  type NodeRef,
-  type HistoricalTreeResult
-} from './index';
+import type { NodeRef, HistoricalTreeResult } from './types';
+import { nodeStore } from '../persistence/node-store.svelte';
 import { 
   resolvePromptContent, 
   getInputTagConnections,
@@ -106,41 +108,31 @@ export async function prepareForGeneration(
   };
 
   const allInvolvedPromptIds = collectAllInvolvedNodes(parentPromptIds);
+  
+  // All involved node IDs (input + all prompts)
+  const allInvolvedIds = [inputNodeId, ...allInvolvedPromptIds];
 
-  // Build nodes with data for syncing
+  // Ensure all involved nodes' versions are up-to-date (contentHash/commit)
+  await nodeStore.ensureVersionsSynced(allInvolvedIds);
+
+  // Build nodes with fresh data from nodeStore
   const nodesWithData: Node<StudioNodeData>[] = nodes
     .map(n => {
-      const data = getNodeData(n.id);
+      const data = nodeStore.get(n.id);
       if (!data) return null;
       return { ...n, data } as Node<StudioNodeData>;
     })
     .filter((n): n is Node<StudioNodeData> => n !== null);
 
-  // Sync all involved nodes: save snapshots AND update commits in one step
-  let updatedNodes = await Promise.all(nodesWithData.map(async n => {
-    // Process input and all involved prompt nodes
-    if (n.id !== inputNodeId && !allInvolvedPromptIds.includes(n.id)) {
-      return n;
-    }
-
-    // Sync the node: saves snapshot and updates commit if content changed
-    const synced = await syncNode(n, edges);
-    if (synced !== n.data) {
-      return { ...n, data: synced };
-    }
-    
-    return n;
-  }));
-
-  // Step 2: Capture refs for direct prompts
-  const freshInputNode = updatedNodes.find(n => n.id === inputNodeId)!;
-  const freshPromptNodes = updatedNodes.filter(
+  // Capture refs for input and direct prompts (commits are now up-to-date)
+  const freshInputData = nodeStore.get(inputNodeId)!;
+  const freshPromptNodes = nodesWithData.filter(
     n => parentPromptIds.includes(n.id) && n.data.type === 'PROMPT'
   );
 
   const inputRef: NodeRef = { 
     id: inputNodeId, 
-    commit: freshInputNode.data.commit 
+    commit: freshInputData.commit 
   };
   
   const promptRefs: NodeRef[] = freshPromptNodes.map(n => ({ 
@@ -160,7 +152,7 @@ export async function prepareForGeneration(
     if (systemPromptNode) {
       const resolved = resolvePromptContent(
         systemPromptNode.id, 
-        updatedNodes, 
+        nodesWithData, 
         edges, 
         new Set(), 
         []
@@ -173,7 +165,7 @@ export async function prepareForGeneration(
   // Step 4: Resolve tags in input content (replaces @tagname with connected prompt content)
   const inputResolved = resolveInputContent(
     inputNodeId,
-    updatedNodes,
+    nodesWithData,
     edges,
     new Set(),
     allPromptRefs
@@ -199,7 +191,7 @@ export async function prepareForGeneration(
   });
 
   return {
-    nodes: updatedNodes,
+    nodes: nodesWithData,
     inputRef,
     promptRefs,
     indirectPromptRefs: uniqueIndirectRefs,

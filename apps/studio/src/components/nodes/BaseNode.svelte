@@ -17,8 +17,22 @@
 	import type { FlowNodeData } from '$lib/types/flow';
 	import { nodeStore } from '$lib/persistence';
 	import type { StudioNodeData } from '$lib/types';
-	import { hasVersionHistory, getVersionCount, type NodeRef } from '$lib/version';
+	import type { NodeRef, Versionable } from '$lib/version';
 	import { getStudioContext } from '$lib/state';
+
+	// ============================================================================
+	// Version Helper Functions (local)
+	// ============================================================================
+
+	/** Check if a node has version history */
+	function hasVersionHistory(nodeData: Versionable): boolean {
+		return nodeData.snapshotRefs.length > 0;
+	}
+
+	/** Get the number of versions (current + snapshots) */
+	function getVersionCount(nodeData: Versionable): number {
+		return nodeData.snapshotRefs.length + 1;
+	}
 	import VersionGallery from '../VersionGallery.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -165,9 +179,18 @@
 		if (ctx.editingNameNodeId === id) {
 			editingNameValue = nodeData?.name || '';
 			nameError = null;
-			setTimeout(() => nameInputRef?.focus(), 0);
 		}
 	});
+
+	// Svelte action for autofocus when input mounts
+	function autofocusAction(node: HTMLInputElement) {
+		console.log('[BaseNode] autofocusAction called for node:', id);
+		console.log('[BaseNode] input element:', node);
+		console.log('[BaseNode] document.activeElement before focus:', document.activeElement);
+		node.focus();
+		console.log('[BaseNode] document.activeElement after focus:', document.activeElement);
+		console.log('[BaseNode] node === document.activeElement:', node === document.activeElement);
+	}
 
 	// ============================================================================
 	// Event Handlers
@@ -224,6 +247,10 @@
 		ctx.setEditingNameNodeId(null);
 		editingNameValue = '';
 		nameError = null;
+	}
+
+	function handleNameDoubleClick() {
+		ctx.setEditingNameNodeId(id);
 	}
 
 	function handleWheel(e: WheelEvent) {
@@ -316,22 +343,28 @@
 			</div>
 			
 			<!-- Center: Node Name -->
-			<div class="flex-1 min-w-0 flex flex-col items-center">
+			<div class="flex-1 min-w-0 flex flex-col items-center h-5">
 				{#if isEditingName}
 					<input
 						bind:this={nameInputRef}
+						use:autofocusAction
 						type="text"
-						class="nodrag w-full max-w-32 px-1.5 py-0.5 text-xs bg-white/90 text-gray-800 rounded border-none outline-none text-center {nameError ? 'ring-2 ring-red-500' : ''}"
+						class="nodrag w-full max-w-32 h-5 px-1.5 text-xs leading-5 bg-white/90 text-gray-800 rounded border-none outline-none text-center {nameError ? 'ring-2 ring-red-500' : ''}"
 						placeholder={m.studio_node_name_placeholder()}
 						bind:value={editingNameValue}
 						onkeydown={handleNameInputKeydown}
 						onblur={saveNameEdit}
 					/>
 					{#if nameError}
-						<span class="text-xs text-red-200 mt-0.5 max-w-40 truncate" title={nameError}>{nameError}</span>
+						<span class="absolute top-full left-1/2 -translate-x-1/2 text-xs text-red-200 mt-0.5 max-w-40 truncate whitespace-nowrap" title={nameError}>{nameError}</span>
 					{/if}
 				{:else if nodeData?.name}
-					<span class="text-xs text-white/90 truncate max-w-32" title={nodeData.name}>
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<span 
+						class="nodrag h-5 leading-5 text-xs text-white/90 truncate max-w-32 cursor-text hover:bg-white/10 px-1.5 rounded transition-colors"
+						title={nodeData.name}
+						ondblclick={handleNameDoubleClick}
+					>
 						{nodeData.name}
 					</span>
 				{/if}

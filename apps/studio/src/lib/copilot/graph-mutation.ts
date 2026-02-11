@@ -273,7 +273,7 @@ export function createGraphMutation(
       } else if (data.type === 'INPUT' && content.text !== undefined) {
         const { InputContent } = await import('$lib/types');
         const inputData = data as InputNodeData;
-        const newContent = new InputContent([{ type: 'text', value: content.text! }]);
+        const newContent = new InputContent([{ type: 'TextBlock', value: content.text! }]);
         // Preserve generationConfig from the existing content
         if (inputData.content?.generationConfig) {
           newContent.generationConfig = inputData.content.generationConfig;

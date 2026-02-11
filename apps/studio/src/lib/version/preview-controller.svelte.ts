@@ -16,8 +16,9 @@ import type { StudioNodeData } from '../types'
 import type { FlowNodeData } from '../types/flow'
 import { nodeStore } from '../persistence'
 import { getVersionHandler } from './types'
-import { rebuildHistoricalTree } from './version-service'
 import { getStudioContext } from '../state'
+import { db } from '../persistence/db'
+import { computeContentHash, type ArtifactNodeContent } from '@pubwiki/api'
 
 // ============================================================================
 // Helper Functions
@@ -32,6 +33,158 @@ function getVersionRefsFromRegistry(data: StudioNodeData | undefined): NodeRef[]
 	return handler?.getVersionRefs?.(data as StudioNodeData)
 }
 
+/**
+ * Rebuild the historical dependency tree from version references.
+ * 
+ * This function:
+ * 1. Finds all nodes referenced by the version refs
+ * 2. For existing nodes with different commits, creates nodeOverrides with historical data
+ * 3. For deleted nodes, creates phantom nodes from snapshots
+ * 4. Reconstructs historical edges from snapshots
+ */
+async function rebuildHistoricalTree<TData extends Versionable>(
+	versionRefs: NodeRef[],
+	refHolderNodeId: string,
+	refHolderPosition: { x: number; y: number } | undefined,
+	allNodes: Node<FlowNodeData>[],
+	currentEdges: Edge[],
+	getNodeData: (nodeId: string) => TData | undefined
+): Promise<HistoricalTreeResult<TData>> {
+	const nodeOverrides = new Map<string, TData>()
+	const phantomNodes: HistoricalTreeResult<TData>['phantomNodes'] = []
+	const historicalEdges: HistoricalTreeResult<TData>['historicalEdges'] = []
+	const usedNodeIds = new Set<string>()
+
+	// First pass: identify phantom nodes (deleted nodes)
+	const phantomNodeIds = new Set<string>()
+	for (const ref of versionRefs) {
+		const existingNode = allNodes.find(n => n.id === ref.id)
+		if (!existingNode) {
+			phantomNodeIds.add(ref.id)
+		}
+	}
+
+	// Second pass: process each ref (async to fetch historical versions)
+	for (const ref of versionRefs) {
+		const existingNode = allNodes.find(n => n.id === ref.id)
+		const snapshot = await nodeStore.getVersion(ref.id, ref.commit)
+
+		if (existingNode) {
+			// Node exists - mark as used
+			usedNodeIds.add(ref.id)
+
+			// Get business data from nodeStore via callback
+			const nodeData = getNodeData(existingNode.id)
+			
+			// Calculate current content hash to detect unsaved edits
+			const contentJson = nodeData?.content?.toJSON() as ArtifactNodeContent | undefined
+			const currentContentHash = contentJson 
+				? await computeContentHash(contentJson)
+				: nodeData?.commit
+			
+			// Check if we need to show historical version
+			if (nodeData && currentContentHash !== ref.commit && snapshot) {
+				// Create override with historical data
+				const historicalData: TData = {
+					...nodeData,
+					content: snapshot.content,
+					commit: snapshot.commit
+				}
+				nodeOverrides.set(ref.id, historicalData)
+			}
+
+			// For existing nodes, also restore incoming edges from phantom nodes
+			const rawSnapshot = await db.snapshots.get([ref.id, ref.commit])
+			if (rawSnapshot?.incomingEdges) {
+				for (const snapshotEdge of rawSnapshot.incomingEdges) {
+					// Add edge if source is a phantom node (deleted)
+					if (phantomNodeIds.has(snapshotEdge.source)) {
+						historicalEdges.push({
+							id: `historical-${snapshotEdge.source}-${ref.id}-${snapshotEdge.targetHandle || 'default'}`,
+							source: snapshotEdge.source,
+							target: ref.id,
+							sourceHandle: snapshotEdge.sourceHandle,
+							targetHandle: snapshotEdge.targetHandle
+						})
+					}
+				}
+			}
+		} else if (snapshot) {
+			// Node was deleted - create phantom node using type from snapshot
+			const nodeType = snapshot.type
+
+			const phantomData = {
+				id: ref.id,
+				name: snapshot.name,
+				type: nodeType.toUpperCase(),
+				content: snapshot.content,
+				commit: snapshot.commit,
+				snapshotRefs: [],
+				parents: []
+			} as unknown as TData
+
+			// Get position from the raw snapshot in db
+			const rawSnapshot = await db.snapshots.get([ref.id, ref.commit])
+			
+			// Use saved position from snapshot, or calculate fallback position
+			const phantomNode = {
+				id: ref.id,
+				type: nodeType,
+				position: rawSnapshot?.position ?? {
+					x: (refHolderPosition?.x ?? 0) - 400,
+					y: (refHolderPosition?.y ?? 0) + phantomNodes.length * 150
+				},
+				data: phantomData
+			}
+
+			phantomNodes.push(phantomNode)
+
+			// Add historical edges from snapshot
+			if (rawSnapshot?.incomingEdges) {
+				for (const snapshotEdge of rawSnapshot.incomingEdges) {
+					const sourceInVersionRefs = versionRefs.some(r => r.id === snapshotEdge.source)
+					if (phantomNodeIds.has(snapshotEdge.source) || sourceInVersionRefs) {
+						historicalEdges.push({
+							id: `historical-${snapshotEdge.source}-${ref.id}-${snapshotEdge.targetHandle || 'default'}`,
+							source: snapshotEdge.source,
+							target: ref.id,
+							sourceHandle: snapshotEdge.sourceHandle,
+							targetHandle: snapshotEdge.targetHandle
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Third pass: restore refHolder's incoming edges from phantom nodes
+	const refHolderData = getNodeData(refHolderNodeId)
+	
+	if (refHolderData && phantomNodeIds.size > 0) {
+		const refHolderSnapshot = await db.snapshots.get([refHolderNodeId, refHolderData.commit])
+		
+		if (refHolderSnapshot?.incomingEdges) {
+			for (const snapshotEdge of refHolderSnapshot.incomingEdges) {
+				if (phantomNodeIds.has(snapshotEdge.source)) {
+					const edgeExists = historicalEdges.some(
+						e => e.source === snapshotEdge.source && e.target === refHolderNodeId
+					)
+					if (!edgeExists) {
+						historicalEdges.push({
+							id: `historical-${snapshotEdge.source}-${refHolderNodeId}-${snapshotEdge.targetHandle || 'default'}`,
+							source: snapshotEdge.source,
+							target: refHolderNodeId,
+							sourceHandle: snapshotEdge.sourceHandle,
+							targetHandle: snapshotEdge.targetHandle
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return { nodeOverrides, phantomNodes, historicalEdges, usedNodeIds }
+}
 
 
 // ============================================================================

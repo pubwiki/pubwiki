@@ -74,19 +74,13 @@ export type {
 
 // Version module
 export {
-  generateContentHash,
-  syncNode,
-  restoreSnapshot,
-  hasVersionHistory,
-  getVersionCount,
-  getNodeSnapshots,
-  rebuildHistoricalTree,
-  styleEdgesForVersions,
   createPreviewController,
   prepareForGeneration,
   versionHandlerRegistry,
   registerVersionHandler,
-  getVersionHandler
+  getVersionHandler,
+  versionService,
+  VersionService
 } from '$lib/version';
 
 export type {

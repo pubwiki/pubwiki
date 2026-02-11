@@ -1,21 +1,14 @@
 /**
- * Version Service
+ * Version Service (Legacy)
  * 
- * Core version control logic for studio nodes.
- * Handles version synchronization, restoration, and historical tree building.
+ * Contains version control utilities that are still needed:
+ * - Historical tree building (rebuildHistoricalTree)
+ * - Snapshot restoration (restoreSnapshot)
+ * - Version query helpers (hasVersionHistory, getVersionCount)
+ * - Edge version styling
  * 
- * After the content-type refactoring:
- * - All persistent data is in node.data.content
- * - Content implements NodeContent interface with clone()/serialize() methods
- * - Commit hash is computed via content.serialize()
- * 
- * After layer separation refactoring:
- * - Flow layer (positions) is separate from business layer (node data)
- * - Business data is accessed via nodeStore or a getNodeData callback
- * 
- * After version-store-unification:
- * - Historical versions stored in nodeStore (via saveSnapshot/getVersion)
- * - snapshotStore removed - all version access through nodeStore
+ * The core VersionService class (dirty tracking, contentHash management)
+ * is now in version-service.svelte.ts
  */
 
 import type { Node, Edge } from '@xyflow/svelte'
@@ -27,11 +20,11 @@ import type {
 	HistoricalTreeResult
 } from './types'
 import type { FlowNodeData } from '../types/flow'
-import { nodeStore, generateContentHash } from '../persistence/node-store.svelte'
-import { computeNodeCommit } from '@pubwiki/api';
-import { db } from '../persistence/db'
+import { nodeStore } from '../persistence/node-store.svelte'
 import type { NodeContent } from '../types/content'
 import type { StudioNodeData } from '../types'
+import { db } from '../persistence/db'
+import { computeContentHash, type ArtifactNodeContent } from '@pubwiki/api'
 
 // ============================================================================
 // Version Sync Functions
@@ -51,109 +44,6 @@ export function getIncomingEdges(nodeId: string, edges: Edge[]): SnapshotEdge[] 
 }
 
 /**
- * Save current node state to snapshot store.
- * Call this BEFORE the user edits the content to preserve the current version.
- * 
- * Uses content.clone() for deep copy (polymorphic call).
- * 
- * @internal Used by syncNode - prefer using syncNode directly
- */
-async function saveCurrentVersion(
-	nodeData: Versionable,
-	edges?: Edge[],
-	position?: SnapshotPosition
-): Promise<void> {
-	// Only save if not already in store
-	const hasSnapshot = await nodeStore.hasSnapshot(nodeData.id, nodeData.commit)
-	if (!hasSnapshot) {
-		const incomingEdges = edges ? getIncomingEdges(nodeData.id, edges) : undefined
-		
-		// Deep clone content for snapshot using polymorphic clone()
-		const snapshotContentData = nodeData.content.clone()
-		
-		// Create a StudioNodeData for saving
-		// Type assertion needed: Versionable.content is NodeContent interface,
-		// so clone() returns NodeContent even though it uses 'this' return type.
-		// The discriminated union (StudioNodeData) requires exact type/content pairs.
-		const snapshotData: StudioNodeData = {
-			id: nodeData.id,
-			type: nodeData.type,
-			name: nodeData.name,
-			commit: nodeData.commit,
-			snapshotRefs: [],
-			parents: [],
-			content: snapshotContentData
-		} as unknown as StudioNodeData
-		
-		await nodeStore.saveSnapshot(snapshotData, { incomingEdges, position })
-	}
-}
-
-/**
- * Sync node's commit hash with its current content and save snapshot.
- * 
- * This function:
- * 1. Saves the current version to snapshot store (with edges and position)
- * 2. If content has changed, updates the commit hash
- * 
- * @param node - The full node object (including position)
-/**
- * Sync a node - detect content changes, save snapshots, and update commit hash.
- * Used as general-purpose sync hook in NodeController.onDataChange.
- * 
- * @param node - The node to sync
- * @param edges - All edges in the graph (to save incoming connections)
- */
-export async function syncNode<T extends Versionable>(
-	node: Node<T>,
-	edges: Edge[]
-): Promise<T> {
-	const nodeData = node.data
-	const position: SnapshotPosition | undefined = node.position
-		? { x: node.position.x, y: node.position.y }
-		: undefined
-
-	// Get content hash using polymorphic serialize() method
-	const currentContentHash = await generateContentHash(nodeData.content.serialize())
-	
-	// Compute what the commit should be for this content
-	const expectedCommit = await computeNodeCommit(nodeData.id, nodeData.parent, currentContentHash, nodeData.type)
-
-	// If commit matches expected commit for current content, save snapshot with current commit and return
-	if (expectedCommit === nodeData.commit) {
-		// Save current version (idempotent - won't save if already exists)
-		await saveCurrentVersion(nodeData, edges, position)
-		return nodeData
-	}
-
-	// Content has changed - the old commit doesn't match current content
-	// Save snapshot of OLD version first (before we update the commit)
-	await saveCurrentVersion(nodeData, edges, position)
-
-	// Create ref to the old version
-	const snapshotRef: NodeRef = {
-		id: nodeData.id,
-		commit: nodeData.commit
-	}
-
-	// Create updated node data with new commit matching current content
-	// Update parent to point to the old commit (version lineage)
-	const updatedNodeData: T = {
-		...nodeData,
-		commit: expectedCommit,
-		contentHash: currentContentHash,
-		parent: nodeData.commit, // Old commit becomes the parent
-		snapshotRefs: [...nodeData.snapshotRefs, snapshotRef]
-	}
-
-	// Also save snapshot with the NEW commit (current content)
-	// This ensures promptRefs can find the snapshot
-	await saveCurrentVersion(updatedNodeData, edges, position)
-
-	return updatedNodeData
-}
-
-/**
  * Restore node to a specific snapshot version.
  * 
  * Uses content.clone() for deep copy (polymorphic call).
@@ -167,23 +57,9 @@ export async function restoreSnapshot<T extends Versionable>(
 		return null
 	}
 
-	// Store current version as snapshot before restoring using clone()
-	const currentSnapshotContent = nodeData.content.clone()
-	
-	// Type assertion needed: Versionable.content is NodeContent interface,
-	// so clone() returns NodeContent even though it uses 'this' return type.
-	// The discriminated union (StudioNodeData) requires exact type/content pairs.
-	const currentSnapshotData: StudioNodeData = {
-		id: nodeData.id,
-		type: nodeData.type,
-		name: nodeData.name,
-		commit: nodeData.commit,
-		snapshotRefs: [],
-		parents: [],
-		content: currentSnapshotContent
-	} as unknown as StudioNodeData
-	
-	await nodeStore.saveSnapshot(currentSnapshotData)
+	// Store current version as snapshot before restoring
+	// saveSnapshot automatically ensures version is up-to-date
+	await nodeStore.saveSnapshot(nodeData.id)
 
 	const currentRef: NodeRef = {
 		id: nodeData.id,
@@ -300,9 +176,9 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 			
 			// Calculate current content hash to detect unsaved edits
 			// The stored commit might be stale if user edited but didn't regenerate
-			const serialized = nodeData?.content?.serialize()
-			const currentContentHash = serialized 
-				? await generateContentHash(serialized)
+			const contentJson = nodeData?.content?.toJSON() as ArtifactNodeContent | undefined
+			const currentContentHash = contentJson 
+				? await computeContentHash(contentJson)
 				: nodeData?.commit
 			
 			console.log(`[rebuildHistoricalTree] Existing node ${ref.id} commit check:`, {
@@ -310,8 +186,7 @@ export async function rebuildHistoricalTree<TData extends Versionable>(
 				currentContentHash: currentContentHash?.slice(0, 8),
 				refCommit: ref.commit.slice(0, 8),
 				needsOverride: currentContentHash !== ref.commit,
-				hasSnapshot: !!snapshot,
-				serializedContent: serialized?.slice(0, 100)
+				hasSnapshot: !!snapshot
 			})
 			
 			// Check if we need to show historical version

@@ -10,6 +10,13 @@
  * SHA-256 to derive a hex digest.
  */
 import { canonicalize } from 'json-canonicalize';
+import type { components } from './generated/openapi';
+
+/** 
+ * ArtifactNodeContent type from OpenAPI schema.
+ * This is the strongly-typed union of all possible node content structures.
+ */
+export type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 
 // ─── Internal helpers ───────────────────────────────────────────────
 
@@ -18,6 +25,25 @@ async function sha256Hex(data: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ─── Content Hash ───────────────────────────────────────────────────
+
+/**
+ * Compute content hash for a node.
+ * 
+ * IMPORTANT: This is the **single source of truth** for contentHash calculation.
+ * Both frontend and backend MUST use this function to guarantee consistency.
+ * 
+ * Uses RFC 8785 JSON Canonicalization Scheme (JCS) for deterministic serialization.
+ * 
+ * @param content - Node content object from content.toJSON() (plain JSON, without type field)
+ * @returns 16-char hex string (64 bits of SHA-256)
+ */
+export async function computeContentHash(content: ArtifactNodeContent): Promise<string> {
+  const payload = canonicalize(content);
+  const hex = await sha256Hex(payload);
+  return hex.substring(0, 16);
 }
 
 // ─── Node Version Commit ────────────────────────────────────────────
