@@ -1,9 +1,11 @@
 import { eq, and, desc, asc, count, sql } from 'drizzle-orm';
 import type { Database } from '../client';
 import { projectPosts, type ProjectPost, type NewProjectPost } from '../schema/posts';
-import { projects, projectMaintainers } from '../schema/projects';
+import { projects } from '../schema/projects';
 import { discussions, discussionReplies, type NewDiscussion } from '../schema/discussions';
 import { user } from '../schema/auth';
+import { resourceDiscoveryControl } from '../schema/discovery-control';
+import { resourceAcl } from '../schema/acl';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   PostListItem,
@@ -62,8 +64,8 @@ export class PostService {
       .select({
         id: user.id,
         username: user.username,
-        displayName: user.name,
-        avatarUrl: user.image,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
       })
       .from(user)
       .where(eq(user.id, authorId))
@@ -72,7 +74,7 @@ export class PostService {
     return result[0] ?? null;
   }
 
-  // 检查用户是否是 project 的 owner 或 maintainer
+  // 检查用户是否是 project 的 owner 或有写权限
   async isProjectMember(projectId: string, userId: string): Promise<ServiceResult<{ isOwner: boolean; isMaintainer: boolean }>> {
     try {
       // 获取 project 检查 owner
@@ -91,21 +93,25 @@ export class PostService {
 
       const isOwner = project.ownerId === userId;
 
-      // 检查是否是 maintainer
-      const maintainer = await this.db
-        .select()
-        .from(projectMaintainers)
+      // 检查用户的 ACL 权限
+      const userAcl = await this.db
+        .select({ canWrite: resourceAcl.canWrite, canManage: resourceAcl.canManage })
+        .from(resourceAcl)
         .where(and(
-          eq(projectMaintainers.projectId, projectId),
-          eq(projectMaintainers.userId, userId)
+          eq(resourceAcl.resourceType, 'project'),
+          eq(resourceAcl.resourceId, projectId),
+          eq(resourceAcl.userId, userId)
         ))
         .limit(1);
+
+      const hasWritePermission = userAcl.length > 0 && (userAcl[0].canWrite || userAcl[0].canManage);
 
       return {
         success: true,
         data: {
           isOwner,
-          isMaintainer: maintainer.length > 0,
+          // 向后兼容：有写权限等价于原来的 isMaintainer
+          isMaintainer: hasWritePermission,
         },
       };
     } catch (error) {
@@ -195,8 +201,8 @@ export class PostService {
           author: {
             id: user.id,
             username: user.username,
-            displayName: user.name,
-            avatarUrl: user.image,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
           },
         })
         .from(projectPosts)
@@ -261,8 +267,8 @@ export class PostService {
           author: {
             id: user.id,
             username: user.username,
-            displayName: user.name,
-            avatarUrl: user.image,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
           },
         })
         .from(projectPosts)
@@ -569,19 +575,27 @@ export class PostService {
   }
 
   // 获取 project 信息（用于权限检查）
-  async getProject(projectId: string): Promise<ServiceResult<{ id: string; ownerId: string; visibility: string }>> {
+  async getProject(projectId: string): Promise<ServiceResult<{ id: string; ownerId: string; isListed: boolean }>> {
     try {
-      const [project] = await this.db
+      const result = await this.db
         .select({
           id: projects.id,
           ownerId: projects.ownerId,
-          visibility: projects.visibility,
+          isListed: resourceDiscoveryControl.isListed,
         })
         .from(projects)
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'project'),
+            eq(resourceDiscoveryControl.resourceId, projects.id)
+          )
+        )
         .where(eq(projects.id, projectId))
         .limit(1);
 
-      if (!project) {
+      const row = result[0];
+      if (!row) {
         return {
           success: false,
           error: { code: 'NOT_FOUND', message: 'Project not found' },
@@ -590,7 +604,11 @@ export class PostService {
 
       return {
         success: true,
-        data: project,
+        data: {
+          id: row.id,
+          ownerId: row.ownerId,
+          isListed: row.isListed ?? false,
+        },
       };
     } catch (error) {
       console.error('Error getting project:', error);

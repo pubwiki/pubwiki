@@ -2,7 +2,7 @@ import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlit
 import { sql } from 'drizzle-orm';
 import { artifacts } from './artifacts';
 import { user } from './auth';
-import type { CollaboratorRole, VisibilityType } from './enums';
+import type { CollaboratorRole } from './enums';
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
@@ -28,6 +28,7 @@ export const artifactCollaborators = sqliteTable(
 );
 
 // collections - 用户收藏夹
+// 注意: 访问控制通过 resource_access_control 表管理 (resourceType='collection')
 export const collections = sqliteTable(
   'collections',
   {
@@ -37,14 +38,12 @@ export const collections = sqliteTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     name: text('name', { length: 100 }).notNull(),
     description: text('description'),
-    visibility: text('visibility').$type<VisibilityType>().default('PRIVATE').notNull(),
     itemCount: integer('item_count').default(0).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   },
   (table) => [
     index('idx_collections_user').on(table.userId),
-    index('idx_collections_visibility').on(table.visibility),
   ]
 );
 

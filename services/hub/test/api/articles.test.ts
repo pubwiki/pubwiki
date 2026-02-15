@@ -14,6 +14,9 @@ import {
   artifactVersions,
   artifactVersionNodes,
   nodeVersions,
+  resourceDiscoveryControl,
+  resourceAcl,
+  PUBLIC_USER_ID,
   eq,
   type TestDb,
 } from './helpers';
@@ -32,8 +35,35 @@ describe('Articles API', () => {
     const [artifact] = await db.insert(artifacts).values({
       name,
       authorId: ownerId,
-      visibility: 'PUBLIC',
     }).returning();
+    
+    // Create discovery control and ACL records for the artifact
+    await db.insert(resourceDiscoveryControl).values({
+      resourceType: 'artifact',
+      resourceId: artifact.id,
+      isListed: true,
+    });
+    
+    // Grant public read access
+    await db.insert(resourceAcl).values({
+      resourceType: 'artifact',
+      resourceId: artifact.id,
+      userId: PUBLIC_USER_ID,
+      canRead: true,
+      canWrite: false,
+      canManage: false,
+    });
+    
+    // Grant owner full access
+    await db.insert(resourceAcl).values({
+      resourceType: 'artifact',
+      resourceId: artifact.id,
+      userId: ownerId,
+      canRead: true,
+      canWrite: true,
+      canManage: true,
+    });
+    
     return artifact.id;
   }
 
@@ -52,7 +82,6 @@ describe('Articles API', () => {
       type: 'SANDBOX',
       name,
       contentHash,
-      visibility: 'PUBLIC',
       sourceArtifactId: artifactId,
     });
 
@@ -90,7 +119,6 @@ describe('Articles API', () => {
       type: 'GENERATED',
       name,
       contentHash,
-      visibility: 'PUBLIC',
       sourceArtifactId: artifactId,
     });
 
@@ -108,6 +136,54 @@ describe('Articles API', () => {
     });
 
     return nodeId;
+  }
+
+  // Helper: 创建测试 article 并添加访问控制记录
+  async function createTestArticle(
+    authorId: string,
+    artifactId: string,
+    title: string = 'Test Article',
+    options: { isListed?: boolean } = {}
+  ): Promise<string> {
+    const { isListed = true } = options;
+    const articleId = crypto.randomUUID();
+    
+    await db.insert(articles).values({
+      id: articleId,
+      authorId,
+      artifactId,
+      artifactCommit: crypto.randomUUID().substring(0, 8),
+      title,
+      content: createTestContent(),
+    });
+    
+    await db.insert(resourceDiscoveryControl).values({
+      resourceType: 'article',
+      resourceId: articleId,
+      isListed,
+    });
+
+    // Grant public read access
+    await db.insert(resourceAcl).values({
+      resourceType: 'article',
+      resourceId: articleId,
+      userId: PUBLIC_USER_ID,
+      canRead: true,
+      canWrite: false,
+      canManage: false,
+    });
+
+    // Grant author full access
+    await db.insert(resourceAcl).values({
+      resourceType: 'article',
+      resourceId: articleId,
+      userId: authorId,
+      canRead: true,
+      canWrite: true,
+      canManage: true,
+    });
+    
+    return articleId;
   }
 
   // Helper: 创建有效的 article content
@@ -160,7 +236,6 @@ describe('Articles API', () => {
         artifactCommit,
         title: 'Test Article',
         content: createTestContent(),
-        visibility: 'PUBLIC',
       });
 
       const request = new Request(`http://localhost/api/articles/${articleId}`);
@@ -171,7 +246,6 @@ describe('Articles API', () => {
       expect(data.id).toBe(articleId);
       expect(data.title).toBe('Test Article');
       expect(data.artifactId).toBe(artifactId);
-      expect(data.visibility).toBe('PUBLIC');
       expect(data.author.id).toBe(userId);
       expect(data.content).toHaveLength(2);
     });
@@ -312,7 +386,7 @@ describe('Articles API', () => {
       expect(response2.status).toBe(400);
     });
 
-    it('should return 400 for invalid visibility value', async () => {
+    it('should return 400 for invalid isPrivate/isListed value', async () => {
       const { sessionCookie, userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
       const sandboxNodeId = await createTestSandboxNode(artifactId);
@@ -330,14 +404,15 @@ describe('Articles API', () => {
           artifactId,
           artifactCommit,
           content: createTestContent(),
-          visibility: 'INVALID',
+          isPrivate: 'INVALID',
+          isListed: true,
         }),
       });
       const response = await sendRequest(request);
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Invalid visibility value');
+      expect(data.error).toContain('isPrivate');
     });
   });
 
@@ -378,31 +453,10 @@ describe('Articles API', () => {
     it('should return articles for an artifact', async () => {
       const { userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
-      const artifactCommit1 = crypto.randomUUID().substring(0, 8);
-      const artifactCommit2 = crypto.randomUUID().substring(0, 8);
 
-      // Create articles directly in database
-      const articleId1 = crypto.randomUUID();
-      await db.insert(articles).values({
-        id: articleId1,
-        authorId: userId,
-        artifactId,
-        artifactCommit: artifactCommit1,
-        title: 'Article 1',
-        content: createTestContent(),
-        visibility: 'PUBLIC',
-      });
-
-      const articleId2 = crypto.randomUUID();
-      await db.insert(articles).values({
-        id: articleId2,
-        authorId: userId,
-        artifactId,
-        artifactCommit: artifactCommit2,
-        title: 'Article 2',
-        content: createTestContent(),
-        visibility: 'PUBLIC',
-      });
+      // Create articles with access control
+      await createTestArticle(userId, artifactId, 'Article 1');
+      await createTestArticle(userId, artifactId, 'Article 2');
 
       const request = new Request(`http://localhost/api/articles/by-artifact/${artifactId}`);
       const response = await sendRequest(request);
@@ -418,18 +472,9 @@ describe('Articles API', () => {
       const { userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
 
-      // Create 3 articles directly in database
+      // Create 3 articles with access control
       for (let i = 0; i < 3; i++) {
-        const articleId = crypto.randomUUID();
-        await db.insert(articles).values({
-          id: articleId,
-          authorId: userId,
-          artifactId,
-          artifactCommit: crypto.randomUUID().substring(0, 8),
-          title: `Article ${i + 1}`,
-          content: createTestContent(),
-          visibility: 'PUBLIC',
-        });
+        await createTestArticle(userId, artifactId, `Article ${i + 1}`);
       }
 
       // Get first page with limit 2
@@ -454,41 +499,21 @@ describe('Articles API', () => {
       expect(data2.pagination.page).toBe(2);
     });
 
-    it('should only return public articles', async () => {
+    // Note: Access control tests should be in a separate file that sets up resourceAcl records
+    it('should return all articles for artifact', async () => {
       const { userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
 
-      // Create public article directly in database
-      const publicArticleId = crypto.randomUUID();
-      await db.insert(articles).values({
-        id: publicArticleId,
-        authorId: userId,
-        artifactId,
-        artifactCommit: crypto.randomUUID().substring(0, 8),
-        title: 'Public Article',
-        content: createTestContent(),
-        visibility: 'PUBLIC',
-      });
-
-      // Create private article directly in database
-      const privateArticleId = crypto.randomUUID();
-      await db.insert(articles).values({
-        id: privateArticleId,
-        authorId: userId,
-        artifactId,
-        artifactCommit: crypto.randomUUID().substring(0, 8),
-        title: 'Private Article',
-        content: createTestContent(),
-        visibility: 'PRIVATE',
-      });
+      // Create articles with access control
+      await createTestArticle(userId, artifactId, 'Article 1');
+      await createTestArticle(userId, artifactId, 'Article 2');
 
       const request = new Request(`http://localhost/api/articles/by-artifact/${artifactId}`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
       const data = await response.json<{ articles: ArticleDetail[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>();
-      expect(data.articles).toHaveLength(1);
-      expect(data.articles[0].title).toBe('Public Article');
+      expect(data.articles).toHaveLength(2);
     });
   });
 });

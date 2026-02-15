@@ -9,69 +9,33 @@ import type {
   ListDiscussionRepliesResponse,
   CreateDiscussionReplyResponse,
   DiscussionDetail,
-  DiscussionReplyItem,
-  DiscussionTargetType,
-  DiscussionCategory,
-  CreateDiscussionRequest,
-  UpdateDiscussionRequest,
   CreateDiscussionReplyRequest,
 } from '@pubwiki/api';
+import { ListDiscussionsQueryParams, ListDiscussionRepliesQueryParams, CreateDiscussionQueryParams, CreateDiscussionBody, UpdateDiscussionBody } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
+import { validateQuery, validateBody, isValidationError } from '../lib/validate';
 
 const discussionsRoute = new Hono<{ Bindings: Env }>();
-
-// 验证 targetType
-function isValidTargetType(value: string): value is DiscussionTargetType {
-  return ['ARTIFACT', 'PROJECT'].includes(value);
-}
-
-// 验证 category
-function isValidCategory(value: string): value is DiscussionCategory {
-  return ['QUESTION', 'FEEDBACK', 'BUG_REPORT', 'FEATURE_REQUEST', 'GENERAL'].includes(value);
-}
 
 // 获取讨论列表
 discussionsRoute.get('/', async (c) => {
   const db = createDb(c.env.DB);
   const discussionService = new DiscussionService(db);
 
-  const query = c.req.query();
-
-  // 验证必填参数
-  if (!query.targetType || !query.targetId) {
-    return c.json<ApiError>({ error: 'targetType and targetId are required' }, 400);
-  }
-
-  if (!isValidTargetType(query.targetType)) {
-    return c.json<ApiError>({ error: 'Invalid targetType. Must be ARTIFACT or PROJECT' }, 400);
-  }
-
-  // 验证 category（如果提供）
-  if (query.category && !isValidCategory(query.category)) {
-    return c.json<ApiError>({ error: 'Invalid category' }, 400);
-  }
-
-  // 验证排序参数
-  const validSortBy = ['createdAt', 'updatedAt', 'replyCount'];
-  const validSortOrder = ['asc', 'desc'];
-
-  if (query.sortBy && !validSortBy.includes(query.sortBy)) {
-    return c.json<ApiError>({ error: `Invalid sortBy. Must be one of: ${validSortBy.join(', ')}` }, 400);
-  }
-  if (query.sortOrder && !validSortOrder.includes(query.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListDiscussionsQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
   const params: ListDiscussionsParams = {
     target: {
-      type: query.targetType,
-      id: query.targetId,
+      type: validated.targetType,
+      id: validated.targetId,
     },
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    category: query.category as DiscussionCategory | undefined,
-    sortBy: query.sortBy as ListDiscussionsParams['sortBy'],
-    sortOrder: query.sortOrder as ListDiscussionsParams['sortOrder'],
+    page: validated.page,
+    limit: validated.limit,
+    category: validated.category,
+    sortBy: validated.sortBy,
+    sortOrder: validated.sortOrder,
   };
 
   const result = await discussionService.listDiscussions(params);
@@ -89,38 +53,18 @@ discussionsRoute.post('/', authMiddleware, async (c) => {
   const discussionService = new DiscussionService(db);
   const user = c.get('user');
 
-  const query = c.req.query();
+  // 使用 zod schema 校验查询参数
+  const validatedQuery = validateQuery(c, CreateDiscussionQueryParams, c.req.query());
+  if (isValidationError(validatedQuery)) return validatedQuery;
 
-  // 验证必填参数
-  if (!query.targetType || !query.targetId) {
-    return c.json<ApiError>({ error: 'targetType and targetId are required' }, 400);
-  }
-
-  if (!isValidTargetType(query.targetType)) {
-    return c.json<ApiError>({ error: 'Invalid targetType. Must be ARTIFACT or PROJECT' }, 400);
-  }
-
-  // 解析请求体
-  let body: CreateDiscussionRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
-
-  if (!body.content || body.content.trim().length === 0) {
-    return c.json<ApiError>({ error: 'content is required' }, 400);
-  }
-
-  // 验证 category（如果提供）
-  if (body.category && !isValidCategory(body.category)) {
-    return c.json<ApiError>({ error: 'Invalid category' }, 400);
-  }
+  // 使用 zod schema 校验请求体
+  const validatedBody = await validateBody(c, CreateDiscussionBody);
+  if (isValidationError(validatedBody)) return validatedBody;
 
   const result = await discussionService.createDiscussion(
-    { type: query.targetType, id: query.targetId },
+    { type: validatedQuery.targetType, id: validatedQuery.targetId },
     user.id,
-    body
+    validatedBody
   );
 
   if (!result.success) {
@@ -159,20 +103,11 @@ discussionsRoute.patch('/:discussionId', authMiddleware, async (c) => {
 
   const discussionId = c.req.param('discussionId');
 
-  // 解析请求体
-  let body: UpdateDiscussionRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
+  // 使用 zod schema 校验请求体
+  const validatedBody = await validateBody(c, UpdateDiscussionBody);
+  if (isValidationError(validatedBody)) return validatedBody;
 
-  // 验证 category（如果提供）
-  if (body.category && !isValidCategory(body.category)) {
-    return c.json<ApiError>({ error: 'Invalid category' }, 400);
-  }
-
-  const result = await discussionService.updateDiscussion(discussionId, user.id, body);
+  const result = await discussionService.updateDiscussion(discussionId, user.id, validatedBody);
 
   if (!result.success) {
     const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
@@ -213,19 +148,14 @@ discussionsRoute.get('/:discussionId/replies', async (c) => {
   const discussionService = new DiscussionService(db);
 
   const discussionId = c.req.param('discussionId');
-  const query = c.req.query();
 
-  // 验证排序参数
-  const validSortOrder = ['asc', 'desc'];
-  if (query.sortOrder && !validSortOrder.includes(query.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListDiscussionRepliesQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
   const params: ListRepliesParams = {
     discussionId,
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    sortOrder: query.sortOrder as ListRepliesParams['sortOrder'],
+    ...validated,
   };
 
   const result = await discussionService.listReplies(params);

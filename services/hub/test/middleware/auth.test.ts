@@ -105,7 +105,7 @@ describe('Auth Middleware', () => {
       const expiredUserId = crypto.randomUUID();
       await db.insert(user).values({
         id: expiredUserId,
-        name: 'Expired User',
+        displayName: 'Expired User',
         username: 'expireduser',
         email: 'expired@example.com',
         emailVerified: true,

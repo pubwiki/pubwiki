@@ -13,10 +13,12 @@ import {
   sendRequest,
   registerUser,
   projects,
-  projectMaintainers,
+  resourceAcl,
   projectPosts,
   discussions,
   discussionReplies,
+  resourceDiscoveryControl,
+  PUBLIC_USER_ID,
   eq,
   type TestDb,
 } from './helpers';
@@ -33,21 +35,61 @@ describe('Project Posts API', () => {
   async function createTestProject(
     ownerId: string,
     name: string,
-    visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC'
+    options: { isPrivate?: boolean; isListed?: boolean } = {}
   ): Promise<string> {
+    const { isPrivate = false, isListed = true } = options;
     const [project] = await db.insert(projects).values({
       ownerId,
       name,
       slug: name.toLowerCase().replace(/\s+/g, '-'),
       topic: `Topic for ${name}`,
-      visibility,
     }).returning();
+    
+    // Create discovery control record
+    await db.insert(resourceDiscoveryControl).values({
+      resourceType: 'project',
+      resourceId: project.id,
+      isListed,
+    });
+    
+    // Create owner ACL (always has full permissions)
+    await db.insert(resourceAcl).values({
+      resourceType: 'project',
+      resourceId: project.id,
+      userId: ownerId,
+      canRead: true,
+      canWrite: true,
+      canManage: true,
+      grantedBy: ownerId,
+    });
+    
+    // If not private, create public read ACL
+    if (!isPrivate) {
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+        grantedBy: ownerId,
+      });
+    }
+    
     return project.id;
   }
 
-  // Helper: 添加维护者
-  async function addMaintainer(projectId: string, userId: string): Promise<void> {
-    await db.insert(projectMaintainers).values({ projectId, userId });
+  // Helper: 添加协作者（通过 ACL 写权限）
+  async function addCollaborator(projectId: string, userId: string): Promise<void> {
+    await db.insert(resourceAcl).values({
+      resourceType: 'project',
+      resourceId: projectId,
+      userId,
+      canRead: true,
+      canWrite: true,
+      canManage: false,
+      grantedBy: userId,
+    });
   }
 
   describe('GET /api/projects/:projectId/posts', () => {
@@ -93,24 +135,26 @@ describe('Project Posts API', () => {
       expect(data.posts[0].content).toBe('<p>Hello World</p>');
     });
 
-    it('should require auth for private project posts', async () => {
+    it('should return 403 for private project posts without auth', async () => {
       const { userId: ownerId } = await registerUser('owner');
-      const projectId = await createTestProject(ownerId, 'Private Project', 'PRIVATE');
+      const projectId = await createTestProject(ownerId, 'Private Project', { isPrivate: true, isListed: false });
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`);
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(401);
+      // Private resources return 403, not 401
+      expect(response.status).toBe(403);
     });
 
-    it('should require auth for unlisted project posts', async () => {
+    it('should return posts for unlisted project (unlisted but not private)', async () => {
       const { userId: ownerId } = await registerUser('owner');
-      const projectId = await createTestProject(ownerId, 'Unlisted Project', 'UNLISTED');
+      const projectId = await createTestProject(ownerId, 'Unlisted Project', { isPrivate: false, isListed: false });
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`);
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(401);
+      // Unlisted but not private projects are publicly accessible
+      expect(response.status).toBe(200);
     });
 
     it('should return 404 for non-existent project', async () => {
@@ -179,21 +223,21 @@ describe('Project Posts API', () => {
       expect(data.post.discussionId).toBeDefined();
     });
 
-    it('should create a post as maintainer', async () => {
+    it('should create a post as collaborator with write permission', async () => {
       const { userId: ownerId } = await registerUser('owner');
-      const { sessionCookie: maintainerCookie, userId: maintainerId } = await registerUser('maintainer');
+      const { sessionCookie: collaboratorCookie, userId: collaboratorId } = await registerUser('collaborator');
       const projectId = await createTestProject(ownerId, 'Test Project');
-      await addMaintainer(projectId, maintainerId);
+      await addCollaborator(projectId, collaboratorId);
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Cookie: maintainerCookie,
+          Cookie: collaboratorCookie,
         },
         body: JSON.stringify({
-          title: 'Maintainer Post',
-          content: '<p>From maintainer</p>',
+          title: 'Collaborator Post',
+          content: '<p>From collaborator</p>',
         }),
       });
       const response = await sendRequest(request);
@@ -485,7 +529,7 @@ describe('Project Posts API', () => {
       const { sessionCookie: ownerCookie, userId: ownerId } = await registerUser('owner');
       const { sessionCookie: maintainerCookie, userId: maintainerId } = await registerUser('maintainer');
       const projectId = await createTestProject(ownerId, 'Test Project');
-      await addMaintainer(projectId, maintainerId);
+      await addCollaborator(projectId, maintainerId);
 
       // Owner 创建 post
       const createResponse = await sendRequest(new Request(`http://localhost/api/projects/${projectId}/posts`, {

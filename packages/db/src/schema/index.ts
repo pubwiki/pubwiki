@@ -17,3 +17,11 @@ export * from './articles';
 export * from './node-versions';
 export * from './node-contents';
 export * from './artifact-version-graph';
+
+// Access control tables
+export * from './access-tokens';
+export * from './article-refs';
+
+// ACL - New access control model
+export * from './discovery-control';
+export * from './acl';

@@ -2,7 +2,9 @@ import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, SaveService } from '@pubwiki/db';
 import type { ApiError, Pagination } from '@pubwiki/api';
+import { ListSavesQueryParams } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
+import { validateQuery, isValidationError } from '../lib/validate';
 
 export const savesRoute = new Hono<{ Bindings: Env }>();
 
@@ -53,16 +55,15 @@ savesRoute.post('/', authMiddleware, async (c) => {
   if (!metadata.contentHash || typeof metadata.contentHash !== 'string') {
     return c.json<ApiError>({ error: 'contentHash is required and must be a string' }, 400);
   }
-  // 验证 visibility
-  if (metadata.visibility && !['PUBLIC', 'PRIVATE', 'UNLISTED'].includes(metadata.visibility as string)) {
-    return c.json<ApiError>({ error: 'Invalid visibility value' }, 400);
-  }
 
   // 获取二进制文件
   const dataFile = formData.get('data');
   if (!dataFile || !(dataFile instanceof File)) {
     return c.json<ApiError>({ error: 'data field is required and must be a binary file' }, 400);
   }
+
+  // 解析访问控制参数
+  const isListed = metadata.isListed === 'true' || metadata.isListed === true;
 
   // 创建 save 记录（saveId 由服务端计算）
   const result = await saveService.createSave({
@@ -76,7 +77,7 @@ savesRoute.post('/', authMiddleware, async (c) => {
     contentHash: metadata.contentHash as string,
     title: metadata.title as string | undefined,
     description: metadata.description as string | undefined,
-    visibility: metadata.visibility as 'PUBLIC' | 'UNLISTED' | 'PRIVATE' | undefined,
+    isListed,
   });
 
   if (!result.success) {
@@ -104,10 +105,11 @@ savesRoute.get('/', async (c) => {
   const db = createDb(c.env.DB);
   const saveService = new SaveService(db);
 
-  const query = c.req.query();
-  const stateNodeId = query.stateNodeId;
-  const stateNodeCommit = query.stateNodeCommit;
-  const saveId = query.saveId;
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListSavesQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
+
+  const { stateNodeId, stateNodeCommit, saveId, author, page, limit } = validated;
 
   const hasStateNodeParams = stateNodeId && stateNodeCommit;
   const hasSaveIdParam = !!saveId;
@@ -120,19 +122,9 @@ savesRoute.get('/', async (c) => {
     return c.json<ApiError>({ error: 'Must specify either stateNodeId+stateNodeCommit or saveId' }, 400);
   }
 
-  if (hasStateNodeParams) {
-    if (!UUID_RE.test(stateNodeId)) {
-      return c.json<ApiError>({ error: 'stateNodeId must be a valid UUID' }, 400);
-    }
-  } else {
-    if (!UUID_RE.test(saveId!)) {
-      return c.json<ApiError>({ error: 'saveId must be a valid UUID' }, 400);
-    }
-  }
-
   const listParams = hasStateNodeParams
-    ? { stateNodeId, stateNodeCommit, author: query.author || undefined, page: query.page ? parseInt(query.page, 10) : undefined, limit: query.limit ? parseInt(query.limit, 10) : undefined }
-    : { saveId: saveId!, author: query.author || undefined, page: query.page ? parseInt(query.page, 10) : undefined, limit: query.limit ? parseInt(query.limit, 10) : undefined };
+    ? { stateNodeId, stateNodeCommit, author, page, limit }
+    : { saveId: saveId!, author, page, limit };
 
   const result = await saveService.listSaves(listParams);
 

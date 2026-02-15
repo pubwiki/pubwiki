@@ -72,8 +72,8 @@ export class DiscussionService {
       .select({
         id: user.id,
         username: user.username,
-        displayName: user.name,
-        avatarUrl: user.image,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
       })
       .from(user)
       .where(eq(user.id, authorId))
@@ -187,8 +187,8 @@ export class DiscussionService {
           .select({
             id: user.id,
             username: user.username,
-            displayName: user.name,
-            avatarUrl: user.image,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
           })
           .from(user)
           .where(sql`${user.id} IN ${authorIds}`);
@@ -532,8 +532,8 @@ export class DiscussionService {
           .select({
             id: user.id,
             username: user.username,
-            displayName: user.name,
-            avatarUrl: user.image,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
           })
           .from(user)
           .where(sql`${user.id} IN ${authorIds}`);

@@ -28,6 +28,8 @@ llm-docs
 src/lib/paraglide
 project.inlang/cache/
 
+# Generated files
+packages/api/openapi.bundled.yaml
 
 target/
 dist/

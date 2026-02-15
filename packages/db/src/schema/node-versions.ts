@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
-import type { NodeType, VisibilityType } from './enums';
+import type { NodeType } from './enums';
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
@@ -20,6 +20,8 @@ const currentTimestamp = sql`(datetime('now'))`;
 //   GENERATED -> generated_contents, VFS -> vfs_contents,
 //   SANDBOX -> sandbox_contents, LOADER -> loader_contents,
 //   STATE -> state_contents
+//
+// 访问控制通过 resource_access_control 表管理 (isPrivate + isListed)
 export const nodeVersions = sqliteTable(
   'node_versions',
   {
@@ -48,7 +50,6 @@ export const nodeVersions = sqliteTable(
     // 元数据
     message: text('message'),
     tag: text('tag'),                                        // Semver tag (可选)
-    visibility: text('visibility').$type<VisibilityType>().default('PRIVATE').notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.commit] }),

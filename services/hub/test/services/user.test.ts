@@ -11,7 +11,7 @@ describe('UserService', () => {
     id?: string;
     username: string;
     email: string;
-    name?: string;
+    displayName?: string;
   }) {
     const now = new Date();
     const userId = data.id ?? crypto.randomUUID();
@@ -19,9 +19,9 @@ describe('UserService', () => {
       id: userId,
       username: data.username,
       email: data.email,
-      name: data.name ?? data.username,
+      displayName: data.displayName ?? data.username,
       emailVerified: false,
-      image: null,
+      avatarUrl: null,
       createdAt: now,
       updatedAt: now,
       displayUsername: data.username,
@@ -143,13 +143,13 @@ describe('UserService', () => {
       userId = await createTestUser({
         username: 'updateuser',
         email: 'update@example.com',
-        name: 'Original Name',
+        displayName: 'Original Name',
       });
     });
 
     it('should update user name', async () => {
       const result = await userService.updateUser(userId, {
-        name: 'New Display Name',
+        displayName: 'New Display Name',
       });
 
       expect(result.success).toBe(true);
@@ -159,7 +159,7 @@ describe('UserService', () => {
 
       // 验证数据库状态
       const dbUser = await db.select().from(user).where(eq(user.id, userId));
-      expect(dbUser[0].name).toBe('New Display Name');
+      expect(dbUser[0].displayName).toBe('New Display Name');
     });
 
     it('should update user bio', async () => {
@@ -197,7 +197,7 @@ describe('UserService', () => {
 
     it('should update user image/avatar', async () => {
       const result = await userService.updateUser(userId, {
-        image: 'https://example.com/avatar.png',
+        avatarUrl: 'https://example.com/avatar.png',
       });
 
       expect(result.success).toBe(true);
@@ -208,7 +208,7 @@ describe('UserService', () => {
 
     it('should update multiple fields at once', async () => {
       const result = await userService.updateUser(userId, {
-        name: 'Updated Name',
+        displayName: 'Updated Name',
         bio: 'Updated bio',
         website: 'https://updated.com',
         location: 'New York',
@@ -231,7 +231,7 @@ describe('UserService', () => {
       await new Promise(resolve => setTimeout(resolve, 10));
 
       await userService.updateUser(userId, {
-        name: 'New Name',
+        displayName: 'New Name',
       });
 
       const afterUpdate = await db.select().from(user).where(eq(user.id, userId));
@@ -240,7 +240,7 @@ describe('UserService', () => {
 
     it('should return error for non-existent user', async () => {
       const result = await userService.updateUser('non-existent-id', {
-        name: 'Test',
+        displayName: 'Test',
       });
 
       expect(result.success).toBe(false);

@@ -71,6 +71,20 @@
       "when": 1770466172836,
       "tag": "0009_high_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1771047403991,
+      "tag": "0010_brainy_sally_floyd",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1771065687601,
+      "tag": "0011_cooing_kat_farrell",
+      "breakpoints": true
     }
   ]
 }

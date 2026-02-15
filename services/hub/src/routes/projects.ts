@@ -2,7 +2,11 @@ import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, ProjectService, PostService, type ListProjectsParams, type ListProjectArtifactsParams, type ListPostsParams } from '@pubwiki/db';
 import type { ListProjectsResponse, ApiError, ProjectDetail, CreateProjectMetadata, CreateProjectResponse, ProjectArtifact, ProjectPageDetail, PostListItem, PostDetail, CreatePostRequest, UpdatePostRequest, ListProjectPostsResponse, CreateProjectPostResponse, GetProjectPostResponse, UpdateProjectPostResponse, DeleteProjectPostResponse } from '@pubwiki/api';
+import { ListProjectsQueryParams, CreateProjectBody, ListProjectArtifactsQueryParams, ListProjectPostsQueryParams } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
+import { resourceAccessMiddleware } from '../middleware/resource-access';
+import { checkResourceAccess, requireResourceOwner } from '../lib/access-control';
+import { validateQuery, validateBody, isValidationError } from '../lib/validate';
 
 const projectsRoute = new Hono<{ Bindings: Env }>();
 
@@ -11,29 +15,11 @@ projectsRoute.get('/', async (c) => {
   const db = createDb(c.env.DB);
   const projectService = new ProjectService(db);
 
-  // 解析查询参数
-  const query = c.req.query();
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListProjectsQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
-  const params: ListProjectsParams = {
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    topic: query.topic,
-    sortBy: query.sortBy as ListProjectsParams['sortBy'],
-    sortOrder: query.sortOrder as ListProjectsParams['sortOrder'],
-  };
-
-  // 验证排序参数
-  const validSortBy = ['createdAt', 'updatedAt'];
-  const validSortOrder = ['asc', 'desc'];
-  
-  if (params.sortBy && !validSortBy.includes(params.sortBy)) {
-    return c.json<ApiError>({ error: `Invalid sortBy value. Must be one of: ${validSortBy.join(', ')}` }, 400);
-  }
-  if (params.sortOrder && !validSortOrder.includes(params.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder value. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
-
-  const result = await projectService.listPublicProjects(params);
+  const result = await projectService.listPublicProjects(validated);
 
   if (!result.success) {
     return c.json<ApiError>({ error: result.error.message }, 500);
@@ -48,37 +34,14 @@ projectsRoute.post('/', authMiddleware, async (c) => {
   const projectService = new ProjectService(db);
   const user = c.get('user');
 
-  // 解析 JSON body
-  let metadata: CreateProjectMetadata;
-  try {
-    metadata = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
-
-  // 验证必填字段
-  if (!metadata.name || !metadata.slug || !metadata.topic) {
-    return c.json<ApiError>({ error: 'name, slug, and topic are required' }, 400);
-  }
-
-  // 验证 slug 格式
-  const slugPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-  if (!slugPattern.test(metadata.slug)) {
-    return c.json<ApiError>({ error: 'slug must be URL-friendly (lowercase letters, numbers, and hyphens only)' }, 400);
-  }
-
-  // 验证 visibility（如果提供）
-  if (metadata.visibility) {
-    const validVisibilities = ['PUBLIC', 'PRIVATE', 'UNLISTED'];
-    if (!validVisibilities.includes(metadata.visibility)) {
-      return c.json<ApiError>({ error: `Invalid visibility. Must be one of: ${validVisibilities.join(', ')}` }, 400);
-    }
-  }
+  // 使用 zod schema 校验请求体
+  const validated = await validateBody(c, CreateProjectBody);
+  if (isValidationError(validated)) return validated;
 
   // 创建 project
   const result = await projectService.createProject({
     ownerId: user.id,
-    metadata,
+    metadata: validated,
   });
 
   if (!result.success) {
@@ -98,82 +61,47 @@ projectsRoute.post('/', authMiddleware, async (c) => {
 });
 
 // 获取 project 详情
-projectsRoute.get('/:projectId', optionalAuthMiddleware, async (c) => {
+projectsRoute.get('/:projectId', resourceAccessMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const projectService = new ProjectService(db);
   const projectId = c.req.param('projectId');
-  const user = c.get('user');
 
-  // 获取 project 详情
+  // 先获取 project 详情（检查是否存在）
   const result = await projectService.getProjectDetails(projectId);
   if (!result.success) {
     if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Project not found' }, 404);
+      return c.json<ApiError>({ error: 'project not found' }, 404);
     }
     return c.json<ApiError>({ error: result.error.message }, 500);
   }
 
-  const projectDetail = result.data;
+  // 再检查权限
+  const accessError = await checkResourceAccess(c, { type: 'project', id: projectId });
+  if (accessError) return accessError;
 
-  // 权限检查
-  // PUBLIC: 所有人可访问
-  // UNLISTED: 仅注册用户可访问
-  // PRIVATE: 仅 owner 和 maintainer 可访问
-  if (projectDetail.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted project' }, 401);
-  }
-  if (projectDetail.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
-    }
-    // 检查是否是owner或maintainer
-    const isOwner = user.id === projectDetail.owner.id;
-    const isMaintainer = projectDetail.maintainers.some(m => m.id === user.id);
-    if (!isOwner && !isMaintainer) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
-    }
-  }
-
-  return c.json<ProjectDetail>(projectDetail);
+  return c.json<ProjectDetail>(result.data);
 });
 
 // 获取 project page 详情
-projectsRoute.get('/:projectId/pages/:pageId', optionalAuthMiddleware, async (c) => {
+// 获取 project page 详情
+projectsRoute.get('/:projectId/pages/:pageId', resourceAccessMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const projectService = new ProjectService(db);
   const projectId = c.req.param('projectId');
   const pageId = c.req.param('pageId');
-  const user = c.get('user');
 
-  // 获取 project 信息进行权限检查
-  const projectResult = await projectService.getProjectById(projectId);
+  // 先检查 project 是否存在
+  const projectResult = await projectService.getProjectDetails(projectId);
   if (!projectResult.success) {
     if (projectResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Project not found' }, 404);
+      return c.json<ApiError>({ error: 'project not found' }, 404);
     }
     return c.json<ApiError>({ error: projectResult.error.message }, 500);
   }
 
-  const { project } = projectResult.data;
-
-  // 权限检查
-  // PUBLIC: 所有人可访问
-  // UNLISTED: 仅注册用户可访问
-  // PRIVATE: 仅 owner 和 maintainer 可访问
-  if (project.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted project' }, 401);
-  }
-  if (project.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
-    }
-    // 检查是否是owner或maintainer
-    const isOwner = user.id === project.ownerId;
-    const isMaintainer = await projectService.isMaintainer(projectId, user.id);
-    if (!isOwner && !isMaintainer) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
-    }
-  }
+  // 再检查权限
+  const accessError = await checkResourceAccess(c, { type: 'project', id: projectId });
+  if (accessError) return accessError;
 
   // 获取 page 详情
   const pageResult = await projectService.getProjectPage(projectId, pageId);
@@ -193,34 +121,15 @@ projectsRoute.get('/:projectId/artifacts', async (c) => {
   const projectService = new ProjectService(db);
   const projectId = c.req.param('projectId');
 
-  // 解析查询参数
-  const query = c.req.query();
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListProjectArtifactsQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
+  // 处理 roleId 参数（'null' 字符串表示无角色）
   const params: ListProjectArtifactsParams = {
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    sortOrder: query.sortOrder as 'asc' | 'desc' | undefined,
+    ...validated,
+    roleId: validated.roleId === 'null' ? null : validated.roleId,
   };
-
-  // 处理 roleId 参数
-  if (query.roleId !== undefined) {
-    if (query.roleId === 'null') {
-      params.roleId = null; // 表示无角色的 artifacts
-    } else {
-      params.roleId = query.roleId;
-    }
-  }
-
-  // 处理 isOfficial 参数
-  if (query.isOfficial !== undefined) {
-    params.isOfficial = query.isOfficial === 'true';
-  }
-
-  // 验证排序参数
-  const validSortOrder = ['asc', 'desc'];
-  if (params.sortOrder && !validSortOrder.includes(params.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder value. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
 
   const result = await projectService.listProjectArtifacts(projectId, params);
 
@@ -290,60 +199,30 @@ projectsRoute.post('/:projectId/artifacts', authMiddleware, async (c) => {
 // ========== Project Posts API ==========
 
 // 获取 project 的 posts 列表
-projectsRoute.get('/:projectId/posts', optionalAuthMiddleware, async (c) => {
+projectsRoute.get('/:projectId/posts', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const projectService = new ProjectService(db);
   const postService = new PostService(db);
   const projectId = c.req.param('projectId');
-  const user = c.get('user');
 
-  // 获取 project 信息进行权限检查
-  const projectResult = await postService.getProject(projectId);
+  // 先检查 project 是否存在
+  const projectResult = await projectService.getProjectDetails(projectId);
   if (!projectResult.success) {
     if (projectResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Project not found' }, 404);
+      return c.json<ApiError>({ error: 'project not found' }, 404);
     }
     return c.json<ApiError>({ error: projectResult.error.message }, 500);
   }
 
-  const project = projectResult.data;
+  // 访问控制检查
+  const accessError = await checkResourceAccess(c, { type: 'project', id: projectId });
+  if (accessError) return accessError;
 
-  // 权限检查
-  if (project.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted project' }, 401);
-  }
-  if (project.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
-    }
-    const isOwner = user.id === project.ownerId;
-    const isMaintainer = await projectService.isMaintainer(projectId, user.id);
-    if (!isOwner && !isMaintainer) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
-    }
-  }
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListProjectPostsQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
-  // 解析查询参数
-  const query = c.req.query();
-  const params: ListPostsParams = {
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    sortBy: query.sortBy as ListPostsParams['sortBy'],
-    sortOrder: query.sortOrder as ListPostsParams['sortOrder'],
-  };
-
-  // 验证排序参数
-  const validSortBy = ['createdAt', 'updatedAt'];
-  const validSortOrder = ['asc', 'desc'];
-  
-  if (params.sortBy && !validSortBy.includes(params.sortBy)) {
-    return c.json<ApiError>({ error: `Invalid sortBy value. Must be one of: ${validSortBy.join(', ')}` }, 400);
-  }
-  if (params.sortOrder && !validSortOrder.includes(params.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder value. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
-
-  const result = await postService.listPosts(projectId, params);
+  const result = await postService.listPosts(projectId, validated);
   if (!result.success) {
     return c.json<ApiError>({ error: result.error.message }, 500);
   }
@@ -413,39 +292,15 @@ projectsRoute.post('/:projectId/posts', authMiddleware, async (c) => {
 });
 
 // 获取 post 详情
-projectsRoute.get('/:projectId/posts/:postId', optionalAuthMiddleware, async (c) => {
+projectsRoute.get('/:projectId/posts/:postId', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const db = createDb(c.env.DB);
-  const projectService = new ProjectService(db);
   const postService = new PostService(db);
   const projectId = c.req.param('projectId');
   const postId = c.req.param('postId');
-  const user = c.get('user');
 
-  // 获取 project 信息进行权限检查
-  const projectResult = await postService.getProject(projectId);
-  if (!projectResult.success) {
-    if (projectResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Project not found' }, 404);
-    }
-    return c.json<ApiError>({ error: projectResult.error.message }, 500);
-  }
-
-  const project = projectResult.data;
-
-  // 权限检查
-  if (project.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted project' }, 401);
-  }
-  if (project.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private project' }, 401);
-    }
-    const isOwner = user.id === project.ownerId;
-    const isMaintainer = await projectService.isMaintainer(projectId, user.id);
-    if (!isOwner && !isMaintainer) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this project' }, 403);
-    }
-  }
+  // 访问控制检查
+  const accessError = await checkResourceAccess(c, { type: 'project', id: projectId });
+  if (accessError) return accessError;
 
   // 获取 post 详情
   const result = await postService.getPost(projectId, postId);

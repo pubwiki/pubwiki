@@ -102,9 +102,10 @@ CreateProjectMetadata:
       description: Project 的 hashtag
     description:
       type: string
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
-      default: PUBLIC
+    isListed:
+      type: boolean
+      default: true
+      description: 是否在公开列表中可见（可发现性）
     license:
       type: string
       maxLength: 50
@@ -201,7 +202,7 @@ ProjectListItem:
     - id
     - name
     - topic
-    - visibility
+    - isListed
     - createdAt
     - updatedAt
     - owner
@@ -226,8 +227,9 @@ ProjectListItem:
         type: string
         format: uri
       description: 封面图片 URL 数组
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     createdAt:
       type: string
       format: date-time
@@ -252,17 +254,9 @@ ProjectListItem:
           type: string
           format: uri
           nullable: true
-    maintainerCount:
-      type: integer
-      description: 管理者数量
     artifactCount:
       type: integer
       description: 关联 artifact 数量
-
-UserProjectRole:
-  type: string
-  enum: [owner, maintainer]
-  description: 用户在 Project 中的角色
 
 UserProjectListItem:
   type: object
@@ -270,11 +264,10 @@ UserProjectListItem:
     - id
     - name
     - topic
-    - visibility
+    - isListed
     - createdAt
     - updatedAt
     - owner
-    - role
   properties:
     id:
       type: string
@@ -296,8 +289,9 @@ UserProjectListItem:
         type: string
         format: uri
       description: 封面图片 URL 数组
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     createdAt:
       type: string
       format: date-time
@@ -322,14 +316,9 @@ UserProjectListItem:
           type: string
           format: uri
           nullable: true
-    maintainerCount:
-      type: integer
-      description: 管理者数量
     artifactCount:
       type: integer
       description: 关联 artifact 数量
-    role:
-      $ref: './project.yaml#/UserProjectRole'
 
 ProjectArtifact:
   type: object
@@ -357,12 +346,11 @@ ProjectDetail:
     - name
     - slug
     - topic
-    - visibility
+    - isListed
     - isArchived
     - createdAt
     - updatedAt
     - owner
-    - maintainers
     - artifacts
     - roles
     - pages
@@ -389,8 +377,9 @@ ProjectDetail:
         type: string
         format: uri
       description: 封面图片 URL 数组
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     isArchived:
       type: boolean
     createdAt:
@@ -417,27 +406,6 @@ ProjectDetail:
           type: string
           format: uri
           nullable: true
-    maintainers:
-      type: array
-      description: 管理者列表
-      items:
-        type: object
-        required:
-          - id
-          - username
-        properties:
-          id:
-            type: string
-            format: uuid
-          username:
-            type: string
-          displayName:
-            type: string
-            nullable: true
-          avatarUrl:
-            type: string
-            format: uri
-            nullable: true
     artifacts:
       type: array
       description: 关联的 artifact 列表

@@ -9,10 +9,10 @@ export const user = sqliteTable(
   'user',
   {
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    name: text('name').notNull(), // displayName
+    displayName: text('displayName').notNull(),
     email: text('email').notNull().unique(),
     emailVerified: integer('email_verified', { mode: 'boolean' }).default(false).notNull(),
-    image: text('image'), // avatarUrl
+    avatarUrl: text('avatarUrl'),
     createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
     updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull(),
     // username 插件字段

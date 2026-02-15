@@ -13,7 +13,7 @@ NodeVersionRefType:
 
 NodeVersionSummary:
   type: object
-  required: [nodeId, commit, authorId, authoredAt, type, contentHash, visibility]
+  required: [nodeId, commit, authorId, authoredAt, type, contentHash, isListed]
   properties:
     nodeId:
       type: string
@@ -50,8 +50,9 @@ NodeVersionSummary:
       type: string
       nullable: true
       description: Semver tag (e.g. v1.0.0)
-    visibility:
-      $ref: '../schemas/common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
 
 NodeVersionDetail:
   allOf:

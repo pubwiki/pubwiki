@@ -4,6 +4,8 @@ import { articles, type Article, type NewArticle } from '../schema/articles';
 import { artifactVersions } from '../schema/artifacts';
 import { nodeVersions } from '../schema/node-versions';
 import { user } from '../schema/auth';
+import { resourceDiscoveryControl } from '../schema/discovery-control';
+import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArticleDetail,
@@ -31,7 +33,7 @@ export interface UpsertArticleParams {
     artifactId: string;
     artifactCommit: string;
     content: ReaderContent;
-    visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+    isListed?: boolean;
   };
 }
 
@@ -57,8 +59,8 @@ export class ArticleService {
       .select({
         id: user.id,
         username: user.username,
-        displayName: user.name,
-        avatarUrl: user.image,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
       })
       .from(user)
       .where(eq(user.id, authorId))
@@ -70,7 +72,8 @@ export class ArticleService {
   // 转换为 ArticleDetail
   private toDetail(
     article: Article,
-    author: AuthorInfo
+    author: AuthorInfo,
+    discoveryControl: { isListed: boolean }
   ): ArticleDetail {
     return {
       id: article.id,
@@ -84,7 +87,7 @@ export class ArticleService {
       },
       artifactId: article.artifactId,
       artifactCommit: article.artifactCommit,
-      visibility: article.visibility,
+      isListed: discoveryControl.isListed,
       likes: article.likes,
       collections: article.collections,
       createdAt: article.createdAt,
@@ -95,13 +98,25 @@ export class ArticleService {
   // 获取文章详情
   async getArticle(articleId: string): Promise<ServiceResult<ArticleDetail>> {
     try {
-      const [article] = await this.db
-        .select()
+      // 获取文章及其发现控制信息
+      const result = await this.db
+        .select({
+          article: articles,
+          isListed: resourceDiscoveryControl.isListed,
+        })
         .from(articles)
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'article'),
+            eq(resourceDiscoveryControl.resourceId, articles.id)
+          )
+        )
         .where(eq(articles.id, articleId))
         .limit(1);
 
-      if (!article) {
+      const row = result[0];
+      if (!row) {
         return {
           success: false,
           error: { code: 'NOT_FOUND', message: 'Article not found' },
@@ -109,7 +124,7 @@ export class ArticleService {
       }
 
       // 获取作者信息
-      const author = await this.getAuthor(article.authorId);
+      const author = await this.getAuthor(row.article.authorId);
       if (!author) {
         return {
           success: false,
@@ -119,7 +134,9 @@ export class ArticleService {
 
       return {
         success: true,
-        data: this.toDetail(article, author),
+        data: this.toDetail(row.article, author, {
+          isListed: row.isListed ?? false,
+        }),
       };
     } catch (error) {
       console.error('Failed to get article:', error);
@@ -193,6 +210,9 @@ export class ArticleService {
         .where(eq(articles.id, articleId))
         .limit(1);
 
+      // 确定发现控制设置
+      const isListed = data.isListed ?? true;     // 默认列出
+
       if (existing) {
         // 更新模式：验证 author
         if (existing.authorId !== authorId) {
@@ -210,10 +230,25 @@ export class ArticleService {
             artifactId: data.artifactId,
             artifactCommit: data.artifactCommit,
             content: data.content as ReaderContent,
-            visibility: data.visibility ?? 'PUBLIC',
             updatedAt: sql`(datetime('now'))`,
           })
           .where(eq(articles.id, articleId));
+
+        // 更新发现控制
+        await this.db
+          .insert(resourceDiscoveryControl)
+          .values({
+            resourceType: 'article',
+            resourceId: articleId,
+            isListed,
+          })
+          .onConflictDoUpdate({
+            target: [resourceDiscoveryControl.resourceType, resourceDiscoveryControl.resourceId],
+            set: {
+              isListed,
+              updatedAt: sql`(datetime('now'))`,
+            },
+          });
       } else {
         // 创建模式
         await this.db.insert(articles).values({
@@ -223,7 +258,35 @@ export class ArticleService {
           artifactId: data.artifactId,
           artifactCommit: data.artifactCommit,
           content: data.content as ReaderContent,
-          visibility: data.visibility ?? 'PUBLIC',
+        });
+
+        // 创建发现控制记录
+        await this.db.insert(resourceDiscoveryControl).values({
+          resourceType: 'article',
+          resourceId: articleId,
+          isListed,
+        });
+
+        // 创建 owner ACL（manage + write + read）
+        await this.db.insert(resourceAcl).values({
+          resourceType: 'article',
+          resourceId: articleId,
+          userId: authorId,
+          canRead: true,
+          canWrite: true,
+          canManage: true,
+          grantedBy: authorId,
+        });
+
+        // 默认创建公开读取 ACL
+        await this.db.insert(resourceAcl).values({
+          resourceType: 'article',
+          resourceId: articleId,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: authorId,
         });
       }
 
@@ -250,14 +313,21 @@ export class ArticleService {
     const offset = (validPage - 1) * validLimit;
 
     try {
-      // 获取总数
+      // 获取总数（仅列出的文章）
       const [countResult] = await this.db
         .select({ count: count() })
         .from(articles)
+        .innerJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'article'),
+            eq(resourceDiscoveryControl.resourceId, articles.id)
+          )
+        )
         .where(
           and(
             eq(articles.artifactId, artifactId),
-            eq(articles.visibility, 'PUBLIC')
+            eq(resourceDiscoveryControl.isListed, true)
           )
         );
 
@@ -266,12 +336,22 @@ export class ArticleService {
 
       // 获取文章列表
       const articleList = await this.db
-        .select()
+        .select({
+          article: articles,
+          isListed: resourceDiscoveryControl.isListed,
+        })
         .from(articles)
+        .innerJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'article'),
+            eq(resourceDiscoveryControl.resourceId, articles.id)
+          )
+        )
         .where(
           and(
             eq(articles.artifactId, artifactId),
-            eq(articles.visibility, 'PUBLIC')
+            eq(resourceDiscoveryControl.isListed, true)
           )
         )
         .orderBy(desc(articles.createdAt))
@@ -280,10 +360,12 @@ export class ArticleService {
 
       // 为每篇文章获取作者信息并转换为 ArticleDetail
       const articleDetails: ArticleDetail[] = [];
-      for (const article of articleList) {
-        const author = await this.getAuthor(article.authorId);
+      for (const row of articleList) {
+        const author = await this.getAuthor(row.article.authorId);
         if (author) {
-          articleDetails.push(this.toDetail(article, author));
+          articleDetails.push(this.toDetail(row.article, author, {
+            isListed: row.isListed ?? false,
+          }));
         }
       }
 

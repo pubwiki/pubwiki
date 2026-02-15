@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, ArtifactService, ProjectService, UserService, type ListUserArtifactsParams, type ListUserProjectsParams } from '@pubwiki/db';
-import type { GetUserArtifactsResponse, GetUserProjectsResponse, ApiError, UserProjectRole, VisibilityType } from '@pubwiki/api';
+import type { GetUserArtifactsResponse, GetUserProjectsResponse, ApiError } from '@pubwiki/api';
+import { GetUserArtifactsQueryParams, GetUserProjectsQueryParams } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware } from '../middleware/auth';
+import { validateQuery, isValidationError } from '../lib/validate';
 
 const usersRoute = new Hono<{ Bindings: Env }>();
 
@@ -20,39 +22,13 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'User not found' }, 404);
   }
 
-  // 解析查询参数
-  const query = c.req.query();
-
-  // 验证排序参数
-  const validSortBy = ['createdAt', 'updatedAt', 'viewCount', 'starCount'];
-  const validSortOrder = ['asc', 'desc'];
-  
-  if (query.sortBy && !validSortBy.includes(query.sortBy)) {
-    return c.json<ApiError>({ error: `Invalid sortBy value. Must be one of: ${validSortBy.join(', ')}` }, 400);
-  }
-  if (query.sortOrder && !validSortOrder.includes(query.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder value. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
-
-  // 确定可见性过滤
-  // - 未认证用户：只能看到 PUBLIC
-  // - 已认证用户查看他人：可以看到 PUBLIC 和 UNLISTED
-  // - 已认证用户查看自己：可以看到所有
-  let visibilityFilter: VisibilityType[];
-  if (!currentUser) {
-    visibilityFilter = ['PUBLIC'];
-  } else if (currentUser.id === userId) {
-    visibilityFilter = ['PUBLIC', 'UNLISTED', 'PRIVATE'];
-  } else {
-    visibilityFilter = ['PUBLIC', 'UNLISTED'];
-  }
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, GetUserArtifactsQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
   const params: ListUserArtifactsParams = {
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    sortBy: query.sortBy as ListUserArtifactsParams['sortBy'],
-    sortOrder: query.sortOrder as ListUserArtifactsParams['sortOrder'],
-    visibilityFilter,
+    ...validated,
+    viewerId: currentUser?.id,
   };
 
   const result = await artifactService.listUserArtifacts(userId, params);
@@ -78,46 +54,13 @@ usersRoute.get('/:userId/projects', optionalAuthMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'User not found' }, 404);
   }
 
-  // 解析查询参数
-  const query = c.req.query();
-
-  // 验证 role 参数
-  const validRoles = ['owner', 'maintainer'];
-  if (query.role && !validRoles.includes(query.role)) {
-    return c.json<ApiError>({ error: `Invalid role value. Must be one of: ${validRoles.join(', ')}` }, 400);
-  }
-
-  // 验证排序参数
-  const validSortBy = ['createdAt', 'updatedAt'];
-  const validSortOrder = ['asc', 'desc'];
-  
-  if (query.sortBy && !validSortBy.includes(query.sortBy)) {
-    return c.json<ApiError>({ error: `Invalid sortBy value. Must be one of: ${validSortBy.join(', ')}` }, 400);
-  }
-  if (query.sortOrder && !validSortOrder.includes(query.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder value. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
-
-  // 确定可见性过滤
-  // - 未认证用户：只能看到 PUBLIC
-  // - 已认证用户查看他人：可以看到 PUBLIC 和 UNLISTED
-  // - 已认证用户查看自己：可以看到所有
-  let visibilityFilter: VisibilityType[];
-  if (!currentUser) {
-    visibilityFilter = ['PUBLIC'];
-  } else if (currentUser.id === userId) {
-    visibilityFilter = ['PUBLIC', 'UNLISTED', 'PRIVATE'];
-  } else {
-    visibilityFilter = ['PUBLIC', 'UNLISTED'];
-  }
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, GetUserProjectsQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
   const params: ListUserProjectsParams = {
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    role: query.role as UserProjectRole | undefined,
-    sortBy: query.sortBy as ListUserProjectsParams['sortBy'],
-    sortOrder: query.sortOrder as ListUserProjectsParams['sortOrder'],
-    visibilityFilter,
+    ...validated,
+    viewerId: currentUser?.id,
   };
 
   const result = await projectService.listUserProjects(userId, params);

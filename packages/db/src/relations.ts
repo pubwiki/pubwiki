@@ -1,12 +1,12 @@
 import { relations } from 'drizzle-orm';
 import { user, session, account, userFollows } from './schema/auth';
 import { artifacts, artifactVersions, tags, artifactTags } from './schema/artifacts';
-import { artifactStats, artifactStars, artifactViews } from './schema/stats';
+import { artifactStats, artifactFavs, artifactViews } from './schema/stats';
 import { discussions, discussionReplies } from './schema/discussions';
 import { artifactRuns } from './schema/runs';
 import { notifications } from './schema/notifications';
 import { artifactCollaborators, collections, collectionItems } from './schema/collaboration';
-import { projects, projectRoles, projectMaintainers, projectArtifacts, projectPages } from './schema/projects';
+import { projects, projectRoles, projectArtifacts, projectPages } from './schema/projects';
 import { projectPosts } from './schema/posts';
 import { articles } from './schema/articles';
 import { nodeVersions, nodeVersionRefs } from './schema/node-versions';
@@ -19,7 +19,7 @@ export const userRelations = relations(user, ({ many }) => ({
   followers: many(userFollows, { relationName: 'following' }),
   following: many(userFollows, { relationName: 'follower' }),
   artifacts: many(artifacts),
-  stars: many(artifactStars),
+  stars: many(artifactFavs),
   views: many(artifactViews),
   discussions: many(discussions),
   replies: many(discussionReplies),
@@ -28,7 +28,6 @@ export const userRelations = relations(user, ({ many }) => ({
   collaborations: many(artifactCollaborators),
   collections: many(collections),
   ownedProjects: many(projects),
-  maintainedProjects: many(projectMaintainers),
   articles: many(articles),
   nodeVersions: many(nodeVersions),
 }));
@@ -76,7 +75,7 @@ export const artifactsRelations = relations(artifacts, ({ one, many }) => ({
   versions: many(artifactVersions),
   tags: many(artifactTags),
   stats: one(artifactStats),
-  stars: many(artifactStars),
+  stars: many(artifactFavs),
   views: many(artifactViews),
   runs: many(artifactRuns),
   collaborators: many(artifactCollaborators),
@@ -122,13 +121,13 @@ export const artifactStatsRelations = relations(artifactStats, ({ one }) => ({
 }));
 
 // Artifact stars relations
-export const artifactStarsRelations = relations(artifactStars, ({ one }) => ({
+export const artifactStarsRelations = relations(artifactFavs, ({ one }) => ({
   user: one(user, {
-    fields: [artifactStars.userId],
+    fields: [artifactFavs.userId],
     references: [user.id],
   }),
   artifact: one(artifacts, {
-    fields: [artifactStars.artifactId],
+    fields: [artifactFavs.artifactId],
     references: [artifacts.id],
   }),
 }));
@@ -239,7 +238,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
     fields: [projects.homepageId],
     references: [projectPages.id],
   }),
-  maintainers: many(projectMaintainers),
   roles: many(projectRoles),
   artifacts: many(projectArtifacts),
   pages: many(projectPages),
@@ -261,18 +259,6 @@ export const projectRolesRelations = relations(projectRoles, ({ one, many }) => 
     references: [projects.id],
   }),
   projectArtifacts: many(projectArtifacts),
-}));
-
-// Project maintainers relations
-export const projectMaintainersRelations = relations(projectMaintainers, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectMaintainers.projectId],
-    references: [projects.id],
-  }),
-  user: one(user, {
-    fields: [projectMaintainers.userId],
-    references: [user.id],
-  }),
 }));
 
 // Project artifacts relations

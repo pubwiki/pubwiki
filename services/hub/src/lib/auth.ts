@@ -42,6 +42,11 @@ export const createAuth = (env: Env) => {
       enabled: true,
     },
     user: {
+      // 字段映射：Better Auth 的 name/image 映射到我们 schema 的 displayName/avatarUrl
+      fields: {
+        name: 'displayName',
+        image: 'avatarUrl',
+      },
       additionalFields: {
         username: {
           type: 'string',

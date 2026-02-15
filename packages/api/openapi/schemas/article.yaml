@@ -72,7 +72,7 @@ ArticleDetail:
     - author
     - artifactId
     - artifactCommit
-    - visibility
+    - isListed
     - likes
     - collections
     - createdAt
@@ -96,8 +96,9 @@ ArticleDetail:
     artifactCommit:
       type: string
       description: Artifact 版本 commit hash
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     likes:
       type: integer
     collections:
@@ -132,6 +133,7 @@ UpsertArticleRequest:
       type: array
       items:
         $ref: './article.yaml#/ReaderContentBlock'
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
-      default: PUBLIC
+    isListed:
+      type: boolean
+      default: false
+      description: 是否在公开列表中可见（可发现性）

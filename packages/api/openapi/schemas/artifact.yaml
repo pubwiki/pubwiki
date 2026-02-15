@@ -61,9 +61,10 @@ CreateArtifactMetadata:
       maxLength: 100
     description:
       type: string
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
-      default: PUBLIC
+    isListed:
+      type: boolean
+      default: true
+      description: 是否在公开列表中可见（可发现性）
     thumbnailUrl:
       type: string
       format: uri
@@ -151,9 +152,10 @@ CreateSaveInput:
     description:
       type: string
       description: Save 描述
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
-      default: PRIVATE
+    isListed:
+      type: boolean
+      default: false
+      description: 是否在公开列表中可见（可发现性）
 
 ArtifactEdgeDescriptor:
   type: object
@@ -215,8 +217,9 @@ CreateArtifactNode:
     tag:
       type: string
       description: Semver 标签
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     refs:
       type: array
       description: 血统引用（主要用于 GENERATED 节点）
@@ -334,15 +337,16 @@ ArtifactLineageItem:
   required:
     - artifactId
     - name
-    - visibility
+    - isListed
   properties:
     artifactId:
       type: string
       format: uuid
     name:
       type: string
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     thumbnailUrl:
       type: string
       format: uri
@@ -371,8 +375,7 @@ ArtifactListItem:
   required:
     - id
     - name
-    - visibility
-    - isArchived
+    - isListed
     - createdAt
     - updatedAt
     - author
@@ -385,9 +388,9 @@ ArtifactListItem:
     description:
       type: string
       nullable: true
-    visibility:
-      type: string
-      enum: [PUBLIC, PRIVATE, UNLISTED]
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     thumbnailUrl:
       type: string
       format: uri
@@ -395,8 +398,6 @@ ArtifactListItem:
     license:
       type: string
       nullable: true
-    isArchived:
-      type: boolean
     createdAt:
       type: string
       format: date-time
@@ -430,9 +431,9 @@ ArtifactListItem:
       properties:
         viewCount:
           type: integer
-        starCount:
+        favCount:
           type: integer
-        forkCount:
+        refCount:
           type: integer
         downloadCount:
           type: integer
@@ -473,8 +474,9 @@ PatchArtifactRequest:
       maxLength: 100
     description:
       type: string
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     version:
       type: string
       pattern: '^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$'

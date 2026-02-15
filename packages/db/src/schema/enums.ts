@@ -1,8 +1,14 @@
 // D1 (SQLite) 不支持原生枚举类型，使用 text 字段配合 TypeScript 类型
 // 这些类型用于类型检查，实际存储为字符串
 
-// 可见性类型
+/**
+ * @deprecated 使用 resource_access_control 表中的 isPrivate + isListed 替代
+ * - PUBLIC → isPrivate=false, isListed=true
+ * - PRIVATE → isPrivate=true, isListed=false
+ * - UNLISTED → isPrivate=false, isListed=false
+ */
 export const VISIBILITY_TYPES = ['PUBLIC', 'PRIVATE', 'UNLISTED'] as const;
+/** @deprecated Use AccessControl (isPrivate + isListed) instead */
 export type VisibilityType = (typeof VISIBILITY_TYPES)[number];
 
 // 讨论分类

@@ -11,7 +11,7 @@ SaveDetail:
     - stateNodeCommit
     - sourceArtifactId
     - sourceArtifactCommit
-    - visibility
+    - isListed
     - createdAt
   properties:
     saveId:
@@ -50,8 +50,9 @@ SaveDetail:
     description:
       type: string
       nullable: true
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
     createdAt:
       type: string
       format: date-time
@@ -96,6 +97,7 @@ CreateSaveRequest:
     description:
       type: string
       description: 存档描述
-    visibility:
-      $ref: './common.yaml#/VisibilityType'
-      default: PRIVATE
+    isListed:
+      type: boolean
+      default: false
+      description: 是否在公开列表中可见（可发现性）

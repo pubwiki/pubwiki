@@ -121,10 +121,8 @@
   get:
     summary: 获取 Project 详情
     description: |
-      获取指定 Project 的详细信息，包括 owner、maintainers、artifacts、roles 和 pages。
-      - PUBLIC project: 所有人可访问
-      - UNLISTED project: 仅注册用户可访问
-      - PRIVATE project: 仅 owner 和 maintainer 可访问
+      获取指定 Project 的详细信息。
+      访问权限由 ACL 系统控制，无权访问时返回 403。
     operationId: getProjectDetail
     tags:
       - Projects
@@ -143,14 +141,8 @@
           application/json:
             schema:
               $ref: '../schemas/project.yaml#/ProjectDetail'
-      '401':
-        description: 需要认证（访问 UNLISTED project 时）
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
       '403':
-        description: 无权访问（访问 PRIVATE project 时）
+        description: 无权访问
         content:
           application/json:
             schema:
@@ -167,9 +159,7 @@
     summary: 获取 Project 页面详情
     description: |
       获取指定 Project 的特定页面详情，包括 HTML 内容。
-      - PUBLIC project: 所有人可访问
-      - UNLISTED project: 仅注册用户可访问
-      - PRIVATE project: 仅 owner 和 maintainer 可访问
+      访问权限由 ACL 系统控制，无权访问时返回 403。
     operationId: getProjectPage
     tags:
       - Projects
@@ -195,14 +185,8 @@
           application/json:
             schema:
               $ref: '../schemas/project.yaml#/ProjectPageDetail'
-      '401':
-        description: 需要认证（访问 UNLISTED project 时）
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
       '403':
-        description: 无权访问（访问 PRIVATE project 时）
+        description: 无权访问
         content:
           application/json:
             schema:
@@ -382,9 +366,7 @@
     summary: 获取 Project 的动态列表
     description: |
       获取指定 Project 的所有动态，支持分页。
-      - PUBLIC project: 所有人可访问
-      - UNLISTED project: 仅注册用户可访问
-      - PRIVATE project: 仅 owner 和 maintainer 可访问
+      访问权限由 ACL 系统控制，无权访问时返回 403。
     operationId: listProjectPosts
     tags:
       - Projects
@@ -442,14 +424,8 @@
                     $ref: '../schemas/post.yaml#/PostListItem'
                 pagination:
                   $ref: '../schemas/common.yaml#/Pagination'
-      '401':
-        description: 需要认证（访问 UNLISTED project 时）
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
       '403':
-        description: 无权访问（访问 PRIVATE project 时）
+        description: 无权访问
         content:
           application/json:
             schema:
@@ -465,7 +441,7 @@
     summary: 创建动态
     description: |
       在指定 Project 下创建新动态。需要认证。
-      仅 owner 和 maintainer 可以创建动态。
+      需要对 Project 有写入权限。
       创建动态时会同时创建一个关联的讨论。
     operationId: createProjectPost
     tags:
@@ -532,9 +508,7 @@
     summary: 获取动态详情
     description: |
       获取指定动态的详细信息，包括关联的讨论。
-      - PUBLIC project: 所有人可访问
-      - UNLISTED project: 仅注册用户可访问
-      - PRIVATE project: 仅 owner 和 maintainer 可访问
+      访问权限由 ACL 系统控制，无权访问时返回 403。
     operationId: getProjectPost
     tags:
       - Projects
@@ -560,14 +534,8 @@
           application/json:
             schema:
               $ref: '../schemas/post.yaml#/PostDetail'
-      '401':
-        description: 需要认证（访问 UNLISTED project 时）
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
       '403':
-        description: 无权访问（访问 PRIVATE project 时）
+        description: 无权访问
         content:
           application/json:
             schema:

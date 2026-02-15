@@ -6,8 +6,8 @@ export type { paths, components, operations } from './generated/openapi';
 export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from './types/content';
 
 // 共享工具函数（客户端 & 服务端通用）
-export { computeContentHash, computeNodeCommit, computeArtifactCommit, computeSaveId } from './utils.ts';
-export type { ArtifactCommitNode, ArtifactCommitEdge } from './utils.ts';
+export { computeContentHash, computeNodeCommit, computeArtifactCommit, computeSaveId } from './utils';
+export type { ArtifactCommitNode, ArtifactCommitEdge } from './utils';
 
 // 便捷类型别名
 import type { components, operations } from './generated/openapi';
@@ -19,7 +19,7 @@ export type UpdateProfileRequest = components['schemas']['UpdateProfileRequest']
 export type Tag = components['schemas']['Tag'];
 export type ArtifactListItem = components['schemas']['ArtifactListItem'];
 export type Pagination = components['schemas']['Pagination'];
-export type VisibilityType = components['schemas']['VisibilityType'];
+export type AccessControl = components['schemas']['AccessControl'];
 export type ArtifactVersion = components['schemas']['ArtifactVersion'];
 export type ArtifactLineageItem = components['schemas']['ArtifactLineageItem'];
 export type ProjectRole = components['schemas']['ProjectRole'];
@@ -27,7 +27,6 @@ export type CreateProjectRole = components['schemas']['CreateProjectRole'];
 export type ProjectListItem = components['schemas']['ProjectListItem'];
 export type ProjectArtifact = components['schemas']['ProjectArtifact'];
 export type ProjectDetail = components['schemas']['ProjectDetail'];
-export type UserProjectRole = components['schemas']['UserProjectRole'];
 export type UserProjectListItem = components['schemas']['UserProjectListItem'];
 export type CreateProjectMetadata = components['schemas']['CreateProjectMetadata'];
 export type CreateProjectPage = components['schemas']['CreateProjectPage'];
@@ -142,6 +141,7 @@ export type GetNodeVersionChildrenResponse = operations['getNodeVersionChildren'
 // Schema 类型（用于请求体）
 export type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
 export type CreateArtifactNode = components['schemas']['CreateArtifactNode'];
+export type CreateSaveInput = components['schemas']['CreateSaveInput'];
 export type PatchArtifactRequest = components['schemas']['PatchArtifactRequest'];
 export type UpdateCommitTagsRequest = components['schemas']['UpdateCommitTagsRequest'];
 export type MarkVersionWeakRequest = components['schemas']['MarkVersionWeakRequest'];

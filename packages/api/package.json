@@ -8,17 +8,21 @@
     ".": "./src/index.ts",
     "./types": "./src/generated/openapi.ts",
     "./client": "./src/client.ts",
-    "./utils": "./src/utils.ts"
+    "./utils": "./src/utils.ts",
+    "./validate": "./src/validate/schemas.ts"
   },
   "scripts": {
-    "generate": "openapi-typescript openapi.yaml -o src/generated/openapi.ts"
+    "generate": "openapi-typescript openapi.yaml -o src/generated/openapi.ts && redocly bundle openapi.yaml -o openapi.bundled.yaml && orval"
   },
   "dependencies": {
     "better-auth": "^1.4.10",
     "json-canonicalize": "^2.0.0",
-    "openapi-fetch": "^0.14.1"
+    "openapi-fetch": "^0.14.1",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "openapi-typescript": "^7.6.1"
+    "@redocly/cli": "^2.18.1",
+    "openapi-typescript": "^7.6.1",
+    "orval": "^8.3.0"
   }
 }

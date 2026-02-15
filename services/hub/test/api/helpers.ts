@@ -1,6 +1,6 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import app from '../../src/index';
-import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, eq } from '@pubwiki/db';
+import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, resourceDiscoveryControl, resourceAcl, PUBLIC_USER_ID, eq } from '@pubwiki/db';
 
 export type TestDb = ReturnType<typeof createDb>;
 
@@ -22,6 +22,8 @@ export function getTestDb(): TestDb {
  * 清空数据库（按外键顺序）
  */
 export async function clearDatabase(db: TestDb): Promise<void> {
+  await db.delete(resourceAcl);
+  await db.delete(resourceDiscoveryControl);
   await db.delete(discussionReplies);
   await db.delete(discussions);
   await db.delete(articles);
@@ -33,7 +35,6 @@ export async function clearDatabase(db: TestDb): Promise<void> {
   await db.delete(artifactStats);
   await db.delete(projectPosts);
   await db.delete(projectArtifacts);
-  await db.delete(projectMaintainers);
   await db.delete(projectRoles);
   await db.delete(projectPages);
   // 更新 projects 表清除 homepageId 引用后再删除（因为有循环引用）
@@ -141,7 +142,7 @@ export async function createTestUser(db: TestDb, username: string = 'testuser'):
   const [createdUser] = await db.insert(user).values({
     username,
     email: `${username}@example.com`,
-    name: username,
+    displayName: username,
     emailVerified: false,
     createdAt: now,
     updatedAt: now,
@@ -243,4 +244,4 @@ export async function createVfsTarGz(
 
 // 导出数据库表和eq操作符，方便测试文件使用
 // 注意: 'user' 是正确的表名，'users' 是别名保持向后兼容
-export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectMaintainers, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, eq };
+export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, resourceDiscoveryControl, resourceAcl, PUBLIC_USER_ID, eq };

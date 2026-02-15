@@ -90,7 +90,9 @@ export function createAuthClient(baseURL: string) {
 export function createApiClient(baseUrl: string) {
   return createClient<paths>({
     baseUrl,
-    credentials: 'include', // 自动发送 session cookie
+    // 使用自定义 fetch 来设置 credentials
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    fetch: (input: RequestInfo | URL, init?: RequestInit) => fetch(input, { ...init, credentials: 'include' } as any),
   });
 }
 

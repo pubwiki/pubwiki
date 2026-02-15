@@ -10,8 +10,9 @@ import { discussionsRoute } from './routes/discussions';
 import { articlesRoute } from './routes/articles';
 import { nodesRoute } from './routes/nodes';
 import { savesRoute } from './routes/saves';
+import { versionsRoute } from './routes/versions';
 import { authMiddleware, optionalAuthMiddleware } from './middleware/auth';
-import { createDb, eq, NodeVersionService, user as userTable } from '@pubwiki/db';
+import { createDb, eq, user as userTable } from '@pubwiki/db';
 import type { HealthCheckResponse, GetMeResponse, UpdateProfileRequest, UpdateProfileResponse, ApiError } from '@pubwiki/api';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -62,68 +63,8 @@ app.route('/api/nodes', nodesRoute);
 // Saves 路由（存档）
 app.route('/api/saves', savesRoute);
 
-// GET /api/versions/:commit - 获取特定版本详情（commit 全局唯一）
-app.get('/api/versions/:commit', authMiddleware, async (c) => {
-  const commit = c.req.param('commit');
-  const db = createDb(c.env.DB);
-  const nodeVersionService = new NodeVersionService(db);
-
-  const result = await nodeVersionService.getVersion(commit);
-
-  if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
-  }
-
-  return c.json(result.data);
-});
-
-// GET /api/versions/:commit/children - 获取子版本（commit 全局唯一）
-app.get('/api/versions/:commit/children', authMiddleware, async (c) => {
-  const commit = c.req.param('commit');
-  const db = createDb(c.env.DB);
-  const nodeVersionService = new NodeVersionService(db);
-
-  const result = await nodeVersionService.getChildren(commit);
-
-  if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
-  }
-
-  return c.json({ versions: result.data });
-});
-
-// GET /api/versions/:commit/archive - 下载 VFS 归档文件（commit 全局唯一）
-app.get('/api/versions/:commit/archive', optionalAuthMiddleware, async (c) => {
-  const commit = c.req.param('commit');
-
-  const db = createDb(c.env.DB);
-  const nodeVersionService = new NodeVersionService(db);
-  const versionResult = await nodeVersionService.getVersion(commit);
-
-  if (!versionResult.success) {
-    if (versionResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Node version not found' }, 404);
-    }
-    return c.json<ApiError>({ error: versionResult.error.message }, 500);
-  }
-
-  const r2Key = `archives/${commit}.tar.gz`;
-  const object = await c.env.R2_BUCKET.get(r2Key);
-
-  if (!object) {
-    return c.json<ApiError>({ error: 'Archive not found in storage' }, 404);
-  }
-
-  return new Response(object.body, {
-    headers: {
-      'Content-Type': 'application/gzip',
-      'Content-Length': String(object.size),
-    },
-  });
-});
+// Versions 路由（版本详情）
+app.route('/api/versions', versionsRoute);
 
 // 需要认证的路由 - 获取当前用户信息
 app.get('/api/me', authMiddleware, async (c) => {
@@ -141,8 +82,8 @@ app.get('/api/me', authMiddleware, async (c) => {
       id: userData.id,
       username: userData.username,
       email: userData.email,
-      displayName: userData.name,
-      avatarUrl: userData.image,
+      displayName: userData.displayName,
+      avatarUrl: userData.avatarUrl,
       bio: userData.bio,
       website: userData.website,
       location: userData.location,
@@ -161,8 +102,8 @@ app.patch('/api/me', authMiddleware, async (c) => {
   
   // 提取允许更新的字段
   const updates: Partial<{
-    name: string;
-    image: string | null;
+    displayName: string;
+    avatarUrl: string | null;
     bio: string | null;
     website: string | null;
     location: string | null;
@@ -171,8 +112,8 @@ app.patch('/api/me', authMiddleware, async (c) => {
     updatedAt: new Date(),
   };
   
-  if (body.displayName !== undefined) updates.name = body.displayName;
-  if (body.avatarUrl !== undefined) updates.image = body.avatarUrl;
+  if (body.displayName !== undefined) updates.displayName = body.displayName;
+  if (body.avatarUrl !== undefined) updates.avatarUrl = body.avatarUrl;
   if (body.bio !== undefined) updates.bio = body.bio;
   if (body.website !== undefined) updates.website = body.website;
   if (body.location !== undefined) updates.location = body.location;
@@ -192,8 +133,8 @@ app.patch('/api/me', authMiddleware, async (c) => {
       id: updated.id,
       username: updated.username,
       email: updated.email,
-      displayName: updated.name,
-      avatarUrl: updated.image,
+      displayName: updated.displayName,
+      avatarUrl: updated.avatarUrl,
       bio: updated.bio,
       website: updated.website,
       location: updated.location,

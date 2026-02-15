@@ -1,8 +1,12 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, ArtifactService, NodeVersionService, artifactVersions, artifactVersionNodes, artifactVersionEdges, artifactCommitTags, eq, and, desc, inArray, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNode, type PatchArtifactInput, type CreateSaveInput } from '@pubwiki/db';
+import { createDb, ArtifactService, NodeVersionService, artifactVersions, eq, and, desc, inArray, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNode, type PatchArtifactInput, type CreateSaveInput } from '@pubwiki/db';
 import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactMetadata, CreateArtifactResponse, GetArtifactGraphResponse, ArtifactEdgeDescriptor, ArtifactNodeContent, ArtifactNodeType, PatchArtifactRequest, PatchArtifactResponse, UpdateCommitTagsRequest, ArtifactVersion as ArtifactVersionType } from '@pubwiki/api';
+import { ListArtifactsQueryParams, GetArtifactLineageQueryParams } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
+import { resourceAccessMiddleware } from '../middleware/resource-access';
+import { checkResourceAccess, requireResourceOwner } from '../lib/access-control';
+import { validateQuery, isValidationError } from '../lib/validate';
 import { marked } from 'marked';
 
 const artifactsRoute = new Hono<{ Bindings: Env }>();
@@ -17,35 +21,19 @@ artifactsRoute.get('/', async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
 
-  // 解析查询参数
-  const query = c.req.query();
-  
   // 解析数组参数（URL query 中的重复参数）
   const url = new URL(c.req.url);
-  const tagInclude = url.searchParams.getAll('tag.include');
-  const tagExclude = url.searchParams.getAll('tag.exclude');
-
-  const params: ListArtifactsParams = {
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
-    tagInclude: tagInclude.length > 0 ? tagInclude : undefined,
-    tagExclude: tagExclude.length > 0 ? tagExclude : undefined,
-    sortBy: query.sortBy as ListArtifactsParams['sortBy'],
-    sortOrder: query.sortOrder as ListArtifactsParams['sortOrder'],
+  const rawQuery = {
+    ...c.req.query(),
+    'tag.include': url.searchParams.getAll('tag.include'),
+    'tag.exclude': url.searchParams.getAll('tag.exclude'),
   };
 
-  // 验证排序参数
-  const validSortBy = ['createdAt', 'updatedAt', 'viewCount', 'starCount'];
-  const validSortOrder = ['asc', 'desc'];
-  
-  if (params.sortBy && !validSortBy.includes(params.sortBy)) {
-    return c.json<ApiError>({ error: `Invalid sortBy value. Must be one of: ${validSortBy.join(', ')}` }, 400);
-  }
-  if (params.sortOrder && !validSortOrder.includes(params.sortOrder)) {
-    return c.json<ApiError>({ error: `Invalid sortOrder value. Must be one of: ${validSortOrder.join(', ')}` }, 400);
-  }
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListArtifactsQueryParams, rawQuery);
+  if (isValidationError(validated)) return validated;
 
-  const result = await artifactService.listPublicArtifacts(params);
+  const result = await artifactService.listPublicArtifacts(validated);
 
   if (!result.success) {
     return c.json<ApiError>({ error: result.error.message }, 500);
@@ -55,59 +43,24 @@ artifactsRoute.get('/', async (c) => {
 });
 
 // 获取 artifact 谱系信息
-artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, async (c) => {
+artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
   const artifactId = c.req.param('artifactId');
-  const user = c.get('user');
 
-  // 获取 artifact 信息进行权限检查
-  const artifactResult = await artifactService.getArtifactById(artifactId);
-  if (!artifactResult.success) {
-    if (artifactResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Artifact not found' }, 404);
-    }
-    return c.json<ApiError>({ error: artifactResult.error.message }, 500);
-  }
+  // 访问控制检查
+  const accessError = await checkResourceAccess(c, { type: 'artifact', id: artifactId });
+  if (accessError) return accessError;
 
-  const { artifact, author } = artifactResult.data;
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, GetArtifactLineageQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
 
-  // 权限检查
-  if (artifact.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted artifact' }, 401);
-  }
-  if (artifact.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
-    }
-    if (user.id !== artifact.authorId) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
-    }
-  }
-
-  // 解析查询参数
-  const query = c.req.query();
-  const lineageParams: GetLineageParams = {};
-
-  if (query.commit) {
-    lineageParams.commit = query.commit;
-  }
-  
-  if (query.parentDepth) {
-    const depth = parseInt(query.parentDepth, 10);
-    if (isNaN(depth) || depth < 1) {
-      return c.json<ApiError>({ error: 'parentDepth must be a positive integer' }, 400);
-    }
-    lineageParams.parentDepth = depth;
-  }
-  
-  if (query.childDepth) {
-    const depth = parseInt(query.childDepth, 10);
-    if (isNaN(depth) || depth < 1) {
-      return c.json<ApiError>({ error: 'childDepth must be a positive integer' }, 400);
-    }
-    lineageParams.childDepth = depth;
-  }
+  const lineageParams: GetLineageParams = {
+    commit: validated.commit,
+    parentDepth: validated.parentDepth,
+    childDepth: validated.childDepth,
+  };
 
   // 获取谱系信息
   const lineageResult = await artifactService.getArtifactLineage(artifactId, lineageParams);
@@ -119,38 +72,20 @@ artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, async (c) => 
 });
 
 // 获取 artifact 主页 HTML
-artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, async (c) => {
+artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
   const artifactId = c.req.param('artifactId');
-  const user = c.get('user');
 
-  // 获取 artifact 信息进行权限检查
-  const artifactResult = await artifactService.getArtifactById(artifactId);
-  if (!artifactResult.success) {
-    if (artifactResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Artifact not found' }, 404);
-    }
-    return c.json<ApiError>({ error: artifactResult.error.message }, 500);
+  // 先检查 artifact 是否存在
+  const artifact = await artifactService.getArtifactById(artifactId);
+  if (!artifact.success) {
+    return c.json<ApiError>({ error: 'artifact not found' }, 404);
   }
 
-  const { artifact } = artifactResult.data;
-
-  // 权限检查
-  // PUBLIC: 所有人可访问
-  // UNLISTED: 仅注册用户可访问
-  // PRIVATE: 仅 owner 可访问
-  if (artifact.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted artifact' }, 401);
-  }
-  if (artifact.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
-    }
-    if (user.id !== artifact.authorId) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
-    }
-  }
+  // 访问控制检查
+  const accessError = await checkResourceAccess(c, { type: 'artifact', id: artifactId });
+  if (accessError) return accessError;
 
   // 从 R2 获取主页 HTML
   const key = getArtifactHomepageKey(artifactId);
@@ -359,133 +294,25 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   );
 });
 
-// 获取 artifact 节点图结构（使用新 artifact_version_nodes/edges + node_versions）
-artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, async (c) => {
+// 获取 artifact 节点图结构
+artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const db = createDb(c.env.DB);
   const artifactService = new ArtifactService(db);
-  const nodeVersionService = new NodeVersionService(db);
   const artifactId = c.req.param('artifactId');
-  const user = c.get('user');
   const versionQuery = c.req.query('version');
 
-  // 获取 artifact 信息进行权限检查
-  const artifactResult = await artifactService.getArtifactById(artifactId);
-  if (!artifactResult.success) {
-    if (artifactResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Artifact not found' }, 404);
-    }
-    return c.json<ApiError>({ error: artifactResult.error.message }, 500);
+  // 访问控制检查
+  const accessError = await checkResourceAccess(c, { type: 'artifact', id: artifactId });
+  if (accessError) return accessError;
+
+  const result = await artifactService.getArtifactGraph(artifactId, versionQuery);
+
+  if (!result.success) {
+    const status = result.error.code === 'NOT_FOUND' ? 404 : 500;
+    return c.json<ApiError>({ error: result.error.message }, status);
   }
 
-  const { artifact } = artifactResult.data;
-
-  // 权限检查
-  if (artifact.visibility === 'UNLISTED' && !user) {
-    return c.json<ApiError>({ error: 'Authentication required to access unlisted artifact' }, 401);
-  }
-  if (artifact.visibility === 'PRIVATE') {
-    if (!user) {
-      return c.json<ApiError>({ error: 'Authentication required to access private artifact' }, 401);
-    }
-    if (user.id !== artifact.authorId) {
-      return c.json<ApiError>({ error: 'You do not have permission to access this artifact' }, 403);
-    }
-  }
-
-  // 获取指定版本或最新版本
-  let versionResult;
-  if (versionQuery && versionQuery !== 'latest') {
-    // 先尝试按 commitHash 查询
-    versionResult = await db
-      .select()
-      .from(artifactVersions)
-      .where(
-        and(
-          eq(artifactVersions.artifactId, artifactId),
-          eq(artifactVersions.commitHash, versionQuery)
-        )
-      )
-      .limit(1);
-
-    // 如果找不到，再尝试按 commitTag 查询（通过关联表）
-    if (versionResult.length === 0) {
-      const tagResult = await artifactService.getVersionByTag(artifactId, versionQuery);
-      if (tagResult.success) {
-        versionResult = [tagResult.data.version];
-      }
-    }
-  } else {
-    versionResult = await db
-      .select()
-      .from(artifactVersions)
-      .where(eq(artifactVersions.artifactId, artifactId))
-      .orderBy(desc(artifactVersions.createdAt))
-      .limit(1);
-  }
-
-  if (versionResult.length === 0) {
-    return c.json<ApiError>({ error: 'Artifact version not found' }, 404);
-  }
-
-  const version = versionResult[0];
-
-  // 获取 artifact_version_nodes
-  const versionNodes = await db
-    .select()
-    .from(artifactVersionNodes)
-    .where(eq(artifactVersionNodes.commitHash, version.commitHash));
-
-  // 获取每个节点的版本信息和内容
-  const nodes = [];
-  for (const vn of versionNodes) {
-    const versionDetail = await nodeVersionService.getVersion(vn.nodeCommit);
-    if (versionDetail.success) {
-      const v = versionDetail.data;
-      nodes.push({
-        id: vn.nodeId,
-        type: v.type as ArtifactNodeType,
-        commit: v.commit,
-        contentHash: v.contentHash,
-        name: v.name,
-        position: vn.positionX != null && vn.positionY != null
-          ? { x: vn.positionX, y: vn.positionY }
-          : undefined,
-        content: v.content as ArtifactNodeContent,
-      });
-    }
-  }
-
-  // 获取 artifact_version_edges
-  const versionEdges = await db
-    .select()
-    .from(artifactVersionEdges)
-    .where(eq(artifactVersionEdges.commitHash, version.commitHash));
-
-  const edges = versionEdges.map(e => ({
-    source: e.sourceNodeId,
-    target: e.targetNodeId,
-    sourceHandle: e.sourceHandle ?? undefined,
-    targetHandle: e.targetHandle ?? undefined,
-  }));
-
-  // 查询该版本的 commitTags
-  const versionCommitTags = await db
-    .select({ tag: artifactCommitTags.tag })
-    .from(artifactCommitTags)
-    .where(eq(artifactCommitTags.commitHash, version.commitHash));
-
-  return c.json<GetArtifactGraphResponse>({
-    nodes,
-    edges,
-    version: {
-      id: version.id,
-      commitHash: version.commitHash,
-      commitTags: versionCommitTags.map(t => t.tag),
-      version: version.version ?? '',
-      createdAt: version.createdAt,
-      entrypoint: version.entrypoint ?? undefined,
-    },
-  });
+  return c.json<GetArtifactGraphResponse>(result.data);
 });
 
 // PATCH: 基于已有版本和增量补丁创建新 Artifact 版本

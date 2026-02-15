@@ -1,7 +1,7 @@
 import { eq, and, or, inArray, notInArray, asc, desc, sql, count, isNotNull } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
 import type { Database } from '../client';
-import { artifacts, tags, artifactTags, artifactVersions, artifactCommitTags, type Artifact, type Tag, type ArtifactVersion, type NewArtifact, type NewArtifactVersion } from '../schema/artifacts';
+import { artifacts, tags, artifactTags, artifactVersions, artifactCommitTags, type Artifact, type Tag, type ArtifactVersion as DbArtifactVersion, type NewArtifact, type NewArtifactVersion } from '../schema/artifacts';
 import { artifactVersionNodes, artifactVersionEdges, type NewArtifactVersionNode, type NewArtifactVersionEdge } from '../schema/artifact-version-graph';
 import { nodeVersions, type NewNodeVersion } from '../schema/node-versions';
 import { ARTIFACT_NODE_TYPES } from '../schema/enums';
@@ -14,78 +14,35 @@ import { chunkArray } from '../utils';
 import type { ServiceError, ServiceResult } from './user';
 import type {
   ArtifactListItem,
-  Pagination as PaginationInfo,
-  ArtifactVersion as ArtifactVersionType,
-  VisibilityType,
+  Pagination,
+  ArtifactVersion,
   CreateArtifactMetadata,
   ArtifactEdgeDescriptor,
   ArtifactNodeContent,
+  ArtifactLineageItem,
+  CreateArtifactNode,
+  CreateSaveInput,
+  ListArtifactsQuery,
+  GetUserArtifactsQuery,
+  PatchArtifactRequest,
+  ListArtifactsResponse,
+  GetArtifactGraphResponse,
+  ArtifactNodeSummary,
+  ArtifactEdge,
 } from '@pubwiki/api';
 import { computeArtifactCommit } from '@pubwiki/api';
-
-// 谱系项（基于 derivativeOf 跳表计算，不再使用独立的 lineage 表）
-export interface ArtifactLineageItem {
-  artifactId: string;
-  name: string;
-  visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
-  thumbnailUrl: string | null;
-  author: {
-    id: string;
-    username: string;
-    displayName: string | null;
-    avatarUrl: string | null;
-  };
-}
+import { AclService } from './access-control/acl-service';
+import { resourceDiscoveryControl } from '../schema/discovery-control';
+import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
 
 // 重新导出供其他模块使用
-export type { ArtifactListItem, PaginationInfo };
+export type { ArtifactListItem, Pagination, ArtifactLineageItem, CreateArtifactNode, CreateSaveInput };
 
-// 列表查询参数
-export interface ListArtifactsParams {
-  page?: number;
-  limit?: number;
-  tagInclude?: string[];  // tag slugs
-  tagExclude?: string[];  // tag slugs
-  sortBy?: 'createdAt' | 'updatedAt' | 'viewCount' | 'starCount';
-  sortOrder?: 'asc' | 'desc';
-}
+// 列表查询参数（排除 undefined）
+export type ListArtifactsParams = NonNullable<ListArtifactsQuery>;
 
-// 列表响应
-export interface ListArtifactsResult {
-  artifacts: ArtifactListItem[];
-  pagination: PaginationInfo;
-}
-
-// 完整的节点版本数据（非 STATE 节点包含完整内容，STATE 节点仅含 save 引用列表）
-export interface CreateArtifactNode {
-  nodeId: string;
-  commit: string;
-  parent?: string | null;
-  type: ArtifactNodeType;
-  name?: string;
-  contentHash: string;
-  content: ArtifactNodeContent;
-  message?: string;
-  tag?: string;
-  visibility?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
-  position?: { x: number; y: number };
-  refs?: Array<{
-    targetNodeId: string;
-    targetCommit: string;
-    refType: string;
-  }>;
-}
-
-// 创建 Save 的输入（随 artifact 一起提交）
-export interface CreateSaveInput {
-  stateNodeId: string;     // 关联的 STATE 节点 ID
-  commit: string;          // save 版本 commit hash
-  contentHash: string;     // 内容指纹
-  parent?: string | null;  // 父版本 commit hash
-  title?: string;
-  description?: string;
-  visibility?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
-}
+// 列表响应（直接使用 API 类型）
+export type ListArtifactsResult = ListArtifactsResponse;
 
 // 创建 artifact 的输入参数
 export interface CreateArtifactInput {
@@ -186,8 +143,8 @@ export class ArtifactService {
         .select({
           id: user.id,
           username: user.username,
-          displayName: user.name,
-          avatarUrl: user.image,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
         })
         .from(user)
         .where(eq(user.id, authorId))
@@ -308,13 +265,25 @@ export class ArtifactService {
           this.db.update(artifacts).set({
             name: metadata.name,
             description: metadata.description ?? null,
-            visibility: metadata.visibility ?? 'PUBLIC',
             currentVersionId: versionId,
             thumbnailUrl: metadata.thumbnailUrl ?? null,
             license: metadata.license ?? null,
             repositoryUrl: metadata.repositoryUrl ?? null,
             updatedAt: new Date().toISOString(),
           }).where(eq(artifacts.id, artifactId))
+        );
+
+        // 更新发现控制记录
+        const isListed = metadata.isListed ?? true;
+        batchOperations.push(
+          this.db.update(resourceDiscoveryControl).set({
+            isListed,
+          }).where(
+            and(
+              eq(resourceDiscoveryControl.resourceType, 'artifact'),
+              eq(resourceDiscoveryControl.resourceId, artifactId)
+            )
+          )
         );
       } else {
         // 创建 artifact
@@ -323,14 +292,48 @@ export class ArtifactService {
           authorId,
           name: metadata.name,
           description: metadata.description ?? null,
-          visibility: metadata.visibility ?? 'PUBLIC',
           currentVersionId: versionId,
           thumbnailUrl: metadata.thumbnailUrl ?? null,
           license: metadata.license ?? null,
           repositoryUrl: metadata.repositoryUrl ?? null,
-          isArchived: false,
         };
         batchOperations.push(this.db.insert(artifacts).values(newArtifact));
+
+        // 创建发现控制记录
+        const isListed = metadata.isListed ?? true;
+        batchOperations.push(
+          this.db.insert(resourceDiscoveryControl).values({
+            resourceType: 'artifact',
+            resourceId: artifactId,
+            isListed,
+          })
+        );
+
+        // 创建 owner ACL（manage + write + read）
+        batchOperations.push(
+          this.db.insert(resourceAcl).values({
+            resourceType: 'artifact',
+            resourceId: artifactId,
+            userId: authorId,
+            canRead: true,
+            canWrite: true,
+            canManage: true,
+            grantedBy: authorId,
+          })
+        );
+
+        // 默认创建公开读取 ACL
+        batchOperations.push(
+          this.db.insert(resourceAcl).values({
+            resourceType: 'artifact',
+            resourceId: artifactId,
+            userId: PUBLIC_USER_ID,
+            canRead: true,
+            canWrite: false,
+            canManage: false,
+            grantedBy: authorId,
+          })
+        );
       }
 
       // 创建版本
@@ -403,7 +406,7 @@ export class ArtifactService {
           content: n.content,
           message: n.message,
           tag: n.tag,
-          visibility: n.visibility,
+          isListed: n.isListed,
           sourceArtifactId: artifactId,
           refs: n.refs as SyncNodeVersionInput['refs'],
         }));
@@ -504,7 +507,7 @@ export class ArtifactService {
             contentHash: save.contentHash,
             title: save.title,
             description: save.description,
-            visibility: save.visibility,
+            isListed: save.isListed,
           });
 
           if (!result.success) {
@@ -530,7 +533,6 @@ export class ArtifactService {
                 commit: nodeVersions.commit,
                 type: nodeVersions.type,
                 authorId: nodeVersions.authorId,
-                visibility: nodeVersions.visibility,
               })
               .from(nodeVersions)
               .where(inArray(nodeVersions.commit, saves));
@@ -560,16 +562,26 @@ export class ArtifactService {
               };
             }
 
-            // 权限检查：save 必须是当前用户创建的，或 visibility 为 PUBLIC/UNLISTED
-            const inaccessibleSaves = saveVersions.filter(v =>
-              v.authorId !== authorId && v.visibility === 'PRIVATE'
-            );
+            // 权限检查：save 必须是当前用户创建的，或是公开的
+            // 使用 AclService 检查权限
+            const aclService = new AclService(this.db);
+            const inaccessibleSaves: string[] = [];
+            for (const v of saveVersions) {
+              if (v.authorId === authorId) continue; // 自己创建的直接通过
+              const canRead = await aclService.canRead(
+                { type: 'save', id: v.commit },
+                authorId
+              );
+              if (!canRead) {
+                inaccessibleSaves.push(v.commit);
+              }
+            }
             if (inaccessibleSaves.length > 0) {
               return {
                 success: false,
                 error: {
                   code: 'FORBIDDEN',
-                  message: `STATE node ${stateNode.nodeId}: no permission to reference private SAVE commits: ${inaccessibleSaves.map(v => v.commit).join(', ')}`,
+                  message: `STATE node ${stateNode.nodeId}: no permission to reference private SAVE commits: ${inaccessibleSaves.join(', ')}`,
                 },
               };
             }
@@ -588,7 +600,7 @@ export class ArtifactService {
           content: n.content,
           message: n.message,
           tag: n.tag,
-          visibility: n.visibility,
+          isListed: n.isListed,
           sourceArtifactId: artifactId,
           refs: n.refs as SyncNodeVersionInput['refs'],
         }));
@@ -710,8 +722,8 @@ export class ArtifactService {
         batchOperations.push(this.db.insert(artifactStats).values({
           artifactId,
           viewCount: 0,
-          starCount: 0,
-          forkCount: 0,
+          favCount: 0,
+          refCount: 0,
           downloadCount: 0,
         }));
       }
@@ -720,7 +732,7 @@ export class ArtifactService {
       await this.db.batch(batchOperations as any);
 
       // 对于更新操作，获取现有的 stats 和 createdAt
-      let existingStats = { viewCount: 0, starCount: 0, forkCount: 0, downloadCount: 0 };
+      let existingStats = { viewCount: 0, favCount: 0, refCount: 0, downloadCount: 0 };
       let existingCreatedAt = new Date().toISOString();
       if (isUpdate) {
         const statsResult = await this.db
@@ -731,8 +743,8 @@ export class ArtifactService {
         if (statsResult.length > 0) {
           existingStats = {
             viewCount: statsResult[0].viewCount,
-            starCount: statsResult[0].starCount,
-            forkCount: statsResult[0].forkCount,
+            favCount: statsResult[0].favCount,
+            refCount: statsResult[0].refCount,
             downloadCount: statsResult[0].downloadCount,
           };
         }
@@ -752,10 +764,9 @@ export class ArtifactService {
         id: artifactId,
         name: metadata.name,
         description: metadata.description ?? null,
-        visibility: metadata.visibility ?? 'PUBLIC',
+        isListed: metadata.isListed ?? true,
         thumbnailUrl: metadata.thumbnailUrl ?? null,
         license: metadata.license ?? null,
-        isArchived: false,
         createdAt: existingCreatedAt,
         updatedAt: new Date().toISOString(),
         author: authorResult[0],
@@ -778,16 +789,16 @@ export class ArtifactService {
     }
   }
 
-  // 获取公开 artifact 列表
+  // 获取公开 artifact 列表（isListed=true）
   async listPublicArtifacts(params: ListArtifactsParams = {}): Promise<ServiceResult<ListArtifactsResult>> {
     const {
       page = 1,
       limit = 20,
-      tagInclude,
-      tagExclude,
+      'tag.include': tagInclude,
+      'tag.exclude': tagExclude,
       sortBy = 'createdAt',
       sortOrder = 'desc',
-    } = params;
+    } = params ?? {};
 
     // 验证分页参数
     const validPage = Math.max(1, page);
@@ -795,10 +806,10 @@ export class ArtifactService {
     const offset = (validPage - 1) * validLimit;
 
     try {
-      // 构建基础条件：只查询公开且未归档的 artifacts
-      const baseConditions = [
-        eq(artifacts.visibility, 'PUBLIC'),
-        eq(artifacts.isArchived, false),
+      // 查询接口不考虑权限，只基于 isListed 过滤
+      // 构建基础条件：只查询 listed 的 artifacts
+      const baseConditions: ReturnType<typeof eq>[] = [
+        eq(resourceDiscoveryControl.isListed, true),
       ];
 
       // 标签过滤 - 需要子查询
@@ -857,6 +868,13 @@ export class ArtifactService {
       const [countResult] = await this.db
         .select({ total: count() })
         .from(artifacts)
+        .innerJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'artifact'),
+            eq(resourceDiscoveryControl.resourceId, artifacts.id)
+          )
+        )
         .where(and(...baseConditions));
 
       const total = countResult?.total ?? 0;
@@ -866,27 +884,35 @@ export class ArtifactService {
       let orderClause;
       if (sortBy === 'viewCount' || sortBy === 'starCount') {
         // 需要 join stats 表进行排序
-        const statsColumn = sortBy === 'viewCount' ? artifactStats.viewCount : artifactStats.starCount;
+        const statsColumn = sortBy === 'viewCount' ? artifactStats.viewCount : artifactStats.favCount;
         orderClause = sortOrder === 'asc' ? asc(statsColumn) : desc(statsColumn);
       } else {
         const artifactColumn = sortBy === 'updatedAt' ? artifacts.updatedAt : artifacts.createdAt;
         orderClause = sortOrder === 'asc' ? asc(artifactColumn) : desc(artifactColumn);
       }
 
-      // 查询 artifacts（带 author 和 stats）
+      // 查询 artifacts（带 author、stats 和 discovery control）
       const artifactsQuery = this.db
         .select({
           artifact: artifacts,
+          discoveryControl: resourceDiscoveryControl,
           author: {
             id: user.id,
             username: user.username,
-            displayName: user.name,
-            avatarUrl: user.image,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
           },
           stats: artifactStats,
         })
         .from(artifacts)
         .innerJoin(user, eq(artifacts.authorId, user.id))
+        .innerJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'artifact'),
+            eq(resourceDiscoveryControl.resourceId, artifacts.id)
+          )
+        )
         .leftJoin(artifactStats, eq(artifacts.id, artifactStats.artifactId))
         .where(and(...baseConditions))
         .orderBy(orderClause)
@@ -927,18 +953,17 @@ export class ArtifactService {
         id: r.artifact.id,
         name: r.artifact.name,
         description: r.artifact.description,
-        visibility: r.artifact.visibility,
+        isListed: r.discoveryControl.isListed,
         thumbnailUrl: r.artifact.thumbnailUrl,
         license: r.artifact.license,
-        isArchived: r.artifact.isArchived,
         createdAt: r.artifact.createdAt,
         updatedAt: r.artifact.updatedAt,
         author: r.author,
         tags: tagsMap.get(r.artifact.id) || [],
         stats: r.stats ? {
           viewCount: r.stats.viewCount,
-          starCount: r.stats.starCount,
-          forkCount: r.stats.forkCount,
+          starCount: r.stats.favCount,
+          forkCount: r.stats.refCount,
           downloadCount: r.stats.downloadCount,
         } : undefined,
       }));
@@ -1247,21 +1272,28 @@ export class ArtifactService {
       .select({
         id: artifacts.id,
         name: artifacts.name,
-        visibility: artifacts.visibility,
+        isListed: resourceDiscoveryControl.isListed,
         thumbnailUrl: artifacts.thumbnailUrl,
         authorId: user.id,
         authorUsername: user.username,
-        authorDisplayName: user.name,
-        authorAvatarUrl: user.image,
+        authorDisplayName: user.displayName,
+        authorAvatarUrl: user.avatarUrl,
       })
       .from(artifacts)
       .innerJoin(user, eq(artifacts.authorId, user.id))
+      .leftJoin(
+        resourceDiscoveryControl,
+        and(
+          eq(resourceDiscoveryControl.resourceType, 'artifact'),
+          eq(resourceDiscoveryControl.resourceId, artifacts.id)
+        )
+      )
       .where(inArray(artifacts.id, artifactIds));
 
     return rows.map(r => ({
       artifactId: r.id,
       name: r.name,
-      visibility: r.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED',
+      isListed: r.isListed ?? false,
       thumbnailUrl: r.thumbnailUrl,
       author: {
         id: r.authorId,
@@ -1281,7 +1313,7 @@ export class ArtifactService {
     authorId: string,
     commitHash: string,
     commitTags: string[],
-  ): Promise<ServiceResult<{ version: ArtifactVersionItem }>> {
+  ): Promise<ServiceResult<{ version: ArtifactVersion }>> {
     try {
       // 检查 artifact 存在且用户有权限
       const existingArtifact = await this.db
@@ -1392,7 +1424,20 @@ export class ArtifactService {
         return { success: false, error: { code: 'NOT_FOUND', message: `Version with tag "${commitTag}" not found` } };
       }
 
-      return { success: true, data: { version: result[0].version } };
+      const dbVersion = result[0].version;
+      return {
+        success: true,
+        data: {
+          version: {
+            id: dbVersion.id,
+            version: dbVersion.version ?? '',
+            commitHash: dbVersion.commitHash,
+            changelog: dbVersion.changelog,
+            publishedAt: dbVersion.publishedAt,
+            createdAt: dbVersion.createdAt,
+          },
+        },
+      };
     } catch (error) {
       console.error('Get version by tag error:', error);
       return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
@@ -1564,10 +1609,22 @@ export class ArtifactService {
         };
       }
 
-      // 获取当前 artifact 名称和 visibility 用作 fallback
-      const currentArtifact = (await this.db.select({ name: artifacts.name, visibility: artifacts.visibility }).from(artifacts).where(eq(artifacts.id, artifactId)).limit(1))[0];
+      // 获取当前 artifact 名称用作 fallback
+      const currentArtifact = (await this.db.select({ name: artifacts.name }).from(artifacts).where(eq(artifacts.id, artifactId)).limit(1))[0];
       const currentName = currentArtifact?.name ?? '';
-      const currentVisibility = (currentArtifact?.visibility ?? 'PUBLIC') as VisibilityType;
+
+      // 获取当前发现控制作为 fallback
+      const currentDiscoveryControl = await this.db
+        .select({ isListed: resourceDiscoveryControl.isListed })
+        .from(resourceDiscoveryControl)
+        .where(
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'artifact'),
+            eq(resourceDiscoveryControl.resourceId, artifactId)
+          )
+        )
+        .limit(1);
+      const currentIsListed = currentDiscoveryControl[0]?.isListed ?? true;
 
       // 委托给 createArtifact 完成实际的版本创建（复用所有验证逻辑）
       const createResult = await this.createArtifact({
@@ -1578,7 +1635,7 @@ export class ArtifactService {
           parentCommit: parentCommit ?? undefined,
           name: metadata.name ?? currentName,
           description: metadata.description,
-          visibility: metadata.visibility ?? currentVisibility,
+          isListed: metadata.isListed ?? currentIsListed,
           version: metadata.version,
           changelog: metadata.changelog,
           commitTags: metadata.commitTags,
@@ -1602,7 +1659,7 @@ export class ArtifactService {
   private async patchArtifactMetadataOnly(
     artifactId: string,
     authorId: string,
-    baseVersion: ArtifactVersion,
+    baseVersion: DbArtifactVersion,
     metadata: PatchArtifactInput['metadata'],
   ): Promise<ServiceResult<PatchArtifactResult>> {
     try {
@@ -1614,11 +1671,22 @@ export class ArtifactService {
       };
       if (metadata.name !== undefined) artifactUpdate.name = metadata.name;
       if (metadata.description !== undefined) artifactUpdate.description = metadata.description;
-      if (metadata.visibility !== undefined) artifactUpdate.visibility = metadata.visibility;
 
       batchOperations.push(
         this.db.update(artifacts).set(artifactUpdate).where(eq(artifacts.id, artifactId))
       );
+
+      // 更新发现控制（如果提供了）
+      if (metadata.isListed !== undefined) {
+        batchOperations.push(
+          this.db.update(resourceDiscoveryControl).set({ isListed: metadata.isListed }).where(
+            and(
+              eq(resourceDiscoveryControl.resourceType, 'artifact'),
+              eq(resourceDiscoveryControl.resourceId, artifactId)
+            )
+          )
+        );
+      }
 
       // 更新版本元数据（仅更新提供了的字段）
       const versionUpdate: Record<string, unknown> = {};
@@ -1721,8 +1789,8 @@ export class ArtifactService {
         .select({
           id: user.id,
           username: user.username,
-          displayName: user.name,
-          avatarUrl: user.image,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
         })
         .from(user)
         .where(eq(user.id, authorId))
@@ -1732,6 +1800,18 @@ export class ArtifactService {
         .select()
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
+        .limit(1);
+
+      // 获取发现控制
+      const discoveryControlResult = await this.db
+        .select({ isListed: resourceDiscoveryControl.isListed })
+        .from(resourceDiscoveryControl)
+        .where(
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'artifact'),
+            eq(resourceDiscoveryControl.resourceId, artifactId)
+          )
+        )
         .limit(1);
 
       // 获取 tags
@@ -1753,10 +1833,9 @@ export class ArtifactService {
         id: artifactId,
         name: updatedArtifact[0].name,
         description: updatedArtifact[0].description,
-        visibility: updatedArtifact[0].visibility,
+        isListed: discoveryControlResult[0]?.isListed ?? true,
         thumbnailUrl: updatedArtifact[0].thumbnailUrl,
         license: updatedArtifact[0].license,
-        isArchived: updatedArtifact[0].isArchived,
         createdAt: updatedArtifact[0].createdAt,
         updatedAt: updatedArtifact[0].updatedAt,
         author: authorResult[0],
@@ -1868,7 +1947,7 @@ export class ArtifactService {
       limit = 20,
       sortBy = 'createdAt',
       sortOrder = 'desc',
-      visibilityFilter = ['PUBLIC'],
+      viewerId,
     } = params;
 
     // 验证分页参数
@@ -1876,22 +1955,31 @@ export class ArtifactService {
     const validLimit = Math.min(100, Math.max(1, limit));
     const offset = (validPage - 1) * validLimit;
 
+    // 判断是否为自己查看自己
+    const isSelf = viewerId === userId;
+
     try {
-      // 构建基础条件：用户拥有的未归档 artifacts
+      // 构建基础条件：用户拥有的 artifacts
       const baseConditions = [
         eq(artifacts.authorId, userId),
-        eq(artifacts.isArchived, false),
       ];
 
-      // 可见性过滤
-      if (visibilityFilter.length > 0) {
-        baseConditions.push(inArray(artifacts.visibility, visibilityFilter));
+      // 如果不是自己查看自己，只查询 isListed = true 的
+      if (!isSelf) {
+        baseConditions.push(eq(resourceDiscoveryControl.isListed, true));
       }
 
-      // 计算总数
+      // 计算总数（需要 left join resource_discovery_control）
       const [countResult] = await this.db
         .select({ total: count() })
         .from(artifacts)
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'artifact'),
+            eq(resourceDiscoveryControl.resourceId, artifacts.id)
+          )
+        )
         .where(and(...baseConditions));
 
       const total = countResult?.total ?? 0;
@@ -1900,27 +1988,35 @@ export class ArtifactService {
       // 构建排序
       let orderClause;
       if (sortBy === 'viewCount' || sortBy === 'starCount') {
-        const statsColumn = sortBy === 'viewCount' ? artifactStats.viewCount : artifactStats.starCount;
+        const statsColumn = sortBy === 'viewCount' ? artifactStats.viewCount : artifactStats.favCount;
         orderClause = sortOrder === 'asc' ? asc(statsColumn) : desc(statsColumn);
       } else {
         const artifactColumn = sortBy === 'updatedAt' ? artifacts.updatedAt : artifacts.createdAt;
         orderClause = sortOrder === 'asc' ? asc(artifactColumn) : desc(artifactColumn);
       }
 
-      // 查询 artifacts（带 author 和 stats）
+      // 查询 artifacts（带 author、stats 和 discovery control）
       const artifactsQuery = this.db
         .select({
           artifact: artifacts,
+          isListed: resourceDiscoveryControl.isListed,
           author: {
             id: user.id,
             username: user.username,
-            displayName: user.name,
-            avatarUrl: user.image,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
           },
           stats: artifactStats,
         })
         .from(artifacts)
         .innerJoin(user, eq(artifacts.authorId, user.id))
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'artifact'),
+            eq(resourceDiscoveryControl.resourceId, artifacts.id)
+          )
+        )
         .leftJoin(artifactStats, eq(artifacts.id, artifactStats.artifactId))
         .where(and(...baseConditions))
         .orderBy(orderClause)
@@ -1932,6 +2028,7 @@ export class ArtifactService {
       // 获取所有 artifact 的 tags
       const artifactIds = artifactResults.map(r => r.artifact.id);
       const tagsMap = new Map<string, ArtifactListItem['tags']>();
+      const publicArtifactIds = new Set<string>();
 
       if (artifactIds.length > 0) {
         const tagResults = await this.db
@@ -1954,6 +2051,20 @@ export class ArtifactService {
           existing.push(row.tag);
           tagsMap.set(row.artifactId, existing);
         }
+
+        // 获取 public artifacts（有 PUBLIC_USER_ID ACL）
+        const publicAclResults = await this.db
+          .select({ resourceId: resourceAcl.resourceId })
+          .from(resourceAcl)
+          .where(and(
+            eq(resourceAcl.resourceType, 'artifact'),
+            eq(resourceAcl.userId, PUBLIC_USER_ID),
+            inArray(resourceAcl.resourceId, artifactIds)
+          ));
+
+        for (const r of publicAclResults) {
+          publicArtifactIds.add(r.resourceId);
+        }
       }
 
       // 组装结果
@@ -1961,18 +2072,17 @@ export class ArtifactService {
         id: r.artifact.id,
         name: r.artifact.name,
         description: r.artifact.description,
-        visibility: r.artifact.visibility,
+        isListed: r.isListed ?? false,
         thumbnailUrl: r.artifact.thumbnailUrl,
         license: r.artifact.license,
-        isArchived: r.artifact.isArchived,
         createdAt: r.artifact.createdAt,
         updatedAt: r.artifact.updatedAt,
         author: r.author,
         tags: tagsMap.get(r.artifact.id) || [],
         stats: r.stats ? {
           viewCount: r.stats.viewCount,
-          starCount: r.stats.starCount,
-          forkCount: r.stats.forkCount,
+          starCount: r.stats.favCount,
+          forkCount: r.stats.refCount,
           downloadCount: r.stats.downloadCount,
         } : undefined,
       }));
@@ -1997,50 +2107,154 @@ export class ArtifactService {
       };
     }
   }
+
+  /**
+   * 获取 artifact 的节点图结构
+   * @param artifactId artifact ID
+   * @param versionQuery 版本查询参数：commitHash、commitTag 或 'latest'
+   */
+  async getArtifactGraph(
+    artifactId: string,
+    versionQuery?: string,
+  ): Promise<ServiceResult<GetArtifactGraphResponse>> {
+    try {
+      const nodeVersionService = new NodeVersionService(this.db);
+
+      // 获取指定版本或最新版本
+      let version: DbArtifactVersion | undefined;
+
+      if (versionQuery && versionQuery !== 'latest') {
+        // 先尝试按 commitHash 查询
+        const [byHash] = await this.db
+          .select()
+          .from(artifactVersions)
+          .where(
+            and(
+              eq(artifactVersions.artifactId, artifactId),
+              eq(artifactVersions.commitHash, versionQuery)
+            )
+          )
+          .limit(1);
+
+        if (byHash) {
+          version = byHash;
+        } else {
+          // 尝试按 commitTag 查询
+          const [byTag] = await this.db
+            .select({ version: artifactVersions })
+            .from(artifactCommitTags)
+            .innerJoin(artifactVersions, eq(artifactCommitTags.commitHash, artifactVersions.commitHash))
+            .where(
+              and(
+                eq(artifactCommitTags.artifactId, artifactId),
+                eq(artifactCommitTags.tag, versionQuery)
+              )
+            )
+            .limit(1);
+
+          if (byTag) {
+            version = byTag.version;
+          }
+        }
+      } else {
+        // 获取最新版本
+        const [latest] = await this.db
+          .select()
+          .from(artifactVersions)
+          .where(eq(artifactVersions.artifactId, artifactId))
+          .orderBy(desc(artifactVersions.createdAt))
+          .limit(1);
+
+        version = latest;
+      }
+
+      if (!version) {
+        return { success: false, error: { code: 'NOT_FOUND', message: 'Artifact version not found' } };
+      }
+
+      // 获取 artifact_version_nodes
+      const versionNodes = await this.db
+        .select()
+        .from(artifactVersionNodes)
+        .where(eq(artifactVersionNodes.commitHash, version.commitHash));
+
+      // 获取每个节点的版本信息和内容
+      const nodes: ArtifactNodeSummary[] = [];
+      for (const vn of versionNodes) {
+        const versionDetail = await nodeVersionService.getVersion(vn.nodeCommit);
+        if (versionDetail.success) {
+          const v = versionDetail.data;
+          nodes.push({
+            id: vn.nodeId,
+            type: v.type as ArtifactNodeType,
+            commit: v.commit,
+            contentHash: v.contentHash,
+            name: v.name,
+            position: vn.positionX != null && vn.positionY != null
+              ? { x: vn.positionX, y: vn.positionY }
+              : undefined,
+            content: v.content as ArtifactNodeContent,
+          });
+        }
+      }
+
+      // 获取 artifact_version_edges
+      const versionEdges = await this.db
+        .select()
+        .from(artifactVersionEdges)
+        .where(eq(artifactVersionEdges.commitHash, version.commitHash));
+
+      const edges: ArtifactEdge[] = versionEdges.map(e => ({
+        source: e.sourceNodeId,
+        target: e.targetNodeId,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
+      }));
+
+      // 查询该版本的 commitTags
+      const versionCommitTags = await this.db
+        .select({ tag: artifactCommitTags.tag })
+        .from(artifactCommitTags)
+        .where(eq(artifactCommitTags.commitHash, version.commitHash));
+
+      return {
+        success: true,
+        data: {
+          nodes,
+          edges,
+          version: {
+            id: version.id,
+            commitHash: version.commitHash,
+            commitTags: versionCommitTags.map(t => t.tag),
+            version: version.version ?? '',
+            createdAt: version.createdAt,
+            entrypoint: version.entrypoint ?? undefined,
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Get artifact graph error:', error);
+      return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
+    }
+  }
 }
 
-// 用户 artifacts 查询参数
-export interface ListUserArtifactsParams {
-  page?: number;
-  limit?: number;
-  sortBy?: 'createdAt' | 'updatedAt' | 'viewCount' | 'starCount';
-  sortOrder?: 'asc' | 'desc';
-  // 权限控制：可以看到哪些可见性级别的 artifacts
-  visibilityFilter?: VisibilityType[];
-}
+// 用户 artifacts 查询参数（基于 API 类型 + 内部参数）
+export type ListUserArtifactsParams = GetUserArtifactsQuery & {
+  /** 查看者 ID：如果是自己查看自己，可以看到所有资源 */
+  viewerId?: string;
+};
 
-// 版本信息
-export interface ArtifactVersionItem {
-  id: string;
-  version: string;
-  commitHash: string;
-  commitTags: string[];
-  changelog: string | null;
-  publishedAt: string | null;
-  createdAt: string;
-}
+// 版本信息（重新导出 API 类型，保持向后兼容）
+export type { ArtifactVersion } from '@pubwiki/api';
+export type ArtifactVersionItem = ArtifactVersion;
 
-// PATCH artifact 输入参数
-export interface PatchArtifactInput {
+// PATCH artifact 输入参数（基于 API 类型 + 内部参数）
+export type PatchArtifactInput = {
   authorId: string;
-  metadata: {
-    artifactId: string;
-    baseCommit: string;
-    commit?: string;  // 有 graph 变更时必须提供，metadata-only 更新时不需要
-    name?: string;
-    description?: string;
-    visibility?: VisibilityType;
-    version?: string;
-    changelog?: string;
-    commitTags?: string[];
-    entrypoint?: { saveCommit: string; sandboxNodeId: string };
-    addNodes?: CreateArtifactNode[];
-    removeNodeIds?: string[];
-    addEdges?: ArtifactEdgeDescriptor[];
-    removeEdges?: ArtifactEdgeDescriptor[];
-  };
+  metadata: PatchArtifactRequest;
   saves?: CreateSaveInput[];
-}
+};
 
 // 谱系查询参数
 export interface GetLineageParams {

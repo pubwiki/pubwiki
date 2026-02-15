@@ -22,6 +22,9 @@ import {
   nodeVersions,
   artifactVersionNodes,
   artifactVersionEdges,
+  resourceDiscoveryControl,
+  resourceAcl,
+  PUBLIC_USER_ID,
   eq,
   type TestDb,
 } from './helpers';
@@ -40,15 +43,45 @@ describe('Artifacts API', () => {
     async function createTestArtifact(
       authorId: string,
       name: string,
-      visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC',
-      isArchived: boolean = false
+      options: { isPrivate?: boolean; isListed?: boolean } = {}
     ): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
       const [artifact] = await db.insert(artifacts).values({
         authorId,
         name,
-        visibility,
-        isArchived,
       }).returning();
+      
+      // Create discovery control record for the artifact
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        isListed,
+      });
+      
+      // Grant owner full permissions
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      });
+      
+      // If not private, grant public read access
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'artifact',
+          resourceId: artifact.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: authorId,
+        });
+      }
+      
       return artifact.id;
     }
 
@@ -64,12 +97,12 @@ describe('Artifacts API', () => {
       await db.insert(artifactTags).values({ artifactId, tagId });
     }
 
-    async function createArtifactStats(artifactId: string, viewCount: number, starCount: number): Promise<void> {
+    async function createArtifactStats(artifactId: string, viewCount: number, favCount: number): Promise<void> {
       await db.insert(artifactStats).values({
         artifactId,
         viewCount,
-        starCount,
-        forkCount: 0,
+        favCount,
+        refCount: 0,
         downloadCount: 0,
         commentCount: 0,
       });
@@ -89,32 +122,18 @@ describe('Artifacts API', () => {
       expect(data.pagination.total).toBe(0);
     });
 
-    it('should return only public artifacts', async () => {
-      await createTestArtifact(testUserId, 'Public Recipe', 'PUBLIC');
-      await createTestArtifact(testUserId, 'Private Game', 'PRIVATE');
-      await createTestArtifact(testUserId, 'Unlisted Pack', 'UNLISTED');
+    it('should return all artifacts (access control is now separate)', async () => {
+      await createTestArtifact(testUserId, 'Recipe 1');
+      await createTestArtifact(testUserId, 'Recipe 2');
+      await createTestArtifact(testUserId, 'Recipe 3');
 
       const request = new Request('http://localhost/api/artifacts');
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
       const data = await response.json<ListArtifactsResponse>();
-      expect(data.artifacts).toHaveLength(1);
-      expect(data.artifacts[0].name).toBe('Public Recipe');
-      expect(data.pagination.total).toBe(1);
-    });
-
-    it('should exclude archived artifacts', async () => {
-      await createTestArtifact(testUserId, 'Active Recipe', 'PUBLIC', false);
-      await createTestArtifact(testUserId, 'Archived Game', 'PUBLIC', true);
-
-      const request = new Request('http://localhost/api/artifacts');
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<ListArtifactsResponse>();
-      expect(data.artifacts).toHaveLength(1);
-      expect(data.artifacts[0].name).toBe('Active Recipe');
+      expect(data.artifacts).toHaveLength(3);
+      expect(data.pagination.total).toBe(3);
     });
 
 
@@ -156,27 +175,56 @@ describe('Artifacts API', () => {
     });
 
     it('should sort by createdAt desc by default', async () => {
+      // Helper to create artifact with ACL records for manual date tests
+      async function createArtifactWithAcl(
+        authorId: string,
+        name: string,
+        createdAt: string,
+        options: { isPrivate?: boolean; isListed?: boolean } = {}
+      ): Promise<string> {
+        const { isPrivate = false, isListed = true } = options;
+        const [artifact] = await db.insert(artifacts).values({
+          authorId,
+          name,
+          createdAt,
+          updatedAt: createdAt,
+        }).returning();
+        
+        await db.insert(resourceDiscoveryControl).values({
+          resourceType: 'artifact',
+          resourceId: artifact.id,
+          isListed,
+        });
+        
+        await db.insert(resourceAcl).values({
+          resourceType: 'artifact',
+          resourceId: artifact.id,
+          userId: authorId,
+          canRead: true,
+          canWrite: true,
+          canManage: true,
+          grantedBy: authorId,
+        });
+        
+        if (!isPrivate) {
+          await db.insert(resourceAcl).values({
+            resourceType: 'artifact',
+            resourceId: artifact.id,
+            userId: PUBLIC_USER_ID,
+            canRead: true,
+            canWrite: false,
+            canManage: false,
+            grantedBy: authorId,
+          });
+        }
+        
+        return artifact.id;
+      }
+      
       // 直接设置不同的时间戳来测试排序
-      await db.insert(artifacts).values({
-        authorId: testUserId,
-        name: 'First',
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:00:00Z',
-      });
-      
-      await db.insert(artifacts).values({
-        authorId: testUserId,
-        name: 'Second',
-        createdAt: '2024-01-02T00:00:00Z',
-        updatedAt: '2024-01-02T00:00:00Z',
-      });
-      
-      await db.insert(artifacts).values({
-        authorId: testUserId,
-        name: 'Third',
-        createdAt: '2024-01-03T00:00:00Z',
-        updatedAt: '2024-01-03T00:00:00Z',
-      });
+      await createArtifactWithAcl(testUserId, 'First', '2024-01-01T00:00:00Z');
+      await createArtifactWithAcl(testUserId, 'Second', '2024-01-02T00:00:00Z');
+      await createArtifactWithAcl(testUserId, 'Third', '2024-01-03T00:00:00Z');
 
       const request = new Request('http://localhost/api/artifacts');
       const response = await sendRequest(request);
@@ -408,7 +456,7 @@ describe('Artifacts API', () => {
       }
       const edges: Array<{ source: string; target: string }> = [];
 
-      const commit = await computeCommitHash(artifactId, parentCommit, nodes, edges);
+      const commit = await computeCommitHash(artifactId, parentCommit, nodes as { nodeId: string; commit: string }[], edges);
       const metadataWithDefaults = {
         ...metadata,
         artifactId,
@@ -708,7 +756,7 @@ describe('Artifacts API', () => {
         name: 'Full Asset Pack',
         version: '2.0.0-beta',
         description: 'A complete asset pack',
-        visibility: 'PRIVATE',
+        isListed: false,
         thumbnailUrl: 'https://example.com/thumb.png',
         license: 'MIT',
         repositoryUrl: 'https://github.com/example/repo',
@@ -726,7 +774,7 @@ describe('Artifacts API', () => {
       const data = await response.json<CreateArtifactResponse>();
       expect(data.artifact.name).toBe('Full Asset Pack');
       expect(data.artifact.description).toBe('A complete asset pack');
-      expect(data.artifact.visibility).toBe('PRIVATE');
+      expect(data.artifact.isListed).toBe(false);
       expect(data.artifact.thumbnailUrl).toBe('https://example.com/thumb.png');
       expect(data.artifact.license).toBe('MIT');
     });
@@ -822,8 +870,8 @@ describe('Artifacts API', () => {
       const [stats] = await db.select().from(artifactStats).where(eq(artifactStats.artifactId, data.artifact.id));
       expect(stats).toBeDefined();
       expect(stats.viewCount).toBe(0);
-      expect(stats.starCount).toBe(0);
-      expect(stats.forkCount).toBe(0);
+      expect(stats.favCount).toBe(0);
+      expect(stats.refCount).toBe(0);
       expect(stats.downloadCount).toBe(0);
     });
 
@@ -932,7 +980,7 @@ describe('Artifacts API', () => {
 
         // 模拟一些 stats 更新
         await db.update(artifactStats)
-          .set({ viewCount: 100, starCount: 50 })
+          .set({ viewCount: 100, favCount: 50 })
           .where(eq(artifactStats.artifactId, artifactId));
 
         // 获取当前版本的 commitHash 作为 parentCommit
@@ -957,7 +1005,7 @@ describe('Artifacts API', () => {
         expect(updateResponse.status).toBe(200);
         const updateData = await updateResponse.json<CreateArtifactResponse>();
         expect(updateData.artifact.stats?.viewCount).toBe(100);
-        expect(updateData.artifact.stats?.starCount).toBe(50);
+        expect(updateData.artifact.stats?.favCount).toBe(50);
       });
 
       it('should create new artifact when artifactId does not exist in database', async () => {
@@ -1199,13 +1247,45 @@ describe('Artifacts API', () => {
     async function createTestArtifact(
       authorId: string,
       name: string,
-      visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC'
+      options: { isPrivate?: boolean; isListed?: boolean } = {}
     ): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
       const [artifact] = await db.insert(artifacts).values({
         authorId,
         name,
-        visibility,
       }).returning();
+      
+      // Create discovery control record for visibility tests
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        isListed,
+      });
+      
+      // Grant owner full permissions
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      });
+      
+      // If not private, grant public read access
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'artifact',
+          resourceId: artifact.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: authorId,
+        });
+      }
+      
       return artifact.id;
     }
 
@@ -1243,7 +1323,7 @@ describe('Artifacts API', () => {
 
       expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Artifact not found');
+      expect(data.error).toBe('artifact not found');
     });
 
     it('should return 404 when homepage not created', async () => {
@@ -1257,19 +1337,20 @@ describe('Artifacts API', () => {
       expect(data.error).toBe('Artifact homepage not found');
     });
 
-    it('should return 401 for unlisted artifact without auth', async () => {
-      const artifactId = await createTestArtifact(testUserId, 'Unlisted Artifact', 'UNLISTED');
+    it('should return homepage for unlisted artifact without auth (unlisted but not private)', async () => {
+      const artifactId = await createTestArtifact(testUserId, 'Unlisted Artifact', { isPrivate: false, isListed: false });
       await storeHomepage(artifactId, '<h1>Secret</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`);
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(401);
+      // Unlisted but not private artifacts are publicly accessible via direct link
+      expect(response.status).toBe(200);
     });
 
     it('should return homepage for unlisted artifact with auth', async () => {
       const { sessionCookie } = await registerUser('autheduser');
-      const artifactId = await createTestArtifact(testUserId, 'Unlisted Artifact', 'UNLISTED');
+      const artifactId = await createTestArtifact(testUserId, 'Unlisted Artifact', { isPrivate: false, isListed: false });
       await storeHomepage(artifactId, '<h1>Unlisted Content</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`, {
@@ -1282,19 +1363,19 @@ describe('Artifacts API', () => {
       expect(html).toBe('<h1>Unlisted Content</h1>');
     });
 
-    it('should return 401 for private artifact without auth', async () => {
-      const artifactId = await createTestArtifact(testUserId, 'Private Artifact', 'PRIVATE');
+    it('should return 403 for private artifact without auth', async () => {
+      const artifactId = await createTestArtifact(testUserId, 'Private Artifact', { isPrivate: true, isListed: false });
       await storeHomepage(artifactId, '<h1>Private</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`);
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(401);
+      expect(response.status).toBe(403);
     });
 
     it('should return 403 for private artifact from different user', async () => {
       const { sessionCookie } = await registerUser('differentuser');
-      const artifactId = await createTestArtifact(testUserId, 'Private Artifact', 'PRIVATE');
+      const artifactId = await createTestArtifact(testUserId, 'Private Artifact', { isPrivate: true, isListed: false });
       await storeHomepage(artifactId, '<h1>Private</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`, {
@@ -1309,7 +1390,7 @@ describe('Artifacts API', () => {
       // Register user and get their ID
       const { sessionCookie, userId: ownerId } = await registerUser('owneruser');
       
-      const artifactId = await createTestArtifact(ownerId, 'My Private Artifact', 'PRIVATE');
+      const artifactId = await createTestArtifact(ownerId, 'My Private Artifact', { isPrivate: true, isListed: false });
       await storeHomepage(artifactId, '<h1>My Private Content</h1>');
 
       const request = new Request(`http://localhost/api/artifacts/${artifactId}/homepage`, {

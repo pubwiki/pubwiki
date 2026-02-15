@@ -4,26 +4,14 @@ import { nodeVersions } from '../schema/node-versions';
 import { saveContents } from '../schema/node-contents';
 import { artifactVersions } from '../schema/artifacts';
 import { user } from '../schema/auth';
+import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
 import type { ServiceResult } from './user';
 import { computeSaveId } from '@pubwiki/api';
+import type { SaveDetail, Pagination } from '@pubwiki/api';
 
-// Save 详情
-export interface SaveDetail {
-  saveId: string;
-  commit: string;
-  parent: string | null;
-  authorId: string;
-  authoredAt: string;
-  stateNodeId: string;
-  stateNodeCommit: string;
-  sourceArtifactId: string;
-  sourceArtifactCommit: string;
-  title: string | null;
-  description: string | null;
-  visibility: string;
-  createdAt: string;
-}
+// 重新导出类型
+export type { SaveDetail };
 
 // 创建 Save 的参数
 export interface CreateSaveParams {
@@ -37,7 +25,7 @@ export interface CreateSaveParams {
   contentHash: string;
   title?: string;
   description?: string;
-  visibility?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
+  isListed?: boolean;
 }
 
 // 列表查询参数
@@ -53,12 +41,7 @@ export type ListSavesParams = {
 // 列表响应
 export interface ListSavesResult {
   saves: SaveDetail[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
+  pagination: Pagination;
 }
 
 export class SaveService {
@@ -84,7 +67,7 @@ export class SaveService {
       contentHash,
       title,
       description,
-      visibility = 'PRIVATE',
+      isListed = false,
     } = params;
 
     try {
@@ -127,7 +110,7 @@ export class SaveService {
           title: title ?? null,
           description: description ?? null,
         },
-        visibility,
+        isListed,
       };
 
       const syncResult = await this.nodeVersionService.syncVersions([syncInput]);
@@ -185,7 +168,7 @@ export class SaveService {
       const total = countResult?.count ?? 0;
       const totalPages = Math.ceil(total / validLimit);
 
-      // 查询 SAVE 版本 + 内容
+      // 查询 SAVE 版本 + 内容 + 访问控制
       const rows = await this.db
         .select({
           saveId: nodeVersions.nodeId,
@@ -195,7 +178,7 @@ export class SaveService {
           authoredAt: nodeVersions.authoredAt,
           sourceArtifactId: nodeVersions.sourceArtifactId,
           contentHash: nodeVersions.contentHash,
-          visibility: nodeVersions.visibility,
+          isListed: resourceDiscoveryControl.isListed,
           // save content fields
           stateNodeId: saveContents.stateNodeId,
           stateNodeCommit: saveContents.stateNodeCommit,
@@ -208,6 +191,13 @@ export class SaveService {
         .innerJoin(
           saveContents,
           eq(nodeVersions.contentHash, saveContents.contentHash)
+        )
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'save'),
+            eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
+          )
         )
         .where(and(...conditions))
         .orderBy(desc(nodeVersions.authoredAt))
@@ -226,7 +216,7 @@ export class SaveService {
         sourceArtifactCommit: r.sourceArtifactCommit,
         title: r.title,
         description: r.description,
-        visibility: r.visibility,
+        isListed: r.isListed ?? false,
         createdAt: r.createdAt!,
       }));
 
@@ -263,7 +253,7 @@ export class SaveService {
           authoredAt: nodeVersions.authoredAt,
           sourceArtifactId: nodeVersions.sourceArtifactId,
           contentHash: nodeVersions.contentHash,
-          visibility: nodeVersions.visibility,
+          isListed: resourceDiscoveryControl.isListed,
           stateNodeId: saveContents.stateNodeId,
           stateNodeCommit: saveContents.stateNodeCommit,
           sourceArtifactCommit: saveContents.sourceArtifactCommit,
@@ -275,6 +265,13 @@ export class SaveService {
         .innerJoin(
           saveContents,
           eq(nodeVersions.contentHash, saveContents.contentHash)
+        )
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'save'),
+            eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
+          )
         )
         .where(
           and(
@@ -305,7 +302,7 @@ export class SaveService {
           sourceArtifactCommit: row.sourceArtifactCommit,
           title: row.title,
           description: row.description,
-          visibility: row.visibility,
+          isListed: row.isListed ?? false,
           createdAt: row.createdAt!,
         },
       };

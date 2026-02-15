@@ -289,9 +289,7 @@
     description: |
       获取指定 Artifact 的只读主页 HTML 内容。
       HTML 内容存储在 R2 中，存储 key 由 artifactId 派生。
-      - PUBLIC artifact: 所有人可访问
-      - UNLISTED artifact: 仅注册用户可访问
-      - PRIVATE artifact: 仅 owner 可访问
+      访问权限由 ACL 系统控制，无权访问时返回 403。
     operationId: getArtifactHomepage
     tags:
       - Artifacts
@@ -311,14 +309,8 @@
             schema:
               type: string
               description: Artifact 主页的 HTML 内容
-      '401':
-        description: 需要认证（访问 UNLISTED artifact 时）
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
       '403':
-        description: 无权访问（访问 PRIVATE artifact 时）
+        description: 无权访问
         content:
           application/json:
             schema:
@@ -337,9 +329,7 @@
       获取指定 Artifact 的谱系（依赖和派生关系）。
       支持递归查询多代父/子关系，可通过 parentDepth 和 childDepth 控制递归深度。
       返回的每个条目包含 parentId 字段，用于在前端构建树状结构。
-      - PUBLIC artifact: 所有人可访问
-      - UNLISTED artifact: 仅注册用户可访问
-      - PRIVATE artifact: 仅 owner 可访问
+      访问权限由 ACL 系统控制，无权访问时返回 403。
     operationId: getArtifactLineage
     tags:
       - Artifacts
@@ -394,14 +384,8 @@
                   description: 依赖此 Artifact 的子 Artifact
                   items:
                     $ref: '../schemas/artifact.yaml#/ArtifactLineageItem'
-      '401':
-        description: 需要认证（访问 UNLISTED artifact 时）
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
       '403':
-        description: 无权访问（访问 PRIVATE artifact 时）
+        description: 无权访问
         content:
           application/json:
             schema:
@@ -418,9 +402,7 @@
     summary: 获取 Artifact 节点图结构
     description: |
       获取 artifact 的完整节点和边列表。
-      - PUBLIC artifact: 所有人可访问
-      - UNLISTED artifact: 仅注册用户可访问
-      - PRIVATE artifact: 仅 owner 可访问
+      访问权限由 ACL 系统控制，无权访问时返回 403。
     operationId: getArtifactGraph
     tags:
       - Nodes

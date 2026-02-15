@@ -52,9 +52,9 @@ export interface paths {
         /**
          * 获取用户的 Artifact 列表
          * @description 获取指定用户拥有的所有 Artifact。
-         *     - 未认证用户：只能看到 PUBLIC artifact
-         *     - 已认证用户查看他人：只能看到 PUBLIC 和 UNLISTED artifact
-         *     - 已认证用户查看自己：可以看到所有 artifact
+         *     返回结果基于可发现性（isListed）过滤：
+         *     - 查看他人：只能看到已列出的 artifact
+         *     - 查看自己：可以看到所有 artifact
          */
         get: operations["getUserArtifacts"];
         put?: never;
@@ -74,11 +74,10 @@ export interface paths {
         };
         /**
          * 获取用户的 Project 列表
-         * @description 获取指定用户 own 或 maintain 的所有 Project。
-         *     返回的每个 project 都包含用户在其中的角色（owner 或 maintainer）。
-         *     - 未认证用户：只能看到 PUBLIC project
-         *     - 已认证用户查看他人：只能看到 PUBLIC 和 UNLISTED project
-         *     - 已认证用户查看自己：可以看到所有 project
+         * @description 获取指定用户拥有的所有 Project。
+         *     返回结果基于可发现性（isListed）过滤：
+         *     - 查看他人：只能看到已列出的 project
+         *     - 查看自己：可以看到所有 project
          */
         get: operations["getUserProjects"];
         put?: never;
@@ -151,9 +150,7 @@ export interface paths {
          * 获取 Artifact 主页 HTML
          * @description 获取指定 Artifact 的只读主页 HTML 内容。
          *     HTML 内容存储在 R2 中，存储 key 由 artifactId 派生。
-         *     - PUBLIC artifact: 所有人可访问
-         *     - UNLISTED artifact: 仅注册用户可访问
-         *     - PRIVATE artifact: 仅 owner 可访问
+         *     访问权限由 ACL 系统控制，无权访问时返回 403。
          */
         get: operations["getArtifactHomepage"];
         put?: never;
@@ -176,9 +173,7 @@ export interface paths {
          * @description 获取指定 Artifact 的谱系（依赖和派生关系）。
          *     支持递归查询多代父/子关系，可通过 parentDepth 和 childDepth 控制递归深度。
          *     返回的每个条目包含 parentId 字段，用于在前端构建树状结构。
-         *     - PUBLIC artifact: 所有人可访问
-         *     - UNLISTED artifact: 仅注册用户可访问
-         *     - PRIVATE artifact: 仅 owner 可访问
+         *     访问权限由 ACL 系统控制，无权访问时返回 403。
          */
         get: operations["getArtifactLineage"];
         put?: never;
@@ -199,9 +194,7 @@ export interface paths {
         /**
          * 获取 Artifact 节点图结构
          * @description 获取 artifact 的完整节点和边列表。
-         *     - PUBLIC artifact: 所有人可访问
-         *     - UNLISTED artifact: 仅注册用户可访问
-         *     - PRIVATE artifact: 仅 owner 可访问
+         *     访问权限由 ACL 系统控制，无权访问时返回 403。
          */
         get: operations["getArtifactGraph"];
         put?: never;
@@ -290,10 +283,8 @@ export interface paths {
         };
         /**
          * 获取 Project 详情
-         * @description 获取指定 Project 的详细信息，包括 owner、maintainers、artifacts、roles 和 pages。
-         *     - PUBLIC project: 所有人可访问
-         *     - UNLISTED project: 仅注册用户可访问
-         *     - PRIVATE project: 仅 owner 和 maintainer 可访问
+         * @description 获取指定 Project 的详细信息。
+         *     访问权限由 ACL 系统控制，无权访问时返回 403。
          */
         get: operations["getProjectDetail"];
         put?: never;
@@ -314,9 +305,7 @@ export interface paths {
         /**
          * 获取 Project 页面详情
          * @description 获取指定 Project 的特定页面详情，包括 HTML 内容。
-         *     - PUBLIC project: 所有人可访问
-         *     - UNLISTED project: 仅注册用户可访问
-         *     - PRIVATE project: 仅 owner 和 maintainer 可访问
+         *     访问权限由 ACL 系统控制，无权访问时返回 403。
          */
         get: operations["getProjectPage"];
         put?: never;
@@ -366,16 +355,14 @@ export interface paths {
         /**
          * 获取 Project 的动态列表
          * @description 获取指定 Project 的所有动态，支持分页。
-         *     - PUBLIC project: 所有人可访问
-         *     - UNLISTED project: 仅注册用户可访问
-         *     - PRIVATE project: 仅 owner 和 maintainer 可访问
+         *     访问权限由 ACL 系统控制，无权访问时返回 403。
          */
         get: operations["listProjectPosts"];
         put?: never;
         /**
          * 创建动态
          * @description 在指定 Project 下创建新动态。需要认证。
-         *     仅 owner 和 maintainer 可以创建动态。
+         *     需要对 Project 有写入权限。
          *     创建动态时会同时创建一个关联的讨论。
          */
         post: operations["createProjectPost"];
@@ -395,9 +382,7 @@ export interface paths {
         /**
          * 获取动态详情
          * @description 获取指定动态的详细信息，包括关联的讨论。
-         *     - PUBLIC project: 所有人可访问
-         *     - UNLISTED project: 仅注册用户可访问
-         *     - PRIVATE project: 仅 owner 和 maintainer 可访问
+         *     访问权限由 ACL 系统控制，无权访问时返回 403。
          */
         get: operations["getProjectPost"];
         put?: never;
@@ -770,8 +755,16 @@ export interface components {
             total: number;
             totalPages: number;
         };
-        /** @enum {string} */
-        VisibilityType: "PUBLIC" | "PRIVATE" | "UNLISTED";
+        /**
+         * @description 访问控制信息（只读字段，由 ACL 系统管理）。
+         *     - isListed: 控制资源是否在公开列表/搜索结果中可见
+         *
+         *     访问权限通过 ACL API 管理，而非直接设置字段。
+         */
+        AccessControl: {
+            /** @description 是否在公开列表中可见，false=不显示，true=显示 */
+            isListed?: boolean;
+        };
         PublicUser: {
             /** Format: uuid */
             id: string;
@@ -834,8 +827,11 @@ export interface components {
             parentCommit?: string | null;
             name: string;
             description?: string;
-            /** @default PUBLIC */
-            visibility: components["schemas"]["VisibilityType"];
+            /**
+             * @description 是否在公开列表中可见（可发现性）
+             * @default true
+             */
+            isListed: boolean;
             /** Format: uri */
             thumbnailUrl?: string;
             license?: string;
@@ -893,7 +889,8 @@ export interface components {
             message?: string;
             /** @description Semver 标签 */
             tag?: string;
-            visibility?: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed?: boolean;
             /** @description 血统引用（主要用于 GENERATED 节点） */
             refs?: components["schemas"]["NodeVersionRef"][];
             position?: {
@@ -949,7 +946,8 @@ export interface components {
             /** Format: uuid */
             artifactId: string;
             name: string;
-            visibility: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
             /** Format: uri */
             thumbnailUrl?: string | null;
             author?: {
@@ -966,12 +964,11 @@ export interface components {
             id: string;
             name: string;
             description?: string | null;
-            /** @enum {string} */
-            visibility: "PUBLIC" | "PRIVATE" | "UNLISTED";
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
             /** Format: uri */
             thumbnailUrl?: string | null;
             license?: string | null;
-            isArchived: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -987,8 +984,8 @@ export interface components {
             tags?: components["schemas"]["Tag"][];
             stats?: {
                 viewCount?: number;
-                starCount?: number;
-                forkCount?: number;
+                favCount?: number;
+                refCount?: number;
                 downloadCount?: number;
             };
         };
@@ -1147,8 +1144,11 @@ export interface components {
             /** @description Project 的 hashtag */
             topic: string;
             description?: string;
-            /** @default PUBLIC */
-            visibility: components["schemas"]["VisibilityType"];
+            /**
+             * @description 是否在公开列表中可见（可发现性）
+             * @default true
+             */
+            isListed: boolean;
             license?: string;
             /** @description 封面图片 URL 数组 */
             coverUrls?: string[];
@@ -1199,7 +1199,8 @@ export interface components {
             license?: string | null;
             /** @description 封面图片 URL 数组 */
             coverUrls?: string[];
-            visibility: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1212,16 +1213,9 @@ export interface components {
                 /** Format: uri */
                 avatarUrl?: string | null;
             };
-            /** @description 管理者数量 */
-            maintainerCount?: number;
             /** @description 关联 artifact 数量 */
             artifactCount?: number;
         };
-        /**
-         * @description 用户在 Project 中的角色
-         * @enum {string}
-         */
-        UserProjectRole: "owner" | "maintainer";
         UserProjectListItem: {
             /** Format: uuid */
             id: string;
@@ -1232,7 +1226,8 @@ export interface components {
             license?: string | null;
             /** @description 封面图片 URL 数组 */
             coverUrls?: string[];
-            visibility: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -1245,11 +1240,8 @@ export interface components {
                 /** Format: uri */
                 avatarUrl?: string | null;
             };
-            /** @description 管理者数量 */
-            maintainerCount?: number;
             /** @description 关联 artifact 数量 */
             artifactCount?: number;
-            role: components["schemas"]["UserProjectRole"];
         };
         ProjectArtifact: {
             artifact: components["schemas"]["ArtifactListItem"];
@@ -1273,7 +1265,8 @@ export interface components {
             license?: string | null;
             /** @description 封面图片 URL 数组 */
             coverUrls?: string[];
-            visibility: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
             isArchived: boolean;
             /** Format: date-time */
             createdAt: string;
@@ -1287,15 +1280,6 @@ export interface components {
                 /** Format: uri */
                 avatarUrl?: string | null;
             };
-            /** @description 管理者列表 */
-            maintainers: {
-                /** Format: uuid */
-                id: string;
-                username: string;
-                displayName?: string | null;
-                /** Format: uri */
-                avatarUrl?: string | null;
-            }[];
             /** @description 关联的 artifact 列表 */
             artifacts: components["schemas"]["ProjectArtifact"][];
             /** @description Project 定义的角色列表 */
@@ -1472,7 +1456,8 @@ export interface components {
             artifactId: string;
             /** @description Artifact 版本 commit hash */
             artifactCommit: string;
-            visibility: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
             likes: number;
             collections: number;
             /** Format: date-time */
@@ -1490,8 +1475,11 @@ export interface components {
             /** @description Artifact 版本 commit hash */
             artifactCommit: string;
             content: components["schemas"]["ReaderContentBlock"][];
-            /** @default PUBLIC */
-            visibility: components["schemas"]["VisibilityType"];
+            /**
+             * @description 是否在公开列表中可见（可发现性）
+             * @default false
+             */
+            isListed: boolean;
         };
         SaveDetail: {
             /** @description Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)） */
@@ -1520,7 +1508,8 @@ export interface components {
             sourceArtifactCommit: string;
             title?: string | null;
             description?: string | null;
-            visibility: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
             /** Format: date-time */
             createdAt: string;
         };
@@ -1549,8 +1538,11 @@ export interface components {
             title?: string;
             /** @description 存档描述 */
             description?: string;
-            /** @default PRIVATE */
-            visibility: components["schemas"]["VisibilityType"];
+            /**
+             * @description 是否在公开列表中可见（可发现性）
+             * @default false
+             */
+            isListed: boolean;
         };
         /**
          * @description Type of reference between node versions (lineage tracking).
@@ -1588,7 +1580,8 @@ export interface components {
             message?: string | null;
             /** @description Semver tag (e.g. v1.0.0) */
             tag?: string | null;
-            visibility: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed: boolean;
         };
         NodeVersionDetail: components["schemas"]["NodeVersionSummary"] & {
             /** @description Full content from the typed content table */
@@ -1631,8 +1624,11 @@ export interface components {
             title?: string;
             /** @description Save 描述 */
             description?: string;
-            /** @default PRIVATE */
-            visibility: components["schemas"]["VisibilityType"];
+            /**
+             * @description 是否在公开列表中可见（可发现性）
+             * @default false
+             */
+            isListed: boolean;
         };
         TextBlock: {
             /**
@@ -1739,7 +1735,8 @@ export interface components {
             commit?: string;
             name?: string;
             description?: string;
-            visibility?: components["schemas"]["VisibilityType"];
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed?: boolean;
             /** @description Semver 版本号 */
             version?: string;
             changelog?: string;
@@ -2233,16 +2230,7 @@ export interface operations {
                     "text/html": string;
                 };
             };
-            /** @description 需要认证（访问 UNLISTED artifact 时） */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问（访问 PRIVATE artifact 时） */
+            /** @description 无权访问 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2298,16 +2286,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description 需要认证（访问 UNLISTED artifact 时） */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问（访问 PRIVATE artifact 时） */
+            /** @description 无权访问 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2654,16 +2633,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProjectDetail"];
                 };
             };
-            /** @description 需要认证（访问 UNLISTED project 时） */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问（访问 PRIVATE project 时） */
+            /** @description 无权访问 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2706,16 +2676,7 @@ export interface operations {
                     "application/json": components["schemas"]["ProjectPageDetail"];
                 };
             };
-            /** @description 需要认证（访问 UNLISTED project 时） */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问（访问 PRIVATE project 时） */
+            /** @description 无权访问 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -2906,16 +2867,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description 需要认证（访问 UNLISTED project 时） */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问（访问 PRIVATE project 时） */
+            /** @description 无权访问 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3025,16 +2977,7 @@ export interface operations {
                     "application/json": components["schemas"]["PostDetail"];
                 };
             };
-            /** @description 需要认证（访问 UNLISTED project 时） */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权访问（访问 PRIVATE project 时） */
+            /** @description 无权访问 */
             403: {
                 headers: {
                     [name: string]: unknown;

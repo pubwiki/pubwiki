@@ -6,7 +6,9 @@ import type {
   ArticleDetail,
   Pagination,
 } from '@pubwiki/api';
+import { ListArticlesByArtifactQueryParams } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
+import { validateQuery, isValidationError } from '../lib/validate';
 
 export const articlesRoute = new Hono<{ Bindings: Env }>();
 
@@ -16,17 +18,19 @@ articlesRoute.get('/by-artifact/:artifactId', async (c) => {
   const articleService = new ArticleService(db);
 
   const artifactId = c.req.param('artifactId');
-  const query = c.req.query();
 
   // 验证 UUID 格式
   if (!artifactId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
     return c.json<ApiError>({ error: 'Invalid artifact ID format' }, 400);
   }
 
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, ListArticlesByArtifactQueryParams, c.req.query());
+  if (isValidationError(validated)) return validated;
+
   const result = await articleService.listArticlesByArtifactId({
     artifactId,
-    page: query.page ? parseInt(query.page, 10) : undefined,
-    limit: query.limit ? parseInt(query.limit, 10) : undefined,
+    ...validated,
   });
 
   if (!result.success) {
@@ -100,6 +104,14 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'content is required and must be an array' }, 400);
   }
 
+  // 验证 isPrivate 和 isListed 类型（如果提供）
+  if (body.isPrivate !== undefined && typeof body.isPrivate !== 'boolean') {
+    return c.json<ApiError>({ error: 'isPrivate must be a boolean' }, 400);
+  }
+  if (body.isListed !== undefined && typeof body.isListed !== 'boolean') {
+    return c.json<ApiError>({ error: 'isListed must be a boolean' }, 400);
+  }
+
   // 验证 content 中每个元素的结构
   for (const block of body.content) {
     const b = block as Record<string, unknown>;
@@ -119,11 +131,6 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
     }
   }
 
-  // 验证 visibility
-  if (body.visibility && !['PUBLIC', 'PRIVATE', 'UNLISTED'].includes(body.visibility as string)) {
-    return c.json<ApiError>({ error: 'Invalid visibility value' }, 400);
-  }
-
   const result = await articleService.upsertArticle({
     articleId,
     authorId: user.id,
@@ -132,7 +139,7 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
       artifactId: body.artifactId as string,
       artifactCommit: body.artifactCommit as string,
       content: body.content as any,
-      visibility: body.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED' | undefined,
+      isListed: body.isListed as boolean | undefined,
     },
   });
 

@@ -153,8 +153,7 @@ describe('E2E: Artifacts API', () => {
       for (const artifact of data!.artifacts) {
         expect(artifact.id).toBeDefined();
         expect(artifact.name).toBeDefined();
-        expect(artifact.visibility).toBe('PUBLIC');
-        expect(artifact.isArchived).toBe(false);
+        expect(artifact.isListed).toBe(true);
         expect(artifact.createdAt).toBeDefined();
         expect(artifact.updatedAt).toBeDefined();
         expect(artifact.author).toBeDefined();
@@ -241,12 +240,12 @@ describe('E2E: Artifacts API', () => {
           for (const parent of lineageData.parents) {
             expect(parent.artifactId).toBeDefined();
             expect(parent.name).toBeDefined();
-            expect(parent.visibility).toBeDefined();
+            expect(parent.isListed).toBeDefined();
           }
           for (const child of lineageData.children) {
             expect(child.artifactId).toBeDefined();
             expect(child.name).toBeDefined();
-            expect(child.visibility).toBeDefined();
+            expect(child.isListed).toBeDefined();
           }
         }
       }
@@ -709,7 +708,8 @@ describe('E2E: Artifacts API', () => {
         slug,
         version: '2.0.0-beta',
         description: 'A complete asset pack',
-        visibility: 'PRIVATE',
+        isPrivate: true,
+        isListed: false,
         thumbnailUrl: 'https://example.com/thumb.png',
         license: 'MIT',
         repositoryUrl: 'https://github.com/example/repo',
@@ -726,10 +726,10 @@ describe('E2E: Artifacts API', () => {
       });
 
       expect(response.status).toBe(200);
-      const data = await response.json() as { artifact: { type: string; name: string; visibility: string; license: string; tags?: { slug: string }[] } };
+      const data = await response.json() as { artifact: { type: string; name: string; isPrivate: boolean; isListed: boolean; license: string; tags?: { slug: string }[] } };
       expect(data.artifact.type).toBe('ASSET_PACK');
       expect(data.artifact.name).toBe('Full Asset Pack');
-      expect(data.artifact.visibility).toBe('PRIVATE');
+      expect(data.artifact.isPrivate).toBe(true);
       expect(data.artifact.license).toBe('MIT');
       expect(data.artifact.tags).toHaveLength(2);
     });
@@ -1363,7 +1363,8 @@ describe('E2E: Artifacts API', () => {
           name: 'Private VFS Test',
           slug,
           version: '1.0.0',
-          visibility: 'PRIVATE',
+          isPrivate: true,
+          isListed: false,
         },
         [{ name: 'secret.txt', content: 'secret content' }],
         {
@@ -1414,7 +1415,8 @@ describe('E2E: Artifacts API', () => {
       sessionCookie = result.sessionCookie;
     });
 
-    async function createArtifactWithHomepage(visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC'): Promise<string> {
+    async function createArtifactWithHomepage(options: { isPrivate?: boolean; isListed?: boolean } = {}): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
       const slug = `homepage-test-${Date.now()}`;
       const formData = new FormData();
       formData.append('metadata', JSON.stringify({
@@ -1423,7 +1425,8 @@ describe('E2E: Artifacts API', () => {
         name: 'Test Artifact',
         slug,
         version: '1.0.0',
-        visibility,
+        isPrivate,
+        isListed,
       }));
       formData.append('descriptor', JSON.stringify({
         version: 1,
@@ -1449,7 +1452,7 @@ describe('E2E: Artifacts API', () => {
     }
 
     it('should return homepage HTML for public artifact', async () => {
-      const artifactId = await createArtifactWithHomepage('PUBLIC');
+      const artifactId = await createArtifactWithHomepage({ isPrivate: false, isListed: true });
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`);
       
@@ -1467,7 +1470,7 @@ describe('E2E: Artifacts API', () => {
     });
 
     it('should return 401 for unlisted artifact without auth', async () => {
-      const artifactId = await createArtifactWithHomepage('UNLISTED');
+      const artifactId = await createArtifactWithHomepage({ isPrivate: false, isListed: false });
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`);
       
@@ -1475,7 +1478,7 @@ describe('E2E: Artifacts API', () => {
     });
 
     it('should return homepage for unlisted artifact with auth', async () => {
-      const artifactId = await createArtifactWithHomepage('UNLISTED');
+      const artifactId = await createArtifactWithHomepage({ isPrivate: false, isListed: false });
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`, {
         headers: {
@@ -1489,7 +1492,7 @@ describe('E2E: Artifacts API', () => {
     });
 
     it('should return 401 for private artifact without auth', async () => {
-      const artifactId = await createArtifactWithHomepage('PRIVATE');
+      const artifactId = await createArtifactWithHomepage({ isPrivate: true, isListed: false });
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`);
       
@@ -1497,7 +1500,7 @@ describe('E2E: Artifacts API', () => {
     });
 
     it('should return homepage for private artifact with owner auth', async () => {
-      const artifactId = await createArtifactWithHomepage('PRIVATE');
+      const artifactId = await createArtifactWithHomepage({ isPrivate: true, isListed: false });
       
       const response = await fetch(`${baseUrl}/artifacts/${artifactId}/homepage`, {
         headers: {
@@ -1511,7 +1514,7 @@ describe('E2E: Artifacts API', () => {
     });
 
     it('should return 403 for private artifact with different user auth', async () => {
-      const artifactId = await createArtifactWithHomepage('PRIVATE');
+      const artifactId = await createArtifactWithHomepage({ isPrivate: true, isListed: false });
       
       // Register a different user
       const timestamp = Date.now();

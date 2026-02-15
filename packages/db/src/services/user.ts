@@ -1,21 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Database } from '../client';
 import { user, type User } from '../schema/auth';
-
-// 用户公开信息（不包含敏感字段）
-// 与 @pubwiki/api 的 PublicUser 保持一致
-export interface PublicUser {
-  id: string;
-  username: string;
-  email: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-  bio: string | null;
-  website: string | null;
-  location: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+import type { PublicUser } from '@pubwiki/api';
 
 // 服务错误类型
 export type ServiceError = 
@@ -33,14 +19,17 @@ export type ServiceResult<T> =
   | { success: true; data: T }
   | { success: false; error: ServiceError };
 
+// 重新导出类型
+export type { PublicUser };
+
 // 将 User 转换为 PublicUser（移除敏感字段）
 function toPublicUser(userData: User): PublicUser {
   return {
     id: userData.id,
     username: userData.username,
     email: userData.email,
-    displayName: userData.name,
-    avatarUrl: userData.image,
+    displayName: userData.displayName,
+    avatarUrl: userData.avatarUrl,
     bio: userData.bio,
     website: userData.website,
     location: userData.location,
@@ -113,7 +102,7 @@ export class UserService {
   // 更新用户信息
   async updateUser(
     id: string,
-    updates: Partial<{ name: string; image: string | null; bio: string | null; website: string | null; location: string | null }>
+    updates: Partial<{ displayName: string; avatarUrl: string | null; bio: string | null; website: string | null; location: string | null }>
   ): Promise<ServiceResult<PublicUser>> {
     try {
       const [updatedUser] = await this.db

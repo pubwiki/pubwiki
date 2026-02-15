@@ -59,8 +59,8 @@ components:
       $ref: './openapi/schemas/common.yaml#/ApiError'
     Pagination:
       $ref: './openapi/schemas/common.yaml#/Pagination'
-    VisibilityType:
-      $ref: './openapi/schemas/common.yaml#/VisibilityType'
+    AccessControl:
+      $ref: './openapi/schemas/common.yaml#/AccessControl'
 
     # User schemas
     PublicUser:
@@ -135,8 +135,6 @@ components:
       $ref: './openapi/schemas/project.yaml#/ProjectPageDetail'
     ProjectListItem:
       $ref: './openapi/schemas/project.yaml#/ProjectListItem'
-    UserProjectRole:
-      $ref: './openapi/schemas/project.yaml#/UserProjectRole'
     UserProjectListItem:
       $ref: './openapi/schemas/project.yaml#/UserProjectListItem'
     ProjectArtifact:

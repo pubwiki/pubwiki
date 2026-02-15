@@ -76,7 +76,8 @@ describe('E2E: Projects API', () => {
         slug,
         topic: 'testing',
         description: 'A test project',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],
@@ -92,11 +93,11 @@ describe('E2E: Projects API', () => {
       });
 
       expect(response.status).toBe(201);
-      const data = await response.json() as { project: { name: string; slug: string; topic: string; visibility: string; owner: { id: string } } };
+      const data = await response.json() as { project: { name: string; slug: string; topic: string; isListed: boolean; owner: { id: string } } };
       expect(data.project.name).toBe('Test Project');
       expect(data.project.slug).toBe(slug);
       expect(data.project.topic).toBe('testing');
-      expect(data.project.visibility).toBe('PUBLIC');
+      expect(data.project.isListed).toBe(true);
       expect(data.project.owner.id).toBe(testUserId);
     });
 
@@ -106,7 +107,8 @@ describe('E2E: Projects API', () => {
         name: 'Project With Roles',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Admin', description: 'Administrator role' },
           { name: 'Editor', description: 'Editor role' },
@@ -134,7 +136,8 @@ describe('E2E: Projects API', () => {
         name: 'Project With Role Tree',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Root Role', description: 'Root role' },
           { name: 'Child Role 1', parentName: 'Root Role' },
@@ -185,7 +188,8 @@ describe('E2E: Projects API', () => {
         name: 'Project With Artifacts',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         artifacts: [{ artifactId, roleName: 'Default Role' }],
         roles: [
           { name: 'Default Role' },
@@ -219,7 +223,8 @@ describe('E2E: Projects API', () => {
         slug,
         topic: 'advanced',
         description: 'A project with all features',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         license: 'MIT',
         coverUrls: ['https://example.com/cover.jpg'],
         artifacts: [
@@ -277,7 +282,8 @@ describe('E2E: Projects API', () => {
         name: 'Invalid Parent Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Child Role', parentName: 'Nonexistent Parent' },
         ],
@@ -303,7 +309,8 @@ describe('E2E: Projects API', () => {
         name: 'Circular Reference Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Role 1', parentName: 'Role 2' },
           { name: 'Role 2', parentName: 'Role 1' },
@@ -328,7 +335,8 @@ describe('E2E: Projects API', () => {
         name: 'Unauthorized Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],
@@ -351,7 +359,8 @@ describe('E2E: Projects API', () => {
         name: 'First Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],
@@ -370,7 +379,8 @@ describe('E2E: Projects API', () => {
         name: 'Second Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],
@@ -411,7 +421,8 @@ describe('E2E: Projects API', () => {
         name: 'Project With Pages',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],
@@ -454,7 +465,8 @@ describe('E2E: Projects API', () => {
         name: 'Invalid Homepage Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],
@@ -581,7 +593,8 @@ describe('E2E: Projects API', () => {
         name: 'Pages Test Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],
@@ -641,7 +654,8 @@ describe('E2E: Projects API', () => {
         name: 'Page Not Found Test',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],

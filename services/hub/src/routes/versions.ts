@@ -1,0 +1,72 @@
+import { Hono } from 'hono';
+import type { Env } from '../types';
+import { createDb, NodeVersionService } from '@pubwiki/db';
+import type { ApiError } from '@pubwiki/api';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+
+const versionsRoute = new Hono<{ Bindings: Env }>();
+
+// GET /versions/:commit - 获取特定版本详情（commit 全局唯一）
+versionsRoute.get('/:commit', authMiddleware, async (c) => {
+  const commit = c.req.param('commit');
+  const db = createDb(c.env.DB);
+  const nodeVersionService = new NodeVersionService(db);
+
+  const result = await nodeVersionService.getVersion(commit);
+
+  if (!result.success) {
+    if (result.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: result.error.message }, 404);
+    }
+    return c.json<ApiError>({ error: result.error.message }, 500);
+  }
+
+  return c.json(result.data);
+});
+
+// GET /versions/:commit/children - 获取子版本（commit 全局唯一）
+versionsRoute.get('/:commit/children', authMiddleware, async (c) => {
+  const commit = c.req.param('commit');
+  const db = createDb(c.env.DB);
+  const nodeVersionService = new NodeVersionService(db);
+
+  const result = await nodeVersionService.getChildren(commit);
+
+  if (!result.success) {
+    return c.json<ApiError>({ error: result.error.message }, 500);
+  }
+
+  return c.json({ versions: result.data });
+});
+
+// GET /versions/:commit/archive - 下载 VFS 归档文件（commit 全局唯一）
+versionsRoute.get('/:commit/archive', optionalAuthMiddleware, async (c) => {
+  const commit = c.req.param('commit');
+
+  const db = createDb(c.env.DB);
+  const nodeVersionService = new NodeVersionService(db);
+  const versionResult = await nodeVersionService.getVersion(commit);
+
+  if (!versionResult.success) {
+    if (versionResult.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: 'Node version not found' }, 404);
+    }
+    return c.json<ApiError>({ error: versionResult.error.message }, 500);
+  }
+
+  const r2Key = `archives/${commit}.tar.gz`;
+  const object = await c.env.R2_BUCKET.get(r2Key);
+
+  if (!object) {
+    return c.json<ApiError>({ error: 'Archive not found in storage' }, 404);
+  }
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'application/gzip',
+      'Content-Length': String(object.size),
+    },
+  });
+});
+
+export { versionsRoute };

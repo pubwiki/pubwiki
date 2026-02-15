@@ -76,7 +76,7 @@ import type {
   Tag,
   ArtifactListItem,
   Pagination,
-  VisibilityType,
+  AccessControl,
   ArtifactVersion,
   LineageType,
   ArtifactLineageItem,
@@ -270,7 +270,7 @@ formData.append('metadata', JSON.stringify({
   slug: 'my-awesome-recipe',
   version: '1.0.0',
   description: 'An awesome recipe for something great',
-  visibility: 'PUBLIC',
+  isListed: true,  // 是否在公开列表中可见
   tags: ['javascript', 'tutorial'],
   changelog: 'Initial release',
   isPrerelease: false,
@@ -935,22 +935,20 @@ if (error) {
 
 | 参数 | 类型 | 描述 |
 |------|------|------|
-| 无参数 | - | Owner 可查看所有检查点；非 Owner 只能查看 PUBLIC 检查点 |
+| 无参数 | - | Owner 可查看所有检查点；非 Owner 只能查看有读取权限的检查点 |
 
 > \* 权限说明：
-> - PUBLIC artifact/project: 所有人可访问
-> - UNLISTED artifact/project: 仅注册用户可访问
-> - PRIVATE artifact: 仅 owner 可访问
-> - PRIVATE project: 仅 owner 和 maintainer 可访问
+> - 访问权限由 ACL 系统控制
+> - ACL 中设置 `canRead` 权限的用户可读取资源
+> - ACL 中设置 `PUBLIC_USER_ID = '*'` 时任何人可读取
 > 
 > 用户 artifacts/projects 端点权限：
-> - 未认证用户：只能看到 PUBLIC 资源
-> - 已认证用户查看他人：可以看到 PUBLIC 和 UNLISTED 资源
-> - 已认证用户查看自己：可以看到所有资源（包括 PRIVATE）
+> - 列表查询只过滤 `isListed`（可发现性），不检查权限
+> - 资源详情需要 ACL 读取权限
 >
 > Cloud Saves 端点权限：
-> - `/saves/{saveId}/export/{ref}`：Owner 可导出任意版本；非 Owner 只能导出 PUBLIC 检查点版本
-> - `/saves/{saveId}/checkpoints`：Owner 可查看所有检查点；非 Owner 只能查看 PUBLIC 检查点
+> - `/saves/{saveId}/export/{ref}`：Owner 可导出任意版本；非 Owner 需要 ACL 读取权限
+> - `/saves/{saveId}/checkpoints`：Owner 可查看所有检查点；非 Owner 需要 ACL 读取权限
 
 ## 类型定义
 
@@ -1016,7 +1014,7 @@ interface CreateArtifactMetadata {
   slug: string;              // 必填，URL-friendly 标识符
   version: string;           // 必填，semver 格式（如 1.0.0、1.0.0-beta）
   description?: string;      // 可选
-  visibility?: VisibilityType;  // 可选，默认 PUBLIC
+  isListed?: boolean;        // 可选，默认 true（是否在公开列表中可见）
   thumbnailUrl?: string;     // 可选，URL 格式
   license?: string;          // 可选，最大 50 字符
   repositoryUrl?: string;    // 可选，URL 格式
@@ -1044,7 +1042,7 @@ interface CreateProjectMetadata {
   slug: string;              // 必填，URL-friendly 标识符
   topic: string;             // 必填，Project 的 hashtag
   description?: string;      // 可选
-  visibility?: VisibilityType;  // 可选，默认 PUBLIC
+  isListed?: boolean;        // 可选，默认 true（是否在公开列表中可见）
   license?: string;          // 可选，最大 50 字符
   coverUrls?: string[];      // 可选，封面图片 URL 数组
   artifacts?: CreateProjectArtifact[];  // 可选，要关联的 artifact 列表
@@ -1170,7 +1168,7 @@ interface ArtifactListItem {
   name: string;
   slug: string;
   description?: string | null;
-  visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+  isListed: boolean;  // 是否在公开列表中可见（可发现性）
   thumbnailUrl?: string | null;
   license?: string | null;
   isArchived: boolean;
@@ -1258,7 +1256,7 @@ interface ArtifactLineageItem {
     name: string;
     slug: string;
     type: ArtifactType;
-    visibility: VisibilityType;
+    isListed: boolean;  // 是否在公开列表中可见
     thumbnailUrl?: string | null;
     author: {
       id: string;
@@ -1314,7 +1312,7 @@ interface ProjectListItem {
   name: string;
   topic: string;        // hashtag
   description?: string | null;
-  visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+  isListed: boolean;    // 是否在公开列表中可见
   createdAt: string;    // ISO 8601 日期时间
   updatedAt: string;
   owner: {
@@ -1323,7 +1321,6 @@ interface ProjectListItem {
     displayName?: string | null;
     avatarUrl?: string | null;
   };
-  maintainerCount?: number;   // 管理者数量
   artifactCount?: number;     // 关联 artifact 数量
 }
 ```
@@ -1424,7 +1421,7 @@ interface ProjectDetail {
   description?: string | null;
   license?: string | null;
   coverUrls?: string[];  // 封面图片 URL 数组
-  visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+  isListed: boolean;    // 是否在公开列表中可见
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -1434,12 +1431,6 @@ interface ProjectDetail {
     displayName?: string | null;
     avatarUrl?: string | null;
   };
-  maintainers: {        // 管理者列表
-    id: string;
-    username: string;
-    displayName?: string | null;
-    avatarUrl?: string | null;
-  }[];
   artifacts: ProjectArtifact[];  // 关联的 artifacts
   roles: ProjectRole[];          // 定义的角色列表
   pages: ProjectPage[];          // 页面列表（不含内容）
@@ -1465,7 +1456,7 @@ interface UserProjectListItem {
   name: string;
   topic: string;        // hashtag
   description?: string | null;
-  visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+  isListed: boolean;    // 是否在公开列表中可见
   createdAt: string;    // ISO 8601 日期时间
   updatedAt: string;
   owner: {
@@ -1474,7 +1465,6 @@ interface UserProjectListItem {
     displayName?: string | null;
     avatarUrl?: string | null;
   };
-  maintainerCount?: number;   // 管理者数量
   artifactCount?: number;     // 关联 artifact 数量
   role: UserProjectRole;      // 用户在此 project 中的角色
 }
@@ -1671,22 +1661,14 @@ interface CheckpointInfo {
   quadCount: number;            // RDF quad 数量
   name?: string | null;         // 检查点名称
   description?: string | null;  // 描述
-  visibility: 'PRIVATE' | 'UNLISTED' | 'PUBLIC'; // 可见性
+  isListed: boolean;            // 是否在公开列表中可见
 }
 ```
 
-### CheckpointVisibility
-
-检查点可见性枚举：
-
-```typescript
-type CheckpointVisibility = 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
-```
-
 **可见性说明**：
-- `PRIVATE`：仅存档所有者可见
-- `UNLISTED`：知道链接的注册用户可访问
-- `PUBLIC`：所有人可见（Artifact 发布时会自动提升为 PUBLIC）
+- `isListed: true`：检查点在公开列表中可见
+- `isListed: false`：检查点不在公开列表中显示
+- 访问权限由 ACL 系统控制
 
 ### CreateSaveRequest
 

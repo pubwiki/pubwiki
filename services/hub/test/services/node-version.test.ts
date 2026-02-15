@@ -33,9 +33,9 @@ describe('NodeVersionService', () => {
       id: userId,
       username,
       email: `${username}@test.com`,
-      name: username,
+      displayName: username,
       emailVerified: false,
-      image: null,
+      avatarUrl: null,
       createdAt: now,
       updatedAt: now,
       displayUsername: username,
@@ -68,7 +68,7 @@ describe('NodeVersionService', () => {
       type,
       contentHash,
       content: overrides.content ?? { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'hello' }] },
-      visibility: overrides.visibility ?? 'PUBLIC',
+      isListed: overrides.isListed ?? true,
       name: overrides.name ?? 'test-node',
       message: overrides.message,
       tag: overrides.tag,
@@ -208,58 +208,8 @@ describe('NodeVersionService', () => {
       expect(after[0].refCount).toBe(2);
     });
 
-    it('should reject child visibility exceeding parent visibility', async () => {
-      const nodeId = crypto.randomUUID();
-      const parent = await inputVersion({
-        nodeId,
-        contentHash: makeContentHash('priv'),
-        visibility: 'PRIVATE',
-      });
-
-      // Create a PRIVATE parent
-      await service.syncVersions([parent]);
-
-      // Attempt to create a PUBLIC child — should fail visibility validation
-      const child = await inputVersion({
-        nodeId,
-        parent: parent.commit,
-        contentHash: makeContentHash('pub'),
-        visibility: 'PUBLIC',
-      });
-      const result = await service.syncVersions([child]);
-
-      expect(result.success).toBe(true);
-      if (!result.success) return;
-      expect(result.data.created).toBe(0);
-      expect(result.data.errors).toHaveLength(1);
-      expect(result.data.errors[0]).toContain('visibility');
-    });
-
-    it('should allow equal or lower child visibility', async () => {
-      const nodeId = crypto.randomUUID();
-      const parent = await inputVersion({
-        nodeId,
-        contentHash: makeContentHash('pub1'),
-        visibility: 'PUBLIC',
-      });
-
-      // Create a PUBLIC parent
-      await service.syncVersions([parent]);
-
-      // UNLISTED child of PUBLIC parent should succeed
-      const child = await inputVersion({
-        nodeId,
-        parent: parent.commit,
-        contentHash: makeContentHash('unl1'),
-        visibility: 'UNLISTED',
-      });
-      const result = await service.syncVersions([child]);
-
-      expect(result.success).toBe(true);
-      if (!result.success) return;
-      expect(result.data.created).toBe(1);
-      expect(result.data.errors).toHaveLength(0);
-    });
+    // NOTE: Visibility validation tests removed - access control is now managed
+    // via resourceDiscoveryControl + resourceAcl tables, not on nodeVersions directly.
 
     it('should create lineage refs for GENERATED versions', async () => {
       const inputNodeId = crypto.randomUUID();
@@ -336,31 +286,8 @@ describe('NodeVersionService', () => {
       expect(result.data.errors).toHaveLength(0);
     });
 
-    it('should default visibility to PRIVATE when not specified', async () => {
-      const nodeId = crypto.randomUUID();
-      const contentHash = makeContentHash('def');
-      const commit = await computeNodeCommit(nodeId, null, contentHash, 'INPUT');
-
-      await service.syncVersions([
-        {
-          nodeId,
-          commit,
-          authorId: testUserId,
-          sourceArtifactId: crypto.randomUUID(),
-          type: 'INPUT',
-          contentHash,
-          content: { type: 'INPUT', blocks: [] },
-          // No visibility specified
-        },
-      ]);
-
-      const rows = await db
-        .select()
-        .from(nodeVersions)
-        .where(eq(nodeVersions.commit, commit));
-      expect(rows).toHaveLength(1);
-      expect(rows[0].visibility).toBe('PRIVATE');
-    });
+    // NOTE: isPrivate default test removed - access control is now managed
+    // via resourceDiscoveryControl + resourceAcl tables, not on nodeVersions directly.
   });
 
   // ========================================================================
@@ -804,7 +731,8 @@ describe('NodeVersionService', () => {
         .from(generatedContents)
         .where(eq(generatedContents.contentHash, hash));
       expect(rows).toHaveLength(1);
-      expect(rows[0].blocks).toEqual([{ type: 'TextBlock', value: 'AI response' }]);
+      // GENERATED blocks are MessageBlock[] format (from @pubwiki/chat), stored as-is
+      expect(rows[0].blocks).toEqual([{ id: '1', type: 'text', content: 'AI response' }]);
       // GENERATED blocks are MessageBlock[], not ContentBlock[], so plainText is not extracted
       expect(rows[0].plainText).toBeNull();
     });

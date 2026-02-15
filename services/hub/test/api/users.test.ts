@@ -12,10 +12,10 @@ import {
   registerUser,
   artifacts,
   projects,
-  projectMaintainers,
   artifactStats,
-  user,
-  eq,
+  resourceAcl,
+  resourceDiscoveryControl,
+  PUBLIC_USER_ID,
   type TestDb,
 } from './helpers';
 
@@ -33,24 +33,54 @@ describe('Users API', () => {
     async function createTestArtifact(
       authorId: string,
       name: string,
-      visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC',
-      isArchived: boolean = false
+      options: { isPrivate?: boolean; isListed?: boolean } = {}
     ): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
       const [artifact] = await db.insert(artifacts).values({
         authorId,
         name,
-        visibility,
-        isArchived,
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        isListed,
+      });
+      
+      // Create owner ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      });
+      
+      // If not private, create public read ACL
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'artifact',
+          resourceId: artifact.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: authorId,
+        });
+      }
+      
       return artifact.id;
     }
 
-    async function createArtifactStats(artifactId: string, viewCount: number, starCount: number): Promise<void> {
+    async function createArtifactStats(artifactId: string, viewCount: number, favCount: number): Promise<void> {
       await db.insert(artifactStats).values({
         artifactId,
         viewCount,
-        starCount,
-        forkCount: 0,
+        favCount,
+        refCount: 0,
         downloadCount: 0,
         commentCount: 0,
       });
@@ -79,26 +109,25 @@ describe('Users API', () => {
       expect(data.pagination.total).toBe(0);
     });
 
-    it('should return only public artifacts for unauthenticated user', async () => {
-      await createTestArtifact(testUserId, 'Public Recipe', 'PUBLIC');
-      await createTestArtifact(testUserId, 'Private Game', 'PRIVATE');
-      await createTestArtifact(testUserId, 'Unlisted Pack', 'UNLISTED');
+    it('should return only listed artifacts for unauthenticated user', async () => {
+      await createTestArtifact(testUserId, 'Public Recipe');
+      await createTestArtifact(testUserId, 'Unlisted Pack', { isListed: false });
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
       const data = await response.json<GetUserArtifactsResponse>();
+      // Only isListed = true artifacts are visible to others
       expect(data.artifacts).toHaveLength(1);
       expect(data.artifacts[0].name).toBe('Public Recipe');
     });
 
-    it('should return public and unlisted artifacts for authenticated user viewing others', async () => {
+    it('should return only listed artifacts for authenticated user viewing others', async () => {
       const { sessionCookie } = await registerUser('viewer');
       
-      await createTestArtifact(testUserId, 'Public Recipe', 'PUBLIC');
-      await createTestArtifact(testUserId, 'Private Game', 'PRIVATE');
-      await createTestArtifact(testUserId, 'Unlisted Pack', 'UNLISTED');
+      await createTestArtifact(testUserId, 'Public Recipe');
+      await createTestArtifact(testUserId, 'Unlisted Pack', { isListed: false });
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts`, {
         headers: { Cookie: sessionCookie },
@@ -107,18 +136,17 @@ describe('Users API', () => {
 
       expect(response.status).toBe(200);
       const data = await response.json<GetUserArtifactsResponse>();
-      expect(data.artifacts).toHaveLength(2);
+      // Only isListed = true artifacts are visible to others
+      expect(data.artifacts).toHaveLength(1);
       const names = data.artifacts.map(a => a.name);
       expect(names).toContain('Public Recipe');
-      expect(names).toContain('Unlisted Pack');
     });
 
     it('should return all artifacts for authenticated user viewing self', async () => {
       const { sessionCookie, userId: ownerId } = await registerUser('owner');
       
-      await createTestArtifact(ownerId, 'Public Recipe', 'PUBLIC');
-      await createTestArtifact(ownerId, 'Private Game', 'PRIVATE');
-      await createTestArtifact(ownerId, 'Unlisted Pack', 'UNLISTED');
+      await createTestArtifact(ownerId, 'Public Recipe');
+      await createTestArtifact(ownerId, 'Unlisted Pack', { isListed: false });
 
       const request = new Request(`http://localhost/api/users/${ownerId}/artifacts`, {
         headers: { Cookie: sessionCookie },
@@ -127,27 +155,29 @@ describe('Users API', () => {
 
       expect(response.status).toBe(200);
       const data = await response.json<GetUserArtifactsResponse>();
-      expect(data.artifacts).toHaveLength(3);
+      // Self can see all artifacts regardless of isListed
+      expect(data.artifacts).toHaveLength(2);
     });
 
-    it('should exclude archived artifacts', async () => {
-      await createTestArtifact(testUserId, 'Active Artifact', 'PUBLIC', false);
-      await createTestArtifact(testUserId, 'Archived Artifact', 'PUBLIC', true);
+    it('should exclude unlisted artifacts for other users', async () => {
+      await createTestArtifact(testUserId, 'Public Artifact');
+      await createTestArtifact(testUserId, 'Unlisted Artifact', { isListed: false });
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
       const data = await response.json<GetUserArtifactsResponse>();
+      // Only isListed = true artifacts are visible to others
       expect(data.artifacts).toHaveLength(1);
-      expect(data.artifacts[0].name).toBe('Active Artifact');
+      expect(data.artifacts[0].name).toBe('Public Artifact');
     });
 
 
 
     it('should paginate correctly', async () => {
       for (let i = 1; i <= 5; i++) {
-        await createTestArtifact(testUserId, `Artifact ${i}`, 'PUBLIC');
+        await createTestArtifact(testUserId, `Artifact ${i}`);
       }
 
       const request = new Request(`http://localhost/api/users/${testUserId}/artifacts?page=1&limit=2`);
@@ -164,9 +194,9 @@ describe('Users API', () => {
 
     it('should sort by sortBy and sortOrder parameters', async () => {
       // 创建 artifacts 时加入少量延迟以确保 createdAt 不同
-      await createTestArtifact(testUserId, 'First', 'PUBLIC');
+      await createTestArtifact(testUserId, 'First');
       // 使用不同的 createdAt
-      await createTestArtifact(testUserId, 'Second', 'PUBLIC');
+      await createTestArtifact(testUserId, 'Second');
 
       // 测试升序排列
       const requestAsc = new Request(`http://localhost/api/users/${testUserId}/artifacts?sortBy=createdAt&sortOrder=asc`);
@@ -204,22 +234,49 @@ describe('Users API', () => {
     async function createTestProject(
       ownerId: string,
       name: string,
-      visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC',
-      isArchived: boolean = false
+      options: { isPrivate?: boolean; isListed?: boolean; isArchived?: boolean } = {}
     ): Promise<string> {
+      const { isPrivate = false, isListed = true, isArchived = false } = options;
       const [project] = await db.insert(projects).values({
         ownerId,
         name,
         slug: name.toLowerCase().replace(/\s+/g, '-'),
         topic: `Topic for ${name}`,
-        visibility,
         isArchived,
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        isListed,
+      });
+      
+      // Create owner ACL (always has full permissions)
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: ownerId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: ownerId,
+      });
+      
+      // If not private, create public read ACL
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'project',
+          resourceId: project.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: ownerId,
+        });
+      }
+      
       return project.id;
-    }
-
-    async function addMaintainer(projectId: string, userId: string): Promise<void> {
-      await db.insert(projectMaintainers).values({ projectId, userId });
     }
 
     beforeEach(async () => {
@@ -245,8 +302,8 @@ describe('Users API', () => {
       expect(data.pagination.total).toBe(0);
     });
 
-    it('should return owned projects with role=owner', async () => {
-      await createTestProject(testUserId, 'Owned Project', 'PUBLIC');
+    it('should return owned projects', async () => {
+      await createTestProject(testUserId, 'Owned Project');
 
       const request = new Request(`http://localhost/api/users/${testUserId}/projects`);
       const response = await sendRequest(request);
@@ -255,99 +312,27 @@ describe('Users API', () => {
       const data = await response.json<GetUserProjectsResponse>();
       expect(data.projects).toHaveLength(1);
       expect(data.projects[0].name).toBe('Owned Project');
-      expect(data.projects[0].role).toBe('owner');
     });
 
-    it('should return maintained projects with role=maintainer', async () => {
-      const otherUserId = await createTestUser(db, 'otheruser');
-      const projectId = await createTestProject(otherUserId, 'Other Project', 'PUBLIC');
-      await addMaintainer(projectId, testUserId);
+    it('should return only listed projects for unauthenticated user', async () => {
+      await createTestProject(testUserId, 'Public Project');
+      await createTestProject(testUserId, 'Unlisted Project', { isListed: false });
 
       const request = new Request(`http://localhost/api/users/${testUserId}/projects`);
       const response = await sendRequest(request);
 
       expect(response.status).toBe(200);
       const data = await response.json<GetUserProjectsResponse>();
-      expect(data.projects).toHaveLength(1);
-      expect(data.projects[0].name).toBe('Other Project');
-      expect(data.projects[0].role).toBe('maintainer');
-    });
-
-    it('should return both owned and maintained projects', async () => {
-      await createTestProject(testUserId, 'Owned Project', 'PUBLIC');
-      
-      const otherUserId = await createTestUser(db, 'otheruser');
-      const projectId = await createTestProject(otherUserId, 'Other Project', 'PUBLIC');
-      await addMaintainer(projectId, testUserId);
-
-      const request = new Request(`http://localhost/api/users/${testUserId}/projects`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<GetUserProjectsResponse>();
-      expect(data.projects).toHaveLength(2);
-      
-      const ownedProject = data.projects.find(p => p.name === 'Owned Project');
-      const maintainedProject = data.projects.find(p => p.name === 'Other Project');
-      
-      expect(ownedProject?.role).toBe('owner');
-      expect(maintainedProject?.role).toBe('maintainer');
-    });
-
-    it('should filter by role=owner', async () => {
-      await createTestProject(testUserId, 'Owned Project', 'PUBLIC');
-      
-      const otherUserId = await createTestUser(db, 'otheruser');
-      const projectId = await createTestProject(otherUserId, 'Other Project', 'PUBLIC');
-      await addMaintainer(projectId, testUserId);
-
-      const request = new Request(`http://localhost/api/users/${testUserId}/projects?role=owner`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<GetUserProjectsResponse>();
-      expect(data.projects).toHaveLength(1);
-      expect(data.projects[0].name).toBe('Owned Project');
-      expect(data.projects[0].role).toBe('owner');
-    });
-
-    it('should filter by role=maintainer', async () => {
-      await createTestProject(testUserId, 'Owned Project', 'PUBLIC');
-      
-      const otherUserId = await createTestUser(db, 'otheruser');
-      const projectId = await createTestProject(otherUserId, 'Other Project', 'PUBLIC');
-      await addMaintainer(projectId, testUserId);
-
-      const request = new Request(`http://localhost/api/users/${testUserId}/projects?role=maintainer`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<GetUserProjectsResponse>();
-      expect(data.projects).toHaveLength(1);
-      expect(data.projects[0].name).toBe('Other Project');
-      expect(data.projects[0].role).toBe('maintainer');
-    });
-
-    it('should return only public projects for unauthenticated user', async () => {
-      await createTestProject(testUserId, 'Public Project', 'PUBLIC');
-      await createTestProject(testUserId, 'Private Project', 'PRIVATE');
-      await createTestProject(testUserId, 'Unlisted Project', 'UNLISTED');
-
-      const request = new Request(`http://localhost/api/users/${testUserId}/projects`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<GetUserProjectsResponse>();
+      // Only isListed = true projects are visible to others
       expect(data.projects).toHaveLength(1);
       expect(data.projects[0].name).toBe('Public Project');
     });
 
-    it('should return public and unlisted projects for authenticated user viewing others', async () => {
+    it('should return only listed projects for authenticated user viewing others', async () => {
       const { sessionCookie } = await registerUser('viewer');
       
-      await createTestProject(testUserId, 'Public Project', 'PUBLIC');
-      await createTestProject(testUserId, 'Private Project', 'PRIVATE');
-      await createTestProject(testUserId, 'Unlisted Project', 'UNLISTED');
+      await createTestProject(testUserId, 'Public Project');
+      await createTestProject(testUserId, 'Unlisted Project', { isListed: false });
 
       const request = new Request(`http://localhost/api/users/${testUserId}/projects`, {
         headers: { Cookie: sessionCookie },
@@ -356,18 +341,17 @@ describe('Users API', () => {
 
       expect(response.status).toBe(200);
       const data = await response.json<GetUserProjectsResponse>();
-      expect(data.projects).toHaveLength(2);
+      // Only isListed = true projects are visible to others
+      expect(data.projects).toHaveLength(1);
       const names = data.projects.map(p => p.name);
       expect(names).toContain('Public Project');
-      expect(names).toContain('Unlisted Project');
     });
 
     it('should return all projects for authenticated user viewing self', async () => {
       const { sessionCookie, userId: ownerId } = await registerUser('owner');
       
-      await createTestProject(ownerId, 'Public Project', 'PUBLIC');
-      await createTestProject(ownerId, 'Private Project', 'PRIVATE');
-      await createTestProject(ownerId, 'Unlisted Project', 'UNLISTED');
+      await createTestProject(ownerId, 'Public Project');
+      await createTestProject(ownerId, 'Unlisted Project', { isListed: false });
 
       const request = new Request(`http://localhost/api/users/${ownerId}/projects`, {
         headers: { Cookie: sessionCookie },
@@ -376,12 +360,13 @@ describe('Users API', () => {
 
       expect(response.status).toBe(200);
       const data = await response.json<GetUserProjectsResponse>();
-      expect(data.projects).toHaveLength(3);
+      // Self can see all projects regardless of isListed
+      expect(data.projects).toHaveLength(2);
     });
 
     it('should exclude archived projects', async () => {
-      await createTestProject(testUserId, 'Active Project', 'PUBLIC', false);
-      await createTestProject(testUserId, 'Archived Project', 'PUBLIC', true);
+      await createTestProject(testUserId, 'Active Project');
+      await createTestProject(testUserId, 'Archived Project', { isArchived: true });
 
       const request = new Request(`http://localhost/api/users/${testUserId}/projects`);
       const response = await sendRequest(request);
@@ -394,7 +379,7 @@ describe('Users API', () => {
 
     it('should paginate correctly', async () => {
       for (let i = 1; i <= 5; i++) {
-        await createTestProject(testUserId, `Project ${i}`, 'PUBLIC');
+        await createTestProject(testUserId, `Project ${i}`);
       }
 
       const request = new Request(`http://localhost/api/users/${testUserId}/projects?page=1&limit=2`);
@@ -407,15 +392,6 @@ describe('Users API', () => {
       expect(data.pagination.limit).toBe(2);
       expect(data.pagination.total).toBe(5);
       expect(data.pagination.totalPages).toBe(3);
-    });
-
-    it('should reject invalid role parameter', async () => {
-      const request = new Request(`http://localhost/api/users/${testUserId}/projects?role=invalid`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(400);
-      const data = await response.json<ApiError>();
-      expect(data.error).toContain('Invalid role value');
     });
 
     it('should reject invalid sortBy parameter', async () => {

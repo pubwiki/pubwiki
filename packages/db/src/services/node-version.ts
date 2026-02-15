@@ -2,29 +2,20 @@ import { eq, and, desc, sql, inArray, lt, or } from 'drizzle-orm';
 import type { Database } from '../client';
 import { nodeVersions, nodeVersionRefs, type NodeVersion, type NewNodeVersion, type NewNodeVersionRef, type NodeVersionRefType } from '../schema/node-versions';
 import { inputContents, promptContents, generatedContents, vfsContents, sandboxContents, loaderContents, stateContents, saveContents } from '../schema/node-contents';
-import type { NodeType, VisibilityType } from '../schema/enums';
+import type { NodeType } from '../schema/enums';
 import type { ServiceError, ServiceResult } from './user';
-import type { ArtifactNodeContent, ContentBlock, VfsMountConfig, VfsFileInfo } from '@pubwiki/api';
+import type { ArtifactNodeContent, ContentBlock, VfsMountConfig, VfsFileInfo, NodeVersionSummary as ApiNodeVersionSummary, NodeVersionDetail as ApiNodeVersionDetail } from '@pubwiki/api';
 import { computeNodeCommit } from '@pubwiki/api';
 
 // ========================================================================
-// Public types
+// Extended types (API types + internal fields)
 // ========================================================================
 
-/** Summary of a node version (without full content) */
-export interface NodeVersionSummary {
-  nodeId: string;
-  commit: string;
-  parent: string | null;
-  authorId: string;
-  authoredAt: string;
-  type: NodeType;
-  name: string | null;
-  contentHash: string;
-  message: string | null;
-  tag: string | null;
-  visibility: VisibilityType;
+/** Summary of a node version (API type + internal fields) */
+export interface NodeVersionSummary extends ApiNodeVersionSummary {
+  /** Source artifact that created this version */
   sourceArtifactId: string;
+  /** Parent version this was derived from (for fork tracking) */
   derivativeOf: string | null;
 }
 
@@ -32,6 +23,10 @@ export interface NodeVersionSummary {
 export interface NodeVersionDetail extends NodeVersionSummary {
   content?: ArtifactNodeContent;
 }
+
+// ========================================================================
+// Internal types (not in API)
+// ========================================================================
 
 /** SAVE node content (internal type, not exposed via public API) */
 export interface SaveNodeContent {
@@ -59,7 +54,7 @@ export interface SyncNodeVersionInput {
   content: AllNodeContent;  // The actual content to store in the typed content table
   message?: string;
   tag?: string;
-  visibility?: 'PUBLIC' | 'UNLISTED' | 'PRIVATE';
+  isListed?: boolean;
   sourceArtifactId: string;  // 创建该版本的 artifact ID
   // For GENERATED nodes: lineage refs
   refs?: Array<{
@@ -345,25 +340,6 @@ export class NodeVersionService {
             continue;
           }
 
-          // Validate visibility inheritance
-          if (input.parent && input.visibility) {
-            const parentVersion = await this.db
-              .select({ visibility: nodeVersions.visibility })
-              .from(nodeVersions)
-              .where(eq(nodeVersions.commit, input.parent))
-              .limit(1);
-
-            if (parentVersion.length > 0) {
-              const valid = this.validateVisibility(input.visibility, parentVersion[0].visibility);
-              if (!valid) {
-                result.errors.push(
-                  `Version ${input.commit}: visibility ${input.visibility} exceeds parent visibility ${parentVersion[0].visibility}`
-                );
-                continue;
-              }
-            }
-          }
-
           // Upsert content to typed content table
           await this.upsertContent(input.type, input.contentHash, input.content);
 
@@ -406,7 +382,6 @@ export class NodeVersionService {
             derivativeOf,
             message: input.message ?? null,
             tag: input.tag ?? null,
-            visibility: input.visibility ?? 'PRIVATE',
           };
 
           // Insert lineage refs
@@ -495,9 +470,11 @@ export class NodeVersionService {
       contentHash: v.contentHash,
       message: v.message,
       tag: v.tag,
-      visibility: v.visibility as VisibilityType,
       sourceArtifactId: v.sourceArtifactId,
       derivativeOf: v.derivativeOf,
+      // Node 默认不可发现，实际访问控制由 ACL 决定
+      // TODO: 后续可从 resource_discovery_control 表获取
+      isListed: false,
     };
   }
 
@@ -620,20 +597,6 @@ export class NodeVersionService {
         });
         break;
     }
-  }
-
-  /** Validate visibility inheritance: child visibility ≤ parent visibility */
-  private validateVisibility(childVis: string, parentVis: string): boolean {
-    const levels: Record<string, number> = {
-      'PRIVATE': 0,
-      'UNLISTED': 1,
-      'PUBLIC': 2,
-    };
-
-    const childLevel = levels[childVis] ?? 0;
-    const parentLevel = levels[parentVis] ?? 0;
-
-    return childLevel <= parentLevel;
   }
 
   /**

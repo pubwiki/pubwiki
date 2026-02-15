@@ -33,7 +33,6 @@ describe('Discussions API', () => {
     const [artifact] = await db.insert(artifacts).values({
       authorId,
       name,
-      visibility: 'PUBLIC',
     }).returning();
     return artifact.id;
   }
@@ -45,7 +44,6 @@ describe('Discussions API', () => {
       name,
       slug: name.toLowerCase().replace(/\s+/g, '-'),
       topic: 'test-topic',
-      visibility: 'PUBLIC',
     }).returning();
     return project.id;
   }

@@ -14,17 +14,17 @@ export const artifactStats = sqliteTable(
       .primaryKey()
       .references(() => artifacts.id, { onDelete: 'cascade' }),
     viewCount: integer('view_count').default(0).notNull(),
-    starCount: integer('star_count').default(0).notNull(),
-    forkCount: integer('fork_count').default(0).notNull(),
+    favCount: integer('fav_count').default(0).notNull(),
+    refCount: integer('ref_count').default(0).notNull(),
     downloadCount: integer('download_count').default(0).notNull(),
     commentCount: integer('comment_count').default(0).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   }
 );
 
-// artifact_stars - 点赞记录
-export const artifactStars = sqliteTable(
-  'artifact_stars',
+// artifact_stars - 收藏记录
+export const artifactFavs = sqliteTable(
+  'artifact_favs',
   {
     userId: text('user_id')
       .notNull()
@@ -65,7 +65,7 @@ export const artifactViews = sqliteTable(
 // Type exports
 export type ArtifactStats = typeof artifactStats.$inferSelect;
 export type NewArtifactStats = typeof artifactStats.$inferInsert;
-export type ArtifactStar = typeof artifactStars.$inferSelect;
-export type NewArtifactStar = typeof artifactStars.$inferInsert;
+export type ArtifactStar = typeof artifactFavs.$inferSelect;
+export type NewArtifactStar = typeof artifactFavs.$inferInsert;
 export type ArtifactView = typeof artifactViews.$inferSelect;
 export type NewArtifactView = typeof artifactViews.$inferInsert;

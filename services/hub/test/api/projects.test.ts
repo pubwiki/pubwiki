@@ -13,11 +13,13 @@ import {
   createTestUser,
   registerUser,
   projects,
-  projectMaintainers,
+  resourceAcl,
   projectArtifacts,
   projectRoles,
   projectPages,
   artifacts,
+  resourceDiscoveryControl,
+  PUBLIC_USER_ID,
   user,
   eq,
   type TestDb,
@@ -37,30 +39,100 @@ describe('Projects API', () => {
     async function createTestProject(
       ownerId: string,
       name: string,
-      visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC',
+      options: { isPrivate?: boolean; isListed?: boolean } = {},
       isArchived: boolean = false
     ): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
       const [project] = await db.insert(projects).values({
         ownerId,
         name,
         slug: name.toLowerCase().replace(/\s+/g, '-'),
         topic: `Topic for ${name}`,
-        visibility,
         isArchived,
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        isListed,
+      });
+      
+      // Create owner ACL (always has full permissions)
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: ownerId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: ownerId,
+      });
+      
+      // If not private, create public read ACL
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'project',
+          resourceId: project.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: ownerId,
+        });
+      }
+      
       return project.id;
     }
 
-    async function addMaintainer(projectId: string, userId: string): Promise<void> {
-      await db.insert(projectMaintainers).values({ projectId, userId });
+    async function addCollaborator(projectId: string, userId: string): Promise<void> {
+      // 添加 ACL 写权限作为协作者
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: projectId,
+        userId,
+        canRead: true,
+        canWrite: true,
+        canManage: false,
+        grantedBy: userId,
+      });
     }
 
     async function createTestArtifact(authorId: string, name: string): Promise<string> {
       const [artifact] = await db.insert(artifacts).values({
         authorId,
         name,
-        visibility: 'PUBLIC',
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        isListed: true,
+      });
+      
+      // Create owner ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      });
+      
+      // Create public read ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+        grantedBy: authorId,
+      });
+      
       return artifact.id;
     }
 
@@ -83,9 +155,9 @@ describe('Projects API', () => {
     });
 
     it('should return only public projects', async () => {
-      await createTestProject(testUserId, 'Public Project', 'PUBLIC');
-      await createTestProject(testUserId, 'Private Project', 'PRIVATE');
-      await createTestProject(testUserId, 'Unlisted Project', 'UNLISTED');
+      await createTestProject(testUserId, 'Public Project', { isListed: true });
+      await createTestProject(testUserId, 'Private Project', { isPrivate: true, isListed: false });
+      await createTestProject(testUserId, 'Unlisted Project', { isListed: false });
 
       const request = new Request('http://localhost/api/projects');
       const response = await sendRequest(request);
@@ -98,8 +170,8 @@ describe('Projects API', () => {
     });
 
     it('should exclude archived projects', async () => {
-      await createTestProject(testUserId, 'Active Project', 'PUBLIC', false);
-      await createTestProject(testUserId, 'Archived Project', 'PUBLIC', true);
+      await createTestProject(testUserId, 'Active Project', { isListed: true }, false);
+      await createTestProject(testUserId, 'Archived Project', { isListed: true }, true);
 
       const request = new Request('http://localhost/api/projects');
       const response = await sendRequest(request);
@@ -108,20 +180,6 @@ describe('Projects API', () => {
       const data = await response.json<ListProjectsResponse>();
       expect(data.projects).toHaveLength(1);
       expect(data.projects[0].name).toBe('Active Project');
-    });
-
-    it('should include maintainer count', async () => {
-      const projectId = await createTestProject(testUserId, 'Project with maintainers');
-      const maintainerId = await createTestUser(db, 'maintainer1');
-      await addMaintainer(projectId, maintainerId);
-
-      const request = new Request('http://localhost/api/projects');
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<ListProjectsResponse>();
-      expect(data.projects).toHaveLength(1);
-      expect(data.projects[0].maintainerCount).toBe(1);
     });
 
     it('should include artifact count', async () => {
@@ -162,20 +220,60 @@ describe('Projects API', () => {
     async function createTestProject(
       ownerId: string,
       name: string,
-      visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC'
+      options: { isPrivate?: boolean; isListed?: boolean } = {}
     ): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
       const [project] = await db.insert(projects).values({
         ownerId,
         name,
         slug: name.toLowerCase().replace(/\s+/g, '-'),
         topic: `Topic for ${name}`,
-        visibility,
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        isListed,
+      });
+      
+      // Create owner ACL (always has full permissions)
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: ownerId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: ownerId,
+      });
+      
+      // If not private, create public read ACL
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'project',
+          resourceId: project.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: ownerId,
+        });
+      }
+      
       return project.id;
     }
 
-    async function addMaintainer(projectId: string, userId: string): Promise<void> {
-      await db.insert(projectMaintainers).values({ projectId, userId });
+    async function addCollaborator(projectId: string, userId: string): Promise<void> {
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: projectId,
+        userId,
+        canRead: true,
+        canWrite: true,
+        canManage: false,
+        grantedBy: userId,
+      });
     }
 
     async function createTestRole(projectId: string, name: string, parentRoleId?: string): Promise<string> {
@@ -192,8 +290,37 @@ describe('Projects API', () => {
       const [artifact] = await db.insert(artifacts).values({
         authorId,
         name,
-        visibility: 'PUBLIC',
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        isListed: true,
+      });
+      
+      // Create owner ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      });
+      
+      // Create public read ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+        grantedBy: authorId,
+      });
+      
       return artifact.id;
     }
 
@@ -216,25 +343,10 @@ describe('Projects API', () => {
       expect(data.id).toBe(projectId);
       expect(data.name).toBe('Public Project Detail');
       expect(data.owner.username).toBe('projectdetailuser');
-      expect(data.maintainers).toHaveLength(0);
       expect(data.artifacts).toHaveLength(0);
       expect(data.roles).toHaveLength(0);
       expect(data.pages).toHaveLength(0);
       expect(data.homepageId).toBeNull();
-    });
-
-    it('should include maintainers in detail', async () => {
-      const projectId = await createTestProject(testUserId, 'Project with maintainers');
-      const maintainerId = await createTestUser(db, 'maintainer1');
-      await addMaintainer(projectId, maintainerId);
-
-      const request = new Request(`http://localhost/api/projects/${projectId}`);
-      const response = await sendRequest(request);
-
-      expect(response.status).toBe(200);
-      const data = await response.json<ProjectDetail>();
-      expect(data.maintainers).toHaveLength(1);
-      expect(data.maintainers[0].username).toBe('maintainer1');
     });
 
     it('should include roles in detail', async () => {
@@ -317,22 +429,23 @@ describe('Projects API', () => {
 
       expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Project not found');
+      expect(data.error).toBe('project not found');
     });
 
-    it('should return 401 for unlisted project without auth', async () => {
-      const projectId = await createTestProject(testUserId, 'Unlisted Project', 'UNLISTED');
+    it('should return unlisted project without auth (unlisted but not private)', async () => {
+      const projectId = await createTestProject(testUserId, 'Unlisted Project', { isPrivate: false, isListed: false });
 
       const request = new Request(`http://localhost/api/projects/${projectId}`);
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(401);
+      // Unlisted but not private resources are publicly accessible via direct link
+      expect(response.status).toBe(200);
     });
 
     it('should return unlisted project with auth', async () => {
       await db.delete(user);
       const { sessionCookie, userId } = await registerUser('unlistedprojectuser');
-      const projectId = await createTestProject(userId, 'Unlisted Project', 'UNLISTED');
+      const projectId = await createTestProject(userId, 'Unlisted Project', { isPrivate: false, isListed: false });
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
         headers: { Cookie: sessionCookie },
@@ -343,7 +456,7 @@ describe('Projects API', () => {
     });
 
     it('should return 403 for private project with non-owner auth', async () => {
-      const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
+      const projectId = await createTestProject(testUserId, 'Private Project', { isPrivate: true, isListed: false });
       const { sessionCookie } = await registerUser('otheruser');
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
@@ -357,7 +470,7 @@ describe('Projects API', () => {
     it('should return private project for owner', async () => {
       await db.delete(user);
       const { sessionCookie, userId } = await registerUser('privateprojectowner');
-      const projectId = await createTestProject(userId, 'Private Project', 'PRIVATE');
+      const projectId = await createTestProject(userId, 'Private Project', { isPrivate: true, isListed: false });
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
         headers: { Cookie: sessionCookie },
@@ -367,12 +480,12 @@ describe('Projects API', () => {
       expect(response.status).toBe(200);
     });
 
-    it('should return private project for maintainer', async () => {
-      const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
+    it('should return private project for user with ACL read permission', async () => {
+      const projectId = await createTestProject(testUserId, 'Private Project', { isPrivate: true, isListed: false });
       
-      // Create maintainer via API
-      const { sessionCookie, userId: maintainerId } = await registerUser('maintaineruser');
-      await addMaintainer(projectId, maintainerId);
+      // Create user with ACL access
+      const { sessionCookie, userId: collaboratorId } = await registerUser('collaboratoruser');
+      await addCollaborator(projectId, collaboratorId);
 
       const request = new Request(`http://localhost/api/projects/${projectId}`, {
         headers: { Cookie: sessionCookie },
@@ -388,8 +501,37 @@ describe('Projects API', () => {
       const [artifact] = await db.insert(artifacts).values({
         authorId,
         name,
-        visibility: 'PUBLIC',
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        isListed: true,
+      });
+      
+      // Create owner ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      });
+      
+      // Create public read ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+        grantedBy: authorId,
+      });
+      
       return artifact.id;
     }
 
@@ -423,7 +565,7 @@ describe('Projects API', () => {
           topic: 'test-topic',
           description: 'A test project',
           license: 'MIT',
-          visibility: 'PUBLIC',
+          isListed: true,
           roles: [
             { name: 'Default Role' },
           ],
@@ -439,7 +581,7 @@ describe('Projects API', () => {
       expect(data.project.topic).toBe('test-topic');
       expect(data.project.description).toBe('A test project');
       expect(data.project.license).toBe('MIT');
-      expect(data.project.visibility).toBe('PUBLIC');
+      expect(data.project.isListed).toBe(true);
       expect(data.project.pages).toHaveLength(0);
       expect(data.project.homepageId).toBeNull();
     });
@@ -454,10 +596,10 @@ describe('Projects API', () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: 'Private Project',
-          slug: 'private-project',
+          name: 'Unlisted Project',
+          slug: 'unlisted-project',
           topic: 'test-topic',
-          visibility: 'PRIVATE',
+          isListed: false,
           roles: [
             { name: 'Default Role' },
           ],
@@ -467,7 +609,7 @@ describe('Projects API', () => {
 
       expect(response.status).toBe(201);
       const data = await response.json<CreateProjectResponse>();
-      expect(data.project.visibility).toBe('PRIVATE');
+      expect(data.project.isListed).toBe(false);
     });
 
     it('should create a project with linked artifacts', async () => {
@@ -760,15 +902,47 @@ describe('Projects API', () => {
     async function createTestProject(
       ownerId: string,
       name: string,
-      visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC'
+      options: { isPrivate?: boolean; isListed?: boolean } = {}
     ): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
       const [project] = await db.insert(projects).values({
         ownerId,
         name,
         slug: name.toLowerCase().replace(/\s+/g, '-'),
         topic: `Topic for ${name}`,
-        visibility,
       }).returning();
+      
+      // Create discovery control record
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        isListed,
+      });
+      
+      // Create owner ACL (always has full permissions)
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: ownerId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: ownerId,
+      });
+      
+      // If not private, create public read ACL
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'project',
+          resourceId: project.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: ownerId,
+        });
+      }
+      
       return project.id;
     }
 
@@ -782,8 +956,16 @@ describe('Projects API', () => {
       return page.id;
     }
 
-    async function addMaintainer(projectId: string, userId: string): Promise<void> {
-      await db.insert(projectMaintainers).values({ projectId, userId });
+    async function addCollaborator(projectId: string, userId: string): Promise<void> {
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: projectId,
+        userId,
+        canRead: true,
+        canWrite: true,
+        canManage: false,
+        grantedBy: userId,
+      });
     }
 
     beforeEach(async () => {
@@ -821,23 +1003,24 @@ describe('Projects API', () => {
 
       expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('Project not found');
+      expect(data.error).toBe('project not found');
     });
 
-    it('should return 401 for unlisted project page without auth', async () => {
-      const projectId = await createTestProject(testUserId, 'Unlisted Project', 'UNLISTED');
+    it('should return unlisted project page without auth (unlisted but not private)', async () => {
+      const projectId = await createTestProject(testUserId, 'Unlisted Project', { isPrivate: false, isListed: false });
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`);
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(401);
+      // Unlisted but not private resources are publicly accessible
+      expect(response.status).toBe(200);
     });
 
     it('should return page for unlisted project with auth', async () => {
       await db.delete(user);
       const { sessionCookie, userId } = await registerUser('unlistedpageuser');
-      const projectId = await createTestProject(userId, 'Unlisted Project', 'UNLISTED');
+      const projectId = await createTestProject(userId, 'Unlisted Project', { isPrivate: false, isListed: false });
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`, {
@@ -849,7 +1032,7 @@ describe('Projects API', () => {
     });
 
     it('should return 403 for private project page with non-owner auth', async () => {
-      const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
+      const projectId = await createTestProject(testUserId, 'Private Project', { isPrivate: true, isListed: false });
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
       const { sessionCookie } = await registerUser('otheruser');
 
@@ -864,7 +1047,7 @@ describe('Projects API', () => {
     it('should return private project page for owner', async () => {
       await db.delete(user);
       const { sessionCookie, userId } = await registerUser('privatepageowner');
-      const projectId = await createTestProject(userId, 'Private Project', 'PRIVATE');
+      const projectId = await createTestProject(userId, 'Private Project', { isPrivate: true, isListed: false });
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`, {
@@ -875,12 +1058,12 @@ describe('Projects API', () => {
       expect(response.status).toBe(200);
     });
 
-    it('should return private project page for maintainer', async () => {
-      const projectId = await createTestProject(testUserId, 'Private Project', 'PRIVATE');
+    it('should return private project page for user with ACL permission', async () => {
+      const projectId = await createTestProject(testUserId, 'Private Project', { isPrivate: true, isListed: false });
       const pageId = await createTestPage(projectId, 'Page', '<p>Content</p>');
       
-      const { sessionCookie, userId: maintainerId } = await registerUser('maintaineruser');
-      await addMaintainer(projectId, maintainerId);
+      const { sessionCookie, userId: collaboratorId } = await registerUser('collaboratoruser');
+      await addCollaborator(projectId, collaboratorId);
 
       const request = new Request(`http://localhost/api/projects/${projectId}/pages/${pageId}`, {
         headers: { Cookie: sessionCookie },

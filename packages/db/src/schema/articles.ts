@@ -1,13 +1,13 @@
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
-import type { VisibilityType } from './enums';
 import type { ReaderContent } from '@pubwiki/api';
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
 
 // articles - 文章表
+// 访问控制通过 resource_access_control 表管理 (isPrivate + isListed)
 export const articles = sqliteTable(
   'articles',
   {
@@ -20,7 +20,6 @@ export const articles = sqliteTable(
     artifactCommit: text('artifact_commit').notNull(),
     title: text('title', { length: 200 }).notNull(),
     content: text('content', { mode: 'json' }).$type<ReaderContent>().notNull(),
-    visibility: text('visibility').$type<VisibilityType>().default('PUBLIC').notNull(),
     likes: integer('likes').default(0).notNull(),
     collections: integer('collections').default(0).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
@@ -30,7 +29,6 @@ export const articles = sqliteTable(
     index('idx_articles_author').on(table.authorId),
     index('idx_articles_artifact').on(table.artifactId),
     index('idx_articles_artifact_commit').on(table.artifactId, table.artifactCommit),
-    index('idx_articles_visibility').on(table.visibility),
     index('idx_articles_created').on(table.createdAt),
   ]
 );

@@ -81,7 +81,7 @@ describe('E2E: Discussions API', () => {
         name: 'Test Project',
         slug,
         topic: 'testing',
-        visibility: 'PUBLIC',
+        isListed: true,
         roles: [
           { name: 'Default Role' },
         ],

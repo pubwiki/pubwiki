@@ -75,9 +75,9 @@
     summary: 获取用户的 Artifact 列表
     description: |
       获取指定用户拥有的所有 Artifact。
-      - 未认证用户：只能看到 PUBLIC artifact
-      - 已认证用户查看他人：只能看到 PUBLIC 和 UNLISTED artifact
-      - 已认证用户查看自己：可以看到所有 artifact
+      返回结果基于可发现性（isListed）过滤：
+      - 查看他人：只能看到已列出的 artifact
+      - 查看自己：可以看到所有 artifact
     operationId: getUserArtifacts
     tags:
       - Users
@@ -152,11 +152,10 @@
   get:
     summary: 获取用户的 Project 列表
     description: |
-      获取指定用户 own 或 maintain 的所有 Project。
-      返回的每个 project 都包含用户在其中的角色（owner 或 maintainer）。
-      - 未认证用户：只能看到 PUBLIC project
-      - 已认证用户查看他人：只能看到 PUBLIC 和 UNLISTED project
-      - 已认证用户查看自己：可以看到所有 project
+      获取指定用户拥有的所有 Project。
+      返回结果基于可发现性（isListed）过滤：
+      - 查看他人：只能看到已列出的 project
+      - 查看自己：可以看到所有 project
     operationId: getUserProjects
     tags:
       - Users

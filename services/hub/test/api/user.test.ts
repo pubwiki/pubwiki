@@ -93,7 +93,7 @@ describe('User API', () => {
       // 验证数据库状态
       const dbUser = await db.select().from(user).where(eq(user.username, 'profiletest'));
       expect(dbUser).toHaveLength(1);
-      expect(dbUser[0].name).toBe('Updated Name');
+      expect(dbUser[0].displayName).toBe('Updated Name');
       expect(dbUser[0].bio).toBe('This is my bio');
       expect(dbUser[0].website).toBe('https://example.com');
       expect(dbUser[0].location).toBe('Tokyo, Japan');

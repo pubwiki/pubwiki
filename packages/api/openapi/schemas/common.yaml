@@ -29,6 +29,14 @@ Pagination:
     totalPages:
       type: integer
 
-VisibilityType:
-  type: string
-  enum: [PUBLIC, PRIVATE, UNLISTED]
+AccessControl:
+  type: object
+  description: |
+    访问控制信息（只读字段，由 ACL 系统管理）。
+    - isListed: 控制资源是否在公开列表/搜索结果中可见
+    
+    访问权限通过 ACL API 管理，而非直接设置字段。
+  properties:
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见，false=不显示，true=显示

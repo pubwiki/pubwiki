@@ -1,13 +1,13 @@
 import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
-import type { VisibilityType } from './enums';
 import type { ArtifactEntrypoint } from '@pubwiki/api'
 
 // 当前时间戳 (ISO 格式字符串)
 const currentTimestamp = sql`(datetime('now'))`;
 
 // artifacts - 主内容表
+// 访问控制通过 resource_access_control 表管理 (isPrivate + isListed)
 export const artifacts = sqliteTable(
   'artifacts',
   {
@@ -17,18 +17,15 @@ export const artifacts = sqliteTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     name: text('name', { length: 100 }).notNull(),
     description: text('description'),
-    visibility: text('visibility').$type<VisibilityType>().default('PUBLIC').notNull(),
     currentVersionId: text('current_version_id'), // 稍后设置引用
     thumbnailUrl: text('thumbnail_url', { length: 500 }),
     license: text('license', { length: 50 }),
     repositoryUrl: text('repository_url', { length: 500 }),
-    isArchived: integer('is_archived', { mode: 'boolean' }).default(false).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   },
   (table) => [
     index('idx_artifacts_author').on(table.authorId),
-    index('idx_artifacts_visibility').on(table.visibility),
   ]
 );
 
