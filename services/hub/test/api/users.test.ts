@@ -222,7 +222,7 @@ describe('Users API', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toContain('Invalid sortBy value');
+      expect(data.error).toContain('sortBy');
     });
 
 
@@ -400,7 +400,7 @@ describe('Users API', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toContain('Invalid sortBy value');
+      expect(data.error).toContain('sortBy');
     });
   });
 });

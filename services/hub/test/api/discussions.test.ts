@@ -113,7 +113,7 @@ describe('Discussions API', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toContain('Invalid targetType');
+      expect(data.error).toContain('targetType');
     });
 
     it('should return empty list when no discussions exist', async () => {

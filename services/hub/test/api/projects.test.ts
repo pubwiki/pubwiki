@@ -881,7 +881,7 @@ describe('Projects API', () => {
           slug: 'project-invalid-artifact',
           topic: 'test-topic',
           artifacts: [
-            { artifactId: 'non-existent-artifact-id', roleName: 'Default Role' }
+            { artifactId: '00000000-0000-0000-0000-000000000000', roleName: 'Default Role' }
           ],
           roles: [
             { name: 'Default Role' },

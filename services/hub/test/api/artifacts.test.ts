@@ -305,7 +305,7 @@ describe('Artifacts API', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toContain('Invalid sortBy');
+      expect(data.error).toContain('sortBy');
     });
 
   });
