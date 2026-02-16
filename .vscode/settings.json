@@ -2,5 +2,7 @@
 	"files.associations": {
 		"*.css": "tailwindcss"
 	},
-	"svelte.enable-ts-plugin": true
+	"svelte.enable-ts-plugin": true,
+	// Fucking ridiculous feature that makes terminal created by AI hidden introduced in 1.109.0
+	"chat.tools.terminal.outputLocation": "terminal"
 }
