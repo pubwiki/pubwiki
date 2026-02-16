@@ -423,7 +423,7 @@ export class ProjectService {
       // 6. 获取 artifacts 的 tags 和 stats
       const artifactIds = artifactRelations.map(a => a.id);
       
-      const tagsMap: Record<string, { id: string; name: string; slug: string; description: string | null; color: string | null }[]> = {};
+      const tagsMap: Record<string, { slug: string; name: string; description: string | null; color: string | null }[]> = {};
       const statsMap: Record<string, { viewCount: number; starCount: number; forkCount: number; downloadCount: number }> = {};
 
       if (artifactIds.length > 0) {
@@ -431,14 +431,13 @@ export class ProjectService {
         const tagResults = await this.ctx
           .select({
             artifactId: artifactTags.artifactId,
-            tagId: tags.id,
-            tagName: tags.name,
             tagSlug: tags.slug,
+            tagName: tags.name,
             tagDescription: tags.description,
             tagColor: tags.color,
           })
           .from(artifactTags)
-          .innerJoin(tags, eq(artifactTags.tagId, tags.id))
+          .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
           .where(inArray(artifactTags.artifactId, artifactIds));
 
         for (const row of tagResults) {
@@ -446,9 +445,8 @@ export class ProjectService {
             tagsMap[row.artifactId] = [];
           }
           tagsMap[row.artifactId].push({
-            id: row.tagId,
-            name: row.tagName,
             slug: row.tagSlug,
+            name: row.tagName,
             description: row.tagDescription,
             color: row.tagColor,
           });
@@ -1129,21 +1127,20 @@ export class ProjectService {
       // 获取 artifacts 的 tags 和 stats
       const artifactIds = artifactRelations.map(a => a.id);
       
-      const tagsMap: Record<string, { id: string; name: string; slug: string; description: string | null; color: string | null }[]> = {};
+      const tagsMap: Record<string, { slug: string; name: string; description: string | null; color: string | null }[]> = {};
       const statsMap: Record<string, { viewCount: number; starCount: number; forkCount: number; downloadCount: number }> = {};
 
       if (artifactIds.length > 0) {
         const tagResults = await this.ctx
           .select({
             artifactId: artifactTags.artifactId,
-            tagId: tags.id,
-            tagName: tags.name,
             tagSlug: tags.slug,
+            tagName: tags.name,
             tagDescription: tags.description,
             tagColor: tags.color,
           })
           .from(artifactTags)
-          .innerJoin(tags, eq(artifactTags.tagId, tags.id))
+          .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
           .where(inArray(artifactTags.artifactId, artifactIds));
 
         for (const row of tagResults) {
@@ -1151,9 +1148,8 @@ export class ProjectService {
             tagsMap[row.artifactId] = [];
           }
           tagsMap[row.artifactId].push({
-            id: row.tagId,
-            name: row.tagName,
             slug: row.tagSlug,
+            name: row.tagName,
             description: row.tagDescription,
             color: row.tagColor,
           });
@@ -1391,14 +1387,13 @@ export class ProjectService {
       // 获取 tags
       const tagResults = await this.ctx
         .select({
-          tagId: tags.id,
-          tagName: tags.name,
           tagSlug: tags.slug,
+          tagName: tags.name,
           tagDescription: tags.description,
           tagColor: tags.color,
         })
         .from(artifactTags)
-        .innerJoin(tags, eq(artifactTags.tagId, tags.id))
+        .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
         .where(eq(artifactTags.artifactId, artifactId));
 
       // 获取 stats
@@ -1442,9 +1437,8 @@ export class ProjectService {
             avatarUrl: null,
           },
           tags: tagResults.map(t => ({
-            id: t.tagId,
-            name: t.tagName,
             slug: t.tagSlug,
+            name: t.tagName,
             description: t.tagDescription,
             color: t.tagColor,
           })),

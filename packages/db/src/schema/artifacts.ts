@@ -38,7 +38,7 @@ export const artifactVersions = sqliteTable(
       .notNull()
       .references(() => artifacts.id, { onDelete: 'cascade' }),
     version: text('version', { length: 50 }), // optional semver
-    commitHash: text('commit_hash').notNull(), // SHA-256 前8位
+    commitHash: text('commit_hash').notNull(), // SHA-256 hex string (64 chars)
     changelog: text('changelog'),
     publishedAt: text('published_at'),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
@@ -78,40 +78,38 @@ export const artifactCommitTags = sqliteTable(
   ]
 );
 
-// tags - 标签表
+// tags - 标签表 (slug 作为主键)
 export const tags = sqliteTable(
   'tags',
   {
-    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    slug: text('slug', { length: 50 }).primaryKey(),
     name: text('name', { length: 50 }).notNull().unique(),
-    slug: text('slug', { length: 50 }).notNull().unique(),
     description: text('description'),
     color: text('color', { length: 7 }), // #RRGGBB
     usageCount: integer('usage_count').default(0).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
   },
   (table) => [
-    index('idx_tags_slug').on(table.slug),
     index('idx_tags_usage').on(table.usageCount),
   ]
 );
 
-// artifact_tags - 多对多关系
+// artifact_tags - 多对多关系 (使用 tagSlug 代替 tagId)
 export const artifactTags = sqliteTable(
   'artifact_tags',
   {
     artifactId: text('artifact_id')
       .notNull()
       .references(() => artifacts.id, { onDelete: 'cascade' }),
-    tagId: text('tag_id')
+    tagSlug: text('tag_slug')
       .notNull()
-      .references(() => tags.id, { onDelete: 'cascade' }),
+      .references(() => tags.slug, { onDelete: 'cascade' }),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.artifactId, table.tagId] }),
+    primaryKey({ columns: [table.artifactId, table.tagSlug] }),
     index('idx_artifact_tags_artifact').on(table.artifactId),
-    index('idx_artifact_tags_tag').on(table.tagId),
+    index('idx_artifact_tags_tag').on(table.tagSlug),
   ]
 );
 

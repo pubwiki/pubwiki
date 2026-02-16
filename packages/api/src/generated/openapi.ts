@@ -793,10 +793,9 @@ export interface components {
             location?: string;
         };
         Tag: {
-            /** Format: uuid */
-            id: string;
-            name: string;
+            /** @description Tag slug (primary key) */
             slug: string;
+            name: string;
             description?: string | null;
             /** @description 颜色代码 #RRGGBB */
             color?: string | null;
@@ -1066,12 +1065,10 @@ export interface components {
              * @enum {string}
              */
             type: "STATE";
-            /**
-             * @description 引用的 SAVE 版本 commit hash 列表。
-             *     STATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。
-             *     作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。
-             */
-            saves?: string[];
+            /** @description 状态节点的名称 */
+            name: string;
+            /** @description 状态节点的描述 */
+            description?: string;
         };
         VfsNodeContent: {
             /**

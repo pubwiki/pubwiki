@@ -18,6 +18,19 @@ import type { components } from './generated/openapi';
  */
 export type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 
+/**
+ * SaveContent type for SAVE node content hash calculation.
+ * Save is independent from ArtifactNodeContent in the API layer.
+ */
+export interface SaveContent {
+  type: 'SAVE';
+  stateNodeId: string;
+  stateNodeCommit: string;
+  sourceArtifactCommit: string;
+  title: string | null | undefined;
+  description: string | null | undefined;
+}
+
 // ─── Internal helpers ───────────────────────────────────────────────
 
 async function sha256Hex(data: string): Promise<string> {
@@ -37,13 +50,12 @@ async function sha256Hex(data: string): Promise<string> {
  * 
  * Uses RFC 8785 JSON Canonicalization Scheme (JCS) for deterministic serialization.
  * 
- * @param content - Node content object from content.toJSON() (plain JSON, without type field)
- * @returns 16-char hex string (64 bits of SHA-256)
+ * @param content - Node content object (ArtifactNodeContent or SaveContent)
+ * @returns 64-char hex string (full SHA-256)
  */
-export async function computeContentHash(content: ArtifactNodeContent): Promise<string> {
+export async function computeContentHash(content: ArtifactNodeContent | SaveContent): Promise<string> {
   const payload = canonicalize(content);
-  const hex = await sha256Hex(payload);
-  return hex.substring(0, 16);
+  return sha256Hex(payload);
 }
 
 // ─── Node Version Commit ────────────────────────────────────────────
@@ -51,7 +63,7 @@ export async function computeContentHash(content: ArtifactNodeContent): Promise<
 /**
  * Compute a deterministic, **globally unique** commit hash for a node version.
  *
- * Algorithm: `SHA-256(canonicalize({ nodeId, parent, contentHash, type }))` → first 16 hex chars.
+ * Algorithm: `SHA-256(canonicalize({ nodeId, parent, contentHash, type }))` → full 64-char hex.
  *
  * Including `nodeId` and `parent` in the preimage ensures global uniqueness:
  * - Different nodes always produce different commits (different `nodeId`).
@@ -61,7 +73,7 @@ export async function computeContentHash(content: ArtifactNodeContent): Promise<
  * @param parent      - Parent commit hash, or `null` for root versions.
  * @param contentHash - Content hash referencing the typed content table.
  * @param type        - Node type (INPUT, PROMPT, GENERATED, VFS, SANDBOX, LOADER, STATE, SAVE).
- * @returns 16-char hex string (64 bits of SHA-256).
+ * @returns 64-char hex string (full SHA-256).
  */
 export async function computeNodeCommit(
   nodeId: string,
@@ -70,8 +82,7 @@ export async function computeNodeCommit(
   type: string,
 ): Promise<string> {
   const payload = canonicalize({ nodeId, parent, contentHash, type });
-  const hex = await sha256Hex(payload);
-  return hex.substring(0, 16);
+  return sha256Hex(payload);
 }
 
 // ─── Artifact Version Commit ────────────────────────────────────────
@@ -91,7 +102,7 @@ export interface ArtifactCommitEdge {
 /**
  * Compute a deterministic commit hash for an artifact version (chain structure).
  *
- * Algorithm: `SHA-256(canonicalize({ artifactId, parentCommit, nodes (sorted), edges (sorted) }))` → first 16 hex chars.
+ * Algorithm: `SHA-256(canonicalize({ artifactId, parentCommit, nodes (sorted), edges (sorted) }))` → full 64-char hex.
  *
  * Including `artifactId` and `parentCommit` ensures global uniqueness:
  * - Different artifacts with identical content → different hash.
@@ -101,7 +112,7 @@ export interface ArtifactCommitEdge {
  * @param parentCommit - Previous version's commit hash, or `null` for the first version.
  * @param nodes        - Array of `{ nodeId, commit }` describing node references in this version.
  * @param edges        - Array of edge descriptors.
- * @returns 16-char hex string.
+ * @returns 64-char hex string (full SHA-256).
  */
 export async function computeArtifactCommit(
   artifactId: string,
@@ -117,8 +128,7 @@ export async function computeArtifactCommit(
     .map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle, targetHandle: e.targetHandle }));
 
   const payload = canonicalize({ artifactId, parentCommit, nodes: sortedNodes, edges: sortedEdges });
-  const hex = await sha256Hex(payload);
-  return hex.substring(0, 16);
+  return sha256Hex(payload);
 }
 
 // ─── Save ID ────────────────────────────────────────────────────────

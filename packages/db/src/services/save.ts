@@ -25,6 +25,12 @@ export interface CreateSaveParams {
   title?: string;
   description?: string;
   isListed?: boolean;
+  /**
+   * Skip all validation (artifact version and STATE node validation).
+   * Set to true when creating saves together with an artifact
+   * (both the artifact version and STATE node will be created in the same transaction).
+   */
+  skipValidation?: boolean;
 }
 
 // 列表查询参数
@@ -70,25 +76,53 @@ export class SaveService {
       title,
       description,
       isListed = false,
+      skipValidation = false,
     } = params;
 
     try {
-      // 验证 sourceArtifactId + sourceArtifactCommit 对应的 artifact version 存在
-      const [artifactVersion] = await this.ctx.select({ id: artifactVersions.id })
-        .from(artifactVersions)
-        .where(
-          and(
-            eq(artifactVersions.artifactId, sourceArtifactId),
-            eq(artifactVersions.commitHash, sourceArtifactCommit)
+      if (!skipValidation) {
+        // Validate stateNodeId + stateNodeCommit exists and is a STATE type node
+        const [stateNode] = await this.ctx.select({ type: nodeVersions.type })
+          .from(nodeVersions)
+          .where(
+            and(
+              eq(nodeVersions.nodeId, stateNodeId),
+              eq(nodeVersions.commit, stateNodeCommit)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (!artifactVersion) {
-        return {
-          success: false,
-          error: { code: 'BAD_REQUEST', message: `Artifact version not found: ${sourceArtifactId}@${sourceArtifactCommit}` },
-        };
+        if (!stateNode) {
+          return {
+            success: false,
+            error: { code: 'BAD_REQUEST', message: `STATE node not found: ${stateNodeId}@${stateNodeCommit}` },
+          };
+        }
+
+        if (stateNode.type !== 'STATE') {
+          return {
+            success: false,
+            error: { code: 'BAD_REQUEST', message: `Node ${stateNodeId}@${stateNodeCommit} is not a STATE node (got ${stateNode.type})` },
+          };
+        }
+
+        // Validate sourceArtifactId + sourceArtifactCommit corresponds to an existing artifact version
+        const [artifactVersion] = await this.ctx.select({ id: artifactVersions.id })
+          .from(artifactVersions)
+          .where(
+            and(
+              eq(artifactVersions.artifactId, sourceArtifactId),
+              eq(artifactVersions.commitHash, sourceArtifactCommit)
+            )
+          )
+          .limit(1);
+
+        if (!artifactVersion) {
+          return {
+            success: false,
+            error: { code: 'BAD_REQUEST', message: `Artifact version not found: ${sourceArtifactId}@${sourceArtifactCommit}` },
+          };
+        }
       }
 
       // 计算确定性 saveId

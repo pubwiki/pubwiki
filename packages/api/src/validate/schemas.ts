@@ -169,9 +169,8 @@ export const GetUserArtifactsResponse = zod.object({
   "avatarUrl": zod.url().nullish()
 }),
   "tags": zod.array(zod.object({
-  "id": zod.uuid(),
+  "slug": zod.string().describe('Tag slug (primary key)'),
   "name": zod.string(),
-  "slug": zod.string(),
   "description": zod.string().nullish(),
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
@@ -293,9 +292,8 @@ export const ListArtifactsResponse = zod.object({
   "avatarUrl": zod.url().nullish()
 }),
   "tags": zod.array(zod.object({
-  "id": zod.uuid(),
+  "slug": zod.string().describe('Tag slug (primary key)'),
   "name": zod.string(),
-  "slug": zod.string(),
   "description": zod.string().nullish(),
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
@@ -453,7 +451,8 @@ export const CreateArtifactBody = zod.object({
 })).optional()
 }),zod.object({
   "type": zod.enum(['STATE']),
-  "saves": zod.array(zod.string()).optional().describe('引用的 SAVE 版本 commit hash 列表。\nSTATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。\n作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。\n')
+  "name": zod.string().describe('状态节点的名称'),
+  "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
   "projectId": zod.string().describe('所属项目 ID'),
@@ -516,9 +515,8 @@ export const CreateArtifactResponse = zod.object({
   "avatarUrl": zod.url().nullish()
 }),
   "tags": zod.array(zod.object({
-  "id": zod.uuid(),
+  "slug": zod.string().describe('Tag slug (primary key)'),
   "name": zod.string(),
-  "slug": zod.string(),
   "description": zod.string().nullish(),
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
@@ -643,7 +641,8 @@ export const PatchArtifactBody = zod.object({
 })).optional()
 }),zod.object({
   "type": zod.enum(['STATE']),
-  "saves": zod.array(zod.string()).optional().describe('引用的 SAVE 版本 commit hash 列表。\nSTATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。\n作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。\n')
+  "name": zod.string().describe('状态节点的名称'),
+  "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
   "projectId": zod.string().describe('所属项目 ID'),
@@ -723,9 +722,8 @@ export const PatchArtifactResponse = zod.object({
   "avatarUrl": zod.url().nullish()
 }),
   "tags": zod.array(zod.object({
-  "id": zod.uuid(),
+  "slug": zod.string().describe('Tag slug (primary key)'),
   "name": zod.string(),
-  "slug": zod.string(),
   "description": zod.string().nullish(),
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
@@ -902,7 +900,8 @@ export const GetArtifactGraphResponse = zod.object({
 })).optional()
 }),zod.object({
   "type": zod.enum(['STATE']),
-  "saves": zod.array(zod.string()).optional().describe('引用的 SAVE 版本 commit hash 列表。\nSTATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。\n作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。\n')
+  "name": zod.string().describe('状态节点的名称'),
+  "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
   "projectId": zod.string().describe('所属项目 ID'),
@@ -1151,9 +1150,8 @@ export const GetProjectDetailResponse = zod.object({
   "avatarUrl": zod.url().nullish()
 }),
   "tags": zod.array(zod.object({
-  "id": zod.uuid(),
+  "slug": zod.string().describe('Tag slug (primary key)'),
   "name": zod.string(),
-  "slug": zod.string(),
   "description": zod.string().nullish(),
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
@@ -1267,9 +1265,8 @@ export const ListProjectArtifactsResponse = zod.object({
   "avatarUrl": zod.url().nullish()
 }),
   "tags": zod.array(zod.object({
-  "id": zod.uuid(),
+  "slug": zod.string().describe('Tag slug (primary key)'),
   "name": zod.string(),
-  "slug": zod.string(),
   "description": zod.string().nullish(),
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
@@ -2298,7 +2295,8 @@ export const GetNodeVersionResponse = zod.object({
 })).optional()
 }),zod.object({
   "type": zod.enum(['STATE']),
-  "saves": zod.array(zod.string()).optional().describe('引用的 SAVE 版本 commit hash 列表。\nSTATE node 通过此字段引用同一 nodeId 下的 SAVE 类型 node versions。\n作者先通过 Save API 上传存档（SAVE 版本），再在 artifact 的 STATE node 中引用这些 commit。\n')
+  "name": zod.string().describe('状态节点的名称'),
+  "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
   "projectId": zod.string().describe('所属项目 ID'),

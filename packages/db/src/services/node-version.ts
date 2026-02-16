@@ -294,13 +294,17 @@ export class NodeVersionService {
    * Batch sync local versions to cloud.
    * This is the ONLY entry point for creating node versions.
    * 
+   * This operation is IDEMPOTENT - calling it multiple times with the same
+   * inputs will produce the same result. Already-existing versions are skipped
+   * before content upsert to prevent refCount inflation.
+   * 
    * For each version:
-   * 1. Check if it already exists (skip if so)
-   * 2. Validate parent exists (if specified)
-   * 3. Validate visibility inheritance
-   * 4. Upsert content to typed content table (ref_count managed)
-   * 5. Insert node_versions record
-   * 6. Insert lineage refs (if any)
+   * 1. Validate commit hash matches computeNodeCommit()
+   * 2. Deduplicate by commit within the batch
+   * 3. Skip versions that already exist in database
+   * 4. Upsert content to typed content table (refCount managed)
+   * 5. Insert node_versions record (onConflictDoNothing)
+   * 6. Insert lineage refs if any (onConflictDoNothing)
    * 
    * Note: All writes are collected into BatchContext, not executed immediately.
    * The caller (route layer) is responsible for calling ctx.commit().
@@ -309,17 +313,65 @@ export class NodeVersionService {
     const result: SyncResult = { created: 0, skipped: 0, errors: [] };
 
     try {
-      // Batch query existing commits to avoid N+1
-      const commits = inputs.map(i => i.commit);
+      // ========== Phase 1: Validate all inputs and deduplicate by commit ==========
+      
+      // Use Map to validate and deduplicate in one pass (keeps first occurrence)
+      const validatedInputMap = new Map<string, SyncNodeVersionInput>();
+      for (const input of inputs) {
+        // Skip duplicates
+        if (validatedInputMap.has(input.commit)) {
+          continue;
+        }
+
+        const expectedCommit = await computeNodeCommit(
+          input.nodeId,
+          input.parent ?? null,
+          input.contentHash,
+          input.type,
+        );
+        if (input.commit !== expectedCommit) {
+          result.errors.push(
+            `Version for node ${input.nodeId}: commit hash mismatch: expected ${expectedCommit}, got ${input.commit}. ` +
+            `Client must compute commit using computeNodeCommit(nodeId, parent, contentHash, type).`
+          );
+          continue;
+        }
+        validatedInputMap.set(input.commit, input);
+      }
+
+      // Batch query existing commits to filter out already-existing versions
+      const commits = [...validatedInputMap.keys()];
       const existingVersions = commits.length > 0
         ? await this.ctx.select({ commit: nodeVersions.commit })
             .from(nodeVersions)
             .where(inArray(nodeVersions.commit, commits))
         : [];
-      const existingSet = new Set(existingVersions.map(v => v.commit));
 
+      // Remove existing versions from map
+      for (const v of existingVersions) {
+        validatedInputMap.delete(v.commit);
+        result.skipped++;
+      }
+
+      const newInputs = [...validatedInputMap.values()];
+
+      // ========== Phase 2: Batch upsert unique contents ==========
+      
+      // Collect unique contentHashes and their contents
+      const contentMap = new Map<string, AllNodeContent>();
+      for (const input of newInputs) {
+        contentMap.set(input.contentHash, input.content);
+      }
+
+      // Upsert all unique contents
+      for (const [contentHash, content] of contentMap) {
+        this.upsertContent(contentHash, content);
+      }
+
+      // ========== Phase 3: Prepare parent info for derivativeOf ==========
+      
       // Batch query parent versions for derivativeOf computation
-      const parentCommits = inputs
+      const parentCommits = newInputs
         .map(i => i.parent)
         .filter((p): p is string => p != null);
       const parentVersions = parentCommits.length > 0
@@ -333,32 +385,10 @@ export class NodeVersionService {
         : [];
       const parentMap = new Map(parentVersions.map(p => [p.commit, p]));
 
-      for (const input of inputs) {
+      // ========== Phase 4: Create node versions ==========
+      
+      for (const input of newInputs) {
         try {
-          // Skip if already exists (idempotent)
-          if (existingSet.has(input.commit)) {
-            result.skipped++;
-            continue;
-          }
-
-          // Validate client-computed commit hash
-          const expectedCommit = await computeNodeCommit(
-            input.nodeId,
-            input.parent ?? null,
-            input.contentHash,
-            input.type,
-          );
-          if (input.commit !== expectedCommit) {
-            result.errors.push(
-              `Version for node ${input.nodeId}: commit hash mismatch: expected ${expectedCommit}, got ${input.commit}. ` +
-              `Client must compute commit using computeNodeCommit(nodeId, parent, contentHash, type).`
-            );
-            continue;
-          }
-
-          // Upsert content to typed content table (idempotent)
-          this.upsertContent(input.type, input.contentHash, input.content);
-
           // Compute derivativeOf (skip-list pointer for cross-artifact lineage)
           let derivativeOf: string | null = null;
           if (input.parent) {
@@ -510,12 +540,16 @@ export class NodeVersionService {
   }
 
   /**
-   * Upsert content into the typed content table (idempotent).
+   * Upsert content into the typed content table.
    * Uses ON CONFLICT to increment ref_count if content already exists.
+   * 
+   * WARNING: This is NOT idempotent - calling multiple times for the same
+   * contentHash will increment refCount each time. Callers must ensure
+   * this is only called once per content (e.g., by checking existence first).
    * 
    * Note: This collects the operation into BatchContext, not executed immediately.
    */
-  private upsertContent(type: NodeType, contentHash: string, content: AllNodeContent): void {
+  private upsertContent(contentHash: string, content: AllNodeContent): void {
     // Using type narrowing via the discriminated union's `type` field
     switch (content.type) {
       case 'INPUT': {
@@ -621,7 +655,8 @@ export class NodeVersionService {
           db.insert(stateContents)
             .values({
               contentHash,
-              saves: content.saves,
+              name: content.name,
+              description: content.description,
             })
             .onConflictDoUpdate({
               target: stateContents.contentHash,

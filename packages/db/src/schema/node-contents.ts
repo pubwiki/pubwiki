@@ -127,14 +127,15 @@ export const loaderContents = sqliteTable('loader_contents', {
 
 // ────────────────────────────────────────────────────────────
 // 7) STATE 节点内容
-// 内容：Artifact 中的状态节点，仅存储 SAVE 版本引用列表
-// 实际存档元数据（title, description）存储在 save_contents 中
+// 内容：Artifact 中的状态节点，存储名称和描述
+// Save 与 STATE 的关系通过 save_contents.stateNodeId + stateNodeCommit 反向引用
 // ────────────────────────────────────────────────────────────
 export const stateContents = sqliteTable('state_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
 
-  // 引用的 SAVE commit 列表（Artifact STATE node 引用作者的存档版本）
-  saves: text('saves', { mode: 'json' }).$type<string[]>(),
+  // 状态节点元数据
+  name: text('name').notNull(),                                // 状态节点名称
+  description: text('description'),                            // 状态节点描述
 
   refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),

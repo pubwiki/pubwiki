@@ -1,9 +1,10 @@
 import { eq, and, inArray, asc, desc, sql, count, isNotNull } from 'drizzle-orm';
 import type { BatchContext } from '../batch-context';
 import { artifacts, tags, artifactTags, artifactVersions, artifactCommitTags, type Artifact, type ArtifactVersion as DbArtifactVersion, type NewArtifact, type NewArtifactVersion } from '../schema/artifacts';
+import { TagService, type TagInfo } from './tag';
 import { artifactVersionNodes, artifactVersionEdges, type NewArtifactVersionNode, type NewArtifactVersionEdge } from '../schema/artifact-version-graph';
 import { nodeVersions } from '../schema/node-versions';
-import { ARTIFACT_NODE_TYPES } from '../schema/enums';
+import { saveContents } from '../schema/node-contents';
 import type { ArtifactNodeType } from '../schema/enums';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
 import { SaveService } from './save';
@@ -29,7 +30,6 @@ import type {
   ArtifactEdge,
 } from '@pubwiki/api';
 import { computeArtifactCommit } from '@pubwiki/api';
-import { AclService } from './access-control/acl-service';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
 
@@ -84,702 +84,715 @@ export class ArtifactService {
     );
   }
 
-  // 创建或更新 artifact（使用 batch 保证原子性）
-  // 通过检查 metadata.artifactId 是否存在于数据库中决定是创建还是更新
+  // ============================================================================
+  // createArtifact - Main Entry Point
+  // ============================================================================
+
+  /**
+   * 创建或更新 artifact（使用 batch 保证原子性）
+   * 通过检查 metadata.artifactId 是否存在于数据库中决定是创建还是更新
+   */
   async createArtifact(input: CreateArtifactInput): Promise<ServiceResult<CreateArtifactResult>> {
     const { authorId, metadata, nodes, edges } = input;
     const artifactId = metadata.artifactId;
 
     try {
-      // 先检查 artifactId 是否已存在于数据库中，决定是创建还是更新
-      const existingArtifact = await this.ctx
-        .select({ id: artifacts.id, authorId: artifacts.authorId, currentVersionId: artifacts.currentVersionId })
-        .from(artifacts)
-        .where(eq(artifacts.id, artifactId))
-        .limit(1);
+      // Step 1: Validate and prepare context (check permissions, verify commit hash, get author)
+      const prepareResult = await this.prepareArtifactContext(artifactId, authorId, metadata, nodes, edges);
+      if (!prepareResult.success) return prepareResult;
+      const { isUpdate, author, versionId } = prepareResult.data;
 
-      const isUpdate = existingArtifact.length > 0;
+      // Step 2: Validate and sync nodes (nodes must exist before version references them)
+      const nodeResult = await this.validateAndSyncNodes(artifactId, authorId, metadata.commit, nodes, edges, input.saves ?? []);
+      if (!nodeResult.success) return nodeResult;
 
+      // Step 3: Validate entrypoint (depends on nodes being validated)
+      const entrypointResult = this.validateEntrypoint(metadata.entrypoint, nodes, input.saves ?? []);
+      if (!entrypointResult.success) return entrypointResult;
+
+      // Step 4: Create or update artifact record (without currentVersionId for new artifacts)
       if (isUpdate) {
-        // 更新模式：验证 owner 是当前用户
-        if (existingArtifact[0].authorId !== authorId) {
-          return {
-            success: false,
-            error: { code: 'FORBIDDEN', message: 'You do not have permission to update this artifact' },
-          };
+        const updateResult = await this.updateExistingArtifact(artifactId, metadata, versionId);
+        if (!updateResult.success) return updateResult;
+      } else {
+        this.createNewArtifact(artifactId, authorId, metadata, versionId);
+      }
+
+      // Step 5: Create version record (artifact must exist first due to FK)
+      this.createVersionRecord(artifactId, versionId, metadata);
+
+      // Step 6: Store graph structure (version must exist, nodes already synced)
+      this.storeGraphStructure(metadata.commit, nodes, edges);
+
+      // Step 7: Process commit tags (version must exist)
+      await this.processCommitTags(artifactId, metadata.commit, metadata.commitTags ?? []);
+
+      // Step 8: Process tags
+      const tagService = new TagService(this.ctx);
+      const existingTagsMap = metadata.tags && metadata.tags.length > 0
+        ? await tagService.fetchTagsBySlug(metadata.tags)
+        : new Map<string, TagInfo>();
+      const processedTags = await this.processTags(
+        artifactId, isUpdate, metadata.tags ?? [], tagService, existingTagsMap
+      );
+
+      // Step 9: Create stats record (only for new artifacts)
+      if (!isUpdate) {
+        this.createStatsRecord(artifactId);
+      }
+
+      // Step 10: Build and return response
+      const artifact = await this.buildArtifactResponse(
+        artifactId, isUpdate, metadata, author, processedTags
+      );
+
+      return { success: true, data: { artifact } };
+    } catch (error) {
+      console.error('Create artifact error:', error);
+      return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
+    }
+  }
+
+  // ============================================================================
+  // createArtifact - Private Helper Methods
+  // ============================================================================
+
+  /**
+   * Step 1: Validate permissions, compute parent commit, verify commit hash, get author info
+   */
+  private async prepareArtifactContext(
+    artifactId: string,
+    authorId: string,
+    metadata: CreateArtifactMetadata,
+    nodes: CreateArtifactNode[],
+    edges: ArtifactEdgeDescriptor[],
+  ): Promise<ServiceResult<{
+    isUpdate: boolean;
+    parentCommit: string | null;
+    author: { id: string; username: string; displayName: string | null; avatarUrl: string | null };
+    versionId: string;
+  }>> {
+    // Check if artifact exists
+    const existingArtifact = await this.ctx
+      .select({ id: artifacts.id, authorId: artifacts.authorId, currentVersionId: artifacts.currentVersionId })
+      .from(artifacts)
+      .where(eq(artifacts.id, artifactId))
+      .limit(1);
+
+    const isUpdate = existingArtifact.length > 0;
+
+    // Verify ownership for updates
+    if (isUpdate && existingArtifact[0].authorId !== authorId) {
+      return {
+        success: false,
+        error: { code: 'FORBIDDEN', message: 'You do not have permission to update this artifact' },
+      };
+    }
+
+    // Compute parentCommit (current version's commitHash for updates, null for creates)
+    let parentCommit: string | null = null;
+    if (isUpdate && existingArtifact[0].currentVersionId) {
+      const currentVersion = await this.ctx
+        .select({ commitHash: artifactVersions.commitHash })
+        .from(artifactVersions)
+        .where(eq(artifactVersions.id, existingArtifact[0].currentVersionId))
+        .limit(1);
+      if (currentVersion.length > 0) {
+        parentCommit = currentVersion[0].commitHash;
+      }
+    }
+
+    // Verify commit hash
+    const expectedCommit = await ArtifactService.computeCommitHash(artifactId, parentCommit, nodes, edges);
+    if (metadata.commit !== expectedCommit) {
+      return {
+        success: false,
+        error: {
+          code: 'BAD_REQUEST',
+          message: `Commit hash mismatch: expected ${expectedCommit}, got ${metadata.commit}. Client must compute commit using (artifactId + parentCommit + nodes + edges).`,
+        },
+      };
+    }
+
+    // Get author info
+    const authorResult = await this.ctx
+      .select({
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        avatarUrl: user.avatarUrl,
+      })
+      .from(user)
+      .where(eq(user.id, authorId))
+      .limit(1);
+
+    if (authorResult.length === 0) {
+      return { success: false, error: { code: 'NOT_FOUND', message: 'Author not found' } };
+    }
+
+    return {
+      success: true,
+      data: {
+        isUpdate,
+        parentCommit,
+        author: authorResult[0],
+        versionId: crypto.randomUUID(),
+      },
+    };
+  }
+
+  /**
+   * Step 2a: Update existing artifact (for update mode)
+   */
+  private async updateExistingArtifact(
+    artifactId: string,
+    metadata: CreateArtifactMetadata,
+    versionId: string,
+  ): Promise<ServiceResult<void>> {
+    // Check for duplicate commit hash
+    const existingVersion = await this.ctx
+      .select({ id: artifactVersions.id })
+      .from(artifactVersions)
+      .where(and(
+        eq(artifactVersions.artifactId, artifactId),
+        eq(artifactVersions.commitHash, metadata.commit)
+      ))
+      .limit(1);
+
+    if (existingVersion.length > 0) {
+      return {
+        success: false,
+        error: { code: 'CONFLICT', message: `Version with commit ${metadata.commit} already exists for this artifact` },
+      };
+    }
+
+    // Update artifact record
+    this.ctx.modify(db =>
+      db.update(artifacts).set({
+        name: metadata.name,
+        description: metadata.description ?? null,
+        currentVersionId: versionId,
+        thumbnailUrl: metadata.thumbnailUrl ?? null,
+        license: metadata.license ?? null,
+        repositoryUrl: metadata.repositoryUrl ?? null,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(artifacts.id, artifactId))
+    );
+
+    // Update discovery control
+    const isListed = metadata.isListed ?? true;
+    this.ctx.modify(db =>
+      db.update(resourceDiscoveryControl).set({ isListed }).where(
+        and(
+          eq(resourceDiscoveryControl.resourceType, 'artifact'),
+          eq(resourceDiscoveryControl.resourceId, artifactId)
+        )
+      )
+    );
+
+    return { success: true, data: undefined };
+  }
+
+  /**
+   * Step 2b: Create new artifact (for create mode)
+   */
+  private createNewArtifact(
+    artifactId: string,
+    authorId: string,
+    metadata: CreateArtifactMetadata,
+    versionId: string,
+  ): void {
+    const newArtifact: NewArtifact = {
+      id: artifactId,
+      authorId,
+      name: metadata.name,
+      description: metadata.description ?? null,
+      currentVersionId: versionId,
+      thumbnailUrl: metadata.thumbnailUrl ?? null,
+      license: metadata.license ?? null,
+      repositoryUrl: metadata.repositoryUrl ?? null,
+    };
+    this.ctx.modify(db => db.insert(artifacts).values(newArtifact));
+
+    // Create discovery control record
+    const isListed = metadata.isListed ?? true;
+    this.ctx.modify(db =>
+      db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifactId,
+        isListed,
+      })
+    );
+
+    // Create owner ACL (manage + write + read)
+    this.ctx.modify(db =>
+      db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifactId,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      })
+    );
+
+    // Create public read ACL
+    this.ctx.modify(db =>
+      db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifactId,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+        grantedBy: authorId,
+      })
+    );
+  }
+
+  /**
+   * Step 3: Create version record
+   */
+  private createVersionRecord(
+    artifactId: string,
+    versionId: string,
+    metadata: CreateArtifactMetadata,
+  ): void {
+    const newVersion: NewArtifactVersion = {
+      id: versionId,
+      artifactId,
+      version: metadata.version ?? null,
+      commitHash: metadata.commit,
+      changelog: metadata.changelog ?? null,
+      publishedAt: new Date().toISOString(),
+      entrypoint: metadata.entrypoint ?? null,
+    };
+    this.ctx.modify(db => db.insert(artifactVersions).values(newVersion));
+  }
+
+  /**
+   * Step 4: Process commit tags (clear old tags with same name, create new associations)
+   */
+  private async processCommitTags(
+    artifactId: string,
+    commitHash: string,
+    commitTags: string[],
+  ): Promise<void> {
+    if (commitTags.length === 0) return;
+
+    // Find and delete existing tags with same names
+    const existingCommitTags = await this.ctx.select({ id: artifactCommitTags.id })
+      .from(artifactCommitTags)
+      .where(and(
+        eq(artifactCommitTags.artifactId, artifactId),
+        inArray(artifactCommitTags.tag, commitTags)
+      ));
+
+    for (const ct of existingCommitTags) {
+      this.ctx.modify(db =>
+        db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
+      );
+    }
+
+    // Create new commit tag associations
+    for (const tag of commitTags) {
+      this.ctx.modify(db =>
+        db.insert(artifactCommitTags).values({ artifactId, commitHash, tag })
+      );
+    }
+  }
+
+  /**
+   * Step 5: Sync all nodes and create saves.
+   */
+  private async validateAndSyncNodes(
+    artifactId: string,
+    authorId: string,
+    commitHash: string,
+    nodes: CreateArtifactNode[],
+    edges: ArtifactEdgeDescriptor[],
+    saves: CreateSaveInput[],
+  ): Promise<ServiceResult<void>> {
+    const nodeVersionService = new NodeVersionService(this.ctx);
+
+    // Step 1: Create saves first (they will be referenced by STATE nodes)
+    if (saves.length > 0) {
+      const saveResult = await this.createSaves(artifactId, authorId, commitHash, nodes, edges, saves);
+      if (!saveResult.success) return saveResult;
+    }
+
+    // Step 2: Sync all nodes together
+    const syncInputs: SyncNodeVersionInput[] = nodes.map(n => ({
+      nodeId: n.nodeId,
+      commit: n.commit,
+      parent: n.parent ?? null,
+      authorId,
+      type: n.type,
+      name: n.name,
+      contentHash: n.contentHash,
+      content: n.content,
+      message: n.message,
+      tag: n.tag,
+      isListed: n.isListed,
+      sourceArtifactId: artifactId,
+      refs: n.refs as SyncNodeVersionInput['refs'],
+    }));
+
+    const syncResult = await nodeVersionService.syncVersions(syncInputs);
+    if (!syncResult.success) {
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: `Failed to sync node versions: ${syncResult.error.message}` },
+      };
+    }
+
+    if (syncResult.data.errors.length > 0) {
+      return {
+        success: false,
+        error: { code: 'BAD_REQUEST', message: `Node sync errors: ${syncResult.data.errors.join('; ')}` },
+      };
+    }
+
+    return { success: true, data: undefined };
+  }
+
+  /**
+   * Create saves that are submitted with the artifact
+   */
+  private async createSaves(
+    artifactId: string,
+    authorId: string,
+    commitHash: string,
+    nodes: CreateArtifactNode[],
+    edges: ArtifactEdgeDescriptor[],
+    saves: CreateSaveInput[],
+  ): Promise<ServiceResult<void>> {
+    const saveService = new SaveService(this.ctx);
+
+    // Build state node map: stateNodeId → stateNodeCommit (from nodes array)
+    const stateNodeMap = new Map<string, string>();
+    for (const node of nodes) {
+      if (node.type === 'STATE') {
+        stateNodeMap.set(node.nodeId, node.commit);
+      }
+    }
+
+    // Cache for graph connectivity validation results (same stateNodeId may be referenced by multiple saves)
+    const connectivityCache = new Map<string, ServiceResult<void>>();
+
+    // Cache for DB-fetched STATE node commits (same stateNodeId may be referenced by multiple saves)
+    const dbStateNodeCache = new Map<string, string | null>();
+
+    for (const save of saves) {
+      let stateNodeCommit = stateNodeMap.get(save.stateNodeId);
+
+      // If not found in nodes array, try to find in database
+      if (!stateNodeCommit) {
+        // Check cache first
+        if (dbStateNodeCache.has(save.stateNodeId)) {
+          stateNodeCommit = dbStateNodeCache.get(save.stateNodeId) ?? undefined;
+        } else {
+          // Query database for existing STATE node
+          const dbStateNode = await this.ctx.select({
+            commit: nodeVersions.commit,
+            type: nodeVersions.type,
+          })
+            .from(nodeVersions)
+            .where(eq(nodeVersions.nodeId, save.stateNodeId))
+            .orderBy(desc(nodeVersions.authoredAt))
+            .limit(1);
+
+          if (dbStateNode.length > 0 && dbStateNode[0].type === 'STATE') {
+            stateNodeCommit = dbStateNode[0].commit;
+            dbStateNodeCache.set(save.stateNodeId, stateNodeCommit);
+          } else {
+            dbStateNodeCache.set(save.stateNodeId, null);
+          }
         }
       }
 
-      // 确定 parentCommit：更新时为当前版本的 commitHash，创建时为 null
-      let parentCommit: string | null = null;
-      if (isUpdate && existingArtifact[0].currentVersionId) {
-        const currentVersion = await this.ctx
-          .select({ commitHash: artifactVersions.commitHash })
-          .from(artifactVersions)
-          .where(eq(artifactVersions.id, existingArtifact[0].currentVersionId))
-          .limit(1);
-        if (currentVersion.length > 0) {
-          parentCommit = currentVersion[0].commitHash;
-        }
-      }
-
-      // 校验客户端传入的 commit hash（包含 artifactId 和 parentCommit 形成链状结构）
-      const expectedCommit = await ArtifactService.computeCommitHash(artifactId, parentCommit, nodes, edges);
-      if (metadata.commit !== expectedCommit) {
+      if (!stateNodeCommit) {
         return {
           success: false,
           error: {
             code: 'BAD_REQUEST',
-            message: `Commit hash mismatch: expected ${expectedCommit}, got ${metadata.commit}. Client must compute commit using (artifactId + parentCommit + nodes + edges).`,
+            message: `Save references state node ${save.stateNodeId} which is not in the graph and does not exist in the database`,
           },
         };
       }
 
-      // 获取作者信息（batch 前检查）
-      const authorResult = await this.ctx
-        .select({
-          id: user.id,
-          username: user.username,
-          displayName: user.displayName,
-          avatarUrl: user.avatarUrl,
-        })
-        .from(user)
-        .where(eq(user.id, authorId))
-        .limit(1);
+      // Validate graph connectivity: state node → loader node → sandbox node (with caching)
+      let validationResult = connectivityCache.get(save.stateNodeId);
+      if (!validationResult) {
+        validationResult = this.validateSaveGraphConnectivity(save.stateNodeId, nodes, edges);
+        connectivityCache.set(save.stateNodeId, validationResult);
+      }
+      if (!validationResult.success) return validationResult;
 
-      if (authorResult.length === 0) {
+      const result = await saveService.createSave({
+        stateNodeId: save.stateNodeId,
+        stateNodeCommit,
+        commit: save.commit,
+        parent: save.parent ?? null,
+        authorId,
+        sourceArtifactId: artifactId,
+        sourceArtifactCommit: commitHash,
+        contentHash: save.contentHash,
+        title: save.title,
+        description: save.description,
+        isListed: save.isListed,
+        // Skip validation since both artifact version and STATE node will be created in the same transaction
+        skipValidation: true,
+      });
+
+      if (!result.success) {
         return {
           success: false,
-          error: { code: 'NOT_FOUND', message: 'Author not found' },
+          error: { code: 'BAD_REQUEST', message: `Failed to create save: ${result.error.message}` },
         };
       }
+    }
 
-      // 注意：节点类型验证已在 API 层完成，此处不再重复验证
+    return { success: true, data: undefined };
+  }
 
-      // 预先获取已存在的 tags
-      const existingTagsMap = new Map<string, { id: string; name: string; slug: string; description: string | null; color: string | null }>();
-      if (metadata.tags && metadata.tags.length > 0) {
-        const existingTags = await this.ctx
-          .select()
-          .from(tags)
-          .where(inArray(tags.slug, metadata.tags));
-        
-        for (const tag of existingTags) {
-          existingTagsMap.set(tag.slug, {
-            id: tag.id,
-            name: tag.name,
-            slug: tag.slug,
-            description: tag.description,
-            color: tag.color,
-          });
-        }
+  /**
+   * Validate that state node is connected to sandbox through loader
+   */
+  private validateSaveGraphConnectivity(
+    stateNodeId: string,
+    nodes: CreateArtifactNode[],
+    edges: ArtifactEdgeDescriptor[],
+  ): ServiceResult<void> {
+    // Find loader nodes connected to state node
+    const stateNodeEdges = edges.filter(e => e.source === stateNodeId);
+    const loaderNodeIds = new Set<string>();
+    for (const e of stateNodeEdges) {
+      const targetNode = nodes.find(n => n.nodeId === e.target);
+      if (targetNode && targetNode.type === 'LOADER') {
+        loaderNodeIds.add(e.target);
       }
+    }
 
-      // 如果是更新操作，获取旧的 tags 用于后续减少使用计数
-      const oldTagIds: string[] = [];
-      if (isUpdate) {
-        const oldTags = await this.ctx
-          .select({ tagId: artifactTags.tagId })
-          .from(artifactTags)
-          .where(eq(artifactTags.artifactId, metadata.artifactId!));
-        oldTagIds.push(...oldTags.map(t => t.tagId));
-      }
-
-      // 使用用户传入的 artifactId
-      const versionId = crypto.randomUUID();
-
-      // 收集处理后的 tags 信息
-      const processedTags: { id: string; name: string; slug: string; description: string | null; color: string | null }[] = [];
-
-      // 更新模式下，追加新版本（不删除旧版本）
-      if (isUpdate) {
-        // 检查 commitHash 是否重复（利用已有的 unique index）
-        const existingVersion = await this.ctx
-          .select({ id: artifactVersions.id })
-          .from(artifactVersions)
-          .where(and(
-            eq(artifactVersions.artifactId, artifactId),
-            eq(artifactVersions.commitHash, metadata.commit)
-          ))
-          .limit(1);
-
-        if (existingVersion.length > 0) {
-          return {
-            success: false,
-            error: { code: 'CONFLICT', message: `Version with commit ${metadata.commit} already exists for this artifact` },
-          };
-        }
-
-        // 增量更新 tags：计算新旧差异
-        const newTagSlugs = new Set(metadata.tags ?? []);
-        
-        // 获取当前 tags 的 slug → id 映射
-        const currentTagSlugs = new Set<string>();
-        if (oldTagIds.length > 0) {
-          const currentTags = await this.ctx
-            .select({ id: tags.id, slug: tags.slug })
-            .from(tags)
-            .where(inArray(tags.id, oldTagIds));
-          for (const t of currentTags) {
-            currentTagSlugs.add(t.slug);
-          }
-        }
-
-        // 需要移除的 tags（在旧列表中但不在新列表中）
-        const tagsToRemove = [...currentTagSlugs].filter(s => !newTagSlugs.has(s));
-        // 需要添加的 tags（在新列表中但不在旧列表中）
-        const tagsToAdd = [...newTagSlugs].filter(s => !currentTagSlugs.has(s));
-
-        // 移除不再使用的 tags
-        if (tagsToRemove.length > 0) {
-          const tagsToRemoveRecords = await this.ctx
-            .select({ id: tags.id })
-            .from(tags)
-            .where(inArray(tags.slug, tagsToRemove));
-          for (const t of tagsToRemoveRecords) {
-            this.ctx.modify(db =>
-              db.delete(artifactTags).where(
-                and(eq(artifactTags.artifactId, artifactId), eq(artifactTags.tagId, t.id))
-              )
-            );
-            this.ctx.modify(db =>
-              db.update(tags).set({ usageCount: sql`MAX(0, ${tags.usageCount} - 1)` }).where(eq(tags.id, t.id))
-            );
-          }
-        }
-
-        // 添加新 tags（逻辑在下面的 tags 处理中统一完成，这里只处理移除）
-        // 将 tagsToAdd 作为需要处理的 tags
-        if (metadata.tags) {
-          metadata.tags = [...tagsToAdd];
-        }
-        
-        // 更新 artifact 基本信息
-        this.ctx.modify(db =>
-          db.update(artifacts).set({
-            name: metadata.name,
-            description: metadata.description ?? null,
-            currentVersionId: versionId,
-            thumbnailUrl: metadata.thumbnailUrl ?? null,
-            license: metadata.license ?? null,
-            repositoryUrl: metadata.repositoryUrl ?? null,
-            updatedAt: new Date().toISOString(),
-          }).where(eq(artifacts.id, artifactId))
-        );
-
-        // 更新发现控制记录
-        const isListed = metadata.isListed ?? true;
-        this.ctx.modify(db =>
-          db.update(resourceDiscoveryControl).set({
-            isListed,
-          }).where(
-            and(
-              eq(resourceDiscoveryControl.resourceType, 'artifact'),
-              eq(resourceDiscoveryControl.resourceId, artifactId)
-            )
-          )
-        );
-      } else {
-        // 创建 artifact
-        const newArtifact: NewArtifact = {
-          id: artifactId,
-          authorId,
-          name: metadata.name,
-          description: metadata.description ?? null,
-          currentVersionId: versionId,
-          thumbnailUrl: metadata.thumbnailUrl ?? null,
-          license: metadata.license ?? null,
-          repositoryUrl: metadata.repositoryUrl ?? null,
-        };
-        this.ctx.modify(db => db.insert(artifacts).values(newArtifact));
-
-        // 创建发现控制记录
-        const isListed = metadata.isListed ?? true;
-        this.ctx.modify(db =>
-          db.insert(resourceDiscoveryControl).values({
-            resourceType: 'artifact',
-            resourceId: artifactId,
-            isListed,
-          })
-        );
-
-        // 创建 owner ACL（manage + write + read）
-        this.ctx.modify(db =>
-          db.insert(resourceAcl).values({
-            resourceType: 'artifact',
-            resourceId: artifactId,
-            userId: authorId,
-            canRead: true,
-            canWrite: true,
-            canManage: true,
-            grantedBy: authorId,
-          })
-        );
-
-        // 默认创建公开读取 ACL
-        this.ctx.modify(db =>
-          db.insert(resourceAcl).values({
-            resourceType: 'artifact',
-            resourceId: artifactId,
-            userId: PUBLIC_USER_ID,
-            canRead: true,
-            canWrite: false,
-            canManage: false,
-            grantedBy: authorId,
-          })
-        );
-      }
-
-      // 创建版本
-      const newVersion: NewArtifactVersion = {
-        id: versionId,
-        artifactId,
-        version: metadata.version ?? null,
-        commitHash: metadata.commit,
-        changelog: metadata.changelog ?? null,
-        publishedAt: new Date().toISOString(),
-        entrypoint: metadata.entrypoint ?? null,
-      };
-
-      // 处理 commitTags：先清除同 artifact 中使用相同 tag 的旧关联，再创建新关联
-      const commitTags = metadata.commitTags ?? [];
-      if (commitTags.length > 0) {
-        // 查找已存在的同名 tag（可能指向其他版本），删除旧关联
-        const existingCommitTags = await this.ctx.select({ id: artifactCommitTags.id })
-          .from(artifactCommitTags)
-          .where(and(
-            eq(artifactCommitTags.artifactId, artifactId),
-            inArray(artifactCommitTags.tag, commitTags)
-          ));
-        for (const ct of existingCommitTags) {
-          this.ctx.modify(db =>
-            db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
-          );
-        }
-      }
-
-      this.ctx.modify(db => db.insert(artifactVersions).values(newVersion));
-
-      // 创建新的 commitTag 关联
-      for (const tag of commitTags) {
-        this.ctx.modify(db =>
-          db.insert(artifactCommitTags).values({
-            artifactId,
-            commitHash: metadata.commit,
-            tag,
-          })
-        );
-      }
-
-      // 校验所有 node type ∈ ARTIFACT_NODE_TYPES（拒绝 SAVE）
-      for (const node of nodes) {
-        if (!(ARTIFACT_NODE_TYPES as readonly string[]).includes(node.type)) {
-          return {
-            success: false,
-            error: {
-              code: 'BAD_REQUEST',
-              message: `Invalid node type: ${node.type}. Must be one of: ${ARTIFACT_NODE_TYPES.join(', ')}`,
-            },
-          };
-        }
-      }
-
-      // 同步非 STATE 类型的 node versions
-      const nonStateNodes = nodes.filter(n => n.type !== 'STATE');
-      if (nonStateNodes.length > 0) {
-        const nodeVersionService = new NodeVersionService(this.ctx);
-        const syncInputs: SyncNodeVersionInput[] = nonStateNodes.map(n => ({
-          nodeId: n.nodeId,
-          commit: n.commit,
-          parent: n.parent ?? null,
-          authorId: authorId,
-          type: n.type,
-          name: n.name,
-          contentHash: n.contentHash,
-          content: n.content,
-          message: n.message,
-          tag: n.tag,
-          isListed: n.isListed,
-          sourceArtifactId: artifactId,
-          refs: n.refs as SyncNodeVersionInput['refs'],
-        }));
-
-        const syncResult = await nodeVersionService.syncVersions(syncInputs);
-        if (!syncResult.success) {
-          return {
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: `Failed to sync node versions: ${syncResult.error.message}` },
-          };
-        }
-
-        if (syncResult.data.errors.length > 0) {
-          return {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: `Node sync errors: ${syncResult.data.errors.join('; ')}` },
-          };
-        }
-      }
-
-      // 创建随 artifact 一起提交的 saves（在 STATE node 验证之前）
-      const saves = input.saves ?? [];
-      if (saves.length > 0) {
-        const saveService = new SaveService(this.ctx);
-        // 为每个 save 查找对应的 state node commit
-        const stateNodeMap = new Map<string, string>(); // stateNodeId → stateNodeCommit
-        for (const node of nodes) {
-          if (node.type === 'STATE') {
-            stateNodeMap.set(node.nodeId, node.commit);
-          }
-        }
-
-        for (const save of saves) {
-          const stateNodeCommit = stateNodeMap.get(save.stateNodeId);
-          if (!stateNodeCommit) {
-            return {
-              success: false,
-              error: {
-                code: 'BAD_REQUEST',
-                message: `Save references state node ${save.stateNodeId} which is not in the graph`,
-              },
-            };
-          }
-
-          // 校验 save 对应的 state node 和 sandbox node 通过 loader node 相连
-          // 即在图中存在路径: state node → loader node → sandbox node
-          const stateNodeEdges = edges.filter(e => e.source === save.stateNodeId);
-          const loaderNodeIds = new Set<string>();
-          for (const e of stateNodeEdges) {
-            const targetNode = nodes.find(n => n.nodeId === e.target);
-            if (targetNode && targetNode.type === 'LOADER') {
-              loaderNodeIds.add(e.target);
-            }
-          }
-
-          if (loaderNodeIds.size === 0) {
-            return {
-              success: false,
-              error: {
-                code: 'BAD_REQUEST',
-                message: `Save validation failed: state node ${save.stateNodeId} is not connected to any LOADER node`,
-              },
-            };
-          }
-
-          // 检查 loader 节点连接到 sandbox 节点
-          let hasSandboxConnection = false;
-          for (const loaderId of loaderNodeIds) {
-            const loaderEdges = edges.filter(e => e.source === loaderId);
-            for (const le of loaderEdges) {
-              const targetNode = nodes.find(n => n.nodeId === le.target);
-              if (targetNode && targetNode.type === 'SANDBOX') {
-                hasSandboxConnection = true;
-                break;
-              }
-            }
-            if (hasSandboxConnection) break;
-          }
-
-          if (!hasSandboxConnection) {
-            return {
-              success: false,
-              error: {
-                code: 'BAD_REQUEST',
-                message: `Save validation failed: state node ${save.stateNodeId} is not connected to a SANDBOX node through a LOADER node`,
-              },
-            };
-          }
-
-          const result = await saveService.createSave({
-            stateNodeId: save.stateNodeId,
-            stateNodeCommit,
-            commit: save.commit,
-            parent: save.parent ?? null,
-            authorId,
-            sourceArtifactId: artifactId,
-            sourceArtifactCommit: metadata.commit,
-            contentHash: save.contentHash,
-            title: save.title,
-            description: save.description,
-            isListed: save.isListed,
-          });
-
-          if (!result.success) {
-            return {
-              success: false,
-              error: { code: 'BAD_REQUEST', message: `Failed to create save: ${result.error.message}` },
-            };
-          }
-        }
-      }
-
-      // STATE 类型的 node：验证引用的 SAVE commit 存在且权限合法，然后同步 STATE node 版本
-      const stateNodes = nodes.filter(n => n.type === 'STATE');
-      if (stateNodes.length > 0) {
-        // 验证每个 STATE node 的 saves 引用
-        for (const stateNode of stateNodes) {
-          const saves = (stateNode.content as { saves?: string[] })?.saves;
-          if (saves && saves.length > 0) {
-            // 查询所有引用的 save 版本
-            const saveVersions = await this.ctx
-              .select({
-                nodeId: nodeVersions.nodeId,
-                commit: nodeVersions.commit,
-                type: nodeVersions.type,
-                authorId: nodeVersions.authorId,
-              })
-              .from(nodeVersions)
-              .where(inArray(nodeVersions.commit, saves));
-
-            // 检查每个 save commit 是否存在
-            const foundCommits = new Set(saveVersions.map(v => v.commit));
-            const missingCommits = saves.filter(c => !foundCommits.has(c));
-            if (missingCommits.length > 0) {
-              return {
-                success: false,
-                error: {
-                  code: 'BAD_REQUEST',
-                  message: `STATE node ${stateNode.nodeId}: referenced SAVE commits not found: ${missingCommits.join(', ')}`,
-                },
-              };
-            }
-
-            // 验证引用的都是 SAVE 类型
-            const nonSaveVersions = saveVersions.filter(v => v.type !== 'SAVE');
-            if (nonSaveVersions.length > 0) {
-              return {
-                success: false,
-                error: {
-                  code: 'BAD_REQUEST',
-                  message: `STATE node ${stateNode.nodeId}: referenced commits are not SAVE type: ${nonSaveVersions.map(v => v.commit).join(', ')}`,
-                },
-              };
-            }
-
-            // 权限检查：save 必须是当前用户创建的，或是公开的
-            // 使用 AclService 检查权限
-            const aclService = new AclService(this.ctx.unwrapDb());
-            const inaccessibleSaves: string[] = [];
-            for (const v of saveVersions) {
-              if (v.authorId === authorId) continue; // 自己创建的直接通过
-              const canRead = await aclService.canRead(
-                { type: 'save', id: v.commit },
-                authorId
-              );
-              if (!canRead) {
-                inaccessibleSaves.push(v.commit);
-              }
-            }
-            if (inaccessibleSaves.length > 0) {
-              return {
-                success: false,
-                error: {
-                  code: 'FORBIDDEN',
-                  message: `STATE node ${stateNode.nodeId}: no permission to reference private SAVE commits: ${inaccessibleSaves.join(', ')}`,
-                },
-              };
-            }
-          }
-        }
-
-        const nodeVersionService = new NodeVersionService(this.ctx);
-        const stateInputs: SyncNodeVersionInput[] = stateNodes.map(n => ({
-          nodeId: n.nodeId,
-          commit: n.commit,
-          parent: n.parent ?? null,
-          authorId: authorId,
-          type: n.type,
-          name: n.name,
-          contentHash: n.contentHash,
-          content: n.content,
-          message: n.message,
-          tag: n.tag,
-          isListed: n.isListed,
-          sourceArtifactId: artifactId,
-          refs: n.refs as SyncNodeVersionInput['refs'],
-        }));
-
-        const syncResult = await nodeVersionService.syncVersions(stateInputs);
-        if (!syncResult.success) {
-          return {
-            success: false,
-            error: { code: 'INTERNAL_ERROR', message: `Failed to sync state nodes: ${syncResult.error.message}` },
-          };
-        }
-      }
-
-      // 验证 entrypoint 的 saveCommit 在对应 STATE node 的 saves 列表内
-      if (metadata.entrypoint) {
-        const { saveCommit, sandboxNodeId } = metadata.entrypoint;
-
-        // 验证 sandboxNodeId 在图中且类型为 SANDBOX
-        const sandboxNode = nodes.find(n => n.nodeId === sandboxNodeId);
-        if (!sandboxNode) {
-          return {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not in the graph` },
-          };
-        }
-        if (sandboxNode.type !== 'SANDBOX') {
-          return {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not a SANDBOX node (got ${sandboxNode.type})` },
-          };
-        }
-
-        // 验证 saveCommit 存在于某个 STATE node 的 saves 列表中
-        let saveCommitFound = false;
-        for (const node of nodes) {
-          if (node.type === 'STATE') {
-            const stateSaves = (node.content as { saves?: string[] })?.saves;
-            if (stateSaves && stateSaves.includes(saveCommit)) {
-              saveCommitFound = true;
-              break;
-            }
-          }
-        }
-        if (!saveCommitFound) {
-          return {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} is not found in any STATE node's saves list` },
-          };
-        }
-      }
-
-      // 添加所有节点到 artifact_version_nodes
-      for (const node of nodes) {
-        const versionNode: NewArtifactVersionNode = {
-          commitHash: metadata.commit,
-          nodeId: node.nodeId,
-          nodeCommit: node.commit,
-          positionX: node.position?.x ?? null,
-          positionY: node.position?.y ?? null,
-        };
-        this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode));
-      }
-
-      // 存储边到 artifact_version_edges 表
-      for (const edge of edges) {
-        const versionEdge: NewArtifactVersionEdge = {
-          commitHash: metadata.commit,
-          sourceNodeId: edge.source,
-          targetNodeId: edge.target,
-          sourceHandle: edge.sourceHandle ?? null,
-          targetHandle: edge.targetHandle ?? null,
-        };
-        this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge));
-      }
-
-      // 处理 tags
-      if (metadata.tags && metadata.tags.length > 0) {
-        for (const tagSlug of metadata.tags) {
-          const existingTag = existingTagsMap.get(tagSlug);
-
-          if (!existingTag) {
-            // 创建新 tag
-            const newTagId = crypto.randomUUID();
-            this.ctx.modify(db => db.insert(tags).values({
-              id: newTagId,
-              name: tagSlug,
-              slug: tagSlug,
-              usageCount: 1,
-            }));
-            processedTags.push({ id: newTagId, name: tagSlug, slug: tagSlug, description: null, color: null });
-            
-            // 创建关联
-            this.ctx.modify(db => db.insert(artifactTags).values({
-              artifactId,
-              tagId: newTagId,
-            }));
-          } else {
-            // 更新 tag 使用次数
-            this.ctx.modify(db =>
-              db
-                .update(tags)
-                .set({ usageCount: sql`${tags.usageCount} + 1` })
-                .where(eq(tags.id, existingTag.id))
-            );
-            
-            processedTags.push(existingTag);
-
-            // 创建关联
-            this.ctx.modify(db => db.insert(artifactTags).values({
-              artifactId,
-              tagId: existingTag.id,
-            }));
-          }
-        }
-      }
-
-      // 创建 stats 记录（仅在创建新 artifact 时）
-      if (!isUpdate) {
-        this.ctx.modify(db => db.insert(artifactStats).values({
-          artifactId,
-          viewCount: 0,
-          favCount: 0,
-          refCount: 0,
-          downloadCount: 0,
-        }));
-      }
-
-      // 对于更新操作，获取现有的 stats 和 createdAt
-      let existingStats = { viewCount: 0, favCount: 0, refCount: 0, downloadCount: 0 };
-      let existingCreatedAt = new Date().toISOString();
-      if (isUpdate) {
-        const statsResult = await this.ctx
-          .select()
-          .from(artifactStats)
-          .where(eq(artifactStats.artifactId, artifactId))
-          .limit(1);
-        if (statsResult.length > 0) {
-          existingStats = {
-            viewCount: statsResult[0].viewCount,
-            favCount: statsResult[0].favCount,
-            refCount: statsResult[0].refCount,
-            downloadCount: statsResult[0].downloadCount,
-          };
-        }
-        
-        const artifactResult = await this.ctx
-          .select({ createdAt: artifacts.createdAt })
-          .from(artifacts)
-          .where(eq(artifacts.id, artifactId))
-          .limit(1);
-        if (artifactResult.length > 0) {
-          existingCreatedAt = artifactResult[0].createdAt;
-        }
-      }
-
-      // 返回创建/更新的 artifact
-      const artifact: ArtifactListItem = {
-        id: artifactId,
-        name: metadata.name,
-        description: metadata.description ?? null,
-        isListed: metadata.isListed ?? true,
-        thumbnailUrl: metadata.thumbnailUrl ?? null,
-        license: metadata.license ?? null,
-        createdAt: existingCreatedAt,
-        updatedAt: new Date().toISOString(),
-        author: authorResult[0],
-        tags: processedTags,
-        stats: existingStats,
-      };
-
-      return {
-        success: true,
-        data: {
-          artifact,
-        },
-      };
-    } catch (error) {
-      console.error('Create artifact error:', error);
+    if (loaderNodeIds.size === 0) {
       return {
         success: false,
-        error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+        error: {
+          code: 'BAD_REQUEST',
+          message: `Save validation failed: state node ${stateNodeId} is not connected to any LOADER node`,
+        },
       };
+    }
+
+    // Check loader nodes connect to sandbox
+    let hasSandboxConnection = false;
+    for (const loaderId of loaderNodeIds) {
+      const loaderEdges = edges.filter(e => e.source === loaderId);
+      for (const le of loaderEdges) {
+        const targetNode = nodes.find(n => n.nodeId === le.target);
+        if (targetNode && targetNode.type === 'SANDBOX') {
+          hasSandboxConnection = true;
+          break;
+        }
+      }
+      if (hasSandboxConnection) break;
+    }
+
+    if (!hasSandboxConnection) {
+      return {
+        success: false,
+        error: {
+          code: 'BAD_REQUEST',
+          message: `Save validation failed: state node ${stateNodeId} is not connected to a SANDBOX node through a LOADER node`,
+        },
+      };
+    }
+
+    return { success: true, data: undefined };
+  }
+
+  /**
+   * Step 6: Validate entrypoint references
+   * 
+   * @param entrypoint - The entrypoint configuration
+   * @param nodes - All nodes in the artifact
+   * @param saves - All saves being created with this artifact
+   */
+  private validateEntrypoint(
+    entrypoint: CreateArtifactMetadata['entrypoint'],
+    nodes: CreateArtifactNode[],
+    saves: CreateSaveInput[],
+  ): ServiceResult<void> {
+    if (!entrypoint) {
+      return { success: true, data: undefined };
+    }
+
+    const { saveCommit, sandboxNodeId } = entrypoint;
+
+    // Verify sandboxNodeId exists and is SANDBOX type
+    const sandboxNode = nodes.find(n => n.nodeId === sandboxNodeId);
+    if (!sandboxNode) {
+      return {
+        success: false,
+        error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not in the graph` },
+      };
+    }
+    if (sandboxNode.type !== 'SANDBOX') {
+      return {
+        success: false,
+        error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not a SANDBOX node (got ${sandboxNode.type})` },
+      };
+    }
+
+    // Verify saveCommit is in the saves array
+    const saveFound = saves.find(s => s.commit === saveCommit);
+    if (!saveFound) {
+      return {
+        success: false,
+        error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} is not found in the saves array` },
+      };
+    }
+
+    // Verify the save references a STATE node in this artifact
+    const stateNodeIds = new Set(nodes.filter(n => n.type === 'STATE').map(n => n.nodeId));
+    if (!stateNodeIds.has(saveFound.stateNodeId)) {
+      return {
+        success: false,
+        error: { code: 'BAD_REQUEST', message: `Entrypoint save references state node ${saveFound.stateNodeId} which is not in the graph` },
+      };
+    }
+
+    return { success: true, data: undefined };
+  }
+
+  /**
+   * Step 7: Store graph structure (nodes and edges)
+   */
+  private storeGraphStructure(
+    commitHash: string,
+    nodes: CreateArtifactNode[],
+    edges: ArtifactEdgeDescriptor[],
+  ): void {
+    // Store nodes
+    for (const node of nodes) {
+      const versionNode: NewArtifactVersionNode = {
+        commitHash,
+        nodeId: node.nodeId,
+        nodeCommit: node.commit,
+        positionX: node.position?.x ?? null,
+        positionY: node.position?.y ?? null,
+      };
+      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode));
+    }
+
+    // Store edges
+    for (const edge of edges) {
+      const versionEdge: NewArtifactVersionEdge = {
+        commitHash,
+        sourceNodeId: edge.source,
+        targetNodeId: edge.target,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+      };
+      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge));
     }
   }
 
-  // 获取公开 artifact 列表（isListed=true）
+  /**
+   * Step 8: Process tags using TagService
+   */
+  private async processTags(
+    artifactId: string,
+    isUpdate: boolean,
+    tagSlugs: string[],
+    tagService: TagService,
+    existingTagsMap: Map<string, TagInfo>,
+  ): Promise<TagInfo[]> {
+    if (tagSlugs.length === 0) {
+      return [];
+    }
+
+    if (isUpdate) {
+      const syncResult = await tagService.syncTags(artifactId, tagSlugs, existingTagsMap);
+      return syncResult.processedTags;
+    } else {
+      const setResult = await tagService.setTags(artifactId, tagSlugs, existingTagsMap);
+      return setResult.processedTags;
+    }
+  }
+
+  /**
+   * Step 9: Create stats record (only for new artifacts)
+   */
+  private createStatsRecord(artifactId: string): void {
+    this.ctx.modify(db => db.insert(artifactStats).values({
+      artifactId,
+      viewCount: 0,
+      favCount: 0,
+      refCount: 0,
+      downloadCount: 0,
+    }));
+  }
+
+  /**
+   * Step 10: Build artifact response with stats and timestamps
+   */
+  private async buildArtifactResponse(
+    artifactId: string,
+    isUpdate: boolean,
+    metadata: CreateArtifactMetadata,
+    author: { id: string; username: string; displayName: string | null; avatarUrl: string | null },
+    processedTags: TagInfo[],
+  ): Promise<ArtifactListItem> {
+    let existingStats = { viewCount: 0, favCount: 0, refCount: 0, downloadCount: 0 };
+    let existingCreatedAt = new Date().toISOString();
+
+    if (isUpdate) {
+      const statsResult = await this.ctx
+        .select()
+        .from(artifactStats)
+        .where(eq(artifactStats.artifactId, artifactId))
+        .limit(1);
+      if (statsResult.length > 0) {
+        existingStats = {
+          viewCount: statsResult[0].viewCount,
+          favCount: statsResult[0].favCount,
+          refCount: statsResult[0].refCount,
+          downloadCount: statsResult[0].downloadCount,
+        };
+      }
+
+      const artifactResult = await this.ctx
+        .select({ createdAt: artifacts.createdAt })
+        .from(artifacts)
+        .where(eq(artifacts.id, artifactId))
+        .limit(1);
+      if (artifactResult.length > 0) {
+        existingCreatedAt = artifactResult[0].createdAt;
+      }
+    }
+
+    return {
+      id: artifactId,
+      name: metadata.name,
+      description: metadata.description ?? null,
+      isListed: metadata.isListed ?? true,
+      thumbnailUrl: metadata.thumbnailUrl ?? null,
+      license: metadata.license ?? null,
+      createdAt: existingCreatedAt,
+      updatedAt: new Date().toISOString(),
+      author,
+      tags: processedTags,
+      stats: existingStats,
+    };
+  }
+
+  // ============================================================================
+  // Other Public Methods
+  // ============================================================================
+
+  // 创建或更新 artifact（使用 batch 保证原子性）
   async listPublicArtifacts(params: ListArtifactsParams = {}): Promise<ServiceResult<ListArtifactsResult>> {
     const {
       page = 1,
@@ -811,7 +824,7 @@ export class ArtifactService {
           sql`(
             SELECT count(DISTINCT ${tags.slug})
             FROM ${artifactTags}
-            INNER JOIN ${tags} ON ${artifactTags.tagId} = ${tags.id}
+            INNER JOIN ${tags} ON ${artifactTags.tagSlug} = ${tags.slug}
             WHERE ${artifactTags.artifactId} = ${artifacts.id}
               AND ${tags.slug} IN (${sql.join(tagInclude.map(t => sql`${t}`), sql`, `)})
           ) = ${tagInclude.length}`
@@ -825,7 +838,7 @@ export class ArtifactService {
           sql`NOT EXISTS (
             SELECT 1
             FROM ${artifactTags}
-            INNER JOIN ${tags} ON ${artifactTags.tagId} = ${tags.id}
+            INNER JOIN ${tags} ON ${artifactTags.tagSlug} = ${tags.slug}
             WHERE ${artifactTags.artifactId} = ${artifacts.id}
               AND ${tags.slug} IN (${sql.join(tagExclude.map(t => sql`${t}`), sql`, `)})
           )`
@@ -896,15 +909,14 @@ export class ArtifactService {
           .select({
             artifactId: artifactTags.artifactId,
             tag: {
-              id: tags.id,
-              name: tags.name,
               slug: tags.slug,
+              name: tags.name,
               description: tags.description,
               color: tags.color,
             },
           })
           .from(artifactTags)
-          .innerJoin(tags, eq(artifactTags.tagId, tags.id))
+          .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
           .where(inArray(artifactTags.artifactId, artifactIds));
 
         for (const row of tagResults) {
@@ -1621,7 +1633,7 @@ export class ArtifactService {
       if (metadata.version !== undefined) versionUpdate.version = metadata.version;
       if (metadata.changelog !== undefined) versionUpdate.changelog = metadata.changelog;
       if (metadata.entrypoint !== undefined) {
-        // 验证 entrypoint 的 saveCommit 在对应 STATE node 的 saves 列表内
+        // 验证 entrypoint
         const { saveCommit, sandboxNodeId } = metadata.entrypoint;
 
         // 获取当前版本的节点
@@ -1629,10 +1641,10 @@ export class ArtifactService {
           .from(artifactVersionNodes)
           .where(eq(artifactVersionNodes.commitHash, baseVersion.commitHash));
 
-        // 获取每个节点的版本信息
+        // 获取当前版本中的 STATE 节点 ID 集合
+        const stateNodeIds = new Set<string>();
         const nodeVersionService = new NodeVersionService(this.ctx);
         let sandboxFound = false;
-        let saveCommitFound = false;
 
         for (const vn of versionNodes) {
           const versionDetail = await nodeVersionService.getVersion(vn.nodeCommit);
@@ -1643,10 +1655,7 @@ export class ArtifactService {
             sandboxFound = true;
           }
           if (v.type === 'STATE') {
-            const stateSaves = (v.content as { saves?: string[] })?.saves;
-            if (stateSaves && stateSaves.includes(saveCommit)) {
-              saveCommitFound = true;
-            }
+            stateNodeIds.add(vn.nodeId);
           }
         }
 
@@ -1656,10 +1665,27 @@ export class ArtifactService {
             error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not a SANDBOX node in the current version` },
           };
         }
-        if (!saveCommitFound) {
+
+        // 验证 saveCommit 是否引用了当前版本中的某个 STATE 节点
+        // 查询 save_contents 表获取该 saveCommit 对应的 stateNodeId
+        const saveContentResult = await this.ctx.select({ stateNodeId: saveContents.stateNodeId })
+          .from(saveContents)
+          .innerJoin(nodeVersions, eq(nodeVersions.contentHash, saveContents.contentHash))
+          .where(eq(nodeVersions.commit, saveCommit))
+          .limit(1);
+
+        if (saveContentResult.length === 0) {
           return {
             success: false,
-            error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} is not found in any STATE node's saves list in the current version` },
+            error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} is not found` },
+          };
+        }
+
+        const saveStateNodeId = saveContentResult[0].stateNodeId;
+        if (!stateNodeIds.has(saveStateNodeId)) {
+          return {
+            success: false,
+            error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} references state node ${saveStateNodeId} which is not in the current artifact version` },
           };
         }
 
@@ -1738,15 +1764,14 @@ export class ArtifactService {
       // 获取 tags
       const tagResults = await this.ctx.select({
           tag: {
-            id: tags.id,
-            name: tags.name,
             slug: tags.slug,
+            name: tags.name,
             description: tags.description,
             color: tags.color,
           },
         })
         .from(artifactTags)
-        .innerJoin(tags, eq(artifactTags.tagId, tags.id))
+        .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
         .where(eq(artifactTags.artifactId, artifactId));
 
       const artifact: ArtifactListItem = {
@@ -1954,15 +1979,14 @@ export class ArtifactService {
           .select({
             artifactId: artifactTags.artifactId,
             tag: {
-              id: tags.id,
-              name: tags.name,
               slug: tags.slug,
+              name: tags.name,
               description: tags.description,
               color: tags.color,
             },
           })
           .from(artifactTags)
-          .innerJoin(tags, eq(artifactTags.tagId, tags.id))
+          .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
           .where(inArray(artifactTags.artifactId, artifactIds));
 
         for (const row of tagResults) {

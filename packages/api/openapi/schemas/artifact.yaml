@@ -56,16 +56,13 @@ ArtifactStats:
 Tag:
   type: object
   required:
-    - id
-    - name
     - slug
+    - name
   properties:
-    id:
-      type: string
-      format: uuid
-    name:
-      type: string
     slug:
+      type: string
+      description: "Tag slug (primary key)"
+    name:
       type: string
     description:
       type: string

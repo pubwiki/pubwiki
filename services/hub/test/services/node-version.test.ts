@@ -276,7 +276,7 @@ describe('NodeVersionService', () => {
         { type: 'VFS', table: vfsContents, content: { type: 'VFS', projectId: 'proj1' } },
         { type: 'SANDBOX', table: sandboxContents, content: { type: 'SANDBOX', entryFile: 'index.html' } },
         { type: 'LOADER', table: loaderContents, content: { type: 'LOADER' } },
-        { type: 'STATE', table: stateContents, content: { type: 'STATE', saves: ['commit1'] } },
+        { type: 'STATE', table: stateContents, content: { type: 'STATE', name: 'Test State' } },
       ];
 
       for (const { type, table, content } of types) {
@@ -730,7 +730,7 @@ describe('NodeVersionService', () => {
       expect(rows[0].fileTree).toHaveLength(2);
     });
 
-    it('should store STATE content with saves reference list', async () => {
+    it('should store STATE content with name and description', async () => {
       const hash = makeContentHash('tsta');
       const v = await inputVersion({
         nodeId: crypto.randomUUID(),
@@ -738,7 +738,8 @@ describe('NodeVersionService', () => {
         type: 'STATE',
         content: {
           type: 'STATE',
-          saves: ['abc12345', 'def67890'],
+          name: 'Game Save State',
+          description: 'This is a test state node',
         },
       });
       await service.syncVersions([v]);
@@ -749,7 +750,8 @@ describe('NodeVersionService', () => {
         .from(stateContents)
         .where(eq(stateContents.contentHash, hash));
       expect(rows).toHaveLength(1);
-      expect(rows[0].saves).toEqual(['abc12345', 'def67890']);
+      expect(rows[0].name).toBe('Game Save State');
+      expect(rows[0].description).toBe('This is a test state node');
     });
 
     it('should store GENERATED content with blocks', async () => {

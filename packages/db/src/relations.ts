@@ -107,8 +107,8 @@ export const artifactTagsRelations = relations(artifactTags, ({ one }) => ({
     references: [artifacts.id],
   }),
   tag: one(tags, {
-    fields: [artifactTags.tagId],
-    references: [tags.id],
+    fields: [artifactTags.tagSlug],
+    references: [tags.slug],
   }),
 }));
 

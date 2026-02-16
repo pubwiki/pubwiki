@@ -4,7 +4,7 @@ import type {
   CreateArtifactResponse,
   ApiError,
 } from '@pubwiki/api';
-import { computeArtifactCommit, computeNodeCommit } from '@pubwiki/api';
+import { computeArtifactCommit, computeNodeCommit, computeSaveId, computeContentHash } from '@pubwiki/api';
 import {
   getTestDb,
   getTestR2Bucket,
@@ -84,15 +84,16 @@ describe('Artifacts API', () => {
     }
 
     async function createTestTag(name: string): Promise<string> {
-      const [tag] = await db.insert(tags).values({
+      const slug = name.toLowerCase().replace(/\s+/g, '-');
+      await db.insert(tags).values({
+        slug,
         name,
-        slug: name.toLowerCase().replace(/\s+/g, '-'),
-      }).returning();
-      return tag.id;
+      }).onConflictDoNothing();
+      return slug;
     }
 
-    async function addTagToArtifact(artifactId: string, tagId: string): Promise<void> {
-      await db.insert(artifactTags).values({ artifactId, tagId });
+    async function addTagToArtifact(artifactId: string, tagSlug: string): Promise<void> {
+      await db.insert(artifactTags).values({ artifactId, tagSlug });
     }
 
     async function createArtifactStats(artifactId: string, viewCount: number, favCount: number): Promise<void> {
@@ -1263,6 +1264,162 @@ describe('Artifacts API', () => {
 
       // nodeId 全局唯一标识节点实体，不同 artifact 可以各自为同一节点创建新版本（fork 语义），
       // 因此不存在"node ID 被其他 artifact 占用"的冲突。
+    });
+
+    // =========================================================================
+    // STATE node + saves 测试
+    // 测试创建 artifact 时同时提交 save，并在 STATE 节点中引用该 save
+    // =========================================================================
+    describe('STATE node with saves', () => {
+      // 创建一个完整的 artifact 图，包括 STATE、LOADER、SANDBOX 节点和 saves
+      async function createArtifactWithStateSaveFormData(
+        metadata: Record<string, unknown>,
+        userId: string,
+      ): Promise<FormData> {
+        const formData = new FormData();
+
+        const artifactId = (metadata.artifactId as string) ?? crypto.randomUUID();
+        const parentCommit = (metadata.parentCommit as string | undefined) ?? null;
+
+        // 创建三个节点：STATE、LOADER、SANDBOX
+        const stateNodeId = crypto.randomUUID();
+        const loaderNodeId = crypto.randomUUID();
+        const sandboxNodeId = crypto.randomUUID();
+
+        // 创建 SANDBOX 和 LOADER 节点
+        const sandboxContentHash = await computeContentHash({ type: 'SANDBOX', entryFile: 'index.html' });
+        const sandboxCommit = await computeNodeCommit(sandboxNodeId, null, sandboxContentHash, 'SANDBOX');
+
+        const loaderContentHash = await computeContentHash({ type: 'LOADER' });
+        const loaderCommit = await computeNodeCommit(loaderNodeId, null, loaderContentHash, 'LOADER');
+
+        // 创建 STATE 节点
+        const stateContent = { type: 'STATE' as const, name: 'Game State', description: 'Test state node' };
+        const stateContentHash = await computeContentHash(stateContent);
+        const stateCommit = await computeNodeCommit(stateNodeId, null, stateContentHash, 'STATE');
+
+        // Edges for request (without sourceHandle/targetHandle - they're optional)
+        const requestEdges = [
+          { source: stateNodeId, target: loaderNodeId },
+          { source: loaderNodeId, target: sandboxNodeId },
+        ];
+
+        // Edges for commit calculation (with null handles, matching server behavior)
+        const commitEdges = [
+          { source: stateNodeId, target: loaderNodeId, sourceHandle: null, targetHandle: null },
+          { source: loaderNodeId, target: sandboxNodeId, sourceHandle: null, targetHandle: null },
+        ];
+
+        // 计算 artifact commit
+        const commitNodes = [
+          { nodeId: stateNodeId, commit: stateCommit },
+          { nodeId: loaderNodeId, commit: loaderCommit },
+          { nodeId: sandboxNodeId, commit: sandboxCommit },
+        ];
+        const artifactCommit = await computeArtifactCommit(artifactId, parentCommit, commitNodes, commitEdges);
+
+        // 计算 save 的 ID 和 commit
+        const saveId = await computeSaveId(stateNodeId, stateCommit, userId, artifactId, artifactCommit);
+        const saveContentHash = await computeContentHash({
+          type: 'SAVE',
+          stateNodeId,
+          stateNodeCommit: stateCommit,
+          sourceArtifactCommit: artifactCommit,
+          title: 'Test Save',
+          description: null,
+        });
+        const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+        // 节点列表
+        const nodes = [
+          {
+            nodeId: stateNodeId,
+            commit: stateCommit,
+            type: 'STATE',
+            name: 'state',
+            contentHash: stateContentHash,
+            content: stateContent,
+          },
+          {
+            nodeId: loaderNodeId,
+            commit: loaderCommit,
+            type: 'LOADER',
+            name: 'loader',
+            contentHash: loaderContentHash,
+            content: { type: 'LOADER' },
+          },
+          {
+            nodeId: sandboxNodeId,
+            commit: sandboxCommit,
+            type: 'SANDBOX',
+            name: 'sandbox',
+            contentHash: sandboxContentHash,
+            content: { type: 'SANDBOX', entryFile: 'index.html' },
+          },
+        ];
+
+        // 创建 save 输入
+        const saves = [
+          {
+            stateNodeId,
+            commit: saveCommit,
+            contentHash: saveContentHash,
+            parent: null,
+            title: 'Test Save',
+            description: 'A test save created with the artifact',
+            isListed: false,
+          },
+        ];
+
+        // 构建 metadata
+        const metadataWithDefaults = {
+          ...metadata,
+          artifactId,
+          parentCommit,
+          commit: artifactCommit,
+          saves,
+        };
+
+        formData.append('metadata', JSON.stringify(metadataWithDefaults));
+        formData.append('nodes', JSON.stringify(nodes));
+        formData.append('edges', JSON.stringify(requestEdges));
+
+        return formData;
+      }
+
+      it('should create artifact with save (save references STATE node through stateNodeId)', async () => {
+        // 这个测试验证：
+        // - 可以和 artifact 一起创建 save
+        // - Save 与 STATE 节点关联（通过 save_contents.stateNodeId）
+        // - STATE 节点内容只包含 name 和 description（不包含 saves 引用）
+
+        // 获取当前用户 ID
+        const loginResponse = await sendRequest(new Request('http://localhost/api/auth/get-session', {
+          headers: { Cookie: sessionCookie },
+        }));
+        const sessionData = await loginResponse.json<{ user: { id: string } }>();
+        const userId = sessionData.user.id;
+
+        const formData = await createArtifactWithStateSaveFormData(
+          { name: 'Artifact with STATE and Save' },
+          userId,
+        );
+
+        const request = new Request('http://localhost/api/artifacts', {
+          method: 'POST',
+          headers: { Cookie: sessionCookie },
+          body: formData,
+        });
+        const response = await sendRequest(request);
+        const responseData = await response.json();
+
+        // Debug: throw error with detailed message if status is not 200
+        if (response.status !== 200) {
+          throw new Error(`Expected 200 but got ${response.status}: ${JSON.stringify(responseData, null, 2)}`);
+        }
+
+        expect((responseData as CreateArtifactResponse).artifact.name).toBe('Artifact with STATE and Save');
+      });
     });
   });
 

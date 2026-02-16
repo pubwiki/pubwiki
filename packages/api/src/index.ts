@@ -7,7 +7,7 @@ export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from './
 
 // 共享工具函数（客户端 & 服务端通用）
 export { computeContentHash, computeNodeCommit, computeArtifactCommit, computeSaveId } from './utils';
-export type { ArtifactCommitNode, ArtifactCommitEdge } from './utils';
+export type { ArtifactCommitNode, ArtifactCommitEdge, SaveContent } from './utils';
 
 // 便捷类型别名
 import type { components, operations } from './generated/openapi';
