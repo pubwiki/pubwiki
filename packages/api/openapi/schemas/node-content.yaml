@@ -61,7 +61,7 @@ TextBlock:
   properties:
     type:
       type: string
-      const: text
+      const: TextBlock
     value:
       type: string
 
@@ -73,7 +73,7 @@ RefTagBlock:
   properties:
     type:
       type: string
-      const: reftag
+      const: RefTagBlock
     name:
       type: string
       description: 引用的节点名称

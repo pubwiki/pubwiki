@@ -15,13 +15,15 @@ export const articles = sqliteTable(
     authorId: text('author_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    // 关联的 artifact 和版本
+    // Associated artifact and version
     artifactId: text('artifact_id').notNull(),
     artifactCommit: text('artifact_commit').notNull(),
     title: text('title', { length: 200 }).notNull(),
     content: text('content', { mode: 'json' }).$type<ReaderContent>().notNull(),
     likes: integer('likes').default(0).notNull(),
     collections: integer('collections').default(0).notNull(),
+    // Optimistic lock version (no state pointer field in this table)
+    version: integer('version').default(1).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   },

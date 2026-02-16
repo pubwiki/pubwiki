@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
 import type { NodeType } from './enums';

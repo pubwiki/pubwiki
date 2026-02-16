@@ -1,9 +1,8 @@
 import { eq, and, desc, count, sql } from 'drizzle-orm';
-import type { Database } from '../client';
+import type { BatchContext } from '../batch-context';
 import { nodeVersions } from '../schema/node-versions';
 import { saveContents } from '../schema/node-contents';
 import { artifactVersions } from '../schema/artifacts';
-import { user } from '../schema/auth';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
 import type { ServiceResult } from './user';
@@ -47,15 +46,18 @@ export interface ListSavesResult {
 export class SaveService {
   private nodeVersionService: NodeVersionService;
 
-  constructor(private db: Database) {
-    this.nodeVersionService = new NodeVersionService(db);
+  constructor(private ctx: BatchContext) {
+    this.nodeVersionService = new NodeVersionService(ctx);
   }
 
   // 计算确定性 saveId，委托给 @pubwiki/api 的共享实现
   static computeSaveId = computeSaveId;
 
-  // 创建存档（通过 NodeVersionService.syncVersions 创建 SAVE 类型 node version）
-  async createSave(params: CreateSaveParams): Promise<ServiceResult<SaveDetail>> {
+  /**
+   * Create a save (SAVE type node version).
+   * Returns only commit - caller should commit batch and then call getSave to get full detail.
+   */
+  async createSave(params: CreateSaveParams): Promise<ServiceResult<{ commit: string }>> {
     const {
       stateNodeId,
       stateNodeCommit,
@@ -72,8 +74,7 @@ export class SaveService {
 
     try {
       // 验证 sourceArtifactId + sourceArtifactCommit 对应的 artifact version 存在
-      const [artifactVersion] = await this.db
-        .select({ id: artifactVersions.id })
+      const [artifactVersion] = await this.ctx.select({ id: artifactVersions.id })
         .from(artifactVersions)
         .where(
           and(
@@ -122,8 +123,8 @@ export class SaveService {
         };
       }
 
-      // 获取创建的 save 详情
-      return this.getSave(commit);
+      // Return commit - caller should commit batch and then call getSave
+      return { success: true, data: { commit } };
     } catch (error) {
       console.error('Failed to create save:', error);
       return {
@@ -156,8 +157,7 @@ export class SaveService {
       }
 
       // 总数（需要 JOIN saveContents 因为条件引用了 saveContents.stateNodeId）
-      const [countResult] = await this.db
-        .select({ count: count() })
+      const [countResult] = await this.ctx.select({ count: count() })
         .from(nodeVersions)
         .innerJoin(
           saveContents,
@@ -169,8 +169,7 @@ export class SaveService {
       const totalPages = Math.ceil(total / validLimit);
 
       // 查询 SAVE 版本 + 内容 + 访问控制
-      const rows = await this.db
-        .select({
+      const rows = await this.ctx.select({
           saveId: nodeVersions.nodeId,
           commit: nodeVersions.commit,
           parent: nodeVersions.parent,
@@ -244,8 +243,7 @@ export class SaveService {
   // 获取特定存档详情（commit 全局唯一）
   async getSave(commit: string): Promise<ServiceResult<SaveDetail>> {
     try {
-      const [row] = await this.db
-        .select({
+      const [row] = await this.ctx.select({
           saveId: nodeVersions.nodeId,
           commit: nodeVersions.commit,
           parent: nodeVersions.parent,
@@ -322,8 +320,7 @@ export class SaveService {
   ): Promise<ServiceResult<{ r2Key: string }>> {
     try {
       // 查找 save
-      const [save] = await this.db
-        .select({
+      const [save] = await this.ctx.select({
           authorId: nodeVersions.authorId,
           contentHash: nodeVersions.contentHash,
         })
@@ -351,18 +348,18 @@ export class SaveService {
         };
       }
 
-      // 使用 batch 保证原子性：删除 node version + 减少 save_contents 引用计数
-      await this.db.batch([
-        this.db
-          .delete(nodeVersions)
-          .where(eq(nodeVersions.commit, commit)),
-        this.db
-          .update(saveContents)
+      // 收集删除操作：删除 node version + 减少 save_contents 引用计数
+      this.ctx.modify(db =>
+        db.delete(nodeVersions)
+          .where(eq(nodeVersions.commit, commit))
+      );
+      this.ctx.modify(db =>
+        db.update(saveContents)
           .set({
             refCount: sql`CASE WHEN ${saveContents.refCount} > 0 THEN ${saveContents.refCount} - 1 ELSE 0 END`,
           })
-          .where(eq(saveContents.contentHash, save.contentHash)),
-      ]);
+          .where(eq(saveContents.contentHash, save.contentHash))
+      );
 
       const r2Key = `saves/${commit}.bin`;
 

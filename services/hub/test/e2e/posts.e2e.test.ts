@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
-import { createApiClient } from '@pubwiki/api/client';
 import { registerUser } from './helpers';
-import type { CreateProjectMetadata, CreateProjectRole, CreatePostRequest, PostDetail, ListProjectPostsResponse } from '@pubwiki/api';
+import type { PostDetail, ListProjectPostsResponse } from '@pubwiki/api';
 
 describe('E2E: Project Posts API', () => {
   let worker: Unstable_DevWorker;
-  let client: ReturnType<typeof createApiClient>;
   let baseUrl: string;
   let sessionCookie: string;
   let testUserId: string;
@@ -21,7 +19,6 @@ describe('E2E: Project Posts API', () => {
       persist: false,
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
-    client = createApiClient(baseUrl);
 
     // 创建测试用户并获取 session cookie
     const username = `post_test_${Date.now()}`;
@@ -131,8 +128,6 @@ describe('E2E: Project Posts API', () => {
   });
 
   describe('GET /projects/:projectId/posts', () => {
-    let postId: string;
-
     beforeAll(async () => {
       // 创建一个测试 post
       const response = await fetch(`${baseUrl}/projects/${testProjectId}/posts`, {
@@ -146,8 +141,8 @@ describe('E2E: Project Posts API', () => {
           content: '<p>For listing test</p>',
         }),
       });
-      const data = await response.json() as { post: PostDetail };
-      postId = data.post.id;
+      await response.json() as { post: PostDetail };
+      // Post created for listing test
     });
 
     it('should list posts for public project', async () => {

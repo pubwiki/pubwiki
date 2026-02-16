@@ -50,6 +50,78 @@ export async function validateBody<T extends z.ZodType>(
 }
 
 /**
+ * 从 FormData 中获取 JSON 字段并校验（必填字段版本）
+ * @param c Hono Context
+ * @param formData FormData 对象
+ * @param fieldName 字段名
+ * @param schema Zod schema
+ * @returns 校验后的数据，或 Response（错误）
+ */
+export function validateFormDataJson<T extends z.ZodType>(
+  c: Context,
+  formData: FormData,
+  fieldName: string,
+  schema: T,
+): z.infer<T> | Response;
+
+/**
+ * 从 FormData 中获取 JSON 字段并校验（可选字段版本）
+ * @param c Hono Context
+ * @param formData FormData 对象
+ * @param fieldName 字段名
+ * @param schema Zod schema
+ * @param options.required 是否必填
+ * @returns 校验后的数据，或 Response（错误），或 undefined（可选字段不存在时）
+ */
+export function validateFormDataJson<T extends z.ZodType>(
+  c: Context,
+  formData: FormData,
+  fieldName: string,
+  schema: T,
+  options: { required: false },
+): z.infer<T> | Response | undefined;
+
+// 实现
+export function validateFormDataJson<T extends z.ZodType>(
+  c: Context,
+  formData: FormData,
+  fieldName: string,
+  schema: T,
+  options: { required?: boolean } = {},
+): z.infer<T> | Response | undefined {
+  const { required = true } = options;
+
+  const fieldValue = formData.get(fieldName);
+  
+  // 检查字段是否存在
+  if (!fieldValue || typeof fieldValue !== 'string') {
+    if (required) {
+      return c.json<ApiError>({ error: `${fieldName} field is required and must be a JSON string` }, 400);
+    }
+    return undefined;
+  }
+
+  // 解析 JSON
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fieldValue);
+  } catch {
+    return c.json<ApiError>({ error: `Invalid JSON in ${fieldName} field` }, 400);
+  }
+
+  // 使用 schema 校验
+  const result = schema.safeParse(parsed);
+  if (!result.success) {
+    const errors = result.error.issues.map(issue => 
+      `${issue.path.join('.')}: ${issue.message}`
+    ).join('; ');
+    return c.json<ApiError>({ error: `Validation error in ${fieldName}: ${errors}` }, 400);
+  }
+
+  return result.data;
+}
+
+/**
  * 校验路径参数
  */
 export function validateParams<T extends z.ZodType>(

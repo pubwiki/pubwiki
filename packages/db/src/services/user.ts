@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import type { Database } from '../client';
+import type { BatchContext } from '../batch-context';
 import { user, type User } from '../schema/auth';
 import type { PublicUser } from '@pubwiki/api';
 
@@ -39,13 +39,12 @@ function toPublicUser(userData: User): PublicUser {
 }
 
 export class UserService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   // 通过 ID 获取用户
   async getUserById(id: string): Promise<ServiceResult<PublicUser>> {
     try {
-      const [userData] = await this.db
-        .select()
+      const [userData] = await this.ctx.select()
         .from(user)
         .where(eq(user.id, id))
         .limit(1);
@@ -73,8 +72,7 @@ export class UserService {
   // 通过用户名获取用户
   async getUserByUsername(username: string): Promise<ServiceResult<PublicUser>> {
     try {
-      const [userData] = await this.db
-        .select()
+      const [userData] = await this.ctx.select()
         .from(user)
         .where(eq(user.username, username))
         .limit(1);
@@ -105,25 +103,37 @@ export class UserService {
     updates: Partial<{ displayName: string; avatarUrl: string | null; bio: string | null; website: string | null; location: string | null }>
   ): Promise<ServiceResult<PublicUser>> {
     try {
-      const [updatedUser] = await this.db
-        .update(user)
-        .set({
-          ...updates,
-          updatedAt: new Date(),
-        })
+      // Check if user exists first
+      const [existingUser] = await this.ctx.select()
+        .from(user)
         .where(eq(user.id, id))
-        .returning();
+        .limit(1);
 
-      if (!updatedUser) {
+      if (!existingUser) {
         return {
           success: false,
           error: { code: 'USER_NOT_FOUND', message: 'User not found' },
         };
       }
 
+      // Collect update operation (executed on commit)
+      this.ctx.modify(db =>
+        db.update(user)
+          .set({
+            ...updates,
+            updatedAt: new Date(),
+          })
+          .where(eq(user.id, id))
+      );
+
+      // Return the expected result (after commit, data will be updated)
       return {
         success: true,
-        data: toPublicUser(updatedUser),
+        data: toPublicUser({
+          ...existingUser,
+          ...updates,
+          updatedAt: new Date(),
+        }),
       };
     } catch (error) {
       console.error('Update user error:', error);

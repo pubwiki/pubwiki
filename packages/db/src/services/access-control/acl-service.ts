@@ -1,4 +1,4 @@
-import { eq, and, or, inArray } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import type { Database } from '../../client';
 import { resourceAcl, PUBLIC_USER_ID, type AclPermission, type AclPermissions } from '../../schema/acl';
 import { resourceDiscoveryControl } from '../../schema/discovery-control';
@@ -426,6 +426,7 @@ export class AclService {
    * 获取 Save 的父 Artifact
    * Save 表中有 artifactId 字段
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async getSaveParent(saveId: string): Promise<ResourceRef | null> {
     // Save 表结构需要确认，这里假设有 saves 表
     // 如果没有，返回 null

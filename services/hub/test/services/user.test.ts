@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env } from 'cloudflare:test';
-import { createDb, UserService, user, account, session, artifacts, artifactTags, artifactStats, artifactVersions, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, eq } from '@pubwiki/db';
+import { createDb, UserService, BatchContext, user, account, session, artifacts, artifactTags, artifactStats, artifactVersions, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, eq } from '@pubwiki/db';
 
 describe('UserService', () => {
   let db: ReturnType<typeof createDb>;
+  let ctx: BatchContext;
   let userService: UserService;
 
   // 辅助函数：直接在数据库中创建测试用户
@@ -35,7 +36,8 @@ describe('UserService', () => {
 
   beforeEach(async () => {
     db = createDb(env.DB);
-    userService = new UserService(db);
+    ctx = new BatchContext(db);
+    userService = new UserService(ctx);
     
     // 清空数据库（按外键顺序）
     await db.delete(nodeVersionRefs);
@@ -157,6 +159,9 @@ describe('UserService', () => {
         expect(result.data.displayName).toBe('New Display Name');
       }
 
+      // Commit the batch to persist changes
+      await ctx.commit();
+
       // 验证数据库状态
       const dbUser = await db.select().from(user).where(eq(user.id, userId));
       expect(dbUser[0].displayName).toBe('New Display Name');
@@ -233,6 +238,7 @@ describe('UserService', () => {
       await userService.updateUser(userId, {
         displayName: 'New Name',
       });
+      await ctx.commit();
 
       const afterUpdate = await db.select().from(user).where(eq(user.id, userId));
       expect(afterUpdate[0].updatedAt).not.toBe(originalUpdatedAt);
@@ -255,6 +261,11 @@ describe('UserService', () => {
         bio: 'Some bio',
         website: 'https://example.com',
       });
+      await ctx.commit();
+      
+      // Reset ctx for the next batch
+      ctx = new BatchContext(db);
+      userService = new UserService(ctx);
 
       // 然后设置为 null
       const result = await userService.updateUser(userId, {

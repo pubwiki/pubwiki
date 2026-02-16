@@ -1,24 +1,22 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, NodeVersionService } from '@pubwiki/db';
+import { createDb, NodeVersionService, BatchContext } from '@pubwiki/db';
 import type { ApiError } from '@pubwiki/api';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { serviceErrorResponse } from '../lib/service-error';
 
 const versionsRoute = new Hono<{ Bindings: Env }>();
 
 // GET /versions/:commit - 获取特定版本详情（commit 全局唯一）
 versionsRoute.get('/:commit', authMiddleware, async (c) => {
   const commit = c.req.param('commit');
-  const db = createDb(c.env.DB);
-  const nodeVersionService = new NodeVersionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const nodeVersionService = new NodeVersionService(ctx);
 
   const result = await nodeVersionService.getVersion(commit);
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json(result.data);
@@ -27,8 +25,8 @@ versionsRoute.get('/:commit', authMiddleware, async (c) => {
 // GET /versions/:commit/children - 获取子版本（commit 全局唯一）
 versionsRoute.get('/:commit/children', authMiddleware, async (c) => {
   const commit = c.req.param('commit');
-  const db = createDb(c.env.DB);
-  const nodeVersionService = new NodeVersionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const nodeVersionService = new NodeVersionService(ctx);
 
   const result = await nodeVersionService.getChildren(commit);
 
@@ -43,15 +41,12 @@ versionsRoute.get('/:commit/children', authMiddleware, async (c) => {
 versionsRoute.get('/:commit/archive', optionalAuthMiddleware, async (c) => {
   const commit = c.req.param('commit');
 
-  const db = createDb(c.env.DB);
-  const nodeVersionService = new NodeVersionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const nodeVersionService = new NodeVersionService(ctx);
   const versionResult = await nodeVersionService.getVersion(commit);
 
   if (!versionResult.success) {
-    if (versionResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Node version not found' }, 404);
-    }
-    return c.json<ApiError>({ error: versionResult.error.message }, 500);
+    return serviceErrorResponse(c, versionResult.error);
   }
 
   const r2Key = `archives/${commit}.tar.gz`;

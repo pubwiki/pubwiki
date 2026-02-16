@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, DiscussionService, type ListDiscussionsParams, type ListRepliesParams } from '@pubwiki/db';
+import { BatchContext, createDb, DiscussionService, type ListDiscussionsParams, type ListRepliesParams } from '@pubwiki/db';
 import type {
   ApiError,
   ListDiscussionsResponse,
@@ -14,13 +14,14 @@ import type {
 import { ListDiscussionsQueryParams, ListDiscussionRepliesQueryParams, CreateDiscussionQueryParams, CreateDiscussionBody, UpdateDiscussionBody } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
 import { validateQuery, validateBody, isValidationError } from '../lib/validate';
+import { serviceErrorResponse } from '../lib/service-error';
 
 const discussionsRoute = new Hono<{ Bindings: Env }>();
 
 // 获取讨论列表
 discussionsRoute.get('/', async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
 
   // 使用 zod schema 校验查询参数
   const validated = validateQuery(c, ListDiscussionsQueryParams, c.req.query());
@@ -49,8 +50,8 @@ discussionsRoute.get('/', async (c) => {
 
 // 创建讨论
 discussionsRoute.post('/', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
   const user = c.get('user');
 
   // 使用 zod schema 校验查询参数
@@ -68,10 +69,10 @@ discussionsRoute.post('/', authMiddleware, async (c) => {
   );
 
   if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
+    return serviceErrorResponse(c, result.error);
   }
 
+  await ctx.commit();
   return c.json<CreateDiscussionResponse>({
     message: 'Discussion created successfully',
     discussion: result.data,
@@ -80,16 +81,15 @@ discussionsRoute.post('/', authMiddleware, async (c) => {
 
 // 获取讨论详情
 discussionsRoute.get('/:discussionId', async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
 
   const discussionId = c.req.param('discussionId');
 
   const result = await discussionService.getDiscussion(discussionId);
 
   if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<DiscussionDetail>(result.data);
@@ -97,8 +97,8 @@ discussionsRoute.get('/:discussionId', async (c) => {
 
 // 更新讨论
 discussionsRoute.patch('/:discussionId', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
   const user = c.get('user');
 
   const discussionId = c.req.param('discussionId');
@@ -110,11 +110,10 @@ discussionsRoute.patch('/:discussionId', authMiddleware, async (c) => {
   const result = await discussionService.updateDiscussion(discussionId, user.id, validatedBody);
 
   if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
-                       result.error.code === 'FORBIDDEN' ? 403 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
+    return serviceErrorResponse(c, result.error);
   }
 
+  await ctx.commit();
   return c.json<UpdateDiscussionResponse>({
     message: 'Discussion updated successfully',
     discussion: result.data,
@@ -123,8 +122,8 @@ discussionsRoute.patch('/:discussionId', authMiddleware, async (c) => {
 
 // 删除讨论
 discussionsRoute.delete('/:discussionId', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
   const user = c.get('user');
 
   const discussionId = c.req.param('discussionId');
@@ -132,11 +131,10 @@ discussionsRoute.delete('/:discussionId', authMiddleware, async (c) => {
   const result = await discussionService.deleteDiscussion(discussionId, user.id);
 
   if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
-                       result.error.code === 'FORBIDDEN' ? 403 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
+    return serviceErrorResponse(c, result.error);
   }
 
+  await ctx.commit();
   return c.json({ message: 'Discussion deleted successfully' });
 });
 
@@ -144,8 +142,8 @@ discussionsRoute.delete('/:discussionId', authMiddleware, async (c) => {
 
 // 获取讨论回复列表
 discussionsRoute.get('/:discussionId/replies', async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
 
   const discussionId = c.req.param('discussionId');
 
@@ -161,8 +159,7 @@ discussionsRoute.get('/:discussionId/replies', async (c) => {
   const result = await discussionService.listReplies(params);
 
   if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<ListDiscussionRepliesResponse>(result.data);
@@ -170,8 +167,8 @@ discussionsRoute.get('/:discussionId/replies', async (c) => {
 
 // 创建回复
 discussionsRoute.post('/:discussionId/replies', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
   const user = c.get('user');
 
   const discussionId = c.req.param('discussionId');
@@ -191,11 +188,10 @@ discussionsRoute.post('/:discussionId/replies', authMiddleware, async (c) => {
   const result = await discussionService.createReply(discussionId, user.id, body);
 
   if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
-                       result.error.code === 'FORBIDDEN' ? 403 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
+    return serviceErrorResponse(c, result.error);
   }
 
+  await ctx.commit();
   return c.json<CreateDiscussionReplyResponse>({
     message: 'Reply created successfully',
     reply: result.data,
@@ -204,8 +200,8 @@ discussionsRoute.post('/:discussionId/replies', authMiddleware, async (c) => {
 
 // 删除回复
 discussionsRoute.delete('/replies/:replyId', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const discussionService = new DiscussionService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const discussionService = new DiscussionService(ctx);
   const user = c.get('user');
 
   const replyId = c.req.param('replyId');
@@ -213,11 +209,10 @@ discussionsRoute.delete('/replies/:replyId', authMiddleware, async (c) => {
   const result = await discussionService.deleteReply(replyId, user.id);
 
   if (!result.success) {
-    const statusCode = result.error.code === 'NOT_FOUND' ? 404 :
-                       result.error.code === 'FORBIDDEN' ? 403 : 500;
-    return c.json<ApiError>({ error: result.error.message }, statusCode);
+    return serviceErrorResponse(c, result.error);
   }
 
+  await ctx.commit();
   return c.json({ message: 'Reply deleted successfully' });
 });
 

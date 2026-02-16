@@ -3,6 +3,9 @@
 // Export database client
 export { createDb, type Database } from './client';
 
+// Export batch context
+export { BatchContext, OptimisticLockError, type ModifyOptions, type OptimisticLockValidator } from './batch-context';
+
 // Export all schema tables and types
 export * from './schema';
 

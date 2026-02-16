@@ -1,17 +1,15 @@
-import { eq, and, or, inArray, notInArray, asc, desc, sql, count, isNotNull } from 'drizzle-orm';
-import type { BatchItem } from 'drizzle-orm/batch';
-import type { Database } from '../client';
-import { artifacts, tags, artifactTags, artifactVersions, artifactCommitTags, type Artifact, type Tag, type ArtifactVersion as DbArtifactVersion, type NewArtifact, type NewArtifactVersion } from '../schema/artifacts';
+import { eq, and, inArray, asc, desc, sql, count, isNotNull } from 'drizzle-orm';
+import type { BatchContext } from '../batch-context';
+import { artifacts, tags, artifactTags, artifactVersions, artifactCommitTags, type Artifact, type ArtifactVersion as DbArtifactVersion, type NewArtifact, type NewArtifactVersion } from '../schema/artifacts';
 import { artifactVersionNodes, artifactVersionEdges, type NewArtifactVersionNode, type NewArtifactVersionEdge } from '../schema/artifact-version-graph';
-import { nodeVersions, type NewNodeVersion } from '../schema/node-versions';
+import { nodeVersions } from '../schema/node-versions';
 import { ARTIFACT_NODE_TYPES } from '../schema/enums';
 import type { ArtifactNodeType } from '../schema/enums';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
 import { SaveService } from './save';
-import { artifactStats, type ArtifactStats } from '../schema/stats';
-import { user, type User } from '../schema/auth';
-import { chunkArray } from '../utils';
-import type { ServiceError, ServiceResult } from './user';
+import { artifactStats } from '../schema/stats';
+import { user } from '../schema/auth';
+import type { ServiceResult } from './user';
 import type {
   ArtifactListItem,
   Pagination,
@@ -65,7 +63,7 @@ export interface PatchArtifactResult extends CreateArtifactResult {
 }
 
 export class ArtifactService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   /**
    * 计算 artifact version 的确定性 commit hash（链状结构）。
@@ -88,14 +86,13 @@ export class ArtifactService {
 
   // 创建或更新 artifact（使用 batch 保证原子性）
   // 通过检查 metadata.artifactId 是否存在于数据库中决定是创建还是更新
-  // 前置条件：所有 nodes 中引用的 (nodeId, commit) 必须已通过 POST /nodes/:nodeId/sync 同步
   async createArtifact(input: CreateArtifactInput): Promise<ServiceResult<CreateArtifactResult>> {
     const { authorId, metadata, nodes, edges } = input;
     const artifactId = metadata.artifactId;
 
     try {
       // 先检查 artifactId 是否已存在于数据库中，决定是创建还是更新
-      const existingArtifact = await this.db
+      const existingArtifact = await this.ctx
         .select({ id: artifacts.id, authorId: artifacts.authorId, currentVersionId: artifacts.currentVersionId })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
@@ -116,7 +113,7 @@ export class ArtifactService {
       // 确定 parentCommit：更新时为当前版本的 commitHash，创建时为 null
       let parentCommit: string | null = null;
       if (isUpdate && existingArtifact[0].currentVersionId) {
-        const currentVersion = await this.db
+        const currentVersion = await this.ctx
           .select({ commitHash: artifactVersions.commitHash })
           .from(artifactVersions)
           .where(eq(artifactVersions.id, existingArtifact[0].currentVersionId))
@@ -139,7 +136,7 @@ export class ArtifactService {
       }
 
       // 获取作者信息（batch 前检查）
-      const authorResult = await this.db
+      const authorResult = await this.ctx
         .select({
           id: user.id,
           username: user.username,
@@ -162,7 +159,7 @@ export class ArtifactService {
       // 预先获取已存在的 tags
       const existingTagsMap = new Map<string, { id: string; name: string; slug: string; description: string | null; color: string | null }>();
       if (metadata.tags && metadata.tags.length > 0) {
-        const existingTags = await this.db
+        const existingTags = await this.ctx
           .select()
           .from(tags)
           .where(inArray(tags.slug, metadata.tags));
@@ -181,7 +178,7 @@ export class ArtifactService {
       // 如果是更新操作，获取旧的 tags 用于后续减少使用计数
       const oldTagIds: string[] = [];
       if (isUpdate) {
-        const oldTags = await this.db
+        const oldTags = await this.ctx
           .select({ tagId: artifactTags.tagId })
           .from(artifactTags)
           .where(eq(artifactTags.artifactId, metadata.artifactId!));
@@ -191,15 +188,13 @@ export class ArtifactService {
       // 使用用户传入的 artifactId
       const versionId = crypto.randomUUID();
 
-      // 收集所有批量操作的语句
-      const batchOperations: BatchItem<"sqlite">[] = [];
+      // 收集处理后的 tags 信息
       const processedTags: { id: string; name: string; slug: string; description: string | null; color: string | null }[] = [];
-      const timestamp = Date.now();
 
       // 更新模式下，追加新版本（不删除旧版本）
       if (isUpdate) {
         // 检查 commitHash 是否重复（利用已有的 unique index）
-        const existingVersion = await this.db
+        const existingVersion = await this.ctx
           .select({ id: artifactVersions.id })
           .from(artifactVersions)
           .where(and(
@@ -216,13 +211,12 @@ export class ArtifactService {
         }
 
         // 增量更新 tags：计算新旧差异
-        const currentTagIds = new Set(oldTagIds);
         const newTagSlugs = new Set(metadata.tags ?? []);
         
         // 获取当前 tags 的 slug → id 映射
         const currentTagSlugs = new Set<string>();
         if (oldTagIds.length > 0) {
-          const currentTags = await this.db
+          const currentTags = await this.ctx
             .select({ id: tags.id, slug: tags.slug })
             .from(tags)
             .where(inArray(tags.id, oldTagIds));
@@ -238,18 +232,18 @@ export class ArtifactService {
 
         // 移除不再使用的 tags
         if (tagsToRemove.length > 0) {
-          const tagsToRemoveRecords = await this.db
+          const tagsToRemoveRecords = await this.ctx
             .select({ id: tags.id })
             .from(tags)
             .where(inArray(tags.slug, tagsToRemove));
           for (const t of tagsToRemoveRecords) {
-            batchOperations.push(
-              this.db.delete(artifactTags).where(
+            this.ctx.modify(db =>
+              db.delete(artifactTags).where(
                 and(eq(artifactTags.artifactId, artifactId), eq(artifactTags.tagId, t.id))
               )
             );
-            batchOperations.push(
-              this.db.update(tags).set({ usageCount: sql`MAX(0, ${tags.usageCount} - 1)` }).where(eq(tags.id, t.id))
+            this.ctx.modify(db =>
+              db.update(tags).set({ usageCount: sql`MAX(0, ${tags.usageCount} - 1)` }).where(eq(tags.id, t.id))
             );
           }
         }
@@ -261,8 +255,8 @@ export class ArtifactService {
         }
         
         // 更新 artifact 基本信息
-        batchOperations.push(
-          this.db.update(artifacts).set({
+        this.ctx.modify(db =>
+          db.update(artifacts).set({
             name: metadata.name,
             description: metadata.description ?? null,
             currentVersionId: versionId,
@@ -275,8 +269,8 @@ export class ArtifactService {
 
         // 更新发现控制记录
         const isListed = metadata.isListed ?? true;
-        batchOperations.push(
-          this.db.update(resourceDiscoveryControl).set({
+        this.ctx.modify(db =>
+          db.update(resourceDiscoveryControl).set({
             isListed,
           }).where(
             and(
@@ -297,12 +291,12 @@ export class ArtifactService {
           license: metadata.license ?? null,
           repositoryUrl: metadata.repositoryUrl ?? null,
         };
-        batchOperations.push(this.db.insert(artifacts).values(newArtifact));
+        this.ctx.modify(db => db.insert(artifacts).values(newArtifact));
 
         // 创建发现控制记录
         const isListed = metadata.isListed ?? true;
-        batchOperations.push(
-          this.db.insert(resourceDiscoveryControl).values({
+        this.ctx.modify(db =>
+          db.insert(resourceDiscoveryControl).values({
             resourceType: 'artifact',
             resourceId: artifactId,
             isListed,
@@ -310,8 +304,8 @@ export class ArtifactService {
         );
 
         // 创建 owner ACL（manage + write + read）
-        batchOperations.push(
-          this.db.insert(resourceAcl).values({
+        this.ctx.modify(db =>
+          db.insert(resourceAcl).values({
             resourceType: 'artifact',
             resourceId: artifactId,
             userId: authorId,
@@ -323,8 +317,8 @@ export class ArtifactService {
         );
 
         // 默认创建公开读取 ACL
-        batchOperations.push(
-          this.db.insert(resourceAcl).values({
+        this.ctx.modify(db =>
+          db.insert(resourceAcl).values({
             resourceType: 'artifact',
             resourceId: artifactId,
             userId: PUBLIC_USER_ID,
@@ -351,26 +345,25 @@ export class ArtifactService {
       const commitTags = metadata.commitTags ?? [];
       if (commitTags.length > 0) {
         // 查找已存在的同名 tag（可能指向其他版本），删除旧关联
-        const existingCommitTags = await this.db
-          .select({ id: artifactCommitTags.id })
+        const existingCommitTags = await this.ctx.select({ id: artifactCommitTags.id })
           .from(artifactCommitTags)
           .where(and(
             eq(artifactCommitTags.artifactId, artifactId),
             inArray(artifactCommitTags.tag, commitTags)
           ));
         for (const ct of existingCommitTags) {
-          batchOperations.push(
-            this.db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
+          this.ctx.modify(db =>
+            db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
           );
         }
       }
 
-      batchOperations.push(this.db.insert(artifactVersions).values(newVersion));
+      this.ctx.modify(db => db.insert(artifactVersions).values(newVersion));
 
       // 创建新的 commitTag 关联
       for (const tag of commitTags) {
-        batchOperations.push(
-          this.db.insert(artifactCommitTags).values({
+        this.ctx.modify(db =>
+          db.insert(artifactCommitTags).values({
             artifactId,
             commitHash: metadata.commit,
             tag,
@@ -394,7 +387,7 @@ export class ArtifactService {
       // 同步非 STATE 类型的 node versions
       const nonStateNodes = nodes.filter(n => n.type !== 'STATE');
       if (nonStateNodes.length > 0) {
-        const nodeVersionService = new NodeVersionService(this.db);
+        const nodeVersionService = new NodeVersionService(this.ctx);
         const syncInputs: SyncNodeVersionInput[] = nonStateNodes.map(n => ({
           nodeId: n.nodeId,
           commit: n.commit,
@@ -430,7 +423,7 @@ export class ArtifactService {
       // 创建随 artifact 一起提交的 saves（在 STATE node 验证之前）
       const saves = input.saves ?? [];
       if (saves.length > 0) {
-        const saveService = new SaveService(this.db);
+        const saveService = new SaveService(this.ctx);
         // 为每个 save 查找对应的 state node commit
         const stateNodeMap = new Map<string, string>(); // stateNodeId → stateNodeCommit
         for (const node of nodes) {
@@ -527,7 +520,7 @@ export class ArtifactService {
           const saves = (stateNode.content as { saves?: string[] })?.saves;
           if (saves && saves.length > 0) {
             // 查询所有引用的 save 版本
-            const saveVersions = await this.db
+            const saveVersions = await this.ctx
               .select({
                 nodeId: nodeVersions.nodeId,
                 commit: nodeVersions.commit,
@@ -564,7 +557,7 @@ export class ArtifactService {
 
             // 权限检查：save 必须是当前用户创建的，或是公开的
             // 使用 AclService 检查权限
-            const aclService = new AclService(this.db);
+            const aclService = new AclService(this.ctx.unwrapDb());
             const inaccessibleSaves: string[] = [];
             for (const v of saveVersions) {
               if (v.authorId === authorId) continue; // 自己创建的直接通过
@@ -588,7 +581,7 @@ export class ArtifactService {
           }
         }
 
-        const nodeVersionService = new NodeVersionService(this.db);
+        const nodeVersionService = new NodeVersionService(this.ctx);
         const stateInputs: SyncNodeVersionInput[] = stateNodes.map(n => ({
           nodeId: n.nodeId,
           commit: n.commit,
@@ -661,7 +654,7 @@ export class ArtifactService {
           positionX: node.position?.x ?? null,
           positionY: node.position?.y ?? null,
         };
-        batchOperations.push(this.db.insert(artifactVersionNodes).values(versionNode));
+        this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode));
       }
 
       // 存储边到 artifact_version_edges 表
@@ -673,7 +666,7 @@ export class ArtifactService {
           sourceHandle: edge.sourceHandle ?? null,
           targetHandle: edge.targetHandle ?? null,
         };
-        batchOperations.push(this.db.insert(artifactVersionEdges).values(versionEdge));
+        this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge));
       }
 
       // 处理 tags
@@ -684,7 +677,7 @@ export class ArtifactService {
           if (!existingTag) {
             // 创建新 tag
             const newTagId = crypto.randomUUID();
-            batchOperations.push(this.db.insert(tags).values({
+            this.ctx.modify(db => db.insert(tags).values({
               id: newTagId,
               name: tagSlug,
               slug: tagSlug,
@@ -693,14 +686,14 @@ export class ArtifactService {
             processedTags.push({ id: newTagId, name: tagSlug, slug: tagSlug, description: null, color: null });
             
             // 创建关联
-            batchOperations.push(this.db.insert(artifactTags).values({
+            this.ctx.modify(db => db.insert(artifactTags).values({
               artifactId,
               tagId: newTagId,
             }));
           } else {
             // 更新 tag 使用次数
-            batchOperations.push(
-              this.db
+            this.ctx.modify(db =>
+              db
                 .update(tags)
                 .set({ usageCount: sql`${tags.usageCount} + 1` })
                 .where(eq(tags.id, existingTag.id))
@@ -709,7 +702,7 @@ export class ArtifactService {
             processedTags.push(existingTag);
 
             // 创建关联
-            batchOperations.push(this.db.insert(artifactTags).values({
+            this.ctx.modify(db => db.insert(artifactTags).values({
               artifactId,
               tagId: existingTag.id,
             }));
@@ -719,7 +712,7 @@ export class ArtifactService {
 
       // 创建 stats 记录（仅在创建新 artifact 时）
       if (!isUpdate) {
-        batchOperations.push(this.db.insert(artifactStats).values({
+        this.ctx.modify(db => db.insert(artifactStats).values({
           artifactId,
           viewCount: 0,
           favCount: 0,
@@ -728,14 +721,11 @@ export class ArtifactService {
         }));
       }
 
-      // 使用 batch 执行所有操作（D1 的 batch 是事务性的）
-      await this.db.batch(batchOperations as any);
-
       // 对于更新操作，获取现有的 stats 和 createdAt
       let existingStats = { viewCount: 0, favCount: 0, refCount: 0, downloadCount: 0 };
       let existingCreatedAt = new Date().toISOString();
       if (isUpdate) {
-        const statsResult = await this.db
+        const statsResult = await this.ctx
           .select()
           .from(artifactStats)
           .where(eq(artifactStats.artifactId, artifactId))
@@ -749,7 +739,7 @@ export class ArtifactService {
           };
         }
         
-        const artifactResult = await this.db
+        const artifactResult = await this.ctx
           .select({ createdAt: artifacts.createdAt })
           .from(artifacts)
           .where(eq(artifacts.id, artifactId))
@@ -806,66 +796,44 @@ export class ArtifactService {
     const offset = (validPage - 1) * validLimit;
 
     try {
-      // 查询接口不考虑权限，只基于 isListed 过滤
       // 构建基础条件：只查询 listed 的 artifacts
-      const baseConditions: ReturnType<typeof eq>[] = [
+      const baseConditions = [
         eq(resourceDiscoveryControl.isListed, true),
       ];
 
-      // 标签过滤 - 需要子查询
-      let artifactIdsFromTagInclude: string[] | null = null;
-      let artifactIdsFromTagExclude: string[] | null = null;
+      // 标签过滤 - 使用 EXISTS/NOT EXISTS 子查询，避免先查出所有 ID 再用 IN
+      // 这样数据库优化器可以利用索引，而不是在内存中处理大量 ID 列表
 
       if (tagInclude && tagInclude.length > 0) {
-        // 获取包含所有指定标签的 artifact IDs (AND 逻辑)
-        const tagResults = await this.db
-          .select({ artifactId: artifactTags.artifactId })
-          .from(artifactTags)
-          .innerJoin(tags, eq(artifactTags.tagId, tags.id))
-          .where(inArray(tags.slug, tagInclude))
-          .groupBy(artifactTags.artifactId)
-          .having(sql`count(distinct ${tags.slug}) = ${tagInclude.length}`);
-
-        artifactIdsFromTagInclude = tagResults.map(r => r.artifactId);
-        
-        // 如果没有匹配的 artifact，直接返回空结果
-        if (artifactIdsFromTagInclude.length === 0) {
-          return {
-            success: true,
-            data: {
-              artifacts: [],
-              pagination: {
-                page: validPage,
-                limit: validLimit,
-                total: 0,
-                totalPages: 0,
-              },
-            },
-          };
-        }
+        // tagInclude: AND 逻辑 - artifact 必须包含所有指定的标签
+        // 使用相关子查询：检查匹配到的不同标签数量是否等于要求的数量
+        baseConditions.push(
+          sql`(
+            SELECT count(DISTINCT ${tags.slug})
+            FROM ${artifactTags}
+            INNER JOIN ${tags} ON ${artifactTags.tagId} = ${tags.id}
+            WHERE ${artifactTags.artifactId} = ${artifacts.id}
+              AND ${tags.slug} IN (${sql.join(tagInclude.map(t => sql`${t}`), sql`, `)})
+          ) = ${tagInclude.length}`
+        );
       }
 
       if (tagExclude && tagExclude.length > 0) {
-        // 获取包含任意排除标签的 artifact IDs
-        const excludeResults = await this.db
-          .select({ artifactId: artifactTags.artifactId })
-          .from(artifactTags)
-          .innerJoin(tags, eq(artifactTags.tagId, tags.id))
-          .where(inArray(tags.slug, tagExclude));
-
-        artifactIdsFromTagExclude = [...new Set(excludeResults.map(r => r.artifactId))];
-      }
-
-      // 添加标签过滤条件
-      if (artifactIdsFromTagInclude !== null) {
-        baseConditions.push(inArray(artifacts.id, artifactIdsFromTagInclude));
-      }
-      if (artifactIdsFromTagExclude !== null && artifactIdsFromTagExclude.length > 0) {
-        baseConditions.push(notInArray(artifacts.id, artifactIdsFromTagExclude));
+        // tagExclude: OR 逻辑 - artifact 不能包含任意排除的标签
+        // 使用 NOT EXISTS 子查询
+        baseConditions.push(
+          sql`NOT EXISTS (
+            SELECT 1
+            FROM ${artifactTags}
+            INNER JOIN ${tags} ON ${artifactTags.tagId} = ${tags.id}
+            WHERE ${artifactTags.artifactId} = ${artifacts.id}
+              AND ${tags.slug} IN (${sql.join(tagExclude.map(t => sql`${t}`), sql`, `)})
+          )`
+        );
       }
 
       // 计算总数
-      const [countResult] = await this.db
+      const [countResult] = await this.ctx
         .select({ total: count() })
         .from(artifacts)
         .innerJoin(
@@ -880,20 +848,18 @@ export class ArtifactService {
       const total = countResult?.total ?? 0;
       const totalPages = Math.ceil(total / validLimit);
 
-      // 构建排序
-      let orderClause;
-      if (sortBy === 'viewCount' || sortBy === 'starCount') {
-        // 需要 join stats 表进行排序
-        const statsColumn = sortBy === 'viewCount' ? artifactStats.viewCount : artifactStats.favCount;
-        orderClause = sortOrder === 'asc' ? asc(statsColumn) : desc(statsColumn);
-      } else {
-        const artifactColumn = sortBy === 'updatedAt' ? artifacts.updatedAt : artifacts.createdAt;
-        orderClause = sortOrder === 'asc' ? asc(artifactColumn) : desc(artifactColumn);
-      }
+      // 构建排序 - 使用映射表避免硬编码
+      const sortColumnMap = {
+        createdAt: artifacts.createdAt,
+        updatedAt: artifacts.updatedAt,
+        viewCount: artifactStats.viewCount,
+        favCount: artifactStats.favCount,
+      } as const;
+      const sortColumn = sortColumnMap[sortBy as keyof typeof sortColumnMap];
+      const orderClause = sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn);
 
       // 查询 artifacts（带 author、stats 和 discovery control）
-      const artifactsQuery = this.db
-        .select({
+      const artifactsQuery = this.ctx.select({
           artifact: artifacts,
           discoveryControl: resourceDiscoveryControl,
           author: {
@@ -926,7 +892,7 @@ export class ArtifactService {
       const tagsMap = new Map<string, ArtifactListItem['tags']>();
 
       if (artifactIds.length > 0) {
-        const tagResults = await this.db
+        const tagResults = await this.ctx
           .select({
             artifactId: artifactTags.artifactId,
             tag: {
@@ -962,8 +928,8 @@ export class ArtifactService {
         tags: tagsMap.get(r.artifact.id) || [],
         stats: r.stats ? {
           viewCount: r.stats.viewCount,
-          starCount: r.stats.favCount,
-          forkCount: r.stats.refCount,
+          favCount: r.stats.favCount,
+          refCount: r.stats.refCount,
           downloadCount: r.stats.downloadCount,
         } : undefined,
       }));
@@ -995,7 +961,7 @@ export class ArtifactService {
     author: { id: string; username: string };
   }>> {
     try {
-      const result = await this.db
+      const result = await this.ctx
         .select({
           artifact: artifacts,
           author: {
@@ -1040,7 +1006,7 @@ export class ArtifactService {
 
     try {
       // 检查 artifact 是否存在，同时获取 currentVersionId
-      const [artifactRecord] = await this.db
+      const [artifactRecord] = await this.ctx
         .select({ id: artifacts.id, currentVersionId: artifacts.currentVersionId })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
@@ -1057,7 +1023,7 @@ export class ArtifactService {
       let versionCommitHash: string | null = null;
       if (commit) {
         // 验证 commit hash 存在
-        const [matchedVersion] = await this.db
+        const [matchedVersion] = await this.ctx
           .select({ commitHash: artifactVersions.commitHash })
           .from(artifactVersions)
           .where(and(
@@ -1073,7 +1039,7 @@ export class ArtifactService {
         }
         versionCommitHash = matchedVersion.commitHash;
       } else if (artifactRecord.currentVersionId) {
-        const [currentVersion] = await this.db
+        const [currentVersion] = await this.ctx
           .select({ commitHash: artifactVersions.commitHash })
           .from(artifactVersions)
           .where(eq(artifactVersions.id, artifactRecord.currentVersionId))
@@ -1124,39 +1090,9 @@ export class ArtifactService {
     if (maxDepth <= 0 || visited.has(artifactId)) return [];
     visited.add(artifactId);
 
-    // 查询当前 artifact 版本中所有节点的 derivativeOf，找到不同 sourceArtifactId
-    const nvCurrent = this.db.$with('nv_current').as(
-      this.db
-        .select({
-          nodeId: artifactVersionNodes.nodeId,
-          nodeCommit: artifactVersionNodes.nodeCommit,
-        })
-        .from(artifactVersionNodes)
-        .where(eq(artifactVersionNodes.commitHash, versionCommitHash))
-    );
-
-    // 找到直接父 artifact IDs
-    const parentIds = await this.db
-      .with(nvCurrent)
-      .selectDistinct({ sourceArtifactId: nodeVersions.sourceArtifactId })
-      .from(nvCurrent)
-      .innerJoin(
-        nodeVersions,
-        eq(nodeVersions.commit, nvCurrent.nodeCommit)
-      )
-      .where(
-        and(
-          isNotNull(nodeVersions.derivativeOf),
-          sql`${nodeVersions.sourceArtifactId} != ${artifactId}`
-        )
-      );
-
-    // 实际上 derivativeOf 指向的是另一个 commit，那个 commit 的 sourceArtifactId 才是父 artifact。
-    // 但当前 node 的 sourceArtifactId 就是自己（因为是在 createArtifact 中传入的）。
-    // 我们需要查 derivativeOf 指向的版本的 sourceArtifactId。
-
+    // 查询当前 artifact 版本中所有节点的 derivativeOf，找到指向的 sourceArtifactId
     // 重写：通过 join 获取 derivativeOf 目标版本的 sourceArtifactId
-    const parentArtifactRows = await this.db
+    const parentArtifactRows = await this.ctx
       .selectDistinct({ sourceArtifactId: sql<string>`nv_parent.source_artifact_id` })
       .from(artifactVersionNodes)
       .innerJoin(
@@ -1175,7 +1111,7 @@ export class ArtifactService {
         )
       );
 
-    const parentArtifactIds = parentArtifactRows.map(r => r.sourceArtifactId);
+    const parentArtifactIds = parentArtifactRows.map((r: { sourceArtifactId: string }) => r.sourceArtifactId);
     if (parentArtifactIds.length === 0) return [];
 
     // 获取 artifact 详细信息
@@ -1185,13 +1121,13 @@ export class ArtifactService {
     if (maxDepth > 1) {
       for (const parentId of parentArtifactIds) {
         if (visited.has(parentId)) continue;
-        const [parentArtifact] = await this.db
+        const [parentArtifact] = await this.ctx
           .select({ currentVersionId: artifacts.currentVersionId })
           .from(artifacts)
           .where(eq(artifacts.id, parentId))
           .limit(1);
         if (parentArtifact?.currentVersionId) {
-          const [parentVersion] = await this.db
+          const [parentVersion] = await this.ctx
             .select({ commitHash: artifactVersions.commitHash })
             .from(artifactVersions)
             .where(eq(artifactVersions.id, parentArtifact.currentVersionId))
@@ -1219,7 +1155,7 @@ export class ArtifactService {
 
     // 找到当前 artifact 版本中的所有节点 commit
     // 然后找到 derivativeOf 指向这些 commit 的其他节点版本，它们的 sourceArtifactId 就是子 artifact
-    const childArtifactRows = await this.db
+    const childArtifactRows = await this.ctx
       .selectDistinct({ sourceArtifactId: sql<string>`nv_child.source_artifact_id` })
       .from(artifactVersionNodes)
       .innerJoin(
@@ -1242,13 +1178,13 @@ export class ArtifactService {
     if (maxDepth > 1) {
       for (const childId of childArtifactIds) {
         if (visited.has(childId)) continue;
-        const [childArtifact] = await this.db
+        const [childArtifact] = await this.ctx
           .select({ currentVersionId: artifacts.currentVersionId })
           .from(artifacts)
           .where(eq(artifacts.id, childId))
           .limit(1);
         if (childArtifact?.currentVersionId) {
-          const [childVersion] = await this.db
+          const [childVersion] = await this.ctx
             .select({ commitHash: artifactVersions.commitHash })
             .from(artifactVersions)
             .where(eq(artifactVersions.id, childArtifact.currentVersionId))
@@ -1268,7 +1204,7 @@ export class ArtifactService {
   private async fetchArtifactLineageDetails(artifactIds: string[]): Promise<ArtifactLineageItem[]> {
     if (artifactIds.length === 0) return [];
 
-    const rows = await this.db
+    const rows = await this.ctx
       .select({
         id: artifacts.id,
         name: artifacts.name,
@@ -1316,7 +1252,7 @@ export class ArtifactService {
   ): Promise<ServiceResult<{ version: ArtifactVersion }>> {
     try {
       // 检查 artifact 存在且用户有权限
-      const existingArtifact = await this.db
+      const existingArtifact = await this.ctx
         .select({ id: artifacts.id, authorId: artifacts.authorId })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
@@ -1331,8 +1267,7 @@ export class ArtifactService {
       }
 
       // 查找目标版本
-      const [targetVersion] = await this.db
-        .select()
+      const [targetVersion] = await this.ctx.select()
         .from(artifactVersions)
         .where(and(
           eq(artifactVersions.artifactId, artifactId),
@@ -1344,34 +1279,31 @@ export class ArtifactService {
         return { success: false, error: { code: 'NOT_FOUND', message: `Version with commit ${commitHash} not found` } };
       }
 
-      const batchOperations: BatchItem<"sqlite">[] = [];
-
       // 先删除该版本上已有的所有 tag
-      batchOperations.push(
-        this.db.delete(artifactCommitTags).where(
+      this.ctx.modify(db =>
+        db.delete(artifactCommitTags).where(
           eq(artifactCommitTags.commitHash, targetVersion.commitHash)
         )
       );
 
       // 如果设置了新 tags，先清除同 artifact 中使用相同 tag 的旧关联
       if (commitTags.length > 0) {
-        const existingTags = await this.db
-          .select({ id: artifactCommitTags.id })
+        const existingTags = await this.ctx.select({ id: artifactCommitTags.id })
           .from(artifactCommitTags)
           .where(and(
             eq(artifactCommitTags.artifactId, artifactId),
             inArray(artifactCommitTags.tag, commitTags),
           ));
         for (const ct of existingTags) {
-          batchOperations.push(
-            this.db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
+          this.ctx.modify(db =>
+            db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
           );
         }
 
         // 创建新的 tag 关联
         for (const tag of commitTags) {
-          batchOperations.push(
-            this.db.insert(artifactCommitTags).values({
+          this.ctx.modify(db =>
+            db.insert(artifactCommitTags).values({
               artifactId,
               commitHash: targetVersion.commitHash,
               tag,
@@ -1379,8 +1311,6 @@ export class ArtifactService {
           );
         }
       }
-
-      await this.db.batch(batchOperations as any);
 
       return {
         success: true,
@@ -1410,7 +1340,7 @@ export class ArtifactService {
     commitTag: string,
   ): Promise<ServiceResult<{ version: ArtifactVersion }>> {
     try {
-      const result = await this.db
+      const result = await this.ctx
         .select({ version: artifactVersions })
         .from(artifactCommitTags)
         .innerJoin(artifactVersions, eq(artifactCommitTags.commitHash, artifactVersions.commitHash))
@@ -1460,7 +1390,7 @@ export class ArtifactService {
 
     try {
       // 检查 artifact 存在且用户有权限
-      const existingArtifact = await this.db
+      const existingArtifact = await this.ctx
         .select({ id: artifacts.id, authorId: artifacts.authorId, currentVersionId: artifacts.currentVersionId })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
@@ -1475,7 +1405,7 @@ export class ArtifactService {
       }
 
       // 获取 baseCommit 对应的版本
-      const [baseVersion] = await this.db
+      const [baseVersion] = await this.ctx
         .select()
         .from(artifactVersions)
         .where(and(
@@ -1509,7 +1439,7 @@ export class ArtifactService {
       // 确定 parentCommit：当前最新版本的 commitHash（保持链状结构）
       let parentCommit: string | null = null;
       if (existingArtifact[0].currentVersionId) {
-        const [currentVersion] = await this.db
+        const [currentVersion] = await this.ctx
           .select({ commitHash: artifactVersions.commitHash })
           .from(artifactVersions)
           .where(eq(artifactVersions.id, existingArtifact[0].currentVersionId))
@@ -1520,13 +1450,13 @@ export class ArtifactService {
       }
 
       // 获取 baseCommit 的完整节点列表
-      const baseNodes = await this.db
+      const baseNodes = await this.ctx
         .select()
         .from(artifactVersionNodes)
         .where(eq(artifactVersionNodes.commitHash, baseVersion.commitHash));
 
       // 获取 baseCommit 的完整边列表
-      const baseEdges = await this.db
+      const baseEdges = await this.ctx
         .select()
         .from(artifactVersionEdges)
         .where(eq(artifactVersionEdges.commitHash, baseVersion.commitHash));
@@ -1540,7 +1470,7 @@ export class ArtifactService {
 
       // 构建合并后的节点列表
       const mergedNodes: CreateArtifactNode[] = [];
-      const nodeVersionService = new NodeVersionService(this.db);
+      const nodeVersionService = new NodeVersionService(this.ctx);
 
       for (const bn of baseNodes) {
         if (removeNodeIds.has(bn.nodeId)) continue; // 被删除的节点
@@ -1610,11 +1540,11 @@ export class ArtifactService {
       }
 
       // 获取当前 artifact 名称用作 fallback
-      const currentArtifact = (await this.db.select({ name: artifacts.name }).from(artifacts).where(eq(artifacts.id, artifactId)).limit(1))[0];
+      const currentArtifact = (await this.ctx.select({ name: artifacts.name }).from(artifacts).where(eq(artifacts.id, artifactId)).limit(1))[0];
       const currentName = currentArtifact?.name ?? '';
 
       // 获取当前发现控制作为 fallback
-      const currentDiscoveryControl = await this.db
+      const currentDiscoveryControl = await this.ctx
         .select({ isListed: resourceDiscoveryControl.isListed })
         .from(resourceDiscoveryControl)
         .where(
@@ -1663,8 +1593,6 @@ export class ArtifactService {
     metadata: PatchArtifactInput['metadata'],
   ): Promise<ServiceResult<PatchArtifactResult>> {
     try {
-      const batchOperations: BatchItem<"sqlite">[] = [];
-
       // 更新 artifact 基本信息（仅更新提供了的字段）
       const artifactUpdate: Record<string, unknown> = {
         updatedAt: new Date().toISOString(),
@@ -1672,14 +1600,14 @@ export class ArtifactService {
       if (metadata.name !== undefined) artifactUpdate.name = metadata.name;
       if (metadata.description !== undefined) artifactUpdate.description = metadata.description;
 
-      batchOperations.push(
-        this.db.update(artifacts).set(artifactUpdate).where(eq(artifacts.id, artifactId))
+      this.ctx.modify(db =>
+        db.update(artifacts).set(artifactUpdate).where(eq(artifacts.id, artifactId))
       );
 
       // 更新发现控制（如果提供了）
       if (metadata.isListed !== undefined) {
-        batchOperations.push(
-          this.db.update(resourceDiscoveryControl).set({ isListed: metadata.isListed }).where(
+        this.ctx.modify(db =>
+          db.update(resourceDiscoveryControl).set({ isListed: metadata.isListed }).where(
             and(
               eq(resourceDiscoveryControl.resourceType, 'artifact'),
               eq(resourceDiscoveryControl.resourceId, artifactId)
@@ -1697,13 +1625,12 @@ export class ArtifactService {
         const { saveCommit, sandboxNodeId } = metadata.entrypoint;
 
         // 获取当前版本的节点
-        const versionNodes = await this.db
-          .select({ nodeId: artifactVersionNodes.nodeId, nodeCommit: artifactVersionNodes.nodeCommit })
+        const versionNodes = await this.ctx.select({ nodeId: artifactVersionNodes.nodeId, nodeCommit: artifactVersionNodes.nodeCommit })
           .from(artifactVersionNodes)
           .where(eq(artifactVersionNodes.commitHash, baseVersion.commitHash));
 
         // 获取每个节点的版本信息
-        const nodeVersionService = new NodeVersionService(this.db);
+        const nodeVersionService = new NodeVersionService(this.ctx);
         let sandboxFound = false;
         let saveCommitFound = false;
 
@@ -1740,39 +1667,38 @@ export class ArtifactService {
       }
 
       if (Object.keys(versionUpdate).length > 0) {
-        batchOperations.push(
-          this.db.update(artifactVersions).set(versionUpdate).where(eq(artifactVersions.id, baseVersion.id))
+        this.ctx.modify(db =>
+          db.update(artifactVersions).set(versionUpdate).where(eq(artifactVersions.id, baseVersion.id))
         );
       }
 
       // 处理 commitTags
       if (metadata.commitTags !== undefined) {
         // 先删除该版本上已有的所有 tag
-        batchOperations.push(
-          this.db.delete(artifactCommitTags).where(
+        this.ctx.modify(db =>
+          db.delete(artifactCommitTags).where(
             eq(artifactCommitTags.commitHash, baseVersion.commitHash)
           )
         );
 
         if (metadata.commitTags.length > 0) {
           // 清除同 artifact 中使用相同 tag 的旧关联
-          const existingTags = await this.db
-            .select({ id: artifactCommitTags.id })
+          const existingTags = await this.ctx.select({ id: artifactCommitTags.id })
             .from(artifactCommitTags)
             .where(and(
               eq(artifactCommitTags.artifactId, artifactId),
               inArray(artifactCommitTags.tag, metadata.commitTags),
             ));
           for (const ct of existingTags) {
-            batchOperations.push(
-              this.db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
+            this.ctx.modify(db =>
+              db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
             );
           }
 
           // 创建新的 tag 关联
           for (const tag of metadata.commitTags) {
-            batchOperations.push(
-              this.db.insert(artifactCommitTags).values({
+            this.ctx.modify(db =>
+              db.insert(artifactCommitTags).values({
                 artifactId,
                 commitHash: baseVersion.commitHash,
                 tag,
@@ -1782,11 +1708,8 @@ export class ArtifactService {
         }
       }
 
-      await this.db.batch(batchOperations as any);
-
       // 获取更新后的信息用于返回
-      const authorResult = await this.db
-        .select({
+      const authorResult = await this.ctx.select({
           id: user.id,
           username: user.username,
           displayName: user.displayName,
@@ -1796,15 +1719,13 @@ export class ArtifactService {
         .where(eq(user.id, authorId))
         .limit(1);
 
-      const updatedArtifact = await this.db
-        .select()
+      const updatedArtifact = await this.ctx.select()
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
         .limit(1);
 
       // 获取发现控制
-      const discoveryControlResult = await this.db
-        .select({ isListed: resourceDiscoveryControl.isListed })
+      const discoveryControlResult = await this.ctx.select({ isListed: resourceDiscoveryControl.isListed })
         .from(resourceDiscoveryControl)
         .where(
           and(
@@ -1815,8 +1736,7 @@ export class ArtifactService {
         .limit(1);
 
       // 获取 tags
-      const tagResults = await this.db
-        .select({
+      const tagResults = await this.ctx.select({
           tag: {
             id: tags.id,
             name: tags.name,
@@ -1858,10 +1778,10 @@ export class ArtifactService {
     artifactId: string,
     authorId: string,
     commitHash: string,
-  ): Promise<ServiceResult<{ gcResult: { decremented: number; deleted: number } }>> {
+  ): Promise<ServiceResult<{ gcResult: { processedCount: number } }>> {
     try {
       // 检查 artifact 存在且用户有权限
-      const [existingArtifact] = await this.db
+      const [existingArtifact] = await this.ctx
         .select({ id: artifacts.id, authorId: artifacts.authorId })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
@@ -1876,7 +1796,7 @@ export class ArtifactService {
       }
 
       // 查找目标版本
-      const [targetVersion] = await this.db
+      const [targetVersion] = await this.ctx
         .select()
         .from(artifactVersions)
         .where(and(
@@ -1895,41 +1815,40 @@ export class ArtifactService {
       }
 
       // 更新 isWeak 标记
-      await this.db.update(artifactVersions)
-        .set({ isWeak: true })
-        .where(eq(artifactVersions.id, targetVersion.id));
+      this.ctx.modify(db =>
+        db.update(artifactVersions)
+          .set({ isWeak: true })
+          .where(eq(artifactVersions.id, targetVersion.id))
+      );
 
       // 获取该版本关联的所有 node 版本
-      const versionNodes = await this.db
-        .select({
+      const versionNodes = await this.ctx.select({
           nodeId: artifactVersionNodes.nodeId,
           nodeCommit: artifactVersionNodes.nodeCommit,
         })
         .from(artifactVersionNodes)
         .where(eq(artifactVersionNodes.commitHash, targetVersion.commitHash));
 
-      // 获取每个 node 的 type 和 contentHash
-      const nodeVersionService = new NodeVersionService(this.db);
-      let decremented = 0;
-      let deleted = 0;
+      // 获取每个 node 的 type 和 contentHash，并收集 decrementContentRefCount 操作
+      const nodeVersionService = new NodeVersionService(this.ctx);
+      let processedCount = 0;
 
       for (const vn of versionNodes) {
-        const [nv] = await this.db
-          .select({ type: nodeVersions.type, contentHash: nodeVersions.contentHash })
+        const [nv] = await this.ctx.select({ type: nodeVersions.type, contentHash: nodeVersions.contentHash })
           .from(nodeVersions)
           .where(eq(nodeVersions.commit, vn.nodeCommit))
           .limit(1);
 
         if (!nv) continue;
 
-        const result = await nodeVersionService.decrementContentRefCount(nv.type, nv.contentHash);
-        if (result.decremented) decremented++;
-        if (result.deleted) deleted++;
+        // This collects the decrement operation into BatchContext
+        nodeVersionService.decrementContentRefCount(nv.type, nv.contentHash);
+        processedCount++;
       }
 
       return {
         success: true,
-        data: { gcResult: { decremented, deleted } },
+        data: { gcResult: { processedCount } },
       };
     } catch (error) {
       console.error('Mark version weak error:', error);
@@ -1969,11 +1888,13 @@ export class ArtifactService {
         baseConditions.push(eq(resourceDiscoveryControl.isListed, true));
       }
 
-      // 计算总数（需要 left join resource_discovery_control）
-      const [countResult] = await this.db
+      // 计算总数
+      // 注意：使用 INNER JOIN resourceDiscoveryControl，因为 createArtifact 会同时创建 discovery control 记录
+      // 如果用 LEFT JOIN + WHERE isListed=true，会过滤掉 isListed=NULL 的行，效果等同于 INNER JOIN 但语义不清晰
+      const [countResult] = await this.ctx
         .select({ total: count() })
         .from(artifacts)
-        .leftJoin(
+        .innerJoin(
           resourceDiscoveryControl,
           and(
             eq(resourceDiscoveryControl.resourceType, 'artifact'),
@@ -1986,18 +1907,17 @@ export class ArtifactService {
       const totalPages = Math.ceil(total / validLimit);
 
       // 构建排序
-      let orderClause;
-      if (sortBy === 'viewCount' || sortBy === 'starCount') {
-        const statsColumn = sortBy === 'viewCount' ? artifactStats.viewCount : artifactStats.favCount;
-        orderClause = sortOrder === 'asc' ? asc(statsColumn) : desc(statsColumn);
-      } else {
-        const artifactColumn = sortBy === 'updatedAt' ? artifacts.updatedAt : artifacts.createdAt;
-        orderClause = sortOrder === 'asc' ? asc(artifactColumn) : desc(artifactColumn);
-      }
+      const sortColumnMap = {
+        ...artifactStats,
+        ...artifacts,
+      };
+      const sortColumn = sortColumnMap[sortBy];
+      const orderClause = sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn);
 
       // 查询 artifacts（带 author、stats 和 discovery control）
-      const artifactsQuery = this.db
-        .select({
+      // 注意：resourceDiscoveryControl 使用 INNER JOIN（每个 artifact 都有对应记录）
+      //       artifactStats 使用 LEFT JOIN（stats 记录可能不存在，虽然 createArtifact 会创建）
+      const artifactsQuery = this.ctx.select({
           artifact: artifacts,
           isListed: resourceDiscoveryControl.isListed,
           author: {
@@ -2010,7 +1930,7 @@ export class ArtifactService {
         })
         .from(artifacts)
         .innerJoin(user, eq(artifacts.authorId, user.id))
-        .leftJoin(
+        .innerJoin(
           resourceDiscoveryControl,
           and(
             eq(resourceDiscoveryControl.resourceType, 'artifact'),
@@ -2028,10 +1948,9 @@ export class ArtifactService {
       // 获取所有 artifact 的 tags
       const artifactIds = artifactResults.map(r => r.artifact.id);
       const tagsMap = new Map<string, ArtifactListItem['tags']>();
-      const publicArtifactIds = new Set<string>();
 
       if (artifactIds.length > 0) {
-        const tagResults = await this.db
+        const tagResults = await this.ctx
           .select({
             artifactId: artifactTags.artifactId,
             tag: {
@@ -2051,20 +1970,6 @@ export class ArtifactService {
           existing.push(row.tag);
           tagsMap.set(row.artifactId, existing);
         }
-
-        // 获取 public artifacts（有 PUBLIC_USER_ID ACL）
-        const publicAclResults = await this.db
-          .select({ resourceId: resourceAcl.resourceId })
-          .from(resourceAcl)
-          .where(and(
-            eq(resourceAcl.resourceType, 'artifact'),
-            eq(resourceAcl.userId, PUBLIC_USER_ID),
-            inArray(resourceAcl.resourceId, artifactIds)
-          ));
-
-        for (const r of publicAclResults) {
-          publicArtifactIds.add(r.resourceId);
-        }
       }
 
       // 组装结果
@@ -2081,8 +1986,8 @@ export class ArtifactService {
         tags: tagsMap.get(r.artifact.id) || [],
         stats: r.stats ? {
           viewCount: r.stats.viewCount,
-          starCount: r.stats.favCount,
-          forkCount: r.stats.refCount,
+          favCount: r.stats.favCount,
+          refCount: r.stats.refCount,
           downloadCount: r.stats.downloadCount,
         } : undefined,
       }));
@@ -2118,14 +2023,14 @@ export class ArtifactService {
     versionQuery?: string,
   ): Promise<ServiceResult<GetArtifactGraphResponse>> {
     try {
-      const nodeVersionService = new NodeVersionService(this.db);
+      const nodeVersionService = new NodeVersionService(this.ctx);
 
       // 获取指定版本或最新版本
       let version: DbArtifactVersion | undefined;
 
       if (versionQuery && versionQuery !== 'latest') {
         // 先尝试按 commitHash 查询
-        const [byHash] = await this.db
+        const [byHash] = await this.ctx
           .select()
           .from(artifactVersions)
           .where(
@@ -2140,7 +2045,7 @@ export class ArtifactService {
           version = byHash;
         } else {
           // 尝试按 commitTag 查询
-          const [byTag] = await this.db
+          const [byTag] = await this.ctx
             .select({ version: artifactVersions })
             .from(artifactCommitTags)
             .innerJoin(artifactVersions, eq(artifactCommitTags.commitHash, artifactVersions.commitHash))
@@ -2158,7 +2063,7 @@ export class ArtifactService {
         }
       } else {
         // 获取最新版本
-        const [latest] = await this.db
+        const [latest] = await this.ctx
           .select()
           .from(artifactVersions)
           .where(eq(artifactVersions.artifactId, artifactId))
@@ -2173,7 +2078,7 @@ export class ArtifactService {
       }
 
       // 获取 artifact_version_nodes
-      const versionNodes = await this.db
+      const versionNodes = await this.ctx
         .select()
         .from(artifactVersionNodes)
         .where(eq(artifactVersionNodes.commitHash, version.commitHash));
@@ -2199,7 +2104,7 @@ export class ArtifactService {
       }
 
       // 获取 artifact_version_edges
-      const versionEdges = await this.db
+      const versionEdges = await this.ctx
         .select()
         .from(artifactVersionEdges)
         .where(eq(artifactVersionEdges.commitHash, version.commitHash));
@@ -2212,7 +2117,7 @@ export class ArtifactService {
       }));
 
       // 查询该版本的 commitTags
-      const versionCommitTags = await this.db
+      const versionCommitTags = await this.ctx
         .select({ tag: artifactCommitTags.tag })
         .from(artifactCommitTags)
         .where(eq(artifactCommitTags.commitHash, version.commitHash));

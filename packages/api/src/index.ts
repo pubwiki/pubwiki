@@ -33,6 +33,11 @@ export type CreateProjectPage = components['schemas']['CreateProjectPage'];
 export type ProjectPage = components['schemas']['ProjectPage'];
 export type ProjectPageDetail = components['schemas']['ProjectPageDetail'];
 export type ArtifactEntrypoint = components['schemas']['ArtifactEntrypoint']
+export type ArtifactStats = components['schemas']['ArtifactStats'];
+export type ArtifactSortBy = components['schemas']['ArtifactSortBy'];
+export type ProjectSortBy = components['schemas']['ProjectSortBy'];
+export type DiscussionSortBy = components['schemas']['DiscussionSortBy'];
+export type SortOrder = components['schemas']['SortOrder'];
 
 // Node 相关类型
 export type ArtifactNodeType = components['schemas']['ArtifactNodeType'];

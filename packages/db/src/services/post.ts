@@ -1,12 +1,12 @@
 import { eq, and, desc, asc, count, sql } from 'drizzle-orm';
-import type { Database } from '../client';
+import type { BatchContext } from '../batch-context';
 import { projectPosts, type ProjectPost, type NewProjectPost } from '../schema/posts';
 import { projects } from '../schema/projects';
 import { discussions, discussionReplies, type NewDiscussion } from '../schema/discussions';
 import { user } from '../schema/auth';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { resourceAcl } from '../schema/acl';
-import type { ServiceError, ServiceResult } from './user';
+import type { ServiceResult } from './user';
 import type {
   PostListItem,
   PostDetail,
@@ -56,11 +56,11 @@ export interface UpdatePostParams {
 }
 
 export class PostService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   // 获取作者信息
   private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
-    const result = await this.db
+    const result = await this.ctx
       .select({
         id: user.id,
         username: user.username,
@@ -78,7 +78,7 @@ export class PostService {
   async isProjectMember(projectId: string, userId: string): Promise<ServiceResult<{ isOwner: boolean; isMaintainer: boolean }>> {
     try {
       // 获取 project 检查 owner
-      const [project] = await this.db
+      const [project] = await this.ctx
         .select({ ownerId: projects.ownerId })
         .from(projects)
         .where(eq(projects.id, projectId))
@@ -94,7 +94,7 @@ export class PostService {
       const isOwner = project.ownerId === userId;
 
       // 检查用户的 ACL 权限
-      const userAcl = await this.db
+      const userAcl = await this.ctx
         .select({ canWrite: resourceAcl.canWrite, canManage: resourceAcl.canManage })
         .from(resourceAcl)
         .where(and(
@@ -168,7 +168,7 @@ export class PostService {
 
     try {
       // 检查 project 是否存在
-      const [project] = await this.db
+      const [project] = await this.ctx
         .select({ id: projects.id })
         .from(projects)
         .where(eq(projects.id, projectId))
@@ -182,7 +182,7 @@ export class PostService {
       }
 
       // 获取总数
-      const countResult = await this.db
+      const countResult = await this.ctx
         .select({ count: count() })
         .from(projectPosts)
         .where(eq(projectPosts.projectId, projectId));
@@ -195,7 +195,7 @@ export class PostService {
       const orderFn = sortOrder === 'asc' ? asc : desc;
 
       // 获取 posts（置顶优先）
-      const postRows = await this.db
+      const postRows = await this.ctx
         .select({
           post: projectPosts,
           author: {
@@ -213,12 +213,11 @@ export class PostService {
         .offset(offset);
 
       // 获取每个 post 关联的 discussion 的回复数
-      const postIds = postRows.map(r => r.post.id);
       const discussionIds = postRows.filter(r => r.post.discussionId).map(r => r.post.discussionId!);
       
       let replyCountMap = new Map<string, number>();
       if (discussionIds.length > 0) {
-        const replyCounts = await this.db
+        const replyCounts = await this.ctx
           .select({
             discussionId: discussions.id,
             replyCount: discussions.replyCount,
@@ -261,7 +260,7 @@ export class PostService {
   async getPost(projectId: string, postId: string): Promise<ServiceResult<PostDetail>> {
     try {
       // 获取 post 及其作者
-      const [result] = await this.db
+      const [result] = await this.ctx
         .select({
           post: projectPosts,
           author: {
@@ -290,7 +289,7 @@ export class PostService {
       let discussionDetail: DiscussionDetail | null = null;
       let replyCount = 0;
       if (result.post.discussionId) {
-        const [discussion] = await this.db
+        const [discussion] = await this.ctx
           .select({
             id: discussions.id,
             targetType: discussions.targetType,
@@ -349,13 +348,16 @@ export class PostService {
     }
   }
 
-  // 创建 post（同时创建关联的 discussion）
-  async createPost(params: CreatePostParams): Promise<ServiceResult<PostDetail>> {
+  /**
+   * Create a post with its associated discussion.
+   * Returns only postId - caller should commit and then call getPost to get full detail.
+   */
+  async createPost(params: CreatePostParams): Promise<ServiceResult<{ postId: string }>> {
     const { projectId, authorId, data } = params;
 
     try {
       // 检查 project 是否存在
-      const [project] = await this.db
+      const [project] = await this.ctx
         .select({ id: projects.id })
         .from(projects)
         .where(eq(projects.id, projectId))
@@ -404,14 +406,16 @@ export class PostService {
         isPinned: false,
       };
 
-      // 使用 batch 执行原子操作
-      await this.db.batch([
-        this.db.insert(discussions).values(newDiscussion),
-        this.db.insert(projectPosts).values(newPost),
-      ]);
+      // 收集原子操作
+      this.ctx.modify(db =>
+        db.insert(discussions).values(newDiscussion)
+      );
+      this.ctx.modify(db =>
+        db.insert(projectPosts).values(newPost)
+      );
 
-      // 获取创建的 post 详情
-      return this.getPost(projectId, postId);
+      // Return postId - caller should commit and then call getPost
+      return { success: true, data: { postId } };
     } catch (error) {
       console.error('Error creating post:', error);
       return {
@@ -421,11 +425,14 @@ export class PostService {
     }
   }
 
-  // 更新 post
-  async updatePost(projectId: string, postId: string, userId: string, data: UpdatePostRequest): Promise<ServiceResult<PostDetail>> {
+  /**
+   * Update a post.
+   * Returns only postId - caller should commit and then call getPost to get full detail.
+   */
+  async updatePost(projectId: string, postId: string, userId: string, data: UpdatePostRequest): Promise<ServiceResult<{ postId: string }>> {
     try {
       // 获取现有 post
-      const [existingPost] = await this.db
+      const [existingPost] = await this.ctx
         .select()
         .from(projectPosts)
         .where(and(
@@ -478,32 +485,28 @@ export class PostService {
       if (data.coverUrls !== undefined) updateData.coverUrls = JSON.stringify(data.coverUrls);
       if (data.isPinned !== undefined && canPin) updateData.isPinned = data.isPinned;
 
-      // 使用 batch 原子更新 post 和关联的 discussion
+      // 收集更新 post 操作
+      this.ctx.modify(db =>
+        db.update(projectPosts)
+          .set(updateData)
+          .where(eq(projectPosts.id, postId))
+      );
+
+      // 如果更新了标题且有关联 discussion，同时更新 discussion
       if (data.title !== undefined && existingPost.discussionId) {
-        // 同时更新 post 和 discussion
-        await this.db.batch([
-          this.db
-            .update(projectPosts)
-            .set(updateData)
-            .where(eq(projectPosts.id, postId)),
-          this.db
-            .update(discussions)
+        const discussionId = existingPost.discussionId;
+        this.ctx.modify(db =>
+          db.update(discussions)
             .set({ 
               title: data.title,
               updatedAt: updateData.updatedAt,
             })
-            .where(eq(discussions.id, existingPost.discussionId)),
-        ]);
-      } else {
-        // 只更新 post
-        await this.db
-          .update(projectPosts)
-          .set(updateData)
-          .where(eq(projectPosts.id, postId));
+            .where(eq(discussions.id, discussionId))
+        );
       }
 
-      // 返回更新后的 post 详情
-      return this.getPost(projectId, postId);
+      // Return postId - caller should commit and then call getPost
+      return { success: true, data: { postId } };
     } catch (error) {
       console.error('Error updating post:', error);
       return {
@@ -517,7 +520,7 @@ export class PostService {
   async deletePost(projectId: string, postId: string, userId: string): Promise<ServiceResult<void>> {
     try {
       // 获取现有 post
-      const [existingPost] = await this.db
+      const [existingPost] = await this.ctx
         .select()
         .from(projectPosts)
         .where(and(
@@ -551,17 +554,24 @@ export class PostService {
         };
       }
 
-      // 使用 batch 原子删除 post 和关联的 discussion
+      // 收集原子删除操作
       if (existingPost.discussionId) {
-        // 删除 post、discussion 和回复
-        await this.db.batch([
-          this.db.delete(discussionReplies).where(eq(discussionReplies.discussionId, existingPost.discussionId)),
-          this.db.delete(projectPosts).where(eq(projectPosts.id, postId)),
-          this.db.delete(discussions).where(eq(discussions.id, existingPost.discussionId)),
-        ]);
+        const discussionId = existingPost.discussionId;
+        // 删除回复、post、discussion
+        this.ctx.modify(db =>
+          db.delete(discussionReplies).where(eq(discussionReplies.discussionId, discussionId))
+        );
+        this.ctx.modify(db =>
+          db.delete(projectPosts).where(eq(projectPosts.id, postId))
+        );
+        this.ctx.modify(db =>
+          db.delete(discussions).where(eq(discussions.id, discussionId))
+        );
       } else {
         // 只删除 post
-        await this.db.delete(projectPosts).where(eq(projectPosts.id, postId));
+        this.ctx.modify(db =>
+          db.delete(projectPosts).where(eq(projectPosts.id, postId))
+        );
       }
 
       return { success: true, data: undefined };
@@ -577,7 +587,7 @@ export class PostService {
   // 获取 project 信息（用于权限检查）
   async getProject(projectId: string): Promise<ServiceResult<{ id: string; ownerId: string; isListed: boolean }>> {
     try {
-      const result = await this.db
+      const result = await this.ctx
         .select({
           id: projects.id,
           ownerId: projects.ownerId,

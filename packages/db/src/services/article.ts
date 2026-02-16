@@ -1,12 +1,12 @@
 import { eq, sql, desc, count, and, inArray } from 'drizzle-orm';
-import type { Database } from '../client';
-import { articles, type Article, type NewArticle } from '../schema/articles';
+import type { BatchContext } from '../batch-context';
+import { articles, type Article } from '../schema/articles';
 import { artifactVersions } from '../schema/artifacts';
 import { nodeVersions } from '../schema/node-versions';
 import { user } from '../schema/auth';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
-import type { ServiceError, ServiceResult } from './user';
+import type { ServiceResult } from './user';
 import type {
   ArticleDetail,
   ReaderContent,
@@ -51,12 +51,11 @@ export interface ListArticlesByArtifactResult {
 }
 
 export class ArticleService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   // 获取作者信息
   private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
-    const result = await this.db
-      .select({
+    const result = await this.ctx.select({
         id: user.id,
         username: user.username,
         displayName: user.displayName,
@@ -99,8 +98,7 @@ export class ArticleService {
   async getArticle(articleId: string): Promise<ServiceResult<ArticleDetail>> {
     try {
       // 获取文章及其发现控制信息
-      const result = await this.db
-        .select({
+      const result = await this.ctx.select({
           article: articles,
           isListed: resourceDiscoveryControl.isListed,
         })
@@ -147,14 +145,16 @@ export class ArticleService {
     }
   }
 
-  // 创建或更新文章
-  async upsertArticle(params: UpsertArticleParams): Promise<ServiceResult<ArticleDetail>> {
+  /**
+   * Create or update an article.
+   * Returns only articleId - caller should commit and then call getArticle to get full detail.
+   */
+  async upsertArticle(params: UpsertArticleParams): Promise<ServiceResult<{ articleId: string }>> {
     const { articleId, authorId, data } = params;
 
     try {
       // 验证 (artifactId, artifactCommit) 对应的 artifact 版本存在
-      const [version] = await this.db
-        .select({ id: artifactVersions.id })
+      const [version] = await this.ctx.select({ id: artifactVersions.id })
         .from(artifactVersions)
         .where(
           and(
@@ -179,8 +179,7 @@ export class ArticleService {
 
       if (gameRefs.length > 0) {
         const saveCommits = [...new Set(gameRefs.map(ref => ref.saveCommit))];
-        const existingSaves = await this.db
-          .select({ commit: nodeVersions.commit })
+        const existingSaves = await this.ctx.select({ commit: nodeVersions.commit })
           .from(nodeVersions)
           .where(
             and(
@@ -204,8 +203,7 @@ export class ArticleService {
       }
 
       // 检查文章是否存在
-      const [existing] = await this.db
-        .select()
+      const [existing] = await this.ctx.select()
         .from(articles)
         .where(eq(articles.id, articleId))
         .limit(1);
@@ -222,76 +220,86 @@ export class ArticleService {
           };
         }
 
-        // 执行更新
-        await this.db
-          .update(articles)
-          .set({
+        // 收集更新操作
+        this.ctx.modify(db =>
+          db.update(articles)
+            .set({
+              title: data.title,
+              artifactId: data.artifactId,
+              artifactCommit: data.artifactCommit,
+              content: data.content as ReaderContent,
+              updatedAt: sql`(datetime('now'))`,
+            })
+            .where(eq(articles.id, articleId))
+        );
+
+        // 更新发现控制（使用 upsert 模式）
+        this.ctx.modify(db =>
+          db.insert(resourceDiscoveryControl)
+            .values({
+              resourceType: 'article',
+              resourceId: articleId,
+              isListed,
+            })
+            .onConflictDoUpdate({
+              target: [resourceDiscoveryControl.resourceType, resourceDiscoveryControl.resourceId],
+              set: {
+                isListed,
+                updatedAt: sql`(datetime('now'))`,
+              },
+            })
+        );
+      } else {
+        // 创建模式
+        this.ctx.modify(db =>
+          db.insert(articles).values({
+            id: articleId,
+            authorId,
             title: data.title,
             artifactId: data.artifactId,
             artifactCommit: data.artifactCommit,
             content: data.content as ReaderContent,
-            updatedAt: sql`(datetime('now'))`,
           })
-          .where(eq(articles.id, articleId));
+        );
 
-        // 更新发现控制
-        await this.db
-          .insert(resourceDiscoveryControl)
-          .values({
+        // 创建发现控制记录
+        this.ctx.modify(db =>
+          db.insert(resourceDiscoveryControl).values({
             resourceType: 'article',
             resourceId: articleId,
             isListed,
           })
-          .onConflictDoUpdate({
-            target: [resourceDiscoveryControl.resourceType, resourceDiscoveryControl.resourceId],
-            set: {
-              isListed,
-              updatedAt: sql`(datetime('now'))`,
-            },
-          });
-      } else {
-        // 创建模式
-        await this.db.insert(articles).values({
-          id: articleId,
-          authorId,
-          title: data.title,
-          artifactId: data.artifactId,
-          artifactCommit: data.artifactCommit,
-          content: data.content as ReaderContent,
-        });
-
-        // 创建发现控制记录
-        await this.db.insert(resourceDiscoveryControl).values({
-          resourceType: 'article',
-          resourceId: articleId,
-          isListed,
-        });
+        );
 
         // 创建 owner ACL（manage + write + read）
-        await this.db.insert(resourceAcl).values({
-          resourceType: 'article',
-          resourceId: articleId,
-          userId: authorId,
-          canRead: true,
-          canWrite: true,
-          canManage: true,
-          grantedBy: authorId,
-        });
+        this.ctx.modify(db =>
+          db.insert(resourceAcl).values({
+            resourceType: 'article',
+            resourceId: articleId,
+            userId: authorId,
+            canRead: true,
+            canWrite: true,
+            canManage: true,
+            grantedBy: authorId,
+          })
+        );
 
         // 默认创建公开读取 ACL
-        await this.db.insert(resourceAcl).values({
-          resourceType: 'article',
-          resourceId: articleId,
-          userId: PUBLIC_USER_ID,
-          canRead: true,
-          canWrite: false,
-          canManage: false,
-          grantedBy: authorId,
-        });
+        this.ctx.modify(db =>
+          db.insert(resourceAcl).values({
+            resourceType: 'article',
+            resourceId: articleId,
+            userId: PUBLIC_USER_ID,
+            canRead: true,
+            canWrite: false,
+            canManage: false,
+            grantedBy: authorId,
+          })
+        );
       }
 
-      // 返回完整的文章详情
-      return this.getArticle(articleId);
+      // Return articleId - caller should commit and then call getArticle
+      return { success: true, data: { articleId } };
     } catch (error) {
       console.error('Failed to upsert article:', error);
       return {
@@ -314,8 +322,7 @@ export class ArticleService {
 
     try {
       // 获取总数（仅列出的文章）
-      const [countResult] = await this.db
-        .select({ count: count() })
+      const [countResult] = await this.ctx.select({ count: count() })
         .from(articles)
         .innerJoin(
           resourceDiscoveryControl,
@@ -335,8 +342,7 @@ export class ArticleService {
       const totalPages = Math.ceil(total / validLimit);
 
       // 获取文章列表
-      const articleList = await this.db
-        .select({
+      const articleList = await this.ctx.select({
           article: articles,
           isListed: resourceDiscoveryControl.isListed,
         })

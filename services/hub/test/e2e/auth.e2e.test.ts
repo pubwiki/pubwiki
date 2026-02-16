@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
-import { createApiClient, createAuthClient } from '@pubwiki/api/client';
+import { createApiClient } from '@pubwiki/api/client';
 import { registerUser, loginUser } from './helpers';
 
 describe('E2E: Auth Flow (Better-Auth)', () => {

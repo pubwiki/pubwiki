@@ -143,7 +143,7 @@ export const getUserArtifactsQuerySortByDefault = `createdAt`;export const getUs
 export const GetUserArtifactsQueryParams = zod.object({
   "page": zod.number().min(1).default(getUserArtifactsQueryPageDefault).describe('页码'),
   "limit": zod.number().min(1).max(getUserArtifactsQueryLimitMax).default(getUserArtifactsQueryLimitDefault).describe('每页数量'),
-  "sortBy": zod.enum(['createdAt', 'updatedAt', 'viewCount', 'starCount']).default(getUserArtifactsQuerySortByDefault).describe('排序字段'),
+  "sortBy": zod.enum(['createdAt', 'updatedAt', 'viewCount', 'favCount']).default(getUserArtifactsQuerySortByDefault).describe('排序字段'),
   "sortOrder": zod.enum(['asc', 'desc']).default(getUserArtifactsQuerySortOrderDefault).describe('排序方向')
 })
 
@@ -176,11 +176,11 @@ export const GetUserArtifactsResponse = zod.object({
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
   "stats": zod.object({
-  "viewCount": zod.number().optional(),
-  "favCount": zod.number().optional(),
-  "refCount": zod.number().optional(),
-  "downloadCount": zod.number().optional()
-}).optional()
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
 })),
   "pagination": zod.object({
   "page": zod.number().min(1),
@@ -267,7 +267,7 @@ export const ListArtifactsQueryParams = zod.object({
   "limit": zod.number().min(1).max(listArtifactsQueryLimitMax).default(listArtifactsQueryLimitDefault).describe('每页数量'),
   "tag.include": zod.array(zod.string()).optional().describe('包含的标签 slug 列表（AND 逻辑）'),
   "tag.exclude": zod.array(zod.string()).optional().describe('排除的标签 slug 列表'),
-  "sortBy": zod.enum(['createdAt', 'updatedAt', 'viewCount', 'starCount']).default(listArtifactsQuerySortByDefault).describe('排序字段'),
+  "sortBy": zod.enum(['createdAt', 'updatedAt', 'viewCount', 'favCount']).default(listArtifactsQuerySortByDefault).describe('排序字段'),
   "sortOrder": zod.enum(['asc', 'desc']).default(listArtifactsQuerySortOrderDefault).describe('排序方向')
 })
 
@@ -300,11 +300,11 @@ export const ListArtifactsResponse = zod.object({
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
   "stats": zod.object({
-  "viewCount": zod.number().optional(),
-  "favCount": zod.number().optional(),
-  "refCount": zod.number().optional(),
-  "downloadCount": zod.number().optional()
-}).optional()
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
 })),
   "pagination": zod.object({
   "page": zod.number().min(1),
@@ -388,10 +388,10 @@ export const CreateArtifactBody = zod.object({
   "content": zod.union([zod.object({
   "type": zod.enum(['INPUT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })])),
   "mountpoints": zod.array(zod.object({
@@ -406,10 +406,10 @@ export const CreateArtifactBody = zod.object({
 }),zod.object({
   "type": zod.enum(['PROMPT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })]))
 }),zod.object({
@@ -523,11 +523,11 @@ export const CreateArtifactResponse = zod.object({
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
   "stats": zod.object({
-  "viewCount": zod.number().optional(),
-  "favCount": zod.number().optional(),
-  "refCount": zod.number().optional(),
-  "downloadCount": zod.number().optional()
-}).optional()
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
 })
 })
 
@@ -578,10 +578,10 @@ export const PatchArtifactBody = zod.object({
   "content": zod.union([zod.object({
   "type": zod.enum(['INPUT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })])),
   "mountpoints": zod.array(zod.object({
@@ -596,10 +596,10 @@ export const PatchArtifactBody = zod.object({
 }),zod.object({
   "type": zod.enum(['PROMPT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })]))
 }),zod.object({
@@ -730,11 +730,11 @@ export const PatchArtifactResponse = zod.object({
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
   "stats": zod.object({
-  "viewCount": zod.number().optional(),
-  "favCount": zod.number().optional(),
-  "refCount": zod.number().optional(),
-  "downloadCount": zod.number().optional()
-}).optional()
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
 }),
   "versionCreated": zod.boolean().describe('是否创建了新版本（false 表示仅更新了 metadata）')
 })
@@ -837,10 +837,10 @@ export const GetArtifactGraphResponse = zod.object({
   "content": zod.union([zod.object({
   "type": zod.enum(['INPUT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })])),
   "mountpoints": zod.array(zod.object({
@@ -855,10 +855,10 @@ export const GetArtifactGraphResponse = zod.object({
 }),zod.object({
   "type": zod.enum(['PROMPT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })]))
 }),zod.object({
@@ -1158,11 +1158,11 @@ export const GetProjectDetailResponse = zod.object({
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
   "stats": zod.object({
-  "viewCount": zod.number().optional(),
-  "favCount": zod.number().optional(),
-  "refCount": zod.number().optional(),
-  "downloadCount": zod.number().optional()
-}).optional()
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
 }),
   "role": zod.object({
   "id": zod.uuid(),
@@ -1274,11 +1274,11 @@ export const ListProjectArtifactsResponse = zod.object({
   "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
 })).optional(),
   "stats": zod.object({
-  "viewCount": zod.number().optional(),
-  "favCount": zod.number().optional(),
-  "refCount": zod.number().optional(),
-  "downloadCount": zod.number().optional()
-}).optional()
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
 }),
   "role": zod.object({
   "id": zod.uuid(),
@@ -2233,10 +2233,10 @@ export const GetNodeVersionResponse = zod.object({
   "content": zod.union([zod.object({
   "type": zod.enum(['INPUT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })])),
   "mountpoints": zod.array(zod.object({
@@ -2251,10 +2251,10 @@ export const GetNodeVersionResponse = zod.object({
 }),zod.object({
   "type": zod.enum(['PROMPT']),
   "blocks": zod.array(zod.union([zod.object({
-  "type": zod.literal("text"),
+  "type": zod.literal("TextBlock"),
   "value": zod.string()
 }),zod.object({
-  "type": zod.literal("reftag"),
+  "type": zod.literal("RefTagBlock"),
   "name": zod.string().describe('引用的节点名称')
 })]))
 }),zod.object({

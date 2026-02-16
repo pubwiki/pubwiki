@@ -982,12 +982,7 @@ export interface components {
                 avatarUrl?: string | null;
             };
             tags?: components["schemas"]["Tag"][];
-            stats?: {
-                viewCount?: number;
-                favCount?: number;
-                refCount?: number;
-                downloadCount?: number;
-            };
+            stats?: components["schemas"]["ArtifactStats"];
         };
         NodeRef: {
             /**
@@ -1594,6 +1589,35 @@ export interface components {
             targetCommit: string;
             refType: components["schemas"]["NodeVersionRefType"];
         };
+        /**
+         * @description Artifact 列表排序字段
+         * @default createdAt
+         * @enum {string}
+         */
+        ArtifactSortBy: "createdAt" | "updatedAt" | "viewCount" | "favCount";
+        /**
+         * @description 排序方向
+         * @default desc
+         * @enum {string}
+         */
+        SortOrder: "asc" | "desc";
+        /** @description Artifact 统计信息 */
+        ArtifactStats: {
+            /** @description 浏览次数 */
+            viewCount?: number;
+            /** @description 收藏次数 */
+            favCount?: number;
+            /** @description 引用次数（被 fork 次数） */
+            refCount?: number;
+            /** @description 下载次数 */
+            downloadCount?: number;
+        };
+        /**
+         * @description Project 列表排序字段
+         * @default createdAt
+         * @enum {string}
+         */
+        ProjectSortBy: "createdAt" | "updatedAt";
         ArtifactEntrypoint: {
             /** @description Save 的 commit hash，指定启动时加载的存档 */
             saveCommit: string;
@@ -1773,6 +1797,12 @@ export interface components {
          *     weak 版本不对 node 产生引用计数，标记后尝试 GC 引用计数归零的 node 内容。
          */
         MarkVersionWeakRequest: Record<string, never>;
+        /**
+         * @description Discussion 列表排序字段
+         * @default createdAt
+         * @enum {string}
+         */
+        DiscussionSortBy: "createdAt" | "updatedAt" | "replyCount";
     };
     responses: never;
     parameters: never;
@@ -1892,9 +1922,9 @@ export interface operations {
                 /** @description 每页数量 */
                 limit?: number;
                 /** @description 排序字段 */
-                sortBy?: "createdAt" | "updatedAt" | "viewCount" | "starCount";
+                sortBy?: components["schemas"]["ArtifactSortBy"];
                 /** @description 排序方向 */
-                sortOrder?: "asc" | "desc";
+                sortOrder?: components["schemas"]["SortOrder"];
             };
             header?: never;
             path: {
@@ -1947,9 +1977,9 @@ export interface operations {
                 /** @description 按用户角色过滤（owner 或 maintainer） */
                 role?: "owner" | "maintainer";
                 /** @description 排序字段 */
-                sortBy?: "createdAt" | "updatedAt";
+                sortBy?: components["schemas"]["ProjectSortBy"];
                 /** @description 排序方向 */
-                sortOrder?: "asc" | "desc";
+                sortOrder?: components["schemas"]["SortOrder"];
             };
             header?: never;
             path: {
@@ -2004,9 +2034,9 @@ export interface operations {
                 /** @description 排除的标签 slug 列表 */
                 "tag.exclude"?: string[];
                 /** @description 排序字段 */
-                sortBy?: "createdAt" | "updatedAt" | "viewCount" | "starCount";
+                sortBy?: components["schemas"]["ArtifactSortBy"];
                 /** @description 排序方向 */
-                sortOrder?: "asc" | "desc";
+                sortOrder?: components["schemas"]["SortOrder"];
             };
             header?: never;
             path?: never;
@@ -2524,9 +2554,9 @@ export interface operations {
                 /** @description 按 topic（hashtag）过滤 */
                 topic?: string;
                 /** @description 排序字段 */
-                sortBy?: "createdAt" | "updatedAt";
+                sortBy?: components["schemas"]["ProjectSortBy"];
                 /** @description 排序方向 */
-                sortOrder?: "asc" | "desc";
+                sortOrder?: components["schemas"]["SortOrder"];
             };
             header?: never;
             path?: never;
@@ -2842,9 +2872,9 @@ export interface operations {
                 /** @description 每页数量 */
                 limit?: number;
                 /** @description 排序字段 */
-                sortBy?: "createdAt" | "updatedAt";
+                sortBy?: components["schemas"]["ProjectSortBy"];
                 /** @description 排序方向 */
-                sortOrder?: "asc" | "desc";
+                sortOrder?: components["schemas"]["SortOrder"];
             };
             header?: never;
             path: {
@@ -3135,9 +3165,9 @@ export interface operations {
                 /** @description 每页数量 */
                 limit?: number;
                 /** @description 排序字段 */
-                sortBy?: "createdAt" | "updatedAt" | "replyCount";
+                sortBy?: components["schemas"]["DiscussionSortBy"];
                 /** @description 排序方向 */
-                sortOrder?: "asc" | "desc";
+                sortOrder?: components["schemas"]["SortOrder"];
             };
             header?: never;
             path?: never;

@@ -1,21 +1,23 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, ArticleService } from '@pubwiki/db';
+import { createDb, BatchContext, ArticleService } from '@pubwiki/db';
 import type {
   ApiError,
   ArticleDetail,
   Pagination,
+  ReaderContent,
 } from '@pubwiki/api';
 import { ListArticlesByArtifactQueryParams } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
 import { validateQuery, isValidationError } from '../lib/validate';
+import { serviceErrorResponse } from '../lib/service-error';
 
 export const articlesRoute = new Hono<{ Bindings: Env }>();
 
 // 获取与 artifact 关联的所有文章（分页）
 articlesRoute.get('/by-artifact/:artifactId', async (c) => {
-  const db = createDb(c.env.DB);
-  const articleService = new ArticleService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const articleService = new ArticleService(ctx);
 
   const artifactId = c.req.param('artifactId');
 
@@ -34,10 +36,7 @@ articlesRoute.get('/by-artifact/:artifactId', async (c) => {
   });
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<{ articles: ArticleDetail[]; pagination: Pagination }>(result.data);
@@ -45,8 +44,8 @@ articlesRoute.get('/by-artifact/:artifactId', async (c) => {
 
 // 获取文章详情
 articlesRoute.get('/:articleId', async (c) => {
-  const db = createDb(c.env.DB);
-  const articleService = new ArticleService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const articleService = new ArticleService(ctx);
 
   const articleId = c.req.param('articleId');
 
@@ -58,10 +57,7 @@ articlesRoute.get('/:articleId', async (c) => {
   const result = await articleService.getArticle(articleId);
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<ArticleDetail>(result.data);
@@ -69,8 +65,8 @@ articlesRoute.get('/:articleId', async (c) => {
 
 // 创建或更新文章
 articlesRoute.put('/:articleId', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const articleService = new ArticleService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const articleService = new ArticleService(ctx);
   const user = c.get('user');
 
   const articleId = c.req.param('articleId');
@@ -138,23 +134,26 @@ articlesRoute.put('/:articleId', authMiddleware, async (c) => {
       title: body.title as string,
       artifactId: body.artifactId as string,
       artifactCommit: body.artifactCommit as string,
-      content: body.content as any,
+      content: body.content as ReaderContent,
       isListed: body.isListed as boolean | undefined,
     },
   });
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    if (result.error.code === 'FORBIDDEN') {
-      return c.json<ApiError>({ error: result.error.message }, 403);
-    }
-    if (result.error.code === 'BAD_REQUEST') {
-      return c.json<ApiError>({ error: result.error.message }, 400);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
-  return c.json<ArticleDetail>(result.data);
+  // Commit the batch to persist changes
+  await ctx.commit();
+
+  // Query the full article detail
+  const detailCtx = new BatchContext(createDb(c.env.DB));
+  const detailService = new ArticleService(detailCtx);
+  const detailResult = await detailService.getArticle(result.data.articleId);
+
+  if (!detailResult.success) {
+    return serviceErrorResponse(c, detailResult.error);
+  }
+
+  return c.json<ArticleDetail>(detailResult.data);
 });

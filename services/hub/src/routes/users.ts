@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, ArtifactService, ProjectService, UserService, type ListUserArtifactsParams, type ListUserProjectsParams } from '@pubwiki/db';
+import { BatchContext, createDb, ArtifactService, ProjectService, UserService, type ListUserArtifactsParams, type ListUserProjectsParams } from '@pubwiki/db';
 import type { GetUserArtifactsResponse, GetUserProjectsResponse, ApiError } from '@pubwiki/api';
 import { GetUserArtifactsQueryParams, GetUserProjectsQueryParams } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware } from '../middleware/auth';
@@ -10,9 +10,9 @@ const usersRoute = new Hono<{ Bindings: Env }>();
 
 // 获取用户的 artifact 列表
 usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
-  const userService = new UserService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
+  const userService = new UserService(ctx);
   const userId = c.req.param('userId');
   const currentUser = c.get('user');
 
@@ -42,9 +42,9 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
 
 // 获取用户的 project 列表（own 或 maintain 的）
 usersRoute.get('/:userId/projects', optionalAuthMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const projectService = new ProjectService(db);
-  const userService = new UserService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const projectService = new ProjectService(ctx);
+  const userService = new UserService(ctx);
   const userId = c.req.param('userId');
   const currentUser = c.get('user');
 

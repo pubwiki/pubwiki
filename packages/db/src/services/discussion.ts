@@ -1,8 +1,8 @@
 import { eq, and, desc, asc, count, sql } from 'drizzle-orm';
-import type { Database } from '../client';
+import type { BatchContext } from '../batch-context';
 import { discussions, discussionReplies, type Discussion, type DiscussionReply, type NewDiscussion, type NewDiscussionReply } from '../schema/discussions';
-import { user, type User } from '../schema/auth';
-import type { ServiceError, ServiceResult } from './user';
+import { user } from '../schema/auth';
+import type { ServiceResult } from './user';
 import type {
   DiscussionListItem,
   DiscussionDetail,
@@ -64,11 +64,11 @@ interface AuthorInfo {
 }
 
 export class DiscussionService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   // 获取作者信息
   private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
-    const result = await this.db
+    const result = await this.ctx
       .select({
         id: user.id,
         username: user.username,
@@ -146,7 +146,7 @@ export class DiscussionService {
       }
 
       // 计算总数
-      const [totalResult] = await this.db
+      const [totalResult] = await this.ctx
         .select({ count: count() })
         .from(discussions)
         .where(and(...conditions));
@@ -170,7 +170,7 @@ export class DiscussionService {
       orderClauses.push(sortOrder === 'asc' ? asc(sortColumn) : desc(sortColumn));
 
       // 查询讨论列表
-      const discussionList = await this.db
+      const discussionList = await this.ctx
         .select()
         .from(discussions)
         .where(and(...conditions))
@@ -183,7 +183,7 @@ export class DiscussionService {
       const authorsMap = new Map<string, AuthorInfo>();
 
       if (authorIds.length > 0) {
-        const authorsResult = await this.db
+        const authorsResult = await this.ctx
           .select({
             id: user.id,
             username: user.username,
@@ -228,7 +228,7 @@ export class DiscussionService {
   // 获取讨论详情
   async getDiscussion(id: string): Promise<ServiceResult<DiscussionDetail>> {
     try {
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select()
         .from(discussions)
         .where(eq(discussions.id, id))
@@ -287,7 +287,8 @@ export class DiscussionService {
         category: data.category ?? 'GENERAL',
       };
 
-      const [inserted] = await this.db
+      // Use unwrapDb for insert with returning (batch doesn't support returning)
+      const [inserted] = await this.ctx.unwrapDb()
         .insert(discussions)
         .values(newDiscussion)
         .returning();
@@ -313,7 +314,7 @@ export class DiscussionService {
   ): Promise<ServiceResult<DiscussionDetail>> {
     try {
       // 获取讨论
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select()
         .from(discussions)
         .where(eq(discussions.id, id))
@@ -351,7 +352,8 @@ export class DiscussionService {
       if (data.content !== undefined) updateData.content = data.content;
       if (data.category !== undefined) updateData.category = data.category;
 
-      const [updated] = await this.db
+      // Use unwrapDb for update with returning (batch doesn't support returning)
+      const [updated] = await this.ctx.unwrapDb()
         .update(discussions)
         .set(updateData)
         .where(eq(discussions.id, id))
@@ -376,7 +378,7 @@ export class DiscussionService {
   async deleteDiscussion(id: string, userId: string): Promise<ServiceResult<void>> {
     try {
       // 获取讨论
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select()
         .from(discussions)
         .where(eq(discussions.id, id))
@@ -397,7 +399,7 @@ export class DiscussionService {
         };
       }
 
-      await this.db.delete(discussions).where(eq(discussions.id, id));
+      this.ctx.modify(db => db.delete(discussions).where(eq(discussions.id, id)));
 
       return { success: true, data: undefined };
     } catch (error) {
@@ -412,7 +414,7 @@ export class DiscussionService {
   // 置顶/取消置顶讨论（管理员功能）
   async pinDiscussion(id: string, isPinned: boolean): Promise<ServiceResult<DiscussionDetail>> {
     try {
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select()
         .from(discussions)
         .where(eq(discussions.id, id))
@@ -425,7 +427,8 @@ export class DiscussionService {
         };
       }
 
-      const [updated] = await this.db
+      // Use unwrapDb for update with returning
+      const [updated] = await this.ctx.unwrapDb()
         .update(discussions)
         .set({ isPinned, updatedAt: new Date().toISOString() })
         .where(eq(discussions.id, id))
@@ -449,7 +452,7 @@ export class DiscussionService {
   // 锁定/解锁讨论（管理员功能）
   async lockDiscussion(id: string, isLocked: boolean): Promise<ServiceResult<DiscussionDetail>> {
     try {
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select()
         .from(discussions)
         .where(eq(discussions.id, id))
@@ -462,7 +465,8 @@ export class DiscussionService {
         };
       }
 
-      const [updated] = await this.db
+      // Use unwrapDb for update with returning
+      const [updated] = await this.ctx.unwrapDb()
         .update(discussions)
         .set({ isLocked, updatedAt: new Date().toISOString() })
         .where(eq(discussions.id, id))
@@ -491,7 +495,7 @@ export class DiscussionService {
 
     try {
       // 检查讨论是否存在
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select({ id: discussions.id })
         .from(discussions)
         .where(eq(discussions.id, discussionId))
@@ -505,7 +509,7 @@ export class DiscussionService {
       }
 
       // 计算总数
-      const [totalResult] = await this.db
+      const [totalResult] = await this.ctx
         .select({ count: count() })
         .from(discussionReplies)
         .where(eq(discussionReplies.discussionId, discussionId));
@@ -515,7 +519,7 @@ export class DiscussionService {
       const offset = (page - 1) * limit;
 
       // 查询回复列表
-      const replyList = await this.db
+      const replyList = await this.ctx
         .select()
         .from(discussionReplies)
         .where(eq(discussionReplies.discussionId, discussionId))
@@ -528,7 +532,7 @@ export class DiscussionService {
       const authorsMap = new Map<string, AuthorInfo>();
 
       if (authorIds.length > 0) {
-        const authorsResult = await this.db
+        const authorsResult = await this.ctx
           .select({
             id: user.id,
             username: user.username,
@@ -578,7 +582,7 @@ export class DiscussionService {
   ): Promise<ServiceResult<DiscussionReplyItem>> {
     try {
       // 获取讨论
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select()
         .from(discussions)
         .where(eq(discussions.id, discussionId))
@@ -610,7 +614,7 @@ export class DiscussionService {
 
       // 如果有父回复，验证其存在
       if (data.parentReplyId) {
-        const [parentReply] = await this.db
+        const [parentReply] = await this.ctx
           .select({ id: discussionReplies.id })
           .from(discussionReplies)
           .where(and(
@@ -634,36 +638,41 @@ export class DiscussionService {
         content: data.content,
       };
 
-      // 使用 batch 保证原子性：插入回复 + 更新讨论回复计数
+      // 收集操作：插入回复 + 更新讨论回复计数
       const replyId = crypto.randomUUID();
       const now = new Date().toISOString();
       
-      await this.db.batch([
-        this.db.insert(discussionReplies).values({
+      this.ctx.modify(db =>
+        db.insert(discussionReplies).values({
           ...newReply,
           id: replyId,
           createdAt: now,
           updatedAt: now,
-        }),
-        this.db
-          .update(discussions)
+        })
+      );
+      this.ctx.modify(db =>
+        db.update(discussions)
           .set({
             replyCount: sql`${discussions.replyCount} + 1`,
             updatedAt: now,
           })
-          .where(eq(discussions.id, discussionId)),
-      ]);
+          .where(eq(discussions.id, discussionId))
+      );
 
-      // 获取插入的回复
-      const [inserted] = await this.db
-        .select()
-        .from(discussionReplies)
-        .where(eq(discussionReplies.id, replyId))
-        .limit(1);
+      // Note: 在 commit 后数据才会真正写入，但这里返回预期结果
+      const insertedReply = {
+        id: replyId,
+        discussionId,
+        authorId,
+        parentReplyId: newReply.parentReplyId ?? null,
+        content: newReply.content,
+        createdAt: now,
+        updatedAt: now,
+      };
 
       return {
         success: true,
-        data: this.toReplyItem(inserted, author),
+        data: this.toReplyItem(insertedReply as typeof discussionReplies.$inferSelect, author),
       };
     } catch (error) {
       console.error('Error creating reply:', error);
@@ -678,7 +687,7 @@ export class DiscussionService {
   async deleteReply(replyId: string, userId: string): Promise<ServiceResult<void>> {
     try {
       // 获取回复
-      const [reply] = await this.db
+      const [reply] = await this.ctx
         .select()
         .from(discussionReplies)
         .where(eq(discussionReplies.id, replyId))
@@ -700,26 +709,26 @@ export class DiscussionService {
       }
 
       // 获取讨论
-      const [discussion] = await this.db
+      const [discussion] = await this.ctx
         .select()
         .from(discussions)
         .where(eq(discussions.id, reply.discussionId))
         .limit(1);
 
-      // 使用 batch 保证原子性：删除回复 + 更新讨论回复计数
+      // 收集操作：删除回复 + 更新讨论回复计数
+      this.ctx.modify(db =>
+        db.delete(discussionReplies).where(eq(discussionReplies.id, replyId))
+      );
+      
       if (discussion) {
-        await this.db.batch([
-          this.db.delete(discussionReplies).where(eq(discussionReplies.id, replyId)),
-          this.db
-            .update(discussions)
+        this.ctx.modify(db =>
+          db.update(discussions)
             .set({
               replyCount: sql`CASE WHEN ${discussions.replyCount} > 0 THEN ${discussions.replyCount} - 1 ELSE 0 END`,
               updatedAt: new Date().toISOString(),
             })
-            .where(eq(discussions.id, reply.discussionId)),
-        ]);
-      } else {
-        await this.db.delete(discussionReplies).where(eq(discussionReplies.id, replyId));
+            .where(eq(discussions.id, reply.discussionId))
+        );
       }
 
       return { success: true, data: undefined };

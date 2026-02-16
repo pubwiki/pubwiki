@@ -47,16 +47,12 @@
         in: query
         description: 排序字段
         schema:
-          type: string
-          enum: [createdAt, updatedAt, replyCount]
-          default: createdAt
+          $ref: '../schemas/artifact.yaml#/DiscussionSortBy'
       - name: sortOrder
         in: query
         description: 排序方向
         schema:
-          type: string
-          enum: [asc, desc]
-          default: desc
+          $ref: '../schemas/artifact.yaml#/SortOrder'
     responses:
       '200':
         description: 成功获取讨论列表

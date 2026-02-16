@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
-import { registerUser, createVfsTarGz } from './helpers';
+import { registerUser } from './helpers';
 
 /**
  * E2E 测试：访问控制
@@ -29,7 +29,6 @@ describe('E2E: Access Control', () => {
 
   // User B: 另一个用户（非所有者）
   let userBSession: string;
-  let userBId: string;
 
   beforeAll(async () => {
     // 启动 worker 服务器
@@ -48,7 +47,6 @@ describe('E2E: Access Control', () => {
 
     const userBResult = await registerUser(baseUrl, `access_other_${Date.now()}`);
     userBSession = userBResult.sessionCookie;
-    userBId = userBResult.userId;
   });
 
   afterAll(async () => {
@@ -366,12 +364,10 @@ describe('E2E: Access Control', () => {
 
     describe('Public + Listed (default)', () => {
       let projectId: string;
-      let projectSlug: string;
 
       beforeAll(async () => {
         const project = await createProject(userASession, { isListed: true });
         projectId = project.id;
-        projectSlug = project.slug;
       });
 
       it('should be accessible by anyone (unauthenticated)', async () => {

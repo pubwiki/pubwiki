@@ -1,5 +1,58 @@
 # Artifact-related schemas
 
+# ============================================================================
+# 通用枚举和排序类型
+# ============================================================================
+
+ArtifactSortBy:
+  type: string
+  description: Artifact 列表排序字段
+  enum: [createdAt, updatedAt, viewCount, favCount]
+  default: createdAt
+
+ProjectSortBy:
+  type: string
+  description: Project 列表排序字段
+  enum: [createdAt, updatedAt]
+  default: createdAt
+
+DiscussionSortBy:
+  type: string
+  description: Discussion 列表排序字段
+  enum: [createdAt, updatedAt, replyCount]
+  default: createdAt
+
+SortOrder:
+  type: string
+  description: 排序方向
+  enum: [asc, desc]
+  default: desc
+
+# ============================================================================
+# 统计类型
+# ============================================================================
+
+ArtifactStats:
+  type: object
+  description: Artifact 统计信息
+  properties:
+    viewCount:
+      type: integer
+      description: 浏览次数
+    favCount:
+      type: integer
+      description: 收藏次数
+    refCount:
+      type: integer
+      description: 引用次数（被 fork 次数）
+    downloadCount:
+      type: integer
+      description: 下载次数
+
+# ============================================================================
+# 基础类型
+# ============================================================================
+
 Tag:
   type: object
   required:
@@ -427,16 +480,7 @@ ArtifactListItem:
       items:
         $ref: './artifact.yaml#/Tag'
     stats:
-      type: object
-      properties:
-        viewCount:
-          type: integer
-        favCount:
-          type: integer
-        refCount:
-          type: integer
-        downloadCount:
-          type: integer
+      $ref: './artifact.yaml#/ArtifactStats'
 
 # ============================================================================
 # Patch Artifact API 专用类型

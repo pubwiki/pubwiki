@@ -2,7 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Env } from '../types';
 import { createAuth } from '../lib/auth';
 import { createDb, AclService } from '@pubwiki/db';
-import type { ResourceRef, AccessCheckResult } from '@pubwiki/db/services';
+import type { ResourceRef } from '@pubwiki/db/services';
 
 /**
  * 资源访问控制上下文

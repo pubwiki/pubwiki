@@ -996,7 +996,7 @@ async function createDiscussionReply(
 }
 
 // 创建 Mock 讨论
-async function createMockDiscussions(artifacts: MockArtifact[]): Promise<void> {
+async function createMockDiscussions(): Promise<void> {
   for (const discussion of mockDiscussions) {
     const artifact = createdArtifacts.get(discussion.artifactSlug);
     if (!artifact) {
@@ -1096,7 +1096,7 @@ async function createPost(
 }
 
 // 创建 Mock 动态
-async function createMockPosts(projects: MockProject[]): Promise<void> {
+async function createMockPosts(): Promise<void> {
   for (const post of mockPosts) {
     const project = createdProjects.get(post.projectSlug);
     if (!project) {
@@ -1128,7 +1128,7 @@ async function main() {
       throw new Error('API health check failed');
     }
     console.log('✓ API is available\n');
-  } catch (error) {
+  } catch {
     console.error('❌ Cannot connect to API. Make sure the server is running.');
     console.error('   Run: pnpm dev');
     process.exit(1);
@@ -1239,12 +1239,12 @@ async function main() {
 
   // 步骤 7: 创建讨论
   console.log('💬 Creating discussions...');
-  await createMockDiscussions(artifacts);
+  await createMockDiscussions();
   console.log('');
 
   // 步骤 8: 创建项目动态
   console.log('📢 Creating project posts...');
-  await createMockPosts(projects);
+  await createMockPosts();
   console.log('');
 
   // 步骤 9: 从 mock 目录加载并创建 articles

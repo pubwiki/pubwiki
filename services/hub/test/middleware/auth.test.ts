@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import { Hono } from 'hono';
 import { authMiddleware, optionalAuthMiddleware } from '../../src/middleware/auth';
-import { createDb, user, session, account, verification } from '@pubwiki/db';
+import { createDb, user, session } from '@pubwiki/db';
 import { clearDatabase, getTestDb, registerAndGetSession } from '../api/helpers';
 import type { ApiError } from '@pubwiki/api';
 

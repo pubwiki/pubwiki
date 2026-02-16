@@ -12,7 +12,6 @@ import {
   registerUser,
   artifacts,
   projects,
-  artifactStats,
   resourceAcl,
   resourceDiscoveryControl,
   PUBLIC_USER_ID,
@@ -73,17 +72,6 @@ describe('Users API', () => {
       }
       
       return artifact.id;
-    }
-
-    async function createArtifactStats(artifactId: string, viewCount: number, favCount: number): Promise<void> {
-      await db.insert(artifactStats).values({
-        artifactId,
-        viewCount,
-        favCount,
-        refCount: 0,
-        downloadCount: 0,
-        commentCount: 0,
-      });
     }
 
     beforeEach(async () => {

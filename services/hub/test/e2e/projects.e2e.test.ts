@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
-import type { CreateProjectMetadata, CreateProjectRole, CreateProjectPage } from '@pubwiki/api';
+import type { CreateProjectMetadata, CreateProjectPage } from '@pubwiki/api';
 import { registerUser } from './helpers';
 
 describe('E2E: Projects API', () => {
@@ -555,7 +555,7 @@ describe('E2E: Projects API', () => {
     });
 
     it('should return 400 for invalid sortBy value', async () => {
-      const { data, error, response } = await client.GET('/projects', {
+      const { error, response } = await client.GET('/projects', {
         params: {
           query: {
             // @ts-expect-error - testing invalid value
@@ -570,7 +570,7 @@ describe('E2E: Projects API', () => {
     });
 
     it('should return 400 for invalid sortOrder value', async () => {
-      const { data, error, response } = await client.GET('/projects', {
+      const { error, response } = await client.GET('/projects', {
         params: {
           query: {
             // @ts-expect-error - testing invalid value
@@ -634,7 +634,7 @@ describe('E2E: Projects API', () => {
     });
 
     it('should return 404 for non-existent project', async () => {
-      const { data, error, response } = await client.GET('/projects/{projectId}/pages/{pageId}', {
+      const { error, response } = await client.GET('/projects/{projectId}/pages/{pageId}', {
         params: {
           path: {
             projectId: '00000000-0000-0000-0000-000000000000',
@@ -673,7 +673,7 @@ describe('E2E: Projects API', () => {
       const createData = await createResponse.json() as { project: { id: string } };
       const projectId = createData.project.id;
 
-      const { data, error, response } = await client.GET('/projects/{projectId}/pages/{pageId}', {
+      const { error, response } = await client.GET('/projects/{projectId}/pages/{pageId}', {
         params: {
           path: { projectId, pageId: '00000000-0000-0000-0000-000000000000' },
         },

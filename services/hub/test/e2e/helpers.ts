@@ -1,44 +1,9 @@
 /**
  * E2E 测试辅助函数
- * 使用 @pubwiki/api 的 createAuthClient 进行认证
  */
-
-import { createAuthClient } from '@pubwiki/api/client';
 
 // 存储 cookies 的简单实现
 let storedCookies: Map<string, string> = new Map();
-
-/**
- * 自定义 fetch，用于在 Node.js 环境中管理 cookies
- */
-function createCookieFetch() {
-  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const headers = new Headers(init?.headers);
-    
-    // 添加存储的 cookies
-    if (storedCookies.size > 0) {
-      const cookieStr = Array.from(storedCookies.entries())
-        .map(([k, v]) => `${k}=${v}`)
-        .join('; ');
-      headers.set('Cookie', cookieStr);
-    }
-    
-    const response = await fetch(input, { ...init, headers });
-    
-    // 保存响应中的 Set-Cookie
-    const setCookie = response.headers.get('Set-Cookie');
-    if (setCookie) {
-      // 解析 Set-Cookie header
-      const cookieParts = setCookie.split(';')[0];
-      const [name, value] = cookieParts.split('=');
-      if (name && value) {
-        storedCookies.set(name.trim(), value.trim());
-      }
-    }
-    
-    return response;
-  };
-}
 
 /**
  * 清除存储的 cookies
@@ -71,10 +36,7 @@ export async function registerUser(
   // 提取 origin（不包含 /api）
   const origin = new URL(baseUrl).origin;
   
-  // 创建带自定义 fetch 的 auth client
-  const authClient = createAuthClient(origin);
-  
-  // 使用 better-auth 客户端注册
+  // 使用 fetch API 直接注册（在 Node.js 环境中更容易控制 cookies）
   // 由于 better-auth/client 在 Node.js 环境中不会自动处理 cookies，
   // 我们直接使用 fetch API
   const response = await fetch(`${baseUrl}/auth/sign-up/email`, {

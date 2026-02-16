@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
-import { createApiClient } from '@pubwiki/api/client';
 import { registerUser } from './helpers';
 
 describe('E2E: Discussions API', () => {
   let worker: Unstable_DevWorker;
-  let client: ReturnType<typeof createApiClient>;
   let baseUrl: string;
   let sessionCookie: string;
   let testUserId: string;
@@ -21,7 +19,6 @@ describe('E2E: Discussions API', () => {
       persist: false,
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
-    client = createApiClient(baseUrl);
 
     // 创建测试用户并获取 session cookie
     const username = `discussion_test_${Date.now()}`;

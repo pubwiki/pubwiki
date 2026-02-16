@@ -31,7 +31,7 @@ describe('E2E: Users API', () => {
 
   describe('GET /users/{userId}/artifacts', () => {
     it('should return 404 for non-existent user', async () => {
-      const { data, error, response } = await client.GET('/users/{userId}/artifacts', {
+      const { error, response } = await client.GET('/users/{userId}/artifacts', {
         params: {
           path: {
             userId: '00000000-0000-0000-0000-000000000000',
@@ -138,7 +138,7 @@ describe('E2E: Users API', () => {
       const result = await registerUser(baseUrl, `artifactuser_${suffix}`);
       const userId = result.userId;
 
-      const { data, error, response } = await client.GET('/users/{userId}/artifacts', {
+      const { error, response } = await client.GET('/users/{userId}/artifacts', {
         params: {
           path: { userId },
           query: {
@@ -156,7 +156,7 @@ describe('E2E: Users API', () => {
 
   describe('GET /users/{userId}/projects', () => {
     it('should return 404 for non-existent user', async () => {
-      const { data, error, response } = await client.GET('/users/{userId}/projects', {
+      const { error, response } = await client.GET('/users/{userId}/projects', {
         params: {
           path: {
             userId: '00000000-0000-0000-0000-000000000000',
@@ -262,7 +262,7 @@ describe('E2E: Users API', () => {
       const result = await registerUser(baseUrl, `projectuser_${suffix}`);
       const userId = result.userId;
 
-      const { data, error, response } = await client.GET('/users/{userId}/projects', {
+      const { error, response } = await client.GET('/users/{userId}/projects', {
         params: {
           path: { userId },
           query: {
@@ -283,7 +283,7 @@ describe('E2E: Users API', () => {
       const result = await registerUser(baseUrl, `projectuser_${suffix}`);
       const userId = result.userId;
 
-      const { data, error, response } = await client.GET('/users/{userId}/projects', {
+      const { error, response } = await client.GET('/users/{userId}/projects', {
         params: {
           path: { userId },
           query: {

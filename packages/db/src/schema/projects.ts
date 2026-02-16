@@ -23,6 +23,8 @@ export const projects = sqliteTable(
     coverUrls: text('cover_urls'), // JSON array of cover image URLs
     homepageId: text('homepage_id'), // Reference to the homepage in projectPages
     isArchived: integer('is_archived', { mode: 'boolean' }).default(false).notNull(),
+    // Optimistic lock version (no state pointer field in this table)
+    version: integer('version').default(1).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   },

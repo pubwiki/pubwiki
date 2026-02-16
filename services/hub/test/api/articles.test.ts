@@ -105,39 +105,6 @@ describe('Articles API', () => {
     return nodeId;
   }
 
-  // Helper: 创建测试非 sandbox node
-  async function createTestNonSandboxNode(artifactId: string, name: string = 'Test Non-Sandbox Node'): Promise<string> {
-    const nodeId = crypto.randomUUID();
-    const contentHash = crypto.randomUUID().substring(0, 16);
-    const commit = await computeNodeCommit(nodeId, null, contentHash, 'GENERATED');
-    const [artifact] = await db.select().from(artifacts).where(eq(artifacts.id, artifactId)).limit(1);
-
-    await db.insert(nodeVersions).values({
-      nodeId,
-      commit,
-      authorId: artifact.authorId,
-      type: 'GENERATED',
-      name,
-      contentHash,
-      sourceArtifactId: artifactId,
-    });
-
-    // 创建 artifact version 并关联
-    const [version] = await db.insert(artifactVersions).values({
-      artifactId,
-      version: '1.0.0',
-      commitHash: crypto.randomUUID().substring(0, 8),
-    }).returning();
-
-    await db.insert(artifactVersionNodes).values({
-      commitHash: version.commitHash,
-      nodeId,
-      nodeCommit: commit,
-    });
-
-    return nodeId;
-  }
-
   // Helper: 创建测试 article 并添加访问控制记录
   async function createTestArticle(
     authorId: string,
@@ -224,7 +191,7 @@ describe('Articles API', () => {
     it('should return article details for existing article', async () => {
       const { userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
-      const sandboxNodeId = await createTestSandboxNode(artifactId);
+      await createTestSandboxNode(artifactId);
 
       // 直接创建文章
       const articleId = crypto.randomUUID();
@@ -347,7 +314,7 @@ describe('Articles API', () => {
     it('should return 400 for invalid title length', async () => {
       const { sessionCookie, userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
-      const sandboxNodeId = await createTestSandboxNode(artifactId);
+      await createTestSandboxNode(artifactId);
       const articleId = crypto.randomUUID();
       const artifactCommit = crypto.randomUUID().substring(0, 8);
 
@@ -389,7 +356,7 @@ describe('Articles API', () => {
     it('should return 400 for invalid isPrivate/isListed value', async () => {
       const { sessionCookie, userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
-      const sandboxNodeId = await createTestSandboxNode(artifactId);
+      await createTestSandboxNode(artifactId);
       const articleId = crypto.randomUUID();
       const artifactCommit = crypto.randomUUID().substring(0, 8);
 

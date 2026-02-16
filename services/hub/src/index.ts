@@ -11,7 +11,7 @@ import { articlesRoute } from './routes/articles';
 import { nodesRoute } from './routes/nodes';
 import { savesRoute } from './routes/saves';
 import { versionsRoute } from './routes/versions';
-import { authMiddleware, optionalAuthMiddleware } from './middleware/auth';
+import { authMiddleware } from './middleware/auth';
 import { createDb, eq, user as userTable } from '@pubwiki/db';
 import type { HealthCheckResponse, GetMeResponse, UpdateProfileRequest, UpdateProfileResponse, ApiError } from '@pubwiki/api';
 

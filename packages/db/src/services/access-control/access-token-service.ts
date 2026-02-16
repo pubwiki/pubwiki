@@ -29,7 +29,7 @@ export interface AccessTokenInfo {
   usageLimit: number | null;
   usageCount: number;
   label: string | null;
-}``
+}
 
 /**
  * 生成安全的随机 token

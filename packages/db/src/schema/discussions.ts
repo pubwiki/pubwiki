@@ -11,7 +11,7 @@ export const discussions = sqliteTable(
   'discussions',
   {
     id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-    // 多态关联: 支持 ARTIFACT, PROJECT 等多种目标类型
+    // Polymorphic association: supports ARTIFACT, PROJECT and other target types
     targetType: text('target_type').$type<DiscussionTargetType>().notNull(),
     targetId: text('target_id').notNull(),
     authorId: text('author_id')
@@ -23,6 +23,8 @@ export const discussions = sqliteTable(
     isPinned: integer('is_pinned', { mode: 'boolean' }).default(false).notNull(),
     isLocked: integer('is_locked', { mode: 'boolean' }).default(false).notNull(),
     replyCount: integer('reply_count').default(0).notNull(),
+    // Optimistic lock version (no state pointer field in this table)
+    version: integer('version').default(1).notNull(),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   },

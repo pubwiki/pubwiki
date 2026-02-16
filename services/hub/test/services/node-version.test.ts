@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import {
   createDb,
   NodeVersionService,
+  BatchContext,
   user,
   session,
   account,
@@ -22,6 +23,7 @@ import { computeNodeCommit } from '@pubwiki/api';
 
 describe('NodeVersionService', () => {
   let db: ReturnType<typeof createDb>;
+  let ctx: BatchContext;
   let service: NodeVersionService;
   let testUserId: string;
 
@@ -77,9 +79,17 @@ describe('NodeVersionService', () => {
     };
   }
 
+  // Helper: commit batch and reset context for next operation
+  async function commitAndReset(): Promise<void> {
+    await ctx.commit();
+    ctx = new BatchContext(db);
+    service = new NodeVersionService(ctx);
+  }
+
   beforeEach(async () => {
     db = createDb(env.DB);
-    service = new NodeVersionService(db);
+    ctx = new BatchContext(db);
+    service = new NodeVersionService(ctx);
 
     // Clean tables (reverse FK order)
     await db.delete(nodeVersionRefs);
@@ -115,6 +125,8 @@ describe('NodeVersionService', () => {
       expect(result.data.skipped).toBe(0);
       expect(result.data.errors).toHaveLength(0);
 
+      await commitAndReset();
+
       // Verify row in nodeVersions
       const rows = await db
         .select()
@@ -138,6 +150,8 @@ describe('NodeVersionService', () => {
       if (!result.success) return;
       expect(result.data.created).toBe(2);
 
+      await commitAndReset();
+
       const rows = await db
         .select()
         .from(nodeVersions)
@@ -152,6 +166,7 @@ describe('NodeVersionService', () => {
 
       // First sync
       await service.syncVersions([v]);
+      await commitAndReset();
 
       // Second sync with the same version
       const result = await service.syncVersions([v]);
@@ -160,6 +175,8 @@ describe('NodeVersionService', () => {
       if (!result.success) return;
       expect(result.data.created).toBe(0);
       expect(result.data.skipped).toBe(1);
+
+      await commitAndReset();
 
       // Only one row should exist
       const rows = await db
@@ -181,6 +198,7 @@ describe('NodeVersionService', () => {
           content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'shared content' }] },
         }),
       ]);
+      await commitAndReset();
 
       // Verify ref_count = 1
       const before = await db
@@ -198,6 +216,7 @@ describe('NodeVersionService', () => {
           content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'shared content' }] },
         }),
       ]);
+      await commitAndReset();
 
       // ref_count should now be 2
       const after = await db
@@ -221,6 +240,7 @@ describe('NodeVersionService', () => {
         contentHash: makeContentHash('inp'),
       });
       await service.syncVersions([inputV]);
+      await commitAndReset();
 
       // Create generated node with refs to input
       const genV = await inputVersion({
@@ -236,6 +256,7 @@ describe('NodeVersionService', () => {
         ],
       });
       await service.syncVersions([genV]);
+      await commitAndReset();
 
       // Verify refs in DB
       const refs = await db
@@ -248,7 +269,7 @@ describe('NodeVersionService', () => {
     });
 
     it('should store content in the correct typed table for each node type', async () => {
-      const types: Array<{ type: SyncNodeVersionInput['type']; table: any; content: unknown }> = [
+      const types: Array<{ type: SyncNodeVersionInput['type']; table: typeof inputContents | typeof promptContents | typeof generatedContents | typeof vfsContents | typeof sandboxContents | typeof loaderContents | typeof stateContents; content: unknown }> = [
         { type: 'INPUT', table: inputContents, content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'in' }] } },
         { type: 'PROMPT', table: promptContents, content: { type: 'PROMPT', blocks: [{ type: 'TextBlock', value: 'pr' }] } },
         { type: 'GENERATED', table: generatedContents, content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'gen' }], inputRef: { id: 'x', commit: 'y' } } },
@@ -267,6 +288,7 @@ describe('NodeVersionService', () => {
           content: content as SyncNodeVersionInput['content'],
         });
         await service.syncVersions([v]);
+        await commitAndReset();
 
         // Verify content in the correct table
         const rows = await db
@@ -301,6 +323,7 @@ describe('NodeVersionService', () => {
       const v3 = await inputVersion({ nodeId, parent: v2.commit, contentHash: makeContentHash('v03'), authoredAt: '2024-01-03T00:00:00Z' });
 
       await service.syncVersions([v1, v2, v3]);
+      await commitAndReset();
 
       const result = await service.getVersions(nodeId);
       expect(result.success).toBe(true);
@@ -329,6 +352,7 @@ describe('NodeVersionService', () => {
       const v5 = await inputVersion({ nodeId, parent: v4.commit, contentHash: makeContentHash('p05'), authoredAt: '2024-01-05T00:00:00Z' });
 
       await service.syncVersions([v1, v2, v3, v4, v5]);
+      await commitAndReset();
 
       // First page: limit 2
       const page1 = await service.getVersions(nodeId, { limit: 2 });
@@ -363,6 +387,7 @@ describe('NodeVersionService', () => {
       const v2 = await inputVersion({ nodeId, parent: v1.commit, contentHash: makeContentHash('fit2'), authoredAt: '2024-01-02T00:00:00Z' });
 
       await service.syncVersions([v1, v2]);
+      await commitAndReset();
 
       const result = await service.getVersions(nodeId, { limit: 10 });
       expect(result.success).toBe(true);
@@ -392,6 +417,7 @@ describe('NodeVersionService', () => {
       const v = await inputVersion({ nodeId, contentHash, content: { type: 'INPUT', blocks } });
 
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const result = await service.getVersion(v.commit);
       expect(result.success).toBe(true);
@@ -426,6 +452,7 @@ describe('NodeVersionService', () => {
       const vNew = await inputVersion({ nodeId, parent: vOld.commit, contentHash: makeContentHash('new'), authoredAt: '2024-06-01T00:00:00Z' });
 
       await service.syncVersions([vOld, vNew]);
+      await commitAndReset();
 
       const result = await service.getLatest(nodeId);
       expect(result.success).toBe(true);
@@ -454,11 +481,13 @@ describe('NodeVersionService', () => {
       // Create parent
       const parentV = await inputVersion({ nodeId, contentHash: makeContentHash('par'), authoredAt: '2024-01-01T00:00:00Z' });
       await service.syncVersions([parentV]);
+      await commitAndReset();
 
       // Create two children (fork)
       const ch1 = await inputVersion({ nodeId, parent: parentV.commit, contentHash: makeContentHash('ch1'), authoredAt: '2024-01-02T00:00:00Z' });
       const ch2 = await inputVersion({ nodeId, parent: parentV.commit, contentHash: makeContentHash('ch2'), authoredAt: '2024-01-03T00:00:00Z' });
       await service.syncVersions([ch1, ch2]);
+      await commitAndReset();
 
       const result = await service.getChildren(parentV.commit);
       expect(result.success).toBe(true);
@@ -476,6 +505,7 @@ describe('NodeVersionService', () => {
       const v = await inputVersion({ nodeId, contentHash: makeContentHash('leaf') });
 
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const result = await service.getChildren(v.commit);
       expect(result.success).toBe(true);
@@ -503,6 +533,7 @@ describe('NodeVersionService', () => {
 
       // Create input and prompt first
       await service.syncVersions([inputV, promptV]);
+      await commitAndReset();
 
       // Create generated with multiple refs
       const genV = await inputVersion({
@@ -516,6 +547,7 @@ describe('NodeVersionService', () => {
         ],
       });
       await service.syncVersions([genV]);
+      await commitAndReset();
 
       const result = await service.getVersionRefs(genV.commit);
       expect(result.success).toBe(true);
@@ -531,6 +563,7 @@ describe('NodeVersionService', () => {
       const v = await inputVersion({ nodeId, contentHash: makeContentHash('nrf') });
 
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const result = await service.getVersionRefs(v.commit);
       expect(result.success).toBe(true);
@@ -548,6 +581,7 @@ describe('NodeVersionService', () => {
       const v = await inputVersion({ nodeId, contentHash: makeContentHash('exi') });
 
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const exists = await service.versionExists(v.commit);
       expect(exists).toBe(true);
@@ -569,6 +603,7 @@ describe('NodeVersionService', () => {
       const fakeCommit = 'nonexistent00000';
 
       await service.syncVersions([v1]);
+      await commitAndReset();
 
       const existingSet = await service.filterExistingVersions([
         v1.commit,
@@ -599,6 +634,7 @@ describe('NodeVersionService', () => {
 
       // Build chain: v0 -> v1 -> v2 -> v3
       await service.syncVersions(versions);
+      await commitAndReset();
 
       // Verify chain via getChildren
       const children0 = await service.getChildren(versions[0].commit);
@@ -625,6 +661,7 @@ describe('NodeVersionService', () => {
       const fk3 = await inputVersion({ nodeId, parent: rootV.commit, contentHash: makeContentHash('fk3'), authoredAt: '2024-01-04T00:00:00Z' });
 
       await service.syncVersions([rootV, fk1, fk2, fk3]);
+      await commitAndReset();
 
       const children = await service.getChildren(rootV.commit);
       expect(children.success).toBe(true);
@@ -650,6 +687,7 @@ describe('NodeVersionService', () => {
         },
       });
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const rows = await db
         .select()
@@ -679,6 +717,7 @@ describe('NodeVersionService', () => {
         },
       });
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const rows = await db
         .select()
@@ -703,6 +742,7 @@ describe('NodeVersionService', () => {
         },
       });
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const rows = await db
         .select()
@@ -725,6 +765,7 @@ describe('NodeVersionService', () => {
         },
       });
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const rows = await db
         .select()
@@ -752,6 +793,7 @@ describe('NodeVersionService', () => {
       });
 
       await service.syncVersions([v]);
+      await commitAndReset();
 
       const rows = await db
         .select()
@@ -769,6 +811,7 @@ describe('NodeVersionService', () => {
 
       const vA = await inputVersion({ nodeId: nodeA, contentHash: makeContentHash('xra') });
       await service.syncVersions([vA]);
+      await commitAndReset();
 
       const vB = await inputVersion({
         nodeId: nodeB,
@@ -778,6 +821,7 @@ describe('NodeVersionService', () => {
         refs: [{ targetCommit: vA.commit, refType: 'input' }],
       });
       await service.syncVersions([vB]);
+      await commitAndReset();
 
       const refs = await service.getVersionRefs(vB.commit);
       if (!refs.success) return;

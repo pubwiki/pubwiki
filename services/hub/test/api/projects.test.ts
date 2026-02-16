@@ -21,7 +21,6 @@ import {
   resourceDiscoveryControl,
   PUBLIC_USER_ID,
   user,
-  eq,
   type TestDb,
 } from './helpers';
 
@@ -83,19 +82,6 @@ describe('Projects API', () => {
       }
       
       return project.id;
-    }
-
-    async function addCollaborator(projectId: string, userId: string): Promise<void> {
-      // 添加 ACL 写权限作为协作者
-      await db.insert(resourceAcl).values({
-        resourceType: 'project',
-        resourceId: projectId,
-        userId,
-        canRead: true,
-        canWrite: true,
-        canManage: false,
-        grantedBy: userId,
-      });
     }
 
     async function createTestArtifact(authorId: string, name: string): Promise<string> {
@@ -429,7 +415,7 @@ describe('Projects API', () => {
 
       expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('project not found');
+      expect(data.error).toBe('Project not found');
     });
 
     it('should return unlisted project without auth (unlisted but not private)', async () => {
@@ -890,7 +876,7 @@ describe('Projects API', () => {
       });
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
       expect(data.error).toContain('Artifacts not found');
     });
@@ -1003,7 +989,7 @@ describe('Projects API', () => {
 
       expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('project not found');
+      expect(data.error).toBe('Project not found');
     });
 
     it('should return unlisted project page without auth (unlisted but not private)', async () => {

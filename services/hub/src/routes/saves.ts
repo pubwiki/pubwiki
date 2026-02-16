@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, SaveService } from '@pubwiki/db';
+import { BatchContext, createDb, SaveService } from '@pubwiki/db';
 import type { ApiError, Pagination } from '@pubwiki/api';
 import { ListSavesQueryParams } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
 import { validateQuery, isValidationError } from '../lib/validate';
+import { serviceErrorResponse } from '../lib/service-error';
 
 export const savesRoute = new Hono<{ Bindings: Env }>();
 
@@ -12,8 +13,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 // POST /saves — 创建存档（multipart: metadata JSON + quads.bin）
 savesRoute.post('/', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const saveService = new SaveService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const saveService = new SaveService(ctx);
   const user = c.get('user');
 
   let formData: FormData;
@@ -81,29 +82,35 @@ savesRoute.post('/', authMiddleware, async (c) => {
   });
 
   if (!result.success) {
-    if (result.error.code === 'BAD_REQUEST') {
-      return c.json<ApiError>({ error: result.error.message }, 400);
-    }
-    if (result.error.code === 'CONFLICT') {
-      return c.json<ApiError>({ error: result.error.message }, 409);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
-  // 上传 quads.bin 到 R2（commit 全局唯一，作为 key）
+  // Commit the batch to persist changes
+  await ctx.commit();
+
+  // Upload quads.bin to R2 (commit is globally unique, used as key)
   const r2Key = saveService.getSaveDataKey(metadata.commit as string);
   const buffer = await dataFile.arrayBuffer();
   await c.env.R2_BUCKET.put(r2Key, buffer, {
     httpMetadata: { contentType: 'application/octet-stream' },
   });
 
-  return c.json(result.data, 201);
+  // Query the full save detail
+  const detailCtx = new BatchContext(createDb(c.env.DB));
+  const detailService = new SaveService(detailCtx);
+  const detailResult = await detailService.getSave(result.data.commit);
+
+  if (!detailResult.success) {
+    return serviceErrorResponse(c, detailResult.error);
+  }
+
+  return c.json(detailResult.data, 201);
 });
 
 // GET /saves — 获取存档列表（按 stateNodeId+stateNodeCommit 或 saveId 查询）
 savesRoute.get('/', async (c) => {
-  const db = createDb(c.env.DB);
-  const saveService = new SaveService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const saveService = new SaveService(ctx);
 
   // 使用 zod schema 校验查询参数
   const validated = validateQuery(c, ListSavesQueryParams, c.req.query());
@@ -137,8 +144,8 @@ savesRoute.get('/', async (c) => {
 
 // GET /saves/:commit — 获取存档详情（commit 全局唯一）
 savesRoute.get('/:commit', async (c) => {
-  const db = createDb(c.env.DB);
-  const saveService = new SaveService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const saveService = new SaveService(ctx);
 
   const commit = c.req.param('commit');
 
@@ -146,10 +153,7 @@ savesRoute.get('/:commit', async (c) => {
   const result = await saveService.getSave(commit);
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json(result.data);
@@ -157,8 +161,8 @@ savesRoute.get('/:commit', async (c) => {
 
 // DELETE /saves/:commit — 删除存档（commit 全局唯一）
 savesRoute.delete('/:commit', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const saveService = new SaveService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const saveService = new SaveService(ctx);
   const user = c.get('user');
 
   const commit = c.req.param('commit');
@@ -166,14 +170,10 @@ savesRoute.delete('/:commit', authMiddleware, async (c) => {
   const result = await saveService.deleteSave(commit, user.id);
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    if (result.error.code === 'FORBIDDEN') {
-      return c.json<ApiError>({ error: result.error.message }, 403);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
+
+  await ctx.commit();
 
   // 清理 R2
   try {
@@ -188,18 +188,15 @@ savesRoute.delete('/:commit', authMiddleware, async (c) => {
 
 // GET /saves/:commit/data — 下载 quads.bin（commit 全局唯一）
 savesRoute.get('/:commit/data', async (c) => {
-  const db = createDb(c.env.DB);
-  const saveService = new SaveService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const saveService = new SaveService(ctx);
 
   const commit = c.req.param('commit');
 
   // 先确认 save 存在并获取 saveId
   const saveResult = await saveService.getSave(commit);
   if (!saveResult.success) {
-    if (saveResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Save not found' }, 404);
-    }
-    return c.json<ApiError>({ error: saveResult.error.message }, 500);
+    return serviceErrorResponse(c, saveResult.error);
   }
 
   // 从 R2 获取

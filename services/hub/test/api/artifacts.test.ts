@@ -13,7 +13,6 @@ import {
   registerUser,
   createTestUser,
   createVfsTarGz,
-  user,
   artifacts,
   tags,
   artifactTags,
@@ -21,7 +20,6 @@ import {
   artifactVersions,
   nodeVersions,
   artifactVersionNodes,
-  artifactVersionEdges,
   resourceDiscoveryControl,
   resourceAcl,
   PUBLIC_USER_ID,
@@ -140,7 +138,7 @@ describe('Artifacts API', () => {
     it('should filter by tag.include (AND logic)', async () => {
       const artifactId1 = await createTestArtifact(testUserId, 'Recipe with both tags');
       const artifactId2 = await createTestArtifact(testUserId, 'Game with one tag');
-      const artifactId3 = await createTestArtifact(testUserId, 'Prompt with no tags');
+      await createTestArtifact(testUserId, 'Prompt with no tags');
 
       const tag1Id = await createTestTag('javascript');
       const tag2Id = await createTestTag('tutorial');
@@ -159,7 +157,7 @@ describe('Artifacts API', () => {
     });
 
     it('should filter by tag.exclude', async () => {
-      const artifactId1 = await createTestArtifact(testUserId, 'Recipe to keep');
+      await createTestArtifact(testUserId, 'Recipe to keep');
       const artifactId2 = await createTestArtifact(testUserId, 'Game to exclude');
 
       const tagId = await createTestTag('deprecated');
@@ -358,12 +356,12 @@ describe('Artifacts API', () => {
           type: 'VFS',
           name: 'files',
           contentHash,
-          content: { projectId: crypto.randomUUID(), fileTree: files.map(f => ({ path: f.name, size: 0 })) },
+          content: { type: 'VFS', projectId: crypto.randomUUID(), fileTree: files.map(f => ({ path: f.name, size: 0 })) },
         }];
       }
       const edges: Array<{ source: string; target: string }> = [];
 
-      const commit = await computeCommitHash(artifactId, parentCommit, nodes as any, edges);
+      const commit = await computeCommitHash(artifactId, parentCommit, nodes as Array<{nodeId: string; commit: string; contentHash: string}>, edges);
       const metadataWithDefaults = {
         ...metadata,
         artifactId,
@@ -375,7 +373,7 @@ describe('Artifacts API', () => {
       formData.append('edges', JSON.stringify(edges));
 
       if (files && files.length > 0) {
-        const nodeCommit = (nodes[0] as any).commit;
+        const nodeCommit = (nodes[0] as {commit: string}).commit;
         // 创建 tar.gz 归档
         const tarGz = await createVfsTarGz(files.map(f => ({
           name: f.name,
@@ -410,12 +408,12 @@ describe('Artifacts API', () => {
           type: 'PROMPT',
           name: 'prompt',
           contentHash,
-          content: { blocks: [] },
+          content: { type: 'PROMPT', blocks: [] },
         }];
       }
       const edges: Array<{ source: string; target: string }> = [];
 
-      const commit = await computeCommitHash(artifactId, parentCommit, nodes as any, edges);
+      const commit = await computeCommitHash(artifactId, parentCommit, nodes as Array<{nodeId: string; commit: string; contentHash: string}>, edges);
       const metadataWithDefaults = {
         ...metadata,
         artifactId,
@@ -451,7 +449,11 @@ describe('Artifacts API', () => {
           type: 'GENERATED',
           name: 'output',
           contentHash,
-          content: { blocks: [] },
+          content: { 
+            type: 'GENERATED', 
+            blocks: [],
+            inputRef: { id: crypto.randomUUID(), commit: 'dummy-input-commit' },
+          },
         }];
       }
       const edges: Array<{ source: string; target: string }> = [];
@@ -486,13 +488,20 @@ describe('Artifacts API', () => {
         const contentHash = crypto.randomUUID().substring(0, 16);
         const nodeType = n.type ?? 'INPUT';
         const nodeCommit = await computeNodeCommit(n.id, null, contentHash, nodeType);
+        
+        // Ensure content has the type field matching nodeType
+        let content = n.content || {};
+        if (typeof content === 'object' && content !== null && !('type' in content)) {
+          content = { type: nodeType, ...content };
+        }
+        
         return {
           nodeId: n.id,
           commit: nodeCommit,
           ...(n.type ? { type: n.type } : {}),
           ...(n.name ? { name: n.name } : {}),
           contentHash,
-          content: n.content || {},
+          content,
         };
       }));
       const edges = descriptor.edges;
@@ -507,6 +516,21 @@ describe('Artifacts API', () => {
       formData.append('metadata', JSON.stringify(metadataWithDefaults));
       formData.append('nodes', JSON.stringify(nodes));
       formData.append('edges', JSON.stringify(edges));
+
+      // Add VFS files if provided
+      if (nodeFiles) {
+        for (const [_nodeId, files] of nodeFiles) {
+          const tarGz = await createVfsTarGz(files.map(f => ({
+            name: f.name,
+            content: f.content
+          })));
+          const blob = new Blob([tarGz], { type: 'application/gzip' });
+          const nodeCommit = nodes.find(n => n.nodeId === _nodeId)?.commit;
+          if (nodeCommit) {
+            formData.append(`vfs[${nodeCommit}]`, blob, 'archive.tar.gz');
+          }
+        }
+      }
 
       return formData;
     }
@@ -577,7 +601,7 @@ describe('Artifacts API', () => {
       const versionNodeRecords = await db.select().from(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, versions[0].commitHash));
       expect(versionNodeRecords.length).toBeGreaterThan(0);
       
-      const vfsNode = versionNodeRecords.find(n => true); // first node
+      const vfsNode = versionNodeRecords.find(() => true); // first node
       expect(vfsNode).toBeDefined();
       
       // VFS archives are stored by commit only (globally unique)
@@ -704,7 +728,8 @@ describe('Artifacts API', () => {
 
         expect(response.status).toBe(400);
         const data = await response.json<ApiError>();
-        expect(data.error).toContain('must have');
+        // Zod validation error format: "Invalid option: expected one of ..."
+        expect(data.error).toContain('Invalid');
       });
     });
 
@@ -727,7 +752,8 @@ describe('Artifacts API', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toContain('required');
+      // Zod validation error format: "Invalid input: expected string, received undefined"
+      expect(data.error).toContain('Invalid');
     });
 
 
@@ -837,13 +863,12 @@ describe('Artifacts API', () => {
       expect(versionNodeRecords.length).toBeGreaterThan(0);
 
       // Get all files from node version content (through node_versions table)
-      const allFiles: { path: string }[] = [];
+      // NOTE: In the new architecture, content is stored in typed content tables
+      // The loop below verifies node versions exist
       for (const vn of versionNodeRecords) {
-        const nvRecords = await db.select().from(nodeVersions).where(eq(nodeVersions.nodeId, vn.nodeId));
-        for (const nv of nvRecords) {
-          // In new architecture, content is in typed content tables; check via NodeVersionService
-          // For this test, we just verify the node versions exist
-        }
+        await db.select().from(nodeVersions).where(eq(nodeVersions.nodeId, vn.nodeId));
+        // In new architecture, content is in typed content tables; check via NodeVersionService
+        // For this test, we just verify the node versions exist
       }
 
       // In the new architecture, content is stored in typed content tables (e.g. vfs_contents)

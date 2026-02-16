@@ -168,6 +168,18 @@ importers:
 
   .:
     devDependencies:
+      '@eslint/js':
+        specifier: 'catalog:'
+        version: 9.39.2
+      eslint:
+        specifier: 'catalog:'
+        version: 9.39.2(jiti@2.6.1)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      typescript-eslint:
+        specifier: 'catalog:'
+        version: 8.53.0(eslint@9.39.2(jiti@2.6.1))(typescript@5.9.3)
       vitest:
         specifier: 'catalog:'
         version: 4.0.17(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.2)
@@ -652,6 +664,9 @@ importers:
       orval:
         specifier: ^8.3.0
         version: 8.3.0(typescript@5.9.3)
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
 
   packages/bundler:
     dependencies:
@@ -8566,7 +8581,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vitest: 4.0.17(@opentelemetry/api@1.9.0)(@types/node@25.0.3)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.2)
+      vitest: 4.0.17(@opentelemetry/api@1.9.0)(@types/node@22.19.5)(@vitest/browser-playwright@4.0.17)(@vitest/ui@4.0.17)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.2)
 
   '@vitest/utils@3.2.4':
     dependencies:

@@ -1,12 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
-import { createApiClient } from '@pubwiki/api/client';
 import { execSync } from 'child_process';
 import { registerUser } from './helpers';
 
 describe('E2E: Auth Middleware - User Validation', () => {
   let worker: Unstable_DevWorker;
-  let client: ReturnType<typeof createApiClient>;
   let baseUrl: string;
 
   beforeAll(async () => {
@@ -18,7 +16,6 @@ describe('E2E: Auth Middleware - User Validation', () => {
       persist: false, // 不持久化数据，每次测试干净的数据库
     });
     baseUrl = `http://${worker.address}:${worker.port}/api`;
-    client = createApiClient(baseUrl);
   });
 
   afterAll(async () => {
@@ -46,7 +43,7 @@ describe('E2E: Auth Middleware - User Validation', () => {
           `npx wrangler d1 execute DB --local --command "DELETE FROM user WHERE id = '${userId}'"`,
           { encoding: 'utf-8', stdio: 'pipe' }
         );
-      } catch (error) {
+      } catch {
         // wrangler 命令可能返回非零退出码但实际执行成功
         console.log('Delete command executed');
       }
@@ -72,7 +69,7 @@ describe('E2E: Auth Middleware - User Validation', () => {
           `npx wrangler d1 execute DB --local --command "DELETE FROM user WHERE id = '${userId}'"`,
           { encoding: 'utf-8', stdio: 'pipe' }
         );
-      } catch (error) {
+      } catch {
         console.log('Delete command executed');
       }
 

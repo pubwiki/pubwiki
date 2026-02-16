@@ -1,11 +1,4 @@
 import { sqliteTable, text, integer, index, primaryKey } from 'drizzle-orm/sqlite-core';
-import { sql } from 'drizzle-orm';
-import { artifacts } from './artifacts';
-import { user } from './auth';
-import { nodeVersions } from './node-versions';
-
-// 当前时间戳 (ISO 格式字符串)
-const currentTimestamp = sql`(datetime('now'))`;
 
 // ========================================================================
 // artifact_version_nodes - Artifact 版本的节点组成

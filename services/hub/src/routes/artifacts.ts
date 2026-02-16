@@ -1,15 +1,24 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, ArtifactService, NodeVersionService, artifactVersions, eq, and, desc, inArray, type ListArtifactsParams, type GetLineageParams, type CreateArtifactNode, type PatchArtifactInput, type CreateSaveInput } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactMetadata, CreateArtifactResponse, GetArtifactGraphResponse, ArtifactEdgeDescriptor, ArtifactNodeContent, ArtifactNodeType, PatchArtifactRequest, PatchArtifactResponse, UpdateCommitTagsRequest, ArtifactVersion as ArtifactVersionType } from '@pubwiki/api';
-import { ListArtifactsQueryParams, GetArtifactLineageQueryParams } from '@pubwiki/api/validate';
+import { createDb, BatchContext, ArtifactService, type GetLineageParams, type CreateSaveInput, type CreateArtifactInput, type PatchArtifactInput } from '@pubwiki/db';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateCommitTagsRequest } from '@pubwiki/api';
+import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
-import { checkResourceAccess, requireResourceOwner } from '../lib/access-control';
-import { validateQuery, isValidationError } from '../lib/validate';
+import { checkResourceAccess } from '../lib/access-control';
+import { validateQuery, validateFormDataJson, isValidationError } from '../lib/validate';
+import { serviceErrorResponse } from '../lib/service-error';
 import { marked } from 'marked';
 
 const artifactsRoute = new Hono<{ Bindings: Env }>();
+
+// 从 CreateArtifactBody 提取子 schema（用于 multipart/form-data 的分字段校验）
+const CreateArtifactMetadataSchema = CreateArtifactBody.shape.metadata;
+const CreateArtifactNodesSchema = CreateArtifactBody.shape.nodes;
+const CreateArtifactEdgesSchema = CreateArtifactBody.shape.edges;
+
+// 从 PatchArtifactBody 提取子 schema
+const PatchArtifactMetadataSchema = PatchArtifactBody.shape.metadata;
 
 // 生成artifact主页在R2中的存储key
 function getArtifactHomepageKey(artifactId: string): string {
@@ -18,15 +27,14 @@ function getArtifactHomepageKey(artifactId: string): string {
 
 // 获取公开 artifact 列表
 artifactsRoute.get('/', async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
 
   // 解析数组参数（URL query 中的重复参数）
-  const url = new URL(c.req.url);
   const rawQuery = {
     ...c.req.query(),
-    'tag.include': url.searchParams.getAll('tag.include'),
-    'tag.exclude': url.searchParams.getAll('tag.exclude'),
+    'tag.include': c.req.queries('tag.include'),
+    'tag.exclude': c.req.queries('tag.exclude'),
   };
 
   // 使用 zod schema 校验查询参数
@@ -44,8 +52,8 @@ artifactsRoute.get('/', async (c) => {
 
 // 获取 artifact 谱系信息
 artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
   const artifactId = c.req.param('artifactId');
 
   // 访问控制检查
@@ -73,8 +81,8 @@ artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, resourceAcces
 
 // 获取 artifact 主页 HTML
 artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
   const artifactId = c.req.param('artifactId');
 
   // 先检查 artifact 是否存在
@@ -100,11 +108,9 @@ artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, resourceAcce
   return c.html(html);
 });
 
-// 创建 artifact（两步流程的第二步：引用已同步的 node versions）
-// 前置条件：所有引用的 node versions 必须已通过 POST /nodes/:nodeId/sync 同步
 artifactsRoute.post('/', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
   const user = c.get('user');
 
   // 解析 multipart/form-data
@@ -115,42 +121,17 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'Invalid form data' }, 400);
   }
 
-  // 获取并解析 metadata
-  const metadataStr = formData.get('metadata');
-  if (!metadataStr || typeof metadataStr !== 'string') {
-    return c.json<ApiError>({ error: 'metadata field is required and must be a JSON string' }, 400);
-  }
+  // 使用 zod schema 校验 metadata
+  const metadata = validateFormDataJson(c, formData, 'metadata', CreateArtifactMetadataSchema);
+  if (isValidationError(metadata)) return metadata;
 
-  let metadata: CreateArtifactMetadata;
-  try {
-    metadata = JSON.parse(metadataStr);
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON in metadata field' }, 400);
-  }
+  // 使用 zod schema 校验 nodes
+  const nodes = validateFormDataJson(c, formData, 'nodes', CreateArtifactNodesSchema);
+  if (isValidationError(nodes)) return nodes;
 
-  // 获取并解析 nodes（完整的 node version 数据）
-  const nodesStr = formData.get('nodes');
-  if (!nodesStr || typeof nodesStr !== 'string') {
-    return c.json<ApiError>({ error: 'nodes field is required and must be a JSON string' }, 400);
-  }
-
-  let nodes: CreateArtifactNode[];
-  try {
-    nodes = JSON.parse(nodesStr);
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON in nodes field' }, 400);
-  }
-
-  if (!Array.isArray(nodes)) {
-    return c.json<ApiError>({ error: 'nodes must be an array' }, 400);
-  }
-
-  // 验证每个 node 的必填字段
-  for (const node of nodes) {
-    if (!node.nodeId || !node.commit || !node.type || !node.contentHash) {
-      return c.json<ApiError>({ error: 'Each node must have nodeId, commit, type, and contentHash fields' }, 400);
-    }
-  }
+  // 使用 zod schema 校验 edges
+  const edges = validateFormDataJson(c, formData, 'edges', CreateArtifactEdgesSchema);
+  if (isValidationError(edges)) return edges;
 
   // 收集 VFS 二进制文件: vfs[{commit}] 和 save 二进制文件: save[{commit}]
   const vfsArchives = new Map<string, ArrayBuffer>();
@@ -173,52 +154,6 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
-  // 获取并解析 edges
-  const edgesStr = formData.get('edges');
-  if (!edgesStr || typeof edgesStr !== 'string') {
-    return c.json<ApiError>({ error: 'edges field is required and must be a JSON string' }, 400);
-  }
-
-  let edges: ArtifactEdgeDescriptor[];
-  try {
-    edges = JSON.parse(edgesStr);
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON in edges field' }, 400);
-  }
-
-  if (!Array.isArray(edges)) {
-    return c.json<ApiError>({ error: 'edges must be an array' }, 400);
-  }
-
-  // 验证必填字段
-  if (!metadata.name) {
-    return c.json<ApiError>({ error: 'name is required in metadata' }, 400);
-  }
-
-  // 验证 artifactId
-  if (!metadata.artifactId) {
-    return c.json<ApiError>({ error: 'artifactId is required in metadata' }, 400);
-  }
-
-  // 验证 commit
-  if (!metadata.commit) {
-    return c.json<ApiError>({ error: 'commit is required in metadata' }, 400);
-  }
-
-  // 解析可选的 saves（和 nodes、edges 平级）
-  let saves: CreateSaveInput[] | undefined;
-  const savesStr = formData.get('saves');
-  if (savesStr && typeof savesStr === 'string') {
-    try {
-      saves = JSON.parse(savesStr);
-      if (!Array.isArray(saves)) {
-        return c.json<ApiError>({ error: 'saves must be an array' }, 400);
-      }
-    } catch {
-      return c.json<ApiError>({ error: 'Invalid JSON in saves field' }, 400);
-    }
-  }
-
   // 处理可选的主页 markdown
   let homepageHtml: string | null = null;
   const homepageFile = formData.get('homepage');
@@ -231,30 +166,25 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
+  // 从 metadata.saves 提取 saves（zod 已校验）
+  const saves: CreateSaveInput[] | undefined = metadata.saves;
+
   // 创建 artifact（内部同步 node versions + 创建 saves + 创建 artifact version）
+  // 使用类型断言：zod 推断的类型和 openapi-typescript 生成的类型结构等价，但 TypeScript 认为不兼容
   const result = await artifactService.createArtifact({
     authorId: user.id,
     metadata,
     nodes,
     edges,
     saves,
-  });
+  } as CreateArtifactInput);
 
   if (!result.success) {
-    if (result.error.code === 'CONFLICT') {
-      return c.json<ApiError>({ error: result.error.message }, 409);
-    }
-    if (result.error.code === 'FORBIDDEN') {
-      return c.json<ApiError>({ error: result.error.message }, 403);
-    }
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    if (result.error.code === 'BAD_REQUEST') {
-      return c.json<ApiError>({ error: result.error.message }, 400);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
+
+  // Commit database operations
+  await ctx.commit();
 
   const { artifact: createdArtifact } = result.data;
   const artifactId = createdArtifact.id;
@@ -296,8 +226,8 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
 
 // 获取 artifact 节点图结构
 artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
   const artifactId = c.req.param('artifactId');
   const versionQuery = c.req.query('version');
 
@@ -308,8 +238,7 @@ artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, resourceAccessM
   const result = await artifactService.getArtifactGraph(artifactId, versionQuery);
 
   if (!result.success) {
-    const status = result.error.code === 'NOT_FOUND' ? 404 : 500;
-    return c.json<ApiError>({ error: result.error.message }, status);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<GetArtifactGraphResponse>(result.data);
@@ -317,8 +246,8 @@ artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, resourceAccessM
 
 // PATCH: 基于已有版本和增量补丁创建新 Artifact 版本
 artifactsRoute.patch('/', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
   const user = c.get('user');
 
   // 解析 multipart/form-data
@@ -329,27 +258,9 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'Invalid form data' }, 400);
   }
 
-  // 获取并解析 metadata
-  const metadataStr = formData.get('metadata');
-  if (!metadataStr || typeof metadataStr !== 'string') {
-    return c.json<ApiError>({ error: 'metadata field is required and must be a JSON string' }, 400);
-  }
-
-  let metadata: PatchArtifactRequest;
-  try {
-    metadata = JSON.parse(metadataStr);
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON in metadata field' }, 400);
-  }
-
-  // 验证必填字段
-  if (!metadata.artifactId) {
-    return c.json<ApiError>({ error: 'artifactId is required' }, 400);
-  }
-  if (!metadata.baseCommit) {
-    return c.json<ApiError>({ error: 'baseCommit is required' }, 400);
-  }
-  // commit 仅在有 graph 变更时必须（service 层会校验）
+  // 使用 zod schema 校验 metadata
+  const metadata = validateFormDataJson(c, formData, 'metadata', PatchArtifactMetadataSchema);
+  if (isValidationError(metadata)) return metadata;
 
   // 收集 VFS 二进制文件: vfs[{commit}] 和 save 二进制文件: save[{commit}]
   const vfsArchives = new Map<string, ArrayBuffer>();
@@ -372,20 +283,6 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     }
   }
 
-  // 解析可选的 saves
-  let saves: CreateSaveInput[] | undefined;
-  const savesStr = formData.get('saves');
-  if (savesStr && typeof savesStr === 'string') {
-    try {
-      saves = JSON.parse(savesStr);
-      if (!Array.isArray(saves)) {
-        return c.json<ApiError>({ error: 'saves must be an array' }, 400);
-      }
-    } catch {
-      return c.json<ApiError>({ error: 'Invalid JSON in saves field' }, 400);
-    }
-  }
-
   // 处理可选的主页 markdown
   let homepageHtml: string | null = null;
   const homepageFile = formData.get('homepage');
@@ -398,31 +295,23 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     }
   }
 
+  // 从 metadata 提取 saves（zod 已校验）
+  const saves: CreateSaveInput[] | undefined = metadata.saves;
+
   // 执行 patch
+  // 使用类型断言：zod 推断的类型和 openapi-typescript 生成的类型结构等价，但 TypeScript 认为不兼容
   const result = await artifactService.patchArtifact({
     authorId: user.id,
-    metadata: {
-      ...metadata,
-      addNodes: metadata.addNodes as CreateArtifactNode[] | undefined,
-    },
+    metadata,
     saves,
-  });
+  } as PatchArtifactInput);
 
   if (!result.success) {
-    if (result.error.code === 'CONFLICT') {
-      return c.json<ApiError>({ error: result.error.message }, 409);
-    }
-    if (result.error.code === 'FORBIDDEN') {
-      return c.json<ApiError>({ error: result.error.message }, 403);
-    }
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    if (result.error.code === 'BAD_REQUEST') {
-      return c.json<ApiError>({ error: result.error.message }, 400);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
+
+  // Commit database operations
+  await ctx.commit();
 
   const { artifact: patchedArtifact, versionCreated } = result.data;
   const artifactId = patchedArtifact.id;
@@ -465,8 +354,8 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
 
 // PUT: 设置 commit 上的标签列表
 artifactsRoute.put('/:artifactId/commit-tag', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
   const user = c.get('user');
   const artifactId = c.req.param('artifactId');
 
@@ -493,14 +382,11 @@ artifactsRoute.put('/:artifactId/commit-tag', authMiddleware, async (c) => {
   );
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    if (result.error.code === 'FORBIDDEN') {
-      return c.json<ApiError>({ error: result.error.message }, 403);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
+
+  // Commit database operations
+  await ctx.commit();
 
   return c.json({
     message: 'Commit tags updated successfully',
@@ -510,8 +396,8 @@ artifactsRoute.put('/:artifactId/commit-tag', authMiddleware, async (c) => {
 
 // PUT: 标记版本为 weak（不可逆）
 artifactsRoute.put('/:artifactId/versions/:commitHash/weak', authMiddleware, async (c) => {
-  const db = createDb(c.env.DB);
-  const artifactService = new ArtifactService(db);
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
   const user = c.get('user');
   const artifactId = c.req.param('artifactId');
   const commitHash = c.req.param('commitHash');
@@ -523,17 +409,11 @@ artifactsRoute.put('/:artifactId/versions/:commitHash/weak', authMiddleware, asy
   );
 
   if (!result.success) {
-    if (result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: result.error.message }, 404);
-    }
-    if (result.error.code === 'FORBIDDEN') {
-      return c.json<ApiError>({ error: result.error.message }, 403);
-    }
-    if (result.error.code === 'BAD_REQUEST') {
-      return c.json<ApiError>({ error: result.error.message }, 400);
-    }
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
+
+  // Commit database operations
+  await ctx.commit();
 
   return c.json({
     message: 'Version marked as weak',

@@ -23,6 +23,7 @@
   "devDependencies": {
     "@redocly/cli": "^2.18.1",
     "openapi-typescript": "^7.6.1",
-    "orval": "^8.3.0"
+    "orval": "^8.3.0",
+    "typescript": "catalog:"
   }
 }

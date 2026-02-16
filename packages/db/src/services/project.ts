@@ -1,23 +1,20 @@
-import { eq, and, asc, desc, sql, count, inArray, or } from 'drizzle-orm';
-import type { BatchItem } from 'drizzle-orm/batch';
-import type { Database } from '../client';
-import { projects, projectArtifacts, projectRoles, projectPages, type Project, type ProjectRole, type ProjectPage } from '../schema/projects';
+import { eq, and, asc, desc, sql, count, inArray } from 'drizzle-orm';
+import type { BatchContext } from '../batch-context';
+import { projects, projectArtifacts, projectRoles, projectPages, type Project } from '../schema/projects';
 import { artifacts, tags, artifactTags } from '../schema/artifacts';
 import { artifactStats } from '../schema/stats';
 import { user, type User } from '../schema/auth';
-import type { ServiceError, ServiceResult } from './user';
-import type { Pagination } from './artifact';
+import type { ServiceResult } from './user';
 import type {
   ProjectListItem,
   ProjectDetail,
   ProjectArtifact as ProjectArtifactItem,
-  ArtifactListItem,
   UserProjectListItem,
   CreateProjectMetadata,
   CreateProjectRole,
-  CreateProjectPage,
   ProjectPage as ProjectPageItem,
   ProjectPageDetail,
+  operations,
 } from '@pubwiki/api';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
@@ -25,37 +22,40 @@ import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
 // 重新导出供其他模块使用
 export type { ProjectListItem, ProjectDetail, ProjectArtifactItem, UserProjectListItem, CreateProjectMetadata, ProjectPageItem, ProjectPageDetail };
 
+// ============================================================================
+// 类型定义：从 API operations 提取查询参数和响应类型
+// ============================================================================
+
+// listProjects 查询参数和响应
+export type ListProjectsParams = operations['listProjects']['parameters']['query'];
+export type ListProjectsResult = operations['listProjects']['responses']['200']['content']['application/json'];
+
+// getUserProjects 查询参数和响应（服务层增加 viewerId 用于权限判断）
+type GetUserProjectsQuery = NonNullable<operations['getUserProjects']['parameters']['query']>;
+export type ListUserProjectsParams = GetUserProjectsQuery & {
+  viewerId?: string;  // 服务层扩展：查看者 ID，用于判断是否能看到私有资源
+};
+export type ListUserProjectsResult = operations['getUserProjects']['responses']['200']['content']['application/json'];
+
+// listProjectArtifacts 查询参数和响应
+export type ListProjectArtifactsParams = NonNullable<operations['listProjectArtifacts']['parameters']['query']>;
+export type ListProjectArtifactsResult = operations['listProjectArtifacts']['responses']['200']['content']['application/json'];
+
+// linkArtifactToProject 请求体（服务层增加 projectId 和 userId）
+type LinkArtifactRequestBody = operations['linkArtifactToProject']['requestBody']['content']['application/json'];
+export type LinkArtifactToProjectParams = LinkArtifactRequestBody & {
+  projectId: string;  // 服务层需要，API 从 path 获取
+  userId: string;     // 服务层需要，用于权限检查
+};
+
 // 创建 project 参数
 export interface CreateProjectParams {
   ownerId: string;
   metadata: CreateProjectMetadata;
 }
 
-// 用户简要信息（内部使用）
-interface UserBrief {
-  id: string;
-  username: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-}
-
-// 列表查询参数
-export interface ListProjectsParams {
-  page?: number;
-  limit?: number;
-  topic?: string;
-  sortBy?: 'createdAt' | 'updatedAt';
-  sortOrder?: 'asc' | 'desc';
-}
-
-// 列表响应
-export interface ListProjectsResult {
-  projects: ProjectListItem[];
-  pagination: Pagination;
-}
-
 export class ProjectService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   // 拓扑排序角色，确保父角色在子角色之前
   // 使用 name 作为唯一标识符
@@ -126,7 +126,7 @@ export class ProjectService {
       }
 
       // 获取总数
-      const countResult = await this.db
+      const countResult = await this.ctx
         .select({ count: count() })
         .from(projects)
         .innerJoin(resourceDiscoveryControl, and(
@@ -148,7 +148,7 @@ export class ProjectService {
       const orderFn = sortOrder === 'asc' ? asc : desc;
 
       // 获取 project 列表（关联 owner）
-      const projectRows = await this.db
+      const projectRows = await this.ctx
         .select({
           id: projects.id,
           name: projects.name,
@@ -174,7 +174,7 @@ export class ProjectService {
           eq(resourceAcl.resourceId, projects.id),
           eq(resourceAcl.userId, PUBLIC_USER_ID)
         ))
-        .leftJoin(user, eq(projects.ownerId, user.id))
+        .innerJoin(user, eq(projects.ownerId, user.id))
         .where(and(...baseConditions))
         .orderBy(orderFn(orderColumn))
         .limit(validLimit)
@@ -183,11 +183,11 @@ export class ProjectService {
       // 获取每个 project 的 artifact 数量
       const projectIds = projectRows.map(p => p.id);
       
-      let artifactCounts: Record<string, number> = {};
+      const artifactCounts: Record<string, number> = {};
 
       if (projectIds.length > 0) {
         // 获取 artifact 数量
-        const artifactResults = await this.db
+        const artifactResults = await this.ctx
           .select({
             projectId: projectArtifacts.projectId,
             count: count(),
@@ -248,10 +248,10 @@ export class ProjectService {
   // 根据 ID 获取 project
   async getProjectById(projectId: string): Promise<ServiceResult<{ project: Project; owner: User }>> {
     try {
-      const result = await this.db
+      const result = await this.ctx
         .select()
         .from(projects)
-        .leftJoin(user, eq(projects.ownerId, user.id))
+        .innerJoin(user, eq(projects.ownerId, user.id))
         .where(eq(projects.id, projectId))
         .limit(1);
 
@@ -287,7 +287,7 @@ export class ProjectService {
   // 检查用户是否有项目的写权限（替代原来的 isMaintainer）
   async hasWritePermission(projectId: string, userId: string): Promise<boolean> {
     try {
-      const result = await this.db
+      const result = await this.ctx
         .select({ canWrite: resourceAcl.canWrite, canManage: resourceAcl.canManage })
         .from(resourceAcl)
         .where(and(
@@ -308,7 +308,7 @@ export class ProjectService {
   async getProjectDetails(projectId: string): Promise<ServiceResult<ProjectDetail>> {
     try {
       // 1. 获取 project 基本信息和 owner
-      const projectResult = await this.db
+      const projectResult = await this.ctx
         .select({
           id: projects.id,
           name: projects.name,
@@ -332,7 +332,7 @@ export class ProjectService {
           eq(resourceDiscoveryControl.resourceType, 'project'),
           eq(resourceDiscoveryControl.resourceId, projects.id)
         ))
-        .leftJoin(user, eq(projects.ownerId, user.id))
+        .innerJoin(user, eq(projects.ownerId, user.id))
         .where(eq(projects.id, projectId))
         .limit(1);
 
@@ -349,7 +349,7 @@ export class ProjectService {
       const project = projectResult[0];
 
       // 检查 project 是否有 PUBLIC_USER_ID ACL
-      const publicAclResult = await this.db
+      await this.ctx
         .select({ resourceId: resourceAcl.resourceId })
         .from(resourceAcl)
         .where(and(
@@ -360,7 +360,7 @@ export class ProjectService {
         .limit(1);
 
       // 2. 获取 roles
-      const roleRows = await this.db
+      const roleRows = await this.ctx
         .select({
           id: projectRoles.id,
           name: projectRoles.name,
@@ -373,7 +373,7 @@ export class ProjectService {
         .where(eq(projectRoles.projectId, projectId));
 
       // 4. 获取 pages（按 order 排序，不包含内容）
-      const pageRows = await this.db
+      const pageRows = await this.ctx
         .select({
           id: projectPages.id,
           name: projectPages.name,
@@ -387,7 +387,7 @@ export class ProjectService {
         .orderBy(asc(projectPages.order));
 
       // 5. 获取关联的 artifacts（包含角色信息）
-      const artifactRelations = await this.db
+      const artifactRelations = await this.ctx
         .select({
           artifactId: projectArtifacts.artifactId,
           roleId: projectArtifacts.roleId,
@@ -414,7 +414,7 @@ export class ProjectService {
           eq(resourceDiscoveryControl.resourceType, 'artifact'),
           eq(resourceDiscoveryControl.resourceId, artifacts.id)
         ))
-        .leftJoin(user, eq(artifacts.authorId, user.id))
+        .innerJoin(user, eq(artifacts.authorId, user.id))
         .where(eq(projectArtifacts.projectId, projectId));
 
       // 创建 role 映射
@@ -423,12 +423,12 @@ export class ProjectService {
       // 6. 获取 artifacts 的 tags 和 stats
       const artifactIds = artifactRelations.map(a => a.id);
       
-      let tagsMap: Record<string, { id: string; name: string; slug: string; description: string | null; color: string | null }[]> = {};
-      let statsMap: Record<string, { viewCount: number; starCount: number; forkCount: number; downloadCount: number }> = {};
+      const tagsMap: Record<string, { id: string; name: string; slug: string; description: string | null; color: string | null }[]> = {};
+      const statsMap: Record<string, { viewCount: number; starCount: number; forkCount: number; downloadCount: number }> = {};
 
       if (artifactIds.length > 0) {
         // 获取 tags
-        const tagResults = await this.db
+        const tagResults = await this.ctx
           .select({
             artifactId: artifactTags.artifactId,
             tagId: tags.id,
@@ -455,7 +455,7 @@ export class ProjectService {
         }
 
         // 获取 stats
-        const statsResults = await this.db
+        const statsResults = await this.ctx
           .select()
           .from(artifactStats)
           .where(inArray(artifactStats.artifactId, artifactIds));
@@ -556,7 +556,7 @@ export class ProjectService {
 
     try {
       // 构建排序
-      const orderColumn = sortBy === 'updatedAt' ? projects.updatedAt : projects.createdAt;
+      const orderColumn = projects[sortBy];
       const orderFn = sortOrder === 'asc' ? asc : desc;
 
       // 获取用户 own 的 projects
@@ -570,10 +570,12 @@ export class ProjectService {
       }
 
       // 获取总数
-      const countResult = await this.db
+      // 注意：使用 INNER JOIN resourceDiscoveryControl，因为 createProject 会同时创建 discovery control 记录
+      // 如果用 LEFT JOIN + WHERE isListed=true，会过滤掉 isListed=NULL 的行，效果等同于 INNER JOIN 但语义不清晰
+      const countResult = await this.ctx
         .select({ count: count() })
         .from(projects)
-        .leftJoin(resourceDiscoveryControl, and(
+        .innerJoin(resourceDiscoveryControl, and(
           eq(resourceDiscoveryControl.resourceType, 'project'),
           eq(resourceDiscoveryControl.resourceId, projects.id)
         ))
@@ -598,7 +600,8 @@ export class ProjectService {
       }
 
       // 获取 project 列表（关联 owner 和 discovery control）
-      const projectRows = await this.db
+      // 注意：resourceDiscoveryControl 使用 INNER JOIN（每个 project 都有对应记录）
+      const projectRows = await this.ctx
         .select({
           id: projects.id,
           name: projects.name,
@@ -615,11 +618,11 @@ export class ProjectService {
           ownerAvatarUrl: user.avatarUrl,
         })
         .from(projects)
-        .leftJoin(resourceDiscoveryControl, and(
+        .innerJoin(resourceDiscoveryControl, and(
           eq(resourceDiscoveryControl.resourceType, 'project'),
           eq(resourceDiscoveryControl.resourceId, projects.id)
         ))
-        .leftJoin(user, eq(projects.ownerId, user.id))
+        .innerJoin(user, eq(projects.ownerId, user.id))
         .where(and(...ownedConditions))
         .orderBy(orderFn(orderColumn))
         .limit(validLimit)
@@ -628,11 +631,11 @@ export class ProjectService {
       // 获取每个 project 的 artifact 数量
       const projectIds = projectRows.map(p => p.id);
       
-      let artifactCounts: Record<string, number> = {};
+      const artifactCounts: Record<string, number> = {};
 
       if (projectIds.length > 0) {
         // 获取 artifact 数量
-        const artifactResults = await this.db
+        const artifactResults = await this.ctx
           .select({
             projectId: projectArtifacts.projectId,
             count: count(),
@@ -690,8 +693,12 @@ export class ProjectService {
     }
   }
 
-  // 创建 project（使用 batch 保证原子性）
-  async createProject(params: CreateProjectParams): Promise<ServiceResult<ProjectDetail>> {
+  /**
+   * Create a project with all related records.
+   * Returns the projectId after collecting all writes into batch.
+   * The caller should commit the batch and then call getProjectDetails to get the full detail.
+   */
+  async createProject(params: CreateProjectParams): Promise<ServiceResult<{ projectId: string }>> {
     const { ownerId, metadata } = params;
 
     try {
@@ -723,7 +730,7 @@ export class ProjectService {
       }
 
       // 检查 slug 是否已存在
-      const existingProject = await this.db
+      const existingProject = await this.ctx
         .select({ id: projects.id })
         .from(projects)
         .where(eq(projects.slug, metadata.slug))
@@ -742,7 +749,7 @@ export class ProjectService {
       // 验证 artifacts（如果提供）
       if (metadata.artifacts && metadata.artifacts.length > 0) {
         const artifactIds = metadata.artifacts.map(a => a.artifactId);
-        const existingArtifacts = await this.db
+        const existingArtifacts = await this.ctx
           .select({ id: artifacts.id })
           .from(artifacts)
           .where(inArray(artifacts.id, artifactIds));
@@ -854,11 +861,10 @@ export class ProjectService {
         }
       }
 
-      // === 构建 batch 操作 ===
-      const batchOperations: BatchItem<"sqlite">[] = [];
+      // === 收集写操作到 BatchContext ===
 
       // 1. 创建 project
-      batchOperations.push(this.db.insert(projects).values({
+      this.ctx.modify(db => db.insert(projects).values({
         id: projectId,
         ownerId,
         name: metadata.name,
@@ -872,14 +878,14 @@ export class ProjectService {
 
       // 1.1 创建发现控制记录
       const isListed = metadata.isListed ?? true;
-      batchOperations.push(this.db.insert(resourceDiscoveryControl).values({
+      this.ctx.modify(db => db.insert(resourceDiscoveryControl).values({
         resourceType: 'project',
         resourceId: projectId,
         isListed,
       }));
 
       // 创建 owner ACL（manage + write + read）
-      batchOperations.push(this.db.insert(resourceAcl).values({
+      this.ctx.modify(db => db.insert(resourceAcl).values({
         resourceType: 'project',
         resourceId: projectId,
         userId: ownerId,
@@ -890,7 +896,7 @@ export class ProjectService {
       }));
 
       // 默认创建公开读取 ACL
-      batchOperations.push(this.db.insert(resourceAcl).values({
+      this.ctx.modify(db => db.insert(resourceAcl).values({
         resourceType: 'project',
         resourceId: projectId,
         userId: PUBLIC_USER_ID,
@@ -904,7 +910,7 @@ export class ProjectService {
       if (metadata.pages && metadata.pages.length > 0) {
         for (let i = 0; i < metadata.pages.length; i++) {
           const page = metadata.pages[i];
-          batchOperations.push(this.db.insert(projectPages).values({
+          this.ctx.modify(db => db.insert(projectPages).values({
             id: pageIds[i],
             projectId,
             name: page.name,
@@ -921,7 +927,7 @@ export class ProjectService {
         const parentRoleId = role.parentName ? nameToRealId.get(role.parentName) : null;
         const isLeaf = !parentNames.has(role.name);
         
-        batchOperations.push(this.db.insert(projectRoles).values({
+        this.ctx.modify(db => db.insert(projectRoles).values({
           id: roleId,
           projectId,
           name: role.name,
@@ -935,7 +941,7 @@ export class ProjectService {
       if (metadata.artifacts && metadata.artifacts.length > 0) {
         for (const artifact of metadata.artifacts) {
           const roleId = nameToRealId.get(artifact.roleName)!;
-          batchOperations.push(this.db.insert(projectArtifacts).values({
+          this.ctx.modify(db => db.insert(projectArtifacts).values({
             projectId,
             artifactId: artifact.artifactId,
             roleId,
@@ -944,18 +950,10 @@ export class ProjectService {
         }
       }
 
-      // === 执行 batch（D1 的 batch 是事务性的）===
-      await this.db.batch(batchOperations as any);
-
-      // 获取完整的 project 详情
-      const projectDetail = await this.getProjectDetails(projectId);
-      if (!projectDetail.success) {
-        return projectDetail;
-      }
-
+      // Return the projectId - caller should commit and then call getProjectDetails
       return {
         success: true,
-        data: projectDetail.data,
+        data: { projectId },
       };
     } catch (error) {
       console.error('Failed to create project:', error);
@@ -973,7 +971,7 @@ export class ProjectService {
   async getProjectPage(projectId: string, pageId: string): Promise<ServiceResult<ProjectPageDetail>> {
     try {
       // 获取 page 详情
-      const [page] = await this.db
+      const [page] = await this.ctx
         .select({
           id: projectPages.id,
           projectId: projectPages.projectId,
@@ -1027,7 +1025,6 @@ export class ProjectService {
       limit = 20,
       roleId,
       isOfficial,
-      sortBy = 'createdAt',
       sortOrder = 'desc',
     } = params;
 
@@ -1037,7 +1034,7 @@ export class ProjectService {
 
     try {
       // 验证 project 存在
-      const projectExists = await this.db
+      const projectExists = await this.ctx
         .select({ id: projects.id })
         .from(projects)
         .where(eq(projects.id, projectId))
@@ -1071,18 +1068,17 @@ export class ProjectService {
       const whereClause = and(...conditions);
 
       // 获取总数
-      const [{ total }] = await this.db
+      const [{ total }] = await this.ctx
         .select({ total: count() })
         .from(projectArtifacts)
         .where(whereClause);
 
       const totalPages = Math.ceil(total / validLimit);
 
-      // 获取 artifacts
-      const orderByColumn = sortBy === 'createdAt' ? projectArtifacts.createdAt : projectArtifacts.createdAt;
+      // 获取 artifacts（默认按关联创建时间排序）
       const orderFn = sortOrder === 'asc' ? asc : desc;
 
-      const artifactRelations = await this.db
+      const artifactRelations = await this.ctx
         .select({
           artifactId: projectArtifacts.artifactId,
           roleId: projectArtifacts.roleId,
@@ -1109,14 +1105,14 @@ export class ProjectService {
           eq(resourceDiscoveryControl.resourceType, 'artifact'),
           eq(resourceDiscoveryControl.resourceId, artifacts.id)
         ))
-        .leftJoin(user, eq(artifacts.authorId, user.id))
+        .innerJoin(user, eq(artifacts.authorId, user.id))
         .where(whereClause)
-        .orderBy(orderFn(orderByColumn))
+        .orderBy(orderFn(projectArtifacts.createdAt))
         .limit(validLimit)
         .offset(offset);
 
       // 获取 roles 映射
-      const roleRows = await this.db
+      const roleRows = await this.ctx
         .select({
           id: projectRoles.id,
           name: projectRoles.name,
@@ -1133,11 +1129,11 @@ export class ProjectService {
       // 获取 artifacts 的 tags 和 stats
       const artifactIds = artifactRelations.map(a => a.id);
       
-      let tagsMap: Record<string, { id: string; name: string; slug: string; description: string | null; color: string | null }[]> = {};
-      let statsMap: Record<string, { viewCount: number; starCount: number; forkCount: number; downloadCount: number }> = {};
+      const tagsMap: Record<string, { id: string; name: string; slug: string; description: string | null; color: string | null }[]> = {};
+      const statsMap: Record<string, { viewCount: number; starCount: number; forkCount: number; downloadCount: number }> = {};
 
       if (artifactIds.length > 0) {
-        const tagResults = await this.db
+        const tagResults = await this.ctx
           .select({
             artifactId: artifactTags.artifactId,
             tagId: tags.id,
@@ -1163,7 +1159,7 @@ export class ProjectService {
           });
         }
 
-        const statsResults = await this.db
+        const statsResults = await this.ctx
           .select()
           .from(artifactStats)
           .where(inArray(artifactStats.artifactId, artifactIds));
@@ -1244,7 +1240,7 @@ export class ProjectService {
       }
 
       // 验证 project 存在
-      const [project] = await this.db
+      const [project] = await this.ctx
         .select({ id: projects.id, ownerId: projects.ownerId })
         .from(projects)
         .where(eq(projects.id, projectId))
@@ -1261,7 +1257,7 @@ export class ProjectService {
       }
 
       // 验证 artifact 存在
-      const [artifact] = await this.db
+      const [artifact] = await this.ctx
         .select({
           id: artifacts.id,
           name: artifacts.name,
@@ -1287,7 +1283,7 @@ export class ProjectService {
       }
 
       // 检查是否已经关联
-      const existingLink = await this.db
+      const existingLink = await this.ctx
         .select({ projectId: projectArtifacts.projectId })
         .from(projectArtifacts)
         .where(and(
@@ -1307,9 +1303,9 @@ export class ProjectService {
       }
 
       // 检查 isOfficial 权限：只有有管理权限的用户可以设置 isOfficial=true
-      let finalIsOfficial = isOfficial ?? false;
+      const finalIsOfficial = isOfficial ?? false;
       if (finalIsOfficial) {
-        const userAcl = await this.db
+        const userAcl = await this.ctx
           .select({ canManage: resourceAcl.canManage })
           .from(resourceAcl)
           .where(and(
@@ -1334,7 +1330,7 @@ export class ProjectService {
 
       // 如果指定了 roleId，验证 role 存在且是 isLeaf
       // roleId 现在是必填的，所以这里一定会执行
-      const [roleRow] = await this.db
+      const [roleRow] = await this.ctx
         .select({
           id: projectRoles.id,
           name: projectRoles.name,
@@ -1373,15 +1369,15 @@ export class ProjectService {
       const role = roleRow;
 
       // 创建关联
-      await this.db.insert(projectArtifacts).values({
+      this.ctx.modify(db => db.insert(projectArtifacts).values({
         projectId,
         artifactId,
         roleId,
         isOfficial: finalIsOfficial,
-      });
+      }));
 
       // 获取 author 信息
-      const [author] = await this.db
+      const [author] = await this.ctx
         .select({
           id: user.id,
           username: user.username,
@@ -1393,7 +1389,7 @@ export class ProjectService {
         .limit(1);
 
       // 获取 tags
-      const tagResults = await this.db
+      const tagResults = await this.ctx
         .select({
           tagId: tags.id,
           tagName: tags.name,
@@ -1406,14 +1402,14 @@ export class ProjectService {
         .where(eq(artifactTags.artifactId, artifactId));
 
       // 获取 stats
-      const [stats] = await this.db
+      const [stats] = await this.ctx
         .select()
         .from(artifactStats)
         .where(eq(artifactStats.artifactId, artifactId))
         .limit(1);
 
       // 获取 artifact 的 access control 信息
-      const [discoveryControl] = await this.db
+      const [discoveryControl] = await this.ctx
         .select({
           isListed: resourceDiscoveryControl.isListed,
         })
@@ -1483,7 +1479,7 @@ export class ProjectService {
   // 检查用户在 project 中的权限
   async checkProjectPermissions(projectId: string, userId: string): Promise<ServiceResult<{ isOwner: boolean; hasWritePermission: boolean; hasManagePermission: boolean }>> {
     try {
-      const [project] = await this.db
+      const [project] = await this.ctx
         .select({ ownerId: projects.ownerId })
         .from(projects)
         .where(eq(projects.id, projectId))
@@ -1501,7 +1497,7 @@ export class ProjectService {
 
       const isOwner = project.ownerId === userId;
 
-      const userAcl = await this.db
+      const userAcl = await this.ctx
         .select({ canWrite: resourceAcl.canWrite, canManage: resourceAcl.canManage })
         .from(resourceAcl)
         .where(and(
@@ -1546,45 +1542,4 @@ export class ProjectService {
       },
     };
   }
-}
-
-// Project artifacts 查询参数
-export interface ListProjectArtifactsParams {
-  page?: number;
-  limit?: number;
-  roleId?: string | null; // null 表示无角色的 artifacts
-  isOfficial?: boolean;
-  sortBy?: 'createdAt';
-  sortOrder?: 'asc' | 'desc';
-}
-
-// Project artifacts 列表结果
-export interface ListProjectArtifactsResult {
-  artifacts: ProjectArtifactItem[];
-  pagination: Pagination;
-}
-
-// 链接 artifact 到 project 参数
-export interface LinkArtifactToProjectParams {
-  projectId: string;
-  artifactId: string;
-  roleId?: string;
-  isOfficial?: boolean;
-  userId: string; // 执行操作的用户，用于权限检查
-}
-
-// 用户 projects 查询参数
-export interface ListUserProjectsParams {
-  page?: number;
-  limit?: number;
-  sortBy?: 'createdAt' | 'updatedAt';
-  sortOrder?: 'asc' | 'desc';
-  // 查看者 ID：如果是自己查看自己，可以看到所有资源
-  viewerId?: string;
-}
-
-// 用户 projects 列表结果
-export interface ListUserProjectsResult {
-  projects: UserProjectListItem[];
-  pagination: Pagination;
 }

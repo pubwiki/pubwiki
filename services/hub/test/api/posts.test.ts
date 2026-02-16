@@ -5,7 +5,6 @@ import type {
   CreateProjectPostResponse,
   UpdateProjectPostResponse,
   DeleteProjectPostResponse,
-  ApiError,
 } from '@pubwiki/api';
 import {
   getTestDb,
@@ -16,7 +15,6 @@ import {
   resourceAcl,
   projectPosts,
   discussions,
-  discussionReplies,
   resourceDiscoveryControl,
   PUBLIC_USER_ID,
   eq,
@@ -94,7 +92,7 @@ describe('Project Posts API', () => {
 
   describe('GET /api/projects/:projectId/posts', () => {
     it('should return empty list when no posts exist', async () => {
-      const { sessionCookie, userId: ownerId } = await registerUser('owner');
+      const { userId: ownerId } = await registerUser('owner');
       const projectId = await createTestProject(ownerId, 'Test Project');
 
       const request = new Request(`http://localhost/api/projects/${projectId}/posts`);

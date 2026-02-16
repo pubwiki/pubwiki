@@ -113,7 +113,7 @@ describe('E2E: Artifacts API', () => {
     });
 
     it('should return 400 for invalid sortBy value', async () => {
-      const { data, error, response } = await client.GET('/artifacts', {
+      const { error, response } = await client.GET('/artifacts', {
         params: {
           query: {
             // @ts-expect-error - testing invalid value
@@ -128,7 +128,7 @@ describe('E2E: Artifacts API', () => {
     });
 
     it('should return 400 for invalid type value', async () => {
-      const { data, error, response } = await client.GET('/artifacts', {
+      const { error, response } = await client.GET('/artifacts', {
         params: {
           query: {
             // @ts-expect-error - testing invalid value
