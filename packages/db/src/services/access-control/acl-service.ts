@@ -3,9 +3,6 @@ import type { Database } from '../../client';
 import { resourceAcl, PUBLIC_USER_ID, type AclPermission, type AclPermissions } from '../../schema/acl';
 import { resourceDiscoveryControl } from '../../schema/discovery-control';
 import type { ResourceType } from './index';
-import { projectArtifacts } from '../../schema/projects';
-import { articles } from '../../schema/articles';
-import { nodeVersions } from '../../schema/node-versions';
 
 // ========================================================================
 // 类型定义
@@ -255,12 +252,6 @@ export class AclService {
       if (userAcl && this.hasPermission(userAcl, permission)) {
         return { allowed: true, reason: 'acl' };
       }
-
-      // 3. 检查继承权限
-      const inheritedResult = await this.checkInheritedPermission(ref, userId, permission);
-      if (inheritedResult.allowed) {
-        return inheritedResult;
-      }
     }
 
     return { allowed: false, reason: 'denied' };
@@ -289,167 +280,7 @@ export class AclService {
     const result = await this.checkPermission(ref, userId, 'manage');
     return result.allowed;
   }
-
-  /**
-   * 获取用户在资源上的有效权限
-   */
-  async getEffectivePermissions(
-    ref: ResourceRef,
-    userId: string | undefined
-  ): Promise<{ canRead: boolean; canWrite: boolean; canManage: boolean }> {
-    // 公开权限
-    const publicAcl = await this.getAcl(ref, PUBLIC_USER_ID);
-    let canRead = publicAcl?.canRead ?? false;
-    let canWrite = publicAcl?.canWrite ?? false;
-    let canManage = publicAcl?.canManage ?? false;
-
-    // 用户直接权限
-    if (userId) {
-      const userAcl = await this.getAcl(ref, userId);
-      if (userAcl) {
-        canRead = canRead || userAcl.canRead;
-        canWrite = canWrite || userAcl.canWrite;
-        canManage = canManage || userAcl.canManage;
-      }
-
-      // 继承权限
-      const inherited = await this.getInheritedPermissions(ref, userId);
-      canRead = canRead || inherited.canRead;
-      canWrite = canWrite || inherited.canWrite;
-      canManage = canManage || inherited.canManage;
-    }
-
-    return { canRead, canWrite, canManage };
-  }
-
-  // ========================================================================
-  // 权限继承
-  // ========================================================================
-
-  /**
-   * 检查继承权限
-   *
-   * 继承链：
-   * - Article → Artifact
-   * - Node → Artifact
-   * - Save → Artifact
-   * - Artifact → Project (通过 project_artifacts)
-   */
-  private async checkInheritedPermission(
-    ref: ResourceRef,
-    userId: string,
-    permission: AclPermission
-  ): Promise<AccessCheckResult> {
-    const parentRef = await this.getParentResource(ref);
-    if (!parentRef) {
-      return { allowed: false, reason: 'denied' };
-    }
-
-    // 检查父资源权限
-    const parentResult = await this.checkPermission(parentRef, userId, permission);
-    if (parentResult.allowed) {
-      return { allowed: true, reason: 'inherited' };
-    }
-
-    return { allowed: false, reason: 'denied' };
-  }
-
-  /**
-   * 获取继承的权限
-   */
-  private async getInheritedPermissions(
-    ref: ResourceRef,
-    userId: string
-  ): Promise<{ canRead: boolean; canWrite: boolean; canManage: boolean }> {
-    const parentRef = await this.getParentResource(ref);
-    if (!parentRef) {
-      return { canRead: false, canWrite: false, canManage: false };
-    }
-
-    return this.getEffectivePermissions(parentRef, userId);
-  }
-
-  /**
-   * 获取父资源引用（用于权限继承）
-   */
-  private async getParentResource(ref: ResourceRef): Promise<ResourceRef | null> {
-    switch (ref.type) {
-      case 'article':
-        return this.getArticleParent(ref.id);
-      case 'node':
-        return this.getNodeParent(ref.id);
-      case 'save':
-        return this.getSaveParent(ref.id);
-      case 'artifact':
-        return this.getArtifactParent(ref.id);
-      default:
-        return null;
-    }
-  }
-
-  /**
-   * 获取 Article 的父 Artifact
-   */
-  private async getArticleParent(articleId: string): Promise<ResourceRef | null> {
-    const result = await this.db
-      .select({ artifactId: articles.artifactId })
-      .from(articles)
-      .where(eq(articles.id, articleId))
-      .limit(1);
-
-    if (result.length === 0 || !result[0].artifactId) {
-      return null;
-    }
-
-    return { type: 'artifact', id: result[0].artifactId };
-  }
-
-  /**
-   * 获取 Node 的父 Artifact
-   * Node 通过 node_versions.sourceArtifactId 关联到 artifact
-   */
-  private async getNodeParent(nodeId: string): Promise<ResourceRef | null> {
-    const result = await this.db
-      .select({ sourceArtifactId: nodeVersions.sourceArtifactId })
-      .from(nodeVersions)
-      .where(eq(nodeVersions.nodeId, nodeId))
-      .limit(1);
-
-    if (result.length === 0) {
-      return null;
-    }
-
-    return { type: 'artifact', id: result[0].sourceArtifactId };
-  }
-
-  /**
-   * 获取 Save 的父 Artifact
-   * Save 表中有 artifactId 字段
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async getSaveParent(saveId: string): Promise<ResourceRef | null> {
-    // Save 表结构需要确认，这里假设有 saves 表
-    // 如果没有，返回 null
-    return null;
-  }
-
-  /**
-   * 获取 Artifact 的父 Project
-   */
-  private async getArtifactParent(artifactId: string): Promise<ResourceRef | null> {
-    const result = await this.db
-      .select({ projectId: projectArtifacts.projectId })
-      .from(projectArtifacts)
-      .where(eq(projectArtifacts.artifactId, artifactId))
-      .limit(1);
-
-    if (result.length === 0) {
-      return null;
-    }
-
-    return { type: 'project', id: result[0].projectId };
-  }
-
+  
   // ========================================================================
   // 私有辅助方法
   // ========================================================================
