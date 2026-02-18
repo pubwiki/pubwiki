@@ -463,7 +463,9 @@ CREATE TABLE `save_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
 	`state_node_id` text NOT NULL,
 	`state_node_commit` text NOT NULL,
-	`source_artifact_commit` text NOT NULL,
+	`artifact_id` text NOT NULL,
+	`artifact_commit` text NOT NULL,
+	`quads_hash` text NOT NULL,
 	`title` text,
 	`description` text,
 	`ref_count` integer DEFAULT 0 NOT NULL,
@@ -471,9 +473,11 @@ CREATE TABLE `save_contents` (
 );
 --> statement-breakpoint
 CREATE INDEX `idx_save_contents_state_node` ON `save_contents` (`state_node_id`);--> statement-breakpoint
+CREATE INDEX `idx_save_contents_quads_hash` ON `save_contents` (`quads_hash`);--> statement-breakpoint
 CREATE TABLE `state_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
-	`saves` text,
+	`name` text NOT NULL,
+	`description` text,
 	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
@@ -482,6 +486,7 @@ CREATE TABLE `vfs_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
 	`mounts` text,
+	`files_hash` text NOT NULL,
 	`file_count` integer,
 	`total_size` integer,
 	`file_tree` text,
@@ -489,6 +494,7 @@ CREATE TABLE `vfs_contents` (
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
+CREATE INDEX `idx_vfs_contents_files_hash` ON `vfs_contents` (`files_hash`);--> statement-breakpoint
 CREATE TABLE `artifact_version_edges` (
 	`commit_hash` text NOT NULL,
 	`source_node_id` text NOT NULL,

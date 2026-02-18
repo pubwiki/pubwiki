@@ -4,13 +4,12 @@ import { artifacts, tags, artifactTags, artifactVersions, artifactCommitTags, ty
 import { TagService, type TagInfo } from './tag';
 import { artifactVersionNodes, artifactVersionEdges, type NewArtifactVersionNode, type NewArtifactVersionEdge } from '../schema/artifact-version-graph';
 import { nodeVersions } from '../schema/node-versions';
-import { saveContents } from '../schema/node-contents';
-import type { ArtifactNodeType } from '../schema/enums';
+import type { NodeType } from '../schema/enums';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
-import { SaveService } from './save';
 import { artifactStats } from '../schema/stats';
 import { user } from '../schema/auth';
 import type { ServiceResult } from './user';
+import { NodeGraph } from '../utils/node-graph';
 import type {
   ArtifactListItem,
   Pagination,
@@ -20,7 +19,6 @@ import type {
   ArtifactNodeContent,
   ArtifactLineageItem,
   CreateArtifactNode,
-  CreateSaveInput,
   ListArtifactsQuery,
   GetUserArtifactsQuery,
   PatchArtifactRequest,
@@ -34,7 +32,7 @@ import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
 
 // 重新导出供其他模块使用
-export type { ArtifactListItem, Pagination, ArtifactLineageItem, CreateArtifactNode, CreateSaveInput };
+export type { ArtifactListItem, Pagination, ArtifactLineageItem, CreateArtifactNode };
 
 // 列表查询参数（排除 undefined）
 export type ListArtifactsParams = NonNullable<ListArtifactsQuery>;
@@ -48,7 +46,6 @@ export interface CreateArtifactInput {
   metadata: CreateArtifactMetadata;
   nodes: CreateArtifactNode[];
   edges: ArtifactEdgeDescriptor[];
-  saves?: CreateSaveInput[];
 }
 
 // 创建 artifact 的返回结果
@@ -96,19 +93,20 @@ export class ArtifactService {
     const { authorId, metadata, nodes, edges } = input;
     const artifactId = metadata.artifactId;
 
-    try {
+    try {      
       // Step 1: Validate and prepare context (check permissions, verify commit hash, get author)
       const prepareResult = await this.prepareArtifactContext(artifactId, authorId, metadata, nodes, edges);
       if (!prepareResult.success) return prepareResult;
       const { isUpdate, author, versionId } = prepareResult.data;
 
-      // Step 2: Validate and sync nodes (nodes must exist before version references them)
-      const nodeResult = await this.validateAndSyncNodes(artifactId, authorId, metadata.commit, nodes, edges, input.saves ?? []);
-      if (!nodeResult.success) return nodeResult;
+      // Step 2: Build and validate graph structure using NodeGraph abstraction
+      const graph = NodeGraph.fromArrays(nodes, edges);
+      const validationResult = graph.validate(metadata.entrypoint);
+      if (!validationResult.success) return validationResult;
 
-      // Step 3: Validate entrypoint (depends on nodes being validated)
-      const entrypointResult = this.validateEntrypoint(metadata.entrypoint, nodes, input.saves ?? []);
-      if (!entrypointResult.success) return entrypointResult;
+      // Step 3: Sync nodes (nodes must exist before version references them)
+      const nodeResult = await this.syncNodes(artifactId, authorId, nodes);
+      if (!nodeResult.success) return nodeResult;
 
       // Step 4: Create or update artifact record (without currentVersionId for new artifacts)
       if (isUpdate) {
@@ -128,13 +126,16 @@ export class ArtifactService {
       await this.processCommitTags(artifactId, metadata.commit, metadata.commitTags ?? []);
 
       // Step 8: Process tags
-      const tagService = new TagService(this.ctx);
-      const existingTagsMap = metadata.tags && metadata.tags.length > 0
-        ? await tagService.fetchTagsBySlug(metadata.tags)
-        : new Map<string, TagInfo>();
-      const processedTags = await this.processTags(
-        artifactId, isUpdate, metadata.tags ?? [], tagService, existingTagsMap
-      );
+      let processedTags: TagInfo[] = [];
+      const tagSlugs = metadata.tags ?? [];
+      if (tagSlugs.length > 0) {
+        const tagService = new TagService(this.ctx);
+        const existingTagsMap = await tagService.fetchTagsBySlug(tagSlugs);
+        const result = isUpdate
+          ? await tagService.syncTags(artifactId, tagSlugs, existingTagsMap)
+          : await tagService.setTags(artifactId, tagSlugs, existingTagsMap);
+        processedTags = result.processedTags;
+      }
 
       // Step 9: Create stats record (only for new artifacts)
       if (!isUpdate) {
@@ -290,6 +291,27 @@ export class ArtifactService {
       )
     );
 
+    // FIXME: this should also handle permission change
+    // a user could set a published artifact from public to private
+    // or from private to public
+    // 
+    // since there is reference relation between artifacts and nodes
+    // we must carefully consider this situation.
+    // 
+    // 1. when an artifact is firstly published with several referenced
+    //    nodes and original nodes, we must make sure
+    //    1. The auther must have read permission on the referenced nodes
+    //    2. The permission of the original nodes must be the same as the
+    //       artifact itself
+    // 2. when an artifact is turned from public to private, its nodes must 
+    //    be updated to private. However, the version of this node must be
+    //    updated to keep the permission of the previous version unchanged
+    // 3. when an artifact is turned from private to public
+    //    1. its original nodes must be made public 
+    //    2. its referenced nodes must all be public. In fact, its referenced
+    //       nodes will naturally be all-public since there is no way to make
+    //       a node version private
+
     return { success: true, data: undefined };
   }
 
@@ -338,6 +360,10 @@ export class ArtifactService {
     );
 
     // Create public read ACL
+    // FIXME: The api should allow user to specify a isPrivate field to 
+    // set artifact to private when publishing
+    // FIXME: The modification of ACL table should be handled with the 
+    // service instead of direct db manipulating
     this.ctx.modify(db =>
       db.insert(resourceAcl).values({
         resourceType: 'artifact',
@@ -404,25 +430,18 @@ export class ArtifactService {
   }
 
   /**
-   * Step 5: Sync all nodes and create saves.
+   * Sync all nodes to node_versions table.
+   * Validation is now handled by NodeGraph abstraction before this method is called.
    */
-  private async validateAndSyncNodes(
+  private async syncNodes(
     artifactId: string,
     authorId: string,
-    commitHash: string,
     nodes: CreateArtifactNode[],
-    edges: ArtifactEdgeDescriptor[],
-    saves: CreateSaveInput[],
   ): Promise<ServiceResult<void>> {
     const nodeVersionService = new NodeVersionService(this.ctx);
 
-    // Step 1: Create saves first (they will be referenced by STATE nodes)
-    if (saves.length > 0) {
-      const saveResult = await this.createSaves(artifactId, authorId, commitHash, nodes, edges, saves);
-      if (!saveResult.success) return saveResult;
-    }
-
-    // Step 2: Sync all nodes together
+    // Sync all nodes together
+    // SAVE nodes now have all required fields in their content (stateNodeCommit, artifactId, artifactCommit)
     const syncInputs: SyncNodeVersionInput[] = nodes.map(n => ({
       nodeId: n.nodeId,
       commit: n.commit,
@@ -451,215 +470,6 @@ export class ArtifactService {
       return {
         success: false,
         error: { code: 'BAD_REQUEST', message: `Node sync errors: ${syncResult.data.errors.join('; ')}` },
-      };
-    }
-
-    return { success: true, data: undefined };
-  }
-
-  /**
-   * Create saves that are submitted with the artifact
-   */
-  private async createSaves(
-    artifactId: string,
-    authorId: string,
-    commitHash: string,
-    nodes: CreateArtifactNode[],
-    edges: ArtifactEdgeDescriptor[],
-    saves: CreateSaveInput[],
-  ): Promise<ServiceResult<void>> {
-    const saveService = new SaveService(this.ctx);
-
-    // Build state node map: stateNodeId → stateNodeCommit (from nodes array)
-    const stateNodeMap = new Map<string, string>();
-    for (const node of nodes) {
-      if (node.type === 'STATE') {
-        stateNodeMap.set(node.nodeId, node.commit);
-      }
-    }
-
-    // Cache for graph connectivity validation results (same stateNodeId may be referenced by multiple saves)
-    const connectivityCache = new Map<string, ServiceResult<void>>();
-
-    // Cache for DB-fetched STATE node commits (same stateNodeId may be referenced by multiple saves)
-    const dbStateNodeCache = new Map<string, string | null>();
-
-    for (const save of saves) {
-      let stateNodeCommit = stateNodeMap.get(save.stateNodeId);
-
-      // If not found in nodes array, try to find in database
-      if (!stateNodeCommit) {
-        // Check cache first
-        if (dbStateNodeCache.has(save.stateNodeId)) {
-          stateNodeCommit = dbStateNodeCache.get(save.stateNodeId) ?? undefined;
-        } else {
-          // Query database for existing STATE node
-          const dbStateNode = await this.ctx.select({
-            commit: nodeVersions.commit,
-            type: nodeVersions.type,
-          })
-            .from(nodeVersions)
-            .where(eq(nodeVersions.nodeId, save.stateNodeId))
-            .orderBy(desc(nodeVersions.authoredAt))
-            .limit(1);
-
-          if (dbStateNode.length > 0 && dbStateNode[0].type === 'STATE') {
-            stateNodeCommit = dbStateNode[0].commit;
-            dbStateNodeCache.set(save.stateNodeId, stateNodeCommit);
-          } else {
-            dbStateNodeCache.set(save.stateNodeId, null);
-          }
-        }
-      }
-
-      if (!stateNodeCommit) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `Save references state node ${save.stateNodeId} which is not in the graph and does not exist in the database`,
-          },
-        };
-      }
-
-      // Validate graph connectivity: state node → loader node → sandbox node (with caching)
-      let validationResult = connectivityCache.get(save.stateNodeId);
-      if (!validationResult) {
-        validationResult = this.validateSaveGraphConnectivity(save.stateNodeId, nodes, edges);
-        connectivityCache.set(save.stateNodeId, validationResult);
-      }
-      if (!validationResult.success) return validationResult;
-
-      const result = await saveService.createSave({
-        stateNodeId: save.stateNodeId,
-        stateNodeCommit,
-        commit: save.commit,
-        parent: save.parent ?? null,
-        authorId,
-        sourceArtifactId: artifactId,
-        sourceArtifactCommit: commitHash,
-        contentHash: save.contentHash,
-        title: save.title,
-        description: save.description,
-        isListed: save.isListed,
-        // Skip validation since both artifact version and STATE node will be created in the same transaction
-        skipValidation: true,
-      });
-
-      if (!result.success) {
-        return {
-          success: false,
-          error: { code: 'BAD_REQUEST', message: `Failed to create save: ${result.error.message}` },
-        };
-      }
-    }
-
-    return { success: true, data: undefined };
-  }
-
-  /**
-   * Validate that state node is connected to sandbox through loader
-   */
-  private validateSaveGraphConnectivity(
-    stateNodeId: string,
-    nodes: CreateArtifactNode[],
-    edges: ArtifactEdgeDescriptor[],
-  ): ServiceResult<void> {
-    // Find loader nodes connected to state node
-    const stateNodeEdges = edges.filter(e => e.source === stateNodeId);
-    const loaderNodeIds = new Set<string>();
-    for (const e of stateNodeEdges) {
-      const targetNode = nodes.find(n => n.nodeId === e.target);
-      if (targetNode && targetNode.type === 'LOADER') {
-        loaderNodeIds.add(e.target);
-      }
-    }
-
-    if (loaderNodeIds.size === 0) {
-      return {
-        success: false,
-        error: {
-          code: 'BAD_REQUEST',
-          message: `Save validation failed: state node ${stateNodeId} is not connected to any LOADER node`,
-        },
-      };
-    }
-
-    // Check loader nodes connect to sandbox
-    let hasSandboxConnection = false;
-    for (const loaderId of loaderNodeIds) {
-      const loaderEdges = edges.filter(e => e.source === loaderId);
-      for (const le of loaderEdges) {
-        const targetNode = nodes.find(n => n.nodeId === le.target);
-        if (targetNode && targetNode.type === 'SANDBOX') {
-          hasSandboxConnection = true;
-          break;
-        }
-      }
-      if (hasSandboxConnection) break;
-    }
-
-    if (!hasSandboxConnection) {
-      return {
-        success: false,
-        error: {
-          code: 'BAD_REQUEST',
-          message: `Save validation failed: state node ${stateNodeId} is not connected to a SANDBOX node through a LOADER node`,
-        },
-      };
-    }
-
-    return { success: true, data: undefined };
-  }
-
-  /**
-   * Step 6: Validate entrypoint references
-   * 
-   * @param entrypoint - The entrypoint configuration
-   * @param nodes - All nodes in the artifact
-   * @param saves - All saves being created with this artifact
-   */
-  private validateEntrypoint(
-    entrypoint: CreateArtifactMetadata['entrypoint'],
-    nodes: CreateArtifactNode[],
-    saves: CreateSaveInput[],
-  ): ServiceResult<void> {
-    if (!entrypoint) {
-      return { success: true, data: undefined };
-    }
-
-    const { saveCommit, sandboxNodeId } = entrypoint;
-
-    // Verify sandboxNodeId exists and is SANDBOX type
-    const sandboxNode = nodes.find(n => n.nodeId === sandboxNodeId);
-    if (!sandboxNode) {
-      return {
-        success: false,
-        error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not in the graph` },
-      };
-    }
-    if (sandboxNode.type !== 'SANDBOX') {
-      return {
-        success: false,
-        error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not a SANDBOX node (got ${sandboxNode.type})` },
-      };
-    }
-
-    // Verify saveCommit is in the saves array
-    const saveFound = saves.find(s => s.commit === saveCommit);
-    if (!saveFound) {
-      return {
-        success: false,
-        error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} is not found in the saves array` },
-      };
-    }
-
-    // Verify the save references a STATE node in this artifact
-    const stateNodeIds = new Set(nodes.filter(n => n.type === 'STATE').map(n => n.nodeId));
-    if (!stateNodeIds.has(saveFound.stateNodeId)) {
-      return {
-        success: false,
-        error: { code: 'BAD_REQUEST', message: `Entrypoint save references state node ${saveFound.stateNodeId} which is not in the graph` },
       };
     }
 
@@ -696,29 +506,6 @@ export class ArtifactService {
         targetHandle: edge.targetHandle ?? null,
       };
       this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge));
-    }
-  }
-
-  /**
-   * Step 8: Process tags using TagService
-   */
-  private async processTags(
-    artifactId: string,
-    isUpdate: boolean,
-    tagSlugs: string[],
-    tagService: TagService,
-    existingTagsMap: Map<string, TagInfo>,
-  ): Promise<TagInfo[]> {
-    if (tagSlugs.length === 0) {
-      return [];
-    }
-
-    if (isUpdate) {
-      const syncResult = await tagService.syncTags(artifactId, tagSlugs, existingTagsMap);
-      return syncResult.processedTags;
-    } else {
-      const setResult = await tagService.setTags(artifactId, tagSlugs, existingTagsMap);
-      return setResult.processedTags;
     }
   }
 
@@ -1437,7 +1224,13 @@ export class ArtifactService {
         || (metadata.removeEdges && metadata.removeEdges.length > 0);
 
       if (!hasGraphChanges && !metadata.commit) {
-        // metadata-only 更新：直接更新 baseVersion 和 artifact 信息
+        // metadata-only 更新：使用 NodeGraph 验证 entrypoint
+        if (metadata.entrypoint !== undefined) {
+          const graphResult = await NodeGraph.fromCommitHash(this.ctx, baseVersion.commitHash);
+          if (!graphResult.success) return graphResult;
+          const entrypointResult = graphResult.data.validateEntrypoint(metadata.entrypoint);
+          if (!entrypointResult.success) return entrypointResult;
+        }
         return await this.patchArtifactMetadataOnly(artifactId, authorId, baseVersion, metadata);
       }
 
@@ -1461,81 +1254,23 @@ export class ArtifactService {
         }
       }
 
-      // 获取 baseCommit 的完整节点列表
-      const baseNodes = await this.ctx
-        .select()
-        .from(artifactVersionNodes)
-        .where(eq(artifactVersionNodes.commitHash, baseVersion.commitHash));
+      // 使用 NodeGraph.fromPatch 构建合并后的图
+      const graphResult = await NodeGraph.fromPatch(this.ctx, baseVersion.commitHash, {
+        addNodes: metadata.addNodes,
+        removeNodeIds: metadata.removeNodeIds,
+        addEdges: metadata.addEdges,
+        removeEdges: metadata.removeEdges,
+      });
+      if (!graphResult.success) return graphResult;
+      const graph = graphResult.data;
 
-      // 获取 baseCommit 的完整边列表
-      const baseEdges = await this.ctx
-        .select()
-        .from(artifactVersionEdges)
-        .where(eq(artifactVersionEdges.commitHash, baseVersion.commitHash));
+      // 验证合并后的图
+      const validationResult = graph.validate(metadata.entrypoint);
+      if (!validationResult.success) return validationResult;
 
-      // 应用节点补丁
-      const removeNodeIds = new Set(metadata.removeNodeIds ?? []);
-      const addNodesMap = new Map<string, CreateArtifactNode>();
-      for (const node of metadata.addNodes ?? []) {
-        addNodesMap.set(node.nodeId, node);
-      }
-
-      // 构建合并后的节点列表
-      const mergedNodes: CreateArtifactNode[] = [];
-      const nodeVersionService = new NodeVersionService(this.ctx);
-
-      for (const bn of baseNodes) {
-        if (removeNodeIds.has(bn.nodeId)) continue; // 被删除的节点
-
-        if (addNodesMap.has(bn.nodeId)) {
-          // 被更新的节点：使用 patch 中的新数据
-          mergedNodes.push(addNodesMap.get(bn.nodeId)!);
-          addNodesMap.delete(bn.nodeId);
-        } else {
-          // 保持不变的节点：从 base version 中获取完整数据
-          const versionDetail = await nodeVersionService.getVersion(bn.nodeCommit);
-          if (!versionDetail.success) {
-            return { success: false, error: { code: 'INTERNAL_ERROR', message: `Failed to get node version: ${bn.nodeId}@${bn.nodeCommit}` } };
-          }
-          const v = versionDetail.data;
-          mergedNodes.push({
-            nodeId: bn.nodeId,
-            commit: bn.nodeCommit,
-            type: v.type as ArtifactNodeType,
-            name: v.name ?? undefined,
-            contentHash: v.contentHash,
-            content: v.content!,
-            position: bn.positionX != null && bn.positionY != null
-              ? { x: bn.positionX, y: bn.positionY }
-              : undefined,
-          });
-        }
-      }
-
-      // 添加新节点（不在 base 中的）
-      for (const [, node] of addNodesMap) {
-        mergedNodes.push(node);
-      }
-
-      // 应用边补丁
-      const removeEdgeKeys = new Set(
-        (metadata.removeEdges ?? []).map(e => `${e.source}:${e.target}`)
-      );
-
-      const mergedEdges: ArtifactEdgeDescriptor[] = [];
-      for (const be of baseEdges) {
-        const key = `${be.sourceNodeId}:${be.targetNodeId}`;
-        if (removeEdgeKeys.has(key)) continue;
-        mergedEdges.push({
-          source: be.sourceNodeId,
-          target: be.targetNodeId,
-          sourceHandle: be.sourceHandle ?? undefined,
-          targetHandle: be.targetHandle ?? undefined,
-        });
-      }
-      for (const edge of metadata.addEdges ?? []) {
-        mergedEdges.push(edge);
-      }
+      // 获取合并后的节点和边
+      const mergedNodes = [...graph.nodes];
+      const mergedEdges = [...graph.edges];
 
       // 校验 commit hash
       const expectedCommit = await ArtifactService.computeCommitHash(
@@ -1569,6 +1304,7 @@ export class ArtifactService {
       const currentIsListed = currentDiscoveryControl[0]?.isListed ?? true;
 
       // 委托给 createArtifact 完成实际的版本创建（复用所有验证逻辑）
+      // SAVE nodes should be included in mergedNodes if needed
       const createResult = await this.createArtifact({
         authorId,
         metadata: {
@@ -1585,7 +1321,6 @@ export class ArtifactService {
         },
         nodes: mergedNodes,
         edges: mergedEdges,
-        saves: input.saves,
       });
       if (!createResult.success) return createResult;
       return { success: true, data: { ...createResult.data, versionCreated: true } };
@@ -1597,6 +1332,7 @@ export class ArtifactService {
 
   /**
    * Metadata-only 更新：直接更新 baseVersion 的元数据和 artifact 基本信息，不创建新版本
+   * Note: Entrypoint validation is handled by caller using NodeGraph before calling this method.
    */
   private async patchArtifactMetadataOnly(
     artifactId: string,
@@ -1629,66 +1365,11 @@ export class ArtifactService {
       }
 
       // 更新版本元数据（仅更新提供了的字段）
+      // Entrypoint validation is done before calling this method using NodeGraph
       const versionUpdate: Record<string, unknown> = {};
       if (metadata.version !== undefined) versionUpdate.version = metadata.version;
       if (metadata.changelog !== undefined) versionUpdate.changelog = metadata.changelog;
       if (metadata.entrypoint !== undefined) {
-        // 验证 entrypoint
-        const { saveCommit, sandboxNodeId } = metadata.entrypoint;
-
-        // 获取当前版本的节点
-        const versionNodes = await this.ctx.select({ nodeId: artifactVersionNodes.nodeId, nodeCommit: artifactVersionNodes.nodeCommit })
-          .from(artifactVersionNodes)
-          .where(eq(artifactVersionNodes.commitHash, baseVersion.commitHash));
-
-        // 获取当前版本中的 STATE 节点 ID 集合
-        const stateNodeIds = new Set<string>();
-        const nodeVersionService = new NodeVersionService(this.ctx);
-        let sandboxFound = false;
-
-        for (const vn of versionNodes) {
-          const versionDetail = await nodeVersionService.getVersion(vn.nodeCommit);
-          if (!versionDetail.success) continue;
-
-          const v = versionDetail.data;
-          if (v.type === 'SANDBOX' && vn.nodeId === sandboxNodeId) {
-            sandboxFound = true;
-          }
-          if (v.type === 'STATE') {
-            stateNodeIds.add(vn.nodeId);
-          }
-        }
-
-        if (!sandboxFound) {
-          return {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not a SANDBOX node in the current version` },
-          };
-        }
-
-        // 验证 saveCommit 是否引用了当前版本中的某个 STATE 节点
-        // 查询 save_contents 表获取该 saveCommit 对应的 stateNodeId
-        const saveContentResult = await this.ctx.select({ stateNodeId: saveContents.stateNodeId })
-          .from(saveContents)
-          .innerJoin(nodeVersions, eq(nodeVersions.contentHash, saveContents.contentHash))
-          .where(eq(nodeVersions.commit, saveCommit))
-          .limit(1);
-
-        if (saveContentResult.length === 0) {
-          return {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} is not found` },
-          };
-        }
-
-        const saveStateNodeId = saveContentResult[0].stateNodeId;
-        if (!stateNodeIds.has(saveStateNodeId)) {
-          return {
-            success: false,
-            error: { code: 'BAD_REQUEST', message: `Entrypoint saveCommit ${saveCommit} references state node ${saveStateNodeId} which is not in the current artifact version` },
-          };
-        }
-
         versionUpdate.entrypoint = metadata.entrypoint;
       }
 
@@ -2115,7 +1796,7 @@ export class ArtifactService {
           const v = versionDetail.data;
           nodes.push({
             id: vn.nodeId,
-            type: v.type as ArtifactNodeType,
+            type: v.type as NodeType,
             commit: v.commit,
             contentHash: v.contentHash,
             name: v.name,
@@ -2182,7 +1863,6 @@ export type ArtifactVersionItem = ArtifactVersion;
 export type PatchArtifactInput = {
   authorId: string;
   metadata: PatchArtifactRequest;
-  saves?: CreateSaveInput[];
 };
 
 // 谱系查询参数

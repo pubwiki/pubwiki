@@ -273,7 +273,7 @@ describe('NodeVersionService', () => {
         { type: 'INPUT', table: inputContents, content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'in' }] } },
         { type: 'PROMPT', table: promptContents, content: { type: 'PROMPT', blocks: [{ type: 'TextBlock', value: 'pr' }] } },
         { type: 'GENERATED', table: generatedContents, content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'gen' }], inputRef: { id: 'x', commit: 'y' } } },
-        { type: 'VFS', table: vfsContents, content: { type: 'VFS', projectId: 'proj1' } },
+        { type: 'VFS', table: vfsContents, content: { type: 'VFS', filesHash: 'testhash0000000000000000000000000000000000000000000000000000001' } },
         { type: 'SANDBOX', table: sandboxContents, content: { type: 'SANDBOX', entryFile: 'index.html' } },
         { type: 'LOADER', table: loaderContents, content: { type: 'LOADER' } },
         { type: 'STATE', table: stateContents, content: { type: 'STATE', name: 'Test State' } },
@@ -699,7 +699,7 @@ describe('NodeVersionService', () => {
       expect(rows[0].plainText).toBe('test input');
     });
 
-    it('should store VFS content with projectId and file metadata', async () => {
+    it('should store VFS content with file metadata', async () => {
       const hash = makeContentHash('tvfs');
       const v = await inputVersion({
         nodeId: crypto.randomUUID(),
@@ -707,7 +707,7 @@ describe('NodeVersionService', () => {
         type: 'VFS',
         content: {
           type: 'VFS',
-          projectId: 'proj-123',
+          filesHash: 'testhash0000000000000000000000000000000000000000000000000000002',
           fileCount: 10,
           totalSize: 4096,
           fileTree: [
@@ -724,7 +724,6 @@ describe('NodeVersionService', () => {
         .from(vfsContents)
         .where(eq(vfsContents.contentHash, hash));
       expect(rows).toHaveLength(1);
-      expect(rows[0].projectId).toBe('proj-123');
       expect(rows[0].fileCount).toBe(10);
       expect(rows[0].totalSize).toBe(4096);
       expect(rows[0].fileTree).toHaveLength(2);

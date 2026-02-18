@@ -31,10 +31,6 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const COLLABORATOR_ROLES = ['OWNER', 'EDITOR', 'VIEWER'] as const;
 export type CollaboratorRole = (typeof COLLABORATOR_ROLES)[number];
 
-// Artifact Node 类型（仅用于 artifact 创建时的类型校验）
-export const ARTIFACT_NODE_TYPES = ['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'STATE', 'LOADER', 'SANDBOX'] as const;
-export type ArtifactNodeType = (typeof ARTIFACT_NODE_TYPES)[number];
-
-// Node 类型（node_versions.type 字段的类型约束，包含 SAVE）
-export const NODE_TYPES = [...ARTIFACT_NODE_TYPES, 'SAVE'] as const;
+// Node 类型（统一使用，包含 SAVE）
+export const NODE_TYPES = ['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'STATE', 'LOADER', 'SANDBOX', 'SAVE'] as const;
 export type NodeType = (typeof NODE_TYPES)[number];

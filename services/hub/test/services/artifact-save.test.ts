@@ -15,10 +15,11 @@ import {
   artifactVersionNodes,
   artifactVersionEdges,
 } from '@pubwiki/db';
-import type { SyncNodeVersionInput, CreateArtifactNode, ArtifactEdgeDescriptor, CreateSaveInput } from '@pubwiki/db';
-import { computeNodeCommit, computeContentHash, computeArtifactCommit, computeSaveId } from '@pubwiki/api';
+import type { SyncNodeVersionInput, CreateArtifactNode } from '@pubwiki/db';
+import type { ArtifactEdgeDescriptor } from '@pubwiki/api';
+import { computeNodeCommit, computeContentHash, computeArtifactCommit } from '@pubwiki/api';
 
-describe('ArtifactService - createSaves with existing STATE node', () => {
+describe('ArtifactService - SAVE node validation', () => {
   let db: ReturnType<typeof createDb>;
   let ctx: BatchContext;
   let testUserId: string;
@@ -77,18 +78,43 @@ describe('ArtifactService - createSaves with existing STATE node', () => {
   }
 
   // Helper: create SANDBOX and LOADER nodes content
-  async function createSandboxNode(nodeId: string): Promise<{ commit: string; contentHash: string; content: object }> {
+  async function createSandboxNode(nodeId: string): Promise<{ commit: string; contentHash: string; content: { type: 'SANDBOX'; entryFile: string } }> {
     const content = { type: 'SANDBOX' as const, entryFile: 'index.html' };
     const contentHash = await computeContentHash(content);
     const commit = await computeNodeCommit(nodeId, null, contentHash, 'SANDBOX');
     return { commit, contentHash, content };
   }
 
-  async function createLoaderNode(nodeId: string): Promise<{ commit: string; contentHash: string; content: object }> {
+  async function createLoaderNode(nodeId: string): Promise<{ commit: string; contentHash: string; content: { type: 'LOADER' } }> {
     const content = { type: 'LOADER' as const };
     const contentHash = await computeContentHash(content);
     const commit = await computeNodeCommit(nodeId, null, contentHash, 'LOADER');
     return { commit, contentHash, content };
+  }
+
+  // Helper: create SAVE node data
+  async function createSaveNode(
+    stateNodeId: string,
+    stateNodeCommit: string,
+    artifactId: string,
+    artifactCommit: string,
+    title = 'Test Save',
+  ): Promise<{ nodeId: string; commit: string; contentHash: string; content: { type: 'SAVE'; stateNodeId: string; stateNodeCommit: string; artifactId: string; artifactCommit: string; quadsHash: string; title: string; description: null } }> {
+    const quadsHash = 'abcd1234'.repeat(8); // 64 char hex hash placeholder
+    const content = {
+      type: 'SAVE' as const,
+      stateNodeId,
+      stateNodeCommit,
+      artifactId,
+      artifactCommit,
+      quadsHash,
+      title,
+      description: null,
+    };
+    const contentHash = await computeContentHash(content);
+    const nodeId = crypto.randomUUID();
+    const commit = await computeNodeCommit(nodeId, null, contentHash, 'SAVE');
+    return { nodeId, commit, contentHash, content };
   }
 
   beforeEach(async () => {
@@ -110,13 +136,110 @@ describe('ArtifactService - createSaves with existing STATE node', () => {
     testUserId = await createTestUser();
   });
 
-  it('should allow save referencing STATE node that already exists in database (not in current submission nodes)', async () => {
+  it('should succeed when SAVE node references STATE node defined in same nodes array', async () => {
+    // Create artifact with STATE, LOADER, SANDBOX, and SAVE nodes
+    const artifactId = crypto.randomUUID();
+    const stateNodeId = crypto.randomUUID();
+    const sandboxNodeId = crypto.randomUUID();
+    const loaderNodeId = crypto.randomUUID();
+
+    // Create node data
+    const stateContent = { type: 'STATE' as const, name: 'Game State' };
+    const stateContentHash = await computeContentHash(stateContent);
+    const stateNodeCommit = await computeNodeCommit(stateNodeId, null, stateContentHash, 'STATE');
+
+    const sandboxData = await createSandboxNode(sandboxNodeId);
+    const loaderData = await createLoaderNode(loaderNodeId);
+
+    // Edges: STATE -> LOADER -> SANDBOX
+    const edges: ArtifactEdgeDescriptor[] = [
+      { source: stateNodeId, target: loaderNodeId },
+      { source: loaderNodeId, target: sandboxNodeId },
+    ];
+
+    // Compute artifact commit (without SAVE node first, for SAVE content)
+    const baseCommitNodes = [
+      { nodeId: stateNodeId, commit: stateNodeCommit },
+      { nodeId: sandboxNodeId, commit: sandboxData.commit },
+      { nodeId: loaderNodeId, commit: loaderData.commit },
+    ];
+    const commitEdges = edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: null,
+      targetHandle: null,
+    }));
+    
+    // First compute base commit without SAVE node (used in SAVE content to reference the artifact)
+    const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
+
+    // Create SAVE node data referencing the STATE node (uses baseCommit as the artifact commit it references)
+    const saveData = await createSaveNode(stateNodeId, stateNodeCommit, artifactId, baseCommit);
+
+    // Now compute final commit including the SAVE node
+    const allCommitNodes = [
+      ...baseCommitNodes,
+      { nodeId: saveData.nodeId, commit: saveData.commit },
+    ];
+    const artifactCommit = await computeArtifactCommit(artifactId, null, allCommitNodes, commitEdges);
+
+    const nodes: CreateArtifactNode[] = [
+      {
+        nodeId: stateNodeId,
+        commit: stateNodeCommit,
+        type: 'STATE',
+        name: 'state',
+        contentHash: stateContentHash,
+        content: stateContent,
+      },
+      {
+        nodeId: sandboxNodeId,
+        commit: sandboxData.commit,
+        type: 'SANDBOX',
+        name: 'sandbox',
+        contentHash: sandboxData.contentHash,
+        content: sandboxData.content,
+      },
+      {
+        nodeId: loaderNodeId,
+        commit: loaderData.commit,
+        type: 'LOADER',
+        name: 'loader',
+        contentHash: loaderData.contentHash,
+        content: loaderData.content,
+      },
+      {
+        nodeId: saveData.nodeId,
+        commit: saveData.commit,
+        type: 'SAVE',
+        name: 'save',
+        contentHash: saveData.contentHash,
+        content: saveData.content,
+      },
+    ];
+
+    const artifactService = new ArtifactService(ctx);
+    const result = await artifactService.createArtifact({
+      authorId: testUserId,
+      metadata: {
+        artifactId,
+        commit: artifactCommit,
+        name: 'Artifact with SAVE node',
+        isListed: true,
+      },
+      nodes,
+      edges,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('should succeed when SAVE node references STATE node in the same artifact version', async () => {
     // Step 1: Create a STATE node in DB first (simulating a previously created STATE node)
     const existingStateNodeId = crypto.randomUUID();
     const existingStateNodeCommit = await createStateNodeInDb(existingStateNodeId, 'Existing Game State');
 
-    // Step 2: Create a new artifact with only SANDBOX and LOADER nodes
-    // The save will reference the existing STATE node which is NOT in this artifact's nodes array
+    // Step 2: Create artifact with SAVE referencing the existing STATE node
     const artifactId = crypto.randomUUID();
     const sandboxNodeId = crypto.randomUUID();
     const loaderNodeId = crypto.randomUUID();
@@ -124,360 +247,9 @@ describe('ArtifactService - createSaves with existing STATE node', () => {
     const sandboxData = await createSandboxNode(sandboxNodeId);
     const loaderData = await createLoaderNode(loaderNodeId);
 
-    // Note: existingStateNodeId is NOT in the nodes array - it's an existing node in DB
-    // This simulates the scenario where a save references a STATE node from a different artifact
-    const nodes: CreateArtifactNode[] = [
-      {
-        nodeId: sandboxNodeId,
-        commit: sandboxData.commit,
-        type: 'SANDBOX',
-        name: 'sandbox',
-        contentHash: sandboxData.contentHash,
-        content: sandboxData.content,
-      },
-      {
-        nodeId: loaderNodeId,
-        commit: loaderData.commit,
-        type: 'LOADER',
-        name: 'loader',
-        contentHash: loaderData.contentHash,
-        content: loaderData.content,
-      },
-    ];
-
-    // Edges: existing STATE -> LOADER -> SANDBOX
-    // Note: existingStateNodeId is used in edges but NOT in nodes array
-    const edges: ArtifactEdgeDescriptor[] = [
-      { source: existingStateNodeId, target: loaderNodeId },
-      { source: loaderNodeId, target: sandboxNodeId },
-    ];
-
-    // Compute artifact commit - MUST include existing STATE node for correct hash
-    const commitNodes = [
-      { nodeId: existingStateNodeId, commit: existingStateNodeCommit },
-      { nodeId: sandboxNodeId, commit: sandboxData.commit },
-      { nodeId: loaderNodeId, commit: loaderData.commit },
-    ];
-    const commitEdges = edges.map(e => ({
-      source: e.source,
-      target: e.target,
-      sourceHandle: null,
-      targetHandle: null,
-    }));
-    const artifactCommit = await computeArtifactCommit(artifactId, null, commitNodes, commitEdges);
-
-    // Compute save referencing the existing STATE node
-    const saveId = await computeSaveId(existingStateNodeId, existingStateNodeCommit, testUserId, artifactId, artifactCommit);
-    const saveContentHash = await computeContentHash({
-      type: 'SAVE',
-      stateNodeId: existingStateNodeId,
-      stateNodeCommit: existingStateNodeCommit,
-      sourceArtifactCommit: artifactCommit,
-      title: 'Test Save',
-      description: null,
-    });
-    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
-
-    // Create save input referencing the existing STATE node
-    const saves: CreateSaveInput[] = [
-      {
-        stateNodeId: existingStateNodeId,
-        commit: saveCommit,
-        contentHash: saveContentHash,
-        parent: null,
-        title: 'Test Save',
-        description: 'Save referencing existing STATE node',
-        isListed: false,
-      },
-    ];
-
-    // Step 3: Call createArtifact
-    // The nodes array contains ONLY sandbox and loader, NOT the existing STATE node
-    // But the artifact commit hash includes the existing STATE node
-    // This should succeed because the STATE node exists in the database
-    const artifactService = new ArtifactService(ctx);
-    const result = await artifactService.createArtifact({
-      authorId: testUserId,
-      metadata: {
-        artifactId,
-        commit: artifactCommit,
-        name: 'Artifact with save referencing existing STATE',
-      },
-      // nodes does NOT include the existing STATE node
-      // We need to include node references for artifact version nodes table
-      nodes: [
-        // Include reference to existing STATE node (required for artifact commit validation)
-        {
-          nodeId: existingStateNodeId,
-          commit: existingStateNodeCommit,
-          type: 'STATE',
-          name: 'existing-state',
-          contentHash: (await computeContentHash({ type: 'STATE', name: 'Existing Game State' })),
-          content: { type: 'STATE', name: 'Existing Game State' },
-        },
-        ...nodes,
-      ],
-      edges,
-      saves,
-    });
-
-    // Current implementation should pass because STATE node is in the nodes array
-    // But this is NOT the scenario we want to test!
-    expect(result.success).toBe(true);
-  });
-
-  it('should fail when save references STATE node not in nodes array (current behavior - to be fixed)', async () => {
-    // This test demonstrates the BUG:
-    // When a save references a STATE node that exists in DB, but the STATE node
-    // is not included in the current submission's nodes array, createSaves fails.
-    //
-    // The scenario: User wants to create a save for an existing STATE node from
-    // another artifact, without re-submitting that STATE node.
-    //
-    // After the fix, this test should expect SUCCESS instead of failure.
-
-    // Step 1: Create a STATE node in DB first
-    const existingStateNodeId = crypto.randomUUID();
-    const existingStateNodeCommit = await createStateNodeInDb(existingStateNodeId, 'Existing Game State');
-
-    // Step 2: Create artifact nodes (without the existing STATE node in nodes array)
-    // BUT include a reference to the STATE node so the artifact can use it
-    const artifactId = crypto.randomUUID();
-    const sandboxNodeId = crypto.randomUUID();
-    const loaderNodeId = crypto.randomUUID();
-
-    const sandboxData = await createSandboxNode(sandboxNodeId);
-    const loaderData = await createLoaderNode(loaderNodeId);
-
-    // Nodes array only contains SANDBOX and LOADER
-    // The existing STATE node is referenced via edges but not in nodes array
-    // This represents a "reference to existing node" scenario
-    const nodes: CreateArtifactNode[] = [
-      {
-        nodeId: sandboxNodeId,
-        commit: sandboxData.commit,
-        type: 'SANDBOX',
-        name: 'sandbox',
-        contentHash: sandboxData.contentHash,
-        content: sandboxData.content,
-      },
-      {
-        nodeId: loaderNodeId,
-        commit: loaderData.commit,
-        type: 'LOADER',
-        name: 'loader',
-        contentHash: loaderData.contentHash,
-        content: loaderData.content,
-      },
-    ];
-
-    // Edges include the existing STATE node
-    const edges: ArtifactEdgeDescriptor[] = [
-      { source: existingStateNodeId, target: loaderNodeId },
-      { source: loaderNodeId, target: sandboxNodeId },
-    ];
-
-    // For artifact commit, we must include ALL nodes that are part of the artifact
-    // Including the existing STATE node (referenced by nodeId + commit)
-    const commitNodes = [
-      { nodeId: existingStateNodeId, commit: existingStateNodeCommit },
-      { nodeId: sandboxNodeId, commit: sandboxData.commit },
-      { nodeId: loaderNodeId, commit: loaderData.commit },
-    ];
-    const commitEdges = edges.map(e => ({
-      source: e.source,
-      target: e.target,
-      sourceHandle: null,
-      targetHandle: null,
-    }));
-    const artifactCommit = await computeArtifactCommit(artifactId, null, commitNodes, commitEdges);
-
-    // Compute save referencing the existing STATE node
-    const saveId = await computeSaveId(existingStateNodeId, existingStateNodeCommit, testUserId, artifactId, artifactCommit);
-    const saveContentHash = await computeContentHash({
-      type: 'SAVE',
-      stateNodeId: existingStateNodeId,
-      stateNodeCommit: existingStateNodeCommit,
-      sourceArtifactCommit: artifactCommit,
-      title: 'Test Save',
-      description: null,
-    });
-    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
-
-    const saves: CreateSaveInput[] = [
-      {
-        stateNodeId: existingStateNodeId,
-        commit: saveCommit,
-        contentHash: saveContentHash,
-        parent: null,
-        title: 'Test Save',
-        description: 'Save referencing existing STATE node',
-        isListed: false,
-      },
-    ];
-
-    const artifactService = new ArtifactService(ctx);
-
-    // We need to include a node reference for the existing STATE node for commit hash to match
-    // But we mark its content as the same as what's in DB (no new content to sync)
+    // For artifact to be valid, we need to include the existing STATE node in nodes array
     const existingStateContent = { type: 'STATE' as const, name: 'Existing Game State' };
     const existingStateContentHash = await computeContentHash(existingStateContent);
-
-    const result = await artifactService.createArtifact({
-      authorId: testUserId,
-      metadata: {
-        artifactId,
-        commit: artifactCommit,
-        name: 'Artifact with save referencing existing STATE',
-      },
-      // Include reference to existing STATE node (required for commit hash match)
-      // But the node's type is STATE and it exists in DB, so createSaves should use DB lookup
-      nodes: [
-        {
-          nodeId: existingStateNodeId,
-          commit: existingStateNodeCommit,
-          type: 'STATE',
-          name: 'existing-state',
-          contentHash: existingStateContentHash,
-          content: existingStateContent,
-        },
-        ...nodes,
-      ],
-      edges,
-      saves,
-    });
-
-    // This test should PASS (STATE node is in nodes array)
-    // The real question is: what if we want to reference an existing STATE node
-    // WITHOUT re-submitting its content?
-    expect(result.success).toBe(true);
-  });
-
-  it('should reject save referencing STATE node that neither exists in DB nor in current submission', async () => {
-    // Create artifact with a save that references a completely non-existent STATE node
-    const artifactId = crypto.randomUUID();
-    const sandboxNodeId = crypto.randomUUID();
-    const loaderNodeId = crypto.randomUUID();
-    const fakeStateNodeId = crypto.randomUUID();
-
-    // Create proper fake STATE node data (for commit calculation to pass)
-    const fakeStateContent = { type: 'STATE' as const, name: 'Fake State' };
-    const fakeStateContentHash = await computeContentHash(fakeStateContent);
-    const fakeStateNodeCommit = await computeNodeCommit(fakeStateNodeId, null, fakeStateContentHash, 'STATE');
-
-    const sandboxData = await createSandboxNode(sandboxNodeId);
-    const loaderData = await createLoaderNode(loaderNodeId);
-
-    // Include the fake STATE node in nodes array (so commit hash matches)
-    // But the STATE node does NOT exist in the database
-    const nodes: CreateArtifactNode[] = [
-      {
-        nodeId: fakeStateNodeId,
-        commit: fakeStateNodeCommit,
-        type: 'STATE',
-        name: 'fake-state',
-        contentHash: fakeStateContentHash,
-        content: fakeStateContent,
-      },
-      {
-        nodeId: sandboxNodeId,
-        commit: sandboxData.commit,
-        type: 'SANDBOX',
-        name: 'sandbox',
-        contentHash: sandboxData.contentHash,
-        content: sandboxData.content,
-      },
-      {
-        nodeId: loaderNodeId,
-        commit: loaderData.commit,
-        type: 'LOADER',
-        name: 'loader',
-        contentHash: loaderData.contentHash,
-        content: loaderData.content,
-      },
-    ];
-
-    // Edges: fake STATE -> LOADER -> SANDBOX
-    const edges: ArtifactEdgeDescriptor[] = [
-      { source: fakeStateNodeId, target: loaderNodeId },
-      { source: loaderNodeId, target: sandboxNodeId },
-    ];
-
-    // Compute artifact commit
-    const commitNodes = [
-      { nodeId: fakeStateNodeId, commit: fakeStateNodeCommit },
-      { nodeId: sandboxNodeId, commit: sandboxData.commit },
-      { nodeId: loaderNodeId, commit: loaderData.commit },
-    ];
-    const commitEdges = edges.map(e => ({
-      source: e.source,
-      target: e.target,
-      sourceHandle: null,
-      targetHandle: null,
-    }));
-    const artifactCommit = await computeArtifactCommit(artifactId, null, commitNodes, commitEdges);
-
-    // Compute save referencing the fake STATE node
-    const saveId = await computeSaveId(fakeStateNodeId, fakeStateNodeCommit, testUserId, artifactId, artifactCommit);
-    const saveContentHash = await computeContentHash({
-      type: 'SAVE',
-      stateNodeId: fakeStateNodeId,
-      stateNodeCommit: fakeStateNodeCommit,
-      sourceArtifactCommit: artifactCommit,
-      title: 'Test Save',
-      description: null,
-    });
-    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
-
-    const saves: CreateSaveInput[] = [
-      {
-        stateNodeId: fakeStateNodeId,
-        commit: saveCommit,
-        contentHash: saveContentHash,
-        parent: null,
-        title: 'Test Save',
-        description: 'Save referencing non-existent STATE node',
-        isListed: false,
-      },
-    ];
-
-    const artifactService = new ArtifactService(ctx);
-    const result = await artifactService.createArtifact({
-      authorId: testUserId,
-      metadata: {
-        artifactId,
-        commit: artifactCommit,
-        name: 'Artifact with valid STATE in nodes',
-      },
-      nodes,
-      edges,
-      saves,
-    });
-
-    // When STATE node is in the nodes array, it should succeed
-    // (the STATE node will be created as part of the artifact creation)
-    expect(result.success).toBe(true);
-  });
-
-  it('should succeed when save references DB STATE node even if nodes array has wrong type (DB takes precedence)', async () => {
-    // THIS IS THE BUG TEST:
-    // STATE node exists in database, but is referenced in nodes array WITHOUT type='STATE'.
-    // createSaves builds stateNodeMap only from nodes where type='STATE',
-    // so it cannot find the stateNodeCommit for this existing STATE node.
-    //
-    // After fix: createSaves should query the database when stateNodeId is not in stateNodeMap.
-
-    // Step 1: Create a STATE node in DB
-    const existingStateNodeId = crypto.randomUUID();
-    const existingStateNodeCommit = await createStateNodeInDb(existingStateNodeId, 'Existing Game State');
-
-    // Step 2: Create artifact with SANDBOX and LOADER, and a reference to existing STATE
-    const artifactId = crypto.randomUUID();
-    const sandboxNodeId = crypto.randomUUID();
-    const loaderNodeId = crypto.randomUUID();
-
-    const sandboxData = await createSandboxNode(sandboxNodeId);
-    const loaderData = await createLoaderNode(loaderNodeId);
 
     // Edges: STATE -> LOADER -> SANDBOX
     const edges: ArtifactEdgeDescriptor[] = [
@@ -485,8 +257,8 @@ describe('ArtifactService - createSaves with existing STATE node', () => {
       { source: loaderNodeId, target: sandboxNodeId },
     ];
 
-    // Compute artifact commit - includes all nodes
-    const commitNodes = [
+    // Compute base artifact commit (without SAVE node)
+    const baseCommitNodes = [
       { nodeId: existingStateNodeId, commit: existingStateNodeCommit },
       { nodeId: sandboxNodeId, commit: sandboxData.commit },
       { nodeId: loaderNodeId, commit: loaderData.commit },
@@ -497,50 +269,24 @@ describe('ArtifactService - createSaves with existing STATE node', () => {
       sourceHandle: null,
       targetHandle: null,
     }));
-    const artifactCommit = await computeArtifactCommit(artifactId, null, commitNodes, commitEdges);
+    const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
 
-    // Compute save
-    const saveId = await computeSaveId(existingStateNodeId, existingStateNodeCommit, testUserId, artifactId, artifactCommit);
-    const saveContentHash = await computeContentHash({
-      type: 'SAVE',
-      stateNodeId: existingStateNodeId,
-      stateNodeCommit: existingStateNodeCommit,
-      sourceArtifactCommit: artifactCommit,
-      title: 'Test Save',
-      description: null,
-    });
-    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+    // Create SAVE node referencing the existing STATE node (uses baseCommit)
+    const saveData = await createSaveNode(existingStateNodeId, existingStateNodeCommit, artifactId, baseCommit);
 
-    const saves: CreateSaveInput[] = [
-      {
-        stateNodeId: existingStateNodeId,
-        commit: saveCommit,
-        contentHash: saveContentHash,
-        parent: null,
-        title: 'Test Save',
-        description: 'Save referencing existing STATE node',
-        isListed: false,
-      },
+    // Compute final artifact commit including SAVE node
+    const allCommitNodes = [
+      ...baseCommitNodes,
+      { nodeId: saveData.nodeId, commit: saveData.commit },
     ];
+    const artifactCommit = await computeArtifactCommit(artifactId, null, allCommitNodes, commitEdges);
 
-    // The key: include STATE node in nodes array, but mark type as something else (simulating a bug scenario)
-    // Actually, we'll include it with correct content but the check should happen in createSaves
-    const existingStateContent = { type: 'STATE' as const, name: 'Existing Game State' };
-    const existingStateContentHash = await computeContentHash(existingStateContent);
-
-    // Create nodes WITHOUT the STATE node having type='STATE'
-    // This forces createSaves to NOT find it in stateNodeMap
     const nodes: CreateArtifactNode[] = [
-      // Include STATE node for commit hash match, but DON'T mark type as 'STATE'
-      // This simulates a scenario where node exists in DB and we just reference it
-      // The bug is: createSaves only checks nodes with type='STATE'
       {
         nodeId: existingStateNodeId,
         commit: existingStateNodeCommit,
-        // BUG TRIGGER: type is not 'STATE', so stateNodeMap won't include this
-        // In real usage, this would be a reference-only node
-        type: 'LOADER', // WRONG TYPE - but needed to demonstrate the bug
-        name: 'mistyped-state',
+        type: 'STATE',
+        name: 'existing-state',
         contentHash: existingStateContentHash,
         content: existingStateContent,
       },
@@ -560,6 +306,14 @@ describe('ArtifactService - createSaves with existing STATE node', () => {
         contentHash: loaderData.contentHash,
         content: loaderData.content,
       },
+      {
+        nodeId: saveData.nodeId,
+        commit: saveData.commit,
+        type: 'SAVE',
+        name: 'save',
+        contentHash: saveData.contentHash,
+        content: saveData.content,
+      },
     ];
 
     const artifactService = new ArtifactService(ctx);
@@ -568,15 +322,323 @@ describe('ArtifactService - createSaves with existing STATE node', () => {
       metadata: {
         artifactId,
         commit: artifactCommit,
-        name: 'Artifact with mistyped STATE node',
+        name: 'Artifact with SAVE referencing existing STATE',
+        isListed: true,
       },
       nodes,
       edges,
-      saves,
     });
 
-    // After fix: createSaves queries DB when stateNodeId not in stateNodeMap
-    // Since the STATE node exists in DB with correct type, this should succeed
     expect(result.success).toBe(true);
+  });
+
+  it('should reject SAVE node with non-existent STATE node reference', async () => {
+    // Create artifact with SAVE referencing a STATE node that doesn't exist
+    const artifactId = crypto.randomUUID();
+    const fakeStateNodeId = crypto.randomUUID();
+    const fakeStateNodeCommit = 'fake-commit-that-does-not-exist';
+    const sandboxNodeId = crypto.randomUUID();
+    const loaderNodeId = crypto.randomUUID();
+
+    const sandboxData = await createSandboxNode(sandboxNodeId);
+    const loaderData = await createLoaderNode(loaderNodeId);
+
+    // Edges: LOADER -> SANDBOX (no STATE edge since STATE doesn't exist)
+    const edges: ArtifactEdgeDescriptor[] = [
+      { source: loaderNodeId, target: sandboxNodeId },
+    ];
+
+    // Compute base artifact commit (only includes actual nodes that will be submitted)
+    const baseCommitNodes = [
+      { nodeId: sandboxNodeId, commit: sandboxData.commit },
+      { nodeId: loaderNodeId, commit: loaderData.commit },
+    ];
+    const commitEdges = edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: null,
+      targetHandle: null,
+    }));
+    const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
+
+    // Create SAVE node referencing the fake STATE node (uses baseCommit)
+    const quadsHash = 'abcd1234'.repeat(8);
+    const saveContent = {
+      type: 'SAVE' as const,
+      stateNodeId: fakeStateNodeId,
+      stateNodeCommit: fakeStateNodeCommit,
+      artifactId,
+      artifactCommit: baseCommit,
+      quadsHash,
+      title: 'Test Save',
+      description: null,
+    };
+    const saveContentHash = await computeContentHash(saveContent);
+    const saveId = crypto.randomUUID();
+    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+    // Compute final artifact commit including SAVE node
+    const allCommitNodes = [
+      ...baseCommitNodes,
+      { nodeId: saveId, commit: saveCommit },
+    ];
+    const artifactCommit = await computeArtifactCommit(artifactId, null, allCommitNodes, commitEdges);
+
+    const nodes: CreateArtifactNode[] = [
+      // No STATE node included - it doesn't exist
+      {
+        nodeId: sandboxNodeId,
+        commit: sandboxData.commit,
+        type: 'SANDBOX',
+        name: 'sandbox',
+        contentHash: sandboxData.contentHash,
+        content: sandboxData.content,
+      },
+      {
+        nodeId: loaderNodeId,
+        commit: loaderData.commit,
+        type: 'LOADER',
+        name: 'loader',
+        contentHash: loaderData.contentHash,
+        content: loaderData.content,
+      },
+      {
+        nodeId: saveId,
+        commit: saveCommit,
+        type: 'SAVE',
+        name: 'save',
+        contentHash: saveContentHash,
+        content: saveContent,
+      },
+    ];
+
+    const artifactService = new ArtifactService(ctx);
+    const result = await artifactService.createArtifact({
+      authorId: testUserId,
+      metadata: {
+        artifactId,
+        commit: artifactCommit,
+        name: 'Artifact with invalid SAVE reference',
+        isListed: true,
+      },
+      nodes,
+      edges,
+    });
+
+    // Should fail because the referenced STATE node is not in this artifact version
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('BAD_REQUEST');
+      expect(result.error.message).toContain('not present in this artifact version');
+    }
+  });
+
+  it('should reject SAVE node with mismatched stateNodeCommit', async () => {
+    // Create artifact with SAVE referencing a STATE node with wrong commit
+    const artifactId = crypto.randomUUID();
+    const stateNodeId = crypto.randomUUID();
+    const sandboxNodeId = crypto.randomUUID();
+    const loaderNodeId = crypto.randomUUID();
+
+    // Create node data
+    const stateContent = { type: 'STATE' as const, name: 'Game State' };
+    const stateContentHash = await computeContentHash(stateContent);
+    const stateNodeCommit = await computeNodeCommit(stateNodeId, null, stateContentHash, 'STATE');
+
+    const sandboxData = await createSandboxNode(sandboxNodeId);
+    const loaderData = await createLoaderNode(loaderNodeId);
+
+    // Edges
+    const edges: ArtifactEdgeDescriptor[] = [
+      { source: stateNodeId, target: loaderNodeId },
+      { source: loaderNodeId, target: sandboxNodeId },
+    ];
+
+    // Compute base artifact commit
+    const baseCommitNodes = [
+      { nodeId: stateNodeId, commit: stateNodeCommit },
+      { nodeId: sandboxNodeId, commit: sandboxData.commit },
+      { nodeId: loaderNodeId, commit: loaderData.commit },
+    ];
+    const commitEdges = edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: null,
+      targetHandle: null,
+    }));
+    const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
+
+    // Create SAVE node with WRONG stateNodeCommit (uses baseCommit)
+    const wrongStateNodeCommit = 'wrong-commit-hash';
+    const quadsHash = 'abcd1234'.repeat(8);
+    const saveContent = {
+      type: 'SAVE' as const,
+      stateNodeId,
+      stateNodeCommit: wrongStateNodeCommit, // WRONG!
+      artifactId,
+      artifactCommit: baseCommit,
+      quadsHash,
+      title: 'Test Save',
+      description: null,
+    };
+    const saveContentHash = await computeContentHash(saveContent);
+    const saveId = crypto.randomUUID();
+    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+    // Compute final artifact commit including SAVE node
+    const allCommitNodes = [
+      ...baseCommitNodes,
+      { nodeId: saveId, commit: saveCommit },
+    ];
+    const artifactCommit = await computeArtifactCommit(artifactId, null, allCommitNodes, commitEdges);
+
+    const nodes: CreateArtifactNode[] = [
+      {
+        nodeId: stateNodeId,
+        commit: stateNodeCommit,
+        type: 'STATE',
+        name: 'state',
+        contentHash: stateContentHash,
+        content: stateContent,
+      },
+      {
+        nodeId: sandboxNodeId,
+        commit: sandboxData.commit,
+        type: 'SANDBOX',
+        name: 'sandbox',
+        contentHash: sandboxData.contentHash,
+        content: sandboxData.content,
+      },
+      {
+        nodeId: loaderNodeId,
+        commit: loaderData.commit,
+        type: 'LOADER',
+        name: 'loader',
+        contentHash: loaderData.contentHash,
+        content: loaderData.content,
+      },
+      {
+        nodeId: saveId,
+        commit: saveCommit,
+        type: 'SAVE',
+        name: 'save',
+        contentHash: saveContentHash,
+        content: saveContent,
+      },
+    ];
+
+    const artifactService = new ArtifactService(ctx);
+    const result = await artifactService.createArtifact({
+      authorId: testUserId,
+      metadata: {
+        artifactId,
+        commit: artifactCommit,
+        name: 'Artifact with mismatched SAVE commit',
+        isListed: true,
+      },
+      nodes,
+      edges,
+    });
+
+    // Should fail because stateNodeCommit doesn't match
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('BAD_REQUEST');
+      expect(result.error.message).toContain('stateNodeCommit');
+    }
+  });
+
+  it('should reject SAVE node missing stateNodeId in content', async () => {
+    const artifactId = crypto.randomUUID();
+    const sandboxNodeId = crypto.randomUUID();
+    const loaderNodeId = crypto.randomUUID();
+
+    const sandboxData = await createSandboxNode(sandboxNodeId);
+    const loaderData = await createLoaderNode(loaderNodeId);
+
+    const edges: ArtifactEdgeDescriptor[] = [
+      { source: loaderNodeId, target: sandboxNodeId },
+    ];
+
+    const baseCommitNodes = [
+      { nodeId: sandboxNodeId, commit: sandboxData.commit },
+      { nodeId: loaderNodeId, commit: loaderData.commit },
+    ];
+    const commitEdges = edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: null,
+      targetHandle: null,
+    }));
+    const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
+
+    // Create SAVE node with missing stateNodeId (uses baseCommit)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const invalidSaveContent: any = {
+      type: 'SAVE' as const,
+      // stateNodeId: missing!
+      stateNodeCommit: 'some-commit',
+      artifactId,
+      artifactCommit: baseCommit,
+      quadsHash: 'abcd1234'.repeat(8),
+      title: 'Test Save',
+      description: null,
+    };
+    const saveContentHash = await computeContentHash(invalidSaveContent);
+    const saveId = crypto.randomUUID();
+    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+    // Compute final artifact commit including SAVE node
+    const allCommitNodes = [
+      ...baseCommitNodes,
+      { nodeId: saveId, commit: saveCommit },
+    ];
+    const artifactCommit = await computeArtifactCommit(artifactId, null, allCommitNodes, commitEdges);
+
+    const nodes: CreateArtifactNode[] = [
+      {
+        nodeId: sandboxNodeId,
+        commit: sandboxData.commit,
+        type: 'SANDBOX',
+        name: 'sandbox',
+        contentHash: sandboxData.contentHash,
+        content: sandboxData.content,
+      },
+      {
+        nodeId: loaderNodeId,
+        commit: loaderData.commit,
+        type: 'LOADER',
+        name: 'loader',
+        contentHash: loaderData.contentHash,
+        content: loaderData.content,
+      },
+      {
+        nodeId: saveId,
+        commit: saveCommit,
+        type: 'SAVE',
+        name: 'save',
+        contentHash: saveContentHash,
+        content: invalidSaveContent,
+      },
+    ];
+
+    const artifactService = new ArtifactService(ctx);
+    const result = await artifactService.createArtifact({
+      authorId: testUserId,
+      metadata: {
+        artifactId,
+        commit: artifactCommit,
+        name: 'Artifact with invalid SAVE content',
+        isListed: true,
+      },
+      nodes,
+      edges,
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.code).toBe('BAD_REQUEST');
+      expect(result.error.message).toContain('stateNodeId');
+    }
   });
 });

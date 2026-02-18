@@ -9,14 +9,15 @@ SaveDetail:
     - authoredAt
     - stateNodeId
     - stateNodeCommit
-    - sourceArtifactId
-    - sourceArtifactCommit
+    - artifactId
+    - artifactCommit
+    - quadsHash
     - isListed
     - createdAt
   properties:
     saveId:
       type: string
-      description: Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)）
+      description: Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)）
     commit:
       type: string
       description: Save 版本 commit hash
@@ -37,13 +38,16 @@ SaveDetail:
     stateNodeCommit:
       type: string
       description: 关联的 STATE 节点版本 commit hash
-    sourceArtifactId:
+    artifactId:
       type: string
       format: uuid
       description: 创建此 Save 的 artifact ID
-    sourceArtifactCommit:
+    artifactCommit:
       type: string
       description: 创建此 Save 的 artifact 版本 commit hash
+    quadsHash:
+      type: string
+      description: quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin
     title:
       type: string
       nullable: true
@@ -57,16 +61,24 @@ SaveDetail:
       type: string
       format: date-time
 
+# Request for creating user runtime saves (POST /saves)
+# Official saves are created as SAVE artifact nodes during artifact creation
 CreateSaveRequest:
   type: object
   required:
+    - saveId
     - stateNodeId
     - stateNodeCommit
     - commit
-    - sourceArtifactId
-    - sourceArtifactCommit
+    - artifactId
+    - artifactCommit
     - contentHash
+    - quadsHash
   properties:
+    saveId:
+      type: string
+      format: uuid
+      description: Save 节点 ID（客户端自由提供）
     stateNodeId:
       type: string
       format: uuid
@@ -81,16 +93,19 @@ CreateSaveRequest:
       type: string
       nullable: true
       description: 父版本 commit hash（可选）
-    sourceArtifactId:
+    artifactId:
       type: string
       format: uuid
       description: 关联的 artifact ID
-    sourceArtifactCommit:
+    artifactCommit:
       type: string
       description: 关联的 artifact 版本 commit hash
     contentHash:
       type: string
       description: 内容指纹
+    quadsHash:
+      type: string
+      description: quads.bin 的 SHA-256（客户端计算）
     title:
       type: string
       description: 存档标题

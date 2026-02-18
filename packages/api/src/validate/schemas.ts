@@ -342,7 +342,7 @@ export const createArtifactBodyMetadataLicenseMax = 50;
 export const createArtifactBodyMetadataRepositoryUrlMax = 500;
 
 export const createArtifactBodyMetadataVersionRegExp = new RegExp('^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)?$');
-export const createArtifactBodyMetadataSavesItemIsListedDefault = false;export const createArtifactBodyNodesItemContentOneGenerationConfigTemperatureMin = 0;
+export const createArtifactBodyNodesItemContentOneGenerationConfigTemperatureMin = 0;
 export const createArtifactBodyNodesItemContentOneGenerationConfigTemperatureMax = 2;
 
 export const createArtifactBodyNodesItemContentFourEntryFileDefault = `index.html`;
@@ -365,22 +365,13 @@ export const CreateArtifactBody = zod.object({
   "saveCommit": zod.string().describe('Save 的 commit hash，指定启动时加载的存档'),
   "sandboxNodeId": zod.uuid().describe('沙箱节点 ID')
 }).optional(),
-  "commitTags": zod.array(zod.string()).optional().describe('用户可分配的版本标签列表（如 [\"stable\", \"beta\", \"v1.0\"]）。\n同一 artifact 内每个 tag 唯一，一个 commit 可以有多个 tag。\n如果某个 tag 已被其他 commit 使用，则自动从旧 commit 上移除（override 语义）。\n'),
-  "saves": zod.array(zod.object({
-  "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
-  "commit": zod.string().describe('Save 版本的 commit hash'),
-  "contentHash": zod.string().describe('Save 内容的指纹'),
-  "parent": zod.string().nullish().describe('父 save 的 commit hash'),
-  "title": zod.string().optional().describe('Save 标题'),
-  "description": zod.string().optional().describe('Save 描述'),
-  "isListed": zod.boolean().default(createArtifactBodyMetadataSavesItemIsListedDefault).describe('是否在公开列表中可见（可发现性）')
-}).describe('和 artifact 一起创建的 save 数据。\n服务端会从 artifact 的 nodes 数组中自动获取 stateNodeCommit，\n并使用 artifact 的 commit 作为 sourceArtifactCommit。\n')).optional().describe('和 artifact 同时创建的 save 列表（解决 save 和 artifact 的循环依赖）。\nSave 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。\n服务端会先创建 save，然后再验证 STATE 节点内容的合法性。\n')
+  "commitTags": zod.array(zod.string()).optional().describe('用户可分配的版本标签列表（如 [\"stable\", \"beta\", \"v1.0\"]）。\n同一 artifact 内每个 tag 唯一，一个 commit 可以有多个 tag。\n如果某个 tag 已被其他 commit 使用，则自动从旧 commit 上移除（override 语义）。\n')
 }),
   "nodes": zod.array(zod.object({
   "nodeId": zod.uuid().describe('节点 ID'),
   "commit": zod.string().describe('版本 hash'),
   "parent": zod.string().nullish().describe('父版本 commit hash'),
-  "type": zod.enum(['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'LOADER', 'SANDBOX', 'STATE']),
+  "type": zod.enum(['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'LOADER', 'SANDBOX', 'STATE', 'SAVE']),
   "name": zod.string().optional(),
   "contentHash": zod.string().describe('内容指纹'),
   "content": zod.union([zod.object({
@@ -455,7 +446,7 @@ export const CreateArtifactBody = zod.object({
   "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
-  "projectId": zod.string().describe('所属项目 ID'),
+  "filesHash": zod.string().describe('files.tar.gz 的 SHA-256，用于 R2 路径 vfs\/{filesHash}\/files.tar.gz'),
   "mounts": zod.array(zod.object({
   "id": zod.string().describe('挂载点唯一标识符'),
   "sourceNodeId": zod.uuid().describe('源 VFS 节点 ID'),
@@ -474,6 +465,15 @@ export const CreateArtifactBody = zod.object({
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
 })).optional().describe('文件列表（用于 API 验证）')
+}),zod.object({
+  "type": zod.enum(['SAVE']),
+  "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
+  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
+  "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
+  "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
+  "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "title": zod.string().nullish().describe('存档标题'),
+  "description": zod.string().nullish().describe('存档描述')
 })]),
   "message": zod.string().optional().describe('Commit 消息'),
   "tag": zod.string().optional().describe('Semver 标签'),
@@ -549,7 +549,7 @@ export const patchArtifactBodyMetadataVersionRegExp = new RegExp('^\\d+\\.\\d+\\
 export const patchArtifactBodyMetadataAddNodesItemContentOneGenerationConfigTemperatureMin = 0;
 export const patchArtifactBodyMetadataAddNodesItemContentOneGenerationConfigTemperatureMax = 2;
 
-export const patchArtifactBodyMetadataAddNodesItemContentFourEntryFileDefault = `index.html`;export const patchArtifactBodyMetadataSavesItemIsListedDefault = false;
+export const patchArtifactBodyMetadataAddNodesItemContentFourEntryFileDefault = `index.html`;
 
 export const PatchArtifactBody = zod.object({
   "metadata": zod.object({
@@ -570,7 +570,7 @@ export const PatchArtifactBody = zod.object({
   "nodeId": zod.uuid().describe('节点 ID'),
   "commit": zod.string().describe('版本 hash'),
   "parent": zod.string().nullish().describe('父版本 commit hash'),
-  "type": zod.enum(['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'LOADER', 'SANDBOX', 'STATE']),
+  "type": zod.enum(['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'LOADER', 'SANDBOX', 'STATE', 'SAVE']),
   "name": zod.string().optional(),
   "contentHash": zod.string().describe('内容指纹'),
   "content": zod.union([zod.object({
@@ -645,7 +645,7 @@ export const PatchArtifactBody = zod.object({
   "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
-  "projectId": zod.string().describe('所属项目 ID'),
+  "filesHash": zod.string().describe('files.tar.gz 的 SHA-256，用于 R2 路径 vfs\/{filesHash}\/files.tar.gz'),
   "mounts": zod.array(zod.object({
   "id": zod.string().describe('挂载点唯一标识符'),
   "sourceNodeId": zod.uuid().describe('源 VFS 节点 ID'),
@@ -664,6 +664,15 @@ export const PatchArtifactBody = zod.object({
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
 })).optional().describe('文件列表（用于 API 验证）')
+}),zod.object({
+  "type": zod.enum(['SAVE']),
+  "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
+  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
+  "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
+  "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
+  "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "title": zod.string().nullish().describe('存档标题'),
+  "description": zod.string().nullish().describe('存档描述')
 })]),
   "message": zod.string().optional().describe('Commit 消息'),
   "tag": zod.string().optional().describe('Semver 标签'),
@@ -690,16 +699,7 @@ export const PatchArtifactBody = zod.object({
   "target": zod.uuid(),
   "sourceHandle": zod.string().optional(),
   "targetHandle": zod.string().optional()
-})).optional().describe('需要移除的边（通过 source + target 匹配）'),
-  "saves": zod.array(zod.object({
-  "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
-  "commit": zod.string().describe('Save 版本的 commit hash'),
-  "contentHash": zod.string().describe('Save 内容的指纹'),
-  "parent": zod.string().nullish().describe('父 save 的 commit hash'),
-  "title": zod.string().optional().describe('Save 标题'),
-  "description": zod.string().optional().describe('Save 描述'),
-  "isListed": zod.boolean().default(patchArtifactBodyMetadataSavesItemIsListedDefault).describe('是否在公开列表中可见（可发现性）')
-}).describe('和 artifact 一起创建的 save 数据。\n服务端会从 artifact 的 nodes 数组中自动获取 stateNodeCommit，\n并使用 artifact 的 commit 作为 sourceArtifactCommit。\n')).optional().describe('和 patch 同时创建的 save 列表。\nSave 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。\n')
+})).optional().describe('需要移除的边（通过 source + target 匹配）')
 }).describe('基于已有的 commit 和增量补丁创建新的 artifact 版本。\n客户端提交 baseCommit（基准版本）和需要变更的 nodes\/edges，\n服务端将基准版本的完整 graph 与 patch 合并后创建新版本。\n\n如果没有 graph 变更（addNodes\/removeNodeIds\/addEdges\/removeEdges 全部为空或不传），\n且不传 commit，则为 metadata-only 更新：直接修改 baseCommit 版本的元数据，不创建新版本。\n'),
   "homepage": zod.instanceof(File).optional().describe('可选的主页 Markdown 文件')
 })
@@ -824,7 +824,7 @@ export const getArtifactGraphResponseNodesItemContentFourEntryFileDefault = `ind
 export const GetArtifactGraphResponse = zod.object({
   "nodes": zod.array(zod.object({
   "id": zod.uuid(),
-  "type": zod.enum(['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'LOADER', 'SANDBOX', 'STATE']),
+  "type": zod.enum(['PROMPT', 'INPUT', 'GENERATED', 'VFS', 'LOADER', 'SANDBOX', 'STATE', 'SAVE']),
   "commit": zod.string().describe('节点版本的 commit hash'),
   "contentHash": zod.string().describe('节点内容的指纹'),
   "name": zod.string().nullish(),
@@ -904,7 +904,7 @@ export const GetArtifactGraphResponse = zod.object({
   "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
-  "projectId": zod.string().describe('所属项目 ID'),
+  "filesHash": zod.string().describe('files.tar.gz 的 SHA-256，用于 R2 路径 vfs\/{filesHash}\/files.tar.gz'),
   "mounts": zod.array(zod.object({
   "id": zod.string().describe('挂载点唯一标识符'),
   "sourceNodeId": zod.uuid().describe('源 VFS 节点 ID'),
@@ -923,6 +923,15 @@ export const GetArtifactGraphResponse = zod.object({
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
 })).optional().describe('文件列表（用于 API 验证）')
+}),zod.object({
+  "type": zod.enum(['SAVE']),
+  "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
+  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
+  "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
+  "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
+  "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "title": zod.string().nullish().describe('存档标题'),
+  "description": zod.string().nullish().describe('存档描述')
 })]).optional()
 })),
   "edges": zod.array(zod.object({
@@ -2046,13 +2055,15 @@ export const createSaveBodyMetadataIsListedDefault = false;
 
 export const CreateSaveBody = zod.object({
   "metadata": zod.object({
+  "saveId": zod.uuid().describe('Save 节点 ID（客户端自由提供）'),
   "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
   "stateNodeCommit": zod.string().describe('关联的 STATE 节点版本 commit hash'),
   "commit": zod.string().describe('Save 版本 commit hash（客户端计算）'),
   "parent": zod.string().nullish().describe('父版本 commit hash（可选）'),
-  "sourceArtifactId": zod.uuid().describe('关联的 artifact ID'),
-  "sourceArtifactCommit": zod.string().describe('关联的 artifact 版本 commit hash'),
+  "artifactId": zod.uuid().describe('关联的 artifact ID'),
+  "artifactCommit": zod.string().describe('关联的 artifact 版本 commit hash'),
   "contentHash": zod.string().describe('内容指纹'),
+  "quadsHash": zod.string().describe('quads.bin 的 SHA-256（客户端计算）'),
   "title": zod.string().optional().describe('存档标题'),
   "description": zod.string().optional().describe('存档描述'),
   "isListed": zod.boolean().default(createSaveBodyMetadataIsListedDefault).describe('是否在公开列表中可见（可发现性）')
@@ -2093,15 +2104,16 @@ export const listSavesResponsePaginationLimitMax = 100;
 
 export const ListSavesResponse = zod.object({
   "saves": zod.array(zod.object({
-  "saveId": zod.string().describe('Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)）'),
+  "saveId": zod.string().describe('Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)）'),
   "commit": zod.string().describe('Save 版本 commit hash'),
   "parent": zod.string().nullish().describe('父版本 commit hash'),
   "authorId": zod.uuid(),
   "authoredAt": zod.iso.datetime({}),
   "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
   "stateNodeCommit": zod.string().describe('关联的 STATE 节点版本 commit hash'),
-  "sourceArtifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
-  "sourceArtifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
+  "artifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
+  "artifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
+  "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
   "title": zod.string().nullish(),
   "description": zod.string().nullish(),
   "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
@@ -2126,15 +2138,16 @@ export const GetSaveParams = zod.object({
 })
 
 export const GetSaveResponse = zod.object({
-  "saveId": zod.string().describe('Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)）'),
+  "saveId": zod.string().describe('Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)）'),
   "commit": zod.string().describe('Save 版本 commit hash'),
   "parent": zod.string().nullish().describe('父版本 commit hash'),
   "authorId": zod.uuid(),
   "authoredAt": zod.iso.datetime({}),
   "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
   "stateNodeCommit": zod.string().describe('关联的 STATE 节点版本 commit hash'),
-  "sourceArtifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
-  "sourceArtifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
+  "artifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
+  "artifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
+  "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
   "title": zod.string().nullish(),
   "description": zod.string().nullish(),
   "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
@@ -2299,7 +2312,7 @@ export const GetNodeVersionResponse = zod.object({
   "description": zod.string().optional().describe('状态节点的描述')
 }),zod.object({
   "type": zod.enum(['VFS']),
-  "projectId": zod.string().describe('所属项目 ID'),
+  "filesHash": zod.string().describe('files.tar.gz 的 SHA-256，用于 R2 路径 vfs\/{filesHash}\/files.tar.gz'),
   "mounts": zod.array(zod.object({
   "id": zod.string().describe('挂载点唯一标识符'),
   "sourceNodeId": zod.uuid().describe('源 VFS 节点 ID'),
@@ -2318,6 +2331,15 @@ export const GetNodeVersionResponse = zod.object({
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
 })).optional().describe('文件列表（用于 API 验证）')
+}),zod.object({
+  "type": zod.enum(['SAVE']),
+  "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
+  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
+  "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
+  "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
+  "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "title": zod.string().nullish().describe('存档标题'),
+  "description": zod.string().nullish().describe('存档描述')
 })]).optional(),
   "refs": zod.array(zod.object({
   "targetNodeId": zod.string(),

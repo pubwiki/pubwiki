@@ -801,7 +801,7 @@ export interface components {
             color?: string | null;
         };
         /** @enum {string} */
-        ArtifactNodeType: "PROMPT" | "INPUT" | "GENERATED" | "VFS" | "LOADER" | "SANDBOX" | "STATE";
+        ArtifactNodeType: "PROMPT" | "INPUT" | "GENERATED" | "VFS" | "LOADER" | "SANDBOX" | "STATE" | "SAVE";
         CreateArtifactMetadata: {
             /**
              * Format: uuid
@@ -849,12 +849,6 @@ export interface components {
              *     如果某个 tag 已被其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
              */
             commitTags?: string[];
-            /**
-             * @description 和 artifact 同时创建的 save 列表（解决 save 和 artifact 的循环依赖）。
-             *     Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
-             *     服务端会先创建 save，然后再验证 STATE 节点内容的合法性。
-             */
-            saves?: components["schemas"]["CreateSaveInput"][];
         };
         ArtifactEdgeDescriptor: {
             /** Format: uuid */
@@ -1076,8 +1070,8 @@ export interface components {
              * @enum {string}
              */
             type: "VFS";
-            /** @description 所属项目 ID */
-            projectId: string;
+            /** @description files.tar.gz 的 SHA-256，用于 R2 路径 vfs/{filesHash}/files.tar.gz */
+            filesHash: string;
             /** @description VfsMountConfig[] 挂载配置 */
             mounts?: components["schemas"]["VfsMountConfig"][];
             /** @description 文件总数 */
@@ -1089,7 +1083,7 @@ export interface components {
             /** @description 文件列表（用于 API 验证） */
             files?: components["schemas"]["VfsFileInfo"][];
         };
-        ArtifactNodeContent: components["schemas"]["InputNodeContent"] | components["schemas"]["PromptNodeContent"] | components["schemas"]["GeneratedNodeContent"] | components["schemas"]["SandboxNodeContent"] | components["schemas"]["LoaderNodeContent"] | components["schemas"]["StateNodeContent"] | components["schemas"]["VfsNodeContent"];
+        ArtifactNodeContent: components["schemas"]["InputNodeContent"] | components["schemas"]["PromptNodeContent"] | components["schemas"]["GeneratedNodeContent"] | components["schemas"]["SandboxNodeContent"] | components["schemas"]["LoaderNodeContent"] | components["schemas"]["StateNodeContent"] | components["schemas"]["VfsNodeContent"] | components["schemas"]["SaveNodeContent"];
         ProjectRole: {
             /** Format: uuid */
             id: string;
@@ -1474,7 +1468,7 @@ export interface components {
             isListed: boolean;
         };
         SaveDetail: {
-            /** @description Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)） */
+            /** @description Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)） */
             saveId: string;
             /** @description Save 版本 commit hash */
             commit: string;
@@ -1495,9 +1489,11 @@ export interface components {
              * Format: uuid
              * @description 创建此 Save 的 artifact ID
              */
-            sourceArtifactId: string;
+            artifactId: string;
             /** @description 创建此 Save 的 artifact 版本 commit hash */
-            sourceArtifactCommit: string;
+            artifactCommit: string;
+            /** @description quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin */
+            quadsHash: string;
             title?: string | null;
             description?: string | null;
             /** @description 是否在公开列表中可见（可发现性） */
@@ -1506,6 +1502,11 @@ export interface components {
             createdAt: string;
         };
         CreateSaveRequest: {
+            /**
+             * Format: uuid
+             * @description Save 节点 ID（客户端自由提供）
+             */
+            saveId: string;
             /**
              * Format: uuid
              * @description 关联的 STATE 节点 ID
@@ -1521,11 +1522,13 @@ export interface components {
              * Format: uuid
              * @description 关联的 artifact ID
              */
-            sourceArtifactId: string;
+            artifactId: string;
             /** @description 关联的 artifact 版本 commit hash */
-            sourceArtifactCommit: string;
+            artifactCommit: string;
             /** @description 内容指纹 */
             contentHash: string;
+            /** @description quads.bin 的 SHA-256（客户端计算） */
+            quadsHash: string;
             /** @description 存档标题 */
             title?: string;
             /** @description 存档描述 */
@@ -1624,33 +1627,6 @@ export interface components {
              */
             sandboxNodeId: string;
         };
-        /**
-         * @description 和 artifact 一起创建的 save 数据。
-         *     服务端会从 artifact 的 nodes 数组中自动获取 stateNodeCommit，
-         *     并使用 artifact 的 commit 作为 sourceArtifactCommit。
-         */
-        CreateSaveInput: {
-            /**
-             * Format: uuid
-             * @description 关联的 STATE 节点 ID
-             */
-            stateNodeId: string;
-            /** @description Save 版本的 commit hash */
-            commit: string;
-            /** @description Save 内容的指纹 */
-            contentHash: string;
-            /** @description 父 save 的 commit hash */
-            parent?: string | null;
-            /** @description Save 标题 */
-            title?: string;
-            /** @description Save 描述 */
-            description?: string;
-            /**
-             * @description 是否在公开列表中可见（可发现性）
-             * @default false
-             */
-            isListed: boolean;
-        };
         TextBlock: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -1732,6 +1708,33 @@ export interface components {
             /** @description MIME 类型 */
             mimeType?: string;
         };
+        SaveNodeContent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "SAVE";
+            /**
+             * Format: uuid
+             * @description 引用的 STATE 节点 ID
+             */
+            stateNodeId: string;
+            /** @description 引用的 STATE 节点版本 commit hash */
+            stateNodeCommit: string;
+            /**
+             * Format: uuid
+             * @description 创建此存档的 artifact ID
+             */
+            artifactId: string;
+            /** @description 创建此存档的 artifact 版本 commit hash */
+            artifactCommit: string;
+            /** @description quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin */
+            quadsHash: string;
+            /** @description 存档标题 */
+            title?: string | null;
+            /** @description 存档描述 */
+            description?: string | null;
+        };
         /**
          * @description 基于已有的 commit 和增量补丁创建新的 artifact 版本。
          *     客户端提交 baseCommit（基准版本）和需要变更的 nodes/edges，
@@ -1773,11 +1776,6 @@ export interface components {
             addEdges?: components["schemas"]["ArtifactEdgeDescriptor"][];
             /** @description 需要移除的边（通过 source + target 匹配） */
             removeEdges?: components["schemas"]["ArtifactEdgeDescriptor"][];
-            /**
-             * @description 和 patch 同时创建的 save 列表。
-             *     Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
-             */
-            saves?: components["schemas"]["CreateSaveInput"][];
         };
         /** @description 设置指定 commit 上的标签列表（替换语义） */
         UpdateCommitTagsRequest: {

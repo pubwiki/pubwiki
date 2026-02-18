@@ -24,23 +24,6 @@ export interface NodeVersionDetail extends NodeVersionSummary {
   content?: ArtifactNodeContent;
 }
 
-// ========================================================================
-// Internal types (not in API)
-// ========================================================================
-
-/** SAVE node content (internal type, not exposed via public API) */
-export interface SaveNodeContent {
-  type: 'SAVE';
-  stateNodeId: string;
-  stateNodeCommit: string;
-  sourceArtifactCommit: string;
-  title?: string | null;
-  description?: string | null;
-}
-
-/** All node content types (ArtifactNodeContent + SaveNodeContent) */
-export type AllNodeContent = ArtifactNodeContent | SaveNodeContent;
-
 /** Input for creating/syncing a node version */
 export interface SyncNodeVersionInput {
   nodeId: string;
@@ -51,7 +34,7 @@ export interface SyncNodeVersionInput {
   type: NodeType;
   name?: string;
   contentHash: string;
-  content: AllNodeContent;  // The actual content to store in the typed content table
+  content: ArtifactNodeContent;  // The actual content to store in the typed content table
   message?: string;
   tag?: string;
   isListed?: boolean;
@@ -108,7 +91,10 @@ function getContentTable(type: NodeType) {
 // ========================================================================
 // NodeVersionService
 // ========================================================================
-
+// FIXME: ACL is not applied by NodeVersionService. 
+// This service should contain all node relavant operations
+// direct access to node_versions table is not permitted without
+// using this service 
 export class NodeVersionService {
   constructor(private ctx: BatchContext) {}
 
@@ -358,7 +344,7 @@ export class NodeVersionService {
       // ========== Phase 2: Batch upsert unique contents ==========
       
       // Collect unique contentHashes and their contents
-      const contentMap = new Map<string, AllNodeContent>();
+      const contentMap = new Map<string, ArtifactNodeContent>();
       for (const input of newInputs) {
         contentMap.set(input.contentHash, input.content);
       }
@@ -548,8 +534,11 @@ export class NodeVersionService {
    * this is only called once per content (e.g., by checking existence first).
    * 
    * Note: This collects the operation into BatchContext, not executed immediately.
+   * 
+   * For SAVE nodes, the content is expected to have additional fields
+   * (stateNodeCommit, sourceArtifactCommit) populated by artifact.ts.
    */
-  private upsertContent(contentHash: string, content: AllNodeContent): void {
+  private upsertContent(contentHash: string, content: ArtifactNodeContent): void {
     // Using type narrowing via the discriminated union's `type` field
     switch (content.type) {
       case 'INPUT': {
@@ -610,7 +599,7 @@ export class NodeVersionService {
           db.insert(vfsContents)
             .values({
               contentHash,
-              projectId: content.projectId,
+              filesHash: content.filesHash,
               mounts: content.mounts,
               fileCount: content.fileCount,
               totalSize: content.totalSize,
@@ -672,7 +661,9 @@ export class NodeVersionService {
               contentHash,
               stateNodeId: content.stateNodeId,
               stateNodeCommit: content.stateNodeCommit,
-              sourceArtifactCommit: content.sourceArtifactCommit,
+              artifactId: content.artifactId,
+              artifactCommit: content.artifactCommit,
+              quadsHash: content.quadsHash,
               title: content.title,
               description: content.description,
             })

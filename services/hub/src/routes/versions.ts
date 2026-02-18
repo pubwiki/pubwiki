@@ -49,7 +49,20 @@ versionsRoute.get('/:commit/archive', optionalAuthMiddleware, async (c) => {
     return serviceErrorResponse(c, versionResult.error);
   }
 
-  const r2Key = `archives/${commit}.tar.gz`;
+  const version = versionResult.data;
+  
+  // Only VFS nodes have archives
+  if (version.type !== 'VFS') {
+    return c.json<ApiError>({ error: 'Archive only available for VFS nodes' }, 400);
+  }
+
+  // Get filesHash from VFS content
+  const content = version.content as { filesHash: string };
+  if (!content.filesHash) {
+    return c.json<ApiError>({ error: 'VFS node missing filesHash' }, 500);
+  }
+
+  const r2Key = `vfs/${content.filesHash}/files.tar.gz`;
   const object = await c.env.R2_BUCKET.get(r2Key);
 
   if (!object) {

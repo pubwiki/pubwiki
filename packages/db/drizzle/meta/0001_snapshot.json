@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "5987b30e-7c13-4920-aca4-5eae2936ee49",
-  "prevId": "383d14a7-c03d-4fea-9a89-f78d2e5075e1",
+  "id": "a54aab10-6a38-4ecb-9514-66334fc06ce1",
+  "prevId": "57f61422-ec4a-45de-bbcb-396258f060c6",
   "tables": {
     "account": {
       "name": "account",
@@ -3255,8 +3255,22 @@
           "notNull": true,
           "autoincrement": false
         },
-        "source_artifact_commit": {
-          "name": "source_artifact_commit",
+        "artifact_id": {
+          "name": "artifact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "artifact_commit": {
+          "name": "artifact_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "quads_hash": {
+          "name": "quads_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -3298,6 +3312,13 @@
           "name": "idx_save_contents_state_node",
           "columns": [
             "state_node_id"
+          ],
+          "isUnique": false
+        },
+        "idx_save_contents_quads_hash": {
+          "name": "idx_save_contents_quads_hash",
+          "columns": [
+            "quads_hash"
           ],
           "isUnique": false
         }
@@ -3364,18 +3385,18 @@
           "notNull": true,
           "autoincrement": false
         },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "mounts": {
           "name": "mounts",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
+          "autoincrement": false
+        },
+        "files_hash": {
+          "name": "files_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
           "autoincrement": false
         },
         "file_count": {
@@ -3416,7 +3437,15 @@
           "default": "(datetime('now'))"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_vfs_contents_files_hash": {
+          "name": "idx_vfs_contents_files_hash",
+          "columns": [
+            "files_hash"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

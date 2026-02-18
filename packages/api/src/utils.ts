@@ -31,13 +31,25 @@ export interface SaveContent {
   description: string | null | undefined;
 }
 
-// ─── Internal helpers ───────────────────────────────────────────────
+// ─── Hash Utilities ─────────────────────────────────────────────────
 
-async function sha256Hex(data: string): Promise<string> {
-  const encoded = new TextEncoder().encode(data);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+/**
+ * Compute SHA-256 hash of binary data (ArrayBuffer) and return as hex string.
+ * Used for verifying uploaded files against client-provided hashes.
+ * 
+ * This is the **single source of truth** for binary content hash calculation.
+ * Both frontend and backend MUST use this function to guarantee consistency.
+ */
+export async function computeSha256Hex(data: ArrayBuffer): Promise<string> {
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Internal helper for string hashing (used by content hash functions)
+async function sha256Hex(data: string): Promise<string> {
+  const encoded = new TextEncoder().encode(data);
+  return computeSha256Hex(encoded.buffer as ArrayBuffer);
 }
 
 // ─── Content Hash ───────────────────────────────────────────────────
@@ -131,29 +143,3 @@ export async function computeArtifactCommit(
   return sha256Hex(payload);
 }
 
-// ─── Save ID ────────────────────────────────────────────────────────
-
-/**
- * Compute a deterministic save ID (UUID v4 format) from save parameters.
- *
- * Algorithm: `SHA-256(canonicalize({ stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit }))` → UUID v4 format.
- *
- * @returns A UUID-v4-formatted deterministic string.
- */
-export async function computeSaveId(
-  stateNodeId: string,
-  stateNodeCommit: string,
-  userId: string,
-  sourceArtifactId: string,
-  sourceArtifactCommit: string,
-): Promise<string> {
-  const payload = canonicalize({ stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit });
-  const hex = await sha256Hex(payload);
-  return [
-    hex.substring(0, 8),
-    hex.substring(8, 12),
-    '4' + hex.substring(13, 16),      // version 4
-    ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16) + hex.substring(17, 20), // variant
-    hex.substring(20, 32),
-  ].join('-');
-}

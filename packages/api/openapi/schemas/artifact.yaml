@@ -74,7 +74,7 @@ Tag:
 
 ArtifactNodeType:
   type: string
-  enum: [PROMPT, INPUT, GENERATED, VFS, LOADER, SANDBOX, STATE]
+  enum: [PROMPT, INPUT, GENERATED, VFS, LOADER, SANDBOX, STATE, SAVE]
 
 CreateArtifactMetadata:
   type: object
@@ -148,14 +148,6 @@ CreateArtifactMetadata:
         用户可分配的版本标签列表（如 ["stable", "beta", "v1.0"]）。
         同一 artifact 内每个 tag 唯一，一个 commit 可以有多个 tag。
         如果某个 tag 已被其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
-    saves:
-      type: array
-      items:
-        $ref: './artifact.yaml#/CreateSaveInput'
-      description: |
-        和 artifact 同时创建的 save 列表（解决 save 和 artifact 的循环依赖）。
-        Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
-        服务端会先创建 save，然后再验证 STATE 节点内容的合法性。
 
 ArtifactEntrypoint:
   type: object
@@ -170,42 +162,6 @@ ArtifactEntrypoint:
       type: string
       format: uuid
       description: 沙箱节点 ID
-
-CreateSaveInput:
-  type: object
-  description: |
-    和 artifact 一起创建的 save 数据。
-    服务端会从 artifact 的 nodes 数组中自动获取 stateNodeCommit，
-    并使用 artifact 的 commit 作为 sourceArtifactCommit。
-  required:
-    - stateNodeId
-    - commit
-    - contentHash
-  properties:
-    stateNodeId:
-      type: string
-      format: uuid
-      description: 关联的 STATE 节点 ID
-    commit:
-      type: string
-      description: Save 版本的 commit hash
-    contentHash:
-      type: string
-      description: Save 内容的指纹
-    parent:
-      type: string
-      nullable: true
-      description: 父 save 的 commit hash
-    title:
-      type: string
-      description: Save 标题
-    description:
-      type: string
-      description: Save 描述
-    isListed:
-      type: boolean
-      default: false
-      description: 是否在公开列表中可见（可发现性）
 
 ArtifactEdgeDescriptor:
   type: object
@@ -553,13 +509,6 @@ PatchArtifactRequest:
       description: 需要移除的边（通过 source + target 匹配）
       items:
         $ref: './artifact.yaml#/ArtifactEdgeDescriptor'
-    saves:
-      type: array
-      items:
-        $ref: './artifact.yaml#/CreateSaveInput'
-      description: |
-        和 patch 同时创建的 save 列表。
-        Save 的二进制数据通过 save[{commit}] 形式在 multipart form 中上传。
 
 UpdateCommitTagsRequest:
   type: object

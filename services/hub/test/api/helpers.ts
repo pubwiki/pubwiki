@@ -1,6 +1,6 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import app from '../../src/index';
-import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, resourceDiscoveryControl, resourceAcl, PUBLIC_USER_ID, eq } from '@pubwiki/db';
+import { createDb, user, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, resourceDiscoveryControl, resourceAcl, vfsContents, PUBLIC_USER_ID, eq } from '@pubwiki/db';
 
 export type TestDb = ReturnType<typeof createDb>;
 
@@ -244,4 +244,4 @@ export async function createVfsTarGz(
 
 // 导出数据库表和eq操作符，方便测试文件使用
 // 注意: 'user' 是正确的表名，'users' 是别名保持向后兼容
-export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, resourceDiscoveryControl, resourceAcl, PUBLIC_USER_ID, eq };
+export { user, user as users, session, account, verification, artifacts, tags, artifactTags, artifactStats, artifactVersions, projects, projectArtifacts, projectRoles, projectPages, projectPosts, nodeVersions, nodeVersionRefs, artifactVersionNodes, artifactVersionEdges, discussions, discussionReplies, articles, resourceDiscoveryControl, resourceAcl, vfsContents, PUBLIC_USER_ID, eq };

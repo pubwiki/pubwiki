@@ -4,7 +4,7 @@ import type {
   CreateArtifactResponse,
   ApiError,
 } from '@pubwiki/api';
-import { computeArtifactCommit, computeNodeCommit, computeSaveId, computeContentHash } from '@pubwiki/api';
+import { computeArtifactCommit, computeNodeCommit, computeContentHash, computeSha256Hex } from '@pubwiki/api';
 import {
   getTestDb,
   getTestR2Bucket,
@@ -22,6 +22,7 @@ import {
   artifactVersionNodes,
   resourceDiscoveryControl,
   resourceAcl,
+  vfsContents,
   PUBLIC_USER_ID,
   eq,
   type TestDb,
@@ -349,7 +350,16 @@ describe('Artifacts API', () => {
       const nodeId = crypto.randomUUID();
       const contentHash = crypto.randomUUID().substring(0, 16);
       let nodes: Array<Record<string, unknown>> = [];
+      let tarGz: ArrayBuffer | null = null;
+      let filesHashValue: string | null = null;
       if (files && files.length > 0) {
+        // Create tar.gz first to compute filesHash
+        tarGz = await createVfsTarGz(files.map(f => ({
+          name: f.name,
+          content: f.content
+        })));
+        filesHashValue = await computeSha256Hex(tarGz);
+        
         const nodeCommit = await computeNodeCommit(nodeId, null, contentHash, 'VFS');
         nodes = [{
           nodeId,
@@ -357,7 +367,7 @@ describe('Artifacts API', () => {
           type: 'VFS',
           name: 'files',
           contentHash,
-          content: { type: 'VFS', projectId: crypto.randomUUID(), fileTree: files.map(f => ({ path: f.name, size: 0 })) },
+          content: { type: 'VFS', filesHash: filesHashValue, fileTree: files.map(f => ({ path: f.name, size: 0 })) },
         }];
       }
       const edges: Array<{ source: string; target: string }> = [];
@@ -373,15 +383,9 @@ describe('Artifacts API', () => {
       formData.append('nodes', JSON.stringify(nodes));
       formData.append('edges', JSON.stringify(edges));
 
-      if (files && files.length > 0) {
-        const nodeCommit = (nodes[0] as {commit: string}).commit;
-        // 创建 tar.gz 归档
-        const tarGz = await createVfsTarGz(files.map(f => ({
-          name: f.name,
-          content: f.content
-        })));
+      if (files && files.length > 0 && tarGz && filesHashValue) {
         const blob = new Blob([tarGz], { type: 'application/gzip' });
-        formData.append(`vfs[${nodeCommit}]`, blob, 'archive.tar.gz');
+        formData.append(`vfs[${filesHashValue}]`, blob, 'archive.tar.gz');
       }
 
       return formData;
@@ -484,17 +488,34 @@ describe('Artifacts API', () => {
       const artifactId = (metadata.artifactId as string) ?? crypto.randomUUID();
       const parentCommit = (metadata.parentCommit as string | undefined) ?? null;
 
+      // Prepare VFS archives and compute filesHash for VFS nodes
+      const vfsArchiveData = new Map<string, { tarGz: ArrayBuffer; filesHash: string }>();
+      if (nodeFiles) {
+        for (const [nodeId, files] of nodeFiles) {
+          const tarGz = await createVfsTarGz(files.map(f => ({
+            name: f.name,
+            content: f.content
+          })));
+          const filesHash = await computeSha256Hex(tarGz);
+          vfsArchiveData.set(nodeId, { tarGz, filesHash });
+        }
+      }
+
       // Convert descriptor nodes to CreateArtifactNode format
       const nodes = await Promise.all(descriptor.nodes.map(async n => {
-        const contentHash = crypto.randomUUID().substring(0, 16);
         const nodeType = n.type ?? 'INPUT';
-        const nodeCommit = await computeNodeCommit(n.id, null, contentHash, nodeType);
         
-        // Ensure content has the type field matching nodeType
+        // For VFS nodes, use the precomputed filesHash in content
         let content = n.content || {};
-        if (typeof content === 'object' && content !== null && !('type' in content)) {
+        if (nodeType === 'VFS' && vfsArchiveData.has(n.id)) {
+          const { filesHash } = vfsArchiveData.get(n.id)!;
+          content = { type: 'VFS', filesHash, ...(n.content as object || {}) };
+        } else if (typeof content === 'object' && content !== null && !('type' in content)) {
           content = { type: nodeType, ...content };
         }
+        
+        const contentHash = crypto.randomUUID().substring(0, 16);
+        const nodeCommit = await computeNodeCommit(n.id, null, contentHash, nodeType);
         
         return {
           nodeId: n.id,
@@ -518,18 +539,13 @@ describe('Artifacts API', () => {
       formData.append('nodes', JSON.stringify(nodes));
       formData.append('edges', JSON.stringify(edges));
 
-      // Add VFS files if provided
-      if (nodeFiles) {
-        for (const [_nodeId, files] of nodeFiles) {
-          const tarGz = await createVfsTarGz(files.map(f => ({
-            name: f.name,
-            content: f.content
-          })));
+      // Add VFS archives using filesHash as key (for deduplication)
+      const addedHashes = new Set<string>();
+      for (const [, { tarGz, filesHash }] of vfsArchiveData) {
+        if (!addedHashes.has(filesHash)) {
           const blob = new Blob([tarGz], { type: 'application/gzip' });
-          const nodeCommit = nodes.find(n => n.nodeId === _nodeId)?.commit;
-          if (nodeCommit) {
-            formData.append(`vfs[${nodeCommit}]`, blob, 'archive.tar.gz');
-          }
+          formData.append(`vfs[${filesHash}]`, blob, 'archive.tar.gz');
+          addedHashes.add(filesHash);
         }
       }
 
@@ -602,11 +618,19 @@ describe('Artifacts API', () => {
       const versionNodeRecords = await db.select().from(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, versions[0].commitHash));
       expect(versionNodeRecords.length).toBeGreaterThan(0);
       
-      const vfsNode = versionNodeRecords.find(() => true); // first node
-      expect(vfsNode).toBeDefined();
+      const vfsVersionNode = versionNodeRecords.find(() => true); // first node
+      expect(vfsVersionNode).toBeDefined();
       
-      // VFS archives are stored by commit only (globally unique)
-      const archiveKey = `archives/${vfsNode!.nodeCommit}.tar.gz`;
+      // Get node version to find contentHash
+      const nodeVersionRecord = await db.select().from(nodeVersions).where(eq(nodeVersions.commit, vfsVersionNode!.nodeCommit));
+      expect(nodeVersionRecord.length).toBeGreaterThan(0);
+      
+      // Get VFS content to find filesHash
+      const vfsContentRecords = await db.select().from(vfsContents).where(eq(vfsContents.contentHash, nodeVersionRecord[0].contentHash));
+      expect(vfsContentRecords.length).toBeGreaterThan(0);
+      
+      // VFS archives are stored by filesHash: vfs/{filesHash}/files.tar.gz
+      const archiveKey = `vfs/${vfsContentRecords[0].filesHash}/files.tar.gz`;
       const archive = await r2Bucket.get(archiveKey);
       
       expect(archive).not.toBeNull();
@@ -1153,14 +1177,14 @@ describe('Artifacts API', () => {
       });
 
       it('should update nodes and files correctly', async () => {
-        // 创建带节点的 artifact
+        // 创建带 VFS 节点的 artifact
         const nodeId1 = crypto.randomUUID();
         const nodeFiles1 = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles1.set(nodeId1, [{ name: 'node.json', content: 'original content' }]);
+        nodeFiles1.set(nodeId1, [{ name: 'file.txt', content: 'original content' }]);
 
         const createFormData = await createCustomFormData(
           { name: 'Node Recipe' },
-          { version: 1, nodes: [{ id: nodeId1, type: 'PROMPT', name: 'original-node', content: { blocks: [] } }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId1, type: 'VFS', name: 'original-node' }], edges: [] },
           nodeFiles1
         );
 
@@ -1183,14 +1207,14 @@ describe('Artifacts API', () => {
         // 获取当前版本的 commitHash 作为 parentCommit
         const parentCommit = oldVersions[0].commitHash;
 
-        // 更新，用新节点替换
+        // 更新，用新 VFS 节点替换
         const nodeId2 = crypto.randomUUID();
         const nodeFiles2 = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles2.set(nodeId2, [{ name: 'node.json', content: 'updated content' }]);
+        nodeFiles2.set(nodeId2, [{ name: 'file.txt', content: 'updated content' }]);
 
         const updateFormData = await createCustomFormData(
           { artifactId, parentCommit, name: 'Updated Node Recipe', version: '2.0.0' },
-          { version: 1, nodes: [{ id: nodeId2, type: 'PROMPT', name: 'new-node', content: { blocks: [] } }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId2, type: 'VFS', name: 'new-node' }], edges: [] },
           nodeFiles2
         );
 
@@ -1211,14 +1235,14 @@ describe('Artifacts API', () => {
       });
 
       it('should allow reusing same node ID when updating artifact', async () => {
-        // 创建带节点的 artifact
+        // 创建带 VFS 节点的 artifact
         const nodeId = crypto.randomUUID();
         const nodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles.set(nodeId, [{ name: 'node.json', content: 'original content' }]);
+        nodeFiles.set(nodeId, [{ name: 'file.txt', content: 'original content' }]);
 
         const createFormData = await createCustomFormData(
           { name: 'Reuse Node Recipe' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'my-node', content: { blocks: [] } }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId, type: 'VFS', name: 'my-node' }], edges: [] },
           nodeFiles
         );
 
@@ -1238,11 +1262,11 @@ describe('Artifacts API', () => {
 
         // 更新，复用相同的 node ID
         const updatedNodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        updatedNodeFiles.set(nodeId, [{ name: 'node.json', content: 'updated content' }]);
+        updatedNodeFiles.set(nodeId, [{ name: 'file.txt', content: 'updated content' }]);
 
         const updateFormData = await createCustomFormData(
           { artifactId, parentCommit: currentVersion.commitHash, name: 'Updated Reuse Recipe', version: '2.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'PROMPT', name: 'my-node-updated', content: { blocks: [] } }], edges: [] },
+          { version: 1, nodes: [{ id: nodeId, type: 'VFS', name: 'my-node-updated' }], edges: [] },
           updatedNodeFiles
         );
 
@@ -1274,7 +1298,6 @@ describe('Artifacts API', () => {
       // 创建一个完整的 artifact 图，包括 STATE、LOADER、SANDBOX 节点和 saves
       async function createArtifactWithStateSaveFormData(
         metadata: Record<string, unknown>,
-        userId: string,
       ): Promise<FormData> {
         const formData = new FormData();
 
@@ -1319,7 +1342,7 @@ describe('Artifacts API', () => {
         const artifactCommit = await computeArtifactCommit(artifactId, parentCommit, commitNodes, commitEdges);
 
         // 计算 save 的 ID 和 commit
-        const saveId = await computeSaveId(stateNodeId, stateCommit, userId, artifactId, artifactCommit);
+        const saveId = crypto.randomUUID();
         const saveContentHash = await computeContentHash({
           type: 'SAVE',
           stateNodeId,
@@ -1393,16 +1416,8 @@ describe('Artifacts API', () => {
         // - Save 与 STATE 节点关联（通过 save_contents.stateNodeId）
         // - STATE 节点内容只包含 name 和 description（不包含 saves 引用）
 
-        // 获取当前用户 ID
-        const loginResponse = await sendRequest(new Request('http://localhost/api/auth/get-session', {
-          headers: { Cookie: sessionCookie },
-        }));
-        const sessionData = await loginResponse.json<{ user: { id: string } }>();
-        const userId = sessionData.user.id;
-
         const formData = await createArtifactWithStateSaveFormData(
           { name: 'Artifact with STATE and Save' },
-          userId,
         );
 
         const request = new Request('http://localhost/api/artifacts', {

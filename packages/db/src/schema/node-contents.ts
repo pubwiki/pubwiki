@@ -84,8 +84,10 @@ export const vfsContents = sqliteTable('vfs_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
 
   // VFS 配置
-  projectId: text('project_id').notNull(),                     // 所属项目 ID
   mounts: text('mounts', { mode: 'json' }).$type<VfsMountConfig[]>(), // VfsMountConfig[] 挂载配置
+
+  // R2 存储索引（用户上传时计算并验证）
+  filesHash: text('files_hash').notNull(),                     // files.tar.gz 的 SHA-256，用于 R2 路径: vfs/{filesHash}/files.tar.gz
 
   // 文件目录信息（从 tar.gz 中提取，便于展示和搜索）
   fileCount: integer('file_count'),                            // 文件总数
@@ -94,7 +96,9 @@ export const vfsContents = sqliteTable('vfs_contents', {
 
   refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
-});
+}, (table) => [
+  index('idx_vfs_contents_files_hash').on(table.filesHash),
+]);
 
 // ────────────────────────────────────────────────────────────
 // 5) SANDBOX 节点内容
@@ -143,7 +147,7 @@ export const stateContents = sqliteTable('state_contents', {
 
 // ────────────────────────────────────────────────────────────
 // 8) SAVE 节点内容（存档元数据）
-// 实际 quad 数据存储在 R2: nodes/{nodeId}/{commit}/quads.bin
+// 实际 quad 数据存储在 R2: saves/{quadsHash}/quads.bin
 // ────────────────────────────────────────────────────────────
 export const saveContents = sqliteTable('save_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
@@ -151,7 +155,13 @@ export const saveContents = sqliteTable('save_contents', {
   // 关联的 STATE 节点信息
   stateNodeId: text('state_node_id').notNull(),                // 关联的 STATE 节点 ID
   stateNodeCommit: text('state_node_commit').notNull(),        // 关联的 STATE 节点版本 commit
-  sourceArtifactCommit: text('source_artifact_commit').notNull(), // 创建此 Save 的 artifact 版本 commit
+
+  // 创建此 Save 的 artifact 信息
+  artifactId: text('artifact_id').notNull(),                   // 创建此 Save 的 artifact ID
+  artifactCommit: text('artifact_commit').notNull(),           // 创建此 Save 的 artifact 版本 commit
+
+  // R2 存储索引（用户上传时计算并验证）
+  quadsHash: text('quads_hash').notNull(),                     // quads.bin 的 SHA-256，用于 R2 路径: saves/{quadsHash}/quads.bin
 
   title: text('title'),                                        // 存档标题
   description: text('description'),                            // 存档描述
@@ -160,6 +170,7 @@ export const saveContents = sqliteTable('save_contents', {
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 }, (table) => [
   index('idx_save_contents_state_node').on(table.stateNodeId),
+  index('idx_save_contents_quads_hash').on(table.quadsHash),
 ]);
 
 // ========================================================================

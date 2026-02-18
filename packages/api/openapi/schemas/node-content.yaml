@@ -333,14 +333,14 @@ VfsNodeContent:
   type: object
   required:
     - type
-    - projectId
+    - filesHash
   properties:
     type:
       type: string
       const: VFS
-    projectId:
+    filesHash:
       type: string
-      description: 所属项目 ID
+      description: files.tar.gz 的 SHA-256，用于 R2 路径 vfs/{filesHash}/files.tar.gz
     mounts:
       type: array
       description: VfsMountConfig[] 挂载配置
@@ -364,6 +364,50 @@ VfsNodeContent:
         $ref: '#/VfsFileInfo'
 
 # ============================================================================
+# Save Node Content
+# ============================================================================
+
+# Save 节点内容（存档数据）
+SaveNodeContent:
+  type: object
+  required:
+    - type
+    - stateNodeId
+    - stateNodeCommit
+    - artifactId
+    - artifactCommit
+    - quadsHash
+  properties:
+    type:
+      type: string
+      const: SAVE
+    stateNodeId:
+      type: string
+      format: uuid
+      description: 引用的 STATE 节点 ID
+    stateNodeCommit:
+      type: string
+      description: 引用的 STATE 节点版本 commit hash
+    artifactId:
+      type: string
+      format: uuid
+      description: 创建此存档的 artifact ID
+    artifactCommit:
+      type: string
+      description: 创建此存档的 artifact 版本 commit hash
+    quadsHash:
+      type: string
+      description: quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin
+    title:
+      type: string
+      nullable: true
+      description: 存档标题
+    description:
+      type: string
+      nullable: true
+      description: 存档描述
+
+# ============================================================================
 # Union Type for All Node Contents
 # ============================================================================
 
@@ -376,6 +420,7 @@ ArtifactNodeContent:
     - $ref: '#/LoaderNodeContent'
     - $ref: '#/StateNodeContent'
     - $ref: '#/VfsNodeContent'
+    - $ref: '#/SaveNodeContent'
   discriminator:
     propertyName: type
     mapping:
@@ -386,3 +431,4 @@ ArtifactNodeContent:
       LOADER: '#/LoaderNodeContent'
       STATE: '#/StateNodeContent'
       VFS: '#/VfsNodeContent'
+      SAVE: '#/SaveNodeContent'

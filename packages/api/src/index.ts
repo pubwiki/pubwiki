@@ -6,7 +6,7 @@ export type { paths, components, operations } from './generated/openapi';
 export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from './types/content';
 
 // 共享工具函数（客户端 & 服务端通用）
-export { computeContentHash, computeNodeCommit, computeArtifactCommit, computeSaveId } from './utils';
+export { computeContentHash, computeNodeCommit, computeArtifactCommit, computeSha256Hex } from './utils';
 export type { ArtifactCommitNode, ArtifactCommitEdge, SaveContent } from './utils';
 
 // 便捷类型别名
@@ -57,6 +57,7 @@ export type VfsFileInfo = components['schemas']['VfsFileInfo'];
 export type MessageBlock = components['schemas']['MessageBlock'];
 export type MessageBlockType = components['schemas']['MessageBlockType'];
 export type ToolCallStatus = components['schemas']['ToolCallStatus'];
+export type SaveNodeContent = components['schemas']['SaveNodeContent'];
 
 // Discussion 相关类型
 export type DiscussionTargetType = components['schemas']['DiscussionTargetType'];
@@ -146,7 +147,6 @@ export type GetNodeVersionChildrenResponse = operations['getNodeVersionChildren'
 // Schema 类型（用于请求体）
 export type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
 export type CreateArtifactNode = components['schemas']['CreateArtifactNode'];
-export type CreateSaveInput = components['schemas']['CreateSaveInput'];
 export type PatchArtifactRequest = components['schemas']['PatchArtifactRequest'];
 export type UpdateCommitTagsRequest = components['schemas']['UpdateCommitTagsRequest'];
 export type MarkVersionWeakRequest = components['schemas']['MarkVersionWeakRequest'];

@@ -58,6 +58,8 @@ export class AclService {
   /**
    * 设置公开读取权限（等价于原 isPrivate = false）
    */
+  // FIXME: if an artifact is set to public, its nodes should be set to public
+  // accordingly
   async setPublic(ref: ResourceRef, grantedBy: string): Promise<void> {
     await this.db
       .insert(resourceAcl)
@@ -280,7 +282,7 @@ export class AclService {
     const result = await this.checkPermission(ref, userId, 'manage');
     return result.allowed;
   }
-  
+
   // ========================================================================
   // 私有辅助方法
   // ========================================================================

@@ -15,3 +15,6 @@ export function chunkArray<T>(array: T[], fieldsPerRow: number): T[][] {
   }
   return chunks;
 }
+
+// Export NodeGraph for graph validation
+export { NodeGraph, type NodeGraphNode, type NodeGraphEdge, type NodeGraphPatch } from './node-graph';

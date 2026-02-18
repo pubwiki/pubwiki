@@ -137,7 +137,7 @@ describe('SaveService', () => {
     testUserId = await createTestUser();
   });
 
-  describe('createSave', () => {
+  describe('createRuntimeSave', () => {
     it('should reject save with non-existent stateNodeId', async () => {
       const artifactId = crypto.randomUUID();
       const stateNodeId = crypto.randomUUID();
@@ -168,30 +168,35 @@ describe('SaveService', () => {
         createdAt: now,
       });
 
-      // Compute save contentHash
+      // Compute save contentHash (using new schema with artifactId and artifactCommit)
+      const quadsHash = 'abcd1234'.repeat(8); // 64 char hex hash placeholder
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
         stateNodeCommit: fakeStateNodeCommit,
-        sourceArtifactCommit: artifactCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
         title: 'Test Save',
         description: null,
       });
 
       // Compute save commit
-      const saveId = await SaveService.computeSaveId(stateNodeId, fakeStateNodeCommit, testUserId, artifactId, artifactCommit);
+      const saveId = crypto.randomUUID();
       const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
 
       // Try to create save with non-existent stateNodeId + stateNodeCommit
-      const result = await service.createSave({
+      const result = await service.createRuntimeSave({
+        saveId,
         stateNodeId,
         stateNodeCommit: fakeStateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
-        sourceArtifactId: artifactId,
-        sourceArtifactCommit: artifactCommit,
+        artifactId,
+        artifactCommit,
         contentHash: saveContentHash,
+        quadsHash,
         title: 'Test Save',
         description: 'This should fail',
         isListed: false,
@@ -217,29 +222,34 @@ describe('SaveService', () => {
 
       // Compute save contentHash with WRONG stateNodeCommit
       const wrongStateNodeCommit = 'wrong-commit-hash';
+      const quadsHash = 'abcd1234'.repeat(8);
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
         stateNodeCommit: wrongStateNodeCommit,
-        sourceArtifactCommit: artifactCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
         title: 'Test Save',
         description: null,
       });
 
       // Compute save commit
-      const saveId = await SaveService.computeSaveId(stateNodeId, wrongStateNodeCommit, testUserId, artifactId, artifactCommit);
+      const saveId = crypto.randomUUID();
       const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
 
       // Try to create save with wrong stateNodeCommit
-      const result = await service.createSave({
+      const result = await service.createRuntimeSave({
+        saveId,
         stateNodeId,
         stateNodeCommit: wrongStateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
-        sourceArtifactId: artifactId,
-        sourceArtifactCommit: artifactCommit,
+        artifactId,
+        artifactCommit,
         contentHash: saveContentHash,
+        quadsHash,
         title: 'Test Save',
         description: 'This should fail',
         isListed: false,
@@ -264,29 +274,34 @@ describe('SaveService', () => {
       const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
 
       // Compute save contentHash
+      const quadsHash = 'abcd1234'.repeat(8);
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
         stateNodeCommit,
-        sourceArtifactCommit: artifactCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
         title: 'Test Save',
         description: null,
       });
 
       // Compute save commit
-      const saveId = await SaveService.computeSaveId(stateNodeId, stateNodeCommit, testUserId, artifactId, artifactCommit);
+      const saveId = crypto.randomUUID();
       const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
 
       // Create save with valid stateNodeId + stateNodeCommit
-      const result = await service.createSave({
+      const result = await service.createRuntimeSave({
+        saveId,
         stateNodeId,
         stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
-        sourceArtifactId: artifactId,
-        sourceArtifactCommit: artifactCommit,
+        artifactId,
+        artifactCommit,
         contentHash: saveContentHash,
+        quadsHash,
         title: 'Test Save',
         description: 'This should succeed',
         isListed: false,
@@ -298,46 +313,55 @@ describe('SaveService', () => {
       }
     });
 
-    it('should skip validation when skipValidation is true', async () => {
+    it('should reject save with non-existent artifact version', async () => {
       const artifactId = crypto.randomUUID();
       const stateNodeId = crypto.randomUUID();
-      const fakeStateNodeCommit = 'fake-commit-that-does-not-exist';
       const fakeArtifactCommit = 'fake-artifact-commit';
 
+      // Create a real STATE node
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+
+      // Do NOT create artifact version
+
       // Compute save contentHash
+      const quadsHash = 'abcd1234'.repeat(8);
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit: fakeStateNodeCommit,
-        sourceArtifactCommit: fakeArtifactCommit,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit: fakeArtifactCommit,
+        quadsHash,
         title: 'Test Save',
         description: null,
       });
 
       // Compute save commit
-      const saveId = await SaveService.computeSaveId(stateNodeId, fakeStateNodeCommit, testUserId, artifactId, fakeArtifactCommit);
+      const saveId = crypto.randomUUID();
       const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
 
-      // Create save with skipValidation = true (used when creating with artifact)
-      const result = await service.createSave({
+      // Try to create save with non-existent artifact version
+      const result = await service.createRuntimeSave({
+        saveId,
         stateNodeId,
-        stateNodeCommit: fakeStateNodeCommit,
+        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
-        sourceArtifactId: artifactId,
-        sourceArtifactCommit: fakeArtifactCommit,
+        artifactId,
+        artifactCommit: fakeArtifactCommit,
         contentHash: saveContentHash,
+        quadsHash,
         title: 'Test Save',
-        description: 'This should succeed with skipValidation',
+        description: 'This should fail',
         isListed: false,
-        skipValidation: true,
       });
 
-      // Should succeed because validation is skipped
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.commit).toBe(saveCommit);
+      // Should fail because artifact version does not exist
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe('BAD_REQUEST');
+        expect(result.error.message).toContain('Artifact version');
       }
     });
   });

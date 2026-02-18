@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, BatchContext, ArtifactService, type GetLineageParams, type CreateSaveInput, type CreateArtifactInput, type PatchArtifactInput } from '@pubwiki/db';
+import { createDb, BatchContext, ArtifactService, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput } from '@pubwiki/db';
 import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateCommitTagsRequest } from '@pubwiki/api';
+import { computeSha256Hex } from '@pubwiki/api';
 import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
@@ -133,23 +134,38 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   const edges = validateFormDataJson(c, formData, 'edges', CreateArtifactEdgesSchema);
   if (isValidationError(edges)) return edges;
 
-  // 收集 VFS 二进制文件: vfs[{commit}] 和 save 二进制文件: save[{commit}]
+  // 收集 VFS 二进制文件: vfs[{filesHash}] 和 save 二进制文件: save[{quadsHash}]
+  // 使用 hash 作为 key 支持内容去重
   const vfsArchives = new Map<string, ArrayBuffer>();
   const saveArchives = new Map<string, ArrayBuffer>();
   for (const [key, value] of formData.entries()) {
     if (value instanceof File) {
       const vfsMatch = key.match(/^vfs\[([^\]]+)\]$/);
       if (vfsMatch) {
-        const commit = vfsMatch[1];
+        const filesHash = vfsMatch[1];
         const arrayBuffer = await value.arrayBuffer();
-        vfsArchives.set(commit, arrayBuffer);
+        // Verify hash matches
+        const computedHash = await computeSha256Hex(arrayBuffer);
+        if (computedHash !== filesHash) {
+          return c.json<ApiError>({
+            error: `VFS filesHash mismatch: expected ${filesHash}, computed ${computedHash}`,
+          }, 400);
+        }
+        vfsArchives.set(filesHash, arrayBuffer);
         continue;
       }
       const saveMatch = key.match(/^save\[([^\]]+)\]$/);
       if (saveMatch) {
-        const commit = saveMatch[1];
+        const quadsHash = saveMatch[1];
         const arrayBuffer = await value.arrayBuffer();
-        saveArchives.set(commit, arrayBuffer);
+        // Verify hash matches
+        const computedHash = await computeSha256Hex(arrayBuffer);
+        if (computedHash !== quadsHash) {
+          return c.json<ApiError>({
+            error: `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`,
+          }, 400);
+        }
+        saveArchives.set(quadsHash, arrayBuffer);
       }
     }
   }
@@ -166,17 +182,14 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
-  // 从 metadata.saves 提取 saves（zod 已校验）
-  const saves: CreateSaveInput[] | undefined = metadata.saves;
-
-  // 创建 artifact（内部同步 node versions + 创建 saves + 创建 artifact version）
+  // 创建 artifact（内部同步 node versions + 创建 artifact version）
+  // SAVE nodes are now first-class artifact nodes and are included in the nodes array
   // 使用类型断言：zod 推断的类型和 openapi-typescript 生成的类型结构等价，但 TypeScript 认为不兼容
   const result = await artifactService.createArtifact({
     authorId: user.id,
     metadata,
     nodes,
     edges,
-    saves,
   } as CreateArtifactInput);
 
   if (!result.success) {
@@ -189,17 +202,17 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   const { artifact: createdArtifact } = result.data;
   const artifactId = createdArtifact.id;
 
-  // 上传 VFS 归档到 R2（commit 全局唯一，作为 key）
-  for (const [commit, archiveBuffer] of vfsArchives.entries()) {
-    const r2Key = `archives/${commit}.tar.gz`;
+  // 上传 VFS 归档到 R2（filesHash 作为 key，支持去重）
+  for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
+    const r2Key = `vfs/${filesHash}/files.tar.gz`;
     await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
       httpMetadata: { contentType: 'application/gzip' },
     });
   }
 
-  // 上传 save 数据到 R2（commit 全局唯一，作为 key）
-  for (const [commit, saveBuffer] of saveArchives.entries()) {
-    const r2Key = `saves/${commit}.bin`;
+  // 上传 save 数据到 R2（quadsHash 作为 key，支持去重）
+  for (const [quadsHash, saveBuffer] of saveArchives.entries()) {
+    const r2Key = `saves/${quadsHash}/quads.bin`;
     await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
       httpMetadata: { contentType: 'application/octet-stream' },
     });
@@ -262,23 +275,38 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
   const metadata = validateFormDataJson(c, formData, 'metadata', PatchArtifactMetadataSchema);
   if (isValidationError(metadata)) return metadata;
 
-  // 收集 VFS 二进制文件: vfs[{commit}] 和 save 二进制文件: save[{commit}]
+  // 收集 VFS 二进制文件: vfs[{filesHash}] 和 save 二进制文件: save[{quadsHash}]
+  // 使用 hash 作为 key 支持内容去重
   const vfsArchives = new Map<string, ArrayBuffer>();
   const saveArchives = new Map<string, ArrayBuffer>();
   for (const [key, value] of formData.entries()) {
     if (value instanceof File) {
       const vfsMatch = key.match(/^vfs\[([^\]]+)\]$/);
       if (vfsMatch) {
-        const commit = vfsMatch[1];
+        const filesHash = vfsMatch[1];
         const arrayBuffer = await value.arrayBuffer();
-        vfsArchives.set(commit, arrayBuffer);
+        // Verify hash matches
+        const computedHash = await computeSha256Hex(arrayBuffer);
+        if (computedHash !== filesHash) {
+          return c.json<ApiError>({
+            error: `VFS filesHash mismatch: expected ${filesHash}, computed ${computedHash}`,
+          }, 400);
+        }
+        vfsArchives.set(filesHash, arrayBuffer);
         continue;
       }
       const saveMatch = key.match(/^save\[([^\]]+)\]$/);
       if (saveMatch) {
-        const commit = saveMatch[1];
+        const quadsHash = saveMatch[1];
         const arrayBuffer = await value.arrayBuffer();
-        saveArchives.set(commit, arrayBuffer);
+        // Verify hash matches
+        const computedHash = await computeSha256Hex(arrayBuffer);
+        if (computedHash !== quadsHash) {
+          return c.json<ApiError>({
+            error: `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`,
+          }, 400);
+        }
+        saveArchives.set(quadsHash, arrayBuffer);
       }
     }
   }
@@ -295,15 +323,12 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     }
   }
 
-  // 从 metadata 提取 saves（zod 已校验）
-  const saves: CreateSaveInput[] | undefined = metadata.saves;
-
   // 执行 patch
+  // SAVE nodes are now first-class artifact nodes, included in metadata.nodes if graph update is needed
   // 使用类型断言：zod 推断的类型和 openapi-typescript 生成的类型结构等价，但 TypeScript 认为不兼容
   const result = await artifactService.patchArtifact({
     authorId: user.id,
     metadata,
-    saves,
   } as PatchArtifactInput);
 
   if (!result.success) {
@@ -316,19 +341,19 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
   const { artifact: patchedArtifact, versionCreated } = result.data;
   const artifactId = patchedArtifact.id;
 
-  // 上传 VFS 归档到 R2（commit 全局唯一，作为 key）
+  // 上传 VFS 归档到 R2（filesHash 作为 key，支持去重）
   if (versionCreated) {
-    for (const [commit, archiveBuffer] of vfsArchives.entries()) {
-      const r2Key = `archives/${commit}.tar.gz`;
+    for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
+      const r2Key = `vfs/${filesHash}/files.tar.gz`;
       await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
         httpMetadata: { contentType: 'application/gzip' },
       });
     }
   }
 
-  // 上传 save 数据到 R2（commit 全局唯一，作为 key）
-  for (const [commit, saveBuffer] of saveArchives.entries()) {
-    const r2Key = `saves/${commit}.bin`;
+  // 上传 save 数据到 R2（quadsHash 作为 key，支持去重）
+  for (const [quadsHash, saveBuffer] of saveArchives.entries()) {
+    const r2Key = `saves/${quadsHash}/quads.bin`;
     await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
       httpMetadata: { contentType: 'application/octet-stream' },
     });

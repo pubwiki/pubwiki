@@ -41,6 +41,8 @@ export const resourceAcl = sqliteTable(
   {
     // 复合主键：资源类型 + 资源ID + 用户ID
     resourceType: text('resource_type').$type<ResourceType>().notNull(),
+    // FIXME: Make sure that for versioned content, this refers to a specific commit rather than
+    // its id, for example, nodes, saves and artifacts
     resourceId: text('resource_id').notNull(),
     userId: text('user_id').notNull(),  // '*' = public
 
@@ -82,40 +84,4 @@ export interface AclPermissions {
   read?: boolean;
   write?: boolean;
   manage?: boolean;
-}
-
-/**
- * 前端角色映射
- */
-export type AclRole = 'owner' | 'admin' | 'editor' | 'viewer';
-
-/**
- * 角色到权限的映射
- */
-export const ROLE_PERMISSIONS: Record<AclRole, AclPermissions> = {
-  owner: { read: true, write: true, manage: true },
-  admin: { read: true, write: true, manage: true },
-  editor: { read: true, write: true, manage: false },
-  viewer: { read: true, write: false, manage: false },
-};
-
-/**
- * 从权限推断角色（用于前端展示）
- */
-export function inferRoleFromPermissions(permissions: {
-  canRead: boolean;
-  canWrite: boolean;
-  canManage: boolean;
-}): AclRole {
-  if (permissions.canManage && permissions.canWrite && permissions.canRead) {
-    return 'admin'; // owner 和 admin 权限相同，需要额外逻辑判断是否为创建者
-  }
-  if (permissions.canWrite && permissions.canRead) {
-    return 'editor';
-  }
-  if (permissions.canRead) {
-    return 'viewer';
-  }
-  // 没有任何权限，但在 ACL 中有记录（不应该发生）
-  return 'viewer';
 }

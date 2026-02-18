@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../types';
 import { BatchContext, createDb, SaveService } from '@pubwiki/db';
 import type { ApiError, Pagination } from '@pubwiki/api';
+import { computeSha256Hex } from '@pubwiki/api';
 import { ListSavesQueryParams } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
 import { validateQuery, isValidationError } from '../lib/validate';
@@ -11,7 +12,9 @@ export const savesRoute = new Hono<{ Bindings: Env }>();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// POST /saves — 创建存档（multipart: metadata JSON + quads.bin）
+// POST /saves — 创建用户运行时存档（multipart: metadata JSON + data file）
+// This is for user runtime saves - saves created independently of artifact commits.
+// Official saves (participate in artifact commit) are created via artifact nodes.
 savesRoute.post('/', authMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
@@ -38,23 +41,29 @@ savesRoute.post('/', authMiddleware, async (c) => {
   }
 
   // 验证必填字段
+  if (!metadata.saveId || typeof metadata.saveId !== 'string' || !UUID_RE.test(metadata.saveId)) {
+    return c.json<ApiError>({ error: 'saveId is required and must be a valid UUID' }, 400);
+  }
   if (!metadata.stateNodeId || typeof metadata.stateNodeId !== 'string' || !UUID_RE.test(metadata.stateNodeId)) {
     return c.json<ApiError>({ error: 'stateNodeId is required and must be a valid UUID' }, 400);
   }
   if (!metadata.stateNodeCommit || typeof metadata.stateNodeCommit !== 'string') {
     return c.json<ApiError>({ error: 'stateNodeCommit is required and must be a string' }, 400);
   }
-  if (!metadata.sourceArtifactCommit || typeof metadata.sourceArtifactCommit !== 'string') {
-    return c.json<ApiError>({ error: 'sourceArtifactCommit is required and must be a string' }, 400);
+  if (!metadata.artifactCommit || typeof metadata.artifactCommit !== 'string') {
+    return c.json<ApiError>({ error: 'artifactCommit is required and must be a string' }, 400);
   }
   if (!metadata.commit || typeof metadata.commit !== 'string') {
     return c.json<ApiError>({ error: 'commit is required and must be a string' }, 400);
   }
-  if (!metadata.sourceArtifactId || typeof metadata.sourceArtifactId !== 'string' || !UUID_RE.test(metadata.sourceArtifactId)) {
-    return c.json<ApiError>({ error: 'sourceArtifactId is required and must be a valid UUID' }, 400);
+  if (!metadata.artifactId || typeof metadata.artifactId !== 'string' || !UUID_RE.test(metadata.artifactId)) {
+    return c.json<ApiError>({ error: 'artifactId is required and must be a valid UUID' }, 400);
   }
   if (!metadata.contentHash || typeof metadata.contentHash !== 'string') {
     return c.json<ApiError>({ error: 'contentHash is required and must be a string' }, 400);
+  }
+  if (!metadata.quadsHash || typeof metadata.quadsHash !== 'string') {
+    return c.json<ApiError>({ error: 'quadsHash is required and must be a string' }, 400);
   }
 
   // 获取二进制文件
@@ -63,19 +72,30 @@ savesRoute.post('/', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'data field is required and must be a binary file' }, 400);
   }
 
+  // 读取文件内容并验证 quadsHash
+  const buffer = await dataFile.arrayBuffer();
+  const computedQuadsHash = await computeSha256Hex(buffer);
+  if (computedQuadsHash !== metadata.quadsHash) {
+    return c.json<ApiError>({
+      error: `quadsHash mismatch: expected ${metadata.quadsHash}, computed ${computedQuadsHash}`,
+    }, 400);
+  }
+
   // 解析访问控制参数
   const isListed = metadata.isListed === 'true' || metadata.isListed === true;
 
-  // 创建 save 记录（saveId 由服务端计算）
-  const result = await saveService.createSave({
+  // 创建用户运行时存档记录
+  const result = await saveService.createRuntimeSave({
+    saveId: metadata.saveId as string,
     stateNodeId: metadata.stateNodeId as string,
     stateNodeCommit: metadata.stateNodeCommit as string,
-    sourceArtifactCommit: metadata.sourceArtifactCommit as string,
+    artifactCommit: metadata.artifactCommit as string,
     commit: metadata.commit as string,
     parent: (metadata.parent as string) ?? null,
     authorId: user.id,
-    sourceArtifactId: metadata.sourceArtifactId as string,
+    artifactId: metadata.artifactId as string,
     contentHash: metadata.contentHash as string,
+    quadsHash: metadata.quadsHash as string,
     title: metadata.title as string | undefined,
     description: metadata.description as string | undefined,
     isListed,
@@ -88,9 +108,8 @@ savesRoute.post('/', authMiddleware, async (c) => {
   // Commit the batch to persist changes
   await ctx.commit();
 
-  // Upload quads.bin to R2 (commit is globally unique, used as key)
-  const r2Key = saveService.getSaveDataKey(metadata.commit as string);
-  const buffer = await dataFile.arrayBuffer();
+  // Upload data file to R2 using quadsHash for deduplication
+  const r2Key = `saves/${metadata.quadsHash}/quads.bin`;
   await c.env.R2_BUCKET.put(r2Key, buffer, {
     httpMetadata: { contentType: 'application/octet-stream' },
   });
@@ -175,13 +194,10 @@ savesRoute.delete('/:commit', authMiddleware, async (c) => {
 
   await ctx.commit();
 
-  // 清理 R2
-  try {
-    await c.env.R2_BUCKET.delete(result.data.r2Key);
-  } catch (err) {
-    console.error('Failed to delete R2 object:', err);
-    // 不阻塞响应，R2 清理失败不影响 DB 删除结果
-  }
+  // Note: R2 cleanup is deferred. Since we use content-addressed storage (quadsHash),
+  // the same quads data may be shared by multiple saves. R2 objects should only be
+  // deleted when refCount reaches 0, which should be handled by a background job
+  // that periodically cleans up orphaned content.
 
   return c.body(null, 204);
 });
@@ -193,14 +209,16 @@ savesRoute.get('/:commit/data', async (c) => {
 
   const commit = c.req.param('commit');
 
-  // 先确认 save 存在并获取 saveId
+  // 先确认 save 存在并获取 quadsHash
   const saveResult = await saveService.getSave(commit);
   if (!saveResult.success) {
     return serviceErrorResponse(c, saveResult.error);
   }
 
-  // 从 R2 获取
-  const r2Key = saveService.getSaveDataKey(commit);
+  const { quadsHash } = saveResult.data;
+
+  // 从 R2 获取（使用 quadsHash 作为 key）
+  const r2Key = `saves/${quadsHash}/quads.bin`;
   const object = await c.env.R2_BUCKET.get(r2Key);
 
   if (!object) {
