@@ -228,8 +228,10 @@ paths:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1lineage'
   /artifacts/{artifactId}/graph:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1graph'
-  /artifacts/{artifactId}/commit-tag:
-    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1commit-tag'
+  /artifacts/{artifactId}/metadata:
+    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1metadata'
+  /artifacts/{artifactId}/versions/{commitHash}/metadata:
+    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1versions~1{commitHash}~1metadata'
   /artifacts/{artifactId}/versions/{commitHash}/weak:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1versions~1{commitHash}~1weak'
 

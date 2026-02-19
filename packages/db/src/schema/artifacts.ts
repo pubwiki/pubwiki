@@ -17,10 +17,9 @@ export const artifacts = sqliteTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     name: text('name', { length: 100 }).notNull(),
     description: text('description'),
-    currentVersionId: text('current_version_id'), // 稍后设置引用
+    latestVersion: text('latest_version'), // commit hash of the latest version
     thumbnailUrl: text('thumbnail_url', { length: 500 }),
     license: text('license', { length: 50 }),
-    repositoryUrl: text('repository_url', { length: 500 }),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
   },

@@ -314,12 +314,14 @@ export const ListArtifactsResponse = zod.object({
 
 
 /**
- * 一步发布：提交完整的 node version 数据 + artifact 元数据，服务端内部同步 node versions 并创建 artifact version。
+ * 创建新 artifact（纯 insert 语义）。提交完整的 node version 数据 + artifact 元数据。
 
-**创建/更新模式：** 通过 metadata.artifactId 判断：
+**创建模式：** 通过 metadata.artifactId 判断：
 - 该 ID 不存在于数据库中：创建新 artifact
-- 该 ID 存在且 owner 是当前用户：追加新版本（append-only）
-- 该 ID 存在但 owner 不是当前用户：返回 403 Forbidden
+- 该 ID 已存在：返回 409 Conflict
+
+如需更新已有 artifact 的 graph，使用 PATCH /artifacts
+如需更新已有 artifact 的 metadata，使用 PUT /artifacts/{id}/metadata
 
 使用 multipart/form-data 格式：
 - metadata: JSON 格式的 artifact 基本信息
@@ -331,15 +333,13 @@ export const ListArtifactsResponse = zod.object({
 
 注意：vfs[xxx] 和 save[xxx] 是动态 key，在 OpenAPI 中通过 additionalProperties 描述。
 
- * @summary 创建或更新 Artifact（包含完整的 Node Version 数据）
+ * @summary 创建新 Artifact（包含完整的 Node Version 数据）
  */
 export const createArtifactBodyMetadataNameMax = 100;
 
-export const createArtifactBodyMetadataIsListedDefault = true;export const createArtifactBodyMetadataThumbnailUrlMax = 500;
+export const createArtifactBodyMetadataIsListedDefault = true;export const createArtifactBodyMetadataIsPrivateDefault = false;export const createArtifactBodyMetadataThumbnailUrlMax = 500;
 
 export const createArtifactBodyMetadataLicenseMax = 50;
-
-export const createArtifactBodyMetadataRepositoryUrlMax = 500;
 
 export const createArtifactBodyMetadataVersionRegExp = new RegExp('^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)?$');
 export const createArtifactBodyNodesItemContentOneGenerationConfigTemperatureMin = 0;
@@ -355,9 +355,9 @@ export const CreateArtifactBody = zod.object({
   "name": zod.string().min(1).max(createArtifactBodyMetadataNameMax),
   "description": zod.string().optional(),
   "isListed": zod.boolean().default(createArtifactBodyMetadataIsListedDefault).describe('是否在公开列表中可见（可发现性）'),
+  "isPrivate": zod.boolean().default(createArtifactBodyMetadataIsPrivateDefault).describe('是否为私有 artifact：\n- true: 仅 owner 和被授权用户可访问\n- false: 所有人可访问（公开）\n注意：私有 artifact 仍可设置 isListed=true（预告模式：列出但需授权访问）\n'),
   "thumbnailUrl": zod.url().max(createArtifactBodyMetadataThumbnailUrlMax).optional(),
   "license": zod.string().max(createArtifactBodyMetadataLicenseMax).optional(),
-  "repositoryUrl": zod.url().max(createArtifactBodyMetadataRepositoryUrlMax).optional(),
   "version": zod.string().regex(createArtifactBodyMetadataVersionRegExp).optional().describe('Semver 版本号'),
   "changelog": zod.string().optional(),
   "tags": zod.array(zod.string()).optional().describe('Tag slugs 数组'),
@@ -497,75 +497,27 @@ export const CreateArtifactBody = zod.object({
   "homepage": zod.instanceof(File).optional().describe('可选的主页 Markdown 文件，将被渲染为 HTML 后存储。')
 })
 
-export const CreateArtifactResponse = zod.object({
-  "message": zod.string(),
-  "artifact": zod.object({
-  "id": zod.uuid(),
-  "name": zod.string(),
-  "description": zod.string().nullish(),
-  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
-  "thumbnailUrl": zod.url().nullish(),
-  "license": zod.string().nullish(),
-  "createdAt": zod.iso.datetime({}),
-  "updatedAt": zod.iso.datetime({}),
-  "author": zod.object({
-  "id": zod.uuid(),
-  "username": zod.string(),
-  "displayName": zod.string().nullish(),
-  "avatarUrl": zod.url().nullish()
-}),
-  "tags": zod.array(zod.object({
-  "slug": zod.string().describe('Tag slug (primary key)'),
-  "name": zod.string(),
-  "description": zod.string().nullish(),
-  "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
-})).optional(),
-  "stats": zod.object({
-  "viewCount": zod.number().optional().describe('浏览次数'),
-  "favCount": zod.number().optional().describe('收藏次数'),
-  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
-  "downloadCount": zod.number().optional().describe('下载次数')
-}).optional().describe('Artifact 统计信息')
-})
-})
-
 
 /**
  * 增量更新：客户端提交 baseCommit 和变更内容（新增/删除 nodes/edges），
 服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
 
-适用于只修改了部分节点的场景，避免重新提交所有节点数据。
-注意：新增的节点需要包含完整的 node version 数据。
-
-如果没有 graph 变更且不传 commit，则为 metadata-only 更新：
-直接修改 baseCommit 版本的元数据（version, changelog, commitTags, entrypoint 等），
-不创建新版本。
+此接口仅用于 graph 变更，不支持 metadata 修改。
+如需修改 artifact metadata，请使用 PUT /artifacts/{id}/metadata
 
  * @summary 基于已有版本和增量补丁创建新 Artifact 版本
  */
-export const patchArtifactBodyMetadataNameMax = 100;
-
-export const patchArtifactBodyMetadataVersionRegExp = new RegExp('^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)?$');
 export const patchArtifactBodyMetadataAddNodesItemContentOneGenerationConfigTemperatureMin = 0;
 export const patchArtifactBodyMetadataAddNodesItemContentOneGenerationConfigTemperatureMax = 2;
 
-export const patchArtifactBodyMetadataAddNodesItemContentFourEntryFileDefault = `index.html`;
+export const patchArtifactBodyMetadataAddNodesItemContentFourEntryFileDefault = `index.html`;export const patchArtifactBodyMetadataVersionRegExp = new RegExp('^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)?$');
+
 
 export const PatchArtifactBody = zod.object({
   "metadata": zod.object({
   "artifactId": zod.uuid().describe('要更新的 Artifact ID'),
   "baseCommit": zod.string().describe('基准版本的 commit hash'),
-  "commit": zod.string().optional().describe('新版本的 commit hash，由客户端基于合并后的完整 graph 确定性计算。\n计算方式与 POST \/artifacts 一致：hash(artifactId, parentCommit, nodes, edges)\n其中 parentCommit 为基准版本（即 baseCommit）的 commit hash。\n'),
-  "name": zod.string().min(1).max(patchArtifactBodyMetadataNameMax).optional(),
-  "description": zod.string().optional(),
-  "isListed": zod.boolean().optional().describe('是否在公开列表中可见（可发现性）'),
-  "version": zod.string().regex(patchArtifactBodyMetadataVersionRegExp).optional().describe('Semver 版本号'),
-  "changelog": zod.string().optional(),
-  "commitTags": zod.array(zod.string()).optional().describe('可选版本标签列表'),
-  "entrypoint": zod.object({
-  "saveCommit": zod.string().describe('Save 的 commit hash，指定启动时加载的存档'),
-  "sandboxNodeId": zod.uuid().describe('沙箱节点 ID')
-}).optional(),
+  "commit": zod.string().describe('新版本的 commit hash，由客户端基于合并后的完整 graph 确定性计算。\n计算方式与 POST \/artifacts 一致：hash(artifactId, parentCommit, nodes, edges)\n其中 parentCommit 为基准版本（即 baseCommit）的 commit hash。\n'),
   "addNodes": zod.array(zod.object({
   "nodeId": zod.uuid().describe('节点 ID'),
   "commit": zod.string().describe('版本 hash'),
@@ -699,8 +651,15 @@ export const PatchArtifactBody = zod.object({
   "target": zod.uuid(),
   "sourceHandle": zod.string().optional(),
   "targetHandle": zod.string().optional()
-})).optional().describe('需要移除的边（通过 source + target 匹配）')
-}).describe('基于已有的 commit 和增量补丁创建新的 artifact 版本。\n客户端提交 baseCommit（基准版本）和需要变更的 nodes\/edges，\n服务端将基准版本的完整 graph 与 patch 合并后创建新版本。\n\n如果没有 graph 变更（addNodes\/removeNodeIds\/addEdges\/removeEdges 全部为空或不传），\n且不传 commit，则为 metadata-only 更新：直接修改 baseCommit 版本的元数据，不创建新版本。\n'),
+})).optional().describe('需要移除的边（通过 source + target 匹配）'),
+  "version": zod.string().regex(patchArtifactBodyMetadataVersionRegExp).optional().describe('Semver 版本号'),
+  "changelog": zod.string().optional(),
+  "commitTags": zod.array(zod.string()).optional().describe('可选版本标签列表'),
+  "entrypoint": zod.object({
+  "saveCommit": zod.string().describe('Save 的 commit hash，指定启动时加载的存档'),
+  "sandboxNodeId": zod.uuid().describe('沙箱节点 ID')
+}).optional()
+}).describe('基于已有的 commit 和增量补丁创建新的 artifact 版本（仅 graph 变更）。\n客户端提交 baseCommit（基准版本）和需要变更的 nodes\/edges，\n服务端将基准版本的完整 graph 与 patch 合并后创建新版本。\n'),
   "homepage": zod.instanceof(File).optional().describe('可选的主页 Markdown 文件')
 })
 
@@ -733,8 +692,7 @@ export const PatchArtifactResponse = zod.object({
   "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
   "downloadCount": zod.number().optional().describe('下载次数')
 }).optional().describe('Artifact 统计信息')
-}),
-  "versionCreated": zod.boolean().describe('是否创建了新版本（false 表示仅更新了 metadata）')
+})
 })
 
 
@@ -955,22 +913,69 @@ export const GetArtifactGraphResponse = zod.object({
 
 
 /**
- * 设置指定 commit 上的 commitTags 列表（替换语义）。
-如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
-传空数组可清除该 commit 上的所有标签。
+ * 修改 artifact 的 metadata（不涉及 graph 结构变更）。
 
- * @summary 设置 commit 上的标签列表
+**权限变更说明：**
+- private → public：直接更新 ACL（单向宽松），不创建新版本
+- public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回
+  - 同时会将所有关联的 article 也设为私有
+  - 自动生成 changelog: "Visibility changed from public to private"
+
+ * @summary 修改 Artifact 的 metadata
  */
-export const UpdateCommitTagsParams = zod.object({
+export const UpdateArtifactMetadataParams = zod.object({
   "artifactId": zod.uuid().describe('Artifact ID')
 })
 
-export const UpdateCommitTagsBody = zod.object({
-  "commitHash": zod.string().describe('目标 commit hash'),
-  "commitTags": zod.array(zod.string()).describe('要设置的标签列表。传空数组表示清除该 commit 上的所有标签。\n如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除。\n')
-}).describe('设置指定 commit 上的标签列表（替换语义）')
+export const updateArtifactMetadataBodyNameMax = 100;
 
-export const UpdateCommitTagsResponse = zod.object({
+export const updateArtifactMetadataBodyThumbnailUrlMax = 500;
+
+export const updateArtifactMetadataBodyLicenseMax = 50;
+
+
+
+export const UpdateArtifactMetadataBody = zod.object({
+  "name": zod.string().min(1).max(updateArtifactMetadataBodyNameMax).optional(),
+  "description": zod.string().optional(),
+  "thumbnailUrl": zod.url().max(updateArtifactMetadataBodyThumbnailUrlMax).optional(),
+  "license": zod.string().max(updateArtifactMetadataBodyLicenseMax).optional(),
+  "isListed": zod.boolean().optional().describe('是否在公开列表中可见（可发现性）'),
+  "isPrivate": zod.boolean().optional().describe('是否为私有 artifact。\n- private → public：直接更新 ACL（单向宽松）\n- public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回\n'),
+  "tags": zod.array(zod.string()).optional().describe('Tag slugs 数组')
+}).describe('修改 artifact 的 metadata（不涉及 graph 结构变更）。\n权限变更说明：\n- private → public：直接更新 ACL（单向宽松）\n- public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回\n')
+
+export const UpdateArtifactMetadataResponse = zod.object({
+  "commit": zod.string().optional().describe('新版本的 commit hash（仅在权限变更导致新版本时返回）'),
+  "versionCreated": zod.boolean().describe('是否创建了新版本')
+})
+
+
+/**
+ * 修改指定 commit 的版本 metadata（version, changelog, commitTags, entrypoint）。
+此 API 替代原有的 updateCommitTags API，提供更完整的版本 metadata 修改能力。
+
+ * @summary 修改特定版本的 metadata
+ */
+export const UpdateVersionMetadataParams = zod.object({
+  "artifactId": zod.uuid().describe('Artifact ID'),
+  "commitHash": zod.string().describe('版本的 commit hash')
+})
+
+export const updateVersionMetadataBodyVersionRegExp = new RegExp('^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9]+)?$');
+
+
+export const UpdateVersionMetadataBody = zod.object({
+  "version": zod.string().regex(updateVersionMetadataBodyVersionRegExp).optional().describe('版本号（如 1.0.0）'),
+  "changelog": zod.string().optional().describe('该版本的更新日志'),
+  "commitTags": zod.array(zod.string()).optional().describe('版本标签（如 latest, stable）'),
+  "entrypoint": zod.object({
+  "saveCommit": zod.string().describe('Save 的 commit hash，指定启动时加载的存档'),
+  "sandboxNodeId": zod.uuid().describe('沙箱节点 ID')
+}).optional()
+}).describe('修改特定版本的 metadata')
+
+export const UpdateVersionMetadataResponse = zod.object({
   "message": zod.string(),
   "version": zod.object({
   "id": zod.uuid(),

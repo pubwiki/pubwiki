@@ -57,15 +57,17 @@ describe('Discussions API', () => {
     content: string = 'Test content',
     category: 'GENERAL' | 'QUESTION' = 'GENERAL'
   ): Promise<string> {
-    const [discussion] = await db.insert(discussions).values({
+    const discussionId = crypto.randomUUID();
+    await db.insert(discussions).values({
+      id: discussionId,
       targetType,
       targetId,
       authorId,
       title,
       content,
       category,
-    }).returning();
-    return discussion.id;
+    });
+    return discussionId;
   }
 
   // Helper: 直接在数据库创建回复
@@ -74,18 +76,20 @@ describe('Discussions API', () => {
     authorId: string,
     content: string = 'Test reply'
   ): Promise<string> {
-    const [reply] = await db.insert(discussionReplies).values({
+    const replyId = crypto.randomUUID();
+    await db.insert(discussionReplies).values({
+      id: replyId,
       discussionId,
       authorId,
       content,
-    }).returning();
+    });
     
     // 更新回复计数
     await db.update(discussions)
       .set({ replyCount: 1 })
       .where(eq(discussions.id, discussionId));
     
-    return reply.id;
+    return replyId;
   }
 
   describe('GET /api/discussions', () => {

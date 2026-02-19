@@ -115,6 +115,14 @@ CreateArtifactMetadata:
       type: boolean
       default: true
       description: 是否在公开列表中可见（可发现性）
+    isPrivate:
+      type: boolean
+      default: false
+      description: |
+        是否为私有 artifact：
+        - true: 仅 owner 和被授权用户可访问
+        - false: 所有人可访问（公开）
+        注意：私有 artifact 仍可设置 isListed=true（预告模式：列出但需授权访问）
     thumbnailUrl:
       type: string
       format: uri
@@ -122,10 +130,6 @@ CreateArtifactMetadata:
     license:
       type: string
       maxLength: 50
-    repositoryUrl:
-      type: string
-      format: uri
-      maxLength: 500
     version:
       type: string
       pattern: '^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$'
@@ -442,15 +446,13 @@ ArtifactListItem:
 PatchArtifactRequest:
   type: object
   description: |
-    基于已有的 commit 和增量补丁创建新的 artifact 版本。
+    基于已有的 commit 和增量补丁创建新的 artifact 版本（仅 graph 变更）。
     客户端提交 baseCommit（基准版本）和需要变更的 nodes/edges，
     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
-
-    如果没有 graph 变更（addNodes/removeNodeIds/addEdges/removeEdges 全部为空或不传），
-    且不传 commit，则为 metadata-only 更新：直接修改 baseCommit 版本的元数据，不创建新版本。
   required:
     - artifactId
     - baseCommit
+    - commit
   properties:
     artifactId:
       type: string
@@ -465,29 +467,7 @@ PatchArtifactRequest:
         新版本的 commit hash，由客户端基于合并后的完整 graph 确定性计算。
         计算方式与 POST /artifacts 一致：hash(artifactId, parentCommit, nodes, edges)
         其中 parentCommit 为基准版本（即 baseCommit）的 commit hash。
-    name:
-      type: string
-      minLength: 1
-      maxLength: 100
-    description:
-      type: string
-    isListed:
-      type: boolean
-      description: 是否在公开列表中可见（可发现性）
-    version:
-      type: string
-      pattern: '^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$'
-      description: Semver 版本号
-    changelog:
-      type: string
-    commitTags:
-      type: array
-      items:
-        type: string
-      description: 可选版本标签列表
-    entrypoint:
-      $ref: './artifact.yaml#/ArtifactEntrypoint'
-      description: 可选入口点
+    # Graph 变更
     addNodes:
       type: array
       description: 新增或更新的节点（nodeId 已存在则更新该节点的 commit，否则新增）
@@ -509,24 +489,97 @@ PatchArtifactRequest:
       description: 需要移除的边（通过 source + target 匹配）
       items:
         $ref: './artifact.yaml#/ArtifactEdgeDescriptor'
-
-UpdateCommitTagsRequest:
-  type: object
-  description: 设置指定 commit 上的标签列表（替换语义）
-  required:
-    - commitHash
-    - commitTags
-  properties:
-    commitHash:
+    # 版本 metadata（与新版本关联，创建时设置）
+    version:
       type: string
-      description: 目标 commit hash
+      pattern: '^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$'
+      description: Semver 版本号
+    changelog:
+      type: string
     commitTags:
       type: array
       items:
         type: string
+      description: 可选版本标签列表
+    entrypoint:
+      $ref: './artifact.yaml#/ArtifactEntrypoint'
+      description: 可选入口点
+
+# ============================================================================
+# Update Artifact Metadata API 专用类型
+# ============================================================================
+
+UpdateArtifactMetadataRequest:
+  type: object
+  description: |
+    修改 artifact 的 metadata（不涉及 graph 结构变更）。
+    权限变更说明：
+    - private → public：直接更新 ACL（单向宽松）
+    - public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回
+  properties:
+    name:
+      type: string
+      minLength: 1
+      maxLength: 100
+    description:
+      type: string
+    thumbnailUrl:
+      type: string
+      format: uri
+      maxLength: 500
+    license:
+      type: string
+      maxLength: 50
+    isListed:
+      type: boolean
+      description: 是否在公开列表中可见（可发现性）
+    isPrivate:
+      type: boolean
       description: |
-        要设置的标签列表。传空数组表示清除该 commit 上的所有标签。
-        如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除。
+        是否为私有 artifact。
+        - private → public：直接更新 ACL（单向宽松）
+        - public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回
+    tags:
+      type: array
+      items:
+        type: string
+      description: Tag slugs 数组
+
+UpdateArtifactMetadataResponse:
+  type: object
+  required:
+    - versionCreated
+  properties:
+    commit:
+      type: string
+      description: 新版本的 commit hash（仅在权限变更导致新版本时返回）
+    versionCreated:
+      type: boolean
+      description: 是否创建了新版本
+
+# ============================================================================
+# Update Version Metadata API 专用类型
+# ============================================================================
+
+UpdateVersionMetadataRequest:
+  type: object
+  description: 修改特定版本的 metadata
+  properties:
+    version:
+      type: string
+      pattern: '^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$'
+      description: 版本号（如 1.0.0）
+    changelog:
+      type: string
+      description: 该版本的更新日志
+    commitTags:
+      type: array
+      items:
+        type: string
+      description: 版本标签（如 latest, stable）
+    entrypoint:
+      $ref: './artifact.yaml#/ArtifactEntrypoint'
+      description: 入口点配置
 
 MarkVersionWeakRequest:
   type: object

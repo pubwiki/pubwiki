@@ -18,6 +18,7 @@ import type {
 } from '@pubwiki/api';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
+import { AclService, DiscoveryService } from './access-control';
 
 // 重新导出供其他模块使用
 export type { ProjectListItem, ProjectDetail, ProjectArtifactItem, UserProjectListItem, CreateProjectMetadata, ProjectPageItem, ProjectPageDetail };
@@ -55,7 +56,13 @@ export interface CreateProjectParams {
 }
 
 export class ProjectService {
-  constructor(private ctx: BatchContext) {}
+  private readonly aclService: AclService;
+  private readonly discoveryService: DiscoveryService;
+
+  constructor(private ctx: BatchContext) {
+    this.aclService = new AclService(ctx);
+    this.discoveryService = new DiscoveryService(ctx);
+  }
 
   // 拓扑排序角色，确保父角色在子角色之前
   // 使用 name 作为唯一标识符
@@ -874,35 +881,16 @@ export class ProjectService {
         homepageId, // 直接设置，因为我们已经知道 page ID
       }));
 
-      // 1.1 创建发现控制记录
+      // 1.1 创建发现控制记录 using DiscoveryService
       const isListed = metadata.isListed ?? true;
-      this.ctx.modify(db => db.insert(resourceDiscoveryControl).values({
-        resourceType: 'project',
-        resourceId: projectId,
-        isListed,
-      }));
+      const projectRef = { type: 'project' as const, id: projectId };
+      this.discoveryService.create(projectRef, isListed);
 
-      // 创建 owner ACL（manage + write + read）
-      this.ctx.modify(db => db.insert(resourceAcl).values({
-        resourceType: 'project',
-        resourceId: projectId,
-        userId: ownerId,
-        canRead: true,
-        canWrite: true,
-        canManage: true,
-        grantedBy: ownerId,
-      }));
+      // 创建 owner ACL using AclService
+      this.aclService.grantOwner(projectRef, ownerId);
 
-      // 默认创建公开读取 ACL
-      this.ctx.modify(db => db.insert(resourceAcl).values({
-        resourceType: 'project',
-        resourceId: projectId,
-        userId: PUBLIC_USER_ID,
-        canRead: true,
-        canWrite: false,
-        canManage: false,
-        grantedBy: ownerId,
-      }));
+      // 默认创建公开读取 ACL using AclService
+      this.aclService.setPublic(projectRef, ownerId);
 
       // 2. 创建 pages（如果提供）
       if (metadata.pages && metadata.pages.length > 0) {

@@ -83,14 +83,6 @@ export class BatchContext {
   }
 
   /**
-   * Get the underlying database for legacy service compatibility
-   * @deprecated Use ctx.select/selectDistinct/with instead when possible
-   */
-  unwrapDb(): Database {
-    return this.db;
-  }
-
-  /**
    * Collect write operations (not executed immediately)
    *
    * @example

@@ -267,7 +267,7 @@ export class DiscussionService {
     target: DiscussionTarget,
     authorId: string,
     data: CreateDiscussionRequest
-  ): Promise<ServiceResult<DiscussionDetail>> {
+  ): Promise<ServiceResult<{ discussionId: string }>> {
     try {
       // 验证作者存在
       const author = await this.getAuthor(authorId);
@@ -279,6 +279,7 @@ export class DiscussionService {
       }
 
       const newDiscussion: NewDiscussion = {
+        id: crypto.randomUUID(),
         targetType: target.type,
         targetId: target.id,
         authorId,
@@ -287,16 +288,10 @@ export class DiscussionService {
         category: data.category ?? 'GENERAL',
       };
 
-      // Use unwrapDb for insert with returning (batch doesn't support returning)
-      const [inserted] = await this.ctx.unwrapDb()
-        .insert(discussions)
-        .values(newDiscussion)
-        .returning();
+      this.ctx.modify(db => db.insert(discussions).values(newDiscussion));
 
-      return {
-        success: true,
-        data: this.toDetail(inserted, author),
-      };
+      // Return discussionId - caller should commit and then call getDiscussion
+      return { success: true, data: { discussionId: newDiscussion.id } };
     } catch (error) {
       console.error('Error creating discussion:', error);
       return {
@@ -311,7 +306,7 @@ export class DiscussionService {
     id: string,
     authorId: string,
     data: UpdateDiscussionRequest
-  ): Promise<ServiceResult<DiscussionDetail>> {
+  ): Promise<ServiceResult<{ discussionId: string }>> {
     try {
       // 获取讨论
       const [discussion] = await this.ctx
@@ -352,19 +347,10 @@ export class DiscussionService {
       if (data.content !== undefined) updateData.content = data.content;
       if (data.category !== undefined) updateData.category = data.category;
 
-      // Use unwrapDb for update with returning (batch doesn't support returning)
-      const [updated] = await this.ctx.unwrapDb()
-        .update(discussions)
-        .set(updateData)
-        .where(eq(discussions.id, id))
-        .returning();
+      this.ctx.modify(db => db.update(discussions).set(updateData).where(eq(discussions.id, id)));
 
-      const author = await this.getAuthor(updated.authorId);
-
-      return {
-        success: true,
-        data: this.toDetail(updated, author!),
-      };
+      // Return discussionId - caller should commit and then call getDiscussion
+      return { success: true, data: { discussionId: id } };
     } catch (error) {
       console.error('Error updating discussion:', error);
       return {
@@ -412,7 +398,7 @@ export class DiscussionService {
   }
 
   // 置顶/取消置顶讨论（管理员功能）
-  async pinDiscussion(id: string, isPinned: boolean): Promise<ServiceResult<DiscussionDetail>> {
+  async pinDiscussion(id: string, isPinned: boolean): Promise<ServiceResult<{ discussionId: string }>> {
     try {
       const [discussion] = await this.ctx
         .select()
@@ -427,19 +413,10 @@ export class DiscussionService {
         };
       }
 
-      // Use unwrapDb for update with returning
-      const [updated] = await this.ctx.unwrapDb()
-        .update(discussions)
-        .set({ isPinned, updatedAt: new Date().toISOString() })
-        .where(eq(discussions.id, id))
-        .returning();
+      this.ctx.modify(db => db.update(discussions).set({ isPinned, updatedAt: new Date().toISOString() }).where(eq(discussions.id, id)));
 
-      const author = await this.getAuthor(updated.authorId);
-
-      return {
-        success: true,
-        data: this.toDetail(updated, author!),
-      };
+      // Return discussionId - caller should commit and then call getDiscussion
+      return { success: true, data: { discussionId: id } };
     } catch (error) {
       console.error('Error pinning discussion:', error);
       return {
@@ -450,7 +427,7 @@ export class DiscussionService {
   }
 
   // 锁定/解锁讨论（管理员功能）
-  async lockDiscussion(id: string, isLocked: boolean): Promise<ServiceResult<DiscussionDetail>> {
+  async lockDiscussion(id: string, isLocked: boolean): Promise<ServiceResult<{ discussionId: string }>> {
     try {
       const [discussion] = await this.ctx
         .select()
@@ -465,19 +442,10 @@ export class DiscussionService {
         };
       }
 
-      // Use unwrapDb for update with returning
-      const [updated] = await this.ctx.unwrapDb()
-        .update(discussions)
-        .set({ isLocked, updatedAt: new Date().toISOString() })
-        .where(eq(discussions.id, id))
-        .returning();
+      this.ctx.modify(db => db.update(discussions).set({ isLocked, updatedAt: new Date().toISOString() }).where(eq(discussions.id, id)));
 
-      const author = await this.getAuthor(updated.authorId);
-
-      return {
-        success: true,
-        data: this.toDetail(updated, author!),
-      };
+      // Return discussionId - caller should commit and then call getDiscussion
+      return { success: true, data: { discussionId: id } };
     } catch (error) {
       console.error('Error locking discussion:', error);
       return {
@@ -631,24 +599,22 @@ export class DiscussionService {
         }
       }
 
+      const replyId = crypto.randomUUID();
+      const now = new Date().toISOString();
+
       const newReply: NewDiscussionReply = {
+        id: replyId,
         discussionId,
         authorId,
         parentReplyId: data.parentReplyId,
         content: data.content,
+        createdAt: now,
+        updatedAt: now,
       };
 
       // 收集操作：插入回复 + 更新讨论回复计数
-      const replyId = crypto.randomUUID();
-      const now = new Date().toISOString();
-      
       this.ctx.modify(db =>
-        db.insert(discussionReplies).values({
-          ...newReply,
-          id: replyId,
-          createdAt: now,
-          updatedAt: now,
-        })
+        db.insert(discussionReplies).values(newReply)
       );
       this.ctx.modify(db =>
         db.update(discussions)

@@ -41,8 +41,8 @@ export const resourceAcl = sqliteTable(
   {
     // 复合主键：资源类型 + 资源ID + 用户ID
     resourceType: text('resource_type').$type<ResourceType>().notNull(),
-    // FIXME: Make sure that for versioned content, this refers to a specific commit rather than
-    // its id, for example, nodes, saves and artifacts
+    // For low-level versioned content, this refers to a specific commit rather than
+    // its id, including nodes, saves
     resourceId: text('resource_id').notNull(),
     userId: text('user_id').notNull(),  // '*' = public
 

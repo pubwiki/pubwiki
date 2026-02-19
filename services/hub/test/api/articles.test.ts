@@ -99,8 +99,8 @@ describe('Articles API', () => {
       nodeCommit: commit,
     });
 
-    // 设置 artifact 的 currentVersionId
-    await db.update(artifacts).set({ currentVersionId: version.id }).where(eq(artifacts.id, artifactId));
+    // 设置 artifact 的 latestVersion
+    await db.update(artifacts).set({ latestVersion: version.id }).where(eq(artifacts.id, artifactId));
 
     return nodeId;
   }

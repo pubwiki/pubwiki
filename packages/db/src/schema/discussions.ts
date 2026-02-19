@@ -10,7 +10,7 @@ const currentTimestamp = sql`(datetime('now'))`;
 export const discussions = sqliteTable(
   'discussions',
   {
-    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    id: text('id').primaryKey().notNull(),
     // Polymorphic association: supports ARTIFACT, PROJECT and other target types
     targetType: text('target_type').$type<DiscussionTargetType>().notNull(),
     targetId: text('target_id').notNull(),
@@ -40,7 +40,7 @@ export const discussions = sqliteTable(
 export const discussionReplies = sqliteTable(
   'discussion_replies',
   {
-    id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+    id: text('id').primaryKey().notNull(),
     discussionId: text('discussion_id')
       .notNull()
       .references(() => discussions.id, { onDelete: 'cascade' }),

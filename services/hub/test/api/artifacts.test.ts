@@ -3,6 +3,7 @@ import type {
   ListArtifactsResponse,
   CreateArtifactResponse,
   ApiError,
+  ArtifactListItem,
 } from '@pubwiki/api';
 import { computeArtifactCommit, computeNodeCommit, computeContentHash, computeSha256Hex } from '@pubwiki/api';
 import {
@@ -849,9 +850,9 @@ describe('Artifacts API', () => {
 
       // Verify version record in database
       const [artifact] = await db.select().from(artifacts).where(eq(artifacts.id, data.artifact.id));
-      expect(artifact.currentVersionId).not.toBeNull();
+      expect(artifact.latestVersion).not.toBeNull();
 
-      const [version] = await db.select().from(artifactVersions).where(eq(artifactVersions.id, artifact.currentVersionId!));
+      const [version] = await db.select().from(artifactVersions).where(eq(artifactVersions.id, artifact.latestVersion!));
       expect(version.version).toBe('1.2.3');
       expect(version.changelog).toBe('Added new features');
     });
@@ -965,10 +966,12 @@ describe('Artifacts API', () => {
       expect(html).toContain('<strong>homepage</strong>');
     });
 
-    // 更新 Artifact 测试
-    describe('Update artifact (with artifactId in metadata)', () => {
-      it('should update artifact successfully when artifactId is provided', async () => {
-        // 首先创建一个 artifact
+    // =========================================================================
+    // POST pure insert semantics tests (POST now returns 409 on existing artifact)
+    // =========================================================================
+    describe('POST pure insert semantics', () => {
+      it('should return 409 CONFLICT when trying to POST with existing artifactId', async () => {
+        // First create an artifact
         const createFormData = await createVfsFormData({
           name: 'Original Recipe',
           description: 'Original description',
@@ -984,78 +987,22 @@ describe('Artifacts API', () => {
         const createData = await createResponse.json<CreateArtifactResponse>();
         const artifactId = createData.artifact.id;
 
-        // 获取当前版本的 commitHash 作为 parentCommit
-        const [currentVersion] = await db.select({ commitHash: artifactVersions.commitHash })
-          .from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId));
-
-        // 更新这个 artifact
-        const updateFormData = await createVfsFormData({
+        // Try to POST with same artifactId - should fail with 409
+        const conflictFormData = await createVfsFormData({
           artifactId,
-          parentCommit: currentVersion.commitHash,
           name: 'Updated Recipe',
-          version: '2.0.0',
-          description: 'Updated description',
         });
 
-        const updateRequest = new Request('http://localhost/api/artifacts', {
+        const conflictRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
           headers: { Cookie: sessionCookie },
-          body: updateFormData,
+          body: conflictFormData,
         });
-        const updateResponse = await sendRequest(updateRequest);
+        const conflictResponse = await sendRequest(conflictRequest);
 
-        expect(updateResponse.status).toBe(200);
-        const updateData = await updateResponse.json<CreateArtifactResponse>();
-        expect(updateData.message).toBe('Artifact saved successfully');
-        expect(updateData.artifact.id).toBe(artifactId);
-        expect(updateData.artifact.name).toBe('Updated Recipe');
-        expect(updateData.artifact.description).toBe('Updated description');
-      });
-
-      it('should preserve stats when updating artifact', async () => {
-        // 首先创建一个 artifact
-        const createFormData = await createVfsFormData({
-          name: 'Recipe for Stats',
-        });
-
-        const createRequest = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: createFormData,
-        });
-        const createResponse = await sendRequest(createRequest);
-        expect(createResponse.status).toBe(200);
-        const createData = await createResponse.json<CreateArtifactResponse>();
-        const artifactId = createData.artifact.id;
-
-        // 模拟一些 stats 更新
-        await db.update(artifactStats)
-          .set({ viewCount: 100, favCount: 50 })
-          .where(eq(artifactStats.artifactId, artifactId));
-
-        // 获取当前版本的 commitHash 作为 parentCommit
-        const [currentVersion] = await db.select({ commitHash: artifactVersions.commitHash })
-          .from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId));
-
-        // 更新这个 artifact
-        const updateFormData = await createVfsFormData({
-          artifactId,
-          parentCommit: currentVersion.commitHash,
-          name: 'Updated Recipe Stats',
-          version: '2.0.0',
-        });
-
-        const updateRequest = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: updateFormData,
-        });
-        const updateResponse = await sendRequest(updateRequest);
-
-        expect(updateResponse.status).toBe(200);
-        const updateData = await updateResponse.json<CreateArtifactResponse>();
-        expect(updateData.artifact.stats?.viewCount).toBe(100);
-        expect(updateData.artifact.stats?.favCount).toBe(50);
+        expect(conflictResponse.status).toBe(409);
+        const conflictData = await conflictResponse.json<ApiError>();
+        expect(conflictData.error).toContain('already exists');
       });
 
       it('should create new artifact when artifactId does not exist in database', async () => {
@@ -1078,8 +1025,8 @@ describe('Artifacts API', () => {
         expect(data.artifact.name).toBe('New Artifact');
       });
 
-      it('should return 403 when trying to update artifact owned by another user', async () => {
-        // 创建另一个用户的 artifact
+      it('should return 409 when trying to create artifact with existing artifactId (even for different user)', async () => {
+        // Create another user's artifact
         const { sessionCookie: otherUserSessionCookie } = await registerUser('otheruser');
         const createFormData = await createVfsFormData({
           name: 'Other User Recipe',
@@ -1095,38 +1042,28 @@ describe('Artifacts API', () => {
         const createData = await createResponse.json<CreateArtifactResponse>();
         const artifactId = createData.artifact.id;
 
-        // 尝试用当前用户更新
-        const updateFormData = await createVfsFormData({
+        // Try to POST with same artifactId using current user - should fail with 409
+        const conflictFormData = await createVfsFormData({
           artifactId,
           name: 'Hijacked Recipe',
-          version: '2.0.0',
         });
 
-        const updateRequest = new Request('http://localhost/api/artifacts', {
+        const conflictRequest = new Request('http://localhost/api/artifacts', {
           method: 'POST',
           headers: { Cookie: sessionCookie },
-          body: updateFormData,
+          body: conflictFormData,
         });
-        const updateResponse = await sendRequest(updateRequest);
+        const conflictResponse = await sendRequest(conflictRequest);
 
-        expect(updateResponse.status).toBe(403);
-        const updateData = await updateResponse.json<ApiError>();
-        expect(updateData.error).toBe('You do not have permission to update this artifact');
+        expect(conflictResponse.status).toBe(409);
+        const conflictData = await conflictResponse.json<ApiError>();
+        expect(conflictData.error).toContain('already exists');
       });
 
-
-
-      it('should update tags correctly', async () => {
-        // 创建一些标签
-        await db.insert(tags).values([
-          { name: 'tag-a', slug: 'tag-a', usageCount: 10 },
-          { name: 'tag-b', slug: 'tag-b', usageCount: 5 },
-        ]);
-
-        // 创建带标签的 artifact
+      it('should preserve stats in list view after creating artifact', async () => {
+        // First create an artifact
         const createFormData = await createVfsFormData({
-          name: 'Tagged Recipe',
-          tags: ['tag-a'],
+          name: 'Recipe for Stats',
         });
 
         const createRequest = new Request('http://localhost/api/artifacts', {
@@ -1138,156 +1075,23 @@ describe('Artifacts API', () => {
         expect(createResponse.status).toBe(200);
         const createData = await createResponse.json<CreateArtifactResponse>();
         const artifactId = createData.artifact.id;
-        expect(createData.artifact.tags).toHaveLength(1);
 
-        // 检查 tag-a 的使用计数增加了
-        const [tagA1] = await db.select().from(tags).where(eq(tags.slug, 'tag-a'));
-        expect(tagA1.usageCount).toBe(11);
+        // Simulate some stats updates
+        await db.update(artifactStats)
+          .set({ viewCount: 100, favCount: 50 })
+          .where(eq(artifactStats.artifactId, artifactId));
 
-        // 获取当前版本的 commitHash 作为 parentCommit
-        const [currentVersion] = await db.select({ commitHash: artifactVersions.commitHash })
-          .from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId));
-
-        // 更新，移除 tag-a，添加 tag-b
-        const updateFormData = await createVfsFormData({
-          artifactId,
-          parentCommit: currentVersion.commitHash,
-          name: 'Updated Tagged Recipe',
-          version: '2.0.0',
-          tags: ['tag-b'],
-        });
-
-        const updateRequest = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: updateFormData,
-        });
-        const updateResponse = await sendRequest(updateRequest);
-
-        expect(updateResponse.status).toBe(200);
-        const updateData = await updateResponse.json<CreateArtifactResponse>();
-        expect(updateData.artifact.tags).toHaveLength(1);
-        expect(updateData.artifact.tags![0].slug).toBe('tag-b');
-
-        // 检查 tag-a 的使用计数减少了，tag-b 的增加了
-        const [tagA2] = await db.select().from(tags).where(eq(tags.slug, 'tag-a'));
-        const [tagB2] = await db.select().from(tags).where(eq(tags.slug, 'tag-b'));
-        expect(tagA2.usageCount).toBe(10);
-        expect(tagB2.usageCount).toBe(6);
+        // List artifacts and verify stats are preserved
+        const listRequest = new Request('http://localhost/api/artifacts', { method: 'GET' });
+        const listResponse = await sendRequest(listRequest);
+        expect(listResponse.status).toBe(200);
+        const listData = await listResponse.json<{ artifacts: ArtifactListItem[] }>();
+        
+        const artifact = listData.artifacts.find(a => a.id === artifactId);
+        expect(artifact).toBeDefined();
+        expect(artifact?.stats?.viewCount).toBe(100);
+        expect(artifact?.stats?.favCount).toBe(50);
       });
-
-      it('should update nodes and files correctly', async () => {
-        // 创建带 VFS 节点的 artifact
-        const nodeId1 = crypto.randomUUID();
-        const nodeFiles1 = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles1.set(nodeId1, [{ name: 'file.txt', content: 'original content' }]);
-
-        const createFormData = await createCustomFormData(
-          { name: 'Node Recipe' },
-          { version: 1, nodes: [{ id: nodeId1, type: 'VFS', name: 'original-node' }], edges: [] },
-          nodeFiles1
-        );
-
-        const createRequest = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: createFormData,
-        });
-        const createResponse = await sendRequest(createRequest);
-        expect(createResponse.status).toBe(200);
-        const createData = await createResponse.json<CreateArtifactResponse>();
-        const artifactId = createData.artifact.id;
-
-        // 获取旧的节点（new architecture: through artifact_version_nodes）
-        const oldVersions = await db.select().from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId));
-        const oldVersionNodes = await db.select().from(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, oldVersions[0].commitHash));
-        expect(oldVersionNodes).toHaveLength(1);
-        const oldNodeId = oldVersionNodes[0].nodeId;
-
-        // 获取当前版本的 commitHash 作为 parentCommit
-        const parentCommit = oldVersions[0].commitHash;
-
-        // 更新，用新 VFS 节点替换
-        const nodeId2 = crypto.randomUUID();
-        const nodeFiles2 = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles2.set(nodeId2, [{ name: 'file.txt', content: 'updated content' }]);
-
-        const updateFormData = await createCustomFormData(
-          { artifactId, parentCommit, name: 'Updated Node Recipe', version: '2.0.0' },
-          { version: 1, nodes: [{ id: nodeId2, type: 'VFS', name: 'new-node' }], edges: [] },
-          nodeFiles2
-        );
-
-        const updateRequest = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: updateFormData,
-        });
-        const updateResponse = await sendRequest(updateRequest);
-        expect(updateResponse.status).toBe(200);
-
-        // 检查新版本的节点（通过 currentVersionId 获取最新版本）
-        const [updatedArtifact] = await db.select().from(artifacts).where(eq(artifacts.id, artifactId));
-        const [newVersion] = await db.select().from(artifactVersions).where(eq(artifactVersions.id, updatedArtifact.currentVersionId!));
-        const newVersionNodes = await db.select().from(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, newVersion.commitHash));
-        expect(newVersionNodes).toHaveLength(1);
-        expect(newVersionNodes[0].nodeId).not.toBe(oldNodeId);
-      });
-
-      it('should allow reusing same node ID when updating artifact', async () => {
-        // 创建带 VFS 节点的 artifact
-        const nodeId = crypto.randomUUID();
-        const nodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        nodeFiles.set(nodeId, [{ name: 'file.txt', content: 'original content' }]);
-
-        const createFormData = await createCustomFormData(
-          { name: 'Reuse Node Recipe' },
-          { version: 1, nodes: [{ id: nodeId, type: 'VFS', name: 'my-node' }], edges: [] },
-          nodeFiles
-        );
-
-        const createRequest = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: createFormData,
-        });
-        const createResponse = await sendRequest(createRequest);
-        expect(createResponse.status).toBe(200);
-        const createData = await createResponse.json<CreateArtifactResponse>();
-        const artifactId = createData.artifact.id;
-
-        // 获取当前版本的 commitHash 作为 parentCommit
-        const [currentVersion] = await db.select({ commitHash: artifactVersions.commitHash })
-          .from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId));
-
-        // 更新，复用相同的 node ID
-        const updatedNodeFiles = new Map<string, { name: string; content: string; type?: string }[]>();
-        updatedNodeFiles.set(nodeId, [{ name: 'file.txt', content: 'updated content' }]);
-
-        const updateFormData = await createCustomFormData(
-          { artifactId, parentCommit: currentVersion.commitHash, name: 'Updated Reuse Recipe', version: '2.0.0' },
-          { version: 1, nodes: [{ id: nodeId, type: 'VFS', name: 'my-node-updated' }], edges: [] },
-          updatedNodeFiles
-        );
-
-        const updateRequest = new Request('http://localhost/api/artifacts', {
-          method: 'POST',
-          headers: { Cookie: sessionCookie },
-          body: updateFormData,
-        });
-        const updateResponse = await sendRequest(updateRequest);
-        expect(updateResponse.status).toBe(200);
-
-        // 检查节点被更新（相同 ID，新版本 — 通过 currentVersionId 获取最新版本）
-        const [updatedArtifact] = await db.select().from(artifacts).where(eq(artifacts.id, artifactId));
-        const [updatedVersion] = await db.select().from(artifactVersions).where(eq(artifactVersions.id, updatedArtifact.currentVersionId!));
-        const updatedVersionNodes = await db.select().from(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, updatedVersion.commitHash));
-        expect(updatedVersionNodes).toHaveLength(1);
-        expect(updatedVersionNodes[0].nodeId).toBe(nodeId);
-      });
-
-      // nodeId 全局唯一标识节点实体，不同 artifact 可以各自为同一节点创建新版本（fork 语义），
-      // 因此不存在"node ID 被其他 artifact 占用"的冲突。
     });
 
     // =========================================================================

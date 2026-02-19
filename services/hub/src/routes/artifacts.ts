@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, BatchContext, ArtifactService, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateCommitTagsRequest } from '@pubwiki/api';
+import { createDb, BatchContext, ArtifactService, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput } from '@pubwiki/db';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataRequest, UpdateVersionMetadataRequest, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
 import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
@@ -338,20 +338,19 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
   // Commit database operations
   await ctx.commit();
 
-  const { artifact: patchedArtifact, versionCreated } = result.data;
+  const { artifact: patchedArtifact } = result.data;
   const artifactId = patchedArtifact.id;
 
-  // 上传 VFS 归档到 R2（filesHash 作为 key，支持去重）
-  if (versionCreated) {
-    for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
-      const r2Key = `vfs/${filesHash}/files.tar.gz`;
-      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
-        httpMetadata: { contentType: 'application/gzip' },
-      });
-    }
+  // Upload VFS archives to R2 (filesHash as key, supports deduplication)
+  // PATCH always creates a new version, so always upload VFS archives
+  for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
+    const r2Key = `vfs/${filesHash}/files.tar.gz`;
+    await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+      httpMetadata: { contentType: 'application/gzip' },
+    });
   }
 
-  // 上传 save 数据到 R2（quadsHash 作为 key，支持去重）
+  // Upload save data to R2 (quadsHash as key, supports deduplication)
   for (const [quadsHash, saveBuffer] of saveArchives.entries()) {
     const r2Key = `saves/${quadsHash}/quads.bin`;
     await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
@@ -371,40 +370,66 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     {
       message: 'Artifact patched successfully',
       artifact: patchedArtifact,
-      versionCreated,
     },
     200
   );
 });
 
-// PUT: 设置 commit 上的标签列表
-artifactsRoute.put('/:artifactId/commit-tag', authMiddleware, async (c) => {
+// PUT: Update artifact metadata (name, description, isListed, isPrivate, etc.)
+artifactsRoute.put('/:artifactId/metadata', authMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const artifactService = new ArtifactService(ctx);
   const user = c.get('user');
   const artifactId = c.req.param('artifactId');
 
-  let body: UpdateCommitTagsRequest;
+  let body: UpdateArtifactMetadataRequest;
   try {
     body = await c.req.json();
   } catch {
     return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
   }
 
-  if (!body.commitHash) {
-    return c.json<ApiError>({ error: 'commitHash is required' }, 400);
-  }
-
-  if (!Array.isArray(body.commitTags)) {
-    return c.json<ApiError>({ error: 'commitTags must be an array' }, 400);
-  }
-
-  const result = await artifactService.updateCommitTags(
+  const input: UpdateArtifactMetadataInput = {
     artifactId,
-    user.id,
-    body.commitHash,
-    body.commitTags,
-  );
+    authorId: user.id,
+    data: body,
+  };
+
+  const result = await artifactService.updateArtifactMetadata(input);
+
+  if (!result.success) {
+    return serviceErrorResponse(c, result.error);
+  }
+
+  // Commit database operations
+  await ctx.commit();
+
+  return c.json<UpdateArtifactMetadataResponse>(result.data, 200);
+});
+
+// PUT: Update version metadata (version, changelog, commitTags, entrypoint)
+artifactsRoute.put('/:artifactId/versions/:commitHash/metadata', authMiddleware, async (c) => {
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
+  const user = c.get('user');
+  const artifactId = c.req.param('artifactId');
+  const commitHash = c.req.param('commitHash');
+
+  let body: UpdateVersionMetadataRequest;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const input: UpdateVersionMetadataInput = {
+    artifactId,
+    authorId: user.id,
+    commitHash,
+    data: body,
+  };
+
+  const result = await artifactService.updateVersionMetadata(input);
 
   if (!result.success) {
     return serviceErrorResponse(c, result.error);
@@ -414,9 +439,9 @@ artifactsRoute.put('/:artifactId/commit-tag', authMiddleware, async (c) => {
   await ctx.commit();
 
   return c.json({
-    message: 'Commit tags updated successfully',
+    message: 'Version metadata updated successfully',
     version: result.data.version,
-  }, 200);
+  } satisfies UpdateVersionMetadataResponse, 200);
 });
 
 // PUT: 标记版本为 weak（不可逆）

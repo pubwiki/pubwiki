@@ -73,9 +73,16 @@ discussionsRoute.post('/', authMiddleware, async (c) => {
   }
 
   await ctx.commit();
+
+  // Fetch the created discussion
+  const discussionResult = await discussionService.getDiscussion(result.data.discussionId);
+  if (!discussionResult.success) {
+    return serviceErrorResponse(c, discussionResult.error);
+  }
+
   return c.json<CreateDiscussionResponse>({
     message: 'Discussion created successfully',
-    discussion: result.data,
+    discussion: discussionResult.data,
   }, 201);
 });
 
@@ -114,9 +121,16 @@ discussionsRoute.patch('/:discussionId', authMiddleware, async (c) => {
   }
 
   await ctx.commit();
+
+  // Fetch the updated discussion
+  const discussionResult = await discussionService.getDiscussion(result.data.discussionId);
+  if (!discussionResult.success) {
+    return serviceErrorResponse(c, discussionResult.error);
+  }
+
   return c.json<UpdateDiscussionResponse>({
     message: 'Discussion updated successfully',
-    discussion: result.data,
+    discussion: discussionResult.data,
   });
 });
 

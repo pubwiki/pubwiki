@@ -1,7 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import type { Env } from '../types';
 import { createAuth } from '../lib/auth';
-import { createDb, AclService } from '@pubwiki/db';
+import { createDb, AclService, BatchContext } from '@pubwiki/db';
 import type { ResourceRef } from '@pubwiki/db/services';
 
 /**
@@ -64,7 +64,8 @@ declare module 'hono' {
 export const resourceAccessMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next) => {
   const auth = createAuth(c.env);
   const db = createDb(c.env.DB);
-  const aclService = new AclService(db);
+  const batchCtx = new BatchContext(db);
+  const aclService = new AclService(batchCtx);
 
   // 1. 提取用户 ID
   let userId: string | null = null;
@@ -81,7 +82,7 @@ export const resourceAccessMiddleware = createMiddleware<{ Bindings: Env }>(asyn
     c.req.query('access_token') || c.req.header('X-Access-Token') || null;
 
   // 3. 构建上下文
-  const ctx: ResourceAccessContext = {
+  const resourceAccessContext: ResourceAccessContext = {
     userId,
     tokenValue,
     aclService,
@@ -97,7 +98,7 @@ export const resourceAccessMiddleware = createMiddleware<{ Bindings: Env }>(asyn
     },
   };
 
-  c.set('resourceAccess', ctx);
+  c.set('resourceAccess', resourceAccessContext);
   await next();
 });
 

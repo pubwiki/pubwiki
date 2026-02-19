@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm';
-import type { Database } from '../../client';
+import type { BatchContext } from '../../batch-context';
 import { resourceAcl, PUBLIC_USER_ID, type AclPermission, type AclPermissions } from '../../schema/acl';
 import { resourceDiscoveryControl } from '../../schema/discovery-control';
 import type { ResourceType } from './index';
@@ -49,7 +49,7 @@ export interface AclRecord {
  * - 公开/私有状态管理
  */
 export class AclService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   // ========================================================================
   // 公开/私有管理
@@ -60,44 +60,48 @@ export class AclService {
    */
   // FIXME: if an artifact is set to public, its nodes should be set to public
   // accordingly
-  async setPublic(ref: ResourceRef, grantedBy: string): Promise<void> {
-    await this.db
-      .insert(resourceAcl)
-      .values({
-        resourceType: ref.type,
-        resourceId: ref.id,
-        userId: PUBLIC_USER_ID,
-        canRead: true,
-        canWrite: false,
-        canManage: false,
-        grantedBy,
-      })
-      .onConflictDoUpdate({
-        target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
-        set: { canRead: true },
-      });
+  setPublic(ref: ResourceRef, grantedBy: string): void {
+    this.ctx.modify((db) =>
+      db
+        .insert(resourceAcl)
+        .values({
+          resourceType: ref.type,
+          resourceId: ref.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy,
+        })
+        .onConflictDoUpdate({
+          target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
+          set: { canRead: true },
+        })
+    );
   }
 
   /**
    * 移除公开读取权限（等价于原 isPrivate = true）
    */
-  async setPrivate(ref: ResourceRef): Promise<void> {
-    await this.db
-      .delete(resourceAcl)
-      .where(
-        and(
-          eq(resourceAcl.resourceType, ref.type),
-          eq(resourceAcl.resourceId, ref.id),
-          eq(resourceAcl.userId, PUBLIC_USER_ID)
+  setPrivate(ref: ResourceRef): void {
+    this.ctx.modify((db) =>
+      db
+        .delete(resourceAcl)
+        .where(
+          and(
+            eq(resourceAcl.resourceType, ref.type),
+            eq(resourceAcl.resourceId, ref.id),
+            eq(resourceAcl.userId, PUBLIC_USER_ID)
+          )
         )
-      );
+    );
   }
 
   /**
    * 检查是否公开
    */
   async isPublic(ref: ResourceRef): Promise<boolean> {
-    const result = await this.db
+    const result = await this.ctx
       .select({ canRead: resourceAcl.canRead })
       .from(resourceAcl)
       .where(
@@ -119,60 +123,64 @@ export class AclService {
   /**
    * 授予用户权限
    */
-  async grant(
+  grant(
     ref: ResourceRef,
     userId: string,
     permissions: AclPermissions,
     grantedBy: string
-  ): Promise<void> {
-    await this.db
-      .insert(resourceAcl)
-      .values({
-        resourceType: ref.type,
-        resourceId: ref.id,
-        userId,
-        canRead: permissions.read ?? false,
-        canWrite: permissions.write ?? false,
-        canManage: permissions.manage ?? false,
-        grantedBy,
-      })
-      .onConflictDoUpdate({
-        target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
-        set: {
+  ): void {
+    this.ctx.modify((db) =>
+      db
+        .insert(resourceAcl)
+        .values({
+          resourceType: ref.type,
+          resourceId: ref.id,
+          userId,
           canRead: permissions.read ?? false,
           canWrite: permissions.write ?? false,
           canManage: permissions.manage ?? false,
-        },
-      });
+          grantedBy,
+        })
+        .onConflictDoUpdate({
+          target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
+          set: {
+            canRead: permissions.read ?? false,
+            canWrite: permissions.write ?? false,
+            canManage: permissions.manage ?? false,
+          },
+        })
+    );
   }
 
   /**
    * 授予 owner 权限（创建资源时使用）
    */
-  async grantOwner(ref: ResourceRef, userId: string): Promise<void> {
-    await this.grant(ref, userId, { read: true, write: true, manage: true }, userId);
+  grantOwner(ref: ResourceRef, userId: string): void {
+    this.grant(ref, userId, { read: true, write: true, manage: true }, userId);
   }
 
   /**
    * 撤销用户权限
    */
-  async revoke(ref: ResourceRef, userId: string): Promise<void> {
-    await this.db
-      .delete(resourceAcl)
-      .where(
-        and(
-          eq(resourceAcl.resourceType, ref.type),
-          eq(resourceAcl.resourceId, ref.id),
-          eq(resourceAcl.userId, userId)
+  revoke(ref: ResourceRef, userId: string): void {
+    this.ctx.modify((db) =>
+      db
+        .delete(resourceAcl)
+        .where(
+          and(
+            eq(resourceAcl.resourceType, ref.type),
+            eq(resourceAcl.resourceId, ref.id),
+            eq(resourceAcl.userId, userId)
+          )
         )
-      );
+    );
   }
 
   /**
    * 获取用户的 ACL 记录
    */
   async getAcl(ref: ResourceRef, userId: string): Promise<AclRecord | null> {
-    const result = await this.db
+    const result = await this.ctx
       .select({
         userId: resourceAcl.userId,
         canRead: resourceAcl.canRead,
@@ -198,7 +206,7 @@ export class AclService {
    * 获取资源的所有 ACL 记录
    */
   async listAcls(ref: ResourceRef): Promise<AclRecord[]> {
-    return this.db
+    return this.ctx
       .select({
         userId: resourceAcl.userId,
         canRead: resourceAcl.canRead,
@@ -219,15 +227,17 @@ export class AclService {
   /**
    * 删除资源的所有 ACL 记录
    */
-  async deleteAllAcls(ref: ResourceRef): Promise<void> {
-    await this.db
-      .delete(resourceAcl)
-      .where(
-        and(
-          eq(resourceAcl.resourceType, ref.type),
-          eq(resourceAcl.resourceId, ref.id)
+  deleteAllAcls(ref: ResourceRef): void {
+    this.ctx.modify((db) =>
+      db
+        .delete(resourceAcl)
+        .where(
+          and(
+            eq(resourceAcl.resourceType, ref.type),
+            eq(resourceAcl.resourceId, ref.id)
+          )
         )
-      );
+    );
   }
 
   // ========================================================================
@@ -311,27 +321,29 @@ export class AclService {
  * - 与 ACL 完全分离，列表操作只关心 isListed
  */
 export class DiscoveryService {
-  constructor(private db: Database) {}
+  constructor(private ctx: BatchContext) {}
 
   /**
    * 创建资源发现控制记录
    */
-  async create(ref: ResourceRef, isListed: boolean = false): Promise<void> {
-    await this.db
-      .insert(resourceDiscoveryControl)
-      .values({
-        resourceType: ref.type,
-        resourceId: ref.id,
-        isListed,
-      })
-      .onConflictDoNothing();
+  create(ref: ResourceRef, isListed: boolean = false): void {
+    this.ctx.modify((db) =>
+      db
+        .insert(resourceDiscoveryControl)
+        .values({
+          resourceType: ref.type,
+          resourceId: ref.id,
+          isListed,
+        })
+        .onConflictDoNothing()
+    );
   }
 
   /**
    * 获取资源发现控制记录
    */
   async get(ref: ResourceRef): Promise<{ isListed: boolean } | null> {
-    const result = await this.db
+    const result = await this.ctx
       .select({ isListed: resourceDiscoveryControl.isListed })
       .from(resourceDiscoveryControl)
       .where(
@@ -348,30 +360,34 @@ export class DiscoveryService {
   /**
    * 设置 isListed 状态
    */
-  async setListed(ref: ResourceRef, isListed: boolean): Promise<void> {
-    await this.db
-      .update(resourceDiscoveryControl)
-      .set({ isListed, updatedAt: new Date().toISOString() })
-      .where(
-        and(
-          eq(resourceDiscoveryControl.resourceType, ref.type),
-          eq(resourceDiscoveryControl.resourceId, ref.id)
+  setListed(ref: ResourceRef, isListed: boolean): void {
+    this.ctx.modify((db) =>
+      db
+        .update(resourceDiscoveryControl)
+        .set({ isListed, updatedAt: new Date().toISOString() })
+        .where(
+          and(
+            eq(resourceDiscoveryControl.resourceType, ref.type),
+            eq(resourceDiscoveryControl.resourceId, ref.id)
+          )
         )
-      );
+    );
   }
 
   /**
    * 删除资源发现控制记录
    */
-  async delete(ref: ResourceRef): Promise<void> {
-    await this.db
-      .delete(resourceDiscoveryControl)
-      .where(
-        and(
-          eq(resourceDiscoveryControl.resourceType, ref.type),
-          eq(resourceDiscoveryControl.resourceId, ref.id)
+  delete(ref: ResourceRef): void {
+    this.ctx.modify((db) =>
+      db
+        .delete(resourceDiscoveryControl)
+        .where(
+          and(
+            eq(resourceDiscoveryControl.resourceType, ref.type),
+            eq(resourceDiscoveryControl.resourceId, ref.id)
+          )
         )
-      );
+    );
   }
 
   /**

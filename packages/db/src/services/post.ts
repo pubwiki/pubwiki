@@ -5,7 +5,6 @@ import { projects } from '../schema/projects';
 import { discussions, discussionReplies, type NewDiscussion } from '../schema/discussions';
 import { user } from '../schema/auth';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
-import { resourceAcl } from '../schema/acl';
 import type { ServiceResult } from './user';
 import type {
   PostListItem,
@@ -15,6 +14,7 @@ import type {
   UpdatePostRequest,
   Pagination as PaginationInfo,
 } from '@pubwiki/api';
+import { AclService } from './access-control';
 
 // 重新导出类型
 export type { PostListItem, PostDetail };
@@ -56,7 +56,11 @@ export interface UpdatePostParams {
 }
 
 export class PostService {
-  constructor(private ctx: BatchContext) {}
+  private readonly aclService: AclService;
+
+  constructor(private ctx: BatchContext) {
+    this.aclService = new AclService(ctx);
+  }
 
   // 获取作者信息
   private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
@@ -93,18 +97,9 @@ export class PostService {
 
       const isOwner = project.ownerId === userId;
 
-      // 检查用户的 ACL 权限
-      const userAcl = await this.ctx
-        .select({ canWrite: resourceAcl.canWrite, canManage: resourceAcl.canManage })
-        .from(resourceAcl)
-        .where(and(
-          eq(resourceAcl.resourceType, 'project'),
-          eq(resourceAcl.resourceId, projectId),
-          eq(resourceAcl.userId, userId)
-        ))
-        .limit(1);
-
-      const hasWritePermission = userAcl.length > 0 && (userAcl[0].canWrite || userAcl[0].canManage);
+      // 检查用户的 ACL 权限 using AclService
+      const projectRef = { type: 'project' as const, id: projectId };
+      const hasWritePermission = await this.aclService.canWrite(projectRef, userId);
 
       return {
         success: true,

@@ -86,3 +86,82 @@ description: This skill tells you the current backend architecture. This is cons
   - drizzle ORM schema
   - 各个不同domain的服务定义
 - `services/hub`：api的路由实现
+
+## 关于一些特定的设计考量的说明：
+
+### 数据库事务与并行安全性
+
+在我们的设计中，@pubwiki/db包中包含所有细分的业务domain中的业务逻辑，向route层提供可组合的API。这带来了两个问题
+
+1. 业务API的边界和数据库原子性操作边界的misalignment。为了解决这个问题，我们将数据库写入的责任上浮到route层，由route层对业务层进行编排，并最终执行数据库修改操作。
+2. cloudflare D1由于其分布式数据库的特征，不提供事务（transaction）支持，只提供批量写（batch）。这意味着我们不可避免的会遇到并发访问下的TOCTOU问题。为了解决这个问题，我们采用乐观锁方案。即
+   1. 使用where子句唯一指定要更新的行，然后通过rows modified计数来判断更新是否成功
+   2. 保证所有的关键操作都是幂等的
+
+我们定义了一个类`BatchContext`
+
+```typescript
+export class BatchContext {
+  private operations: BatchItem<'sqlite'>[] = [];
+  private optimisticLocks: OptimisticLockValidator[] = [];
+
+  constructor(private readonly db: Database) {}
+
+  // passthrough read operations
+  get select();
+  // queue a modify operation
+  modify(
+    operation: (db: Database) => BatchItem<'sqlite'>,
+    options?: ModifyOptions
+  ): void;
+  // execute all queued modify operations in a single batch
+  commit();
+}
+```
+
+我们将该类传入每一个service中，并且保证service仅通过这个类来实现对数据库的访问。从而保证业务层不再直接访问数据库。
+
+### 访问权限与可发现性
+
+后端中存在下面几种资源：Project，Artifact，Node，Article以及Save。我们需要对这些资源实施合理的访问控制并且管理可见性。
+
+我们需要首先区分这两个维度
+
+- 访问控制指的是用户能否访问一个资源（在已知这个资源的ID的情况下），访问的形式包括读，写以及删除
+- 可发现性指的是用户能够列举一个资源，这常常是通过一些带有列举（list）语义的API接口完成的。被设置为不可列举（`isListed=false`）的资源永远不会出现在list接口中（除非是其拥有者调用这个接口）
+
+我们通过ACL来进行访问控制。对于每一个资源单位（有的根据id区分，有的根据commit区分），我们维护一张ACL表
+
+```typescript
+export const resourceAcl = sqliteTable(
+  'resource_acl',
+  {
+    // 复合主键：资源类型 + 资源ID + 用户ID
+    resourceType: text('resource_type').$type<ResourceType>().notNull(),
+    // For low-level versioned content, this refers to a specific commit rather than
+    // its id, including nodes, saves
+    resourceId: text('resource_id').notNull(),
+    userId: text('user_id').notNull(),  // '*' = public
+
+    // 权限位：可独立授予
+    canRead: integer('can_read', { mode: 'boolean' }).default(false).notNull(),
+    canWrite: integer('can_write', { mode: 'boolean' }).default(false).notNull(),
+    canManage: integer('can_manage', { mode: 'boolean' }).default(false).notNull(),
+
+    // 授权者（谁授予了这个权限）
+    grantedBy: text('granted_by').references(() => user.id, { onDelete: 'set null' }),
+    
+    // 元数据
+    createdAt: text('created_at').default(currentTimestamp).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.resourceType, table.resourceId, table.userId] }),
+    index('idx_acl_user').on(table.userId),
+    index('idx_acl_resource').on(table.resourceType, table.resourceId),
+  ]
+);
+```
+
+我们使用`*`来代表所有用户的集合，以此来实现公开与私有语义。
+
+

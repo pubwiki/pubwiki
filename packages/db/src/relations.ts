@@ -68,8 +68,8 @@ export const artifactsRelations = relations(artifacts, ({ one, many }) => ({
     fields: [artifacts.authorId],
     references: [user.id],
   }),
-  currentVersion: one(artifactVersions, {
-    fields: [artifacts.currentVersionId],
+  latestVersionRecord: one(artifactVersions, {
+    fields: [artifacts.latestVersion],
     references: [artifactVersions.id],
   }),
   versions: many(artifactVersions),

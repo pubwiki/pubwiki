@@ -8,6 +8,7 @@ import type { NodeType } from '../schema/enums';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
 import { artifactStats } from '../schema/stats';
 import { user } from '../schema/auth';
+import { articles } from '../schema/articles';
 import type { ServiceResult } from './user';
 import { NodeGraph } from '../utils/node-graph';
 import type {
@@ -26,10 +27,13 @@ import type {
   GetArtifactGraphResponse,
   ArtifactNodeSummary,
   ArtifactEdge,
+  UpdateArtifactMetadataRequest,
+  UpdateArtifactMetadataResponse,
+  UpdateVersionMetadataRequest,
 } from '@pubwiki/api';
 import { computeArtifactCommit } from '@pubwiki/api';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
-import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
+import { AclService, DiscoveryService } from './access-control';
 
 // 重新导出供其他模块使用
 export type { ArtifactListItem, Pagination, ArtifactLineageItem, CreateArtifactNode };
@@ -53,14 +57,35 @@ export interface CreateArtifactResult {
   artifact: ArtifactListItem;
 }
 
-// PATCH artifact 的返回结果
+// PATCH artifact 的返回结果（仅用于 graph 变更）
 export interface PatchArtifactResult extends CreateArtifactResult {
-  /** 是否创建了新版本（false 表示仅更新了 metadata） */
-  versionCreated: boolean;
+  /** Always true since PATCH always creates a new version */
+  versionCreated: true;
+}
+
+// Update artifact metadata input
+export interface UpdateArtifactMetadataInput {
+  artifactId: string;
+  authorId: string;
+  data: UpdateArtifactMetadataRequest;
+}
+
+// Update version metadata input
+export interface UpdateVersionMetadataInput {
+  artifactId: string;
+  authorId: string;
+  commitHash: string;
+  data: UpdateVersionMetadataRequest;
 }
 
 export class ArtifactService {
-  constructor(private ctx: BatchContext) {}
+  private readonly aclService: AclService;
+  private readonly discoveryService: DiscoveryService;
+
+  constructor(private ctx: BatchContext) {
+    this.aclService = new AclService(ctx);
+    this.discoveryService = new DiscoveryService(ctx);
+  }
 
   /**
    * 计算 artifact version 的确定性 commit hash（链状结构）。
@@ -82,69 +107,85 @@ export class ArtifactService {
   }
 
   // ============================================================================
-  // createArtifact - Main Entry Point
+  // createArtifact - Main Entry Point (Pure Insert Semantics)
   // ============================================================================
 
   /**
-   * 创建或更新 artifact（使用 batch 保证原子性）
-   * 通过检查 metadata.artifactId 是否存在于数据库中决定是创建还是更新
+   * Create a new artifact (pure insert semantics).
+   * 
+   * If artifactId already exists, returns 409 Conflict.
+   * For updating existing artifacts:
+   * - Use patchArtifact() for graph changes
+   * - Use updateArtifactMetadata() for metadata changes
    */
   async createArtifact(input: CreateArtifactInput): Promise<ServiceResult<CreateArtifactResult>> {
     const { authorId, metadata, nodes, edges } = input;
     const artifactId = metadata.artifactId;
 
-    try {      
-      // Step 1: Validate and prepare context (check permissions, verify commit hash, get author)
+    try {
+      // Step 1: Check if artifact already exists (pure insert - reject if exists)
+      const existingArtifact = await this.ctx
+        .select({ id: artifacts.id })
+        .from(artifacts)
+        .where(eq(artifacts.id, artifactId))
+        .limit(1);
+
+      if (existingArtifact.length > 0) {
+        return {
+          success: false,
+          error: {
+            code: 'CONFLICT',
+            message: `Artifact ${artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.`,
+          },
+        };
+      }
+
+      // Step 2: Validate and prepare context
       const prepareResult = await this.prepareArtifactContext(artifactId, authorId, metadata, nodes, edges);
       if (!prepareResult.success) return prepareResult;
-      const { isUpdate, author, versionId } = prepareResult.data;
+      const { author, versionId } = prepareResult.data;
 
-      // Step 2: Build and validate graph structure using NodeGraph abstraction
+      // Step 3: Build and validate graph structure using NodeGraph abstraction
       const graph = NodeGraph.fromArrays(nodes, edges);
       const validationResult = graph.validate(metadata.entrypoint);
       if (!validationResult.success) return validationResult;
 
-      // Step 3: Sync nodes (nodes must exist before version references them)
-      const nodeResult = await this.syncNodes(artifactId, authorId, nodes);
+      // Determine privacy: default to false (public)
+      const isPrivate = metadata.isPrivate ?? false;
+
+      // Step 4: Sync nodes (nodes must exist before version references them)
+      // Pass isPrivate to ensure node ACLs match artifact's privacy setting
+      const nodeResult = await this.syncNodes(artifactId, authorId, nodes, isPrivate);
       if (!nodeResult.success) return nodeResult;
 
-      // Step 4: Create or update artifact record (without currentVersionId for new artifacts)
-      if (isUpdate) {
-        const updateResult = await this.updateExistingArtifact(artifactId, metadata, versionId);
-        if (!updateResult.success) return updateResult;
-      } else {
-        this.createNewArtifact(artifactId, authorId, metadata, versionId);
-      }
+      // Step 5: Create artifact record
+      this.createNewArtifact(artifactId, authorId, metadata, versionId);
 
-      // Step 5: Create version record (artifact must exist first due to FK)
+      // Step 6: Create version record (artifact must exist first due to FK)
       this.createVersionRecord(artifactId, versionId, metadata);
 
-      // Step 6: Store graph structure (version must exist, nodes already synced)
+      // Step 7: Store graph structure (version must exist, nodes already synced)
       this.storeGraphStructure(metadata.commit, nodes, edges);
 
-      // Step 7: Process commit tags (version must exist)
+      // Step 8: Process commit tags (version must exist)
       await this.processCommitTags(artifactId, metadata.commit, metadata.commitTags ?? []);
 
-      // Step 8: Process tags
+      // Step 9: Process tags
       let processedTags: TagInfo[] = [];
       const tagSlugs = metadata.tags ?? [];
       if (tagSlugs.length > 0) {
         const tagService = new TagService(this.ctx);
         const existingTagsMap = await tagService.fetchTagsBySlug(tagSlugs);
-        const result = isUpdate
-          ? await tagService.syncTags(artifactId, tagSlugs, existingTagsMap)
-          : await tagService.setTags(artifactId, tagSlugs, existingTagsMap);
+        const result = await tagService.setTags(artifactId, tagSlugs, existingTagsMap);
         processedTags = result.processedTags;
       }
 
-      // Step 9: Create stats record (only for new artifacts)
-      if (!isUpdate) {
-        this.createStatsRecord(artifactId);
-      }
+      // Step 10: Create stats record
+      this.createStatsRecord(artifactId);
 
-      // Step 10: Build and return response
+      // Step 11: Build and return response
       const artifact = await this.buildArtifactResponse(
-        artifactId, isUpdate, metadata, author, processedTags
+        artifactId, false, metadata, author, processedTags
       );
 
       return { success: true, data: { artifact } };
@@ -159,7 +200,11 @@ export class ArtifactService {
   // ============================================================================
 
   /**
-   * Step 1: Validate permissions, compute parent commit, verify commit hash, get author info
+   * Prepare context for creating a new artifact.
+   * Verifies commit hash and gets author info.
+   * 
+   * Note: This is now only for new artifacts (pure insert semantics).
+   * Existence check is done in createArtifact before calling this method.
    */
   private async prepareArtifactContext(
     artifactId: string,
@@ -168,40 +213,11 @@ export class ArtifactService {
     nodes: CreateArtifactNode[],
     edges: ArtifactEdgeDescriptor[],
   ): Promise<ServiceResult<{
-    isUpdate: boolean;
-    parentCommit: string | null;
     author: { id: string; username: string; displayName: string | null; avatarUrl: string | null };
     versionId: string;
   }>> {
-    // Check if artifact exists
-    const existingArtifact = await this.ctx
-      .select({ id: artifacts.id, authorId: artifacts.authorId, currentVersionId: artifacts.currentVersionId })
-      .from(artifacts)
-      .where(eq(artifacts.id, artifactId))
-      .limit(1);
-
-    const isUpdate = existingArtifact.length > 0;
-
-    // Verify ownership for updates
-    if (isUpdate && existingArtifact[0].authorId !== authorId) {
-      return {
-        success: false,
-        error: { code: 'FORBIDDEN', message: 'You do not have permission to update this artifact' },
-      };
-    }
-
-    // Compute parentCommit (current version's commitHash for updates, null for creates)
-    let parentCommit: string | null = null;
-    if (isUpdate && existingArtifact[0].currentVersionId) {
-      const currentVersion = await this.ctx
-        .select({ commitHash: artifactVersions.commitHash })
-        .from(artifactVersions)
-        .where(eq(artifactVersions.id, existingArtifact[0].currentVersionId))
-        .limit(1);
-      if (currentVersion.length > 0) {
-        parentCommit = currentVersion[0].commitHash;
-      }
-    }
+    // For new artifacts, parentCommit is always null
+    const parentCommit: string | null = null;
 
     // Verify commit hash
     const expectedCommit = await ArtifactService.computeCommitHash(artifactId, parentCommit, nodes, edges);
@@ -234,8 +250,6 @@ export class ArtifactService {
     return {
       success: true,
       data: {
-        isUpdate,
-        parentCommit,
         author: authorResult[0],
         versionId: crypto.randomUUID(),
       },
@@ -243,80 +257,8 @@ export class ArtifactService {
   }
 
   /**
-   * Step 2a: Update existing artifact (for update mode)
-   */
-  private async updateExistingArtifact(
-    artifactId: string,
-    metadata: CreateArtifactMetadata,
-    versionId: string,
-  ): Promise<ServiceResult<void>> {
-    // Check for duplicate commit hash
-    const existingVersion = await this.ctx
-      .select({ id: artifactVersions.id })
-      .from(artifactVersions)
-      .where(and(
-        eq(artifactVersions.artifactId, artifactId),
-        eq(artifactVersions.commitHash, metadata.commit)
-      ))
-      .limit(1);
-
-    if (existingVersion.length > 0) {
-      return {
-        success: false,
-        error: { code: 'CONFLICT', message: `Version with commit ${metadata.commit} already exists for this artifact` },
-      };
-    }
-
-    // Update artifact record
-    this.ctx.modify(db =>
-      db.update(artifacts).set({
-        name: metadata.name,
-        description: metadata.description ?? null,
-        currentVersionId: versionId,
-        thumbnailUrl: metadata.thumbnailUrl ?? null,
-        license: metadata.license ?? null,
-        repositoryUrl: metadata.repositoryUrl ?? null,
-        updatedAt: new Date().toISOString(),
-      }).where(eq(artifacts.id, artifactId))
-    );
-
-    // Update discovery control
-    const isListed = metadata.isListed ?? true;
-    this.ctx.modify(db =>
-      db.update(resourceDiscoveryControl).set({ isListed }).where(
-        and(
-          eq(resourceDiscoveryControl.resourceType, 'artifact'),
-          eq(resourceDiscoveryControl.resourceId, artifactId)
-        )
-      )
-    );
-
-    // FIXME: this should also handle permission change
-    // a user could set a published artifact from public to private
-    // or from private to public
-    // 
-    // since there is reference relation between artifacts and nodes
-    // we must carefully consider this situation.
-    // 
-    // 1. when an artifact is firstly published with several referenced
-    //    nodes and original nodes, we must make sure
-    //    1. The auther must have read permission on the referenced nodes
-    //    2. The permission of the original nodes must be the same as the
-    //       artifact itself
-    // 2. when an artifact is turned from public to private, its nodes must 
-    //    be updated to private. However, the version of this node must be
-    //    updated to keep the permission of the previous version unchanged
-    // 3. when an artifact is turned from private to public
-    //    1. its original nodes must be made public 
-    //    2. its referenced nodes must all be public. In fact, its referenced
-    //       nodes will naturally be all-public since there is no way to make
-    //       a node version private
-
-    return { success: true, data: undefined };
-  }
-
-  /**
-   * Step 2b: Create new artifact (for create mode)
+   * Create new artifact record.
+   * Uses AclService and DiscoveryService for proper abstraction.
    */
   private createNewArtifact(
     artifactId: string,
@@ -329,52 +271,27 @@ export class ArtifactService {
       authorId,
       name: metadata.name,
       description: metadata.description ?? null,
-      currentVersionId: versionId,
+      latestVersion: versionId,
       thumbnailUrl: metadata.thumbnailUrl ?? null,
       license: metadata.license ?? null,
-      repositoryUrl: metadata.repositoryUrl ?? null,
     };
     this.ctx.modify(db => db.insert(artifacts).values(newArtifact));
 
-    // Create discovery control record
+    // Create discovery control record using DiscoveryService
     const isListed = metadata.isListed ?? true;
-    this.ctx.modify(db =>
-      db.insert(resourceDiscoveryControl).values({
-        resourceType: 'artifact',
-        resourceId: artifactId,
-        isListed,
-      })
-    );
+    const artifactRef = { type: 'artifact' as const, id: artifactId };
+    this.discoveryService.create(artifactRef, isListed);
 
-    // Create owner ACL (manage + write + read)
-    this.ctx.modify(db =>
-      db.insert(resourceAcl).values({
-        resourceType: 'artifact',
-        resourceId: artifactId,
-        userId: authorId,
-        canRead: true,
-        canWrite: true,
-        canManage: true,
-        grantedBy: authorId,
-      })
-    );
+    // Create owner ACL (manage + write + read) using AclService
+    this.aclService.grantOwner(artifactRef, authorId);
 
-    // Create public read ACL
-    // FIXME: The api should allow user to specify a isPrivate field to 
-    // set artifact to private when publishing
-    // FIXME: The modification of ACL table should be handled with the 
-    // service instead of direct db manipulating
-    this.ctx.modify(db =>
-      db.insert(resourceAcl).values({
-        resourceType: 'artifact',
-        resourceId: artifactId,
-        userId: PUBLIC_USER_ID,
-        canRead: true,
-        canWrite: false,
-        canManage: false,
-        grantedBy: authorId,
-      })
-    );
+    // Create public read ACL if not private
+    // isPrivate: true means only owner and authorized users can access
+    // isPrivate: false (default) means everyone can read
+    const isPrivate = metadata.isPrivate ?? false;
+    if (!isPrivate) {
+      this.aclService.setPublic(artifactRef, authorId);
+    }
   }
 
   /**
@@ -432,11 +349,14 @@ export class ArtifactService {
   /**
    * Sync all nodes to node_versions table.
    * Validation is now handled by NodeGraph abstraction before this method is called.
+   * 
+   * @param isPrivate - Whether the artifact (and its nodes) should be private
    */
   private async syncNodes(
     artifactId: string,
     authorId: string,
     nodes: CreateArtifactNode[],
+    isPrivate: boolean,
   ): Promise<ServiceResult<void>> {
     const nodeVersionService = new NodeVersionService(this.ctx);
 
@@ -454,6 +374,7 @@ export class ArtifactService {
       message: n.message,
       tag: n.tag,
       isListed: n.isListed,
+      isPrivate,  // Pass artifact's privacy setting to node versions
       sourceArtifactId: artifactId,
       refs: n.refs as SyncNodeVersionInput['refs'],
     }));
@@ -474,6 +395,54 @@ export class ArtifactService {
     }
 
     return { success: true, data: undefined };
+  }
+
+  /**
+   * Update permission for original nodes in an artifact version.
+   * Only affects nodes where sourceArtifactId matches the given artifactId.
+   * 
+   * Uses one-way relaxation: only private->public is allowed without forking.
+   * 
+   * @param artifactId - The artifact ID to match sourceArtifactId
+   * @param commitHash - The artifact version commit hash
+   * @param isPrivate - Target privacy state (only false is meaningful here)
+   * @param authorId - Author ID for ACL operations
+   */
+  private async updateOriginalNodesPermission(
+    artifactId: string,
+    commitHash: string,
+    isPrivate: boolean,
+    authorId: string,
+  ): Promise<void> {
+    const nodeVersionService = new NodeVersionService(this.ctx);
+
+    // Get all node versions in this artifact version
+    const versionNodes = await this.ctx.select({
+        nodeCommit: artifactVersionNodes.nodeCommit,
+      })
+      .from(artifactVersionNodes)
+      .where(eq(artifactVersionNodes.commitHash, commitHash));
+
+    // For each node, check if it's an original node and update permission
+    for (const vn of versionNodes) {
+      const [nv] = await this.ctx.select({
+          sourceArtifactId: nodeVersions.sourceArtifactId,
+        })
+        .from(nodeVersions)
+        .where(eq(nodeVersions.commit, vn.nodeCommit))
+        .limit(1);
+
+      // Only update original nodes (created by this artifact)
+      if (nv && nv.sourceArtifactId === artifactId) {
+        // Use updatePermission which handles one-way relaxation
+        await nodeVersionService.updatePermission(
+          vn.nodeCommit,
+          isPrivate,
+          authorId,
+          artifactId,
+        );
+      }
+    }
   }
 
   /**
@@ -804,9 +773,9 @@ export class ArtifactService {
     const { commit, parentDepth = 1, childDepth = 1 } = params;
 
     try {
-      // 检查 artifact 是否存在，同时获取 currentVersionId
+      // 检查 artifact 是否存在，同时获取 latestVersion
       const [artifactRecord] = await this.ctx
-        .select({ id: artifacts.id, currentVersionId: artifacts.currentVersionId })
+        .select({ id: artifacts.id, latestVersion: artifacts.latestVersion })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
         .limit(1);
@@ -837,11 +806,11 @@ export class ArtifactService {
           };
         }
         versionCommitHash = matchedVersion.commitHash;
-      } else if (artifactRecord.currentVersionId) {
+      } else if (artifactRecord.latestVersion) {
         const [currentVersion] = await this.ctx
           .select({ commitHash: artifactVersions.commitHash })
           .from(artifactVersions)
-          .where(eq(artifactVersions.id, artifactRecord.currentVersionId))
+          .where(eq(artifactVersions.id, artifactRecord.latestVersion))
           .limit(1);
         versionCommitHash = currentVersion?.commitHash ?? null;
       }
@@ -916,20 +885,20 @@ export class ArtifactService {
     // 获取 artifact 详细信息
     const results = await this.fetchArtifactLineageDetails(parentArtifactIds);
 
-    // 递归获取更深层的父代（使用 currentVersionId 解析 commitHash）
+    // 递归获取更深层的父代（使用 latestVersion 解析 commitHash）
     if (maxDepth > 1) {
       for (const parentId of parentArtifactIds) {
         if (visited.has(parentId)) continue;
         const [parentArtifact] = await this.ctx
-          .select({ currentVersionId: artifacts.currentVersionId })
+          .select({ latestVersion: artifacts.latestVersion })
           .from(artifacts)
           .where(eq(artifacts.id, parentId))
           .limit(1);
-        if (parentArtifact?.currentVersionId) {
+        if (parentArtifact?.latestVersion) {
           const [parentVersion] = await this.ctx
             .select({ commitHash: artifactVersions.commitHash })
             .from(artifactVersions)
-            .where(eq(artifactVersions.id, parentArtifact.currentVersionId))
+            .where(eq(artifactVersions.id, parentArtifact.latestVersion))
             .limit(1);
           if (parentVersion) {
             const ancestors = await this.getLineageParents(parentId, parentVersion.commitHash, maxDepth - 1, visited);
@@ -973,20 +942,20 @@ export class ArtifactService {
 
     const results = await this.fetchArtifactLineageDetails(childArtifactIds);
 
-    // 递归获取更深层的子代（使用 currentVersionId 解析 commitHash）
+    // 递归获取更深层的子代（使用 latestVersion 解析 commitHash）
     if (maxDepth > 1) {
       for (const childId of childArtifactIds) {
         if (visited.has(childId)) continue;
         const [childArtifact] = await this.ctx
-          .select({ currentVersionId: artifacts.currentVersionId })
+          .select({ latestVersion: artifacts.latestVersion })
           .from(artifacts)
           .where(eq(artifacts.id, childId))
           .limit(1);
-        if (childArtifact?.currentVersionId) {
+        if (childArtifact?.latestVersion) {
           const [childVersion] = await this.ctx
             .select({ commitHash: artifactVersions.commitHash })
             .from(artifactVersions)
-            .where(eq(artifactVersions.id, childArtifact.currentVersionId))
+            .where(eq(artifactVersions.id, childArtifact.latestVersion))
             .limit(1);
           if (childVersion) {
             const descendants = await this.getLineageChildren(childId, childVersion.commitHash, maxDepth - 1, visited);
@@ -1039,34 +1008,333 @@ export class ArtifactService {
     }));
   }
 
+  // ============================================================================
+  // updateArtifactMetadata - Metadata-only updates (no graph changes)
+  // ============================================================================
+
   /**
-   * 更新 commitTags：设置指定 commit 上的标签列表（替换语义）
-   * 如果某个 tag 已存在于同 artifact 的其他版本上，先从那个版本移除（override 语义）
+   * Update artifact metadata without creating a new version (unless privacy changes).
+   * 
+   * Privacy change behavior:
+   * - private → public: Direct ACL update (one-way relaxation rule)
+   * - public → private: Fork all nodes as private, create new version with auto-generated changelog
+   *                     Also cascades privacy to all related articles
    */
-  async updateCommitTags(
+  async updateArtifactMetadata(
+    input: UpdateArtifactMetadataInput
+  ): Promise<ServiceResult<UpdateArtifactMetadataResponse>> {
+    const { artifactId, authorId, data } = input;
+
+    try {
+      // Step 1: Verify artifact exists and user has permission
+      const [existingArtifact] = await this.ctx
+        .select({
+          id: artifacts.id,
+          authorId: artifacts.authorId,
+          latestVersion: artifacts.latestVersion,
+          name: artifacts.name,
+        })
+        .from(artifacts)
+        .where(eq(artifacts.id, artifactId))
+        .limit(1);
+
+      if (!existingArtifact) {
+        return { success: false, error: { code: 'NOT_FOUND', message: 'Artifact not found' } };
+      }
+
+      if (existingArtifact.authorId !== authorId) {
+        return { success: false, error: { code: 'FORBIDDEN', message: 'You do not have permission to update this artifact' } };
+      }
+
+      // Step 2: Prepare update fields
+      const updateFields: Record<string, unknown> = {
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (data.name !== undefined) {
+        updateFields.name = data.name;
+      }
+      if (data.description !== undefined) {
+        updateFields.description = data.description;
+      }
+      if (data.thumbnailUrl !== undefined) {
+        updateFields.thumbnailUrl = data.thumbnailUrl;
+      }
+      if (data.license !== undefined) {
+        updateFields.license = data.license;
+      }
+
+      // Step 3: Update discovery control (isListed)
+      const artifactRef = { type: 'artifact' as const, id: artifactId };
+      if (data.isListed !== undefined) {
+        const currentDiscovery = await this.discoveryService.get(artifactRef);
+        if (currentDiscovery && currentDiscovery.isListed !== data.isListed) {
+          this.discoveryService.setListed(artifactRef, data.isListed);
+        }
+      }
+
+      // Step 4: Handle privacy changes
+      let versionCreated = false;
+      let newCommit: string | undefined;
+
+      if (data.isPrivate !== undefined) {
+        const currentIsPublic = await this.aclService.isPublic(artifactRef);
+        const currentIsPrivate = !currentIsPublic;
+        const newIsPrivate = data.isPrivate;
+
+        if (newIsPrivate !== currentIsPrivate) {
+          if (newIsPrivate) {
+            // public → private: Fork nodes and create new version
+            const forkResult = await this.forkToPrivateVersion(
+              artifactId,
+              authorId,
+              existingArtifact.latestVersion
+            );
+            if (!forkResult.success) return forkResult;
+            
+            versionCreated = true;
+            newCommit = forkResult.data.commit;
+            updateFields.latestVersion = forkResult.data.versionId;
+
+            // Cascade privacy to related articles
+            await this.cascadePrivacyToArticles(artifactId);
+          } else {
+            // private → public: Direct ACL update (one-way relaxation)
+            this.aclService.setPublic(artifactRef, authorId);
+            
+            // Update original node versions' ACL to public
+            if (existingArtifact.latestVersion) {
+              const [latestVersionRecord] = await this.ctx
+                .select({ commitHash: artifactVersions.commitHash })
+                .from(artifactVersions)
+                .where(eq(artifactVersions.id, existingArtifact.latestVersion))
+                .limit(1);
+              if (latestVersionRecord) {
+                await this.updateOriginalNodesPermission(
+                  artifactId,
+                  latestVersionRecord.commitHash,
+                  false,
+                  authorId
+                );
+              }
+            }
+          }
+        }
+      }
+
+      // Step 5: Update tags if provided
+      if (data.tags !== undefined) {
+        const tagService = new TagService(this.ctx);
+        // Use syncTags which handles diff computation and maintains usage counts
+        await tagService.syncTags(artifactId, data.tags);
+      }
+
+      // Step 6: Apply artifact record updates
+      if (Object.keys(updateFields).length > 1) { // More than just updatedAt
+        this.ctx.modify(db =>
+          db.update(artifacts).set(updateFields).where(eq(artifacts.id, artifactId))
+        );
+      }
+
+      return {
+        success: true,
+        data: {
+          versionCreated,
+          commit: newCommit,
+        },
+      };
+    } catch (error) {
+      console.error('Update artifact metadata error:', error);
+      return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
+    }
+  }
+
+  /**
+   * Fork all nodes in the latest version to private versions and create a new artifact version.
+   * Used when changing artifact privacy from public to private.
+   */
+  private async forkToPrivateVersion(
     artifactId: string,
     authorId: string,
-    commitHash: string,
-    commitTags: string[],
+    latestVersionId: string | null
+  ): Promise<ServiceResult<{ commit: string; versionId: string }>> {
+    if (!latestVersionId) {
+      return { success: false, error: { code: 'BAD_REQUEST', message: 'No existing version to fork' } };
+    }
+
+    // Get the latest version's commit hash
+    const [latestVersion] = await this.ctx
+      .select({ commitHash: artifactVersions.commitHash })
+      .from(artifactVersions)
+      .where(eq(artifactVersions.id, latestVersionId))
+      .limit(1);
+
+    if (!latestVersion) {
+      return { success: false, error: { code: 'NOT_FOUND', message: 'Latest version not found' } };
+    }
+
+    // Get all nodes and edges in the latest version
+    const versionNodes = await this.ctx
+      .select({
+        nodeId: artifactVersionNodes.nodeId,
+        nodeCommit: artifactVersionNodes.nodeCommit,
+        positionX: artifactVersionNodes.positionX,
+        positionY: artifactVersionNodes.positionY,
+      })
+      .from(artifactVersionNodes)
+      .where(eq(artifactVersionNodes.commitHash, latestVersion.commitHash));
+
+    const versionEdges = await this.ctx
+      .select({
+        sourceNodeId: artifactVersionEdges.sourceNodeId,
+        targetNodeId: artifactVersionEdges.targetNodeId,
+        sourceHandle: artifactVersionEdges.sourceHandle,
+        targetHandle: artifactVersionEdges.targetHandle,
+      })
+      .from(artifactVersionEdges)
+      .where(eq(artifactVersionEdges.commitHash, latestVersion.commitHash));
+
+    // Fork each node to a private version
+    const nodeVersionService = new NodeVersionService(this.ctx);
+    // Use a minimal type that has only the fields needed for commit computation and graph storage
+    const forkedNodes: Array<{
+      nodeId: string;
+      commit: string;
+      position?: { x: number; y: number };
+    }> = [];
+
+    for (const vn of versionNodes) {
+      // Fork the node as private
+      const forkResult = await nodeVersionService.forkAsPrivate(
+        vn.nodeCommit,
+        authorId,
+        artifactId
+      );
+
+      if (!forkResult.success) {
+        return { success: false, error: forkResult.error };
+      }
+
+      forkedNodes.push({
+        nodeId: vn.nodeId,
+        commit: forkResult.data.commit,
+        position: vn.positionX !== null && vn.positionY !== null
+          ? { x: vn.positionX, y: vn.positionY }
+          : undefined,
+      });
+    }
+
+    // Compute new commit hash (only needs nodeId and commit)
+    const edges: ArtifactEdgeDescriptor[] = versionEdges.map(e => ({
+      source: e.sourceNodeId,
+      target: e.targetNodeId,
+      sourceHandle: e.sourceHandle ?? undefined,
+      targetHandle: e.targetHandle ?? undefined,
+    }));
+
+    const newCommit = await computeArtifactCommit(
+      artifactId,
+      latestVersion.commitHash,
+      forkedNodes.map(n => ({ nodeId: n.nodeId, commit: n.commit })),
+      edges.map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null })),
+    );
+
+    // Create new version record
+    const newVersionId = crypto.randomUUID();
+    const newVersion: NewArtifactVersion = {
+      id: newVersionId,
+      artifactId,
+      version: null,
+      commitHash: newCommit,
+      changelog: 'Visibility changed from public to private',
+      publishedAt: new Date().toISOString(),
+      entrypoint: null,
+    };
+    this.ctx.modify(db => db.insert(artifactVersions).values(newVersion));
+
+    // Store graph structure (nodes and edges)
+    for (const node of forkedNodes) {
+      const versionNode: NewArtifactVersionNode = {
+        commitHash: newCommit,
+        nodeId: node.nodeId,
+        nodeCommit: node.commit,
+        positionX: node.position?.x ?? null,
+        positionY: node.position?.y ?? null,
+      };
+      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode));
+    }
+
+    for (const edge of edges) {
+      const versionEdge: NewArtifactVersionEdge = {
+        commitHash: newCommit,
+        sourceNodeId: edge.source,
+        targetNodeId: edge.target,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+      };
+      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge));
+    }
+
+    // Update artifact's ACL to private
+    const artifactRef = { type: 'artifact' as const, id: artifactId };
+    this.aclService.setPrivate(artifactRef);
+
+    return {
+      success: true,
+      data: { commit: newCommit, versionId: newVersionId },
+    };
+  }
+
+  /**
+   * Cascade privacy change to all articles associated with an artifact.
+   * When an artifact becomes private, all its articles should also become private.
+   */
+  private async cascadePrivacyToArticles(artifactId: string): Promise<void> {
+    // Get all articles associated with this artifact
+    const relatedArticles = await this.ctx
+      .select({ id: articles.id })
+      .from(articles)
+      .where(eq(articles.artifactId, artifactId));
+
+    // Update each article's ACL to private
+    for (const article of relatedArticles) {
+      const articleRef = { type: 'article' as const, id: article.id };
+      this.aclService.setPrivate(articleRef);
+    }
+  }
+
+  // ============================================================================
+  // updateVersionMetadata - Update metadata for a specific version
+  // ============================================================================
+
+  /**
+   * Update metadata for a specific artifact version.
+   * Replaces the old updateCommitTags method with more complete functionality.
+   */
+  async updateVersionMetadata(
+    input: UpdateVersionMetadataInput
   ): Promise<ServiceResult<{ version: ArtifactVersion }>> {
+    const { artifactId, authorId, commitHash, data } = input;
+
     try {
-      // 检查 artifact 存在且用户有权限
-      const existingArtifact = await this.ctx
+      // Verify artifact exists and user has permission
+      const [existingArtifact] = await this.ctx
         .select({ id: artifacts.id, authorId: artifacts.authorId })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
         .limit(1);
 
-      if (existingArtifact.length === 0) {
+      if (!existingArtifact) {
         return { success: false, error: { code: 'NOT_FOUND', message: 'Artifact not found' } };
       }
 
-      if (existingArtifact[0].authorId !== authorId) {
+      if (existingArtifact.authorId !== authorId) {
         return { success: false, error: { code: 'FORBIDDEN', message: 'You do not have permission to update this artifact' } };
       }
 
-      // 查找目标版本
-      const [targetVersion] = await this.ctx.select()
+      // Find the target version
+      const [targetVersion] = await this.ctx
+        .select()
         .from(artifactVersions)
         .where(and(
           eq(artifactVersions.artifactId, artifactId),
@@ -1078,37 +1346,72 @@ export class ArtifactService {
         return { success: false, error: { code: 'NOT_FOUND', message: `Version with commit ${commitHash} not found` } };
       }
 
-      // 先删除该版本上已有的所有 tag
-      this.ctx.modify(db =>
-        db.delete(artifactCommitTags).where(
-          eq(artifactCommitTags.commitHash, targetVersion.commitHash)
-        )
-      );
+      // Prepare update fields
+      const updateFields: Record<string, unknown> = {};
 
-      // 如果设置了新 tags，先清除同 artifact 中使用相同 tag 的旧关联
-      if (commitTags.length > 0) {
-        const existingTags = await this.ctx.select({ id: artifactCommitTags.id })
+      if (data.version !== undefined) {
+        updateFields.version = data.version;
+      }
+      if (data.changelog !== undefined) {
+        updateFields.changelog = data.changelog;
+      }
+      if (data.entrypoint !== undefined) {
+        updateFields.entrypoint = data.entrypoint;
+      }
+
+      // Update version record if any fields changed
+      if (Object.keys(updateFields).length > 0) {
+        this.ctx.modify(db =>
+          db.update(artifactVersions)
+            .set(updateFields)
+            .where(eq(artifactVersions.id, targetVersion.id))
+        );
+      }
+
+      // Handle commit tags (replace semantics)
+      let finalCommitTags: string[] = [];
+      if (data.commitTags !== undefined) {
+        // Delete all existing tags for this version
+        this.ctx.modify(db =>
+          db.delete(artifactCommitTags).where(
+            eq(artifactCommitTags.commitHash, targetVersion.commitHash)
+          )
+        );
+
+        // If new tags provided, clear same-named tags from other versions and create new associations
+        if (data.commitTags.length > 0) {
+          const existingTags = await this.ctx
+            .select({ id: artifactCommitTags.id })
+            .from(artifactCommitTags)
+            .where(and(
+              eq(artifactCommitTags.artifactId, artifactId),
+              inArray(artifactCommitTags.tag, data.commitTags),
+            ));
+
+          for (const ct of existingTags) {
+            this.ctx.modify(db =>
+              db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
+            );
+          }
+
+          for (const tag of data.commitTags) {
+            this.ctx.modify(db =>
+              db.insert(artifactCommitTags).values({
+                artifactId,
+                commitHash: targetVersion.commitHash,
+                tag,
+              })
+            );
+          }
+          finalCommitTags = data.commitTags;
+        }
+      } else {
+        // If commitTags not provided, fetch existing tags
+        const existingCommitTags = await this.ctx
+          .select({ tag: artifactCommitTags.tag })
           .from(artifactCommitTags)
-          .where(and(
-            eq(artifactCommitTags.artifactId, artifactId),
-            inArray(artifactCommitTags.tag, commitTags),
-          ));
-        for (const ct of existingTags) {
-          this.ctx.modify(db =>
-            db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
-          );
-        }
-
-        // 创建新的 tag 关联
-        for (const tag of commitTags) {
-          this.ctx.modify(db =>
-            db.insert(artifactCommitTags).values({
-              artifactId,
-              commitHash: targetVersion.commitHash,
-              tag,
-            })
-          );
-        }
+          .where(eq(artifactCommitTags.commitHash, targetVersion.commitHash));
+        finalCommitTags = existingCommitTags.map(ct => ct.tag);
       }
 
       return {
@@ -1116,17 +1419,17 @@ export class ArtifactService {
         data: {
           version: {
             id: targetVersion.id,
-            version: targetVersion.version ?? '',
+            version: data.version ?? targetVersion.version ?? '',
             commitHash: targetVersion.commitHash,
-            commitTags: commitTags,
-            changelog: targetVersion.changelog,
+            commitTags: finalCommitTags,
+            changelog: data.changelog ?? targetVersion.changelog,
             publishedAt: targetVersion.publishedAt,
             createdAt: targetVersion.createdAt,
           },
         },
       };
     } catch (error) {
-      console.error('Update commit tags error:', error);
+      console.error('Update version metadata error:', error);
       return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
     }
   }
@@ -1174,36 +1477,36 @@ export class ArtifactService {
   }
 
   /**
-   * 基于已有 commit 和增量补丁创建新版本（PATCH 语义）
+   * Apply incremental patch to create a new artifact version (PATCH semantics).
    * 
-   * 两种模式：
-   * 1. 有 graph 变更（addNodes/removeNodeIds/addEdges/removeEdges）+ commit：
-   *    合并 graph，校验 commit hash，创建新 artifact version
-   * 2. 仅 metadata 变更（无 graph 变更，无 commit）：
-   *    直接更新 baseCommit 版本的 metadata（version, changelog, commitTags, entrypoint 等）
-   *    和 artifact 的基本信息（name, description, visibility 等），不创建新版本
+   * This method ONLY handles graph changes (add/remove nodes/edges).
+   * Metadata updates (name, description, isListed, isPrivate, tags) should be done
+   * through updateArtifactMetadata().
+   * 
+   * The version metadata (version, changelog, commitTags, entrypoint) is associated
+   * with the new version being created.
    */
   async patchArtifact(input: PatchArtifactInput): Promise<ServiceResult<PatchArtifactResult>> {
     const { authorId, metadata } = input;
     const artifactId = metadata.artifactId;
 
     try {
-      // 检查 artifact 存在且用户有权限
-      const existingArtifact = await this.ctx
-        .select({ id: artifacts.id, authorId: artifacts.authorId, currentVersionId: artifacts.currentVersionId })
+      // Step 1: Verify artifact exists and user has permission
+      const [existingArtifact] = await this.ctx
+        .select({ id: artifacts.id, authorId: artifacts.authorId, latestVersion: artifacts.latestVersion, name: artifacts.name })
         .from(artifacts)
         .where(eq(artifacts.id, artifactId))
         .limit(1);
 
-      if (existingArtifact.length === 0) {
+      if (!existingArtifact) {
         return { success: false, error: { code: 'NOT_FOUND', message: 'Artifact not found' } };
       }
 
-      if (existingArtifact[0].authorId !== authorId) {
+      if (existingArtifact.authorId !== authorId) {
         return { success: false, error: { code: 'FORBIDDEN', message: 'You do not have permission to update this artifact' } };
       }
 
-      // 获取 baseCommit 对应的版本
+      // Step 2: Validate baseCommit exists
       const [baseVersion] = await this.ctx
         .select()
         .from(artifactVersions)
@@ -1217,44 +1520,23 @@ export class ArtifactService {
         return { success: false, error: { code: 'NOT_FOUND', message: `Base version with commit ${metadata.baseCommit} not found` } };
       }
 
-      // 判断是否为 metadata-only 更新（无 graph 变更且无 commit）
-      const hasGraphChanges = (metadata.addNodes && metadata.addNodes.length > 0)
-        || (metadata.removeNodeIds && metadata.removeNodeIds.length > 0)
-        || (metadata.addEdges && metadata.addEdges.length > 0)
-        || (metadata.removeEdges && metadata.removeEdges.length > 0);
-
-      if (!hasGraphChanges && !metadata.commit) {
-        // metadata-only 更新：使用 NodeGraph 验证 entrypoint
-        if (metadata.entrypoint !== undefined) {
-          const graphResult = await NodeGraph.fromCommitHash(this.ctx, baseVersion.commitHash);
-          if (!graphResult.success) return graphResult;
-          const entrypointResult = graphResult.data.validateEntrypoint(metadata.entrypoint);
-          if (!entrypointResult.success) return entrypointResult;
-        }
-        return await this.patchArtifactMetadataOnly(artifactId, authorId, baseVersion, metadata);
-      }
-
-      // 有 graph 变更时，commit 是必须的
-      if (!metadata.commit) {
-        return { success: false, error: { code: 'BAD_REQUEST', message: 'commit is required when graph changes are provided' } };
-      }
-
+      // Step 3: commit is required
       const commit = metadata.commit;
 
-      // 确定 parentCommit：当前最新版本的 commitHash（保持链状结构）
+      // Step 4: Determine parentCommit (current latest version's commitHash)
       let parentCommit: string | null = null;
-      if (existingArtifact[0].currentVersionId) {
+      if (existingArtifact.latestVersion) {
         const [currentVersion] = await this.ctx
           .select({ commitHash: artifactVersions.commitHash })
           .from(artifactVersions)
-          .where(eq(artifactVersions.id, existingArtifact[0].currentVersionId))
+          .where(eq(artifactVersions.id, existingArtifact.latestVersion))
           .limit(1);
         if (currentVersion) {
           parentCommit = currentVersion.commitHash;
         }
       }
 
-      // 使用 NodeGraph.fromPatch 构建合并后的图
+      // Step 5: Build merged graph using NodeGraph.fromPatch
       const graphResult = await NodeGraph.fromPatch(this.ctx, baseVersion.commitHash, {
         addNodes: metadata.addNodes,
         removeNodeIds: metadata.removeNodeIds,
@@ -1264,15 +1546,15 @@ export class ArtifactService {
       if (!graphResult.success) return graphResult;
       const graph = graphResult.data;
 
-      // 验证合并后的图
+      // Step 6: Validate merged graph
       const validationResult = graph.validate(metadata.entrypoint);
       if (!validationResult.success) return validationResult;
 
-      // 获取合并后的节点和边
+      // Step 7: Get merged nodes and edges
       const mergedNodes = [...graph.nodes];
       const mergedEdges = [...graph.edges];
 
-      // 校验 commit hash
+      // Step 8: Verify commit hash
       const expectedCommit = await ArtifactService.computeCommitHash(
         artifactId, parentCommit, mergedNodes, mergedEdges
       );
@@ -1286,137 +1568,67 @@ export class ArtifactService {
         };
       }
 
-      // 获取当前 artifact 名称用作 fallback
-      const currentArtifact = (await this.ctx.select({ name: artifacts.name }).from(artifacts).where(eq(artifacts.id, artifactId)).limit(1))[0];
-      const currentName = currentArtifact?.name ?? '';
+      // Step 9: Get current privacy setting (graph changes don't modify privacy)
+      const artifactRef = { type: 'artifact' as const, id: artifactId };
+      const currentIsPublic = await this.aclService.isPublic(artifactRef);
+      const currentIsPrivate = !currentIsPublic;
 
-      // 获取当前发现控制作为 fallback
-      const currentDiscoveryControl = await this.ctx
-        .select({ isListed: resourceDiscoveryControl.isListed })
-        .from(resourceDiscoveryControl)
-        .where(
-          and(
-            eq(resourceDiscoveryControl.resourceType, 'artifact'),
-            eq(resourceDiscoveryControl.resourceId, artifactId)
-          )
-        )
+      // Step 10: Get current isListed setting (graph changes don't modify discovery)
+      const currentDiscoveryRecord = await this.discoveryService.get(artifactRef);
+      const currentIsListed = currentDiscoveryRecord?.isListed ?? true;
+
+      // Step 11: Sync nodes (preserving current privacy setting)
+      const nodeResult = await this.syncNodes(artifactId, authorId, mergedNodes, currentIsPrivate);
+      if (!nodeResult.success) return nodeResult;
+
+      // Step 12: Check for duplicate commit hash
+      const existingVersion = await this.ctx
+        .select({ id: artifactVersions.id })
+        .from(artifactVersions)
+        .where(and(
+          eq(artifactVersions.artifactId, artifactId),
+          eq(artifactVersions.commitHash, commit)
+        ))
         .limit(1);
-      const currentIsListed = currentDiscoveryControl[0]?.isListed ?? true;
 
-      // 委托给 createArtifact 完成实际的版本创建（复用所有验证逻辑）
-      // SAVE nodes should be included in mergedNodes if needed
-      const createResult = await this.createArtifact({
-        authorId,
-        metadata: {
-          artifactId,
-          commit: commit,
-          parentCommit: parentCommit ?? undefined,
-          name: metadata.name ?? currentName,
-          description: metadata.description,
-          isListed: metadata.isListed ?? currentIsListed,
-          version: metadata.version,
-          changelog: metadata.changelog,
-          commitTags: metadata.commitTags,
-          entrypoint: metadata.entrypoint,
-        },
-        nodes: mergedNodes,
-        edges: mergedEdges,
+      if (existingVersion.length > 0) {
+        return {
+          success: false,
+          error: { code: 'CONFLICT', message: `Version with commit ${commit} already exists for this artifact` },
+        };
+      }
+
+      // Step 13: Create new version record
+      const versionId = crypto.randomUUID();
+      this.createVersionRecord(artifactId, versionId, {
+        artifactId,
+        commit,
+        name: existingArtifact.name,  // Keep existing name
+        isListed: currentIsListed,
+        isPrivate: currentIsPrivate,  // Preserve current privacy setting
+        version: metadata.version,
+        changelog: metadata.changelog,
+        commitTags: metadata.commitTags,
+        entrypoint: metadata.entrypoint,
       });
-      if (!createResult.success) return createResult;
-      return { success: true, data: { ...createResult.data, versionCreated: true } };
-    } catch (error) {
-      console.error('Patch artifact error:', error);
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
-    }
-  }
 
-  /**
-   * Metadata-only 更新：直接更新 baseVersion 的元数据和 artifact 基本信息，不创建新版本
-   * Note: Entrypoint validation is handled by caller using NodeGraph before calling this method.
-   */
-  private async patchArtifactMetadataOnly(
-    artifactId: string,
-    authorId: string,
-    baseVersion: DbArtifactVersion,
-    metadata: PatchArtifactInput['metadata'],
-  ): Promise<ServiceResult<PatchArtifactResult>> {
-    try {
-      // 更新 artifact 基本信息（仅更新提供了的字段）
-      const artifactUpdate: Record<string, unknown> = {
-        updatedAt: new Date().toISOString(),
-      };
-      if (metadata.name !== undefined) artifactUpdate.name = metadata.name;
-      if (metadata.description !== undefined) artifactUpdate.description = metadata.description;
-
+      // Step 14: Update artifact's latestVersion
       this.ctx.modify(db =>
-        db.update(artifacts).set(artifactUpdate).where(eq(artifacts.id, artifactId))
+        db.update(artifacts).set({
+          latestVersion: versionId,
+          updatedAt: new Date().toISOString(),
+        }).where(eq(artifacts.id, artifactId))
       );
 
-      // 更新发现控制（如果提供了）
-      if (metadata.isListed !== undefined) {
-        this.ctx.modify(db =>
-          db.update(resourceDiscoveryControl).set({ isListed: metadata.isListed }).where(
-            and(
-              eq(resourceDiscoveryControl.resourceType, 'artifact'),
-              eq(resourceDiscoveryControl.resourceId, artifactId)
-            )
-          )
-        );
-      }
+      // Step 15: Store graph structure
+      this.storeGraphStructure(commit, mergedNodes, mergedEdges);
 
-      // 更新版本元数据（仅更新提供了的字段）
-      // Entrypoint validation is done before calling this method using NodeGraph
-      const versionUpdate: Record<string, unknown> = {};
-      if (metadata.version !== undefined) versionUpdate.version = metadata.version;
-      if (metadata.changelog !== undefined) versionUpdate.changelog = metadata.changelog;
-      if (metadata.entrypoint !== undefined) {
-        versionUpdate.entrypoint = metadata.entrypoint;
-      }
+      // Step 16: Process commit tags
+      await this.processCommitTags(artifactId, commit, metadata.commitTags ?? []);
 
-      if (Object.keys(versionUpdate).length > 0) {
-        this.ctx.modify(db =>
-          db.update(artifactVersions).set(versionUpdate).where(eq(artifactVersions.id, baseVersion.id))
-        );
-      }
-
-      // 处理 commitTags
-      if (metadata.commitTags !== undefined) {
-        // 先删除该版本上已有的所有 tag
-        this.ctx.modify(db =>
-          db.delete(artifactCommitTags).where(
-            eq(artifactCommitTags.commitHash, baseVersion.commitHash)
-          )
-        );
-
-        if (metadata.commitTags.length > 0) {
-          // 清除同 artifact 中使用相同 tag 的旧关联
-          const existingTags = await this.ctx.select({ id: artifactCommitTags.id })
-            .from(artifactCommitTags)
-            .where(and(
-              eq(artifactCommitTags.artifactId, artifactId),
-              inArray(artifactCommitTags.tag, metadata.commitTags),
-            ));
-          for (const ct of existingTags) {
-            this.ctx.modify(db =>
-              db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
-            );
-          }
-
-          // 创建新的 tag 关联
-          for (const tag of metadata.commitTags) {
-            this.ctx.modify(db =>
-              db.insert(artifactCommitTags).values({
-                artifactId,
-                commitHash: baseVersion.commitHash,
-                tag,
-              })
-            );
-          }
-        }
-      }
-
-      // 获取更新后的信息用于返回
-      const authorResult = await this.ctx.select({
+      // Step 17: Build response
+      const author = await this.ctx
+        .select({
           id: user.id,
           username: user.username,
           displayName: user.displayName,
@@ -1426,51 +1638,50 @@ export class ArtifactService {
         .where(eq(user.id, authorId))
         .limit(1);
 
-      const updatedArtifact = await this.ctx.select()
-        .from(artifacts)
-        .where(eq(artifacts.id, artifactId))
-        .limit(1);
+      const authorInfo = author[0] ?? { id: authorId, username: 'unknown', displayName: null, avatarUrl: null };
 
-      // 获取发现控制
-      const discoveryControlResult = await this.ctx.select({ isListed: resourceDiscoveryControl.isListed })
-        .from(resourceDiscoveryControl)
-        .where(
-          and(
-            eq(resourceDiscoveryControl.resourceType, 'artifact'),
-            eq(resourceDiscoveryControl.resourceId, artifactId)
-          )
-        )
-        .limit(1);
-
-      // 获取 tags
-      const tagResults = await this.ctx.select({
-          tag: {
-            slug: tags.slug,
-            name: tags.name,
-            description: tags.description,
-            color: tags.color,
-          },
-        })
-        .from(artifactTags)
-        .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
+      // Get existing tags for the artifact
+      const existingTags = await this.ctx
+        .select({ slug: tags.slug, name: tags.name })
+        .from(tags)
+        .innerJoin(artifactTags, eq(tags.slug, artifactTags.tagSlug))
         .where(eq(artifactTags.artifactId, artifactId));
+
+      const existingStats = await this.ctx
+        .select()
+        .from(artifactStats)
+        .where(eq(artifactStats.artifactId, artifactId))
+        .limit(1);
+
+      const stats = existingStats[0] ?? { viewCount: 0, favCount: 0, refCount: 0, downloadCount: 0 };
 
       const artifact: ArtifactListItem = {
         id: artifactId,
-        name: updatedArtifact[0].name,
-        description: updatedArtifact[0].description,
-        isListed: discoveryControlResult[0]?.isListed ?? true,
-        thumbnailUrl: updatedArtifact[0].thumbnailUrl,
-        license: updatedArtifact[0].license,
-        createdAt: updatedArtifact[0].createdAt,
-        updatedAt: updatedArtifact[0].updatedAt,
-        author: authorResult[0],
-        tags: tagResults.map(r => r.tag),
+        name: existingArtifact.name,
+        author: {
+          id: authorInfo.id,
+          username: authorInfo.username,
+          displayName: authorInfo.displayName,
+          avatarUrl: authorInfo.avatarUrl,
+        },
+        tags: existingTags.map(t => ({ slug: t.slug, name: t.name })),
+        stats: {
+          viewCount: stats.viewCount,
+          favCount: stats.favCount,
+          refCount: stats.refCount,
+          downloadCount: stats.downloadCount,
+        },
+        isListed: currentIsListed,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
 
-      return { success: true, data: { artifact, versionCreated: false } };
+      return {
+        success: true,
+        data: { artifact, versionCreated: true },
+      };
     } catch (error) {
-      console.error('Patch artifact metadata-only error:', error);
+      console.error('Patch artifact error:', error);
       return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
     }
   }
@@ -1867,7 +2078,7 @@ export type PatchArtifactInput = {
 
 // 谱系查询参数
 export interface GetLineageParams {
-  commit?: string;      // 指定版本的 commit hash，不传则使用 currentVersionId
+  commit?: string;      // 指定版本的 commit hash，不传则使用 latestVersion
   parentDepth?: number; // 向上追溯父代的深度，undefined 表示无限递归
   childDepth?: number;  // 向下追溯子代的深度，undefined 表示无限递归
 }

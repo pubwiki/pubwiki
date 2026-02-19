@@ -5,13 +5,13 @@ import { artifactVersions } from '../schema/artifacts';
 import { nodeVersions } from '../schema/node-versions';
 import { user } from '../schema/auth';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
-import { resourceAcl, PUBLIC_USER_ID } from '../schema/acl';
 import type { ServiceResult } from './user';
 import type {
   ArticleDetail,
   ReaderContent,
   Pagination,
 } from '@pubwiki/api';
+import { AclService, DiscoveryService } from './access-control';
 
 // 重新导出类型
 export type { ArticleDetail };
@@ -51,7 +51,13 @@ export interface ListArticlesByArtifactResult {
 }
 
 export class ArticleService {
-  constructor(private ctx: BatchContext) {}
+  private readonly aclService: AclService;
+  private readonly discoveryService: DiscoveryService;
+
+  constructor(private ctx: BatchContext) {
+    this.aclService = new AclService(ctx);
+    this.discoveryService = new DiscoveryService(ctx);
+  }
 
   // 获取作者信息
   private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
@@ -233,22 +239,15 @@ export class ArticleService {
             .where(eq(articles.id, articleId))
         );
 
-        // 更新发现控制（使用 upsert 模式）
-        this.ctx.modify(db =>
-          db.insert(resourceDiscoveryControl)
-            .values({
-              resourceType: 'article',
-              resourceId: articleId,
-              isListed,
-            })
-            .onConflictDoUpdate({
-              target: [resourceDiscoveryControl.resourceType, resourceDiscoveryControl.resourceId],
-              set: {
-                isListed,
-                updatedAt: sql`(datetime('now'))`,
-              },
-            })
-        );
+        // Update discovery control using DiscoveryService
+        // Note: DiscoveryService.setListed only does update, need to ensure record exists
+        const articleRef = { type: 'article' as const, id: articleId };
+        const existingDiscovery = await this.discoveryService.get(articleRef);
+        if (existingDiscovery) {
+          this.discoveryService.setListed(articleRef, isListed);
+        } else {
+          this.discoveryService.create(articleRef, isListed);
+        }
       } else {
         // 创建模式
         this.ctx.modify(db =>
@@ -262,40 +261,15 @@ export class ArticleService {
           })
         );
 
-        // 创建发现控制记录
-        this.ctx.modify(db =>
-          db.insert(resourceDiscoveryControl).values({
-            resourceType: 'article',
-            resourceId: articleId,
-            isListed,
-          })
-        );
+        // Create discovery control using DiscoveryService
+        const articleRef = { type: 'article' as const, id: articleId };
+        this.discoveryService.create(articleRef, isListed);
 
-        // 创建 owner ACL（manage + write + read）
-        this.ctx.modify(db =>
-          db.insert(resourceAcl).values({
-            resourceType: 'article',
-            resourceId: articleId,
-            userId: authorId,
-            canRead: true,
-            canWrite: true,
-            canManage: true,
-            grantedBy: authorId,
-          })
-        );
+        // Create owner ACL using AclService
+        this.aclService.grantOwner(articleRef, authorId);
 
-        // 默认创建公开读取 ACL
-        this.ctx.modify(db =>
-          db.insert(resourceAcl).values({
-            resourceType: 'article',
-            resourceId: articleId,
-            userId: PUBLIC_USER_ID,
-            canRead: true,
-            canWrite: false,
-            canManage: false,
-            grantedBy: authorId,
-          })
-        );
+        // Create public read ACL (articles are public by default)
+        this.aclService.setPublic(articleRef, authorId);
       }
 
       // Return articleId - caller should commit and then call getArticle

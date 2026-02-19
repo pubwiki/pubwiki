@@ -75,20 +75,20 @@ export class SaveService {
 
     try {
       // Validate stateNodeId + stateNodeCommit exists and is a STATE type node
-      const [stateNode] = await this.ctx.select({ type: nodeVersions.type })
-        .from(nodeVersions)
-        .where(
-          and(
-            eq(nodeVersions.nodeId, stateNodeId),
-            eq(nodeVersions.commit, stateNodeCommit)
-          )
-        )
-        .limit(1);
-
-      if (!stateNode) {
+      // Use NodeVersionService to check version existence and type
+      const stateNodeResult = await this.nodeVersionService.getVersion(stateNodeCommit);
+      if (!stateNodeResult.success) {
         return {
           success: false,
           error: { code: 'BAD_REQUEST', message: `STATE node not found: ${stateNodeId}@${stateNodeCommit}` },
+        };
+      }
+
+      const stateNode = stateNodeResult.data;
+      if (stateNode.nodeId !== stateNodeId) {
+        return {
+          success: false,
+          error: { code: 'BAD_REQUEST', message: `STATE node commit ${stateNodeCommit} does not belong to node ${stateNodeId}` },
         };
       }
 

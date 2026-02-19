@@ -106,7 +106,8 @@ export type GetProjectPageResponse = operations['getProjectPage']['responses']['
 export type GetArtifactHomepageResponse = operations['getArtifactHomepage']['responses']['200']['content']['text/html'];
 export type CreateArtifactResponse = operations['createArtifact']['responses']['201']['content']['application/json'];
 export type PatchArtifactResponse = operations['patchArtifact']['responses']['200']['content']['application/json'];
-export type UpdateCommitTagResponse = operations['updateCommitTags']['responses']['200']['content']['application/json'];
+export type UpdateArtifactMetadataResponse = operations['updateArtifactMetadata']['responses']['200']['content']['application/json'];
+export type UpdateVersionMetadataResponse = operations['updateVersionMetadata']['responses']['200']['content']['application/json'];
 export type GetUserArtifactsResponse = operations['getUserArtifacts']['responses']['200']['content']['application/json'];
 export type GetUserProjectsResponse = operations['getUserProjects']['responses']['200']['content']['application/json'];
 export type CreateProjectResponse = operations['createProject']['responses']['201']['content']['application/json'];
@@ -148,7 +149,8 @@ export type GetNodeVersionChildrenResponse = operations['getNodeVersionChildren'
 export type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
 export type CreateArtifactNode = components['schemas']['CreateArtifactNode'];
 export type PatchArtifactRequest = components['schemas']['PatchArtifactRequest'];
-export type UpdateCommitTagsRequest = components['schemas']['UpdateCommitTagsRequest'];
+export type UpdateArtifactMetadataRequest = components['schemas']['UpdateArtifactMetadataRequest'];
+export type UpdateVersionMetadataRequest = components['schemas']['UpdateVersionMetadataRequest'];
 export type MarkVersionWeakRequest = components['schemas']['MarkVersionWeakRequest'];
 
 // 查询参数类型

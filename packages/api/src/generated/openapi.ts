@@ -102,13 +102,15 @@ export interface paths {
         get: operations["listArtifacts"];
         put?: never;
         /**
-         * 创建或更新 Artifact（包含完整的 Node Version 数据）
-         * @description 一步发布：提交完整的 node version 数据 + artifact 元数据，服务端内部同步 node versions 并创建 artifact version。
+         * 创建新 Artifact（包含完整的 Node Version 数据）
+         * @description 创建新 artifact（纯 insert 语义）。提交完整的 node version 数据 + artifact 元数据。
          *
-         *     **创建/更新模式：** 通过 metadata.artifactId 判断：
+         *     **创建模式：** 通过 metadata.artifactId 判断：
          *     - 该 ID 不存在于数据库中：创建新 artifact
-         *     - 该 ID 存在且 owner 是当前用户：追加新版本（append-only）
-         *     - 该 ID 存在但 owner 不是当前用户：返回 403 Forbidden
+         *     - 该 ID 已存在：返回 409 Conflict
+         *
+         *     如需更新已有 artifact 的 graph，使用 PATCH /artifacts
+         *     如需更新已有 artifact 的 metadata，使用 PUT /artifacts/{id}/metadata
          *
          *     使用 multipart/form-data 格式：
          *     - metadata: JSON 格式的 artifact 基本信息
@@ -129,12 +131,8 @@ export interface paths {
          * @description 增量更新：客户端提交 baseCommit 和变更内容（新增/删除 nodes/edges），
          *     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
          *
-         *     适用于只修改了部分节点的场景，避免重新提交所有节点数据。
-         *     注意：新增的节点需要包含完整的 node version 数据。
-         *
-         *     如果没有 graph 变更且不传 commit，则为 metadata-only 更新：
-         *     直接修改 baseCommit 版本的元数据（version, changelog, commitTags, entrypoint 等），
-         *     不创建新版本。
+         *     此接口仅用于 graph 变更，不支持 metadata 修改。
+         *     如需修改 artifact metadata，请使用 PUT /artifacts/{id}/metadata
          */
         patch: operations["patchArtifact"];
         trace?: never;
@@ -205,7 +203,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/artifacts/{artifactId}/commit-tag": {
+    "/artifacts/{artifactId}/metadata": {
         parameters: {
             query?: never;
             header?: never;
@@ -214,12 +212,37 @@ export interface paths {
         };
         get?: never;
         /**
-         * 设置 commit 上的标签列表
-         * @description 设置指定 commit 上的 commitTags 列表（替换语义）。
-         *     如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除（override 语义）。
-         *     传空数组可清除该 commit 上的所有标签。
+         * 修改 Artifact 的 metadata
+         * @description 修改 artifact 的 metadata（不涉及 graph 结构变更）。
+         *
+         *     **权限变更说明：**
+         *     - private → public：直接更新 ACL（单向宽松），不创建新版本
+         *     - public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回
+         *       - 同时会将所有关联的 article 也设为私有
+         *       - 自动生成 changelog: "Visibility changed from public to private"
          */
-        put: operations["updateCommitTags"];
+        put: operations["updateArtifactMetadata"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/artifacts/{artifactId}/versions/{commitHash}/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 修改特定版本的 metadata
+         * @description 修改指定 commit 的版本 metadata（version, changelog, commitTags, entrypoint）。
+         *     此 API 替代原有的 updateCommitTags API，提供更完整的版本 metadata 修改能力。
+         */
+        put: operations["updateVersionMetadata"];
         post?: never;
         delete?: never;
         options?: never;
@@ -831,11 +854,17 @@ export interface components {
              * @default true
              */
             isListed: boolean;
+            /**
+             * @description 是否为私有 artifact：
+             *     - true: 仅 owner 和被授权用户可访问
+             *     - false: 所有人可访问（公开）
+             *     注意：私有 artifact 仍可设置 isListed=true（预告模式：列出但需授权访问）
+             * @default false
+             */
+            isPrivate: boolean;
             /** Format: uri */
             thumbnailUrl?: string;
             license?: string;
-            /** Format: uri */
-            repositoryUrl?: string;
             /** @description Semver 版本号 */
             version?: string;
             changelog?: string;
@@ -1736,12 +1765,9 @@ export interface components {
             description?: string | null;
         };
         /**
-         * @description 基于已有的 commit 和增量补丁创建新的 artifact 版本。
+         * @description 基于已有的 commit 和增量补丁创建新的 artifact 版本（仅 graph 变更）。
          *     客户端提交 baseCommit（基准版本）和需要变更的 nodes/edges，
          *     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
-         *
-         *     如果没有 graph 变更（addNodes/removeNodeIds/addEdges/removeEdges 全部为空或不传），
-         *     且不传 commit，则为 metadata-only 更新：直接修改 baseCommit 版本的元数据，不创建新版本。
          */
         PatchArtifactRequest: {
             /**
@@ -1756,18 +1782,7 @@ export interface components {
              *     计算方式与 POST /artifacts 一致：hash(artifactId, parentCommit, nodes, edges)
              *     其中 parentCommit 为基准版本（即 baseCommit）的 commit hash。
              */
-            commit?: string;
-            name?: string;
-            description?: string;
-            /** @description 是否在公开列表中可见（可发现性） */
-            isListed?: boolean;
-            /** @description Semver 版本号 */
-            version?: string;
-            changelog?: string;
-            /** @description 可选版本标签列表 */
-            commitTags?: string[];
-            /** @description 可选入口点 */
-            entrypoint?: components["schemas"]["ArtifactEntrypoint"];
+            commit: string;
             /** @description 新增或更新的节点（nodeId 已存在则更新该节点的 commit，否则新增） */
             addNodes?: components["schemas"]["CreateArtifactNode"][];
             /** @description 需要移除的节点 ID 列表 */
@@ -1776,16 +1791,53 @@ export interface components {
             addEdges?: components["schemas"]["ArtifactEdgeDescriptor"][];
             /** @description 需要移除的边（通过 source + target 匹配） */
             removeEdges?: components["schemas"]["ArtifactEdgeDescriptor"][];
+            /** @description Semver 版本号 */
+            version?: string;
+            changelog?: string;
+            /** @description 可选版本标签列表 */
+            commitTags?: string[];
+            /** @description 可选入口点 */
+            entrypoint?: components["schemas"]["ArtifactEntrypoint"];
         };
-        /** @description 设置指定 commit 上的标签列表（替换语义） */
-        UpdateCommitTagsRequest: {
-            /** @description 目标 commit hash */
-            commitHash: string;
+        /**
+         * @description 修改 artifact 的 metadata（不涉及 graph 结构变更）。
+         *     权限变更说明：
+         *     - private → public：直接更新 ACL（单向宽松）
+         *     - public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回
+         */
+        UpdateArtifactMetadataRequest: {
+            name?: string;
+            description?: string;
+            /** Format: uri */
+            thumbnailUrl?: string;
+            license?: string;
+            /** @description 是否在公开列表中可见（可发现性） */
+            isListed?: boolean;
             /**
-             * @description 要设置的标签列表。传空数组表示清除该 commit 上的所有标签。
-             *     如果某个 tag 已被同 artifact 的其他 commit 使用，则自动从旧 commit 上移除。
+             * @description 是否为私有 artifact。
+             *     - private → public：直接更新 ACL（单向宽松）
+             *     - public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回
              */
-            commitTags: string[];
+            isPrivate?: boolean;
+            /** @description Tag slugs 数组 */
+            tags?: string[];
+        };
+        UpdateArtifactMetadataResponse: {
+            /** @description 新版本的 commit hash（仅在权限变更导致新版本时返回） */
+            commit?: string;
+            /** @description 是否创建了新版本 */
+            versionCreated: boolean;
+        };
+        /** @description 修改特定版本的 metadata */
+        UpdateVersionMetadataRequest: {
+            /** @description 版本号（如 1.0.0） */
+            version?: string;
+            /** @description 该版本的更新日志 */
+            changelog?: string;
+            /** @description 版本标签（如 latest, stable） */
+            commitTags?: string[];
+            /** @description 入口点配置 */
+            entrypoint?: components["schemas"]["ArtifactEntrypoint"];
         };
         /**
          * @description 将一个 artifact 版本标记为 weak（不可逆操作）。
@@ -2086,19 +2138,6 @@ export interface operations {
             };
         };
         responses: {
-            /** @description 更新成功（当 metadata.artifactId 存在时） */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @example Artifact updated successfully */
-                        message: string;
-                        artifact: components["schemas"]["ArtifactListItem"];
-                    };
-                };
-            };
             /** @description 创建成功 */
             201: {
                 headers: {
@@ -2130,8 +2169,8 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 无权限更新该 artifact（不是 owner） */
-            403: {
+            /** @description 引用的 node version 不存在（nodeId + commit 未在 node_versions 中找到） */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2139,8 +2178,8 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description 引用的 node version 不存在（nodeId + commit 未在 node_versions 中找到） */
-            404: {
+            /** @description Artifact ID 已存在（Conflict） */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2182,8 +2221,6 @@ export interface operations {
                         /** @example Artifact patched successfully */
                         message: string;
                         artifact: components["schemas"]["ArtifactListItem"];
-                        /** @description 是否创建了新版本（false 表示仅更新了 metadata） */
-                        versionCreated: boolean;
                     };
                 };
             };
@@ -2398,7 +2435,7 @@ export interface operations {
             };
         };
     };
-    updateCommitTags: {
+    updateArtifactMetadata: {
         parameters: {
             query?: never;
             header?: never;
@@ -2410,18 +2447,83 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateCommitTagsRequest"];
+                "application/json": components["schemas"]["UpdateArtifactMetadataRequest"];
             };
         };
         responses: {
-            /** @description commitTags 更新成功 */
+            /** @description Metadata 更新成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateArtifactMetadataResponse"];
+                };
+            };
+            /** @description 请求参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Artifact 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    updateVersionMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact ID */
+                artifactId: string;
+                /** @description 版本的 commit hash */
+                commitHash: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateVersionMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description 版本 metadata 更新成功 */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": {
-                        /** @example Commit tag updated successfully */
+                        /** @example Version metadata updated successfully */
                         message: string;
                         version: components["schemas"]["ArtifactVersion"];
                     };
@@ -2454,7 +2556,7 @@ export interface operations {
                     "application/json": components["schemas"]["ApiError"];
                 };
             };
-            /** @description Artifact 或 commit 不存在 */
+            /** @description Artifact 或版本不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;

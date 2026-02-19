@@ -6,6 +6,7 @@ import type { NodeType } from '../schema/enums';
 import type { ServiceResult } from './user';
 import type { ArtifactNodeContent, ContentBlock, NodeVersionSummary as ApiNodeVersionSummary } from '@pubwiki/api';
 import { computeNodeCommit } from '@pubwiki/api';
+import { AclService } from './access-control';
 
 // ========================================================================
 // Extended types (API types + internal fields)
@@ -38,6 +39,12 @@ export interface SyncNodeVersionInput {
   message?: string;
   tag?: string;
   isListed?: boolean;
+  /** 
+   * Whether this node version should be private.
+   * If true, only owner and authorized users can access.
+   * If false or undefined, the node version is public.
+   */
+  isPrivate?: boolean;
   sourceArtifactId: string;  // 创建该版本的 artifact ID
   // For GENERATED nodes: lineage refs
   refs?: Array<{
@@ -91,12 +98,14 @@ function getContentTable(type: NodeType) {
 // ========================================================================
 // NodeVersionService
 // ========================================================================
-// FIXME: ACL is not applied by NodeVersionService. 
-// This service should contain all node relavant operations
-// direct access to node_versions table is not permitted without
-// using this service 
+// All node-related operations should be performed through this service.
+// Direct access to node_versions table is not permitted without using this service.
 export class NodeVersionService {
-  constructor(private ctx: BatchContext) {}
+  private readonly aclService: AclService;
+
+  constructor(private ctx: BatchContext) {
+    this.aclService = new AclService(ctx);
+  }
 
   // ──────────────────────────────────────────
   // Query operations
@@ -413,6 +422,16 @@ export class NodeVersionService {
               .onConflictDoNothing()
           );
 
+          // Create ACL for node version
+          // Node ACL is based on commit hash (the version identifier)
+          const nodeRef = { type: 'node' as const, id: input.commit };
+          this.aclService.grantOwner(nodeRef, input.authorId);
+          
+          // Set public access if not private
+          if (!input.isPrivate) {
+            this.aclService.setPublic(nodeRef, input.authorId);
+          }
+
           // Collect lineage refs insert (idempotent)
           if (input.refs && input.refs.length > 0) {
             const refValues: NewNodeVersionRef[] = input.refs.map(ref => ({
@@ -693,6 +712,193 @@ export class NodeVersionService {
         .set({ refCount: sql`${table.refCount} - 1` })
         .where(eq(table.contentHash, contentHash))
     );
+  }
+
+  /**
+   * Fork a node version as private.
+   * 
+   * Creates a new node version with the same content but private ACL.
+   * Used when changing artifact privacy from public to private.
+   * The new version's commit is computed based on the new parent relationship.
+   * 
+   * @param sourceCommit - The commit hash of the version to fork
+   * @param authorId - Author ID for the new version
+   * @param sourceArtifactId - The artifact that owns this fork
+   * @returns The new commit hash
+   */
+  async forkAsPrivate(
+    sourceCommit: string,
+    authorId: string,
+    sourceArtifactId: string,
+  ): Promise<ServiceResult<{ commit: string }>> {
+    try {
+      // Get the source version
+      const [sourceVersion] = await this.ctx.select()
+        .from(nodeVersions)
+        .where(eq(nodeVersions.commit, sourceCommit))
+        .limit(1);
+
+      if (!sourceVersion) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: `Node version ${sourceCommit} not found` },
+        };
+      }
+
+      // Compute new commit hash (with sourceCommit as parent)
+      const newCommit = await computeNodeCommit(
+        sourceVersion.nodeId,
+        sourceCommit,  // The forked version's parent is the source
+        sourceVersion.contentHash,
+        sourceVersion.type,
+      );
+
+      // Check if this commit already exists
+      const [existing] = await this.ctx.select({ commit: nodeVersions.commit })
+        .from(nodeVersions)
+        .where(eq(nodeVersions.commit, newCommit))
+        .limit(1);
+
+      if (existing) {
+        // Already exists, return the existing commit
+        return { success: true, data: { commit: newCommit } };
+      }
+
+      // Compute derivativeOf (skip-list pointer)
+      // Since we're forking from a different artifact context, use sourceCommit
+      const derivativeOf = sourceVersion.sourceArtifactId !== sourceArtifactId
+        ? sourceCommit
+        : sourceVersion.derivativeOf;
+
+      // Create new node version record
+      const newVersion: NewNodeVersion = {
+        nodeId: sourceVersion.nodeId,
+        commit: newCommit,
+        parent: sourceCommit,
+        authorId,
+        authoredAt: new Date().toISOString(),
+        type: sourceVersion.type,
+        name: sourceVersion.name,
+        contentHash: sourceVersion.contentHash,
+        sourceArtifactId,
+        derivativeOf,
+        message: 'Forked to private',
+        tag: null,
+      };
+
+      this.ctx.modify(db =>
+        db.insert(nodeVersions)
+          .values(newVersion)
+          .onConflictDoNothing()
+      );
+
+      // Increment content refCount (same content, new reference)
+      this.incrementContentRefCount(sourceVersion.type, sourceVersion.contentHash);
+
+      // Create ACL for the new node version (private)
+      const nodeRef = { type: 'node' as const, id: newCommit };
+      this.aclService.grantOwner(nodeRef, authorId);
+      // Don't set public access - this is a private fork
+
+      // Copy lineage refs if any
+      const sourceRefs = await this.ctx.select()
+        .from(nodeVersionRefs)
+        .where(eq(nodeVersionRefs.sourceCommit, sourceCommit));
+
+      if (sourceRefs.length > 0) {
+        const refValues: NewNodeVersionRef[] = sourceRefs.map(ref => ({
+          sourceCommit: newCommit,
+          targetCommit: ref.targetCommit,
+          refType: ref.refType,
+        }));
+        this.ctx.modify(db =>
+          db.insert(nodeVersionRefs)
+            .values(refValues)
+            .onConflictDoNothing()
+        );
+      }
+
+      return { success: true, data: { commit: newCommit } };
+    } catch (error) {
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: `Failed to fork node version: ${error}` },
+      };
+    }
+  }
+
+  /**
+   * Increment content refCount when a new node version references it.
+   */
+  private incrementContentRefCount(type: NodeType, contentHash: string): void {
+    const table = getContentTable(type);
+    this.ctx.modify(db =>
+      db.update(table)
+        .set({ refCount: sql`${table.refCount} + 1` })
+        .where(eq(table.contentHash, contentHash))
+    );
+  }
+
+  /**
+   * Update permission for a node version (one-way relaxation).
+   * 
+   * Node version permissions follow one-way relaxation rule:
+   * - private -> public: allowed, directly update ACL
+   * - public -> private: NOT allowed on existing commit, must create new version
+   * 
+   * This method only handles the private -> public case.
+   * For public -> private, caller should create a new node version with the desired privacy.
+   * 
+   * @param commit - The node version commit hash
+   * @param isPrivate - Target privacy state (only false is meaningful)
+   * @param authorId - Author ID for ACL operations
+   * @param sourceArtifactId - The artifact that owns this node (for validation)
+   */
+  async updatePermission(
+    commit: string,
+    isPrivate: boolean,
+    authorId: string,
+    sourceArtifactId: string,
+  ): Promise<ServiceResult<void>> {
+    // Get the node version to verify ownership
+    const [version] = await this.ctx.select({
+        sourceArtifactId: nodeVersions.sourceArtifactId,
+      })
+      .from(nodeVersions)
+      .where(eq(nodeVersions.commit, commit))
+      .limit(1);
+
+    if (!version) {
+      return { success: false, error: { code: 'NOT_FOUND', message: `Node version ${commit} not found` } };
+    }
+
+    // Only allow updating original nodes (created by this artifact)
+    if (version.sourceArtifactId !== sourceArtifactId) {
+      return { success: false, error: { code: 'FORBIDDEN', message: 'Cannot update permission of referenced node' } };
+    }
+
+    const nodeRef = { type: 'node' as const, id: commit };
+
+    if (isPrivate) {
+      // public -> private: not allowed via this method
+      // Caller should create a new node version instead
+      const currentIsPublic = await this.aclService.isPublic(nodeRef);
+      if (currentIsPublic) {
+        return {
+          success: false,
+          error: {
+            code: 'BAD_REQUEST',
+            message: 'Cannot change node version from public to private. Create a new version instead.',
+          },
+        };
+      }
+      // Already private, no-op
+    } else {
+      // private -> public: allowed (one-way relaxation)
+      this.aclService.setPublic(nodeRef, authorId);
+    }
+
+    return { success: true, data: undefined };
   }
 
 }
