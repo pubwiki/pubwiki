@@ -702,7 +702,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/versions/{commit}": {
+    "/nodes/commits/{commit}": {
         parameters: {
             query?: never;
             header?: never;
@@ -723,7 +723,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/versions/{commit}/children": {
+    "/nodes/commits/{commit}/children": {
         parameters: {
             query?: never;
             header?: never;
@@ -744,7 +744,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/versions/{commit}/archive": {
+    "/nodes/commits/{commit}/archive": {
         parameters: {
             query?: never;
             header?: never;

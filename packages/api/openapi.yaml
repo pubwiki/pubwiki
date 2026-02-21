@@ -278,11 +278,11 @@ paths:
   # Node Versions (Version Control First-Class Citizen)
   /nodes/{nodeId}/versions:
     $ref: './openapi/paths/nodes.yaml#/~1nodes~1{nodeId}~1versions'
-  /versions/{commit}:
-    $ref: './openapi/paths/nodes.yaml#/~1versions~1{commit}'
-  /versions/{commit}/children:
-    $ref: './openapi/paths/nodes.yaml#/~1versions~1{commit}~1children'
-  /versions/{commit}/archive:
-    $ref: './openapi/paths/nodes.yaml#/~1versions~1{commit}~1archive'
+  /nodes/commits/{commit}:
+    $ref: './openapi/paths/nodes.yaml#/~1nodes~1commits~1{commit}'
+  /nodes/commits/{commit}/children:
+    $ref: './openapi/paths/nodes.yaml#/~1nodes~1commits~1{commit}~1children'
+  /nodes/commits/{commit}/archive:
+    $ref: './openapi/paths/nodes.yaml#/~1nodes~1commits~1{commit}~1archive'
 
 

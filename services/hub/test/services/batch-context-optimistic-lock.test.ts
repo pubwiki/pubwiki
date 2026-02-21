@@ -27,10 +27,8 @@ describe('BatchContext optimistic lock', () => {
       const ctx = new BatchContext(db);
       
       // Insert with expectAffected=1, should succeed
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'test-tag', name: 'Test Tag' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag should not exist' }
-      );
+      ctx.modify({ expectAffected: 1, lockMsg: 'Tag should not exist' })
+        .insert(tags).values({ slug: 'test-tag', name: 'Test Tag' }).onConflictDoNothing();
 
       // Should not throw
       await expect(ctx.commit()).resolves.toBeUndefined();
@@ -44,10 +42,8 @@ describe('BatchContext optimistic lock', () => {
       
       // Try to insert same tag with expectAffected=1
       // This should conflict and return changes=0
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'existing-tag', name: 'Duplicate Tag' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag already exists' }
-      );
+      ctx.modify({ expectAffected: 1, lockMsg: 'Tag already exists' })
+        .insert(tags).values({ slug: 'existing-tag', name: 'Duplicate Tag' }).onConflictDoNothing();
 
       // Should throw OptimisticLockError
       await expect(ctx.commit()).rejects.toThrow(OptimisticLockError);
@@ -59,10 +55,8 @@ describe('BatchContext optimistic lock', () => {
       const ctx = new BatchContext(db);
       const errorMessage = 'Custom error: Tag my-tag already exists';
       
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'my-tag', name: 'Another Tag' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: errorMessage }
-      );
+      ctx.modify({ expectAffected: 1, lockMsg: errorMessage })
+        .insert(tags).values({ slug: 'my-tag', name: 'Another Tag' }).onConflictDoNothing();
 
       try {
         await ctx.commit();
@@ -77,13 +71,11 @@ describe('BatchContext optimistic lock', () => {
       const ctx = new BatchContext(db);
       
       // First operation: no optimistic lock
-      ctx.modify(d => d.insert(tags).values({ slug: 'tag-1', name: 'Tag 1' }));
+      ctx.modify().insert(tags).values({ slug: 'tag-1', name: 'Tag 1' });
       
       // Second operation: with optimistic lock
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'tag-2', name: 'Tag 2' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag 2 should not exist' }
-      );
+      ctx.modify({ expectAffected: 1, lockMsg: 'Tag 2 should not exist' })
+        .insert(tags).values({ slug: 'tag-2', name: 'Tag 2' }).onConflictDoNothing();
 
       // Should succeed since both operations work
       await expect(ctx.commit()).resolves.toBeUndefined();
@@ -100,13 +92,11 @@ describe('BatchContext optimistic lock', () => {
       const ctx = new BatchContext(db);
       
       // First operation succeeds
-      ctx.modify(d => d.insert(tags).values({ slug: 'tag-1', name: 'Tag 1' }));
+      ctx.modify().insert(tags).values({ slug: 'tag-1', name: 'Tag 1' });
       
       // Second operation fails due to conflict
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'tag-2', name: 'New Tag 2' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag 2 already exists' }
-      );
+      ctx.modify({ expectAffected: 1, lockMsg: 'Tag 2 already exists' })
+        .insert(tags).values({ slug: 'tag-2', name: 'New Tag 2' }).onConflictDoNothing();
 
       // Should throw
       await expect(ctx.commit()).rejects.toThrow(OptimisticLockError);
@@ -120,18 +110,14 @@ describe('BatchContext optimistic lock', () => {
     it('should detect duplicate insert attempts', async () => {
       // First create: should succeed
       const ctx1 = new BatchContext(db);
-      ctx1.modify(
-        d => d.insert(tags).values({ slug: 'unique-tag', name: 'Unique Tag' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag unique-tag already exists' }
-      );
+      ctx1.modify({ expectAffected: 1, lockMsg: 'Tag unique-tag already exists' })
+        .insert(tags).values({ slug: 'unique-tag', name: 'Unique Tag' }).onConflictDoNothing();
       await ctx1.commit();
 
       // Second create with same slug: should fail
       const ctx2 = new BatchContext(db);
-      ctx2.modify(
-        d => d.insert(tags).values({ slug: 'unique-tag', name: 'Duplicate Tag' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag unique-tag already exists' }
-      );
+      ctx2.modify({ expectAffected: 1, lockMsg: 'Tag unique-tag already exists' })
+        .insert(tags).values({ slug: 'unique-tag', name: 'Duplicate Tag' }).onConflictDoNothing();
       
       await expect(ctx2.commit()).rejects.toThrow(OptimisticLockError);
     });
@@ -139,18 +125,12 @@ describe('BatchContext optimistic lock', () => {
     it('should allow multiple successful creates with different keys', async () => {
       const ctx = new BatchContext(db);
       
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'tag-a', name: 'Tag A' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag A already exists' }
-      );
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'tag-b', name: 'Tag B' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag B already exists' }
-      );
-      ctx.modify(
-        d => d.insert(tags).values({ slug: 'tag-c', name: 'Tag C' }).onConflictDoNothing(),
-        { expectAffected: 1, lockMsg: 'Tag C already exists' }
-      );
+      ctx.modify({ expectAffected: 1, lockMsg: 'Tag A already exists' })
+        .insert(tags).values({ slug: 'tag-a', name: 'Tag A' }).onConflictDoNothing();
+      ctx.modify({ expectAffected: 1, lockMsg: 'Tag B already exists' })
+        .insert(tags).values({ slug: 'tag-b', name: 'Tag B' }).onConflictDoNothing();
+      ctx.modify({ expectAffected: 1, lockMsg: 'Tag C already exists' })
+        .insert(tags).values({ slug: 'tag-c', name: 'Tag C' }).onConflictDoNothing();
 
       await expect(ctx.commit()).resolves.toBeUndefined();
 

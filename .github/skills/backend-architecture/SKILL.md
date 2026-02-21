@@ -166,4 +166,10 @@ export const resourceAcl = sqliteTable(
 
 我们使用`*`来代表所有用户的集合，以此来实现公开与私有语义。
 
+| Concern | Mechanism | Purpose |
+|---------|-----------|---------|
+| **Access Control** | ACL (`resource_acl`) | Can user read/write this specific resource? |
+| **Discoverability** | Discovery (`resource_discovery_control`) | Should this resource appear in lists/searches? |
+
+**Important**: Listing operations are controlled by `isListed`, NOT by ACL. A user might have ACL permission to read a resource (if they know its ID), but the resource may still be unlisted (not appearing in search results).
 

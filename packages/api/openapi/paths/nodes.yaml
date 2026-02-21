@@ -60,7 +60,7 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
-/versions/{commit}:
+/nodes/commits/{commit}:
   get:
     operationId: getNodeVersion
     summary: Get a specific version detail
@@ -97,7 +97,7 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
-/versions/{commit}/children:
+/nodes/commits/{commit}/children:
   get:
     operationId: getNodeVersionChildren
     summary: Get child versions
@@ -142,7 +142,7 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
-/versions/{commit}/archive:
+/nodes/commits/{commit}/archive:
   get:
     operationId: getNodeVersionArchive
     summary: 下载节点版本的 VFS 归档文件
