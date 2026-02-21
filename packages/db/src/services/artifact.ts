@@ -242,10 +242,8 @@ export class ArtifactService {
       thumbnailUrl: metadata.thumbnailUrl ?? null,
       license: metadata.license ?? null,
     };
-    this.ctx.modify(
-      db => db.insert(artifacts).values(newArtifact).onConflictDoNothing(),
-      { expectAffected: 1, lockMsg: `Artifact ${artifactId} already exists` }
-    );
+    this.ctx.modify({ expectAffected: 1, lockMsg: `Artifact ${artifactId} already exists` })
+      .insert(artifacts).values(newArtifact).onConflictDoNothing();
 
     // Create discovery control record using DiscoveryService
     const isListed = metadata.isListed ?? true;
@@ -284,10 +282,8 @@ export class ArtifactService {
       publishedAt: new Date().toISOString(),
       entrypoint: metadata.entrypoint ?? null,
     };
-    this.ctx.modify(
-      db => db.insert(artifactVersions).values(newVersion).onConflictDoNothing(),
-      { expectAffected: 1, lockMsg: `Version with commit ${metadata.commit} already exists` }
-    );
+    this.ctx.modify({ expectAffected: 1, lockMsg: `Version with commit ${metadata.commit} already exists` })
+      .insert(artifactVersions).values(newVersion).onConflictDoNothing();
   }
 
   /**
@@ -309,16 +305,12 @@ export class ArtifactService {
       ));
 
     for (const ct of existingCommitTags) {
-      this.ctx.modify(db =>
-        db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
-      );
+      this.ctx.modify().delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id));
     }
 
     // Create new commit tag associations
     for (const tag of commitTags) {
-      this.ctx.modify(db =>
-        db.insert(artifactCommitTags).values({ artifactId, commitHash, tag })
-      );
+      this.ctx.modify().insert(artifactCommitTags).values({ artifactId, commitHash, tag });
     }
   }
 
@@ -438,7 +430,7 @@ export class ArtifactService {
         positionX: node.position?.x ?? null,
         positionY: node.position?.y ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode).onConflictDoNothing());
+      this.ctx.modify().insert(artifactVersionNodes).values(versionNode).onConflictDoNothing();
     }
 
     // Store edges
@@ -450,7 +442,7 @@ export class ArtifactService {
         sourceHandle: edge.sourceHandle ?? null,
         targetHandle: edge.targetHandle ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge).onConflictDoNothing());
+      this.ctx.modify().insert(artifactVersionEdges).values(versionEdge).onConflictDoNothing();
     }
   }
 
@@ -458,13 +450,13 @@ export class ArtifactService {
    * Step 9: Create stats record (only for new artifacts)
    */
   private createStatsRecord(artifactId: string): void {
-    this.ctx.modify(db => db.insert(artifactStats).values({
+    this.ctx.modify().insert(artifactStats).values({
       artifactId,
       viewCount: 0,
       favCount: 0,
       refCount: 0,
       downloadCount: 0,
-    }).onConflictDoNothing());
+    }).onConflictDoNothing();
   }
 
   /**
@@ -1097,9 +1089,7 @@ export class ArtifactService {
 
       // Step 6: Apply artifact record updates
       if (Object.keys(updateFields).length > 1) { // More than just updatedAt
-        this.ctx.modify(db =>
-          db.update(artifacts).set(updateFields).where(eq(artifacts.id, artifactId))
-        );
+        this.ctx.modify().update(artifacts).set(updateFields).where(eq(artifacts.id, artifactId));
       }
 
       return {
@@ -1221,10 +1211,8 @@ export class ArtifactService {
       publishedAt: new Date().toISOString(),
       entrypoint: null,
     };
-    this.ctx.modify(
-      db => db.insert(artifactVersions).values(newVersion).onConflictDoNothing(),
-      { expectAffected: 1, lockMsg: `Fork version ${newCommit} already exists` }
-    );
+    this.ctx.modify({ expectAffected: 1, lockMsg: `Fork version ${newCommit} already exists` })
+      .insert(artifactVersions).values(newVersion).onConflictDoNothing();
 
     // Store graph structure (nodes and edges)
     for (const node of forkedNodes) {
@@ -1235,7 +1223,7 @@ export class ArtifactService {
         positionX: node.position?.x ?? null,
         positionY: node.position?.y ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode).onConflictDoNothing());
+      this.ctx.modify().insert(artifactVersionNodes).values(versionNode).onConflictDoNothing();
     }
 
     for (const edge of edges) {
@@ -1246,7 +1234,7 @@ export class ArtifactService {
         sourceHandle: edge.sourceHandle ?? null,
         targetHandle: edge.targetHandle ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge).onConflictDoNothing());
+      this.ctx.modify().insert(artifactVersionEdges).values(versionEdge).onConflictDoNothing();
     }
 
     // Update artifact's ACL to private
@@ -1335,21 +1323,17 @@ export class ArtifactService {
 
       // Update version record if any fields changed
       if (Object.keys(updateFields).length > 0) {
-        this.ctx.modify(db =>
-          db.update(artifactVersions)
-            .set(updateFields)
-            .where(eq(artifactVersions.id, targetVersion.id))
-        );
+        this.ctx.modify().update(artifactVersions)
+          .set(updateFields)
+          .where(eq(artifactVersions.id, targetVersion.id));
       }
 
       // Handle commit tags (replace semantics)
       let finalCommitTags: string[] = [];
       if (data.commitTags !== undefined) {
         // Delete all existing tags for this version
-        this.ctx.modify(db =>
-          db.delete(artifactCommitTags).where(
-            eq(artifactCommitTags.commitHash, targetVersion.commitHash)
-          )
+        this.ctx.modify().delete(artifactCommitTags).where(
+          eq(artifactCommitTags.commitHash, targetVersion.commitHash)
         );
 
         // If new tags provided, clear same-named tags from other versions and create new associations
@@ -1363,19 +1347,15 @@ export class ArtifactService {
             ));
 
           for (const ct of existingTags) {
-            this.ctx.modify(db =>
-              db.delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id))
-            );
+            this.ctx.modify().delete(artifactCommitTags).where(eq(artifactCommitTags.id, ct.id));
           }
 
           for (const tag of data.commitTags) {
-            this.ctx.modify(db =>
-              db.insert(artifactCommitTags).values({
-                artifactId,
-                commitHash: targetVersion.commitHash,
-                tag,
-              }).onConflictDoNothing()
-            );
+            this.ctx.modify().insert(artifactCommitTags).values({
+              artifactId,
+              commitHash: targetVersion.commitHash,
+              tag,
+            }).onConflictDoNothing();
           }
           finalCommitTags = data.commitTags;
         }
@@ -1560,12 +1540,10 @@ export class ArtifactService {
       });
 
       // Step 14: Update artifact's latestVersion
-      this.ctx.modify(db =>
-        db.update(artifacts).set({
-          latestVersion: versionId,
-          updatedAt: new Date().toISOString(),
-        }).where(eq(artifacts.id, artifactId))
-      );
+      this.ctx.modify().update(artifacts).set({
+        latestVersion: versionId,
+        updatedAt: new Date().toISOString(),
+      }).where(eq(artifacts.id, artifactId));
 
       // Step 15: Store graph structure
       this.storeGraphStructure(commit, mergedNodes, mergedEdges);
@@ -1968,15 +1946,13 @@ export class ArtifactService {
       for (const article of associatedArticles) {
         // Use internal delete that skips permission check since we already verified manage permission
         const articleRef = { type: 'article' as const, id: article.id };
-        this.ctx.modify(db => db.delete(articles).where(eq(articles.id, article.id)));
+        this.ctx.modify().delete(articles).where(eq(articles.id, article.id));
         this.aclService.deleteAllAcls(articleRef);
         this.discoveryService.delete(articleRef);
       }
 
       // Step 4: Remove project_artifacts associations (not deleting projects)
-      this.ctx.modify(db =>
-        db.delete(projectArtifacts).where(eq(projectArtifacts.artifactId, artifactId))
-      );
+      this.ctx.modify().delete(projectArtifacts).where(eq(projectArtifacts.artifactId, artifactId));
 
       // Step 5: Get all version commits for R2 cleanup
       const versionCommits = await this.ctx
@@ -2002,48 +1978,30 @@ export class ArtifactService {
 
       // Step 7: Delete version graph data (edges and nodes)
       for (const { commitHash } of versionCommits) {
-        this.ctx.modify(db =>
-          db.delete(artifactVersionEdges).where(eq(artifactVersionEdges.commitHash, commitHash))
-        );
-        this.ctx.modify(db =>
-          db.delete(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, commitHash))
-        );
+        this.ctx.modify().delete(artifactVersionEdges).where(eq(artifactVersionEdges.commitHash, commitHash));
+        this.ctx.modify().delete(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, commitHash));
       }
 
       // Step 8: Delete artifact versions
-      this.ctx.modify(db =>
-        db.delete(artifactVersions).where(eq(artifactVersions.artifactId, artifactId))
-      );
+      this.ctx.modify().delete(artifactVersions).where(eq(artifactVersions.artifactId, artifactId));
 
       // Step 9: Delete commit tags
-      this.ctx.modify(db =>
-        db.delete(artifactCommitTags).where(eq(artifactCommitTags.artifactId, artifactId))
-      );
+      this.ctx.modify().delete(artifactCommitTags).where(eq(artifactCommitTags.artifactId, artifactId));
 
       // Step 10: Delete artifact tags
-      this.ctx.modify(db =>
-        db.delete(artifactTags).where(eq(artifactTags.artifactId, artifactId))
-      );
+      this.ctx.modify().delete(artifactTags).where(eq(artifactTags.artifactId, artifactId));
 
       // Step 11: Delete stats
-      this.ctx.modify(db =>
-        db.delete(artifactStats).where(eq(artifactStats.artifactId, artifactId))
-      );
+      this.ctx.modify().delete(artifactStats).where(eq(artifactStats.artifactId, artifactId));
 
       // Step 12: Delete favs
-      this.ctx.modify(db =>
-        db.delete(artifactFavs).where(eq(artifactFavs.artifactId, artifactId))
-      );
+      this.ctx.modify().delete(artifactFavs).where(eq(artifactFavs.artifactId, artifactId));
 
       // Step 13: Delete views
-      this.ctx.modify(db =>
-        db.delete(artifactViews).where(eq(artifactViews.artifactId, artifactId))
-      );
+      this.ctx.modify().delete(artifactViews).where(eq(artifactViews.artifactId, artifactId));
 
       // Step 14: Delete artifact record
-      this.ctx.modify(db =>
-        db.delete(artifacts).where(eq(artifacts.id, artifactId))
-      );
+      this.ctx.modify().delete(artifacts).where(eq(artifacts.id, artifactId));
 
       // Step 15: Delete ACL records
       this.aclService.deleteAllAcls(artifactRef);

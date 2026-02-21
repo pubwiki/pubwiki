@@ -1,4 +1,5 @@
 import type { BatchItem } from 'drizzle-orm/batch';
+import type { Table } from 'drizzle-orm';
 import type { Database } from './client';
 
 /**
@@ -15,6 +16,32 @@ export interface ModifyOptions {
   expectAffected?: number;
   /** Error message when optimistic lock fails */
   lockMsg?: string;
+}
+
+/**
+ * Creates a proxy that wraps the entire chain and updates the operation at each step.
+ * This ensures we capture the final operation regardless of where the chain ends.
+ */
+function createChainProxy<T>(
+  initial: T,
+  onUpdate: (operation: BatchItem<'sqlite'>) => void
+): T {
+  const wrapChain = (obj: unknown): unknown => {
+    // Update operation at each step (assuming current step might be the endpoint)
+    onUpdate(obj as BatchItem<'sqlite'>);
+    
+    return new Proxy(obj as object, {
+      get: (target, prop) => {
+        const value = (target as Record<string | symbol, unknown>)[prop];
+        if (typeof value === 'function') {
+          return (...args: unknown[]) => wrapChain(value.apply(target, args));
+        }
+        return value;
+      }
+    });
+  };
+  
+  return wrapChain(initial) as T;
 }
 
 /**
@@ -83,32 +110,29 @@ export class BatchContext {
   }
 
   /**
-   * Collect write operations (not executed immediately)
+   * Collect write operations using chain API (not executed immediately)
    *
    * @example
    * // Simple insert
-   * ctx.modify(db => db.insert(users).values({...}));
+   * ctx.modify().insert(users).values({...});
    *
    * // Insert with conflict detection (throws OptimisticLockError if already exists)
-   * ctx.modify(
-   *   db => db.insert(artifacts).values({...}).onConflictDoNothing(),
-   *   { expectAffected: 1, lockMsg: 'Artifact already exists' }
-   * );
+   * ctx.modify({ expectAffected: 1, lockMsg: 'Artifact already exists' })
+   *   .insert(artifacts).values({...}).onConflictDoNothing();
    *
    * // Update with optimistic lock
-   * ctx.modify(
-   *   db => db.update(artifacts)
-   *     .set({ currentVersionId: newId })
-   *     .where(and(eq(artifacts.id, id), eq(artifacts.currentVersionId, oldId))),
-   *   { expectAffected: 1, lockMsg: `artifact ${id} was modified` }
-   * );
+   * ctx.modify({ expectAffected: 1, lockMsg: `artifact ${id} was modified` })
+   *   .update(artifacts)
+   *   .set({ currentVersionId: newId })
+   *   .where(and(eq(artifacts.id, id), eq(artifacts.currentVersionId, oldId)));
+   *
+   * // Delete
+   * ctx.modify().delete(users).where(eq(users.id, id));
    */
-  modify(
-    operation: (db: Database) => BatchItem<'sqlite'>,
-    options?: ModifyOptions
-  ): void {
+  modify(options?: ModifyOptions) {
     const index = this.operations.length;
-    this.operations.push(operation(this.db));
+    // Placeholder - will be updated by chain proxy
+    this.operations.push(undefined as unknown as BatchItem<'sqlite'>);
 
     if (options?.expectAffected !== undefined) {
       this.optimisticLocks.push({
@@ -117,17 +141,19 @@ export class BatchContext {
         msg: options.lockMsg ?? 'Concurrent modification detected',
       });
     }
-  }
 
-  /**
-   * Collect multiple write operations (optimistic lock not supported)
-   */
-  modifyMany(
-    operations: ((db: Database) => BatchItem<'sqlite'>)[]
-  ): void {
-    for (const op of operations) {
-      this.operations.push(op(this.db));
-    }
+    const updateOperation = (op: BatchItem<'sqlite'>) => {
+      this.operations[index] = op;
+    };
+
+    return {
+      insert: <T extends Table>(table: T) =>
+        createChainProxy(this.db.insert(table), updateOperation),
+      update: <T extends Table>(table: T) =>
+        createChainProxy(this.db.update(table), updateOperation),
+      delete: <T extends Table>(table: T) =>
+        createChainProxy(this.db.delete(table), updateOperation),
+    };
   }
 
   /**

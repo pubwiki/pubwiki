@@ -402,12 +402,12 @@ export class PostService {
       };
 
       // 收集原子操作
-      this.ctx.modify(db =>
-        db.insert(discussions).values(newDiscussion)
-      );
-      this.ctx.modify(db =>
-        db.insert(projectPosts).values(newPost)
-      );
+      this.ctx.modify()
+        .insert(discussions)
+        .values(newDiscussion);
+      this.ctx.modify()
+        .insert(projectPosts)
+        .values(newPost);
 
       // Return postId - caller should commit and then call getPost
       return { success: true, data: { postId } };
@@ -481,23 +481,21 @@ export class PostService {
       if (data.isPinned !== undefined && canPin) updateData.isPinned = data.isPinned;
 
       // 收集更新 post 操作
-      this.ctx.modify(db =>
-        db.update(projectPosts)
-          .set(updateData)
-          .where(eq(projectPosts.id, postId))
-      );
+      this.ctx.modify()
+        .update(projectPosts)
+        .set(updateData)
+        .where(eq(projectPosts.id, postId));
 
       // 如果更新了标题且有关联 discussion，同时更新 discussion
       if (data.title !== undefined && existingPost.discussionId) {
         const discussionId = existingPost.discussionId;
-        this.ctx.modify(db =>
-          db.update(discussions)
-            .set({ 
-              title: data.title,
-              updatedAt: updateData.updatedAt,
-            })
-            .where(eq(discussions.id, discussionId))
-        );
+        this.ctx.modify()
+          .update(discussions)
+          .set({ 
+            title: data.title,
+            updatedAt: updateData.updatedAt,
+          })
+          .where(eq(discussions.id, discussionId));
       }
 
       // Return postId - caller should commit and then call getPost
@@ -553,20 +551,20 @@ export class PostService {
       if (existingPost.discussionId) {
         const discussionId = existingPost.discussionId;
         // 删除回复、post、discussion
-        this.ctx.modify(db =>
-          db.delete(discussionReplies).where(eq(discussionReplies.discussionId, discussionId))
-        );
-        this.ctx.modify(db =>
-          db.delete(projectPosts).where(eq(projectPosts.id, postId))
-        );
-        this.ctx.modify(db =>
-          db.delete(discussions).where(eq(discussions.id, discussionId))
-        );
+        this.ctx.modify()
+          .delete(discussionReplies)
+          .where(eq(discussionReplies.discussionId, discussionId));
+        this.ctx.modify()
+          .delete(projectPosts)
+          .where(eq(projectPosts.id, postId));
+        this.ctx.modify()
+          .delete(discussions)
+          .where(eq(discussions.id, discussionId));
       } else {
         // 只删除 post
-        this.ctx.modify(db =>
-          db.delete(projectPosts).where(eq(projectPosts.id, postId))
-        );
+        this.ctx.modify()
+          .delete(projectPosts)
+          .where(eq(projectPosts.id, postId));
       }
 
       return { success: true, data: undefined };

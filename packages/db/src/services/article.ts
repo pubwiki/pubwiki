@@ -248,17 +248,16 @@ export class ArticleService {
         }
 
         // 收集更新操作
-        this.ctx.modify(db =>
-          db.update(articles)
-            .set({
-              title: data.title,
-              artifactId: data.artifactId,
-              artifactCommit: data.artifactCommit,
-              content: data.content as ReaderContent,
-              updatedAt: sql`(datetime('now'))`,
-            })
-            .where(eq(articles.id, articleId))
-        );
+        this.ctx.modify()
+          .update(articles)
+          .set({
+            title: data.title,
+            artifactId: data.artifactId,
+            artifactCommit: data.artifactCommit,
+            content: data.content as ReaderContent,
+            updatedAt: sql`(datetime('now'))`,
+          })
+          .where(eq(articles.id, articleId));
 
         // Update discovery control using DiscoveryService
         const existingDiscovery = await this.discoveryService.get(articleRef);
@@ -279,16 +278,16 @@ export class ArticleService {
         }
       } else {
         // 创建模式
-        this.ctx.modify(db =>
-          db.insert(articles).values({
+        this.ctx.modify()
+          .insert(articles)
+          .values({
             id: articleId,
             authorId,
             title: data.title,
             artifactId: data.artifactId,
             artifactCommit: data.artifactCommit,
             content: data.content as ReaderContent,
-          })
-        );
+          });
 
         // Create discovery control using DiscoveryService
         this.discoveryService.create(articleRef, isListed);
@@ -432,9 +431,9 @@ export class ArticleService {
       }
 
       // Step 3: Delete article record
-      this.ctx.modify(db =>
-        db.delete(articles).where(eq(articles.id, articleId))
-      );
+      this.ctx.modify()
+        .delete(articles)
+        .where(eq(articles.id, articleId));
 
       // Step 4: Delete ACL records
       this.aclService.deleteAllAcls(articleRef);

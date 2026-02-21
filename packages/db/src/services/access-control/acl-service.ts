@@ -61,40 +61,36 @@ export class AclService {
   // FIXME: if an artifact is set to public, its nodes should be set to public
   // accordingly
   setPublic(ref: ResourceRef, grantedBy: string): void {
-    this.ctx.modify((db) =>
-      db
-        .insert(resourceAcl)
-        .values({
-          resourceType: ref.type,
-          resourceId: ref.id,
-          userId: PUBLIC_USER_ID,
-          canRead: true,
-          canWrite: false,
-          canManage: false,
-          grantedBy,
-        })
-        .onConflictDoUpdate({
-          target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
-          set: { canRead: true },
-        })
-    );
+    this.ctx.modify()
+      .insert(resourceAcl)
+      .values({
+        resourceType: ref.type,
+        resourceId: ref.id,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+        grantedBy,
+      })
+      .onConflictDoUpdate({
+        target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
+        set: { canRead: true },
+      });
   }
 
   /**
    * 移除公开读取权限（等价于原 isPrivate = true）
    */
   setPrivate(ref: ResourceRef): void {
-    this.ctx.modify((db) =>
-      db
-        .delete(resourceAcl)
-        .where(
-          and(
-            eq(resourceAcl.resourceType, ref.type),
-            eq(resourceAcl.resourceId, ref.id),
-            eq(resourceAcl.userId, PUBLIC_USER_ID)
-          )
+    this.ctx.modify()
+      .delete(resourceAcl)
+      .where(
+        and(
+          eq(resourceAcl.resourceType, ref.type),
+          eq(resourceAcl.resourceId, ref.id),
+          eq(resourceAcl.userId, PUBLIC_USER_ID)
         )
-    );
+      );
   }
 
   /**
@@ -129,27 +125,25 @@ export class AclService {
     permissions: AclPermissions,
     grantedBy: string
   ): void {
-    this.ctx.modify((db) =>
-      db
-        .insert(resourceAcl)
-        .values({
-          resourceType: ref.type,
-          resourceId: ref.id,
-          userId,
+    this.ctx.modify()
+      .insert(resourceAcl)
+      .values({
+        resourceType: ref.type,
+        resourceId: ref.id,
+        userId,
+        canRead: permissions.read ?? false,
+        canWrite: permissions.write ?? false,
+        canManage: permissions.manage ?? false,
+        grantedBy,
+      })
+      .onConflictDoUpdate({
+        target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
+        set: {
           canRead: permissions.read ?? false,
           canWrite: permissions.write ?? false,
           canManage: permissions.manage ?? false,
-          grantedBy,
-        })
-        .onConflictDoUpdate({
-          target: [resourceAcl.resourceType, resourceAcl.resourceId, resourceAcl.userId],
-          set: {
-            canRead: permissions.read ?? false,
-            canWrite: permissions.write ?? false,
-            canManage: permissions.manage ?? false,
-          },
-        })
-    );
+        },
+      });
   }
 
   /**
@@ -163,17 +157,15 @@ export class AclService {
    * 撤销用户权限
    */
   revoke(ref: ResourceRef, userId: string): void {
-    this.ctx.modify((db) =>
-      db
-        .delete(resourceAcl)
-        .where(
-          and(
-            eq(resourceAcl.resourceType, ref.type),
-            eq(resourceAcl.resourceId, ref.id),
-            eq(resourceAcl.userId, userId)
-          )
+    this.ctx.modify()
+      .delete(resourceAcl)
+      .where(
+        and(
+          eq(resourceAcl.resourceType, ref.type),
+          eq(resourceAcl.resourceId, ref.id),
+          eq(resourceAcl.userId, userId)
         )
-    );
+      );
   }
 
   /**
@@ -228,16 +220,14 @@ export class AclService {
    * 删除资源的所有 ACL 记录
    */
   deleteAllAcls(ref: ResourceRef): void {
-    this.ctx.modify((db) =>
-      db
-        .delete(resourceAcl)
-        .where(
-          and(
-            eq(resourceAcl.resourceType, ref.type),
-            eq(resourceAcl.resourceId, ref.id)
-          )
+    this.ctx.modify()
+      .delete(resourceAcl)
+      .where(
+        and(
+          eq(resourceAcl.resourceType, ref.type),
+          eq(resourceAcl.resourceId, ref.id)
         )
-    );
+      );
   }
 
   // ========================================================================
@@ -327,16 +317,14 @@ export class DiscoveryService {
    * 创建资源发现控制记录
    */
   create(ref: ResourceRef, isListed: boolean = false): void {
-    this.ctx.modify((db) =>
-      db
-        .insert(resourceDiscoveryControl)
-        .values({
-          resourceType: ref.type,
-          resourceId: ref.id,
-          isListed,
-        })
-        .onConflictDoNothing()
-    );
+    this.ctx.modify()
+      .insert(resourceDiscoveryControl)
+      .values({
+        resourceType: ref.type,
+        resourceId: ref.id,
+        isListed,
+      })
+      .onConflictDoNothing();
   }
 
   /**
@@ -361,33 +349,29 @@ export class DiscoveryService {
    * 设置 isListed 状态
    */
   setListed(ref: ResourceRef, isListed: boolean): void {
-    this.ctx.modify((db) =>
-      db
-        .update(resourceDiscoveryControl)
-        .set({ isListed, updatedAt: new Date().toISOString() })
-        .where(
-          and(
-            eq(resourceDiscoveryControl.resourceType, ref.type),
-            eq(resourceDiscoveryControl.resourceId, ref.id)
-          )
+    this.ctx.modify()
+      .update(resourceDiscoveryControl)
+      .set({ isListed, updatedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(resourceDiscoveryControl.resourceType, ref.type),
+          eq(resourceDiscoveryControl.resourceId, ref.id)
         )
-    );
+      );
   }
 
   /**
    * 删除资源发现控制记录
    */
   delete(ref: ResourceRef): void {
-    this.ctx.modify((db) =>
-      db
-        .delete(resourceDiscoveryControl)
-        .where(
-          and(
-            eq(resourceDiscoveryControl.resourceType, ref.type),
-            eq(resourceDiscoveryControl.resourceId, ref.id)
-          )
+    this.ctx.modify()
+      .delete(resourceDiscoveryControl)
+      .where(
+        and(
+          eq(resourceDiscoveryControl.resourceType, ref.type),
+          eq(resourceDiscoveryControl.resourceId, ref.id)
         )
-    );
+      );
   }
 
   /**

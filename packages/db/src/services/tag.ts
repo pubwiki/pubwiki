@@ -165,17 +165,13 @@ export class TagService {
 
     for (const slug of tagSlugs) {
       // Delete association
-      this.ctx.modify(db =>
-        db.delete(artifactTags).where(
-          and(eq(artifactTags.artifactId, artifactId), eq(artifactTags.tagSlug, slug))
-        )
+      this.ctx.modify().delete(artifactTags).where(
+        and(eq(artifactTags.artifactId, artifactId), eq(artifactTags.tagSlug, slug))
       );
       // Decrement usage count
-      this.ctx.modify(db =>
-        db.update(tags)
-          .set({ usageCount: sql`MAX(0, ${tags.usageCount} - 1)` })
-          .where(eq(tags.slug, slug))
-      );
+      this.ctx.modify().update(tags)
+        .set({ usageCount: sql`MAX(0, ${tags.usageCount} - 1)` })
+        .where(eq(tags.slug, slug));
     }
   }
 
@@ -195,17 +191,17 @@ export class TagService {
   ): Promise<TagInfo> {
     if (!existingTag) {
       // Create new tag (slug is the primary key)
-      this.ctx.modify(db => db.insert(tags).values({
+      this.ctx.modify().insert(tags).values({
         slug: slug,
         name: slug,
         usageCount: 1,
-      }));
+      });
 
       // Create association
-      this.ctx.modify(db => db.insert(artifactTags).values({
+      this.ctx.modify().insert(artifactTags).values({
         artifactId,
         tagSlug: slug,
-      }));
+      });
 
       return {
         slug: slug,
@@ -215,17 +211,15 @@ export class TagService {
       };
     } else {
       // Increment usage count for existing tag
-      this.ctx.modify(db =>
-        db.update(tags)
-          .set({ usageCount: sql`${tags.usageCount} + 1` })
-          .where(eq(tags.slug, existingTag.slug))
-      );
+      this.ctx.modify().update(tags)
+        .set({ usageCount: sql`${tags.usageCount} + 1` })
+        .where(eq(tags.slug, existingTag.slug));
 
       // Create association
-      this.ctx.modify(db => db.insert(artifactTags).values({
+      this.ctx.modify().insert(artifactTags).values({
         artifactId,
         tagSlug: existingTag.slug,
-      }));
+      });
 
       return existingTag;
     }

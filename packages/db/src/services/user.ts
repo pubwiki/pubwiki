@@ -117,14 +117,13 @@ export class UserService {
       }
 
       // Collect update operation (executed on commit)
-      this.ctx.modify(db =>
-        db.update(user)
-          .set({
-            ...updates,
-            updatedAt: new Date(),
-          })
-          .where(eq(user.id, id))
-      );
+      this.ctx.modify()
+        .update(user)
+        .set({
+          ...updates,
+          updatedAt: new Date(),
+        })
+        .where(eq(user.id, id));
 
       // Return the expected result (after commit, data will be updated)
       return {

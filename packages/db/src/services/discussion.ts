@@ -288,7 +288,9 @@ export class DiscussionService {
         category: data.category ?? 'GENERAL',
       };
 
-      this.ctx.modify(db => db.insert(discussions).values(newDiscussion));
+      this.ctx.modify()
+        .insert(discussions)
+        .values(newDiscussion);
 
       // Return discussionId - caller should commit and then call getDiscussion
       return { success: true, data: { discussionId: newDiscussion.id } };
@@ -347,7 +349,10 @@ export class DiscussionService {
       if (data.content !== undefined) updateData.content = data.content;
       if (data.category !== undefined) updateData.category = data.category;
 
-      this.ctx.modify(db => db.update(discussions).set(updateData).where(eq(discussions.id, id)));
+      this.ctx.modify()
+        .update(discussions)
+        .set(updateData)
+        .where(eq(discussions.id, id));
 
       // Return discussionId - caller should commit and then call getDiscussion
       return { success: true, data: { discussionId: id } };
@@ -385,7 +390,9 @@ export class DiscussionService {
         };
       }
 
-      this.ctx.modify(db => db.delete(discussions).where(eq(discussions.id, id)));
+      this.ctx.modify()
+        .delete(discussions)
+        .where(eq(discussions.id, id));
 
       return { success: true, data: undefined };
     } catch (error) {
@@ -413,7 +420,10 @@ export class DiscussionService {
         };
       }
 
-      this.ctx.modify(db => db.update(discussions).set({ isPinned, updatedAt: new Date().toISOString() }).where(eq(discussions.id, id)));
+      this.ctx.modify()
+        .update(discussions)
+        .set({ isPinned, updatedAt: new Date().toISOString() })
+        .where(eq(discussions.id, id));
 
       // Return discussionId - caller should commit and then call getDiscussion
       return { success: true, data: { discussionId: id } };
@@ -442,7 +452,10 @@ export class DiscussionService {
         };
       }
 
-      this.ctx.modify(db => db.update(discussions).set({ isLocked, updatedAt: new Date().toISOString() }).where(eq(discussions.id, id)));
+      this.ctx.modify()
+        .update(discussions)
+        .set({ isLocked, updatedAt: new Date().toISOString() })
+        .where(eq(discussions.id, id));
 
       // Return discussionId - caller should commit and then call getDiscussion
       return { success: true, data: { discussionId: id } };
@@ -613,17 +626,16 @@ export class DiscussionService {
       };
 
       // 收集操作：插入回复 + 更新讨论回复计数
-      this.ctx.modify(db =>
-        db.insert(discussionReplies).values(newReply)
-      );
-      this.ctx.modify(db =>
-        db.update(discussions)
-          .set({
-            replyCount: sql`${discussions.replyCount} + 1`,
-            updatedAt: now,
-          })
-          .where(eq(discussions.id, discussionId))
-      );
+      this.ctx.modify()
+        .insert(discussionReplies)
+        .values(newReply);
+      this.ctx.modify()
+        .update(discussions)
+        .set({
+          replyCount: sql`${discussions.replyCount} + 1`,
+          updatedAt: now,
+        })
+        .where(eq(discussions.id, discussionId));
 
       // Note: 在 commit 后数据才会真正写入，但这里返回预期结果
       const insertedReply = {
@@ -682,19 +694,18 @@ export class DiscussionService {
         .limit(1);
 
       // 收集操作：删除回复 + 更新讨论回复计数
-      this.ctx.modify(db =>
-        db.delete(discussionReplies).where(eq(discussionReplies.id, replyId))
-      );
+      this.ctx.modify()
+        .delete(discussionReplies)
+        .where(eq(discussionReplies.id, replyId));
       
       if (discussion) {
-        this.ctx.modify(db =>
-          db.update(discussions)
-            .set({
-              replyCount: sql`CASE WHEN ${discussions.replyCount} > 0 THEN ${discussions.replyCount} - 1 ELSE 0 END`,
-              updatedAt: new Date().toISOString(),
-            })
-            .where(eq(discussions.id, reply.discussionId))
-        );
+        this.ctx.modify()
+          .update(discussions)
+          .set({
+            replyCount: sql`CASE WHEN ${discussions.replyCount} > 0 THEN ${discussions.replyCount} - 1 ELSE 0 END`,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(discussions.id, reply.discussionId));
       }
 
       return { success: true, data: undefined };

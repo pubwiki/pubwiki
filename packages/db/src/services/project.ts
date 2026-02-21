@@ -877,17 +877,19 @@ export class ProjectService {
       // === 收集写操作到 BatchContext ===
 
       // 1. 创建 project
-      this.ctx.modify(db => db.insert(projects).values({
-        id: projectId,
-        ownerId,
-        name: metadata.name,
-        slug: metadata.slug,
-        topic: metadata.topic,
-        description: metadata.description,
-        license: metadata.license,
-        coverUrls: metadata.coverUrls ? JSON.stringify(metadata.coverUrls) : null,
-        homepageId, // 直接设置，因为我们已经知道 page ID
-      }));
+      this.ctx.modify()
+        .insert(projects)
+        .values({
+          id: projectId,
+          ownerId,
+          name: metadata.name,
+          slug: metadata.slug,
+          topic: metadata.topic,
+          description: metadata.description,
+          license: metadata.license,
+          coverUrls: metadata.coverUrls ? JSON.stringify(metadata.coverUrls) : null,
+          homepageId, // 直接设置，因为我们已经知道 page ID
+        });
 
       // 1.1 创建发现控制记录 using DiscoveryService
       const isListed = metadata.isListed ?? true;
@@ -904,14 +906,16 @@ export class ProjectService {
       if (metadata.pages && metadata.pages.length > 0) {
         for (let i = 0; i < metadata.pages.length; i++) {
           const page = metadata.pages[i];
-          this.ctx.modify(db => db.insert(projectPages).values({
-            id: pageIds[i],
-            projectId,
-            name: page.name,
-            icon: page.icon,
-            content: page.content,
-            order: i,
-          }));
+          this.ctx.modify()
+            .insert(projectPages)
+            .values({
+              id: pageIds[i],
+              projectId,
+              name: page.name,
+              icon: page.icon,
+              content: page.content,
+              order: i,
+            });
         }
       }
 
@@ -921,26 +925,30 @@ export class ProjectService {
         const parentRoleId = role.parentName ? nameToRealId.get(role.parentName) : null;
         const isLeaf = !parentNames.has(role.name);
         
-        this.ctx.modify(db => db.insert(projectRoles).values({
-          id: roleId,
-          projectId,
-          name: role.name,
-          description: role.description,
-          parentRoleId,
-          isLeaf,
-        }));
+        this.ctx.modify()
+          .insert(projectRoles)
+          .values({
+            id: roleId,
+            projectId,
+            name: role.name,
+            description: role.description,
+            parentRoleId,
+            isLeaf,
+          });
       }
 
       // 4. 关联 artifacts（如果提供），设置 isOfficial = true
       if (metadata.artifacts && metadata.artifacts.length > 0) {
         for (const artifact of metadata.artifacts) {
           const roleId = nameToRealId.get(artifact.roleName)!;
-          this.ctx.modify(db => db.insert(projectArtifacts).values({
-            projectId,
-            artifactId: artifact.artifactId,
-            roleId,
-            isOfficial: true,
-          }));
+          this.ctx.modify()
+            .insert(projectArtifacts)
+            .values({
+              projectId,
+              artifactId: artifact.artifactId,
+              roleId,
+              isOfficial: true,
+            });
         }
       }
 
@@ -1361,12 +1369,14 @@ export class ProjectService {
       const role = roleRow;
 
       // 创建关联
-      this.ctx.modify(db => db.insert(projectArtifacts).values({
-        projectId,
-        artifactId,
-        roleId,
-        isOfficial: finalIsOfficial,
-      }));
+      this.ctx.modify()
+        .insert(projectArtifacts)
+        .values({
+          projectId,
+          artifactId,
+          roleId,
+          isOfficial: finalIsOfficial,
+        });
 
       // 获取 author 信息
       const [author] = await this.ctx
@@ -1581,40 +1591,40 @@ export class ProjectService {
 
       if (discussionIds.length > 0) {
         // Delete discussion replies first (foreign key constraint)
-        this.ctx.modify(db =>
-          db.delete(discussionReplies).where(inArray(discussionReplies.discussionId, discussionIds))
-        );
+        this.ctx.modify()
+          .delete(discussionReplies)
+          .where(inArray(discussionReplies.discussionId, discussionIds));
 
         // Delete discussions
-        this.ctx.modify(db =>
-          db.delete(discussions).where(inArray(discussions.id, discussionIds))
-        );
+        this.ctx.modify()
+          .delete(discussions)
+          .where(inArray(discussions.id, discussionIds));
       }
 
       // Step 5: Delete project posts
-      this.ctx.modify(db =>
-        db.delete(projectPosts).where(eq(projectPosts.projectId, projectId))
-      );
+      this.ctx.modify()
+        .delete(projectPosts)
+        .where(eq(projectPosts.projectId, projectId));
 
       // Step 6: Delete project pages
-      this.ctx.modify(db =>
-        db.delete(projectPages).where(eq(projectPages.projectId, projectId))
-      );
+      this.ctx.modify()
+        .delete(projectPages)
+        .where(eq(projectPages.projectId, projectId));
 
       // Step 7: Remove project_artifacts associations (not deleting artifacts)
-      this.ctx.modify(db =>
-        db.delete(projectArtifacts).where(eq(projectArtifacts.projectId, projectId))
-      );
+      this.ctx.modify()
+        .delete(projectArtifacts)
+        .where(eq(projectArtifacts.projectId, projectId));
 
       // Step 8: Delete project roles
-      this.ctx.modify(db =>
-        db.delete(projectRoles).where(eq(projectRoles.projectId, projectId))
-      );
+      this.ctx.modify()
+        .delete(projectRoles)
+        .where(eq(projectRoles.projectId, projectId));
 
       // Step 9: Delete project record
-      this.ctx.modify(db =>
-        db.delete(projects).where(eq(projects.id, projectId))
-      );
+      this.ctx.modify()
+        .delete(projects)
+        .where(eq(projects.id, projectId));
 
       // Step 10: Delete ACL records
       this.aclService.deleteAllAcls(projectRef);

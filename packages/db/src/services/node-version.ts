@@ -416,11 +416,10 @@ export class NodeVersionService {
           };
 
           // Collect node version insert (idempotent with onConflictDoNothing)
-          this.ctx.modify(db =>
-            db.insert(nodeVersions)
-              .values(newVersion)
-              .onConflictDoNothing()
-          );
+          this.ctx.modify()
+            .insert(nodeVersions)
+            .values(newVersion)
+            .onConflictDoNothing();
 
           // Create ACL for node version
           // Node ACL is based on commit hash (the version identifier)
@@ -439,11 +438,10 @@ export class NodeVersionService {
               targetCommit: ref.targetCommit,
               refType: ref.refType,
             }));
-            this.ctx.modify(db =>
-              db.insert(nodeVersionRefs)
-                .values(refValues)
-                .onConflictDoNothing()
-            );
+            this.ctx.modify()
+              .insert(nodeVersionRefs)
+              .values(refValues)
+              .onConflictDoNothing();
           }
 
           result.created++;
@@ -562,111 +560,103 @@ export class NodeVersionService {
     switch (content.type) {
       case 'INPUT': {
         const blocks = content.blocks;
-        this.ctx.modify(db =>
-          db.insert(inputContents)
-            .values({
-              contentHash,
-              blocks,
-              generationConfig: content.generationConfig,
-              plainText: extractPlainText(blocks),
-              reftagNames: extractReftagNames(blocks),
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(inputContents)
+          .values({
+            contentHash,
+            blocks,
+            generationConfig: content.generationConfig,
+            plainText: extractPlainText(blocks),
+            reftagNames: extractReftagNames(blocks),
+          })
+          .onConflictDoNothing();
         break;
       }
 
       case 'PROMPT': {
         const blocks = content.blocks;
-        this.ctx.modify(db =>
-          db.insert(promptContents)
-            .values({
-              contentHash,
-              blocks,
-              plainText: extractPlainText(blocks),
-              reftagNames: extractReftagNames(blocks),
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(promptContents)
+          .values({
+            contentHash,
+            blocks,
+            plainText: extractPlainText(blocks),
+            reftagNames: extractReftagNames(blocks),
+          })
+          .onConflictDoNothing();
         break;
       }
 
       case 'GENERATED':
-        this.ctx.modify(db =>
-          db.insert(generatedContents)
-            .values({
-              contentHash,
-              blocks: content.blocks,
-              // GENERATED blocks are MessageBlock[], not ContentBlock[], so no plainText extraction
-              plainText: undefined,
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(generatedContents)
+          .values({
+            contentHash,
+            blocks: content.blocks,
+            // GENERATED blocks are MessageBlock[], not ContentBlock[], so no plainText extraction
+            plainText: undefined,
+          })
+          .onConflictDoNothing();
         break;
 
       case 'VFS':
-        this.ctx.modify(db =>
-          db.insert(vfsContents)
-            .values({
-              contentHash,
-              filesHash: content.filesHash,
-              mounts: content.mounts,
-              fileCount: content.fileCount,
-              totalSize: content.totalSize,
-              fileTree: content.fileTree,
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(vfsContents)
+          .values({
+            contentHash,
+            filesHash: content.filesHash,
+            mounts: content.mounts,
+            fileCount: content.fileCount,
+            totalSize: content.totalSize,
+            fileTree: content.fileTree,
+          })
+          .onConflictDoNothing();
         break;
 
       case 'SANDBOX':
-        this.ctx.modify(db =>
-          db.insert(sandboxContents)
-            .values({
-              contentHash,
-              entryFile: content.entryFile,
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(sandboxContents)
+          .values({
+            contentHash,
+            entryFile: content.entryFile,
+          })
+          .onConflictDoNothing();
         break;
 
       case 'LOADER':
-        this.ctx.modify(db =>
-          db.insert(loaderContents)
-            .values({
-              contentHash,
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(loaderContents)
+          .values({
+            contentHash,
+          })
+          .onConflictDoNothing();
         break;
 
       case 'STATE':
-        this.ctx.modify(db =>
-          db.insert(stateContents)
-            .values({
-              contentHash,
-              name: content.name,
-              description: content.description,
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(stateContents)
+          .values({
+            contentHash,
+            name: content.name,
+            description: content.description,
+          })
+          .onConflictDoNothing();
         break;
 
       case 'SAVE':
-        this.ctx.modify(db =>
-          db.insert(saveContents)
-            .values({
-              contentHash,
-              stateNodeId: content.stateNodeId,
-              stateNodeCommit: content.stateNodeCommit,
-              artifactId: content.artifactId,
-              artifactCommit: content.artifactCommit,
-              quadsHash: content.quadsHash,
-              title: content.title,
-              description: content.description,
-            })
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(saveContents)
+          .values({
+            contentHash,
+            stateNodeId: content.stateNodeId,
+            stateNodeCommit: content.stateNodeCommit,
+            artifactId: content.artifactId,
+            artifactCommit: content.artifactCommit,
+            quadsHash: content.quadsHash,
+            title: content.title,
+            description: content.description,
+          })
+          .onConflictDoNothing();
         break;
     }
   }
@@ -743,11 +733,10 @@ export class NodeVersionService {
         tag: null,
       };
 
-      this.ctx.modify(db =>
-        db.insert(nodeVersions)
-          .values(newVersion)
-          .onConflictDoNothing()
-      );
+      this.ctx.modify()
+        .insert(nodeVersions)
+        .values(newVersion)
+        .onConflictDoNothing();
 
       // Create ACL for the new node version (private)
       const nodeRef = { type: 'node' as const, id: newCommit };
@@ -765,11 +754,10 @@ export class NodeVersionService {
           targetCommit: ref.targetCommit,
           refType: ref.refType,
         }));
-        this.ctx.modify(db =>
-          db.insert(nodeVersionRefs)
-            .values(refValues)
-            .onConflictDoNothing()
-        );
+        this.ctx.modify()
+          .insert(nodeVersionRefs)
+          .values(refValues)
+          .onConflictDoNothing();
       }
 
       return { success: true, data: { commit: newCommit } };

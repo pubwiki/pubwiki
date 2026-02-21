@@ -382,10 +382,9 @@ export class SaveService {
       }
 
       // Delete the node version. Content cleanup is handled by GC via LEFT JOIN.
-      this.ctx.modify(db =>
-        db.delete(nodeVersions)
-          .where(eq(nodeVersions.commit, commit))
-      );
+      this.ctx.modify()
+        .delete(nodeVersions)
+        .where(eq(nodeVersions.commit, commit));
 
       return {
         success: true,
