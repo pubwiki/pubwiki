@@ -700,6 +700,65 @@ describe('E2E: Artifacts API', () => {
       expect(data.error).toContain('slug already exists');
     });
 
+    it('should return 409 when creating artifact with existing artifactId (idempotency)', async () => {
+      // Generate a fixed artifactId that will be used for both requests
+      const artifactId = crypto.randomUUID();
+      
+      // Import computeArtifactCommit dynamically to compute correct commit
+      const { computeArtifactCommit } = await import('@pubwiki/api');
+      
+      // For empty nodes and edges, compute the correct commit
+      const commit = await computeArtifactCommit(artifactId, null, [], []);
+      
+      // First creation: should succeed
+      const formData1 = new FormData();
+      formData1.append('metadata', JSON.stringify({
+        artifactId,
+        name: 'First Artifact',
+        commit,
+        isListed: true,
+        isPrivate: false,
+      }));
+      formData1.append('nodes', JSON.stringify([]));
+      formData1.append('edges', JSON.stringify([]));
+
+      const response1 = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: {
+          Cookie: sessionCookie,
+        },
+        body: formData1,
+      });
+      
+      expect(response1.status).toBe(200);
+      const data1 = await response1.json() as { artifact: { id: string } };
+      expect(data1.artifact.id).toBe(artifactId);
+
+      // Second creation with same artifactId: should return 409
+      const formData2 = new FormData();
+      formData2.append('metadata', JSON.stringify({
+        artifactId, // Same artifactId!
+        name: 'Second Artifact',
+        commit, // Same commit (same content)
+        isListed: true,
+        isPrivate: false,
+      }));
+      formData2.append('nodes', JSON.stringify([]));
+      formData2.append('edges', JSON.stringify([]));
+
+      const response2 = await fetch(`${baseUrl}/artifacts`, {
+        method: 'POST',
+        headers: {
+          Cookie: sessionCookie,
+        },
+        body: formData2,
+      });
+
+      expect(response2.status).toBe(409);
+      const data2 = await response2.json() as { error: string };
+      expect(data2.error).toContain('already exists');
+    });
+
     it('should create artifact with all optional fields', async () => {
       const slug = `full-artifact-${Date.now()}`;
       const formData = createFormData({

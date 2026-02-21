@@ -46,8 +46,6 @@ export const artifactVersions = sqliteTable(
     checksum: text('checksum', { length: 64 }),
     // 入口点：指定启动流图时的初始程序状态
     entrypoint: text('entrypoint', { mode: 'json' }).$type<ArtifactEntrypoint>(),
-    // 弱版本标记：weak 版本不对 node 产生引用计数
-    isWeak: integer('is_weak', { mode: 'boolean' }).default(false).notNull(),
   },
   (table) => [
     index('idx_artifact_versions_artifact').on(table.artifactId),

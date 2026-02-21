@@ -1,6 +1,8 @@
 import { eq, and, asc, desc, sql, count, inArray } from 'drizzle-orm';
 import type { BatchContext } from '../batch-context';
 import { projects, projectArtifacts, projectRoles, projectPages, type Project } from '../schema/projects';
+import { projectPosts } from '../schema/posts';
+import { discussions, discussionReplies } from '../schema/discussions';
 import { artifacts, tags, artifactTags } from '../schema/artifacts';
 import { artifactStats } from '../schema/stats';
 import { user, type User } from '../schema/auth';
@@ -53,6 +55,12 @@ export type LinkArtifactToProjectParams = LinkArtifactRequestBody & {
 export interface CreateProjectParams {
   ownerId: string;
   metadata: CreateProjectMetadata;
+}
+
+// Delete project parameters
+export interface DeleteProjectParams {
+  projectId: operations['deleteProject']['parameters']['path']['projectId'];
+  userId: string; // from auth context
 }
 
 export class ProjectService {
@@ -1523,5 +1531,104 @@ export class ProjectService {
         isMaintainer: result.data.hasWritePermission,
       },
     };
+  }
+
+  /**
+   * Delete a project and all related data.
+   * - Deletes all project posts and their associated discussions
+   * - Deletes all project pages
+   * - Removes project_artifacts associations (does NOT delete artifacts)
+   * - Deletes all project roles
+   * - Cleans up ACL and discovery control records
+   */
+  async deleteProject(params: DeleteProjectParams): Promise<ServiceResult<void>> {
+    const { projectId, userId } = params;
+    const projectRef = { type: 'project' as const, id: projectId };
+
+    try {
+      // Step 1: Check project exists
+      const [existing] = await this.ctx.select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1);
+
+      if (!existing) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Project not found' },
+        };
+      }
+
+      // Step 2: Check manage permission
+      const canManage = await this.aclService.canManage(projectRef, userId);
+      if (!canManage) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'No permission to delete this project' },
+        };
+      }
+
+      // Step 3: Get all project posts and their discussion IDs
+      const posts = await this.ctx
+        .select({ id: projectPosts.id, discussionId: projectPosts.discussionId })
+        .from(projectPosts)
+        .where(eq(projectPosts.projectId, projectId));
+
+      // Step 4: Delete discussions and their replies for each post
+      const discussionIds = posts
+        .map(p => p.discussionId)
+        .filter((id): id is string => id !== null);
+
+      if (discussionIds.length > 0) {
+        // Delete discussion replies first (foreign key constraint)
+        this.ctx.modify(db =>
+          db.delete(discussionReplies).where(inArray(discussionReplies.discussionId, discussionIds))
+        );
+
+        // Delete discussions
+        this.ctx.modify(db =>
+          db.delete(discussions).where(inArray(discussions.id, discussionIds))
+        );
+      }
+
+      // Step 5: Delete project posts
+      this.ctx.modify(db =>
+        db.delete(projectPosts).where(eq(projectPosts.projectId, projectId))
+      );
+
+      // Step 6: Delete project pages
+      this.ctx.modify(db =>
+        db.delete(projectPages).where(eq(projectPages.projectId, projectId))
+      );
+
+      // Step 7: Remove project_artifacts associations (not deleting artifacts)
+      this.ctx.modify(db =>
+        db.delete(projectArtifacts).where(eq(projectArtifacts.projectId, projectId))
+      );
+
+      // Step 8: Delete project roles
+      this.ctx.modify(db =>
+        db.delete(projectRoles).where(eq(projectRoles.projectId, projectId))
+      );
+
+      // Step 9: Delete project record
+      this.ctx.modify(db =>
+        db.delete(projects).where(eq(projects.id, projectId))
+      );
+
+      // Step 10: Delete ACL records
+      this.aclService.deleteAllAcls(projectRef);
+
+      // Step 11: Delete discovery control record
+      this.discoveryService.delete(projectRef);
+
+      return { success: true, data: undefined };
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to delete project' },
+      };
+    }
   }
 }

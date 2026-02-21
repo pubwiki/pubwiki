@@ -186,7 +186,7 @@ describe('NodeVersionService', () => {
       expect(rows).toHaveLength(1);
     });
 
-    it('should deduplicate content by content_hash and increment ref_count', async () => {
+    it('should handle content-addressed storage correctly (same contentHash = same content)', async () => {
       const nodeId1 = crypto.randomUUID();
       const nodeId2 = crypto.randomUUID();
       const sharedHash = makeContentHash('shared');
@@ -200,15 +200,14 @@ describe('NodeVersionService', () => {
       ]);
       await commitAndReset();
 
-      // Verify ref_count = 1
+      // Verify content was inserted
       const before = await db
         .select()
         .from(inputContents)
         .where(eq(inputContents.contentHash, sharedHash));
       expect(before).toHaveLength(1);
-      expect(before[0].refCount).toBe(1);
 
-      // Second version with same content hash (different node)
+      // Second version with same content hash (different node) - idempotent insert
       await service.syncVersions([
         await inputVersion({
           nodeId: nodeId2,
@@ -218,13 +217,12 @@ describe('NodeVersionService', () => {
       ]);
       await commitAndReset();
 
-      // ref_count should now be 2
+      // Content should still be only one row (content-addressed, ON CONFLICT DO NOTHING)
       const after = await db
         .select()
         .from(inputContents)
         .where(eq(inputContents.contentHash, sharedHash));
       expect(after).toHaveLength(1);
-      expect(after[0].refCount).toBe(2);
     });
 
     // NOTE: Visibility validation tests removed - access control is now managed

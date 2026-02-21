@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "57f61422-ec4a-45de-bbcb-396258f060c6",
+  "id": "2de02034-a6ef-4d86-b929-7aa52afaf831",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "account": {
@@ -742,14 +742,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "is_weak": {
-          "name": "is_weak",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         }
       },
       "indexes": {
@@ -827,8 +819,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "current_version_id": {
-          "name": "current_version_id",
+        "latest_version": {
+          "name": "latest_version",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -844,13 +836,6 @@
         "license": {
           "name": "license",
           "type": "text(50)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "repository_url": {
-          "name": "repository_url",
-          "type": "text(500)",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -3019,14 +3004,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -3080,14 +3057,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -3112,14 +3081,6 @@
           "primaryKey": true,
           "notNull": true,
           "autoincrement": false
-        },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
         },
         "created_at": {
           "name": "created_at",
@@ -3167,14 +3128,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -3207,14 +3160,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'index.html'"
-        },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
         },
         "created_at": {
           "name": "created_at",
@@ -3290,14 +3235,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -3352,14 +3289,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -3382,13 +3311,6 @@
           "name": "content_hash",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "project_id": {
-          "name": "project_id",
-          "type": "text",
-          "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
@@ -3426,14 +3348,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "ref_count": {
-          "name": "ref_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
         },
         "created_at": {
           "name": "created_at",

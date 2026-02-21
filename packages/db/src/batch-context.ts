@@ -89,6 +89,12 @@ export class BatchContext {
    * // Simple insert
    * ctx.modify(db => db.insert(users).values({...}));
    *
+   * // Insert with conflict detection (throws OptimisticLockError if already exists)
+   * ctx.modify(
+   *   db => db.insert(artifacts).values({...}).onConflictDoNothing(),
+   *   { expectAffected: 1, lockMsg: 'Artifact already exists' }
+   * );
+   *
    * // Update with optimistic lock
    * ctx.modify(
    *   db => db.update(artifacts)
@@ -145,11 +151,11 @@ export class BatchContext {
     // Validate optimistic locks
     for (const validator of this.optimisticLocks) {
       const result = batchResults[validator.resultIndex];
-      if (result.rowsAffected !== validator.expectedRowsAffected) {
+      if (result.meta?.changes !== validator.expectedRowsAffected) {
         throw new OptimisticLockError(
           validator.msg,
           validator.expectedRowsAffected,
-          result.rowsAffected
+          result.meta?.changes ?? 0
         );
       }
     }

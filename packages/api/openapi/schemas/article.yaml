@@ -137,3 +137,7 @@ UpsertArticleRequest:
       type: boolean
       default: false
       description: 是否在公开列表中可见（可发现性）
+    isPrivate:
+      type: boolean
+      default: false
+      description: 是否为私有文章（访问控制）。如果设为 false（公开），对应的 artifact 必须也是公开的。

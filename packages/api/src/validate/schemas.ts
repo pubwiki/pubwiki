@@ -697,6 +697,22 @@ export const PatchArtifactResponse = zod.object({
 
 
 /**
+ * 删除指定 Artifact。需要认证且具有 manage 权限。
+删除时会：
+- 级联删除所有关联的 Article
+- 解除与 Project 的关联
+- 删除所有版本和相关数据
+- 同步清理 R2 中的 VFS 文件
+不会删除共享的 node_versions（可能被其他 artifact 引用）。
+
+ * @summary 删除 Artifact
+ */
+export const DeleteArtifactParams = zod.object({
+  "artifactId": zod.uuid().describe('Artifact ID')
+})
+
+
+/**
  * 获取指定 Artifact 的只读主页 HTML 内容。
 HTML 内容存储在 R2 中，存储 key 由 artifactId 派生。
 访问权限由 ACL 系统控制，无权访问时返回 403。
@@ -940,6 +956,7 @@ export const UpdateArtifactMetadataBody = zod.object({
   "description": zod.string().optional(),
   "thumbnailUrl": zod.url().max(updateArtifactMetadataBodyThumbnailUrlMax).optional(),
   "license": zod.string().max(updateArtifactMetadataBodyLicenseMax).optional(),
+  "latestVersion": zod.string().optional().describe('设置 artifact 的 latestVersion 指针。\n必须是该 artifact 已存在的版本 ID。\n用于在树状版本结构中指定当前\"主线\"版本。\n'),
   "isListed": zod.boolean().optional().describe('是否在公开列表中可见（可发现性）'),
   "isPrivate": zod.boolean().optional().describe('是否为私有 artifact。\n- private → public：直接更新 ACL（单向宽松）\n- public → private：服务端自动 fork 所有节点为私有版本，创建新 commit 并返回\n'),
   "tags": zod.array(zod.string()).optional().describe('Tag slugs 数组')
@@ -985,31 +1002,6 @@ export const UpdateVersionMetadataResponse = zod.object({
   "changelog": zod.string().nullish(),
   "publishedAt": zod.iso.datetime({}).nullish(),
   "createdAt": zod.iso.datetime({})
-})
-})
-
-
-/**
- * 将指定版本标记为 weak 版本（不可逆操作）。weak 版本不会对其关联的 node 产生引用计数。
-标记为 weak 后，会尝试 GC 掉引用计数归零的 node 内容。
-已经标记为 weak 的版本不能取消标记。
-
- * @summary 标记版本为 weak（不可逆）
- */
-export const MarkVersionWeakParams = zod.object({
-  "artifactId": zod.uuid().describe('Artifact ID'),
-  "commitHash": zod.string().describe('版本的 commit hash')
-})
-
-export const MarkVersionWeakBody = zod.object({
-
-}).describe('将一个 artifact 版本标记为 weak（不可逆操作）。\nweak 版本不对 node 产生引用计数，标记后尝试 GC 引用计数归零的 node 内容。\n')
-
-export const MarkVersionWeakResponse = zod.object({
-  "message": zod.string(),
-  "gcResult": zod.object({
-  "decremented": zod.number().optional().describe('引用计数被减少的内容数量'),
-  "deleted": zod.number().optional().describe('引用计数归零被删除的内容数量')
 })
 })
 
@@ -1204,6 +1196,21 @@ export const GetProjectDetailResponse = zod.object({
   "updatedAt": zod.iso.datetime({})
 })).describe('Project 页面列表（不含内容）'),
   "homepageId": zod.uuid().nullish().describe('主页 ID')
+})
+
+
+/**
+ * 删除指定 Project。需要认证且具有 manage 权限。
+删除时会：
+- 删除所有 project posts 及其关联的 discussions
+- 删除所有 project pages
+- 解除与 artifacts 的关联（不删除 artifact 本身）
+- 删除所有 project roles
+
+ * @summary 删除 Project
+ */
+export const DeleteProjectParams = zod.object({
+  "projectId": zod.uuid().describe('Project ID')
 })
 
 
@@ -1942,7 +1949,7 @@ export const UpsertArticleParams = zod.object({
 
 export const upsertArticleBodyTitleMax = 200;
 
-export const upsertArticleBodyIsListedDefault = false;
+export const upsertArticleBodyIsListedDefault = false;export const upsertArticleBodyIsPrivateDefault = false;
 
 export const UpsertArticleBody = zod.object({
   "title": zod.string().min(1).max(upsertArticleBodyTitleMax),
@@ -1957,7 +1964,8 @@ export const UpsertArticleBody = zod.object({
   "textId": zod.string().describe('关联的文本块 ID'),
   "saveCommit": zod.string().describe('Save 版本 commit hash（可唯一索引到对应的 save node version）')
 })])),
-  "isListed": zod.boolean().default(upsertArticleBodyIsListedDefault).describe('是否在公开列表中可见（可发现性）')
+  "isListed": zod.boolean().default(upsertArticleBodyIsListedDefault).describe('是否在公开列表中可见（可发现性）'),
+  "isPrivate": zod.boolean().default(upsertArticleBodyIsPrivateDefault).describe('是否为私有文章（访问控制）。如果设为 false（公开），对应的 artifact 必须也是公开的。')
 })
 
 export const UpsertArticleResponse = zod.object({
@@ -1985,6 +1993,16 @@ export const UpsertArticleResponse = zod.object({
   "collections": zod.number(),
   "createdAt": zod.iso.datetime({}),
   "updatedAt": zod.iso.datetime({})
+})
+
+
+/**
+ * 删除指定文章。需要认证且具有 manage 权限。
+
+ * @summary 删除文章
+ */
+export const DeleteArticleParams = zod.object({
+  "articleId": zod.uuid()
 })
 
 

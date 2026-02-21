@@ -1,1 +1,0 @@
-ALTER TABLE `vfs_contents` DROP COLUMN `project_id`;

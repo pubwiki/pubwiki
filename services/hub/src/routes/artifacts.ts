@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, BatchContext, ArtifactService, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput } from '@pubwiki/db';
+import { createDb, BatchContext, ArtifactService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput } from '@pubwiki/db';
 import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataRequest, UpdateVersionMetadataRequest, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
 import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody } from '@pubwiki/api/validate';
@@ -197,7 +197,18 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   }
 
   // Commit database operations
-  await ctx.commit();
+  // OptimisticLockError is thrown here if artifact already exists (idempotent creation)
+  try {
+    await ctx.commit();
+  } catch (error) {
+    if (error instanceof OptimisticLockError) {
+      return c.json<ApiError>(
+        { error: `Artifact ${metadata.artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.` },
+        409
+      );
+    }
+    throw error;
+  }
 
   const { artifact: createdArtifact } = result.data;
   const artifactId = createdArtifact.id;
@@ -255,6 +266,34 @@ artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, resourceAccessM
   }
 
   return c.json<GetArtifactGraphResponse>(result.data);
+});
+
+// DELETE: Delete artifact
+artifactsRoute.delete('/:artifactId', authMiddleware, async (c) => {
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
+  const user = c.get('user');
+
+  const artifactId = c.req.param('artifactId');
+
+  // Validate UUID format
+  if (!artifactId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return c.json<ApiError>({ error: 'Invalid artifact ID format' }, 400);
+  }
+
+  const result = await artifactService.deleteArtifact(
+    { artifactId, userId: user.id },
+    c.env.R2_BUCKET
+  );
+
+  if (!result.success) {
+    return serviceErrorResponse(c, result.error);
+  }
+
+  // Commit the batch to persist changes
+  await ctx.commit();
+
+  return c.body(null, 204);
 });
 
 // PATCH: 基于已有版本和增量补丁创建新 Artifact 版本
@@ -336,7 +375,18 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
   }
 
   // Commit database operations
-  await ctx.commit();
+  // OptimisticLockError is thrown here if version with same commit already exists (idempotent patch)
+  try {
+    await ctx.commit();
+  } catch (error) {
+    if (error instanceof OptimisticLockError) {
+      return c.json<ApiError>(
+        { error: `Version with commit ${metadata.commit} already exists for artifact ${metadata.artifactId}. This indicates a duplicate patch request.` },
+        409
+      );
+    }
+    throw error;
+  }
 
   const { artifact: patchedArtifact } = result.data;
   const artifactId = patchedArtifact.id;
@@ -402,7 +452,19 @@ artifactsRoute.put('/:artifactId/metadata', authMiddleware, async (c) => {
   }
 
   // Commit database operations
-  await ctx.commit();
+  try {
+    await ctx.commit();
+  } catch (error) {
+    if (error instanceof OptimisticLockError) {
+      // Concurrent public→private transition detected
+      // Return 409 to let client retry and discover the new state
+      return c.json<ApiError>(
+        { error: 'Concurrent modification: artifact privacy is being updated by another request' },
+        409
+      );
+    }
+    throw error;
+  }
 
   return c.json<UpdateArtifactMetadataResponse>(result.data, 200);
 });
@@ -442,33 +504,6 @@ artifactsRoute.put('/:artifactId/versions/:commitHash/metadata', authMiddleware,
     message: 'Version metadata updated successfully',
     version: result.data.version,
   } satisfies UpdateVersionMetadataResponse, 200);
-});
-
-// PUT: 标记版本为 weak（不可逆）
-artifactsRoute.put('/:artifactId/versions/:commitHash/weak', authMiddleware, async (c) => {
-  const ctx = new BatchContext(createDb(c.env.DB));
-  const artifactService = new ArtifactService(ctx);
-  const user = c.get('user');
-  const artifactId = c.req.param('artifactId');
-  const commitHash = c.req.param('commitHash');
-
-  const result = await artifactService.markVersionWeak(
-    artifactId,
-    user.id,
-    commitHash,
-  );
-
-  if (!result.success) {
-    return serviceErrorResponse(c, result.error);
-  }
-
-  // Commit database operations
-  await ctx.commit();
-
-  return c.json({
-    message: 'Version marked as weak',
-    gcResult: result.data.gcResult,
-  }, 200);
 });
 
 export { artifactsRoute };

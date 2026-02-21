@@ -106,7 +106,6 @@ CREATE TABLE `artifact_versions` (
 	`metadata` text,
 	`checksum` text(64),
 	`entrypoint` text,
-	`is_weak` integer DEFAULT false NOT NULL,
 	FOREIGN KEY (`artifact_id`) REFERENCES `artifacts`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
@@ -118,10 +117,9 @@ CREATE TABLE `artifacts` (
 	`author_id` text NOT NULL,
 	`name` text(100) NOT NULL,
 	`description` text,
-	`current_version_id` text,
+	`latest_version` text,
 	`thumbnail_url` text(500),
 	`license` text(50),
-	`repository_url` text(500),
 	`created_at` text DEFAULT (datetime('now')) NOT NULL,
 	`updated_at` text DEFAULT (datetime('now')) NOT NULL,
 	FOREIGN KEY (`author_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
@@ -423,7 +421,6 @@ CREATE TABLE `generated_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
 	`blocks` text NOT NULL,
 	`plain_text` text,
-	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
@@ -433,13 +430,11 @@ CREATE TABLE `input_contents` (
 	`generation_config` text,
 	`plain_text` text,
 	`reftag_names` text,
-	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `loader_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
-	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
@@ -448,14 +443,12 @@ CREATE TABLE `prompt_contents` (
 	`blocks` text NOT NULL,
 	`plain_text` text,
 	`reftag_names` text,
-	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `sandbox_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
 	`entry_file` text DEFAULT 'index.html' NOT NULL,
-	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
@@ -468,7 +461,6 @@ CREATE TABLE `save_contents` (
 	`quads_hash` text NOT NULL,
 	`title` text,
 	`description` text,
-	`ref_count` integer DEFAULT 0 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
@@ -478,19 +470,16 @@ CREATE TABLE `state_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`description` text,
-	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE `vfs_contents` (
 	`content_hash` text PRIMARY KEY NOT NULL,
-	`project_id` text NOT NULL,
 	`mounts` text,
 	`files_hash` text NOT NULL,
 	`file_count` integer,
 	`total_size` integer,
 	`file_tree` text,
-	`ref_count` integer DEFAULT 1 NOT NULL,
 	`created_at` text DEFAULT (datetime('now')) NOT NULL
 );
 --> statement-breakpoint

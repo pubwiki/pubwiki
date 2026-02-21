@@ -530,6 +530,12 @@ UpdateArtifactMetadataRequest:
     license:
       type: string
       maxLength: 50
+    latestVersion:
+      type: string
+      description: |
+        设置 artifact 的 latestVersion 指针。
+        必须是该 artifact 已存在的版本 ID。
+        用于在树状版本结构中指定当前"主线"版本。
     isListed:
       type: boolean
       description: 是否在公开列表中可见（可发现性）
@@ -580,9 +586,3 @@ UpdateVersionMetadataRequest:
     entrypoint:
       $ref: './artifact.yaml#/ArtifactEntrypoint'
       description: 入口点配置
-
-MarkVersionWeakRequest:
-  type: object
-  description: |
-    将一个 artifact 版本标记为 weak（不可逆操作）。
-    weak 版本不对 node 产生引用计数，标记后尝试 GC 引用计数归零的 node 内容。

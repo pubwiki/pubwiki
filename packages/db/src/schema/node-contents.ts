@@ -31,7 +31,6 @@ export const inputContents = sqliteTable('input_contents', {
   plainText: text('plain_text'),                               // 纯文本内容（从 blocks 提取，用于全文搜索）
   reftagNames: text('reftag_names', { mode: 'json' }).$type<string[]>(), // 引用的 reftag 名称列表
 
-  refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 });
 
@@ -49,7 +48,6 @@ export const promptContents = sqliteTable('prompt_contents', {
   plainText: text('plain_text'),                               // 纯文本（全文搜索）
   reftagNames: text('reftag_names', { mode: 'json' }).$type<string[]>(), // 引用的 reftag 名称列表
 
-  refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 });
 
@@ -70,7 +68,6 @@ export const generatedContents = sqliteTable('generated_contents', {
   // 索引辅助字段
   plainText: text('plain_text'),                               // 纯文本（全文搜索）
 
-  refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 });
 
@@ -94,7 +91,6 @@ export const vfsContents = sqliteTable('vfs_contents', {
   totalSize: integer('total_size'),                            // 总大小 (bytes)
   fileTree: text('file_tree', { mode: 'json' }).$type<VfsFileInfo[]>(), // 文件目录树
 
-  refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 }, (table) => [
   index('idx_vfs_contents_files_hash').on(table.filesHash),
@@ -109,7 +105,6 @@ export const sandboxContents = sqliteTable('sandbox_contents', {
 
   entryFile: text('entry_file').notNull().default('index.html'), // 入口文件路径
 
-  refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 });
 
@@ -125,7 +120,6 @@ export const loaderContents = sqliteTable('loader_contents', {
   // 当前无特定字段，预留未来扩展
   // 例如：lua_version, service_config 等
 
-  refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 });
 
@@ -141,7 +135,6 @@ export const stateContents = sqliteTable('state_contents', {
   name: text('name').notNull(),                                // 状态节点名称
   description: text('description'),                            // 状态节点描述
 
-  refCount: integer('ref_count').default(1).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 });
 
@@ -166,7 +159,6 @@ export const saveContents = sqliteTable('save_contents', {
   title: text('title'),                                        // 存档标题
   description: text('description'),                            // 存档描述
 
-  refCount: integer('ref_count').default(0).notNull(),
   createdAt: text('created_at').default(currentTimestamp).notNull(),
 }, (table) => [
   index('idx_save_contents_state_node').on(table.stateNodeId),
@@ -181,7 +173,7 @@ export const saveContents = sqliteTable('save_contents', {
 //
 // 使用 content_hash 作为路径天然支持去重：
 // 相同内容的 node version 共享同一个 R2 对象，无需额外表记录映射。
-// R2 对象的生命周期与对应内容表的 ref_count 一致。
+// R2 对象的生命周期由 GC 管理：通过 LEFT JOIN node_versions 查找无引用内容。
 
 // Type exports
 export type InputContent = typeof inputContents.$inferSelect;

@@ -6,7 +6,8 @@ import { artifactVersionNodes, artifactVersionEdges, type NewArtifactVersionNode
 import { nodeVersions } from '../schema/node-versions';
 import type { NodeType } from '../schema/enums';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
-import { artifactStats } from '../schema/stats';
+import { artifactStats, artifactFavs, artifactViews } from '../schema/stats';
+import { projectArtifacts } from '../schema/projects';
 import { user } from '../schema/auth';
 import { articles } from '../schema/articles';
 import type { ServiceResult } from './user';
@@ -30,6 +31,7 @@ import type {
   UpdateArtifactMetadataRequest,
   UpdateArtifactMetadataResponse,
   UpdateVersionMetadataRequest,
+  operations,
 } from '@pubwiki/api';
 import { computeArtifactCommit } from '@pubwiki/api';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
@@ -78,6 +80,12 @@ export interface UpdateVersionMetadataInput {
   data: UpdateVersionMetadataRequest;
 }
 
+// Delete artifact parameters
+export interface DeleteArtifactParams {
+  artifactId: operations['deleteArtifact']['parameters']['path']['artifactId'];
+  userId: string; // from auth context
+}
+
 export class ArtifactService {
   private readonly aclService: AclService;
   private readonly discoveryService: DiscoveryService;
@@ -113,7 +121,11 @@ export class ArtifactService {
   /**
    * Create a new artifact (pure insert semantics).
    * 
-   * If artifactId already exists, returns 409 Conflict.
+   * This operation is IDEMPOTENT via optimistic locking:
+   * - Uses ON CONFLICT DO NOTHING for all inserts
+   * - Detects conflicts via meta.changes check at commit time
+   * - If artifactId already exists, returns 409 Conflict
+   * 
    * For updating existing artifacts:
    * - Use patchArtifact() for graph changes
    * - Use updateArtifactMetadata() for metadata changes
@@ -123,27 +135,36 @@ export class ArtifactService {
     const artifactId = metadata.artifactId;
 
     try {
-      // Step 1: Check if artifact already exists (pure insert - reject if exists)
-      const existingArtifact = await this.ctx
-        .select({ id: artifacts.id })
-        .from(artifacts)
-        .where(eq(artifacts.id, artifactId))
-        .limit(1);
-
-      if (existingArtifact.length > 0) {
+      // Step 1: Verify commit hash (for new artifacts, parentCommit is always null)
+      const parentCommit: string | null = null;
+      const expectedCommit = await ArtifactService.computeCommitHash(artifactId, parentCommit, nodes, edges);
+      if (metadata.commit !== expectedCommit) {
         return {
           success: false,
           error: {
-            code: 'CONFLICT',
-            message: `Artifact ${artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.`,
+            code: 'BAD_REQUEST',
+            message: `Commit hash mismatch: expected ${expectedCommit}, got ${metadata.commit}. Client must compute commit using (artifactId + parentCommit + nodes + edges).`,
           },
         };
       }
 
-      // Step 2: Validate and prepare context
-      const prepareResult = await this.prepareArtifactContext(artifactId, authorId, metadata, nodes, edges);
-      if (!prepareResult.success) return prepareResult;
-      const { author, versionId } = prepareResult.data;
+      // Step 2: Get author info
+      const authorResult = await this.ctx
+        .select({
+          id: user.id,
+          username: user.username,
+          displayName: user.displayName,
+          avatarUrl: user.avatarUrl,
+        })
+        .from(user)
+        .where(eq(user.id, authorId))
+        .limit(1);
+
+      if (authorResult.length === 0) {
+        return { success: false, error: { code: 'NOT_FOUND', message: 'Author not found' } };
+      }
+      const author = authorResult[0];
+      const versionId = crypto.randomUUID();
 
       // Step 3: Build and validate graph structure using NodeGraph abstraction
       const graph = NodeGraph.fromArrays(nodes, edges);
@@ -158,8 +179,8 @@ export class ArtifactService {
       const nodeResult = await this.syncNodes(artifactId, authorId, nodes, isPrivate);
       if (!nodeResult.success) return nodeResult;
 
-      // Step 5: Create artifact record
-      this.createNewArtifact(artifactId, authorId, metadata, versionId);
+      // Step 5: Create artifact record (uses optimistic lock to detect conflicts)
+      this.createArtifactRecord(artifactId, authorId, metadata, versionId);
 
       // Step 6: Create version record (artifact must exist first due to FK)
       this.createVersionRecord(artifactId, versionId, metadata);
@@ -185,7 +206,7 @@ export class ArtifactService {
 
       // Step 11: Build and return response
       const artifact = await this.buildArtifactResponse(
-        artifactId, false, metadata, author, processedTags
+        artifactId, metadata, author, processedTags
       );
 
       return { success: true, data: { artifact } };
@@ -200,67 +221,13 @@ export class ArtifactService {
   // ============================================================================
 
   /**
-   * Prepare context for creating a new artifact.
-   * Verifies commit hash and gets author info.
-   * 
-   * Note: This is now only for new artifacts (pure insert semantics).
-   * Existence check is done in createArtifact before calling this method.
-   */
-  private async prepareArtifactContext(
-    artifactId: string,
-    authorId: string,
-    metadata: CreateArtifactMetadata,
-    nodes: CreateArtifactNode[],
-    edges: ArtifactEdgeDescriptor[],
-  ): Promise<ServiceResult<{
-    author: { id: string; username: string; displayName: string | null; avatarUrl: string | null };
-    versionId: string;
-  }>> {
-    // For new artifacts, parentCommit is always null
-    const parentCommit: string | null = null;
-
-    // Verify commit hash
-    const expectedCommit = await ArtifactService.computeCommitHash(artifactId, parentCommit, nodes, edges);
-    if (metadata.commit !== expectedCommit) {
-      return {
-        success: false,
-        error: {
-          code: 'BAD_REQUEST',
-          message: `Commit hash mismatch: expected ${expectedCommit}, got ${metadata.commit}. Client must compute commit using (artifactId + parentCommit + nodes + edges).`,
-        },
-      };
-    }
-
-    // Get author info
-    const authorResult = await this.ctx
-      .select({
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        avatarUrl: user.avatarUrl,
-      })
-      .from(user)
-      .where(eq(user.id, authorId))
-      .limit(1);
-
-    if (authorResult.length === 0) {
-      return { success: false, error: { code: 'NOT_FOUND', message: 'Author not found' } };
-    }
-
-    return {
-      success: true,
-      data: {
-        author: authorResult[0],
-        versionId: crypto.randomUUID(),
-      },
-    };
-  }
-
-  /**
    * Create new artifact record.
    * Uses AclService and DiscoveryService for proper abstraction.
+   * 
+   * Uses ON CONFLICT DO NOTHING with optimistic lock to detect conflicts.
+   * If artifact already exists, the optimistic lock will fail at commit time.
    */
-  private createNewArtifact(
+  private createArtifactRecord(
     artifactId: string,
     authorId: string,
     metadata: CreateArtifactMetadata,
@@ -275,7 +242,10 @@ export class ArtifactService {
       thumbnailUrl: metadata.thumbnailUrl ?? null,
       license: metadata.license ?? null,
     };
-    this.ctx.modify(db => db.insert(artifacts).values(newArtifact));
+    this.ctx.modify(
+      db => db.insert(artifacts).values(newArtifact).onConflictDoNothing(),
+      { expectAffected: 1, lockMsg: `Artifact ${artifactId} already exists` }
+    );
 
     // Create discovery control record using DiscoveryService
     const isListed = metadata.isListed ?? true;
@@ -296,6 +266,9 @@ export class ArtifactService {
 
   /**
    * Step 3: Create version record
+   * 
+   * Uses ON CONFLICT DO NOTHING with optimistic lock to detect conflicts.
+   * If version with same commitHash already exists, the optimistic lock will fail at commit time.
    */
   private createVersionRecord(
     artifactId: string,
@@ -311,7 +284,10 @@ export class ArtifactService {
       publishedAt: new Date().toISOString(),
       entrypoint: metadata.entrypoint ?? null,
     };
-    this.ctx.modify(db => db.insert(artifactVersions).values(newVersion));
+    this.ctx.modify(
+      db => db.insert(artifactVersions).values(newVersion).onConflictDoNothing(),
+      { expectAffected: 1, lockMsg: `Version with commit ${metadata.commit} already exists` }
+    );
   }
 
   /**
@@ -462,7 +438,7 @@ export class ArtifactService {
         positionX: node.position?.x ?? null,
         positionY: node.position?.y ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode));
+      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode).onConflictDoNothing());
     }
 
     // Store edges
@@ -474,7 +450,7 @@ export class ArtifactService {
         sourceHandle: edge.sourceHandle ?? null,
         targetHandle: edge.targetHandle ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge));
+      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge).onConflictDoNothing());
     }
   }
 
@@ -488,7 +464,7 @@ export class ArtifactService {
       favCount: 0,
       refCount: 0,
       downloadCount: 0,
-    }));
+    }).onConflictDoNothing());
   }
 
   /**
@@ -496,38 +472,12 @@ export class ArtifactService {
    */
   private async buildArtifactResponse(
     artifactId: string,
-    isUpdate: boolean,
     metadata: CreateArtifactMetadata,
     author: { id: string; username: string; displayName: string | null; avatarUrl: string | null },
     processedTags: TagInfo[],
   ): Promise<ArtifactListItem> {
-    let existingStats = { viewCount: 0, favCount: 0, refCount: 0, downloadCount: 0 };
-    let existingCreatedAt = new Date().toISOString();
-
-    if (isUpdate) {
-      const statsResult = await this.ctx
-        .select()
-        .from(artifactStats)
-        .where(eq(artifactStats.artifactId, artifactId))
-        .limit(1);
-      if (statsResult.length > 0) {
-        existingStats = {
-          viewCount: statsResult[0].viewCount,
-          favCount: statsResult[0].favCount,
-          refCount: statsResult[0].refCount,
-          downloadCount: statsResult[0].downloadCount,
-        };
-      }
-
-      const artifactResult = await this.ctx
-        .select({ createdAt: artifacts.createdAt })
-        .from(artifacts)
-        .where(eq(artifacts.id, artifactId))
-        .limit(1);
-      if (artifactResult.length > 0) {
-        existingCreatedAt = artifactResult[0].createdAt;
-      }
-    }
+    const existingStats = { viewCount: 0, favCount: 0, refCount: 0, downloadCount: 0 };
+    const existingCreatedAt = new Date().toISOString();
 
     return {
       id: artifactId,
@@ -1064,6 +1014,22 @@ export class ArtifactService {
         updateFields.license = data.license;
       }
 
+      // Handle latestVersion change (must verify version exists)
+      if (data.latestVersion !== undefined) {
+        const [targetVersion] = await this.ctx
+          .select({ id: artifactVersions.id })
+          .from(artifactVersions)
+          .where(and(
+            eq(artifactVersions.artifactId, artifactId),
+            eq(artifactVersions.id, data.latestVersion)
+          ))
+          .limit(1);
+        if (!targetVersion) {
+          return { success: false, error: { code: 'NOT_FOUND', message: `Version ${data.latestVersion} not found` } };
+        }
+        updateFields.latestVersion = data.latestVersion;
+      }
+
       // Step 3: Update discovery control (isListed)
       const artifactRef = { type: 'artifact' as const, id: artifactId };
       if (data.isListed !== undefined) {
@@ -1152,6 +1118,11 @@ export class ArtifactService {
   /**
    * Fork all nodes in the latest version to private versions and create a new artifact version.
    * Used when changing artifact privacy from public to private.
+   * 
+   * This method is idempotent via optimistic locking:
+   * - forkAsPrivate returns existing commit if already forked
+   * - Version creation uses ON CONFLICT DO NOTHING + expectAffected=1
+   * - Concurrent requests will get OptimisticLockError, handled by caller
    */
   private async forkToPrivateVersion(
     artifactId: string,
@@ -1239,7 +1210,7 @@ export class ArtifactService {
       edges.map(e => ({ source: e.source, target: e.target, sourceHandle: e.sourceHandle ?? null, targetHandle: e.targetHandle ?? null })),
     );
 
-    // Create new version record
+    // Create new version record (uses optimistic lock to detect concurrent forks)
     const newVersionId = crypto.randomUUID();
     const newVersion: NewArtifactVersion = {
       id: newVersionId,
@@ -1250,7 +1221,10 @@ export class ArtifactService {
       publishedAt: new Date().toISOString(),
       entrypoint: null,
     };
-    this.ctx.modify(db => db.insert(artifactVersions).values(newVersion));
+    this.ctx.modify(
+      db => db.insert(artifactVersions).values(newVersion).onConflictDoNothing(),
+      { expectAffected: 1, lockMsg: `Fork version ${newCommit} already exists` }
+    );
 
     // Store graph structure (nodes and edges)
     for (const node of forkedNodes) {
@@ -1261,7 +1235,7 @@ export class ArtifactService {
         positionX: node.position?.x ?? null,
         positionY: node.position?.y ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode));
+      this.ctx.modify(db => db.insert(artifactVersionNodes).values(versionNode).onConflictDoNothing());
     }
 
     for (const edge of edges) {
@@ -1272,7 +1246,7 @@ export class ArtifactService {
         sourceHandle: edge.sourceHandle ?? null,
         targetHandle: edge.targetHandle ?? null,
       };
-      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge));
+      this.ctx.modify(db => db.insert(artifactVersionEdges).values(versionEdge).onConflictDoNothing());
     }
 
     // Update artifact's ACL to private
@@ -1400,7 +1374,7 @@ export class ArtifactService {
                 artifactId,
                 commitHash: targetVersion.commitHash,
                 tag,
-              })
+              }).onConflictDoNothing()
             );
           }
           finalCommitTags = data.commitTags;
@@ -1523,18 +1497,8 @@ export class ArtifactService {
       // Step 3: commit is required
       const commit = metadata.commit;
 
-      // Step 4: Determine parentCommit (current latest version's commitHash)
-      let parentCommit: string | null = null;
-      if (existingArtifact.latestVersion) {
-        const [currentVersion] = await this.ctx
-          .select({ commitHash: artifactVersions.commitHash })
-          .from(artifactVersions)
-          .where(eq(artifactVersions.id, existingArtifact.latestVersion))
-          .limit(1);
-        if (currentVersion) {
-          parentCommit = currentVersion.commitHash;
-        }
-      }
+      // Step 4: Use baseCommit as parentCommit (tree structure - versions branch from their base)
+      const parentCommit = metadata.baseCommit;
 
       // Step 5: Build merged graph using NodeGraph.fromPatch
       const graphResult = await NodeGraph.fromPatch(this.ctx, baseVersion.commitHash, {
@@ -1581,24 +1545,7 @@ export class ArtifactService {
       const nodeResult = await this.syncNodes(artifactId, authorId, mergedNodes, currentIsPrivate);
       if (!nodeResult.success) return nodeResult;
 
-      // Step 12: Check for duplicate commit hash
-      const existingVersion = await this.ctx
-        .select({ id: artifactVersions.id })
-        .from(artifactVersions)
-        .where(and(
-          eq(artifactVersions.artifactId, artifactId),
-          eq(artifactVersions.commitHash, commit)
-        ))
-        .limit(1);
-
-      if (existingVersion.length > 0) {
-        return {
-          success: false,
-          error: { code: 'CONFLICT', message: `Version with commit ${commit} already exists for this artifact` },
-        };
-      }
-
-      // Step 13: Create new version record
+      // Step 12: Create new version record (uses optimistic lock to detect conflicts)
       const versionId = crypto.randomUUID();
       this.createVersionRecord(artifactId, versionId, {
         artifactId,
@@ -1682,93 +1629,6 @@ export class ArtifactService {
       };
     } catch (error) {
       console.error('Patch artifact error:', error);
-      return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
-    }
-  }
-
-  /**
-   * 将一个 artifact 版本标记为 weak（不可逆操作）。
-   * weak 版本不对 node 产生引用计数。
-   * 标记为 weak 时：decrement 关联 node 内容的 refCount，GC refCount=0 的内容。
-   */
-  async markVersionWeak(
-    artifactId: string,
-    authorId: string,
-    commitHash: string,
-  ): Promise<ServiceResult<{ gcResult: { processedCount: number } }>> {
-    try {
-      // 检查 artifact 存在且用户有权限
-      const [existingArtifact] = await this.ctx
-        .select({ id: artifacts.id, authorId: artifacts.authorId })
-        .from(artifacts)
-        .where(eq(artifacts.id, artifactId))
-        .limit(1);
-
-      if (!existingArtifact) {
-        return { success: false, error: { code: 'NOT_FOUND', message: 'Artifact not found' } };
-      }
-
-      if (existingArtifact.authorId !== authorId) {
-        return { success: false, error: { code: 'FORBIDDEN', message: 'You do not have permission to update this artifact' } };
-      }
-
-      // 查找目标版本
-      const [targetVersion] = await this.ctx
-        .select()
-        .from(artifactVersions)
-        .where(and(
-          eq(artifactVersions.artifactId, artifactId),
-          eq(artifactVersions.commitHash, commitHash),
-        ))
-        .limit(1);
-
-      if (!targetVersion) {
-        return { success: false, error: { code: 'NOT_FOUND', message: `Version with commit ${commitHash} not found` } };
-      }
-
-      // weak 标记是不可逆的，已经是 weak 的版本不能再次标记
-      if (targetVersion.isWeak) {
-        return { success: false, error: { code: 'BAD_REQUEST', message: 'Version is already marked as weak. This operation is irreversible.' } };
-      }
-
-      // 更新 isWeak 标记
-      this.ctx.modify(db =>
-        db.update(artifactVersions)
-          .set({ isWeak: true })
-          .where(eq(artifactVersions.id, targetVersion.id))
-      );
-
-      // 获取该版本关联的所有 node 版本
-      const versionNodes = await this.ctx.select({
-          nodeId: artifactVersionNodes.nodeId,
-          nodeCommit: artifactVersionNodes.nodeCommit,
-        })
-        .from(artifactVersionNodes)
-        .where(eq(artifactVersionNodes.commitHash, targetVersion.commitHash));
-
-      // 获取每个 node 的 type 和 contentHash，并收集 decrementContentRefCount 操作
-      const nodeVersionService = new NodeVersionService(this.ctx);
-      let processedCount = 0;
-
-      for (const vn of versionNodes) {
-        const [nv] = await this.ctx.select({ type: nodeVersions.type, contentHash: nodeVersions.contentHash })
-          .from(nodeVersions)
-          .where(eq(nodeVersions.commit, vn.nodeCommit))
-          .limit(1);
-
-        if (!nv) continue;
-
-        // This collects the decrement operation into BatchContext
-        nodeVersionService.decrementContentRefCount(nv.type, nv.contentHash);
-        processedCount++;
-      }
-
-      return {
-        success: true,
-        data: { gcResult: { processedCount } },
-      };
-    } catch (error) {
-      console.error('Mark version weak error:', error);
       return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
     }
   }
@@ -2056,6 +1916,167 @@ export class ArtifactService {
     } catch (error) {
       console.error('Get artifact graph error:', error);
       return { success: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } };
+    }
+  }
+
+  /**
+   * Delete an artifact and all related data.
+   * - Cascade deletes all associated articles
+   * - Removes project_artifacts associations
+   * - Deletes all versions and graph data
+   * - Cleans up R2 storage (VFS files, homepage)
+   * - Does NOT delete shared node_versions
+   * 
+   * @param r2Bucket - Optional R2 bucket for cleaning up VFS files
+   */
+  async deleteArtifact(
+    params: DeleteArtifactParams,
+    r2Bucket?: R2Bucket
+  ): Promise<ServiceResult<void>> {
+    const { artifactId, userId } = params;
+    const artifactRef = { type: 'artifact' as const, id: artifactId };
+
+    try {
+      // Step 1: Check artifact exists
+      const [existing] = await this.ctx.select({ id: artifacts.id })
+        .from(artifacts)
+        .where(eq(artifacts.id, artifactId))
+        .limit(1);
+
+      if (!existing) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Artifact not found' },
+        };
+      }
+
+      // Step 2: Check manage permission
+      const canManage = await this.aclService.canManage(artifactRef, userId);
+      if (!canManage) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'No permission to delete this artifact' },
+        };
+      }
+
+      // Step 3: Get all associated articles and delete them (cascade)
+      const associatedArticles = await this.ctx
+        .select({ id: articles.id })
+        .from(articles)
+        .where(eq(articles.artifactId, artifactId));
+
+      for (const article of associatedArticles) {
+        // Use internal delete that skips permission check since we already verified manage permission
+        const articleRef = { type: 'article' as const, id: article.id };
+        this.ctx.modify(db => db.delete(articles).where(eq(articles.id, article.id)));
+        this.aclService.deleteAllAcls(articleRef);
+        this.discoveryService.delete(articleRef);
+      }
+
+      // Step 4: Remove project_artifacts associations (not deleting projects)
+      this.ctx.modify(db =>
+        db.delete(projectArtifacts).where(eq(projectArtifacts.artifactId, artifactId))
+      );
+
+      // Step 5: Get all version commits for R2 cleanup
+      const versionCommits = await this.ctx
+        .select({ commitHash: artifactVersions.commitHash })
+        .from(artifactVersions)
+        .where(eq(artifactVersions.artifactId, artifactId));
+
+      // Step 6: Get VFS node commits for R2 cleanup
+      const vfsCommits: string[] = [];
+      for (const { commitHash } of versionCommits) {
+        const nodes = await this.ctx
+          .select({ nodeCommit: artifactVersionNodes.nodeCommit })
+          .from(artifactVersionNodes)
+          .innerJoin(nodeVersions, eq(artifactVersionNodes.nodeCommit, nodeVersions.commit))
+          .where(
+            and(
+              eq(artifactVersionNodes.commitHash, commitHash),
+              eq(nodeVersions.type, 'VFS')
+            )
+          );
+        vfsCommits.push(...nodes.map(n => n.nodeCommit));
+      }
+
+      // Step 7: Delete version graph data (edges and nodes)
+      for (const { commitHash } of versionCommits) {
+        this.ctx.modify(db =>
+          db.delete(artifactVersionEdges).where(eq(artifactVersionEdges.commitHash, commitHash))
+        );
+        this.ctx.modify(db =>
+          db.delete(artifactVersionNodes).where(eq(artifactVersionNodes.commitHash, commitHash))
+        );
+      }
+
+      // Step 8: Delete artifact versions
+      this.ctx.modify(db =>
+        db.delete(artifactVersions).where(eq(artifactVersions.artifactId, artifactId))
+      );
+
+      // Step 9: Delete commit tags
+      this.ctx.modify(db =>
+        db.delete(artifactCommitTags).where(eq(artifactCommitTags.artifactId, artifactId))
+      );
+
+      // Step 10: Delete artifact tags
+      this.ctx.modify(db =>
+        db.delete(artifactTags).where(eq(artifactTags.artifactId, artifactId))
+      );
+
+      // Step 11: Delete stats
+      this.ctx.modify(db =>
+        db.delete(artifactStats).where(eq(artifactStats.artifactId, artifactId))
+      );
+
+      // Step 12: Delete favs
+      this.ctx.modify(db =>
+        db.delete(artifactFavs).where(eq(artifactFavs.artifactId, artifactId))
+      );
+
+      // Step 13: Delete views
+      this.ctx.modify(db =>
+        db.delete(artifactViews).where(eq(artifactViews.artifactId, artifactId))
+      );
+
+      // Step 14: Delete artifact record
+      this.ctx.modify(db =>
+        db.delete(artifacts).where(eq(artifacts.id, artifactId))
+      );
+
+      // Step 15: Delete ACL records
+      this.aclService.deleteAllAcls(artifactRef);
+
+      // Step 16: Delete discovery control record
+      this.discoveryService.delete(artifactRef);
+
+      // Step 17: Clean up R2 storage (VFS files and homepage)
+      if (r2Bucket) {
+        // Delete VFS tar.gz files
+        for (const commit of vfsCommits) {
+          try {
+            await r2Bucket.delete(`vfs/${commit}.tar.gz`);
+          } catch (e) {
+            console.warn(`Failed to delete VFS file for commit ${commit}:`, e);
+          }
+        }
+
+        // Delete homepage HTML
+        try {
+          await r2Bucket.delete(`homepage/${artifactId}.html`);
+        } catch (e) {
+          console.warn(`Failed to delete homepage for artifact ${artifactId}:`, e);
+        }
+      }
+
+      return { success: true, data: undefined };
+    } catch (error) {
+      console.error('Failed to delete artifact:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to delete artifact' },
+      };
     }
   }
 }

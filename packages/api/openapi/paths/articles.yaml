@@ -73,6 +73,43 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
+  delete:
+    operationId: deleteArticle
+    summary: 删除文章
+    description: |
+      删除指定文章。需要认证且具有 manage 权限。
+    tags: [Articles]
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: articleId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '204':
+        description: 删除成功
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: 文章不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
 /articles/by-artifact/{artifactId}:
   get:
     operationId: listArticlesByArtifact

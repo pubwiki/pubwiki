@@ -123,7 +123,17 @@ export interface paths {
          *     注意：vfs[xxx] 和 save[xxx] 是动态 key，在 OpenAPI 中通过 additionalProperties 描述。
          */
         post: operations["createArtifact"];
-        delete?: never;
+        /**
+         * 删除 Artifact
+         * @description 删除指定 Artifact。需要认证且具有 manage 权限。
+         *     删除时会：
+         *     - 级联删除所有关联的 Article
+         *     - 解除与 Project 的关联
+         *     - 删除所有版本和相关数据
+         *     - 同步清理 R2 中的 VFS 文件
+         *     不会删除共享的 node_versions（可能被其他 artifact 引用）。
+         */
+        delete: operations["deleteArtifact"];
         options?: never;
         head?: never;
         /**
@@ -250,28 +260,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/artifacts/{artifactId}/versions/{commitHash}/weak": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * 标记版本为 weak（不可逆）
-         * @description 将指定版本标记为 weak 版本（不可逆操作）。weak 版本不会对其关联的 node 产生引用计数。
-         *     标记为 weak 后，会尝试 GC 掉引用计数归零的 node 内容。
-         *     已经标记为 weak 的版本不能取消标记。
-         */
-        put: operations["markVersionWeak"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/projects": {
         parameters: {
             query?: never;
@@ -312,7 +300,16 @@ export interface paths {
         get: operations["getProjectDetail"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * 删除 Project
+         * @description 删除指定 Project。需要认证且具有 manage 权限。
+         *     删除时会：
+         *     - 删除所有 project posts 及其关联的 discussions
+         *     - 删除所有 project pages
+         *     - 解除与 artifacts 的关联（不删除 artifact 本身）
+         *     - 删除所有 project roles
+         */
+        delete: operations["deleteProject"];
         options?: never;
         head?: never;
         patch?: never;
@@ -581,7 +578,11 @@ export interface paths {
          */
         put: operations["upsertArticle"];
         post?: never;
-        delete?: never;
+        /**
+         * 删除文章
+         * @description 删除指定文章。需要认证且具有 manage 权限。
+         */
+        delete: operations["deleteArticle"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1495,6 +1496,11 @@ export interface components {
              * @default false
              */
             isListed: boolean;
+            /**
+             * @description 是否为私有文章（访问控制）。如果设为 false（公开），对应的 artifact 必须也是公开的。
+             * @default false
+             */
+            isPrivate: boolean;
         };
         SaveDetail: {
             /** @description Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)） */
@@ -1811,6 +1817,12 @@ export interface components {
             /** Format: uri */
             thumbnailUrl?: string;
             license?: string;
+            /**
+             * @description 设置 artifact 的 latestVersion 指针。
+             *     必须是该 artifact 已存在的版本 ID。
+             *     用于在树状版本结构中指定当前"主线"版本。
+             */
+            latestVersion?: string;
             /** @description 是否在公开列表中可见（可发现性） */
             isListed?: boolean;
             /**
@@ -1839,11 +1851,6 @@ export interface components {
             /** @description 入口点配置 */
             entrypoint?: components["schemas"]["ArtifactEntrypoint"];
         };
-        /**
-         * @description 将一个 artifact 版本标记为 weak（不可逆操作）。
-         *     weak 版本不对 node 产生引用计数，标记后尝试 GC 引用计数归零的 node 内容。
-         */
-        MarkVersionWeakRequest: Record<string, never>;
         /**
          * @description Discussion 列表排序字段
          * @default createdAt
@@ -2180,6 +2187,54 @@ export interface operations {
             };
             /** @description Artifact ID 已存在（Conflict） */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact ID */
+                artifactId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Artifact 不存在 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2567,80 +2622,6 @@ export interface operations {
             };
         };
     };
-    markVersionWeak: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Artifact ID */
-                artifactId: string;
-                /** @description 版本的 commit hash */
-                commitHash: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MarkVersionWeakRequest"];
-            };
-        };
-        responses: {
-            /** @description 标记成功 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        /** @example Version marked as weak */
-                        message: string;
-                        gcResult: {
-                            /** @description 引用计数被减少的内容数量 */
-                            decremented?: number;
-                            /** @description 引用计数归零被删除的内容数量 */
-                            deleted?: number;
-                        };
-                    };
-                };
-            };
-            /** @description 请求参数错误 */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权限 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Artifact 或版本不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     listProjects: {
         parameters: {
             query?: {
@@ -2761,6 +2742,54 @@ export interface operations {
                 };
             };
             /** @description 无权访问 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Project 不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Project ID */
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权限 */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -3830,6 +3859,53 @@ export interface operations {
             };
             /** @description 无权限 */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteArticle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                articleId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 文章不存在 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -87,6 +87,33 @@ projectsRoute.get('/:projectId', resourceAccessMiddleware, async (c) => {
   return c.json<ProjectDetail>(result.data);
 });
 
+// DELETE: Delete project
+projectsRoute.delete('/:projectId', authMiddleware, async (c) => {
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const projectService = new ProjectService(ctx);
+  const user = c.get('user');
+  const projectId = c.req.param('projectId');
+
+  // Validate UUID format
+  if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    return c.json<ApiError>({ error: 'Invalid project ID format' }, 400);
+  }
+
+  const result = await projectService.deleteProject({
+    projectId,
+    userId: user.id,
+  });
+
+  if (!result.success) {
+    return serviceErrorResponse(c, result.error);
+  }
+
+  // Commit the batch to persist changes
+  await ctx.commit();
+
+  return c.body(null, 204);
+});
+
 // 获取 project page 详情
 // 获取 project page 详情
 projectsRoute.get('/:projectId/pages/:pageId', resourceAccessMiddleware, async (c) => {

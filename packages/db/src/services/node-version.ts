@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, lt, or, inArray } from 'drizzle-orm';
+import { eq, and, desc, lt, or, inArray } from 'drizzle-orm';
 import type { BatchContext } from '../batch-context';
 import { nodeVersions, nodeVersionRefs, type NodeVersion, type NewNodeVersion, type NewNodeVersionRef, type NodeVersionRefType } from '../schema/node-versions';
 import { inputContents, promptContents, generatedContents, vfsContents, sandboxContents, loaderContents, stateContents, saveContents } from '../schema/node-contents';
@@ -290,16 +290,16 @@ export class NodeVersionService {
    * This is the ONLY entry point for creating node versions.
    * 
    * This operation is IDEMPOTENT - calling it multiple times with the same
-   * inputs will produce the same result. Already-existing versions are skipped
-   * before content upsert to prevent refCount inflation.
+   * inputs will produce the same result. Content inserts use ON CONFLICT DO NOTHING
+   * so duplicate content is safely ignored.
    * 
    * For each version:
    * 1. Validate commit hash matches computeNodeCommit()
    * 2. Deduplicate by commit within the batch
    * 3. Skip versions that already exist in database
-   * 4. Upsert content to typed content table (refCount managed)
-   * 5. Insert node_versions record (onConflictDoNothing)
-   * 6. Insert lineage refs if any (onConflictDoNothing)
+   * 4. Insert content to typed content table (ON CONFLICT DO NOTHING)
+   * 5. Insert node_versions record (ON CONFLICT DO NOTHING)
+   * 6. Insert lineage refs if any (ON CONFLICT DO NOTHING)
    * 
    * Note: All writes are collected into BatchContext, not executed immediately.
    * The caller (route layer) is responsible for calling ctx.commit().
@@ -350,7 +350,7 @@ export class NodeVersionService {
 
       const newInputs = [...validatedInputMap.values()];
 
-      // ========== Phase 2: Batch upsert unique contents ==========
+      // ========== Phase 2: Batch insert unique contents ==========
       
       // Collect unique contentHashes and their contents
       const contentMap = new Map<string, ArtifactNodeContent>();
@@ -358,9 +358,9 @@ export class NodeVersionService {
         contentMap.set(input.contentHash, input.content);
       }
 
-      // Upsert all unique contents
+      // Insert all unique contents
       for (const [contentHash, content] of contentMap) {
-        this.upsertContent(contentHash, content);
+        this.insertContent(contentHash, content);
       }
 
       // ========== Phase 3: Prepare parent info for derivativeOf ==========
@@ -540,24 +540,24 @@ export class NodeVersionService {
     // 但 API 的 ArtifactNodeContent 是以 type 为 discriminator 的联合类型，
     // 需要在此注入 type 使结构匹配。
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { contentHash: _contentHash, refCount: _refCount, createdAt: _createdAt, ...contentFields } = result[0];
+    const { contentHash: _contentHash, createdAt: _createdAt, ...contentFields } = result[0];
     return { type, ...contentFields } as ArtifactNodeContent;
   }
 
   /**
-   * Upsert content into the typed content table.
-   * Uses ON CONFLICT to increment ref_count if content already exists.
+   * Insert content into the typed content table.
+   * Uses ON CONFLICT DO NOTHING for idempotency - content is content-addressed,
+   * so if it already exists, it's guaranteed to be identical.
    * 
-   * WARNING: This is NOT idempotent - calling multiple times for the same
-   * contentHash will increment refCount each time. Callers must ensure
-   * this is only called once per content (e.g., by checking existence first).
+   * This operation is IDEMPOTENT - calling multiple times with the same
+   * contentHash will only insert once; subsequent calls are no-ops.
    * 
    * Note: This collects the operation into BatchContext, not executed immediately.
    * 
    * For SAVE nodes, the content is expected to have additional fields
    * (stateNodeCommit, sourceArtifactCommit) populated by artifact.ts.
    */
-  private upsertContent(contentHash: string, content: ArtifactNodeContent): void {
+  private insertContent(contentHash: string, content: ArtifactNodeContent): void {
     // Using type narrowing via the discriminated union's `type` field
     switch (content.type) {
       case 'INPUT': {
@@ -571,10 +571,7 @@ export class NodeVersionService {
               plainText: extractPlainText(blocks),
               reftagNames: extractReftagNames(blocks),
             })
-            .onConflictDoUpdate({
-              target: inputContents.contentHash,
-              set: { refCount: sql`${inputContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
       }
@@ -589,10 +586,7 @@ export class NodeVersionService {
               plainText: extractPlainText(blocks),
               reftagNames: extractReftagNames(blocks),
             })
-            .onConflictDoUpdate({
-              target: promptContents.contentHash,
-              set: { refCount: sql`${promptContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
       }
@@ -606,10 +600,7 @@ export class NodeVersionService {
               // GENERATED blocks are MessageBlock[], not ContentBlock[], so no plainText extraction
               plainText: undefined,
             })
-            .onConflictDoUpdate({
-              target: generatedContents.contentHash,
-              set: { refCount: sql`${generatedContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
 
@@ -624,10 +615,7 @@ export class NodeVersionService {
               totalSize: content.totalSize,
               fileTree: content.fileTree,
             })
-            .onConflictDoUpdate({
-              target: vfsContents.contentHash,
-              set: { refCount: sql`${vfsContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
 
@@ -638,10 +626,7 @@ export class NodeVersionService {
               contentHash,
               entryFile: content.entryFile,
             })
-            .onConflictDoUpdate({
-              target: sandboxContents.contentHash,
-              set: { refCount: sql`${sandboxContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
 
@@ -651,10 +636,7 @@ export class NodeVersionService {
             .values({
               contentHash,
             })
-            .onConflictDoUpdate({
-              target: loaderContents.contentHash,
-              set: { refCount: sql`${loaderContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
 
@@ -666,10 +648,7 @@ export class NodeVersionService {
               name: content.name,
               description: content.description,
             })
-            .onConflictDoUpdate({
-              target: stateContents.contentHash,
-              set: { refCount: sql`${stateContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
 
@@ -686,32 +665,10 @@ export class NodeVersionService {
               title: content.title,
               description: content.description,
             })
-            .onConflictDoUpdate({
-              target: saveContents.contentHash,
-              set: { refCount: sql`${saveContents.refCount} + 1` },
-            })
+            .onConflictDoNothing()
         );
         break;
     }
-  }
-
-  /**
-   * Decrement the refCount of a content row. If refCount reaches 0, delete the row.
-   * Returns { decremented: boolean, deleted: boolean }.
-   * 
-   * Note: This collects operations into BatchContext, not executed immediately.
-   * The actual deletion check happens at commit time.
-   */
-  decrementContentRefCount(type: NodeType, contentHash: string): void {
-    const table = getContentTable(type);
-
-    // Use a single update that decrements refCount
-    // The actual cleanup of zero-refCount rows should be done by a separate garbage collection process
-    this.ctx.modify(db =>
-      db.update(table)
-        .set({ refCount: sql`${table.refCount} - 1` })
-        .where(eq(table.contentHash, contentHash))
-    );
   }
 
   /**
@@ -792,9 +749,6 @@ export class NodeVersionService {
           .onConflictDoNothing()
       );
 
-      // Increment content refCount (same content, new reference)
-      this.incrementContentRefCount(sourceVersion.type, sourceVersion.contentHash);
-
       // Create ACL for the new node version (private)
       const nodeRef = { type: 'node' as const, id: newCommit };
       this.aclService.grantOwner(nodeRef, authorId);
@@ -827,17 +781,7 @@ export class NodeVersionService {
     }
   }
 
-  /**
-   * Increment content refCount when a new node version references it.
-   */
-  private incrementContentRefCount(type: NodeType, contentHash: string): void {
-    const table = getContentTable(type);
-    this.ctx.modify(db =>
-      db.update(table)
-        .set({ refCount: sql`${table.refCount} + 1` })
-        .where(eq(table.contentHash, contentHash))
-    );
-  }
+
 
   /**
    * Update permission for a node version (one-way relaxation).

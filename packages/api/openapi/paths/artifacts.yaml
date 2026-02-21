@@ -258,6 +258,51 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
+  delete:
+    summary: 删除 Artifact
+    description: |
+      删除指定 Artifact。需要认证且具有 manage 权限。
+      删除时会：
+      - 级联删除所有关联的 Article
+      - 解除与 Project 的关联
+      - 删除所有版本和相关数据
+      - 同步清理 R2 中的 VFS 文件
+      不会删除共享的 node_versions（可能被其他 artifact 引用）。
+    operationId: deleteArtifact
+    tags:
+      - Artifacts
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        description: Artifact ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '204':
+        description: 删除成功
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Artifact 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
 /artifacts/{artifactId}/homepage:
   get:
     summary: 获取 Artifact 主页 HTML
@@ -569,86 +614,6 @@
                   example: Version metadata updated successfully
                 version:
                   $ref: '../schemas/artifact.yaml#/ArtifactVersion'
-      '400':
-        description: 请求参数错误
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-      '401':
-        description: 未认证
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-      '403':
-        description: 无权限
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-      '404':
-        description: Artifact 或版本不存在
-        content:
-          application/json:
-            schema:
-              $ref: '../schemas/common.yaml#/ApiError'
-
-/artifacts/{artifactId}/versions/{commitHash}/weak:
-  put:
-    summary: 标记版本为 weak（不可逆）
-    description: |
-      将指定版本标记为 weak 版本（不可逆操作）。weak 版本不会对其关联的 node 产生引用计数。
-      标记为 weak 后，会尝试 GC 掉引用计数归零的 node 内容。
-      已经标记为 weak 的版本不能取消标记。
-    operationId: markVersionWeak
-    tags:
-      - Artifacts
-    security:
-      - cookieAuth: []
-    parameters:
-      - name: artifactId
-        in: path
-        required: true
-        description: Artifact ID
-        schema:
-          type: string
-          format: uuid
-      - name: commitHash
-        in: path
-        required: true
-        description: 版本的 commit hash
-        schema:
-          type: string
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            $ref: '../schemas/artifact.yaml#/MarkVersionWeakRequest'
-    responses:
-      '200':
-        description: 标记成功
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - message
-                - gcResult
-              properties:
-                message:
-                  type: string
-                  example: Version marked as weak
-                gcResult:
-                  type: object
-                  properties:
-                    decremented:
-                      type: integer
-                      description: 引用计数被减少的内容数量
-                    deleted:
-                      type: integer
-                      description: 引用计数归零被删除的内容数量
       '400':
         description: 请求参数错误
         content:

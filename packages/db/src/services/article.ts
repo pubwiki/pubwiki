@@ -8,46 +8,43 @@ import { resourceDiscoveryControl } from '../schema/discovery-control';
 import type { ServiceResult } from './user';
 import type {
   ArticleDetail,
+  ArticleAuthor,
   ReaderContent,
-  Pagination,
+  ListArticlesByArtifactResponse,
+  UpsertArticleRequest,
+  operations,
 } from '@pubwiki/api';
 import { AclService, DiscoveryService } from './access-control';
 
-// 重新导出类型
+// Re-export types
 export type { ArticleDetail };
 
-// 作者信息
-interface AuthorInfo {
-  id: string;
-  username: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-}
-
-// Upsert 参数
+// Upsert parameters: path params + auth context + request body
 export interface UpsertArticleParams {
-  articleId: string;
-  authorId: string;
-  data: {
-    title: string;
-    artifactId: string;
-    artifactCommit: string;
-    content: ReaderContent;
-    isListed?: boolean;
-  };
+  articleId: operations['upsertArticle']['parameters']['path']['articleId'];
+  authorId: string; // from auth context
+  data: UpsertArticleRequest;
 }
 
-// 列表查询参数
-export interface ListArticlesByArtifactParams {
-  artifactId: string;
-  page?: number;
-  limit?: number;
+// Get parameters: path params + optional auth context
+export interface GetArticleParams {
+  articleId: operations['getArticle']['parameters']['path']['articleId'];
+  /** Optional viewer ID for permission checking. If not provided, only public articles are accessible. */
+  viewerId?: string;
 }
 
-// 列表响应类型
-export interface ListArticlesByArtifactResult {
-  articles: ArticleDetail[];
-  pagination: Pagination;
+// List query parameters: path + query params
+type ListArticlesPathParams = operations['listArticlesByArtifact']['parameters']['path'];
+type ListArticlesQueryParams = NonNullable<operations['listArticlesByArtifact']['parameters']['query']>;
+export type ListArticlesByArtifactParams = ListArticlesPathParams & ListArticlesQueryParams;
+
+// List response type - directly use API response type
+export type ListArticlesByArtifactResult = ListArticlesByArtifactResponse;
+
+// Delete parameters: path params + auth context
+export interface DeleteArticleParams {
+  articleId: operations['deleteArticle']['parameters']['path']['articleId'];
+  userId: string; // from auth context
 }
 
 export class ArticleService {
@@ -59,8 +56,8 @@ export class ArticleService {
     this.discoveryService = new DiscoveryService(ctx);
   }
 
-  // 获取作者信息
-  private async getAuthor(authorId: string): Promise<AuthorInfo | null> {
+  // Get author info
+  private async getAuthor(authorId: string): Promise<ArticleAuthor | null> {
     const result = await this.ctx.select({
         id: user.id,
         username: user.username,
@@ -74,10 +71,10 @@ export class ArticleService {
     return result[0] ?? null;
   }
 
-  // 转换为 ArticleDetail
+  // Convert to ArticleDetail
   private toDetail(
     article: Article,
-    author: AuthorInfo,
+    author: ArticleAuthor,
     discoveryControl: { isListed: boolean }
   ): ArticleDetail {
     return {
@@ -101,25 +98,17 @@ export class ArticleService {
   }
 
   // 获取文章详情
-  async getArticle(articleId: string): Promise<ServiceResult<ArticleDetail>> {
+  async getArticle(params: GetArticleParams): Promise<ServiceResult<ArticleDetail>> {
+    const { articleId, viewerId } = params;
+    const articleRef = { type: 'article' as const, id: articleId };
+
     try {
-      // 获取文章及其发现控制信息
-      const result = await this.ctx.select({
-          article: articles,
-          isListed: resourceDiscoveryControl.isListed,
-        })
+      // Step 1: Get article record
+      const [row] = await this.ctx.select()
         .from(articles)
-        .leftJoin(
-          resourceDiscoveryControl,
-          and(
-            eq(resourceDiscoveryControl.resourceType, 'article'),
-            eq(resourceDiscoveryControl.resourceId, articles.id)
-          )
-        )
         .where(eq(articles.id, articleId))
         .limit(1);
 
-      const row = result[0];
       if (!row) {
         return {
           success: false,
@@ -127,8 +116,21 @@ export class ArticleService {
         };
       }
 
-      // 获取作者信息
-      const author = await this.getAuthor(row.article.authorId);
+      // Step 2: Check read permission using AclService
+      const canRead = await this.aclService.canRead(articleRef, viewerId);
+      if (!canRead) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Article not found' },
+        };
+      }
+
+      // Step 3: Get discovery control using DiscoveryService
+      const discoveryRecord = await this.discoveryService.get(articleRef);
+      const isListed = discoveryRecord?.isListed ?? false;
+
+      // Step 4: Get author info
+      const author = await this.getAuthor(row.authorId);
       if (!author) {
         return {
           success: false,
@@ -138,9 +140,7 @@ export class ArticleService {
 
       return {
         success: true,
-        data: this.toDetail(row.article, author, {
-          isListed: row.isListed ?? false,
-        }),
+        data: this.toDetail(row, author, { isListed }),
       };
     } catch (error) {
       console.error('Failed to get article:', error);
@@ -154,6 +154,8 @@ export class ArticleService {
   /**
    * Create or update an article.
    * Returns only articleId - caller should commit and then call getArticle to get full detail.
+   * 
+   * Privacy constraint: If isPrivate=false (public article), the artifact must also be public.
    */
   async upsertArticle(params: UpsertArticleParams): Promise<ServiceResult<{ articleId: string }>> {
     const { articleId, authorId, data } = params;
@@ -175,6 +177,24 @@ export class ArticleService {
           success: false,
           error: { code: 'NOT_FOUND', message: 'Artifact version not found' },
         };
+      }
+
+      // Determine privacy setting (default to false = public)
+      const isPrivate = data.isPrivate ?? false;
+
+      // Check artifact privacy: public article requires public artifact
+      if (!isPrivate) {
+        const artifactRef = { type: 'artifact' as const, id: data.artifactId };
+        const artifactIsPublic = await this.aclService.isPublic(artifactRef);
+        if (!artifactIsPublic) {
+          return {
+            success: false,
+            error: {
+              code: 'BAD_REQUEST',
+              message: 'Cannot create public article for private artifact. Set isPrivate=true or make the artifact public first.',
+            },
+          };
+        }
       }
 
       // 验证 content 中所有 game_ref 引用的 saveCommit 存在
@@ -216,6 +236,7 @@ export class ArticleService {
 
       // 确定发现控制设置
       const isListed = data.isListed ?? true;     // 默认列出
+      const articleRef = { type: 'article' as const, id: articleId };
 
       if (existing) {
         // 更新模式：验证 author
@@ -240,13 +261,21 @@ export class ArticleService {
         );
 
         // Update discovery control using DiscoveryService
-        // Note: DiscoveryService.setListed only does update, need to ensure record exists
-        const articleRef = { type: 'article' as const, id: articleId };
         const existingDiscovery = await this.discoveryService.get(articleRef);
         if (existingDiscovery) {
           this.discoveryService.setListed(articleRef, isListed);
         } else {
           this.discoveryService.create(articleRef, isListed);
+        }
+
+        // Update ACL based on isPrivate (one-way relaxation: private->public allowed, public->private needs check)
+        const currentIsPublic = await this.aclService.isPublic(articleRef);
+        if (isPrivate && currentIsPublic) {
+          // public -> private: remove public ACL
+          this.aclService.setPrivate(articleRef);
+        } else if (!isPrivate && !currentIsPublic) {
+          // private -> public: add public ACL (artifact check already done above)
+          this.aclService.setPublic(articleRef, authorId);
         }
       } else {
         // 创建模式
@@ -262,14 +291,15 @@ export class ArticleService {
         );
 
         // Create discovery control using DiscoveryService
-        const articleRef = { type: 'article' as const, id: articleId };
         this.discoveryService.create(articleRef, isListed);
 
         // Create owner ACL using AclService
         this.aclService.grantOwner(articleRef, authorId);
 
-        // Create public read ACL (articles are public by default)
-        this.aclService.setPublic(articleRef, authorId);
+        // Create public read ACL only if not private
+        if (!isPrivate) {
+          this.aclService.setPublic(articleRef, authorId);
+        }
       }
 
       // Return articleId - caller should commit and then call getArticle
@@ -366,6 +396,58 @@ export class ArticleService {
       return {
         success: false,
         error: { code: 'INTERNAL_ERROR', message: 'Failed to list articles' },
+      };
+    }
+  }
+
+  /**
+   * Delete an article.
+   * Requires manage permission on the article.
+   */
+  async deleteArticle(params: DeleteArticleParams): Promise<ServiceResult<void>> {
+    const { articleId, userId } = params;
+    const articleRef = { type: 'article' as const, id: articleId };
+
+    try {
+      // Step 1: Check article exists
+      const [existing] = await this.ctx.select({ id: articles.id })
+        .from(articles)
+        .where(eq(articles.id, articleId))
+        .limit(1);
+
+      if (!existing) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Article not found' },
+        };
+      }
+
+      // Step 2: Check manage permission
+      const canManage = await this.aclService.canManage(articleRef, userId);
+      if (!canManage) {
+        return {
+          success: false,
+          error: { code: 'FORBIDDEN', message: 'No permission to delete this article' },
+        };
+      }
+
+      // Step 3: Delete article record
+      this.ctx.modify(db =>
+        db.delete(articles).where(eq(articles.id, articleId))
+      );
+
+      // Step 4: Delete ACL records
+      this.aclService.deleteAllAcls(articleRef);
+
+      // Step 5: Delete discovery control record
+      this.discoveryService.delete(articleRef);
+
+      return { success: true, data: undefined };
+    } catch (error) {
+      console.error('Failed to delete article:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to delete article' },
       };
     }
   }

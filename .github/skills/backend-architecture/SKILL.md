@@ -121,6 +121,8 @@ export class BatchContext {
 
 我们将该类传入每一个service中，并且保证service仅通过这个类来实现对数据库的访问。从而保证业务层不再直接访问数据库。
 
+**注意BatchContext的commit方法可能抛出乐观锁异常，因此我们可能需要在路由层捕获异常。service业务层不可能调用commit方法，因此在@pubwiki/db中的任何地方捕获乐观锁异常都是错误的**
+
 ### 访问权限与可发现性
 
 后端中存在下面几种资源：Project，Artifact，Node，Article以及Save。我们需要对这些资源实施合理的访问控制并且管理可见性。

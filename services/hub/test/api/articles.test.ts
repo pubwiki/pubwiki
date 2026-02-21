@@ -31,7 +31,12 @@ describe('Articles API', () => {
   });
 
   // Helper: 创建测试 artifact
-  async function createTestArtifact(ownerId: string, name: string = 'Test Artifact'): Promise<string> {
+  async function createTestArtifact(
+    ownerId: string,
+    name: string = 'Test Artifact',
+    options: { isPrivate?: boolean } = {}
+  ): Promise<string> {
+    const { isPrivate = false } = options;
     const [artifact] = await db.insert(artifacts).values({
       name,
       authorId: ownerId,
@@ -44,15 +49,17 @@ describe('Articles API', () => {
       isListed: true,
     });
     
-    // Grant public read access
-    await db.insert(resourceAcl).values({
-      resourceType: 'artifact',
-      resourceId: artifact.id,
-      userId: PUBLIC_USER_ID,
-      canRead: true,
-      canWrite: false,
-      canManage: false,
-    });
+    // Grant public read access only if not private
+    if (!isPrivate) {
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+      });
+    }
     
     // Grant owner full access
     await db.insert(resourceAcl).values({
@@ -110,9 +117,9 @@ describe('Articles API', () => {
     authorId: string,
     artifactId: string,
     title: string = 'Test Article',
-    options: { isListed?: boolean } = {}
+    options: { isListed?: boolean; isPrivate?: boolean } = {}
   ): Promise<string> {
-    const { isListed = true } = options;
+    const { isListed = true, isPrivate = false } = options;
     const articleId = crypto.randomUUID();
     
     await db.insert(articles).values({
@@ -130,15 +137,17 @@ describe('Articles API', () => {
       isListed,
     });
 
-    // Grant public read access
-    await db.insert(resourceAcl).values({
-      resourceType: 'article',
-      resourceId: articleId,
-      userId: PUBLIC_USER_ID,
-      canRead: true,
-      canWrite: false,
-      canManage: false,
-    });
+    // Grant public read access only if not private
+    if (!isPrivate) {
+      await db.insert(resourceAcl).values({
+        resourceType: 'article',
+        resourceId: articleId,
+        userId: PUBLIC_USER_ID,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+      });
+    }
 
     // Grant author full access
     await db.insert(resourceAcl).values({
@@ -153,7 +162,7 @@ describe('Articles API', () => {
     return articleId;
   }
 
-  // Helper: 创建有效的 article content
+  // Helper: 创建有效的 article content (with game_ref - requires valid saveCommit)
   function createTestContent(): UpsertArticleRequest['content'] {
     return [
       {
@@ -165,6 +174,17 @@ describe('Articles API', () => {
         type: 'game_ref',
         textId: 'text-1',
         saveCommit: crypto.randomUUID().substring(0, 8),
+      },
+    ];
+  }
+
+  // Helper: 创建简单的 article content (text only, no game_ref)
+  function createSimpleContent(): UpsertArticleRequest['content'] {
+    return [
+      {
+        type: 'text',
+        id: 'text-1',
+        text: 'This is a test paragraph',
       },
     ];
   }
@@ -193,17 +213,8 @@ describe('Articles API', () => {
       const artifactId = await createTestArtifact(userId);
       await createTestSandboxNode(artifactId);
 
-      // 直接创建文章
-      const articleId = crypto.randomUUID();
-      const artifactCommit = crypto.randomUUID().substring(0, 8);
-      await db.insert(articles).values({
-        id: articleId,
-        authorId: userId,
-        artifactId,
-        artifactCommit,
-        title: 'Test Article',
-        content: createTestContent(),
-      });
+      // 使用 helper 创建文章（带 ACL 记录）
+      const articleId = await createTestArticle(userId, artifactId, 'Test Article');
 
       const request = new Request(`http://localhost/api/articles/${articleId}`);
       const response = await sendRequest(request);
@@ -214,7 +225,57 @@ describe('Articles API', () => {
       expect(data.title).toBe('Test Article');
       expect(data.artifactId).toBe(artifactId);
       expect(data.author.id).toBe(userId);
-      expect(data.content).toHaveLength(2);
+    });
+
+    it('should return 404 for private article when not authenticated', async () => {
+      const { userId } = await registerUser('author');
+      const artifactId = await createTestArtifact(userId);
+
+      // 创建私有文章
+      const articleId = await createTestArticle(userId, artifactId, 'Private Article', { isPrivate: true });
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`);
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(404);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Article not found');
+    });
+
+    it('should return private article for owner', async () => {
+      const { userId, sessionCookie } = await registerUser('author');
+      const artifactId = await createTestArtifact(userId);
+
+      // 创建私有文章
+      const articleId = await createTestArticle(userId, artifactId, 'Private Article', { isPrivate: true });
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(200);
+      const data = await response.json<ArticleDetail>();
+      expect(data.id).toBe(articleId);
+      expect(data.title).toBe('Private Article');
+    });
+
+    it('should return 404 for private article accessed by another user', async () => {
+      const { userId: authorId } = await registerUser('author');
+      const { sessionCookie: otherUserCookie } = await registerUser('other');
+      const artifactId = await createTestArtifact(authorId);
+
+      // 创建私有文章
+      const articleId = await createTestArticle(authorId, artifactId, 'Private Article', { isPrivate: true });
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        headers: { Cookie: otherUserCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(404);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Article not found');
     });
   });
 
@@ -353,12 +414,14 @@ describe('Articles API', () => {
       expect(response2.status).toBe(400);
     });
 
-    it('should return 400 for invalid isPrivate/isListed value', async () => {
+    it('should return 400 for invalid isListed value', async () => {
       const { sessionCookie, userId } = await registerUser('author');
       const artifactId = await createTestArtifact(userId);
       await createTestSandboxNode(artifactId);
       const articleId = crypto.randomUUID();
-      const artifactCommit = crypto.randomUUID().substring(0, 8);
+      
+      // Get the artifact version commit
+      const [version] = await db.select().from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId)).limit(1);
 
       const request = new Request(`http://localhost/api/articles/${articleId}`, {
         method: 'PUT',
@@ -369,17 +432,109 @@ describe('Articles API', () => {
         body: JSON.stringify({
           title: 'Test Article',
           artifactId,
-          artifactCommit,
+          artifactCommit: version.commitHash,
           content: createTestContent(),
-          isPrivate: 'INVALID',
-          isListed: true,
+          isListed: 'INVALID', // should be boolean
         }),
       });
       const response = await sendRequest(request);
 
       expect(response.status).toBe(400);
       const data = await response.json<ApiError>();
-      expect(data.error).toContain('isPrivate');
+      expect(data.error).toContain('isListed');
+    });
+
+    it('should return 400 when creating public article for private artifact', async () => {
+      const { sessionCookie, userId } = await registerUser('author');
+      // Create a PRIVATE artifact
+      const artifactId = await createTestArtifact(userId, 'Private Artifact', { isPrivate: true });
+      await createTestSandboxNode(artifactId);
+      const articleId = crypto.randomUUID();
+
+      // Get the artifact version commit
+      const [version] = await db.select().from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId)).limit(1);
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: sessionCookie,
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          artifactId,
+          artifactCommit: version.commitHash,
+          content: createSimpleContent(),
+          isPrivate: false, // Trying to create PUBLIC article
+        }),
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(400);
+      const data = await response.json<ApiError>();
+      expect(data.error).toContain('private artifact');
+    });
+
+    it('should allow creating private article for private artifact', async () => {
+      const { sessionCookie, userId } = await registerUser('author');
+      // Create a PRIVATE artifact
+      const artifactId = await createTestArtifact(userId, 'Private Artifact', { isPrivate: true });
+      await createTestSandboxNode(artifactId);
+      const articleId = crypto.randomUUID();
+
+      // Get the artifact version commit
+      const [version] = await db.select().from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId)).limit(1);
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: sessionCookie,
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          artifactId,
+          artifactCommit: version.commitHash,
+          content: createSimpleContent(),
+          isPrivate: true, // Creating PRIVATE article
+        }),
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(200);
+      const data = await response.json<ArticleDetail>();
+      expect(data.title).toBe('Test Article');
+    });
+
+    it('should allow creating public article for public artifact', async () => {
+      const { sessionCookie, userId } = await registerUser('author');
+      // Create a PUBLIC artifact
+      const artifactId = await createTestArtifact(userId);
+      await createTestSandboxNode(artifactId);
+      const articleId = crypto.randomUUID();
+
+      // Get the artifact version commit
+      const [version] = await db.select().from(artifactVersions).where(eq(artifactVersions.artifactId, artifactId)).limit(1);
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: sessionCookie,
+        },
+        body: JSON.stringify({
+          title: 'Test Article',
+          artifactId,
+          artifactCommit: version.commitHash,
+          content: createSimpleContent(),
+          isPrivate: false, // Creating PUBLIC article (default)
+        }),
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(200);
+      const data = await response.json<ArticleDetail>();
+      expect(data.title).toBe('Test Article');
     });
   });
 
@@ -481,6 +636,97 @@ describe('Articles API', () => {
       expect(response.status).toBe(200);
       const data = await response.json<{ articles: ArticleDetail[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>();
       expect(data.articles).toHaveLength(2);
+    });
+  });
+
+  describe('DELETE /api/articles/:articleId', () => {
+    it('should return 400 for invalid article ID format', async () => {
+      const { sessionCookie } = await registerUser('author');
+      
+      const request = new Request('http://localhost/api/articles/invalid-id', {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(400);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Invalid article ID format');
+    });
+
+    it('should return 401 for unauthenticated user', async () => {
+      const request = new Request(`http://localhost/api/articles/${crypto.randomUUID()}`, {
+        method: 'DELETE',
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(401);
+    });
+
+    it('should return 404 for non-existent article', async () => {
+      const { sessionCookie } = await registerUser('author');
+      
+      const request = new Request(`http://localhost/api/articles/${crypto.randomUUID()}`, {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(404);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Article not found');
+    });
+
+    it('should return 403 when user does not have manage permission', async () => {
+      const { userId: ownerId } = await registerUser('owner');
+      const { sessionCookie: otherSessionCookie } = await registerUser('other');
+      
+      const artifactId = await createTestArtifact(ownerId);
+      const articleId = await createTestArticle(ownerId, artifactId, 'Test Article');
+
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        method: 'DELETE',
+        headers: { Cookie: otherSessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(403);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('No permission to delete this article');
+    });
+
+    it('should delete article with manage permission', async () => {
+      const { userId, sessionCookie } = await registerUser('author');
+      
+      const artifactId = await createTestArtifact(userId);
+      const articleId = await createTestArticle(userId, artifactId, 'Test Article');
+
+      // Verify article exists
+      const [beforeDelete] = await db.select().from(articles).where(eq(articles.id, articleId));
+      expect(beforeDelete).toBeDefined();
+
+      // Delete article
+      const request = new Request(`http://localhost/api/articles/${articleId}`, {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(204);
+
+      // Verify article is deleted
+      const [afterDelete] = await db.select().from(articles).where(eq(articles.id, articleId));
+      expect(afterDelete).toBeUndefined();
+
+      // Verify ACL records are deleted
+      const aclRecords = await db.select().from(resourceAcl)
+        .where(eq(resourceAcl.resourceId, articleId));
+      expect(aclRecords).toHaveLength(0);
+
+      // Verify discovery control record is deleted
+      const discoveryRecords = await db.select().from(resourceDiscoveryControl)
+        .where(eq(resourceDiscoveryControl.resourceId, articleId));
+      expect(discoveryRecords).toHaveLength(0);
     });
   });
 });

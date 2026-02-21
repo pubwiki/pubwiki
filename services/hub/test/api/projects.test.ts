@@ -1059,4 +1059,126 @@ describe('Projects API', () => {
       expect(response.status).toBe(200);
     });
   });
+
+  describe('DELETE /api/projects/:projectId', () => {
+    it('should return 400 for invalid project id format', async () => {
+      const { sessionCookie } = await registerUser('projectdeleter1');
+
+      const request = new Request('http://localhost/api/projects/invalid-id', {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(400);
+    });
+
+    it('should return 401 for unauthenticated request', async () => {
+      const request = new Request('http://localhost/api/projects/00000000-0000-0000-0000-000000000001', {
+        method: 'DELETE',
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(401);
+    });
+
+    it('should return 404 for non-existent project', async () => {
+      const { sessionCookie } = await registerUser('projectdeleter2');
+
+      const request = new Request('http://localhost/api/projects/00000000-0000-0000-0000-000000000099', {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(404);
+    });
+
+    it('should return 403 for user without manage permission', async () => {
+      const testUserId = await createTestUser(db);
+      const [project] = await db.insert(projects).values({
+        ownerId: testUserId,
+        name: 'Test Project',
+        slug: 'test-project-delete',
+        topic: 'Test Topic',
+      }).returning();
+      
+      // Create owner ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: testUserId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: testUserId,
+      });
+
+      // Register another user without manage permission
+      const { sessionCookie, userId: otherUserId } = await registerUser('projectdeleter3');
+      
+      // Give read-only permission to other user
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: otherUserId,
+        canRead: true,
+        canWrite: false,
+        canManage: false,
+        grantedBy: testUserId,
+      });
+
+      const request = new Request(`http://localhost/api/projects/${project.id}`, {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(403);
+    });
+
+    it('should successfully delete project with manage permission', async () => {
+      const { sessionCookie, userId } = await registerUser('projectdeleter4');
+      
+      // Create project
+      const [project] = await db.insert(projects).values({
+        ownerId: userId,
+        name: 'Test Project',
+        slug: 'test-project-delete-success',
+        topic: 'Test Topic',
+      }).returning();
+      
+      // Create owner ACL
+      await db.insert(resourceAcl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        userId: userId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: userId,
+      });
+      
+      // Create discovery control
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'project',
+        resourceId: project.id,
+        isListed: true,
+      });
+
+      const request = new Request(`http://localhost/api/projects/${project.id}`, {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(204);
+      
+      // Verify project is deleted
+      const deletedProject = await db.query.projects.findFirst({
+        where: (p, { eq }) => eq(p.id, project.id),
+      });
+      expect(deletedProject).toBeUndefined();
+    });
+  });
 });

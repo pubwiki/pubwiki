@@ -1,4 +1,4 @@
-import { eq, and, desc, count, sql } from 'drizzle-orm';
+import { eq, and, desc, count } from 'drizzle-orm';
 import type { BatchContext } from '../batch-context';
 import { nodeVersions } from '../schema/node-versions';
 import { saveContents } from '../schema/node-contents';
@@ -342,9 +342,9 @@ export class SaveService {
     }
   }
 
-  // 删除存档（commit 全局唯一，仅作者可删）
-  // Returns quadsHash for potential R2 cleanup. Caller should only delete R2 object
-  // if refCount reaches 0 (content-addressed storage may be shared).
+  // Delete a save (commit is globally unique, only author can delete).
+  // Returns quadsHash for potential R2 cleanup. Caller should coordinate with
+  // garbage collection to determine when R2 objects can be safely deleted.
   async deleteSave(
     commit: string,
     userId: string
@@ -381,17 +381,10 @@ export class SaveService {
         };
       }
 
-      // 收集删除操作：删除 node version + 减少 save_contents 引用计数
+      // Delete the node version. Content cleanup is handled by GC via LEFT JOIN.
       this.ctx.modify(db =>
         db.delete(nodeVersions)
           .where(eq(nodeVersions.commit, commit))
-      );
-      this.ctx.modify(db =>
-        db.update(saveContents)
-          .set({
-            refCount: sql`CASE WHEN ${saveContents.refCount} > 0 THEN ${saveContents.refCount} - 1 ELSE 0 END`,
-          })
-          .where(eq(saveContents.contentHash, save.contentHash))
       );
 
       return {

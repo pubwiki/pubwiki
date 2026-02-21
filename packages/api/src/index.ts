@@ -151,7 +151,6 @@ export type CreateArtifactNode = components['schemas']['CreateArtifactNode'];
 export type PatchArtifactRequest = components['schemas']['PatchArtifactRequest'];
 export type UpdateArtifactMetadataRequest = components['schemas']['UpdateArtifactMetadataRequest'];
 export type UpdateVersionMetadataRequest = components['schemas']['UpdateVersionMetadataRequest'];
-export type MarkVersionWeakRequest = components['schemas']['MarkVersionWeakRequest'];
 
 // 查询参数类型
 export type ListArtifactsQuery = operations['listArtifacts']['parameters']['query'];

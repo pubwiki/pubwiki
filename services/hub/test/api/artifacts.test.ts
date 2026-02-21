@@ -1404,4 +1404,138 @@ describe('Artifacts API', () => {
       expect(html).toBe('<h1>My Private Content</h1>');
     });
   });
+
+  describe('DELETE /api/artifacts/:artifactId', () => {
+    let testUserId: string;
+
+    async function createTestArtifact(
+      authorId: string,
+      name: string,
+      options: { isPrivate?: boolean; isListed?: boolean } = {}
+    ): Promise<string> {
+      const { isPrivate = false, isListed = true } = options;
+      const [artifact] = await db.insert(artifacts).values({
+        authorId,
+        name,
+      }).returning();
+      
+      await db.insert(resourceDiscoveryControl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        isListed,
+      });
+      
+      await db.insert(resourceAcl).values({
+        resourceType: 'artifact',
+        resourceId: artifact.id,
+        userId: authorId,
+        canRead: true,
+        canWrite: true,
+        canManage: true,
+        grantedBy: authorId,
+      });
+      
+      if (!isPrivate) {
+        await db.insert(resourceAcl).values({
+          resourceType: 'artifact',
+          resourceId: artifact.id,
+          userId: PUBLIC_USER_ID,
+          canRead: true,
+          canWrite: false,
+          canManage: false,
+          grantedBy: authorId,
+        });
+      }
+      
+      return artifact.id;
+    }
+
+    beforeEach(async () => {
+      testUserId = await createTestUser(db, 'deleteartifactuser');
+    });
+
+    it('should return 400 for invalid artifact ID format', async () => {
+      const { sessionCookie } = await registerUser('testuser');
+      
+      const request = new Request('http://localhost/api/artifacts/invalid-id', {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(400);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Invalid artifact ID format');
+    });
+
+    it('should return 401 for unauthenticated user', async () => {
+      const request = new Request(`http://localhost/api/artifacts/${crypto.randomUUID()}`, {
+        method: 'DELETE',
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(401);
+    });
+
+    it('should return 404 for non-existent artifact', async () => {
+      const { sessionCookie } = await registerUser('testuser');
+      
+      const request = new Request(`http://localhost/api/artifacts/${crypto.randomUUID()}`, {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(404);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Artifact not found');
+    });
+
+    it('should return 403 when user does not have manage permission', async () => {
+      const artifactId = await createTestArtifact(testUserId, 'Test Artifact');
+      const { sessionCookie: otherSessionCookie } = await registerUser('otheruser');
+
+      const request = new Request(`http://localhost/api/artifacts/${artifactId}`, {
+        method: 'DELETE',
+        headers: { Cookie: otherSessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(403);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('No permission to delete this artifact');
+    });
+
+    it('should delete artifact with manage permission', async () => {
+      const { userId, sessionCookie } = await registerUser('deleteowner');
+      const artifactId = await createTestArtifact(userId, 'Artifact To Delete');
+
+      // Verify artifact exists
+      const [beforeDelete] = await db.select().from(artifacts).where(eq(artifacts.id, artifactId));
+      expect(beforeDelete).toBeDefined();
+
+      // Delete artifact
+      const request = new Request(`http://localhost/api/artifacts/${artifactId}`, {
+        method: 'DELETE',
+        headers: { Cookie: sessionCookie },
+      });
+      const response = await sendRequest(request);
+
+      expect(response.status).toBe(204);
+
+      // Verify artifact is deleted
+      const [afterDelete] = await db.select().from(artifacts).where(eq(artifacts.id, artifactId));
+      expect(afterDelete).toBeUndefined();
+
+      // Verify ACL records are deleted
+      const aclRecords = await db.select().from(resourceAcl)
+        .where(eq(resourceAcl.resourceId, artifactId));
+      expect(aclRecords).toHaveLength(0);
+
+      // Verify discovery control record is deleted
+      const discoveryRecords = await db.select().from(resourceDiscoveryControl)
+        .where(eq(resourceDiscoveryControl.resourceId, artifactId));
+      expect(discoveryRecords).toHaveLength(0);
+    });
+  });
 });

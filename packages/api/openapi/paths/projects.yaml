@@ -150,6 +150,50 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
+  delete:
+    summary: 删除 Project
+    description: |
+      删除指定 Project。需要认证且具有 manage 权限。
+      删除时会：
+      - 删除所有 project posts 及其关联的 discussions
+      - 删除所有 project pages
+      - 解除与 artifacts 的关联（不删除 artifact 本身）
+      - 删除所有 project roles
+    operationId: deleteProject
+    tags:
+      - Projects
+    security:
+      - cookieAuth: []
+    parameters:
+      - name: projectId
+        in: path
+        required: true
+        description: Project ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '204':
+        description: 删除成功
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权限
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Project 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
 /projects/{projectId}/pages/{pageId}:
   get:
     summary: 获取 Project 页面详情
