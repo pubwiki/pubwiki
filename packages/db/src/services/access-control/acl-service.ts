@@ -57,9 +57,8 @@ export class AclService {
 
   /**
    * 设置公开读取权限（等价于原 isPrivate = false）
+   * Note: Cascade to node versions is handled by ArtifactService.updateOriginalNodesPermission()
    */
-  // FIXME: if an artifact is set to public, its nodes should be set to public
-  // accordingly
   setPublic(ref: ResourceRef, grantedBy: string): void {
     this.ctx.modify()
       .insert(resourceAcl)

@@ -3,14 +3,13 @@ import type { Env } from '../types';
 import { BatchContext, createDb, SaveService } from '@pubwiki/db';
 import type { ApiError, Pagination } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
-import { ListSavesQueryParams } from '@pubwiki/api/validate';
-import { authMiddleware } from '../middleware/auth';
-import { validateQuery, isValidationError } from '../lib/validate';
+import { ListSavesQueryParams, CreateSaveBody } from '@pubwiki/api/validate';
+import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { resourceAccessMiddleware } from '../middleware/resource-access';
+import { validateQuery, validateFormDataJson, isValidationError } from '../lib/validate';
 import { serviceErrorResponse } from '../lib/service-error';
 
 export const savesRoute = new Hono<{ Bindings: Env }>();
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // POST /saves — 创建用户运行时存档（multipart: metadata JSON + data file）
 // This is for user runtime saves - saves created independently of artifact commits.
@@ -27,52 +26,17 @@ savesRoute.post('/', authMiddleware, async (c) => {
     return c.json<ApiError>({ error: 'Invalid multipart form data' }, 400);
   }
 
-  // 解析 metadata JSON
-  const metadataRaw = formData.get('metadata');
-  if (!metadataRaw || typeof metadataRaw !== 'string') {
-    return c.json<ApiError>({ error: 'metadata field is required and must be a JSON string' }, 400);
-  }
+  // Validate metadata JSON with zod schema
+  const metadata = validateFormDataJson(c, formData, 'metadata', CreateSaveBody.shape.metadata);
+  if (metadata instanceof Response) return metadata;
 
-  let metadata: Record<string, unknown>;
-  try {
-    metadata = JSON.parse(metadataRaw);
-  } catch {
-    return c.json<ApiError>({ error: 'metadata is not valid JSON' }, 400);
-  }
-
-  // 验证必填字段
-  if (!metadata.saveId || typeof metadata.saveId !== 'string' || !UUID_RE.test(metadata.saveId)) {
-    return c.json<ApiError>({ error: 'saveId is required and must be a valid UUID' }, 400);
-  }
-  if (!metadata.stateNodeId || typeof metadata.stateNodeId !== 'string' || !UUID_RE.test(metadata.stateNodeId)) {
-    return c.json<ApiError>({ error: 'stateNodeId is required and must be a valid UUID' }, 400);
-  }
-  if (!metadata.stateNodeCommit || typeof metadata.stateNodeCommit !== 'string') {
-    return c.json<ApiError>({ error: 'stateNodeCommit is required and must be a string' }, 400);
-  }
-  if (!metadata.artifactCommit || typeof metadata.artifactCommit !== 'string') {
-    return c.json<ApiError>({ error: 'artifactCommit is required and must be a string' }, 400);
-  }
-  if (!metadata.commit || typeof metadata.commit !== 'string') {
-    return c.json<ApiError>({ error: 'commit is required and must be a string' }, 400);
-  }
-  if (!metadata.artifactId || typeof metadata.artifactId !== 'string' || !UUID_RE.test(metadata.artifactId)) {
-    return c.json<ApiError>({ error: 'artifactId is required and must be a valid UUID' }, 400);
-  }
-  if (!metadata.contentHash || typeof metadata.contentHash !== 'string') {
-    return c.json<ApiError>({ error: 'contentHash is required and must be a string' }, 400);
-  }
-  if (!metadata.quadsHash || typeof metadata.quadsHash !== 'string') {
-    return c.json<ApiError>({ error: 'quadsHash is required and must be a string' }, 400);
-  }
-
-  // 获取二进制文件
+  // Get binary file
   const dataFile = formData.get('data');
   if (!dataFile || !(dataFile instanceof File)) {
     return c.json<ApiError>({ error: 'data field is required and must be a binary file' }, 400);
   }
 
-  // 读取文件内容并验证 quadsHash
+  // Read file content and verify quadsHash
   const buffer = await dataFile.arrayBuffer();
   const computedQuadsHash = await computeSha256Hex(buffer);
   if (computedQuadsHash !== metadata.quadsHash) {
@@ -81,24 +45,21 @@ savesRoute.post('/', authMiddleware, async (c) => {
     }, 400);
   }
 
-  // 解析访问控制参数
-  const isListed = metadata.isListed === 'true' || metadata.isListed === true;
-
-  // 创建用户运行时存档记录
+  // Create user runtime save record
   const result = await saveService.createRuntimeSave({
-    saveId: metadata.saveId as string,
-    stateNodeId: metadata.stateNodeId as string,
-    stateNodeCommit: metadata.stateNodeCommit as string,
-    artifactCommit: metadata.artifactCommit as string,
-    commit: metadata.commit as string,
-    parent: (metadata.parent as string) ?? null,
+    saveId: metadata.saveId,
+    stateNodeId: metadata.stateNodeId,
+    stateNodeCommit: metadata.stateNodeCommit,
+    artifactCommit: metadata.artifactCommit,
+    commit: metadata.commit,
+    parent: metadata.parent ?? null,
     authorId: user.id,
-    artifactId: metadata.artifactId as string,
-    contentHash: metadata.contentHash as string,
-    quadsHash: metadata.quadsHash as string,
-    title: metadata.title as string | undefined,
-    description: metadata.description as string | undefined,
-    isListed,
+    artifactId: metadata.artifactId,
+    contentHash: metadata.contentHash,
+    quadsHash: metadata.quadsHash,
+    title: metadata.title,
+    description: metadata.description,
+    isListed: metadata.isListed,
   });
 
   if (!result.success) {
@@ -127,9 +88,10 @@ savesRoute.post('/', authMiddleware, async (c) => {
 });
 
 // GET /saves — 获取存档列表（按 stateNodeId+stateNodeCommit 或 saveId 查询）
-savesRoute.get('/', async (c) => {
+savesRoute.get('/', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
+  const { userId } = c.get('resourceAccess');
 
   // 使用 zod schema 校验查询参数
   const validated = validateQuery(c, ListSavesQueryParams, c.req.query());
@@ -149,8 +111,8 @@ savesRoute.get('/', async (c) => {
   }
 
   const listParams = hasStateNodeParams
-    ? { stateNodeId, stateNodeCommit, author, page, limit }
-    : { saveId: saveId!, author, page, limit };
+    ? { stateNodeId, stateNodeCommit, author, page, limit, userId: userId ?? undefined }
+    : { saveId: saveId!, author, page, limit, userId: userId ?? undefined };
 
   const result = await saveService.listSaves(listParams);
 
@@ -162,13 +124,24 @@ savesRoute.get('/', async (c) => {
 });
 
 // GET /saves/:commit — 获取存档详情（commit 全局唯一）
-savesRoute.get('/:commit', async (c) => {
+savesRoute.get('/:commit', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
+  const { userId } = c.get('resourceAccess');
 
   const commit = c.req.param('commit');
 
-  // 排除 commit 值看起来像 UUID 后面跟 /xxx 的情况（兼容旧路由）
+  // Access control check: author or can read parent artifact
+  const canRead = await saveService.canReadSave(commit, userId ?? undefined);
+  if (!canRead) {
+    // Check if save exists first to return proper error code
+    const result = await saveService.getSave(commit);
+    if (!result.success && result.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: 'Save not found' }, 404);
+    }
+    return c.json<ApiError>({ error: 'Access denied' }, 403);
+  }
+
   const result = await saveService.getSave(commit);
 
   if (!result.success) {
@@ -203,13 +176,25 @@ savesRoute.delete('/:commit', authMiddleware, async (c) => {
 });
 
 // GET /saves/:commit/data — 下载 quads.bin（commit 全局唯一）
-savesRoute.get('/:commit/data', async (c) => {
+savesRoute.get('/:commit/data', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
+  const { userId } = c.get('resourceAccess');
 
   const commit = c.req.param('commit');
 
-  // 先确认 save 存在并获取 quadsHash
+  // Access control check: author or can read parent artifact
+  const canRead = await saveService.canReadSave(commit, userId ?? undefined);
+  if (!canRead) {
+    // Check if save exists first to return proper error code
+    const saveResult = await saveService.getSave(commit);
+    if (!saveResult.success && saveResult.error.code === 'NOT_FOUND') {
+      return c.json<ApiError>({ error: 'Save not found' }, 404);
+    }
+    return c.json<ApiError>({ error: 'Access denied' }, 403);
+  }
+
+  // 获取 quadsHash
   const saveResult = await saveService.getSave(commit);
   if (!saveResult.success) {
     return serviceErrorResponse(c, saveResult.error);

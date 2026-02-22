@@ -9,9 +9,8 @@ import type {
   ListDiscussionRepliesResponse,
   CreateDiscussionReplyResponse,
   DiscussionDetail,
-  CreateDiscussionReplyRequest,
 } from '@pubwiki/api';
-import { ListDiscussionsQueryParams, ListDiscussionRepliesQueryParams, CreateDiscussionQueryParams, CreateDiscussionBody, UpdateDiscussionBody } from '@pubwiki/api/validate';
+import { ListDiscussionsQueryParams, ListDiscussionRepliesQueryParams, CreateDiscussionQueryParams, CreateDiscussionBody, UpdateDiscussionBody, CreateDiscussionReplyBody } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
 import { validateQuery, validateBody, isValidationError } from '../lib/validate';
 import { serviceErrorResponse } from '../lib/service-error';
@@ -187,19 +186,11 @@ discussionsRoute.post('/:discussionId/replies', authMiddleware, async (c) => {
 
   const discussionId = c.req.param('discussionId');
 
-  // 解析请求体
-  let body: CreateDiscussionReplyRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
+  // Validate request body with zod schema
+  const validated = await validateBody(c, CreateDiscussionReplyBody);
+  if (isValidationError(validated)) return validated;
 
-  if (!body.content || body.content.trim().length === 0) {
-    return c.json<ApiError>({ error: 'content is required' }, 400);
-  }
-
-  const result = await discussionService.createReply(discussionId, user.id, body);
+  const result = await discussionService.createReply(discussionId, user.id, validated);
 
   if (!result.success) {
     return serviceErrorResponse(c, result.error);

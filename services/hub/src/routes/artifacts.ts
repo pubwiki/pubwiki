@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, BatchContext, ArtifactService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataRequest, UpdateVersionMetadataRequest, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse } from '@pubwiki/api';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
-import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody } from '@pubwiki/api/validate';
+import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody, UpdateArtifactMetadataBody, UpdateVersionMetadataBody } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { checkResourceAccess } from '../lib/access-control';
-import { validateQuery, validateFormDataJson, isValidationError } from '../lib/validate';
+import { validateQuery, validateFormDataJson, validateBody, isValidationError } from '../lib/validate';
 import { serviceErrorResponse } from '../lib/service-error';
 import { marked } from 'marked';
 
@@ -432,17 +432,14 @@ artifactsRoute.put('/:artifactId/metadata', authMiddleware, async (c) => {
   const user = c.get('user');
   const artifactId = c.req.param('artifactId');
 
-  let body: UpdateArtifactMetadataRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
+  // Validate request body with zod schema
+  const validated = await validateBody(c, UpdateArtifactMetadataBody);
+  if (isValidationError(validated)) return validated;
 
   const input: UpdateArtifactMetadataInput = {
     artifactId,
     authorId: user.id,
-    data: body,
+    data: validated,
   };
 
   const result = await artifactService.updateArtifactMetadata(input);
@@ -477,18 +474,15 @@ artifactsRoute.put('/:artifactId/versions/:commitHash/metadata', authMiddleware,
   const artifactId = c.req.param('artifactId');
   const commitHash = c.req.param('commitHash');
 
-  let body: UpdateVersionMetadataRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
+  // Validate request body with zod schema
+  const validated = await validateBody(c, UpdateVersionMetadataBody);
+  if (isValidationError(validated)) return validated;
 
   const input: UpdateVersionMetadataInput = {
     artifactId,
     authorId: user.id,
     commitHash,
-    data: body,
+    data: validated,
   };
 
   const result = await artifactService.updateVersionMetadata(input);

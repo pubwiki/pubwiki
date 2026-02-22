@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { BatchContext, createDb, ProjectService, PostService, type ListProjectArtifactsParams } from '@pubwiki/db';
-import type { ListProjectsResponse, ApiError, ProjectDetail, CreateProjectResponse, ProjectArtifact, ProjectPageDetail, PostDetail, CreatePostRequest, UpdatePostRequest, ListProjectPostsResponse, CreateProjectPostResponse, UpdateProjectPostResponse, DeleteProjectPostResponse } from '@pubwiki/api';
-import { ListProjectsQueryParams, CreateProjectBody, ListProjectArtifactsQueryParams, ListProjectPostsQueryParams } from '@pubwiki/api/validate';
+import type { ListProjectsResponse, ApiError, ProjectDetail, CreateProjectResponse, ProjectArtifact, ProjectPageDetail, PostDetail, ListProjectPostsResponse, CreateProjectPostResponse, UpdateProjectPostResponse, DeleteProjectPostResponse } from '@pubwiki/api';
+import { ListProjectsQueryParams, CreateProjectBody, ListProjectArtifactsQueryParams, ListProjectPostsQueryParams, CreateProjectPostBody, UpdateProjectPostBody, LinkArtifactToProjectBody } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
-import { checkResourceAccess } from '../lib/access-control';
+import { checkResourceAccess, checkResourceWriteAccess } from '../lib/access-control';
 import { validateQuery, validateBody, isValidationError } from '../lib/validate';
 import { serviceErrorResponse } from '../lib/service-error';
 
@@ -174,28 +174,15 @@ projectsRoute.post('/:projectId/artifacts', authMiddleware, async (c) => {
   const projectId = c.req.param('projectId');
   const user = c.get('user');
 
-  // 解析请求体
-  let body: { artifactId: string; roleId: string; isOfficial?: boolean };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
-
-  // 验证必填字段
-  if (!body.artifactId) {
-    return c.json<ApiError>({ error: 'artifactId is required' }, 400);
-  }
-
-  if (!body.roleId) {
-    return c.json<ApiError>({ error: 'roleId is required' }, 400);
-  }
+  // Validate request body with zod schema
+  const validated = await validateBody(c, LinkArtifactToProjectBody);
+  if (isValidationError(validated)) return validated;
 
   const result = await projectService.linkArtifactToProject({
     projectId,
-    artifactId: body.artifactId,
-    roleId: body.roleId,
-    isOfficial: body.isOfficial,
+    artifactId: validated.artifactId,
+    roleId: validated.roleId,
+    isOfficial: validated.isOfficial,
     userId: user.id,
   });
 
@@ -242,50 +229,25 @@ projectsRoute.get('/:projectId/posts', optionalAuthMiddleware, resourceAccessMid
 });
 
 // 创建 post
-projectsRoute.post('/:projectId/posts', authMiddleware, async (c) => {
+projectsRoute.post('/:projectId/posts', authMiddleware, resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const postService = new PostService(ctx);
   const projectId = c.req.param('projectId');
   const user = c.get('user');
 
-  // 检查 project 是否存在并验证权限
-  const projectResult = await postService.getProject(projectId);
-  if (!projectResult.success) {
-    return serviceErrorResponse(c, projectResult.error);
-  }
+  // Check write permission using ACL
+  const accessError = await checkResourceWriteAccess(c, { type: 'project', id: projectId });
+  if (accessError) return accessError;
 
-  // 检查是否是 owner 或 maintainer
-  const memberResult = await postService.isProjectMember(projectId, user.id);
-  if (!memberResult.success) {
-    return c.json<ApiError>({ error: memberResult.error.message }, 500);
-  }
+  // Validate request body with zod schema
+  const validated = await validateBody(c, CreateProjectPostBody);
+  if (isValidationError(validated)) return validated;
 
-  const { isOwner, isMaintainer } = memberResult.data;
-  if (!isOwner && !isMaintainer) {
-    return c.json<ApiError>({ error: 'Only owner or maintainer can create posts' }, 403);
-  }
-
-  // 解析请求体
-  let body: CreatePostRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
-
-  // 验证必填字段
-  if (!body.title || body.title.trim() === '') {
-    return c.json<ApiError>({ error: 'title is required' }, 400);
-  }
-  if (!body.content) {
-    return c.json<ApiError>({ error: 'content is required' }, 400);
-  }
-
-  // 创建 post
+  // Create post
   const result = await postService.createPost({
     projectId,
     authorId: user.id,
-    data: body,
+    data: validated,
   });
 
   if (!result.success) {
@@ -338,16 +300,12 @@ projectsRoute.patch('/:projectId/posts/:postId', authMiddleware, async (c) => {
   const postId = c.req.param('postId');
   const user = c.get('user');
 
-  // 解析请求体
-  let body: UpdatePostRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json<ApiError>({ error: 'Invalid JSON body' }, 400);
-  }
+  // Validate request body with zod schema
+  const validated = await validateBody(c, UpdateProjectPostBody);
+  if (isValidationError(validated)) return validated;
 
-  // 更新 post
-  const result = await postService.updatePost(projectId, postId, user.id, body);
+  // Update post
+  const result = await postService.updatePost(projectId, postId, user.id, validated);
   if (!result.success) {
     return serviceErrorResponse(c, result.error);
   }

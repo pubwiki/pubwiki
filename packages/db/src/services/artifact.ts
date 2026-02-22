@@ -384,32 +384,39 @@ export class ArtifactService {
   ): Promise<void> {
     const nodeVersionService = new NodeVersionService(this.ctx);
 
-    // Get all node versions in this artifact version
-    const versionNodes = await this.ctx.select({
-        nodeCommit: artifactVersionNodes.nodeCommit,
-      })
-      .from(artifactVersionNodes)
-      .where(eq(artifactVersionNodes.commitHash, commitHash));
+    // Get only the original node versions (sourceArtifactId matches) in this artifact version
+    const originalNodeCommits = await nodeVersionService.nodesCreatedBy(artifactId, commitHash);
 
-    // For each node, check if it's an original node and update permission
-    for (const vn of versionNodes) {
-      const [nv] = await this.ctx.select({
-          sourceArtifactId: nodeVersions.sourceArtifactId,
-        })
-        .from(nodeVersions)
-        .where(eq(nodeVersions.commit, vn.nodeCommit))
-        .limit(1);
+    // Update permission for each original node
+    for (const commit of originalNodeCommits) {
+      await nodeVersionService.updatePermission(
+        commit,
+        isPrivate,
+        authorId,
+        artifactId,
+      );
+    }
+  }
 
-      // Only update original nodes (created by this artifact)
-      if (nv && nv.sourceArtifactId === artifactId) {
-        // Use updatePermission which handles one-way relaxation
-        await nodeVersionService.updatePermission(
-          vn.nodeCommit,
-          isPrivate,
-          authorId,
-          artifactId,
-        );
-      }
+  /**
+   * Cascade discovery (isListed) change to all node versions from this artifact.
+   * This ensures that when an artifact's isListed status changes, all its
+   * original node versions are updated accordingly.
+   * 
+   * @param artifactId - The artifact ID to match sourceArtifactId
+   * @param isListed - The new isListed state
+   */
+  private async cascadeDiscoveryToNodes(
+    artifactId: string,
+    isListed: boolean,
+  ): Promise<void> {
+    const nodeVersionService = new NodeVersionService(this.ctx);
+    const commits = await nodeVersionService.nodesCreatedBy(artifactId);
+
+    // Update discovery control for each node
+    for (const commit of commits) {
+      const nodeRef = { type: 'node' as const, id: commit };
+      this.discoveryService.setListed(nodeRef, isListed);
     }
   }
 
@@ -1028,6 +1035,9 @@ export class ArtifactService {
         const currentDiscovery = await this.discoveryService.get(artifactRef);
         if (currentDiscovery && currentDiscovery.isListed !== data.isListed) {
           this.discoveryService.setListed(artifactRef, data.isListed);
+          
+          // Cascade isListed change to all node versions from this artifact
+          await this.cascadeDiscoveryToNodes(artifactId, data.isListed);
         }
       }
 

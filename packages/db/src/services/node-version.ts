@@ -1,12 +1,14 @@
 import { eq, and, desc, lt, or, inArray } from 'drizzle-orm';
 import type { BatchContext } from '../batch-context';
-import { nodeVersions, nodeVersionRefs, type NodeVersion, type NewNodeVersion, type NewNodeVersionRef, type NodeVersionRefType } from '../schema/node-versions';
+import { nodeVersions, nodeVersionRefs, type NewNodeVersion, type NewNodeVersionRef, type NodeVersionRefType } from '../schema/node-versions';
+import { artifactVersionNodes } from '../schema/artifact-version-graph';
 import { inputContents, promptContents, generatedContents, vfsContents, sandboxContents, loaderContents, stateContents, saveContents } from '../schema/node-contents';
+import { resourceDiscoveryControl } from '../schema/discovery-control';
 import type { NodeType } from '../schema/enums';
 import type { ServiceResult } from './user';
 import type { ArtifactNodeContent, ContentBlock, NodeVersionSummary as ApiNodeVersionSummary } from '@pubwiki/api';
 import { computeNodeCommit } from '@pubwiki/api';
-import { AclService } from './access-control';
+import { AclService, DiscoveryService } from './access-control';
 
 // ========================================================================
 // Extended types (API types + internal fields)
@@ -102,14 +104,52 @@ function getContentTable(type: NodeType) {
 // Direct access to node_versions table is not permitted without using this service.
 export class NodeVersionService {
   private readonly aclService: AclService;
+  private readonly discoveryService: DiscoveryService;
 
   constructor(private ctx: BatchContext) {
     this.aclService = new AclService(ctx);
+    this.discoveryService = new DiscoveryService(ctx);
   }
 
   // ──────────────────────────────────────────
   // Query operations
   // ──────────────────────────────────────────
+
+  /**
+   * Get all node version commits created by a specific artifact.
+   * Queries nodes where sourceArtifactId matches the given artifactId.
+   * 
+   * @param artifactId - The artifact ID to match sourceArtifactId
+   * @param artifactCommit - Optional artifact version commit hash. When provided,
+   *                         only returns nodes in that specific artifact version.
+   * @returns Array of node version commits
+   */
+  async nodesCreatedBy(artifactId: string, artifactCommit?: string): Promise<string[]> {
+    if (artifactCommit) {
+      // Get original nodes in a specific artifact version
+      const nodes = await this.ctx
+        .select({ commit: artifactVersionNodes.nodeCommit })
+        .from(artifactVersionNodes)
+        .innerJoin(
+          nodeVersions,
+          eq(nodeVersions.commit, artifactVersionNodes.nodeCommit)
+        )
+        .where(
+          and(
+            eq(artifactVersionNodes.commitHash, artifactCommit),
+            eq(nodeVersions.sourceArtifactId, artifactId)
+          )
+        );
+      return nodes.map(n => n.commit);
+    } else {
+      // Get all nodes created by this artifact (across all versions)
+      const nodes = await this.ctx
+        .select({ commit: nodeVersions.commit })
+        .from(nodeVersions)
+        .where(eq(nodeVersions.sourceArtifactId, artifactId));
+      return nodes.map(n => n.commit);
+    }
+  }
 
   /** Get versions for a node with cursor-based pagination (ordered by authored_at desc) */
   async getVersions(
@@ -141,8 +181,31 @@ export class NodeVersionService {
       }
 
       // Fetch one extra to determine if there's a next page
-      const versions = await this.ctx.select()
+      // Join with resource_discovery_control to get isListed
+      const versions = await this.ctx
+        .select({
+          nodeId: nodeVersions.nodeId,
+          commit: nodeVersions.commit,
+          parent: nodeVersions.parent,
+          authorId: nodeVersions.authorId,
+          authoredAt: nodeVersions.authoredAt,
+          type: nodeVersions.type,
+          name: nodeVersions.name,
+          contentHash: nodeVersions.contentHash,
+          message: nodeVersions.message,
+          tag: nodeVersions.tag,
+          sourceArtifactId: nodeVersions.sourceArtifactId,
+          derivativeOf: nodeVersions.derivativeOf,
+          isListed: resourceDiscoveryControl.isListed,
+        })
         .from(nodeVersions)
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'node'),
+            eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
+          )
+        )
         .where(and(...conditions))
         .orderBy(desc(nodeVersions.authoredAt), desc(nodeVersions.commit))
         .limit(limit + 1);
@@ -157,7 +220,21 @@ export class NodeVersionService {
       return {
         success: true,
         data: {
-          versions: versions.map(this.toSummary),
+          versions: versions.map(v => ({
+            nodeId: v.nodeId,
+            commit: v.commit,
+            parent: v.parent,
+            authorId: v.authorId,
+            authoredAt: v.authoredAt,
+            type: v.type,
+            name: v.name,
+            contentHash: v.contentHash,
+            message: v.message,
+            tag: v.tag,
+            sourceArtifactId: v.sourceArtifactId,
+            derivativeOf: v.derivativeOf,
+            isListed: v.isListed ?? false,
+          })),
           nextCursor,
         },
       };
@@ -172,8 +249,30 @@ export class NodeVersionService {
   /** Get a specific version by commit hash (globally unique) */
   async getVersion(commit: string): Promise<ServiceResult<NodeVersionDetail>> {
     try {
-      const versionResult = await this.ctx.select()
+      const versionResult = await this.ctx
+        .select({
+          nodeId: nodeVersions.nodeId,
+          commit: nodeVersions.commit,
+          parent: nodeVersions.parent,
+          authorId: nodeVersions.authorId,
+          authoredAt: nodeVersions.authoredAt,
+          type: nodeVersions.type,
+          name: nodeVersions.name,
+          contentHash: nodeVersions.contentHash,
+          message: nodeVersions.message,
+          tag: nodeVersions.tag,
+          sourceArtifactId: nodeVersions.sourceArtifactId,
+          derivativeOf: nodeVersions.derivativeOf,
+          isListed: resourceDiscoveryControl.isListed,
+        })
         .from(nodeVersions)
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'node'),
+            eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
+          )
+        )
         .where(eq(nodeVersions.commit, commit))
         .limit(1);
 
@@ -190,7 +289,19 @@ export class NodeVersionService {
       return {
         success: true,
         data: {
-          ...this.toSummary(version),
+          nodeId: version.nodeId,
+          commit: version.commit,
+          parent: version.parent,
+          authorId: version.authorId,
+          authoredAt: version.authoredAt,
+          type: version.type,
+          name: version.name,
+          contentHash: version.contentHash,
+          message: version.message,
+          tag: version.tag,
+          sourceArtifactId: version.sourceArtifactId,
+          derivativeOf: version.derivativeOf,
+          isListed: version.isListed ?? false,
           content,
         },
       };
@@ -205,8 +316,30 @@ export class NodeVersionService {
   /** Get the latest version for a node */
   async getLatest(nodeId: string): Promise<ServiceResult<NodeVersionDetail | null>> {
     try {
-      const versionResult = await this.ctx.select()
+      const versionResult = await this.ctx
+        .select({
+          nodeId: nodeVersions.nodeId,
+          commit: nodeVersions.commit,
+          parent: nodeVersions.parent,
+          authorId: nodeVersions.authorId,
+          authoredAt: nodeVersions.authoredAt,
+          type: nodeVersions.type,
+          name: nodeVersions.name,
+          contentHash: nodeVersions.contentHash,
+          message: nodeVersions.message,
+          tag: nodeVersions.tag,
+          sourceArtifactId: nodeVersions.sourceArtifactId,
+          derivativeOf: nodeVersions.derivativeOf,
+          isListed: resourceDiscoveryControl.isListed,
+        })
         .from(nodeVersions)
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'node'),
+            eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
+          )
+        )
         .where(eq(nodeVersions.nodeId, nodeId))
         .orderBy(desc(nodeVersions.authoredAt))
         .limit(1);
@@ -221,7 +354,19 @@ export class NodeVersionService {
       return {
         success: true,
         data: {
-          ...this.toSummary(version),
+          nodeId: version.nodeId,
+          commit: version.commit,
+          parent: version.parent,
+          authorId: version.authorId,
+          authoredAt: version.authoredAt,
+          type: version.type,
+          name: version.name,
+          contentHash: version.contentHash,
+          message: version.message,
+          tag: version.tag,
+          sourceArtifactId: version.sourceArtifactId,
+          derivativeOf: version.derivativeOf,
+          isListed: version.isListed ?? false,
           content,
         },
       };
@@ -236,14 +381,50 @@ export class NodeVersionService {
   /** Get children versions (commits whose parent is the given commit) */
   async getChildren(commit: string): Promise<ServiceResult<NodeVersionSummary[]>> {
     try {
-      const children = await this.ctx.select()
+      const children = await this.ctx
+        .select({
+          nodeId: nodeVersions.nodeId,
+          commit: nodeVersions.commit,
+          parent: nodeVersions.parent,
+          authorId: nodeVersions.authorId,
+          authoredAt: nodeVersions.authoredAt,
+          type: nodeVersions.type,
+          name: nodeVersions.name,
+          contentHash: nodeVersions.contentHash,
+          message: nodeVersions.message,
+          tag: nodeVersions.tag,
+          sourceArtifactId: nodeVersions.sourceArtifactId,
+          derivativeOf: nodeVersions.derivativeOf,
+          isListed: resourceDiscoveryControl.isListed,
+        })
         .from(nodeVersions)
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'node'),
+            eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
+          )
+        )
         .where(eq(nodeVersions.parent, commit))
         .orderBy(desc(nodeVersions.authoredAt));
 
       return {
         success: true,
-        data: children.map(this.toSummary),
+        data: children.map(v => ({
+          nodeId: v.nodeId,
+          commit: v.commit,
+          parent: v.parent,
+          authorId: v.authorId,
+          authoredAt: v.authoredAt,
+          type: v.type,
+          name: v.name,
+          contentHash: v.contentHash,
+          message: v.message,
+          tag: v.tag,
+          sourceArtifactId: v.sourceArtifactId,
+          derivativeOf: v.derivativeOf,
+          isListed: v.isListed ?? false,
+        })),
       };
     } catch (error) {
       return {
@@ -363,22 +544,74 @@ export class NodeVersionService {
         this.insertContent(contentHash, content);
       }
 
-      // ========== Phase 3: Prepare parent info for derivativeOf ==========
+      // ========== Phase 3: Validate and prepare parent info ==========
       
-      // Batch query parent versions for derivativeOf computation
+      // Build a map from commit to input for intra-batch validation
+      const batchInputMap = new Map(newInputs.map(i => [i.commit, i]));
+      
+      // Batch query parent versions for existence check and derivativeOf computation
       const parentCommits = newInputs
         .map(i => i.parent)
         .filter((p): p is string => p != null);
-      const parentVersions = parentCommits.length > 0
+      
+      // Filter out parents that are in the same batch (they will be created in this sync)
+      const externalParentCommits = parentCommits.filter(p => !batchInputMap.has(p));
+      
+      const parentVersions = externalParentCommits.length > 0
         ? await this.ctx.select({
             commit: nodeVersions.commit,
+            nodeId: nodeVersions.nodeId,
             sourceArtifactId: nodeVersions.sourceArtifactId,
             derivativeOf: nodeVersions.derivativeOf,
           })
             .from(nodeVersions)
-            .where(inArray(nodeVersions.commit, parentCommits))
+            .where(inArray(nodeVersions.commit, externalParentCommits))
         : [];
       const parentMap = new Map(parentVersions.map(p => [p.commit, p]));
+      
+      // Validate parent commits: must exist and have matching nodeId
+      const invalidInputs = new Set<string>();
+      for (const input of newInputs) {
+        if (!input.parent) continue;
+        
+        // Check if parent is in the same batch
+        const batchParent = batchInputMap.get(input.parent);
+        if (batchParent) {
+          // Validate nodeId matches
+          if (batchParent.nodeId !== input.nodeId) {
+            result.errors.push(
+              `Version ${input.commit} for node ${input.nodeId}: parent commit ${input.parent} belongs to different node ${batchParent.nodeId}`
+            );
+            invalidInputs.add(input.commit);
+          }
+          continue;
+        }
+        
+        // Check if parent exists in database
+        const dbParent = parentMap.get(input.parent);
+        if (!dbParent) {
+          result.errors.push(
+            `Version ${input.commit} for node ${input.nodeId}: parent commit ${input.parent} does not exist`
+          );
+          invalidInputs.add(input.commit);
+          continue;
+        }
+        
+        // Validate nodeId matches
+        if (dbParent.nodeId !== input.nodeId) {
+          result.errors.push(
+            `Version ${input.commit} for node ${input.nodeId}: parent commit ${input.parent} belongs to different node ${dbParent.nodeId}`
+          );
+          invalidInputs.add(input.commit);
+        }
+      }
+      
+      // Remove invalid inputs from processing
+      if (invalidInputs.size > 0) {
+        const validInputs = newInputs.filter(i => !invalidInputs.has(i.commit));
+        newInputs.length = 0;
+        newInputs.push(...validInputs);
+      }
 
       // ========== Phase 4: Create node versions ==========
       
@@ -387,14 +620,25 @@ export class NodeVersionService {
           // Compute derivativeOf (skip-list pointer for cross-artifact lineage)
           let derivativeOf: string | null = null;
           if (input.parent) {
-            const parent = parentMap.get(input.parent);
-            if (parent) {
-              if (parent.sourceArtifactId !== input.sourceArtifactId) {
+            // Check if parent is in the same batch
+            const batchParent = batchInputMap.get(input.parent);
+            if (batchParent) {
+              if (batchParent.sourceArtifactId !== input.sourceArtifactId) {
                 // Parent comes from a different artifact
-                derivativeOf = parent.commit;
-              } else {
-                // Inherit parent's skip-list pointer
-                derivativeOf = parent.derivativeOf;
+                derivativeOf = batchParent.commit;
+              }
+              // else: same artifact, derivativeOf stays null (will be computed when parent is processed)
+            } else {
+              // Parent exists in database
+              const parent = parentMap.get(input.parent);
+              if (parent) {
+                if (parent.sourceArtifactId !== input.sourceArtifactId) {
+                  // Parent comes from a different artifact
+                  derivativeOf = parent.commit;
+                } else {
+                  // Inherit parent's skip-list pointer
+                  derivativeOf = parent.derivativeOf;
+                }
               }
             }
           }
@@ -430,6 +674,10 @@ export class NodeVersionService {
           if (!input.isPrivate) {
             this.aclService.setPublic(nodeRef, input.authorId);
           }
+
+          // Create discovery control record for the node version
+          // Inherits isListed from input (typically from source artifact)
+          this.discoveryService.create(nodeRef, input.isListed ?? false);
 
           // Collect lineage refs insert (idempotent)
           if (input.refs && input.refs.length > 0) {
@@ -502,27 +750,6 @@ export class NodeVersionService {
   // ──────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────
-
-  /** Convert DB row to summary */
-  private toSummary(v: NodeVersion): NodeVersionSummary {
-    return {
-      nodeId: v.nodeId,
-      commit: v.commit,
-      parent: v.parent,
-      authorId: v.authorId,
-      authoredAt: v.authoredAt,
-      type: v.type,
-      name: v.name,
-      contentHash: v.contentHash,
-      message: v.message,
-      tag: v.tag,
-      sourceArtifactId: v.sourceArtifactId,
-      derivativeOf: v.derivativeOf,
-      // Node 默认不可发现，实际访问控制由 ACL 决定
-      // TODO: 后续可从 resource_discovery_control 表获取
-      isListed: false,
-    };
-  }
 
   /** Get content from the typed content table, injecting the `type` discriminator */
   private async getContent(type: NodeType, contentHash: string): Promise<ArtifactNodeContent | undefined> {

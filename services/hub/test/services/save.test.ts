@@ -4,6 +4,8 @@ import {
   createDb,
   SaveService,
   NodeVersionService,
+  AclService,
+  DiscoveryService,
   BatchContext,
   user,
   nodeVersions,
@@ -12,6 +14,7 @@ import {
   artifactVersions,
   artifacts,
   resourceDiscoveryControl,
+  resourceAcl,
 } from '@pubwiki/db';
 import type { SyncNodeVersionInput } from '@pubwiki/db';
 import { computeNodeCommit, computeContentHash, computeArtifactCommit } from '@pubwiki/api';
@@ -130,6 +133,7 @@ describe('SaveService', () => {
     await db.delete(nodeVersions);
     await db.delete(artifactVersions);
     await db.delete(resourceDiscoveryControl);
+    await db.delete(resourceAcl);
     await db.delete(artifacts);
     await db.delete(user);
 
@@ -363,6 +367,483 @@ describe('SaveService', () => {
         expect(result.error.code).toBe('BAD_REQUEST');
         expect(result.error.message).toContain('Artifact version');
       }
+    });
+
+    it('should create owner ACL record when creating save', async () => {
+      const artifactId = crypto.randomUUID();
+      const stateNodeId = crypto.randomUUID();
+
+      // Create a real STATE node
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+
+      // Create artifact with the STATE node
+      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
+
+      // Compute save
+      const quadsHash = 'abcd1234'.repeat(8);
+      const saveContentHash = await computeContentHash({
+        type: 'SAVE',
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
+        title: 'Test Save',
+        description: null,
+      });
+      const saveId = crypto.randomUUID();
+      const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+      // Create save
+      const result = await service.createRuntimeSave({
+        saveId,
+        stateNodeId,
+        stateNodeCommit,
+        commit: saveCommit,
+        parent: null,
+        authorId: testUserId,
+        artifactId,
+        artifactCommit,
+        contentHash: saveContentHash,
+        quadsHash,
+        title: 'Test Save',
+        isListed: false,
+      });
+
+      expect(result.success).toBe(true);
+      await commitAndReset();
+
+      // Verify owner ACL record was created (uses 'node' type, created by syncVersions)
+      const aclService = new AclService(ctx);
+      const nodeRef = { type: 'node' as const, id: saveCommit };
+      const canManage = await aclService.canManage(nodeRef, testUserId);
+      const canWrite = await aclService.canWrite(nodeRef, testUserId);
+      const canRead = await aclService.canRead(nodeRef, testUserId);
+
+      expect(canManage).toBe(true);
+      expect(canWrite).toBe(true);
+      expect(canRead).toBe(true);
+    });
+
+    it('should NOT create public ACL for saves (inherits from artifact)', async () => {
+      const artifactId = crypto.randomUUID();
+      const stateNodeId = crypto.randomUUID();
+
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
+
+      const quadsHash = 'abcd1234'.repeat(8);
+      const saveContentHash = await computeContentHash({
+        type: 'SAVE',
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
+        title: 'Test Save',
+        description: null,
+      });
+      const saveId = crypto.randomUUID();
+      const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+      await service.createRuntimeSave({
+        saveId,
+        stateNodeId,
+        stateNodeCommit,
+        commit: saveCommit,
+        parent: null,
+        authorId: testUserId,
+        artifactId,
+        artifactCommit,
+        contentHash: saveContentHash,
+        quadsHash,
+        title: 'Test Save',
+        isListed: true,
+      });
+
+      await commitAndReset();
+
+      // Verify NO public ACL was created (save should NOT have public read by itself)
+      const aclService = new AclService(ctx);
+      const nodeRef = { type: 'node' as const, id: saveCommit };
+      const isPublic = await aclService.isPublic(nodeRef);
+      expect(isPublic).toBe(false);
+    });
+  });
+
+  describe('canReadSave', () => {
+    // Helper to create a full save scenario
+    async function createSaveScenario(opts: {
+      saveIsListed?: boolean;
+      artifactIsPublic?: boolean;
+    }) {
+      const { saveIsListed = false, artifactIsPublic = true } = opts;
+      const artifactId = crypto.randomUUID();
+      const stateNodeId = crypto.randomUUID();
+
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
+
+      // Set artifact public ACL if needed
+      if (artifactIsPublic) {
+        const aclCtx = new BatchContext(db);
+        const aclService = new AclService(aclCtx);
+        aclService.setPublic({ type: 'artifact', id: artifactId }, testUserId);
+        await aclCtx.commit();
+      }
+
+      // Create save
+      const quadsHash = 'abcd1234'.repeat(8);
+      const saveContentHash = await computeContentHash({
+        type: 'SAVE',
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
+        title: 'Test Save',
+        description: null,
+      });
+      const saveId = crypto.randomUUID();
+      const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+      ctx = new BatchContext(db);
+      service = new SaveService(ctx);
+
+      await service.createRuntimeSave({
+        saveId,
+        stateNodeId,
+        stateNodeCommit,
+        commit: saveCommit,
+        parent: null,
+        authorId: testUserId,
+        artifactId,
+        artifactCommit,
+        contentHash: saveContentHash,
+        quadsHash,
+        title: 'Test Save',
+        isListed: saveIsListed,
+      });
+
+      await commitAndReset();
+
+      return { saveCommit, artifactId };
+    }
+
+    it('should allow author to read their own save (even if isListed=false)', async () => {
+      const { saveCommit } = await createSaveScenario({ saveIsListed: false });
+
+      const canRead = await service.canReadSave(saveCommit, testUserId);
+      expect(canRead).toBe(true);
+    });
+
+    it('should allow non-author to read save if artifact is public', async () => {
+      const { saveCommit } = await createSaveScenario({
+        saveIsListed: false,
+        artifactIsPublic: true,
+      });
+
+      // Create another user
+      const otherUserId = await createTestUser('otheruser');
+
+      const canRead = await service.canReadSave(saveCommit, otherUserId);
+      expect(canRead).toBe(true);
+    });
+
+    it('should deny non-author from reading save if artifact is private', async () => {
+      const { saveCommit } = await createSaveScenario({
+        saveIsListed: true,
+        artifactIsPublic: false,
+      });
+
+      // Create another user
+      const otherUserId = await createTestUser('otheruser');
+
+      const canRead = await service.canReadSave(saveCommit, otherUserId);
+      expect(canRead).toBe(false);
+    });
+
+    it('should allow anonymous user to read save if artifact is public', async () => {
+      const { saveCommit } = await createSaveScenario({
+        saveIsListed: false,
+        artifactIsPublic: true,
+      });
+
+      // Anonymous user (undefined userId)
+      const canRead = await service.canReadSave(saveCommit, undefined);
+      expect(canRead).toBe(true);
+    });
+
+    it('should deny anonymous user from reading save if artifact is private', async () => {
+      const { saveCommit } = await createSaveScenario({
+        saveIsListed: true,
+        artifactIsPublic: false,
+      });
+
+      const canRead = await service.canReadSave(saveCommit, undefined);
+      expect(canRead).toBe(false);
+    });
+
+    it('should return false for non-existent save', async () => {
+      const canRead = await service.canReadSave('non-existent-commit', testUserId);
+      expect(canRead).toBe(false);
+    });
+  });
+
+  describe('listSaves access control', () => {
+    async function createSaveWithAccess(opts: {
+      saveIsListed: boolean;
+      artifactIsPublic: boolean;
+      authorId: string;
+      stateNodeId: string;
+      stateNodeCommit: string;
+      artifactId: string;
+      artifactCommit: string;
+      title: string;
+    }) {
+      const { saveIsListed, authorId, stateNodeId, stateNodeCommit, artifactId, artifactCommit, title } = opts;
+
+      const quadsHash = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+      const saveContentHash = await computeContentHash({
+        type: 'SAVE',
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
+        title,
+        description: null,
+      });
+      const saveId = crypto.randomUUID();
+      const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+      ctx = new BatchContext(db);
+      service = new SaveService(ctx);
+
+      await service.createRuntimeSave({
+        saveId,
+        stateNodeId,
+        stateNodeCommit,
+        commit: saveCommit,
+        parent: null,
+        authorId,
+        artifactId,
+        artifactCommit,
+        contentHash: saveContentHash,
+        quadsHash,
+        title,
+        isListed: saveIsListed,
+      });
+
+      await commitAndReset();
+
+      return { saveCommit, saveId };
+    }
+
+    it('should show author all their saves regardless of isListed', async () => {
+      const artifactId = crypto.randomUUID();
+      const stateNodeId = crypto.randomUUID();
+
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
+
+      // Artifact public/private doesn't affect listSaves
+
+      // Create listed save
+      await createSaveWithAccess({
+        saveIsListed: true,
+        artifactIsPublic: false,
+        authorId: testUserId,
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        title: 'Listed Save',
+      });
+
+      // Create unlisted save
+      await createSaveWithAccess({
+        saveIsListed: false,
+        artifactIsPublic: false,
+        authorId: testUserId,
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        title: 'Unlisted Save',
+      });
+
+      // Author should see both saves when querying by stateNodeId + stateNodeCommit
+      const result = await service.listSaves({
+        stateNodeId,
+        stateNodeCommit,
+        userId: testUserId,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.saves.length).toBe(2);
+      }
+    });
+
+    it('should only show non-author listed saves', async () => {
+      const artifactId = crypto.randomUUID();
+      const stateNodeId = crypto.randomUUID();
+
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
+
+      // Artifact public/private doesn't affect listSaves - only isListed matters
+
+      // Create listed save
+      await createSaveWithAccess({
+        saveIsListed: true,
+        artifactIsPublic: false,
+        authorId: testUserId,
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        title: 'Listed Save',
+      });
+
+      // Create unlisted save
+      await createSaveWithAccess({
+        saveIsListed: false,
+        artifactIsPublic: false,
+        authorId: testUserId,
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        title: 'Unlisted Save',
+      });
+
+      // Create another user
+      const otherUserId = await createTestUser('otheruser');
+
+      // Other user should only see the listed save (regardless of artifact ACL)
+      const result = await service.listSaves({
+        stateNodeId,
+        stateNodeCommit,
+        userId: otherUserId,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.saves.length).toBe(1);
+        expect(result.data.saves[0].title).toBe('Listed Save');
+      }
+    });
+
+    it('should only show anonymous user listed saves', async () => {
+      const artifactId = crypto.randomUUID();
+      const stateNodeId = crypto.randomUUID();
+
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
+
+      // Artifact public/private doesn't affect listSaves - only isListed matters
+
+      // Create listed save
+      await createSaveWithAccess({
+        saveIsListed: true,
+        artifactIsPublic: false,
+        authorId: testUserId,
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        title: 'Listed Save',
+      });
+
+      // Create unlisted save
+      await createSaveWithAccess({
+        saveIsListed: false,
+        artifactIsPublic: false,
+        authorId: testUserId,
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        title: 'Unlisted Save',
+      });
+
+      // Anonymous user should only see the listed save (regardless of artifact ACL)
+      const result = await service.listSaves({
+        stateNodeId,
+        stateNodeCommit,
+        userId: undefined,
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.saves.length).toBe(1);
+        expect(result.data.saves[0].title).toBe('Listed Save');
+      }
+    });
+  });
+
+  describe('deleteSave ACL cleanup', () => {
+    it('should delete ACL and discovery control records when save is deleted', async () => {
+      const artifactId = crypto.randomUUID();
+      const stateNodeId = crypto.randomUUID();
+
+      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
+
+      // Create save
+      const quadsHash = 'abcd1234'.repeat(8);
+      const saveContentHash = await computeContentHash({
+        type: 'SAVE',
+        stateNodeId,
+        stateNodeCommit,
+        artifactId,
+        artifactCommit,
+        quadsHash,
+        title: 'Test Save',
+        description: null,
+      });
+      const saveId = crypto.randomUUID();
+      const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
+
+      await service.createRuntimeSave({
+        saveId,
+        stateNodeId,
+        stateNodeCommit,
+        commit: saveCommit,
+        parent: null,
+        authorId: testUserId,
+        artifactId,
+        artifactCommit,
+        contentHash: saveContentHash,
+        quadsHash,
+        title: 'Test Save',
+        isListed: true,
+      });
+
+      await commitAndReset();
+
+      // Verify ACL exists before delete (uses 'node' type)
+      const aclService = new AclService(ctx);
+      const nodeRef = { type: 'node' as const, id: saveCommit };
+      let canManage = await aclService.canManage(nodeRef, testUserId);
+      expect(canManage).toBe(true);
+
+      // Delete save
+      const deleteResult = await service.deleteSave(saveCommit, testUserId);
+      expect(deleteResult.success).toBe(true);
+
+      await commitAndReset();
+
+      // Verify ACL was deleted
+      canManage = await aclService.canManage(nodeRef, testUserId);
+      expect(canManage).toBe(false);
+
+      // Verify discovery control was deleted
+      const discoveryService = new DiscoveryService(ctx);
+      const isListed = await discoveryService.isListed(nodeRef);
+      expect(isListed).toBe(false);
     });
   });
 });

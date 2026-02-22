@@ -2,13 +2,16 @@ import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, NodeVersionService, BatchContext } from '@pubwiki/db';
 import type { GetNodeVersionsResponse, ApiError } from '@pubwiki/api';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { optionalAuthMiddleware } from '../middleware/auth';
+import { resourceAccessMiddleware } from '../middleware/resource-access';
+import { checkResourceAccess } from '../lib/access-control';
 import { serviceErrorResponse } from '../lib/service-error';
 
 const nodesRoute = new Hono<{ Bindings: Env }>();
 
 // GET /nodes/:nodeId/versions - 获取节点版本（分页）
-nodesRoute.get('/:nodeId/versions', authMiddleware, async (c) => {
+// Note: This is a listing operation, controlled by isListed (Discovery), NOT ACL
+nodesRoute.get('/:nodeId/versions', optionalAuthMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const nodeVersionService = new NodeVersionService(ctx);
   const nodeId = c.req.param('nodeId');
@@ -29,8 +32,13 @@ nodesRoute.get('/:nodeId/versions', authMiddleware, async (c) => {
 });
 
 // GET /nodes/commits/:commit - 获取特定版本详情（commit 全局唯一）
-nodesRoute.get('/commits/:commit', authMiddleware, async (c) => {
+nodesRoute.get('/commits/:commit', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const commit = c.req.param('commit');
+
+  // ACL check: verify user can read this node version
+  const accessError = await checkResourceAccess(c, { type: 'node', id: commit });
+  if (accessError) return accessError;
+
   const ctx = new BatchContext(createDb(c.env.DB));
   const nodeVersionService = new NodeVersionService(ctx);
 
@@ -44,8 +52,13 @@ nodesRoute.get('/commits/:commit', authMiddleware, async (c) => {
 });
 
 // GET /nodes/commits/:commit/children - 获取子版本（commit 全局唯一）
-nodesRoute.get('/commits/:commit/children', authMiddleware, async (c) => {
+nodesRoute.get('/commits/:commit/children', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const commit = c.req.param('commit');
+
+  // ACL check: verify user can read this node version
+  const accessError = await checkResourceAccess(c, { type: 'node', id: commit });
+  if (accessError) return accessError;
+
   const ctx = new BatchContext(createDb(c.env.DB));
   const nodeVersionService = new NodeVersionService(ctx);
 
@@ -59,8 +72,12 @@ nodesRoute.get('/commits/:commit/children', authMiddleware, async (c) => {
 });
 
 // GET /nodes/commits/:commit/archive - 下载 VFS 归档文件（commit 全局唯一）
-nodesRoute.get('/commits/:commit/archive', optionalAuthMiddleware, async (c) => {
+nodesRoute.get('/commits/:commit/archive', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
   const commit = c.req.param('commit');
+
+  // ACL check: verify user can read this node version
+  const accessError = await checkResourceAccess(c, { type: 'node', id: commit });
+  if (accessError) return accessError;
 
   const ctx = new BatchContext(createDb(c.env.DB));
   const nodeVersionService = new NodeVersionService(ctx);

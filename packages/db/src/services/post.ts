@@ -78,46 +78,6 @@ export class PostService {
     return result[0] ?? null;
   }
 
-  // 检查用户是否是 project 的 owner 或有写权限
-  async isProjectMember(projectId: string, userId: string): Promise<ServiceResult<{ isOwner: boolean; isMaintainer: boolean }>> {
-    try {
-      // 获取 project 检查 owner
-      const [project] = await this.ctx
-        .select({ ownerId: projects.ownerId })
-        .from(projects)
-        .where(eq(projects.id, projectId))
-        .limit(1);
-
-      if (!project) {
-        return {
-          success: false,
-          error: { code: 'NOT_FOUND', message: 'Project not found' },
-        };
-      }
-
-      const isOwner = project.ownerId === userId;
-
-      // 检查用户的 ACL 权限 using AclService
-      const projectRef = { type: 'project' as const, id: projectId };
-      const hasWritePermission = await this.aclService.canWrite(projectRef, userId);
-
-      return {
-        success: true,
-        data: {
-          isOwner,
-          // 向后兼容：有写权限等价于原来的 isMaintainer
-          isMaintainer: hasWritePermission,
-        },
-      };
-    } catch (error) {
-      console.error('Failed to check project membership:', error);
-      return {
-        success: false,
-        error: { code: 'INTERNAL_ERROR', message: 'Failed to check project membership' },
-      };
-    }
-  }
-
   // 转换为列表项
   private toListItem(post: ProjectPost, author: AuthorInfo, replyCount: number = 0): PostListItem {
     return {
@@ -443,30 +403,25 @@ export class PostService {
         };
       }
 
-      // 检查权限：作者可以更新标题、内容、封面；owner/maintainer 可以额外设置置顶
-      const isAuthor = existingPost.authorId === userId;
-      const memberResult = await this.isProjectMember(projectId, userId);
-      
-      if (!memberResult.success) {
-        return memberResult;
-      }
+      // Check permissions: write permission for update, manage permission for pin
+      const projectRef = { type: 'project' as const, id: projectId };
+      const [canWrite, canManage] = await Promise.all([
+        this.aclService.canWrite(projectRef, userId),
+        this.aclService.canManage(projectRef, userId),
+      ]);
 
-      const { isOwner, isMaintainer } = memberResult.data;
-      const canUpdate = isAuthor || isOwner || isMaintainer;
-      const canPin = isOwner || isMaintainer;
-
-      if (!canUpdate) {
+      if (!canWrite) {
         return {
           success: false,
           error: { code: 'FORBIDDEN', message: 'Not authorized to update this post' },
         };
       }
 
-      // 如果尝试设置置顶但没有权限
-      if (data.isPinned !== undefined && !canPin) {
+      // If trying to pin but no manage permission
+      if (data.isPinned !== undefined && !canManage) {
         return {
           success: false,
-          error: { code: 'FORBIDDEN', message: 'Only owner or maintainer can pin/unpin posts' },
+          error: { code: 'FORBIDDEN', message: 'Only users with manage permission can pin/unpin posts' },
         };
       }
 
@@ -478,7 +433,7 @@ export class PostService {
       if (data.title !== undefined) updateData.title = data.title;
       if (data.content !== undefined) updateData.content = data.content;
       if (data.coverUrls !== undefined) updateData.coverUrls = JSON.stringify(data.coverUrls);
-      if (data.isPinned !== undefined && canPin) updateData.isPinned = data.isPinned;
+      if (data.isPinned !== undefined) updateData.isPinned = data.isPinned;
 
       // 收集更新 post 操作
       this.ctx.modify()
@@ -529,16 +484,11 @@ export class PostService {
         };
       }
 
-      // 检查权限：作者、owner 或 maintainer 可以删除
+      // Check permissions: author or users with manage permission can delete
       const isAuthor = existingPost.authorId === userId;
-      const memberResult = await this.isProjectMember(projectId, userId);
-      
-      if (!memberResult.success) {
-        return memberResult;
-      }
-
-      const { isOwner, isMaintainer } = memberResult.data;
-      const canDelete = isAuthor || isOwner || isMaintainer;
+      const projectRef = { type: 'project' as const, id: projectId };
+      const canManage = await this.aclService.canManage(projectRef, userId);
+      const canDelete = isAuthor || canManage;
 
       if (!canDelete) {
         return {

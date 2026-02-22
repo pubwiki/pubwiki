@@ -669,6 +669,161 @@ describe('NodeVersionService', () => {
   });
 
   // ========================================================================
+  // Parent commit validation
+  // ========================================================================
+  describe('parent commit validation', () => {
+    it('should succeed with valid external parent commit', async () => {
+      const nodeId = crypto.randomUUID();
+      
+      // Create parent version first
+      const parentV = await inputVersion({ nodeId, contentHash: makeContentHash('par01') });
+      await service.syncVersions([parentV]);
+      await commitAndReset();
+
+      // Create child version referencing external parent
+      const childV = await inputVersion({ 
+        nodeId, 
+        parent: parentV.commit, 
+        contentHash: makeContentHash('chi01') 
+      });
+      const result = await service.syncVersions([childV]);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.created).toBe(1);
+      expect(result.data.errors).toHaveLength(0);
+    });
+
+    it('should succeed with valid intra-batch parent commit', async () => {
+      const nodeId = crypto.randomUUID();
+      
+      // Create parent and child in same batch
+      const parentV = await inputVersion({ nodeId, contentHash: makeContentHash('par02') });
+      const childV = await inputVersion({ 
+        nodeId, 
+        parent: parentV.commit, 
+        contentHash: makeContentHash('chi02') 
+      });
+      
+      const result = await service.syncVersions([parentV, childV]);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.created).toBe(2);
+      expect(result.data.errors).toHaveLength(0);
+    });
+
+    it('should fail when external parent commit does not exist', async () => {
+      const nodeId = crypto.randomUUID();
+      const fakeParentCommit = 'nonexistent_parent_commit_0000000000000';
+      
+      // Create child referencing non-existent parent
+      const childV = await inputVersion({ 
+        nodeId, 
+        parent: fakeParentCommit, 
+        contentHash: makeContentHash('chi03') 
+      });
+      const result = await service.syncVersions([childV]);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.created).toBe(0);
+      expect(result.data.errors).toHaveLength(1);
+      expect(result.data.errors[0]).toContain('does not exist');
+      expect(result.data.errors[0]).toContain(fakeParentCommit);
+    });
+
+    it('should fail when external parent belongs to different node', async () => {
+      const nodeId1 = crypto.randomUUID();
+      const nodeId2 = crypto.randomUUID();
+      
+      // Create parent version for node1
+      const parentV = await inputVersion({ nodeId: nodeId1, contentHash: makeContentHash('par04') });
+      await service.syncVersions([parentV]);
+      await commitAndReset();
+
+      // Try to create child for node2 referencing node1's commit as parent
+      const childV = await inputVersion({ 
+        nodeId: nodeId2, 
+        parent: parentV.commit, 
+        contentHash: makeContentHash('chi04') 
+      });
+      const result = await service.syncVersions([childV]);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.created).toBe(0);
+      expect(result.data.errors).toHaveLength(1);
+      expect(result.data.errors[0]).toContain('belongs to different node');
+      expect(result.data.errors[0]).toContain(nodeId1);
+    });
+
+    it('should fail when intra-batch parent belongs to different node', async () => {
+      const nodeId1 = crypto.randomUUID();
+      const nodeId2 = crypto.randomUUID();
+      
+      // Create parent for node1 and child for node2 in same batch
+      const parentV = await inputVersion({ nodeId: nodeId1, contentHash: makeContentHash('par05') });
+      const childV = await inputVersion({ 
+        nodeId: nodeId2, 
+        parent: parentV.commit, 
+        contentHash: makeContentHash('chi05') 
+      });
+      
+      const result = await service.syncVersions([parentV, childV]);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      // Parent should be created, but child should fail
+      expect(result.data.created).toBe(1);
+      expect(result.data.errors).toHaveLength(1);
+      expect(result.data.errors[0]).toContain('belongs to different node');
+      expect(result.data.errors[0]).toContain(nodeId1);
+    });
+
+    it('should create valid versions and skip invalid ones in mixed batch', async () => {
+      const nodeId1 = crypto.randomUUID();
+      const nodeId2 = crypto.randomUUID();
+      const fakeParentCommit = 'nonexistent_parent_commit_0000000001';
+      
+      // Create a mix of valid and invalid versions
+      const validV1 = await inputVersion({ nodeId: nodeId1, contentHash: makeContentHash('mix01') });
+      const validV2 = await inputVersion({ 
+        nodeId: nodeId1, 
+        parent: validV1.commit, 
+        contentHash: makeContentHash('mix02') 
+      });
+      const invalidV1 = await inputVersion({ 
+        nodeId: nodeId1, 
+        parent: fakeParentCommit, 
+        contentHash: makeContentHash('mix03') 
+      });
+      const invalidV2 = await inputVersion({ 
+        nodeId: nodeId2, 
+        parent: validV1.commit,  // Wrong nodeId
+        contentHash: makeContentHash('mix04') 
+      });
+      const validV3 = await inputVersion({ nodeId: nodeId2, contentHash: makeContentHash('mix05') });
+
+      const result = await service.syncVersions([validV1, validV2, invalidV1, invalidV2, validV3]);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.created).toBe(3);  // validV1, validV2, validV3
+      expect(result.data.errors).toHaveLength(2);  // invalidV1, invalidV2
+
+      await commitAndReset();
+
+      // Verify only valid versions were created
+      const rows1 = await db.select().from(nodeVersions).where(eq(nodeVersions.nodeId, nodeId1));
+      expect(rows1).toHaveLength(2);
+      
+      const rows2 = await db.select().from(nodeVersions).where(eq(nodeVersions.nodeId, nodeId2));
+      expect(rows2).toHaveLength(1);
+    });
+  });
+
+  // ========================================================================
   // Content type specifics
   // ========================================================================
   describe('typed content storage', () => {

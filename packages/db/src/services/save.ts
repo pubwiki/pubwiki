@@ -1,10 +1,11 @@
-import { eq, and, desc, count } from 'drizzle-orm';
+import { eq, and, desc, count, or } from 'drizzle-orm';
 import type { BatchContext } from '../batch-context';
 import { nodeVersions } from '../schema/node-versions';
 import { saveContents } from '../schema/node-contents';
 import { artifactVersions } from '../schema/artifacts';
 import { resourceDiscoveryControl } from '../schema/discovery-control';
 import { NodeVersionService, type SyncNodeVersionInput } from './node-version';
+import { AclService, DiscoveryService } from './access-control';
 import type { ServiceResult } from './user';
 import type { SaveDetail, Pagination } from '@pubwiki/api';
 
@@ -33,6 +34,8 @@ export type ListSavesParams = {
   author?: string;
   page?: number;
   limit?: number;
+  /** Current user ID for access control filtering */
+  userId?: string;
 } & (
   | { stateNodeId: string; stateNodeCommit: string; saveId?: undefined }
   | { saveId: string; stateNodeId?: undefined; stateNodeCommit?: undefined }
@@ -46,9 +49,13 @@ export interface ListSavesResult {
 
 export class SaveService {
   private nodeVersionService: NodeVersionService;
+  private aclService: AclService;
+  private discoveryService: DiscoveryService;
 
   constructor(private ctx: BatchContext) {
     this.nodeVersionService = new NodeVersionService(ctx);
+    this.aclService = new AclService(ctx);
+    this.discoveryService = new DiscoveryService(ctx);
   }
 
   /**
@@ -117,7 +124,12 @@ export class SaveService {
         };
       }
 
+      // Check if artifact is public - save inherits artifact's visibility
+      const artifactRef = { type: 'artifact' as const, id: artifactId };
+      const artifactIsPublic = await this.aclService.isPublic(artifactRef);
+
       // Build sync input for SAVE node
+      // Save inherits visibility from parent artifact
       const syncInput: SyncNodeVersionInput = {
         nodeId: saveId,
         commit,
@@ -137,6 +149,7 @@ export class SaveService {
           description: description ?? null,
         },
         isListed,
+        isPrivate: !artifactIsPublic,  // Inherit from artifact: private if artifact is not public
       };
 
       const syncResult = await this.nodeVersionService.syncVersions([syncInput]);
@@ -147,6 +160,9 @@ export class SaveService {
           error: syncResult.error,
         };
       }
+
+      // Note: ACL is already created by syncVersions with type: 'node'
+      // We don't create separate 'save' type ACL to avoid duplication
 
       // Return commit - caller should commit batch and then call getSave
       return { success: true, data: { commit } };
@@ -160,35 +176,64 @@ export class SaveService {
   }
 
   // 查询 SAVE 版本列表（按 stateNodeId+stateNodeCommit 或 saveId）
+  // Access control:
+  // - Author sees all their saves regardless of isListed
+  // - Non-author only sees saves where isListed=true AND can read artifact
   async listSaves(params: ListSavesParams): Promise<ServiceResult<ListSavesResult>> {
-    const { author, page = 1, limit = 20 } = params;
+    const { author, page = 1, limit = 20, userId } = params;
     const validPage = Math.max(1, page);
     const validLimit = Math.min(100, Math.max(1, limit));
     const offset = (validPage - 1) * validLimit;
 
     try {
-      // 构建过滤条件
-      const conditions = [
+      // 构建基本过滤条件
+      const baseConditions = [
         eq(nodeVersions.type, 'SAVE'),
       ];
       if (params.saveId) {
-        conditions.push(eq(nodeVersions.nodeId, params.saveId));
+        baseConditions.push(eq(nodeVersions.nodeId, params.saveId));
       } else if (params.stateNodeId && params.stateNodeCommit) {
-        conditions.push(eq(saveContents.stateNodeId, params.stateNodeId));
-        conditions.push(eq(saveContents.stateNodeCommit, params.stateNodeCommit));
+        baseConditions.push(eq(saveContents.stateNodeId, params.stateNodeId));
+        baseConditions.push(eq(saveContents.stateNodeCommit, params.stateNodeCommit));
       }
       if (author) {
-        conditions.push(eq(nodeVersions.authorId, author));
+        baseConditions.push(eq(nodeVersions.authorId, author));
       }
 
-      // 总数（需要 JOIN saveContents 因为条件引用了 saveContents.stateNodeId）
+      // Build access control condition:
+      // - If userId is provided: (authorId = userId) OR (isListed = true)
+      // - If userId is not provided (anonymous): isListed = true
+      // 
+      // Note: This only controls discoverability. Read access (canReadSave) is
+      // checked separately based on artifact ACL inheritance.
+      const accessCondition = userId
+        ? or(
+            // Author can see all their saves
+            eq(nodeVersions.authorId, userId),
+            // Non-author: isListed=true
+            eq(resourceDiscoveryControl.isListed, true)
+          )
+        : // Anonymous: isListed=true
+          eq(resourceDiscoveryControl.isListed, true);
+
+      // Full condition = base conditions AND access condition
+      const fullConditions = [...baseConditions, accessCondition];
+
+      // 总数（with access control）
       const [countResult] = await this.ctx.select({ count: count() })
         .from(nodeVersions)
         .innerJoin(
           saveContents,
           eq(nodeVersions.contentHash, saveContents.contentHash)
         )
-        .where(and(...conditions));
+        .leftJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'node'),
+            eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
+          )
+        )
+        .where(and(...fullConditions));
 
       const total = countResult?.count ?? 0;
       const totalPages = Math.ceil(total / validLimit);
@@ -220,11 +265,11 @@ export class SaveService {
         .leftJoin(
           resourceDiscoveryControl,
           and(
-            eq(resourceDiscoveryControl.resourceType, 'save'),
+            eq(resourceDiscoveryControl.resourceType, 'node'),
             eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
           )
         )
-        .where(and(...conditions))
+        .where(and(...fullConditions))
         .orderBy(desc(nodeVersions.authoredAt))
         .limit(validLimit)
         .offset(offset);
@@ -295,7 +340,7 @@ export class SaveService {
         .leftJoin(
           resourceDiscoveryControl,
           and(
-            eq(resourceDiscoveryControl.resourceType, 'save'),
+            eq(resourceDiscoveryControl.resourceType, 'node'),
             eq(resourceDiscoveryControl.resourceId, nodeVersions.commit)
           )
         )
@@ -386,6 +431,11 @@ export class SaveService {
         .delete(nodeVersions)
         .where(eq(nodeVersions.commit, commit));
 
+      // Clean up ACL and discovery control records (both use 'node' resource type)
+      const nodeRef = { type: 'node' as const, id: commit };
+      this.aclService.deleteAllAcls(nodeRef);
+      this.discoveryService.delete(nodeRef);
+
       return {
         success: true,
         data: { quadsHash: save.quadsHash },
@@ -397,6 +447,17 @@ export class SaveService {
         error: { code: 'INTERNAL_ERROR', message: 'Failed to delete save' },
       };
     }
+  }
+
+  /**
+   * Check if a user can read a save.
+   * Uses unified 'node' type ACL created by syncVersions.
+   * Note: isListed does NOT affect read access - it only controls discoverability.
+   */
+  async canReadSave(commit: string, userId: string | undefined): Promise<boolean> {
+    // Use node ACL directly - SAVE nodes use 'node' type for ACL
+    const nodeRef = { type: 'node' as const, id: commit };
+    return await this.aclService.canRead(nodeRef, userId);
   }
 
 }
