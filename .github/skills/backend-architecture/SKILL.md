@@ -1,5 +1,5 @@
 ---
-name: Backend Architecture Overview
+name: backend-architecture
 description: This skill tells you the current backend architecture. This is considered a preliminary document before developing the backend part of this project Pub.Wiki
 ---
 
