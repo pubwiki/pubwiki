@@ -18,6 +18,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { config } from 'dotenv';
+import { computeContentHash, computeNodeCommit, computeArtifactCommit } from '@pubwiki/api';
 
 // 从 .env 文件加载环境变量
 config();
@@ -209,6 +210,7 @@ function authFetch(sessionCookie: string) {
 }
 
 // 创建 artifact
+// 为了简化，我们现在只创建包含 SANDBOX 节点的基本 artifact
 // 返回值: artifact ID (成功), null (失败), 'PENDING' (需要稍后重试，因为外部引用未解决)
 async function createArtifact(artifact: MockArtifact, sessionCookie: string): Promise<string | null | 'PENDING'> {
   const fetchWithAuth = authFetch(sessionCookie);
@@ -217,114 +219,52 @@ async function createArtifact(artifact: MockArtifact, sessionCookie: string): Pr
   // 生成 artifactId (客户端生成的 UUID)
   const artifactId = crypto.randomUUID();
   
+  // 创建一个简单的 SANDBOX 节点
+  const sandboxNodeId = crypto.randomUUID();
+  const sandboxContent = { type: 'SANDBOX' as const, entryFile: 'index.html' };
+  const sandboxContentHash = await computeContentHash(sandboxContent);
+  const sandboxCommit = await computeNodeCommit(sandboxNodeId, null, sandboxContentHash, 'SANDBOX');
+
+  const nodes = [
+    {
+      nodeId: sandboxNodeId,
+      commit: sandboxCommit,
+      type: 'SANDBOX' as const,
+      name: 'sandbox',
+      contentHash: sandboxContentHash,
+      content: sandboxContent,
+    },
+  ];
+
+  const edges: Array<{ source: string; target: string; sourceHandle?: string; targetHandle?: string }> = [];
+
+  // 计算 artifact commit
+  const commitNodes = nodes.map(n => ({ nodeId: n.nodeId, commit: n.commit }));
+  const commitEdges = edges.map(e => ({
+    source: e.source,
+    target: e.target,
+    sourceHandle: e.sourceHandle ?? null,
+    targetHandle: e.targetHandle ?? null,
+  }));
+  const artifactCommit = await computeArtifactCommit(artifactId, null, commitNodes, commitEdges);
+
   // 添加 metadata
   const metadata = {
-    artifactId, // 必填字段
-    type: artifact.type,
+    artifactId,
+    commit: artifactCommit,
+    parentCommit: null,
     name: artifact.name,
-    slug: artifact.slug,
     description: artifact.description,
-    visibility: artifact.visibility,
+    isListed: artifact.visibility === 'PUBLIC',
+    isPrivate: artifact.visibility === 'PRIVATE',
     license: artifact.license,
-    thumbnailUrl: artifact.thumbnailUrl,
     version: artifact.version,
     changelog: artifact.changelog,
     tags: artifact.tags,
   };
   formData.append('metadata', JSON.stringify(metadata));
-
-  // 构建 descriptor - 先处理节点，检查是否有外部引用问题
-  // 存储本地 ID 到实际 ID 的映射（用于处理 edges）
-  const localIdToActualId: Record<string, string> = {};
-  
-  const nodeDescriptors: Array<{
-    id: string;
-    external: boolean;
-    type: string;
-    name: string;
-    files?: string[];
-  } | null> = artifact.nodes.map(node => {
-    // 处理外部引用 - 外部节点的 id 应该是被引用节点的真实 ID
-    if (node.external) {
-      if (node.externalArtifactSlug && node.externalNodeId) {
-        const externalArtifact = createdArtifacts.get(node.externalArtifactSlug);
-        if (externalArtifact) {
-          // 直接使用 externalNodeId，现在我们信任用户传入的 ID
-          localIdToActualId[node.id] = node.externalNodeId;
-          return {
-            id: node.externalNodeId,  // 使用被引用节点的 ID
-            external: true,
-            type: node.type,
-            name: node.name,
-          };
-        } else {
-          // 如果引用的 artifact 还没创建，返回 null
-          return null;
-        }
-      } else if (node.externalArtifactId && node.externalNodeId) {
-        // 直接使用提供的 ID
-        localIdToActualId[node.id] = node.externalNodeId;
-        return {
-          id: node.externalNodeId,
-          external: true,
-          type: node.type,
-          name: node.name,
-        };
-      }
-    }
-    
-    // 非外部节点使用本地 ID
-    localIdToActualId[node.id] = node.id;
-    const nodeDesc: {
-      id: string;
-      external: boolean;
-      type: string;
-      name: string;
-      files?: string[];
-    } = {
-      id: node.id,
-      external: false,
-      type: node.type,
-      name: node.name,
-    };
-    
-    // VFS 类型节点的文件路径
-    if (node.type === 'VFS' && node.vfsFilePaths && node.vfsFilePaths.length > 0) {
-      nodeDesc.files = node.vfsFilePaths;
-    }
-    return nodeDesc;
-  });
-
-  // 检查是否有外部引用未解决
-  if (nodeDescriptors.some(n => n === null)) {
-    return 'PENDING'; // 返回特殊标记表示需要稍后重试
-  }
-
-  // 映射 edges 中的节点 ID
-  const mappedEdges = artifact.edges.map(edge => ({
-    source: localIdToActualId[edge.source] || edge.source,
-    target: localIdToActualId[edge.target] || edge.target,
-    sourceHandle: edge.sourceHandle,
-    targetHandle: edge.targetHandle,
-  }));
-
-  const descriptor = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    nodes: nodeDescriptors.filter((n): n is NonNullable<typeof n> => n !== null),
-    edges: mappedEdges,
-  };
-  formData.append('descriptor', JSON.stringify(descriptor));
-
-  // 添加节点文件
-  for (const node of artifact.nodes) {
-    if (node.uploadFiles && !node.external) {
-      for (const file of node.uploadFiles) {
-        const blob = new Blob([file.content], { type: file.mimeType });
-        formData.append(`nodes[${node.id}]`, blob, file.filepath);
-      }
-    }
-  }
+  formData.append('nodes', JSON.stringify(nodes));
+  formData.append('edges', JSON.stringify(edges));
 
   // 添加 homepage
   if (artifact.homepage) {
@@ -350,7 +290,7 @@ async function createArtifact(artifact: MockArtifact, sessionCookie: string): Pr
     return data.artifact.id;
   } else {
     const error = await response.json() as { error: string };
-    if (error.error.includes('slug already exists')) {
+    if (error.error.includes('slug already exists') || error.error.includes('already exists')) {
       console.log(`  ⚠ Artifact already exists: ${artifact.name}`);
       // 尝试获取已存在的 artifact
       const getResponse = await fetchWithAuth(`${API_BASE_URL}/artifacts?slug=${artifact.slug}`, {});
@@ -1247,33 +1187,8 @@ async function main() {
   await createMockPosts();
   console.log('');
 
-  // 步骤 9: 从 mock 目录加载并创建 articles
-  console.log('📂 Loading articles from mock directory...');
-  const articleConfigs = await loadMockArticlesFromDirectory();
-  console.log('');
-
-  console.log('📝 Creating articles...');
-  for (const { article, artifactSlug } of articleConfigs) {
-    // 找到对应的 artifact 以获取作者信息
-    const artifactInfo = createdArtifacts.get(artifactSlug);
-    if (!artifactInfo) {
-      console.warn(`  ⚠ Artifact not found for article: ${article.title} (slug: ${artifactSlug})`);
-      continue;
-    }
-
-    const user = mockUsers.find(u => u.username === artifactInfo.authorUsername);
-    if (!user) {
-      console.warn(`  ⚠ User not found: ${artifactInfo.authorUsername}`);
-      continue;
-    }
-
-    try {
-      const cookie = await getOrCreateUserCookie(user);
-      await createArticle(article, cookie);
-    } catch (error) {
-      console.error(`  ❌ ${error}`);
-    }
-  }
+  // 步骤 9: 跳过 articles（API schema 已更改，需要 artifactId, artifactCommit 和 saveCommit）
+  console.log('📝 Skipping articles (requires real save nodes, not supported in simplified seed)...');
   console.log('');
 
   console.log('✅ Mock data seeding complete!');
@@ -1282,7 +1197,7 @@ async function main() {
   console.log(`   Users: ${mockUsers.length}`);
   console.log(`   Artifacts: ${createdArtifacts.size}`);
   console.log(`   Projects: ${createdProjects.size}`);
-  console.log(`   Articles: ${createdArticles.size}`);
+  console.log(`   Articles: ${createdArticles.size} (skipped)`);
 }
 
 main().catch(console.error);
