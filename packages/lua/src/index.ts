@@ -96,7 +96,11 @@ let gluePath = DEFAULT_GLUE_PATH
 let moduleInstance: LuaModule | null = null
 let modulePromise: Promise<void> | null = null
 
-interface LuaModule {
+/**
+ * Lua WASM 模块接口
+ * 用于类型检查和外部模块注入
+ */
+export interface LuaModule {
   HEAPU8: Uint8Array
   UTF8ToString(ptr: number): string
   _malloc(size: number): number
@@ -127,9 +131,42 @@ type LuaModuleFactory = (options: Record<string, unknown>) => LuaModule | Promis
 
 function ensureModule(): LuaModule {
   if (!moduleInstance) {
-    throw new Error('Lua runner has not been loaded. Call loadRunner() first.')
+    throw new Error('Lua runner has not been loaded. Call loadRunner() or setModule() first.')
   }
   return moduleInstance
+}
+
+/**
+ * 注入已加载的 Lua WASM 模块
+ * 
+ * 用于不支持动态模块加载的环境（如 Cloudflare Workers），
+ * 允许外部预加载模块后注入到包中。
+ * 
+ * @example
+ * ```typescript
+ * // 在 Cloudflare Workers 中使用
+ * import luaGlueFactory from './lua_runner_glue.js'
+ * import wasmBinary from './lua_runner_wasm.wasm'
+ * 
+ * const module = await luaGlueFactory({ wasmBinary })
+ * setModule(module)
+ * 
+ * // 之后可以正常使用 runLua, createLuaInstance 等
+ * ```
+ * 
+ * @param module 已实例化的 Lua WASM 模块
+ */
+export function setModule(module: LuaModule): void {
+  moduleInstance = module
+  // 清除任何进行中的加载 promise，因为模块已经设置好了
+  modulePromise = Promise.resolve()
+}
+
+/**
+ * 检查模块是否已加载
+ */
+export function isModuleLoaded(): boolean {
+  return moduleInstance !== null
 }
 
 // 辅助函数：分配字节到 WASM 内存
