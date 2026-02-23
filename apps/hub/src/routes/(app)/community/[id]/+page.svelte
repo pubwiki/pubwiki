@@ -1,38 +1,34 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { createApiClient } from '@pubwiki/api/client';
 	import type { ProjectDetail, ProjectArtifact, ProjectRole, ProjectPage, ProjectPageDetail, PostListItem, PostDetail, DiscussionReplyItem } from '@pubwiki/api';
 	import { ItemTree, buildTree, type TreeNode } from '$lib/components/ItemTree';
 	import { goto } from '$app/navigation';
-	import { API_BASE_URL } from '$lib/config';
+	import { apiClient } from '$lib/api';
 	import { fade, fly, scale } from 'svelte/transition';
 	import { cubicOut, backOut } from 'svelte/easing';
 	import * as m from '$lib/paraglide/messages';
 
 	let { data } = $props<{ data: PageData }>();
 
-	const client = createApiClient(API_BASE_URL);
-
 	let project = $state<ProjectDetail | null>(null);
 	let homepage = $state<string | null>(null);
 	let loading = $state(true);
 	let homepageLoading = $state(false);
 	let error = $state<string | null>(null);
+	let lastProjectId = $state<string | null>(null);
 
 	// Tab state: 'homepage' | 'links' | 'posts' | custom page id
 	let activeTab = $state<string>('homepage');
 	
-	// Posts state
-	let posts = $state<PostListItem[]>([]);
-	let postsLoading = $state(false);
+	// Posts state - using Promise for {#await} pattern
+	let postsPromise = $state<Promise<PostListItem[]> | null>(null);
 	let selectedPost = $state<PostDetail | null>(null);
 	let postModalOpen = $state(false);
 	let postReplies = $state<DiscussionReplyItem[]>([]);
 	let repliesLoading = $state(false);
 	
-	// Custom page content state
-	let customPageContent = $state<string | null>(null);
-	let customPageLoading = $state(false);
+	// Custom page content state - using Map to cache + Promise pattern
+	let customPagePromises = $state<Map<string, Promise<string | null>>>(new Map());
 	
 	// Role tree node data containing the artifacts for that role
 	interface RoleNodeData {
@@ -76,13 +72,21 @@
 			.sort((a, b) => a.order - b.order);
 	});
 
-	// Fetch project details
+	// Fetch project details when projectId changes
 	$effect(() => {
 		const projectId = data.projectId;
+		if (projectId === lastProjectId) return;
+		
+		lastProjectId = projectId;
 		loading = true;
 		error = null;
+		project = null;
+		homepage = null;
+		postsPromise = null;
+		customPagePromises = new Map();
+		activeTab = 'homepage';
 
-		client.GET('/projects/{projectId}', {
+		apiClient.GET('/projects/{projectId}', {
 			params: { path: { projectId } }
 		}).then(({ data: result, error: apiError }) => {
 			if (result) {
@@ -101,24 +105,24 @@
 		});
 	});
 	
-	// Fetch posts when switching to posts tab
-	$effect(() => {
-		if (activeTab === 'posts' && project && posts.length === 0) {
-			fetchPosts(project.id);
+	// Handle tab change - trigger lazy loading
+	function handleTabChange(tab: string) {
+		activeTab = tab;
+		if (tab === 'posts' && project && !postsPromise) {
+			postsPromise = fetchPosts(project.id);
+		} else if (project && tab !== 'homepage' && tab !== 'links' && tab !== 'posts') {
+			// Custom page - load if not cached
+			if (!customPagePromises.has(tab)) {
+				const promise = fetchCustomPage(project.id, tab);
+				customPagePromises = new Map(customPagePromises).set(tab, promise);
+			}
 		}
-	});
-	
-	// Fetch custom page content when switching to custom page tab
-	$effect(() => {
-		if (project && activeTab !== 'homepage' && activeTab !== 'links' && activeTab !== 'posts') {
-			fetchCustomPage(project.id, activeTab);
-		}
-	});
+	}
 
 	async function fetchHomepage(projectId: string, homepageId: string) {
 		homepageLoading = true;
 		try {
-			const { data: pageData } = await client.GET('/projects/{projectId}/pages/{pageId}', {
+			const { data: pageData } = await apiClient.GET('/projects/{projectId}/pages/{pageId}', {
 				params: { path: { projectId, pageId: homepageId } }
 			});
 			if (pageData) {
@@ -133,37 +137,18 @@
 		}
 	}
 	
-	async function fetchPosts(projectId: string) {
-		postsLoading = true;
-		try {
-			const { data: result } = await client.GET('/projects/{projectId}/posts', {
-				params: { path: { projectId }, query: { limit: 50 } }
-			});
-			if (result) {
-				posts = result.posts;
-			}
-		} catch {
-			posts = [];
-		} finally {
-			postsLoading = false;
-		}
+	async function fetchPosts(projectId: string): Promise<PostListItem[]> {
+		const { data: result } = await apiClient.GET('/projects/{projectId}/posts', {
+			params: { path: { projectId }, query: { limit: 50 } }
+		});
+		return result?.posts ?? [];
 	}
 	
-	async function fetchCustomPage(projectId: string, pageId: string) {
-		customPageLoading = true;
-		customPageContent = null;
-		try {
-			const { data: pageData } = await client.GET('/projects/{projectId}/pages/{pageId}', {
-				params: { path: { projectId, pageId } }
-			});
-			if (pageData) {
-				customPageContent = pageData.content || null;
-			}
-		} catch {
-			customPageContent = null;
-		} finally {
-			customPageLoading = false;
-		}
+	async function fetchCustomPage(projectId: string, pageId: string): Promise<string | null> {
+		const { data: pageData } = await apiClient.GET('/projects/{projectId}/pages/{pageId}', {
+			params: { path: { projectId, pageId } }
+		});
+		return pageData?.content || null;
 	}
 	
 	async function openPostModal(post: PostListItem) {
@@ -174,14 +159,14 @@
 		
 		// Fetch post detail
 		try {
-			const { data: postDetail } = await client.GET('/projects/{projectId}/posts/{postId}', {
+			const { data: postDetail } = await apiClient.GET('/projects/{projectId}/posts/{postId}', {
 				params: { path: { projectId: project.id, postId: post.id } }
 			});
 			if (postDetail) {
 				selectedPost = postDetail;
 				// Fetch replies if there's a discussion
 				if (postDetail.discussionId) {
-					const { data: repliesData } = await client.GET('/discussions/{discussionId}/replies', {
+					const { data: repliesData } = await apiClient.GET('/discussions/{discussionId}/replies', {
 						params: { path: { discussionId: postDetail.discussionId }, query: { limit: 100 } }
 					});
 					if (repliesData) {
@@ -265,9 +250,11 @@
 				<!-- Project Title & Info -->
 				<div class="absolute bottom-0 left-0 right-0 p-6" style="z-index: 3;">
 					<div class="flex items-center gap-3 mb-2">
-						<span class="text-sm text-gray-300">
-							{project.visibility}
-						</span>
+						{#if !project.isListed}
+							<span class="text-sm text-gray-300">
+								Unlisted
+							</span>
+						{/if}
 						{#if project.isArchived}
 							<span class="px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
 								{m.project_archived()}
@@ -294,8 +281,6 @@
 						<span class="text-gray-400">•</span>
 						<span>{m.project_artifacts_count({ count: project.artifacts.length.toString() })}</span>
 						<span class="text-gray-400">•</span>
-						<span>{m.project_maintainers_count({ count: (project.maintainers.length + 1).toString() })}</span>
-						<span class="text-gray-400">•</span>
 						<span>{m.project_updated({ date: formatDate(project.updatedAt) })}</span>
 						{#if project.license}
 							<span class="text-gray-400">•</span>
@@ -311,7 +296,7 @@
 			<div class="border-b border-gray-200 mt-4">
 				<nav class="flex space-x-8 overflow-x-auto" aria-label="Tabs">
 					<button
-						onclick={() => activeTab = 'homepage'}
+						onclick={() => handleTabChange('homepage')}
 						class="{activeTab === 'homepage'
 							? 'border-[#0969da] text-[#0969da]'
 							: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
@@ -323,7 +308,7 @@
 						{m.project_homepage()}
 					</button>
 					<button
-						onclick={() => activeTab = 'links'}
+						onclick={() => handleTabChange('links')}
 						class="{activeTab === 'links'
 							? 'border-[#0969da] text-[#0969da]'
 							: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
@@ -335,7 +320,7 @@
 						{m.project_links()}
 					</button>
 					<button
-						onclick={() => activeTab = 'posts'}
+						onclick={() => handleTabChange('posts')}
 						class="{activeTab === 'posts'
 							? 'border-[#0969da] text-[#0969da]'
 							: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
@@ -348,7 +333,7 @@
 					</button>
 					{#each customPages as page (page.id)}
 						<button
-							onclick={() => activeTab = page.id}
+							onclick={() => handleTabChange(page.id)}
 							class="{activeTab === page.id
 								? 'border-[#0969da] text-[#0969da]'
 								: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
@@ -490,9 +475,6 @@
 															<h4 class="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors truncate">
 																{artifact.name}
 															</h4>
-															<span class="shrink-0 px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-600 {pa.isOfficial ? 'mr-16' : ''}">
-																{artifact.type}
-															</span>
 														</div>
 
 														{#if artifact.description}
@@ -530,77 +512,89 @@
 			{:else if activeTab === 'posts'}
 				<!-- Posts Tab -->
 				<div class="min-h-[400px] max-w-3xl mx-auto">
-					{#if postsLoading}
-						<div class="flex justify-center py-12">
-							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
-						</div>
-					{:else if posts.length === 0}
-						<div class="text-center py-12 text-gray-500">
-							<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
-							</svg>
-							<p class="text-lg font-medium">{m.project_no_posts()}</p>
-							<p class="text-sm mt-1">{m.project_no_posts_desc()}</p>
-						</div>
-					{:else}
-						<div class="space-y-4">
-							{#each posts as post (post.id)}
-								<button 
-									type="button"
-									onclick={() => openPostModal(post)}
-									class="w-full text-left bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-md transition group"
-								>
-									<!-- Cover image if exists -->
-									{#if post.coverUrls && post.coverUrls.length > 0}
-										<div class="h-48 overflow-hidden">
-											<img 
-												src={post.coverUrls[0]} 
-												alt=""
-												class="w-full h-full object-cover group-hover:scale-105 transition-transform"
-											/>
-										</div>
-									{/if}
-									<div class="p-5">
-										<!-- Pinned badge -->
-										{#if post.isPinned}
-											<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 mb-2">
-												<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-													<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-												</svg>
-												{m.project_pinned()}
-											</span>
-										{/if}
-										<h3 class="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
-											{post.title}
-										</h3>
-										<div class="mt-2 text-sm text-gray-600 line-clamp-3 prose-content">
-											{@html post.content}
-										</div>
-										<div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-											<div class="flex items-center gap-2 text-sm text-gray-500">
-												{#if post.author.avatarUrl}
-													<img src={post.author.avatarUrl} alt="" class="w-5 h-5 rounded-full" />
-												{:else}
-													<div class="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">
-														{(post.author.displayName || post.author.username)[0].toUpperCase()}
-													</div>
-												{/if}
-												<span>{post.author.displayName || post.author.username}</span>
-												<span class="text-gray-400">•</span>
-												<span>{formatDate(post.createdAt)}</span>
-											</div>
-											{#if post.replyCount && post.replyCount > 0}
-												<div class="flex items-center gap-1 text-sm text-gray-500">
-													<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-														<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-													</svg>
-													{post.replyCount}
+					{#if postsPromise}
+						{#await postsPromise}
+							<div class="flex justify-center py-12">
+								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
+							</div>
+						{:then posts}
+							{#if posts.length === 0}
+								<div class="text-center py-12 text-gray-500">
+									<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+									</svg>
+									<p class="text-lg font-medium">{m.project_no_posts()}</p>
+									<p class="text-sm mt-1">{m.project_no_posts_desc()}</p>
+								</div>
+							{:else}
+								<div class="space-y-4">
+									{#each posts as post (post.id)}
+										<button 
+											type="button"
+											onclick={() => openPostModal(post)}
+											class="w-full text-left bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-blue-300 hover:shadow-md transition group"
+										>
+											<!-- Cover image if exists -->
+											{#if post.coverUrls && post.coverUrls.length > 0}
+												<div class="h-48 overflow-hidden">
+													<img 
+														src={post.coverUrls[0]} 
+														alt=""
+														class="w-full h-full object-cover group-hover:scale-105 transition-transform"
+													/>
 												</div>
 											{/if}
-										</div>
-									</div>
-								</button>
-							{/each}
+											<div class="p-5">
+												<!-- Pinned badge -->
+												{#if post.isPinned}
+													<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 mb-2">
+														<svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+															<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+														</svg>
+														{m.project_pinned()}
+													</span>
+												{/if}
+												<h3 class="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
+													{post.title}
+												</h3>
+												<div class="mt-2 text-sm text-gray-600 line-clamp-3 prose-content">
+													{@html post.content}
+												</div>
+												<div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+													<div class="flex items-center gap-2 text-sm text-gray-500">
+														{#if post.author.avatarUrl}
+															<img src={post.author.avatarUrl} alt="" class="w-5 h-5 rounded-full" />
+														{:else}
+															<div class="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-500">
+																{(post.author.displayName || post.author.username)[0].toUpperCase()}
+															</div>
+														{/if}
+														<span>{post.author.displayName || post.author.username}</span>
+														<span class="text-gray-400">•</span>
+														<span>{formatDate(post.createdAt)}</span>
+													</div>
+													{#if post.replyCount && post.replyCount > 0}
+														<div class="flex items-center gap-1 text-sm text-gray-500">
+															<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+																<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+															</svg>
+															{post.replyCount}
+														</div>
+													{/if}
+												</div>
+											</div>
+										</button>
+									{/each}
+								</div>
+							{/if}
+						{:catch}
+							<div class="text-center py-12 text-red-500">
+								<p class="text-lg font-medium">Failed to load posts</p>
+							</div>
+						{/await}
+					{:else}
+						<div class="flex justify-center py-12">
+							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
 						</div>
 					{/if}
 				</div>
@@ -608,21 +602,33 @@
 			{:else}
 				<!-- Custom Page Tab -->
 				<div class="min-h-[400px]">
-					{#if customPageLoading}
+					{#if customPagePromises.has(activeTab)}
+						{#await customPagePromises.get(activeTab)}
+							<div class="flex justify-center py-12">
+								<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
+							</div>
+						{:then content}
+							{#if content}
+								<div class="prose max-w-none project-homepage">
+									{@html content}
+								</div>
+							{:else}
+								<div class="text-center py-12 text-gray-500">
+									<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+									</svg>
+									<p class="text-lg font-medium">{m.project_no_content()}</p>
+									<p class="text-sm mt-1">{m.project_empty_page()}</p>
+								</div>
+							{/if}
+						{:catch}
+							<div class="text-center py-12 text-red-500">
+								<p class="text-lg font-medium">Failed to load page</p>
+							</div>
+						{/await}
+					{:else}
 						<div class="flex justify-center py-12">
 							<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
-						</div>
-					{:else if customPageContent}
-						<div class="prose max-w-none project-homepage">
-							{@html customPageContent}
-						</div>
-					{:else}
-						<div class="text-center py-12 text-gray-500">
-							<svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-							</svg>
-							<p class="text-lg font-medium">{m.project_no_content()}</p>
-							<p class="text-sm mt-1">{m.project_empty_page()}</p>
 						</div>
 					{/if}
 				</div>

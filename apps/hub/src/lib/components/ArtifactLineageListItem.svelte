@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ArtifactLineageItem } from '$lib/types';
+	import type { ArtifactLineageItem } from '@pubwiki/api';
 	import ArtifactCard from './ArtifactCard.svelte';
 
 	let { lineageItem } = $props<{ lineageItem: ArtifactLineageItem }>();

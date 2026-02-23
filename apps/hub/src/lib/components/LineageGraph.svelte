@@ -1,13 +1,16 @@
 <script lang="ts">
 	import { SvelteFlow, Background, Controls, type Node, type Edge, Position } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
-	import type { ArtifactListItem, ArtifactLineageItem } from '$lib/types';
+	import type { ArtifactListItem, ArtifactLineageItem } from '@pubwiki/api';
 	import LineageNode from './LineageNode.svelte';
+
+	// Extended type for lineage items that includes parentId (returned by API but not in schema)
+	type LineageItemWithParent = ArtifactLineageItem & { parentId?: string | null };
 
 	let { artifact, parents, children }: {
 		artifact: ArtifactListItem; 
-		parents: ArtifactLineageItem[];
-		children: ArtifactLineageItem[];
+		parents: LineageItemWithParent[];
+		children: LineageItemWithParent[];
 	} = $props();
 
 	const nodeTypes = {
@@ -15,8 +18,8 @@
 	};
 
 	// Build tree structure from flat array using parentId
-	function buildTree(items: ArtifactLineageItem[]): Map<string | null, ArtifactLineageItem[]> {
-		const tree = new Map<string | null, ArtifactLineageItem[]>();
+	function buildTree(items: LineageItemWithParent[]): Map<string | null, LineageItemWithParent[]> {
+		const tree = new Map<string | null, LineageItemWithParent[]>();
 		for (const item of items) {
 			const key = item.parentId ?? null;
 			if (!tree.has(key)) tree.set(key, []);
@@ -26,22 +29,22 @@
 	}
 
 	// Calculate tree depth
-	function getTreeDepth(tree: Map<string | null, ArtifactLineageItem[]>, rootKey: string | null): number {
+	function getTreeDepth(tree: Map<string | null, LineageItemWithParent[]>, rootKey: string | null): number {
 		const children = tree.get(rootKey);
 		if (!children || children.length === 0) return 0;
 		let maxDepth = 0;
 		for (const child of children) {
-			const depth = getTreeDepth(tree, child.artifact.id);
+			const depth = getTreeDepth(tree, child.artifactId);
 			maxDepth = Math.max(maxDepth, depth);
 		}
 		return maxDepth + 1;
 	}
 
 	// Calculate subtree width (number of leaf nodes)
-	function getSubtreeWidth(tree: Map<string | null, ArtifactLineageItem[]>, nodeId: string | null): number {
+	function getSubtreeWidth(tree: Map<string | null, LineageItemWithParent[]>, nodeId: string | null): number {
 		const children = tree.get(nodeId);
 		if (!children || children.length === 0) return 1;
-		return children.reduce((sum, child) => sum + getSubtreeWidth(tree, child.artifact.id), 0);
+		return children.reduce((sum, child) => sum + getSubtreeWidth(tree, child.artifactId), 0);
 	}
 
 	// Prepare graph data using derived state
@@ -87,15 +90,15 @@
 
 			let currentX = xOffset;
 			for (const item of items) {
-				const subtreeWidth = getSubtreeWidth(parentTree, item.artifact.id);
+				const subtreeWidth = getSubtreeWidth(parentTree, item.artifactId);
 				const nodeX = currentX + (subtreeWidth * (NODE_WIDTH + X_GAP)) / 2 - NODE_WIDTH / 2;
 				const nodeY = -(level * (NODE_HEIGHT + Y_GAP));
 
 				// Check if this node has ancestors
-				const hasAncestors = parentTree.has(item.artifact.id);
+				const hasAncestors = parentTree.has(item.artifactId);
 
 				newNodes.push({
-					id: item.artifact.id,
+					id: item.artifactId,
 					type: 'lineage',
 					data: { 
 						lineageItem: item,
@@ -109,14 +112,14 @@
 
 				// Edge from this parent to its child (could be current artifact or another parent)
 				newEdges.push({
-					id: `${item.artifact.id}->${targetNodeId}`,
-					source: item.artifact.id,
+					id: `${item.artifactId}->${targetNodeId}`,
+					source: item.artifactId,
 					target: targetNodeId,
 					type: 'smoothstep'
 				});
 
 				// Recursively add ancestors
-				addParentNodes(item.artifact.id, item.artifact.id, level + 1, currentX);
+				addParentNodes(item.artifactId, item.artifactId, level + 1, currentX);
 
 				currentX += subtreeWidth * (NODE_WIDTH + X_GAP);
 			}
@@ -136,15 +139,15 @@
 
 			let currentX = xOffset;
 			for (const item of items) {
-				const subtreeWidth = getSubtreeWidth(childTree, item.artifact.id);
+				const subtreeWidth = getSubtreeWidth(childTree, item.artifactId);
 				const nodeX = currentX + (subtreeWidth * (NODE_WIDTH + X_GAP)) / 2 - NODE_WIDTH / 2;
 				const nodeY = level * (NODE_HEIGHT + Y_GAP);
 
 				// Check if this node has descendants
-				const hasDescendants = childTree.has(item.artifact.id);
+				const hasDescendants = childTree.has(item.artifactId);
 
 				newNodes.push({
-					id: item.artifact.id,
+					id: item.artifactId,
 					type: 'lineage',
 					data: { 
 						lineageItem: item,
@@ -158,14 +161,14 @@
 
 				// Edge from source to this child
 				newEdges.push({
-					id: `${sourceNodeId}->${item.artifact.id}`,
+					id: `${sourceNodeId}->${item.artifactId}`,
 					source: sourceNodeId,
-					target: item.artifact.id,
+					target: item.artifactId,
 					type: 'smoothstep'
 				});
 
 				// Recursively add descendants
-				addChildNodes(item.artifact.id, item.artifact.id, level + 1, currentX);
+				addChildNodes(item.artifactId, item.artifactId, level + 1, currentX);
 
 				currentX += subtreeWidth * (NODE_WIDTH + X_GAP);
 			}

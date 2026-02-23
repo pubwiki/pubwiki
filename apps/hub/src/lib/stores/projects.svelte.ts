@@ -1,7 +1,6 @@
 import { setContext, getContext } from 'svelte';
-import { createApiClient } from '@pubwiki/api/client';
 import type { ProjectListItem, Pagination } from '@pubwiki/api';
-import { API_BASE_URL } from '$lib/config';
+import { apiClient } from '$lib/api';
 
 const PROJECTS_KEY = Symbol('projects');
 
@@ -10,10 +9,6 @@ export class ProjectStore {
 	pagination = $state<Pagination | null>(null);
 	loading = $state(false);
 	error = $state<string | null>(null);
-
-	private getClient() {
-		return createApiClient(API_BASE_URL);
-	}
 
 	async fetchProjects(options?: {
 		page?: number;
@@ -26,8 +21,7 @@ export class ProjectStore {
 		this.error = null;
 
 		try {
-			const client = this.getClient();
-			const { data, error } = await client.GET('/projects', {
+			const { data, error } = await apiClient.GET('/projects', {
 				params: {
 					query: {
 						page: options?.page ?? 1,

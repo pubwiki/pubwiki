@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { ArtifactNodeSummary } from '$lib/types';
+	import type { ArtifactNodeSummary } from '@pubwiki/api';
 	import { useArtifactStore, type ArtifactNodeDetail } from '$lib/stores/artifacts.svelte';
 	import { FileTree, buildTreeFromPaths } from './FileTree';
 	import NodeVersionHistory from './NodeVersionHistory.svelte';
@@ -15,36 +15,24 @@
 	
 	// Content is now directly available in node.content from ArtifactNodeSummary
 	let content = $derived(node.content ? JSON.stringify(node.content, null, 2) : null);
-	let nodeDetail = $state<ArtifactNodeDetail | null>(null);
-	let loadingContent = $state(false);
+	let vfsDetailPromise = $state<Promise<ArtifactNodeDetail | null> | null>(null);
 	let expanded = $state(false);
 	let showVersionHistory = $state(false);
 	let vfsExpandedFolders = $state(new Set<string>());
 
-	// Load file list for VFS nodes only
-	async function loadVfsDetail() {
-		if (node.type !== 'VFS') return;
-		
-		loadingContent = true;
-		try {
-			// For VFS nodes, fetch node detail to get file list
-			const result = await artifactStore.fetchNodeDetail(artifactId, node.id);
-			if (result) {
-				nodeDetail = result;
-			}
-		} catch {
-			nodeDetail = null;
-		} finally {
-			loadingContent = false;
-		}
+	// Load VFS detail lazily when expanded
+	function loadVfsDetail() {
+		if (node.type !== 'VFS' || vfsDetailPromise) return;
+		vfsDetailPromise = artifactStore.fetchNodeDetail(artifactId, node.id);
 	}
-
-	// Load VFS file list when card is expanded
-	$effect(() => {
-		if (expanded && node.type === 'VFS' && nodeDetail === null && !loadingContent) {
+	
+	// Handle expand - trigger VFS load if needed
+	function handleExpand() {
+		expanded = !expanded;
+		if (expanded && node.type === 'VFS') {
 			loadVfsDetail();
 		}
-	});
+	}
 
 	function getNodeTypeBadgeColor(type: string): string {
 		switch (type) {
@@ -55,9 +43,6 @@
 			default: return 'bg-gray-100 text-gray-700';
 		}
 	}
-
-	// Get file paths from VFS node detail
-	let vfsFilePaths = $derived(nodeDetail?.files?.map(f => f.filepath) ?? []);
 </script>
 
 <div 
@@ -65,8 +50,8 @@
 >
 	<div 
 		class="flex items-start gap-3 cursor-pointer"
-		onclick={() => expanded = !expanded}
-		onkeydown={(e) => e.key === 'Enter' && (expanded = !expanded)}
+		onclick={handleExpand}
+		onkeydown={(e) => e.key === 'Enter' && handleExpand()}
 		role="button"
 		tabindex="0"
 	>
@@ -126,21 +111,35 @@
 			{#if showVersionHistory}
 				<NodeVersionHistory nodeId={node.id} currentCommit={node.commit} />
 			{:else if node.type === 'VFS'}
-				{#if loadingContent}
+				{#if vfsDetailPromise}
+					{#await vfsDetailPromise}
+						<div class="flex items-center gap-2 text-sm text-gray-500">
+							<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
+							Loading files...
+						</div>
+					{:then nodeDetail}
+						{@const vfsFilePaths = nodeDetail?.files?.map(f => f.filepath) ?? []}
+						{#if vfsFilePaths.length > 0}
+							<FileTree 
+								items={buildTreeFromPaths(vfsFilePaths)}
+								expandedFolders={vfsExpandedFolders}
+								onExpandedChange={(folders) => vfsExpandedFolders = folders}
+							/>
+						{:else}
+							<p class="text-sm text-gray-500 italic">
+								No files in this VFS node.
+							</p>
+						{/if}
+					{:catch}
+						<p class="text-sm text-red-500 italic">
+							Failed to load files.
+						</p>
+					{/await}
+				{:else}
 					<div class="flex items-center gap-2 text-sm text-gray-500">
 						<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
 						Loading files...
 					</div>
-				{:else if vfsFilePaths.length > 0}
-					<FileTree 
-						items={buildTreeFromPaths(vfsFilePaths)}
-						expandedFolders={vfsExpandedFolders}
-						onExpandedChange={(folders) => vfsExpandedFolders = folders}
-					/>
-				{:else}
-					<p class="text-sm text-gray-500 italic">
-						No files in this VFS node.
-					</p>
 				{/if}
 			{:else if content}
 				<div class="bg-white rounded-md p-3 overflow-x-auto border border-gray-100">

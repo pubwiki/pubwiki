@@ -1,32 +1,26 @@
 import { setContext, getContext } from 'svelte';
-import { createApiClient } from '@pubwiki/api/client';
 import type { ArticleDetail, Pagination } from '@pubwiki/api';
-import { API_BASE_URL } from '$lib/config';
+import { apiClient } from '$lib/api';
 
 const ARTICLES_KEY = Symbol('articles');
 
 export class ArticleStore {
-	// Cache for articles by sandbox node ID
-	private articlesBySandboxCache = new Map<string, { articles: ArticleDetail[]; pagination: Pagination }>();
+	// Cache for articles by artifact ID
+	private articlesByArtifactCache = new Map<string, { articles: ArticleDetail[]; pagination: Pagination }>();
 	// Cache for single article by ID
 	private articleCache = new Map<string, ArticleDetail>();
 
-	private getClient() {
-		return createApiClient(API_BASE_URL);
-	}
-
 	/**
-	 * Fetch articles by sandbox node ID
+	 * Fetch articles by artifact ID
 	 */
-	async fetchArticlesBySandbox(
-		sandboxNodeId: string,
+	async fetchArticlesByArtifact(
+		artifactId: string,
 		options?: { page?: number; limit?: number }
 	): Promise<{ articles: ArticleDetail[]; pagination: Pagination } | null> {
 		try {
-			const client = this.getClient();
-			const { data, error } = await client.GET('/articles/by-sandbox/{sandboxNodeId}', {
+			const { data, error } = await apiClient.GET('/articles/by-artifact/{artifactId}', {
 				params: {
-					path: { sandboxNodeId },
+					path: { artifactId },
 					query: {
 						page: options?.page ?? 1,
 						limit: options?.limit ?? 20
@@ -36,7 +30,7 @@ export class ArticleStore {
 
 			if (data) {
 				const result = { articles: data.articles, pagination: data.pagination };
-				this.articlesBySandboxCache.set(sandboxNodeId, result);
+				this.articlesByArtifactCache.set(artifactId, result);
 				// Also cache individual articles
 				for (const article of data.articles) {
 					this.articleCache.set(article.id, article);
@@ -44,10 +38,10 @@ export class ArticleStore {
 				return result;
 			}
 
-			console.error('Failed to fetch articles by sandbox:', error);
+			console.error('Failed to fetch articles by artifact:', error);
 			return null;
 		} catch (e) {
-			console.error('Error fetching articles by sandbox:', e);
+			console.error('Error fetching articles by artifact:', e);
 			return null;
 		}
 	}
@@ -62,8 +56,7 @@ export class ArticleStore {
 		}
 
 		try {
-			const client = this.getClient();
-			const { data, error } = await client.GET('/articles/{articleId}', {
+			const { data, error } = await apiClient.GET('/articles/{articleId}', {
 				params: { path: { articleId } }
 			});
 
@@ -81,10 +74,10 @@ export class ArticleStore {
 	}
 
 	/**
-	 * Get cached articles by sandbox node ID
+	 * Get cached articles by artifact ID
 	 */
-	getCachedArticlesBySandbox(sandboxNodeId: string): { articles: ArticleDetail[]; pagination: Pagination } | null {
-		return this.articlesBySandboxCache.get(sandboxNodeId) ?? null;
+	getCachedArticlesByArtifact(artifactId: string): { articles: ArticleDetail[]; pagination: Pagination } | null {
+		return this.articlesByArtifactCache.get(artifactId) ?? null;
 	}
 
 	/**
@@ -98,7 +91,7 @@ export class ArticleStore {
 	 * Clear all caches
 	 */
 	clearCache() {
-		this.articlesBySandboxCache.clear();
+		this.articlesByArtifactCache.clear();
 		this.articleCache.clear();
 	}
 }

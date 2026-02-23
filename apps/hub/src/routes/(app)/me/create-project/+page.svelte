@@ -2,9 +2,8 @@
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { createApiClient } from '@pubwiki/api/client';
-	import type { ArtifactListItem, VisibilityType } from '@pubwiki/api';
-	import { API_BASE_URL } from '$lib/config';
+	import type { ArtifactListItem } from '@pubwiki/api';
+	import { apiClient } from '$lib/api';
 
 	const auth = useAuth();
 
@@ -13,7 +12,7 @@
 	let slug = $state('');
 	let topic = $state('');
 	let description = $state('');
-	let visibility = $state<VisibilityType>('PUBLIC');
+	let isListed = $state(true);
 	let license = $state('');
 	let homepage = $state('');
 
@@ -49,17 +48,12 @@
 		}
 	});
 
-	function getClient() {
-		return createApiClient(API_BASE_URL);
-	}
-
 	async function fetchUserArtifacts() {
 		if (!auth.currentUser) return;
 
 		artifactsLoading = true;
 		try {
-			const client = getClient();
-			const { data } = await client.GET('/users/{userId}/artifacts', {
+			const { data, error } = await apiClient.GET('/users/{userId}/artifacts', {
 				params: {
 					path: { userId: auth.currentUser.id },
 					query: { limit: 100, sortBy: 'createdAt', sortOrder: 'desc' }
@@ -126,14 +120,13 @@
 				slug: slug.trim(),
 				topic: topic.trim(),
 				description: description.trim() || undefined,
-				visibility,
+				isListed,
 				license: license.trim() || undefined,
-				artifactIds: selectedArtifactIds.length > 0 ? selectedArtifactIds : undefined,
-				roles: [] // Required by the API schema
+				artifacts: selectedArtifactIds.length > 0 ? selectedArtifactIds.map(id => ({ artifactId: id, roleName: 'default' })) : undefined,
+				roles: [{ name: 'default', description: 'Default role' }]
 			};
 
-			const client = getClient();
-			const { data, error: apiError } = await client.POST('/projects', {
+			const { data, error: apiError } = await apiClient.POST('/projects', {
 				body: metadata
 			});
 
@@ -239,23 +232,13 @@
 					</div>
 
 					<!-- Visibility -->
-					<fieldset>
-						<legend class="block text-sm font-medium text-gray-700 mb-2">Visibility</legend>
-						<div class="flex gap-4">
-							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="radio" name="visibility" value="PUBLIC" bind:group={visibility} class="text-[#0969da]" />
-								<span class="text-sm text-gray-700">Public</span>
-							</label>
-							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="radio" name="visibility" value="UNLISTED" bind:group={visibility} class="text-[#0969da]" />
-								<span class="text-sm text-gray-700">Unlisted</span>
-							</label>
-							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="radio" name="visibility" value="PRIVATE" bind:group={visibility} class="text-[#0969da]" />
-								<span class="text-sm text-gray-700">Private</span>
-							</label>
-						</div>
-					</fieldset>
+					<div>
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input type="checkbox" bind:checked={isListed} class="rounded text-[#0969da]" />
+							<span class="text-sm text-gray-700">List in public directory</span>
+						</label>
+						<p class="text-xs text-gray-500 mt-1">When unchecked, the project will only be accessible via direct link.</p>
+					</div>
 
 					<!-- License -->
 					<div>
@@ -323,7 +306,6 @@
 										<h4 class="text-sm font-medium text-gray-900 truncate">{artifact.name}</h4>
 										<p class="text-xs text-gray-500 truncate">{artifact.description || 'No description'}</p>
 									</div>
-									<span class="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">{artifact.type}</span>
 								</label>
 							{/each}
 						</div>

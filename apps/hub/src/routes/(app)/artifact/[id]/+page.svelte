@@ -29,9 +29,8 @@
 	let currentGraph = $state<ArtifactGraphData | null>(null);
 	let versionLoading = $state(false);
 	
-	// Articles state
-	let articles = $state<ArticleDetail[]>([]);
-	let articlesLoading = $state(false);
+	// Articles state - using Promise for {#await} pattern
+	let articlesPromise = $state<Promise<ArticleDetail[]> | null>(null);
 
 	/**
 	 * Open artifact in Studio (new project)
@@ -112,13 +111,11 @@
 	let artifact = $derived(details?.artifact);
 	let homepage = $derived(details?.homepage);
 	let nodes = $derived(currentGraph?.nodes ?? []);
+	let sandboxNodes = $derived(nodes.filter(n => n.type === 'SANDBOX'));
 	let parents = $derived(details?.parents ?? []);
 	let children = $derived(details?.children ?? []);
 	let versionInfo = $derived(currentGraph?.version);
 	let commitTags = $derived(versionInfo?.commitTags ?? []);
-	
-	// Get sandbox nodes for articles
-	let sandboxNodes = $derived(nodes.filter(n => n.type === 'SANDBOX'));
 
 	let activeTab = $state('Overview');
 	type TabKey = 'Overview' | 'Nodes' | 'Articles' | 'Lineage' | 'Discussion';
@@ -130,29 +127,21 @@
 		{ key: 'Discussion', label: 'Discussion' }
 	];
 	
-	// Fetch articles when Articles tab is activated and we have sandbox nodes
-	$effect(() => {
-		if (activeTab === 'Articles' && sandboxNodes.length > 0 && articles.length === 0 && !articlesLoading) {
-			articlesLoading = true;
-			// Fetch articles from all sandbox nodes
-			Promise.all(
-				sandboxNodes.map(node => articleStore.fetchArticlesBySandbox(node.id))
-			).then(results => {
-				const allArticles: ArticleDetail[] = [];
-				for (const result of results) {
-					if (result) {
-						allArticles.push(...result.articles);
-					}
-				}
-				// Sort by createdAt desc
-				allArticles.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-				articles = allArticles;
-				articlesLoading = false;
-			}).catch(() => {
-				articlesLoading = false;
-			});
+	// Load articles lazily when tab is activated (only once)
+	function loadArticles() {
+		if (!articlesPromise && artifact) {
+			articlesPromise = articleStore.fetchArticlesByArtifact(artifact.id)
+				.then(result => result?.articles ?? []);
 		}
-	});
+	}
+	
+	// Handle tab change
+	function handleTabChange(tab: TabKey) {
+		activeTab = tab;
+		if (tab === 'Articles') {
+			loadArticles();
+		}
+	}
 
 	function formatDate(dateStr: string): string {
 		return new Date(dateStr).toLocaleDateString();
@@ -182,10 +171,11 @@
 					<span class="hover:underline cursor-pointer">{artifact.author.displayName || artifact.author.username}</span>
 					<span>/</span>
 					<span class="font-bold text-gray-900">{artifact.name}</span>
-					<span class="px-2 py-0.5 text-xs border border-gray-300 rounded-full text-gray-500 ml-2">
-						{artifact.type}
-					</span>
-					<span class="text-xs text-gray-500 ml-2">{artifact.visibility}</span>
+					{#if !artifact.isListed}
+						<span class="px-2 py-0.5 text-xs border border-gray-300 rounded-full text-gray-500 ml-2">
+							Unlisted
+						</span>
+					{/if}
 					
 					<!-- Version Selector -->
 					{#if versionInfo}
@@ -253,7 +243,7 @@
 							{m.artifact_star()}
 						</button>
 						<div class="px-2 py-1 bg-gray-50 border-l border-gray-300 font-bold text-gray-700">
-							{(artifact.stats?.starCount ?? 0).toLocaleString()}
+							{(artifact.stats?.favCount ?? 0).toLocaleString()}
 						</div>
 					</div>
 
@@ -264,7 +254,7 @@
 							{m.artifact_fork()}
 						</button>
 						<div class="px-2 py-1 bg-gray-50 border-l border-gray-300 font-bold text-gray-700">
-							{(artifact.stats?.forkCount ?? 0).toLocaleString()}
+							{(artifact.stats?.refCount ?? 0).toLocaleString()}
 						</div>
 					</div>
 				</div>
@@ -299,7 +289,7 @@
 						<nav class="-mb-px flex space-x-8" aria-label="Tabs">
 							{#each tabsConfig as tab}
 								<button
-									onclick={() => activeTab = tab.key}
+								onclick={() => handleTabChange(tab.key)}
 									class="{activeTab === tab.key
 										? 'border-[#fd8c73] text-gray-900'
 										: 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}
@@ -344,28 +334,43 @@
 							</div>
 						{:else if activeTab === 'Articles'}
 							<div>
-								<div class="flex items-center justify-between mb-4">
-									<h3 class="font-bold text-gray-700">Articles</h3>
-									<span class="text-xs text-gray-500">{articles.length} articles</span>
-								</div>
-								
-								{#if articlesLoading}
+								{#if articlesPromise}
+									{#await articlesPromise}
+										<!-- Loading state -->
+										<div class="flex items-center justify-center py-12">
+											<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
+										</div>
+									{:then articles}
+										<!-- Success state -->
+										<div class="flex items-center justify-between mb-4">
+											<h3 class="font-bold text-gray-700">Articles</h3>
+											<span class="text-xs text-gray-500">{articles.length} articles</span>
+										</div>
+										{#if articles.length > 0}
+											<div class="flex flex-col gap-3">
+												{#each articles as article}
+													<ArticleCard {article} />
+												{/each}
+											</div>
+										{:else if sandboxNodes.length === 0}
+											<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
+												This artifact has no sandbox nodes. Articles require sandbox nodes to associate game state.
+											</div>
+										{:else}
+											<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
+												No articles available.
+											</div>
+										{/if}
+									{:catch}
+										<!-- Error state -->
+										<div class="text-center py-12 text-red-500 bg-red-50 rounded border border-dashed border-red-300">
+											Failed to load articles.
+										</div>
+									{/await}
+								{:else}
+									<!-- Initial state before loading triggered -->
 									<div class="flex items-center justify-center py-12">
 										<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
-									</div>
-								{:else if articles.length > 0}
-									<div class="flex flex-col gap-3">
-										{#each articles as article}
-											<ArticleCard {article} />
-										{/each}
-									</div>
-								{:else if sandboxNodes.length === 0}
-									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
-										This artifact has no sandbox nodes. Articles require sandbox nodes to associate game state.
-									</div>
-								{:else}
-									<div class="text-center py-12 text-gray-500 bg-gray-50 rounded border border-dashed border-gray-300">
-										No articles available.
 									</div>
 								{/if}
 							</div>

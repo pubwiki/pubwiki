@@ -1,24 +1,4 @@
-// Re-export types from @pubwiki/api
-export type {
-	ArtifactListItem,
-	ArtifactType,
-	ArtifactVersion,
-	ArtifactLineageItem,
-	ArtifactNodeSummary,
-	ArtifactEdge,
-	ArtifactNodeType,
-	NodeFileInfo,
-	LineageType,
-	VisibilityType,
-	Tag,
-	Pagination,
-	ProjectListItem,
-	ProjectRole,
-	UserProjectRole,
-	UserProjectListItem
-} from '@pubwiki/api';
-
-// Re-export from artifacts store
+// Re-export store-specific types
 export type { ArtifactDetails, ArtifactGraphData, ArtifactNodeDetail } from './stores/artifacts.svelte';
 
 // Frontend-specific types

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { NodeVersionSummary } from '@pubwiki/api';
-	import { createApiClient } from '@pubwiki/api/client';
-	import { API_BASE_URL } from '$lib/config';
+	import { apiClient } from '$lib/api';
 
 	type Props = {
 		nodeId: string;
@@ -10,50 +9,67 @@
 
 	let { nodeId, currentCommit }: Props = $props();
 
+	// State for paginated loading
 	let versions = $state<NodeVersionSummary[]>([]);
-	let loading = $state(false);
+	let loadingMore = $state(false);
 	let hasMore = $state(true);
 	let cursor = $state<string | null>(null);
-	let error = $state<string | null>(null);
+	
+	// Initial load promise - created once per nodeId
+	let initialLoadPromise = $state<Promise<void> | null>(null);
+	let lastLoadedNodeId = $state<string | null>(null);
 
-	const client = createApiClient(API_BASE_URL);
+	// Load versions (for pagination)
+	async function loadMoreVersions() {
+		if (loadingMore || !hasMore) return;
 
-	async function loadVersions(reset = false) {
-		if (loading || (!hasMore && !reset)) return;
-
-		loading = true;
-		error = null;
-
+		loadingMore = true;
 		try {
-			const { data, error: apiError } = await client.GET('/nodes/{nodeId}/versions', {
+			const { data, error: apiError } = await apiClient.GET('/nodes/{nodeId}/versions', {
 				params: {
 					path: { nodeId },
-					query: { cursor: reset ? undefined : cursor ?? undefined, limit: 20 }
+					query: { cursor: cursor ?? undefined, limit: 20 }
 				}
 			});
 
-			if (apiError) {
-				error = apiError.error || 'Failed to load versions';
-				return;
-			}
-
-			if (data) {
+			if (!apiError && data) {
 				const newVersions = data.versions ?? [];
-				versions = reset ? newVersions : [...versions, ...newVersions];
+				versions = [...versions, ...newVersions];
 				cursor = data.nextCursor ?? null;
 				hasMore = data.nextCursor != null;
 			}
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Unknown error';
 		} finally {
-			loading = false;
+			loadingMore = false;
 		}
 	}
 
-	// Load initial versions
+	// Create initial load promise
+	function createInitialLoad(): Promise<void> {
+		return apiClient.GET('/nodes/{nodeId}/versions', {
+			params: {
+				path: { nodeId },
+				query: { limit: 20 }
+			}
+		}).then(({ data, error: apiError }) => {
+			if (apiError) {
+				throw new Error(apiError.error || 'Failed to load versions');
+			}
+			if (data) {
+				versions = data.versions ?? [];
+				cursor = data.nextCursor ?? null;
+				hasMore = data.nextCursor != null;
+			}
+		});
+	}
+
+	// Initialize load when nodeId is available or changes
 	$effect(() => {
-		if (nodeId) {
-			loadVersions(true);
+		if (nodeId && nodeId !== lastLoadedNodeId) {
+			versions = [];
+			cursor = null;
+			hasMore = true;
+			lastLoadedNodeId = nodeId;
+			initialLoadPromise = createInitialLoad();
 		}
 	});
 
@@ -84,18 +100,18 @@
 		{/if}
 	</div>
 
-	{#if error}
-		<div class="text-sm text-red-600 bg-red-50 p-2 rounded border border-red-200">
-			{error}
-		</div>
-	{/if}
-
-	{#if versions.length === 0 && !loading}
-		<div class="text-sm text-gray-500 italic py-4 text-center">
-			No version history available.
-		</div>
-	{:else}
-		<div class="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+	{#if initialLoadPromise}
+		{#await initialLoadPromise}
+			<div class="flex items-center justify-center py-4">
+				<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
+			</div>
+		{:then}
+			{#if versions.length === 0}
+				<div class="text-sm text-gray-500 italic py-4 text-center">
+					No version history available.
+				</div>
+			{:else}
+				<div class="space-y-2 max-h-[300px] overflow-y-auto pr-1">
 			{#each versions as version}
 				<div 
 					class="p-2 rounded border text-xs {version.commit === currentCommit 
@@ -135,18 +151,28 @@
 				</div>
 			{/each}
 			
-			{#if loading}
+			{#if loadingMore}
 				<div class="flex items-center justify-center py-2">
 					<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
 				</div>
 			{:else if hasMore}
 				<button
-					onclick={() => loadVersions()}
+					onclick={() => loadMoreVersions()}
 					class="w-full py-2 text-xs text-[#0969da] hover:bg-gray-50 rounded border border-dashed border-gray-300"
 				>
 					Load more versions
 				</button>
 			{/if}
+				</div>
+			{/if}
+		{:catch error}
+			<div class="text-sm text-red-600 bg-red-50 p-2 rounded border border-red-200">
+				{error.message || 'Failed to load versions'}
+			</div>
+		{/await}
+	{:else}
+		<div class="flex items-center justify-center py-4">
+			<div class="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-400"></div>
 		</div>
 	{/if}
 </div>

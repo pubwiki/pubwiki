@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Handle, Position } from '@xyflow/svelte';
-	import type { ArtifactLineageItem, ArtifactListItem } from '$lib/types';
+	import type { ArtifactLineageItem, ArtifactListItem } from '@pubwiki/api';
 	import ArtifactCard from './ArtifactCard.svelte';
 
 	type NodeData = {

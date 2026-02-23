@@ -1,5 +1,4 @@
 import { setContext, getContext } from 'svelte';
-import { createApiClient } from '@pubwiki/api/client';
 import type {
 	ArtifactListItem,
 	ArtifactLineageItem,
@@ -7,7 +6,7 @@ import type {
 	ArtifactEdge,
 	NodeFileInfo
 } from '@pubwiki/api';
-import { API_BASE_URL } from '$lib/config';
+import { apiClient } from '$lib/api';
 
 const ARTIFACTS_KEY = Symbol('artifacts');
 
@@ -55,24 +54,19 @@ export class ArtifactStore {
 	// Cache for node details (key: `${artifactId}:${nodeId}`)
 	private nodeDetailCache = new Map<string, ArtifactNodeDetail>();
 
-	private getClient() {
-		return createApiClient(API_BASE_URL);
-	}
-
 	async fetchArtifacts(options?: {
 		page?: number;
 		limit?: number;
 		typeInclude?: string[];
 		tagInclude?: string[];
-		sortBy?: 'createdAt' | 'updatedAt' | 'viewCount' | 'starCount';
+		sortBy?: 'createdAt' | 'updatedAt' | 'viewCount' | 'favCount';
 		sortOrder?: 'asc' | 'desc';
 	}) {
 		this.loading = true;
 		this.error = null;
 		
 		try {
-			const client = this.getClient();
-			const { data, error } = await client.GET('/artifacts', {
+			const { data, error } = await apiClient.GET('/artifacts', {
 				params: {
 					query: {
 						page: options?.page ?? 1,
@@ -115,8 +109,7 @@ export class ArtifactStore {
 
 	async fetchHomepage(artifactId: string): Promise<string | null> {
 		try {
-			const client = this.getClient();
-			const { data, error } = await client.GET('/artifacts/{artifactId}/homepage', {
+			const { data, error } = await apiClient.GET('/artifacts/{artifactId}/homepage', {
 				params: { path: { artifactId } },
 				parseAs: 'text'
 			});
@@ -131,8 +124,7 @@ export class ArtifactStore {
 
 	async fetchGraph(artifactId: string, version: string = 'latest'): Promise<ArtifactGraphData | null> {
 		try {
-			const client = this.getClient();
-			const { data } = await client.GET('/artifacts/{artifactId}/graph', {
+			const { data } = await apiClient.GET('/artifacts/{artifactId}/graph', {
 				params: { path: { artifactId }, query: { version } }
 			});
 			if (data) {
@@ -178,14 +170,12 @@ export class ArtifactStore {
 				return null;
 			}
 		}
-
-		const client = this.getClient();
 		
 		// Fetch homepage, graph and lineage in parallel
 		const [homepageResult, graphResult, lineageResult] = await Promise.all([
 			this.fetchHomepage(artifactId),
 			this.fetchGraph(artifactId),
-			client.GET('/artifacts/{artifactId}/lineage', {
+			apiClient.GET('/artifacts/{artifactId}/lineage', {
 				params: { path: { artifactId } }
 			})
 		]);

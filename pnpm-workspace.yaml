@@ -15,6 +15,7 @@ packages:
   - packages/api
   - packages/ui
   - packages/reader
+  - packages/flow-core
   - apps/hub
   - apps/studio
   - apps/sandbox

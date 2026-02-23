@@ -2,9 +2,8 @@
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { goto } from '$app/navigation';
 	import { browser } from '$app/environment';
-	import { createApiClient } from '@pubwiki/api/client';
 	import type { ArtifactListItem, UserProjectListItem, Pagination } from '@pubwiki/api';
-	import { API_BASE_URL } from '$lib/config';
+	import { apiClient } from '$lib/api';
 	import * as m from '$lib/paraglide/messages';
 
 	const auth = useAuth();
@@ -66,17 +65,12 @@
 		}
 	});
 
-	function getClient() {
-		return createApiClient(API_BASE_URL);
-	}
-
 	async function fetchArtifacts(page = 1) {
 		if (!auth.currentUser) return;
 		
 		artifactsLoading = true;
 		try {
-			const client = getClient();
-			const { data } = await client.GET('/users/{userId}/artifacts', {
+			const { data, error } = await apiClient.GET('/users/{userId}/artifacts', {
 				params: {
 					path: { userId: auth.currentUser.id },
 					query: { page, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }
@@ -99,8 +93,7 @@
 		
 		projectsLoading = true;
 		try {
-			const client = getClient();
-			const { data } = await client.GET('/users/{userId}/projects', {
+			const { data } = await apiClient.GET('/users/{userId}/projects', {
 				params: {
 					path: { userId: auth.currentUser.id },
 					query: { page, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }
@@ -233,8 +226,7 @@
 												<p class="text-xs text-gray-500 truncate">{artifact.description || m.common_no_description()}</p>
 											</div>
 											<div class="text-right shrink-0">
-												<span class="inline-block px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600">{artifact.type}</span>
-												<p class="text-xs text-gray-400 mt-1">{formatDate(artifact.createdAt)}</p>
+												<p class="text-xs text-gray-400">{formatDate(artifact.createdAt)}</p>
 											</div>
 										</a>
 									</li>
@@ -304,14 +296,13 @@
 											<div class="flex-1 min-w-0">
 												<div class="flex items-center gap-2">
 													<h3 class="text-sm font-semibold text-gray-900 hover:text-[#0969da] truncate">{project.name}</h3>
-													<span class="inline-block px-1.5 py-0.5 text-[10px] font-medium rounded bg-blue-100 text-blue-700">
-														{project.role}
-													</span>
 												</div>
 												<p class="text-xs text-gray-500 truncate">#{project.topic} · {project.description || m.common_no_description()}</p>
 											</div>
 											<div class="text-right shrink-0">
-												<span class="inline-block px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600">{project.visibility}</span>
+												{#if !project.isListed}
+													<span class="inline-block px-2 py-0.5 text-xs font-medium rounded bg-gray-100 text-gray-600">Unlisted</span>
+												{/if}
 												<p class="text-xs text-gray-400 mt-1">{formatDate(project.createdAt)}</p>
 											</div>
 										</a>

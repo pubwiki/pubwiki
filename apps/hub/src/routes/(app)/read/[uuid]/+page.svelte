@@ -9,9 +9,11 @@
 
 	const articleStore = useArticleStore();
 	
+	// Article state - use Promise to prevent re-fetch on empty result
 	let article = $state<ArticleDetail | null>(null);
-	let loading = $state(true);
-	let error = $state<string | null>(null);
+	let articlePromise = $state<Promise<ArticleDetail | null> | null>(null);
+	let lastArticleId = $state<string | null>(null);
+	let articleError = $state<string | null>(null);
 
 	let progress = $state(0);
 	let tocOpen = $state(false);
@@ -56,29 +58,22 @@
 		return () => window.removeEventListener('scroll', handleScroll);
 	});
 
-	// Fetch article data
+	// Fetch article data when articleId changes
 	$effect(() => {
 		const articleId = page.params.uuid;
-		if (!articleId) {
-			error = 'Article ID not provided';
-			loading = false;
-			return;
-		}
-		
-		loading = true;
-		error = null;
-		
-		articleStore.fetchArticle(articleId).then((result) => {
-			if (result) {
+		if (articleId && articleId !== lastArticleId) {
+			lastArticleId = articleId;
+			article = null;
+			articleError = null;
+			articlePromise = articleStore.fetchArticle(articleId).then(result => {
 				article = result;
-			} else {
-				error = 'Article not found';
-			}
-			loading = false;
-		}).catch((e) => {
-			error = e instanceof Error ? e.message : 'Article not found';
-			loading = false;
-		});
+				if (!result) articleError = 'Article not found';
+				return result;
+			}).catch(e => {
+				articleError = e instanceof Error ? e.message : 'Article not found';
+				return null;
+			});
+		}
 	});
 
 	// Derive content and toc from article
@@ -108,26 +103,28 @@
 	}
 </script>
 
-{#if loading}
-	<div class="reader-page theme-light">
-		<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
-			<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0969da]"></div>
-		</div>
-	</div>
-{:else if error || !article}
-	<div class="reader-page theme-light">
-		<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
-			<div class="text-center">
-				<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
-				<p class="text-gray-600 mb-4">{error || m.artifact_not_found_message()}</p>
-				<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
-					{m.artifact_go_back()}
-				</button>
+{#if articlePromise}
+	{#await articlePromise}
+		<div class="reader-page theme-light">
+			<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
+				<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0969da]"></div>
 			</div>
 		</div>
-	</div>
-{:else}
-	<div class="reader-page theme-{theme}">
+	{:then}
+		{#if articleError || !article}
+			<div class="reader-page theme-light">
+				<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
+					<div class="text-center">
+						<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
+						<p class="text-gray-600 mb-4">{articleError || m.artifact_not_found_message()}</p>
+						<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
+							{m.artifact_go_back()}
+						</button>
+					</div>
+				</div>
+			</div>
+		{:else}
+			<div class="reader-page theme-{theme}">
 		<header class="reader-header">
 			<a href="/" class="back-button">
 				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -261,7 +258,7 @@
 	>
 		<Reader 
 			content={content} 
-			buildPlaybackUrl={(gameRef: GameRef) => `/${article!.artifactId}/play?sandbox_id=${article!.sandboxNodeId}&saveid=${article!.saveId}&checkpoint=${gameRef.checkpointId}`}
+			buildPlaybackUrl={(gameRef: GameRef) => `/${article!.artifactId}/play?save_commit=${gameRef.saveCommit}`}
 		/>
 	</main>
 
@@ -275,6 +272,26 @@
 		</div>
 	</footer>
 </div>
+		{/if}
+	{:catch}
+		<div class="reader-page theme-light">
+			<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
+				<div class="text-center">
+					<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
+					<p class="text-gray-600 mb-4">{m.artifact_not_found_message()}</p>
+					<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
+						{m.artifact_go_back()}
+					</button>
+				</div>
+			</div>
+		</div>
+	{/await}
+{:else}
+	<div class="reader-page theme-light">
+		<div class="min-h-screen bg-[#faf9f7] flex items-center justify-center">
+			<div class="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0969da]"></div>
+		</div>
+	</div>
 {/if}
 
 <style>
