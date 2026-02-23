@@ -154,10 +154,11 @@ export class NodeVersionService {
   /** Get versions for a node with cursor-based pagination (ordered by authored_at desc) */
   async getVersions(
     nodeId: string,
-    options?: { cursor?: string; limit?: number }
+    options?: { cursor?: string; limit?: number; viewerId?: string }
   ): Promise<ServiceResult<{ versions: NodeVersionSummary[]; nextCursor: string | null }>> {
     try {
       const limit = Math.min(Math.max(options?.limit ?? 20, 1), 100);
+      const viewerId = options?.viewerId;
 
       const conditions = [eq(nodeVersions.nodeId, nodeId)];
 
@@ -180,6 +181,21 @@ export class NodeVersionService {
         }
       }
 
+      // Filter by isListed: only listed versions are visible to non-authors
+      // Authors can see all their versions (listed or not)
+      if (viewerId) {
+        // Can see: listed OR authored by self
+        conditions.push(
+          or(
+            eq(resourceDiscoveryControl.isListed, true),
+            eq(nodeVersions.authorId, viewerId)
+          )!
+        );
+      } else {
+        // Anonymous users can only see listed versions
+        conditions.push(eq(resourceDiscoveryControl.isListed, true));
+      }
+
       // Fetch one extra to determine if there's a next page
       // Join with resource_discovery_control to get isListed
       const versions = await this.ctx
@@ -199,7 +215,7 @@ export class NodeVersionService {
           isListed: resourceDiscoveryControl.isListed,
         })
         .from(nodeVersions)
-        .leftJoin(
+        .innerJoin(
           resourceDiscoveryControl,
           and(
             eq(resourceDiscoveryControl.resourceType, 'node'),

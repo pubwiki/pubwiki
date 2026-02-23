@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiError } from '@pubwiki/api';
+import { OptimisticLockError, type BatchContext } from '@pubwiki/db';
 
 /**
  * ServiceError code 到 HTTP 状态码的映射
@@ -30,4 +31,63 @@ export function serviceErrorResponse(
 ): Response {
   const status = SERVICE_ERROR_STATUS_MAP[error.code] ?? defaultStatus;
   return c.json<ApiError>({ error: error.message }, status);
+}
+
+// ============================================================================
+// Convenience error response helpers
+// These provide a consistent API for common error patterns in route handlers
+// ============================================================================
+
+/** 400 Bad Request */
+export function badRequest(c: Context, message: string): Response {
+  return c.json<ApiError>({ error: message }, 400);
+}
+
+/** 403 Forbidden */
+export function forbidden(c: Context, message: string = 'Access denied'): Response {
+  return c.json<ApiError>({ error: message }, 403);
+}
+
+/** 404 Not Found */
+export function notFound(c: Context, message: string): Response {
+  return c.json<ApiError>({ error: message }, 404);
+}
+
+/** 409 Conflict */
+export function conflict(c: Context, message: string): Response {
+  return c.json<ApiError>({ error: message }, 409);
+}
+
+/** 500 Internal Server Error */
+export function internalError(c: Context, message: string): Response {
+  return c.json<ApiError>({ error: message }, 500);
+}
+
+// ============================================================================
+// BatchContext commit helper with OptimisticLockError handling
+// ============================================================================
+
+/**
+ * Commit BatchContext with consistent OptimisticLockError handling.
+ * Returns a Response if there's a conflict, otherwise returns null.
+ * 
+ * @param c Hono Context
+ * @param ctx BatchContext to commit
+ * @param conflictMessage Message to return on OptimisticLockError (409 Conflict)
+ * @returns Response if conflict, null if success
+ */
+export async function commitWithConflictHandling(
+  c: Context,
+  ctx: BatchContext,
+  conflictMessage: string = 'Concurrent modification detected. Please retry.',
+): Promise<Response | null> {
+  try {
+    await ctx.commit();
+    return null;
+  } catch (error) {
+    if (error instanceof OptimisticLockError) {
+      return conflict(c, conflictMessage);
+    }
+    throw error;
+  }
 }

@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { BatchContext, createDb, ArtifactService, ProjectService, UserService, type ListUserArtifactsParams, type ListUserProjectsParams } from '@pubwiki/db';
-import type { GetUserArtifactsResponse, GetUserProjectsResponse, ApiError } from '@pubwiki/api';
+import type { GetUserArtifactsResponse, GetUserProjectsResponse } from '@pubwiki/api';
 import { GetUserArtifactsQueryParams, GetUserProjectsQueryParams } from '@pubwiki/api/validate';
 import { optionalAuthMiddleware } from '../middleware/auth';
 import { validateQuery, isValidationError } from '../lib/validate';
+import { serviceErrorResponse, notFound } from '../lib/service-error';
 
 const usersRoute = new Hono<{ Bindings: Env }>();
 
@@ -19,7 +20,7 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
   // 验证用户是否存在
   const userResult = await userService.getUserById(userId);
   if (!userResult.success) {
-    return c.json<ApiError>({ error: 'User not found' }, 404);
+    return notFound(c, 'User not found');
   }
 
   // 使用 zod schema 校验查询参数
@@ -34,7 +35,7 @@ usersRoute.get('/:userId/artifacts', optionalAuthMiddleware, async (c) => {
   const result = await artifactService.listUserArtifacts(userId, params);
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<GetUserArtifactsResponse>(result.data);
@@ -51,7 +52,7 @@ usersRoute.get('/:userId/projects', optionalAuthMiddleware, async (c) => {
   // 验证用户是否存在
   const userResult = await userService.getUserById(userId);
   if (!userResult.success) {
-    return c.json<ApiError>({ error: 'User not found' }, 404);
+    return notFound(c, 'User not found');
   }
 
   // 使用 zod schema 校验查询参数
@@ -66,7 +67,7 @@ usersRoute.get('/:userId/projects', optionalAuthMiddleware, async (c) => {
   const result = await projectService.listUserProjects(userId, params);
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<GetUserProjectsResponse>(result.data);

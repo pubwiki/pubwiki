@@ -418,11 +418,13 @@ export class SaveService {
         };
       }
 
-      // 权限检查
-      if (save.authorId !== userId) {
+      // 权限检查 - 使用 ACL canManage
+      const nodeRef = { type: 'node' as const, id: commit };
+      const canManage = await this.aclService.canManage(nodeRef, userId);
+      if (!canManage) {
         return {
           success: false,
-          error: { code: 'FORBIDDEN', message: 'Only the author can delete this save' },
+          error: { code: 'FORBIDDEN', message: 'No permission to delete this save' },
         };
       }
 
@@ -431,8 +433,7 @@ export class SaveService {
         .delete(nodeVersions)
         .where(eq(nodeVersions.commit, commit));
 
-      // Clean up ACL and discovery control records (both use 'node' resource type)
-      const nodeRef = { type: 'node' as const, id: commit };
+      // Clean up ACL and discovery control records (reuse nodeRef from above)
       this.aclService.deleteAllAcls(nodeRef);
       this.discoveryService.delete(nodeRef);
 

@@ -1,30 +1,74 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { BatchContext, createDb, DiscussionService, type ListDiscussionsParams, type ListRepliesParams } from '@pubwiki/db';
+import { BatchContext, createDb, DiscussionService, eq, type ListDiscussionsParams, type ListRepliesParams } from '@pubwiki/db';
+import { projectPosts } from '@pubwiki/db/schema';
 import type {
-  ApiError,
   ListDiscussionsResponse,
   CreateDiscussionResponse,
   UpdateDiscussionResponse,
   ListDiscussionRepliesResponse,
   CreateDiscussionReplyResponse,
   DiscussionDetail,
+  DiscussionTargetType,
 } from '@pubwiki/api';
 import { ListDiscussionsQueryParams, ListDiscussionRepliesQueryParams, CreateDiscussionQueryParams, CreateDiscussionBody, UpdateDiscussionBody, CreateDiscussionReplyBody } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
+import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { validateQuery, validateBody, isValidationError } from '../lib/validate';
-import { serviceErrorResponse } from '../lib/service-error';
+import { serviceErrorResponse, forbidden, notFound, commitWithConflictHandling } from '../lib/service-error';
+import { createAuditLogger } from '../lib/audit';
+import type { ResourceRef } from '@pubwiki/db/services';
 
 const discussionsRoute = new Hono<{ Bindings: Env }>();
 
+/**
+ * Convert discussion target to ACL resource reference.
+ * For POST targets, we need to check the parent project's ACL.
+ */
+async function getTargetResourceRef(
+  targetType: DiscussionTargetType,
+  targetId: string,
+  db: ReturnType<typeof createDb>
+): Promise<ResourceRef | null> {
+  switch (targetType) {
+    case 'ARTIFACT':
+      return { type: 'artifact', id: targetId };
+    case 'PROJECT':
+      return { type: 'project', id: targetId };
+    case 'POST': {
+      // POST belongs to a project, check project ACL
+      const [post] = await db.select({ projectId: projectPosts.projectId })
+        .from(projectPosts)
+        .where(eq(projectPosts.id, targetId))
+        .limit(1);
+      if (!post) return null;
+      return { type: 'project', id: post.projectId };
+    }
+    default:
+      return null;
+  }
+}
+
 // 获取讨论列表
-discussionsRoute.get('/', async (c) => {
-  const ctx = new BatchContext(createDb(c.env.DB));
+discussionsRoute.get('/', resourceAccessMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const ctx = new BatchContext(db);
   const discussionService = new DiscussionService(ctx);
+  const { canRead } = c.get('resourceAccess');
 
   // 使用 zod schema 校验查询参数
   const validated = validateQuery(c, ListDiscussionsQueryParams, c.req.query());
   if (isValidationError(validated)) return validated;
+
+  // Check if user can read the target resource
+  const targetRef = await getTargetResourceRef(validated.targetType, validated.targetId, db);
+  if (!targetRef) {
+    return notFound(c, 'Target resource not found');
+  }
+  const allowed = await canRead(targetRef);
+  if (!allowed) {
+    return forbidden(c);
+  }
 
   const params: ListDiscussionsParams = {
     target: {
@@ -41,21 +85,33 @@ discussionsRoute.get('/', async (c) => {
   const result = await discussionService.listDiscussions(params);
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<ListDiscussionsResponse>(result.data);
 });
 
 // 创建讨论
-discussionsRoute.post('/', authMiddleware, async (c) => {
-  const ctx = new BatchContext(createDb(c.env.DB));
+discussionsRoute.post('/', authMiddleware, resourceAccessMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const ctx = new BatchContext(db);
   const discussionService = new DiscussionService(ctx);
   const user = c.get('user');
+  const { canRead } = c.get('resourceAccess');
 
   // 使用 zod schema 校验查询参数
   const validatedQuery = validateQuery(c, CreateDiscussionQueryParams, c.req.query());
   if (isValidationError(validatedQuery)) return validatedQuery;
+
+  // Check if user can read the target resource (can read = can comment)
+  const targetRef = await getTargetResourceRef(validatedQuery.targetType, validatedQuery.targetId, db);
+  if (!targetRef) {
+    return notFound(c, 'Target resource not found');
+  }
+  const allowed = await canRead(targetRef);
+  if (!allowed) {
+    return forbidden(c);
+  }
 
   // 使用 zod schema 校验请求体
   const validatedBody = await validateBody(c, CreateDiscussionBody);
@@ -71,13 +127,18 @@ discussionsRoute.post('/', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Discussion was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
 
   // Fetch the created discussion
   const discussionResult = await discussionService.getDiscussion(result.data.discussionId);
   if (!discussionResult.success) {
     return serviceErrorResponse(c, discussionResult.error);
   }
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.create('discussion', result.data.discussionId, { targetType: validatedQuery.targetType, targetId: validatedQuery.targetId });
 
   return c.json<CreateDiscussionResponse>({
     message: 'Discussion created successfully',
@@ -86,16 +147,28 @@ discussionsRoute.post('/', authMiddleware, async (c) => {
 });
 
 // 获取讨论详情
-discussionsRoute.get('/:discussionId', async (c) => {
-  const ctx = new BatchContext(createDb(c.env.DB));
+discussionsRoute.get('/:discussionId', resourceAccessMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const ctx = new BatchContext(db);
   const discussionService = new DiscussionService(ctx);
+  const { canRead } = c.get('resourceAccess');
 
   const discussionId = c.req.param('discussionId');
 
+  // First get the discussion to find its target
   const result = await discussionService.getDiscussion(discussionId);
-
   if (!result.success) {
     return serviceErrorResponse(c, result.error);
+  }
+
+  // Check if user can read the target resource
+  const targetRef = await getTargetResourceRef(result.data.targetType, result.data.targetId, db);
+  if (!targetRef) {
+    return notFound(c, 'Target resource not found');
+  }
+  const allowed = await canRead(targetRef);
+  if (!allowed) {
+    return forbidden(c);
   }
 
   return c.json<DiscussionDetail>(result.data);
@@ -119,13 +192,18 @@ discussionsRoute.patch('/:discussionId', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Discussion was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
 
   // Fetch the updated discussion
   const discussionResult = await discussionService.getDiscussion(result.data.discussionId);
   if (!discussionResult.success) {
     return serviceErrorResponse(c, discussionResult.error);
   }
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.update('discussion', discussionId);
 
   return c.json<UpdateDiscussionResponse>({
     message: 'Discussion updated successfully',
@@ -147,18 +225,42 @@ discussionsRoute.delete('/:discussionId', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Discussion was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.delete('discussion', discussionId);
+
   return c.json({ message: 'Discussion deleted successfully' });
 });
 
 // ========== 回复相关路由 ==========
 
 // 获取讨论回复列表
-discussionsRoute.get('/:discussionId/replies', async (c) => {
-  const ctx = new BatchContext(createDb(c.env.DB));
+discussionsRoute.get('/:discussionId/replies', resourceAccessMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const ctx = new BatchContext(db);
   const discussionService = new DiscussionService(ctx);
+  const { canRead } = c.get('resourceAccess');
 
   const discussionId = c.req.param('discussionId');
+
+  // First get the discussion to find its target
+  const discussion = await discussionService.getDiscussion(discussionId);
+  if (!discussion.success) {
+    return serviceErrorResponse(c, discussion.error);
+  }
+
+  // Check if user can read the target resource
+  const targetRef = await getTargetResourceRef(discussion.data.targetType, discussion.data.targetId, db);
+  if (!targetRef) {
+    return notFound(c, 'Target resource not found');
+  }
+  const allowed = await canRead(targetRef);
+  if (!allowed) {
+    return forbidden(c);
+  }
 
   // 使用 zod schema 校验查询参数
   const validated = validateQuery(c, ListDiscussionRepliesQueryParams, c.req.query());
@@ -179,12 +281,30 @@ discussionsRoute.get('/:discussionId/replies', async (c) => {
 });
 
 // 创建回复
-discussionsRoute.post('/:discussionId/replies', authMiddleware, async (c) => {
-  const ctx = new BatchContext(createDb(c.env.DB));
+discussionsRoute.post('/:discussionId/replies', authMiddleware, resourceAccessMiddleware, async (c) => {
+  const db = createDb(c.env.DB);
+  const ctx = new BatchContext(db);
   const discussionService = new DiscussionService(ctx);
   const user = c.get('user');
+  const { canRead } = c.get('resourceAccess');
 
   const discussionId = c.req.param('discussionId');
+
+  // First get the discussion to find its target
+  const discussion = await discussionService.getDiscussion(discussionId);
+  if (!discussion.success) {
+    return serviceErrorResponse(c, discussion.error);
+  }
+
+  // Check if user can read the target resource (can read = can reply)
+  const targetRef = await getTargetResourceRef(discussion.data.targetType, discussion.data.targetId, db);
+  if (!targetRef) {
+    return notFound(c, 'Target resource not found');
+  }
+  const allowed = await canRead(targetRef);
+  if (!allowed) {
+    return forbidden(c);
+  }
 
   // Validate request body with zod schema
   const validated = await validateBody(c, CreateDiscussionReplyBody);
@@ -196,7 +316,13 @@ discussionsRoute.post('/:discussionId/replies', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Reply was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.create('discussion_reply', result.data.id, { discussionId });
+
   return c.json<CreateDiscussionReplyResponse>({
     message: 'Reply created successfully',
     reply: result.data,
@@ -217,7 +343,13 @@ discussionsRoute.delete('/replies/:replyId', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Reply was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.delete('discussion_reply', replyId);
+
   return c.json({ message: 'Reply deleted successfully' });
 });
 

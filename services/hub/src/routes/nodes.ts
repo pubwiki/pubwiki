@@ -1,25 +1,31 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, NodeVersionService, BatchContext } from '@pubwiki/db';
-import type { GetNodeVersionsResponse, ApiError } from '@pubwiki/api';
-import { optionalAuthMiddleware } from '../middleware/auth';
+import type { GetNodeVersionsResponse } from '@pubwiki/api';
+
 import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { checkResourceAccess } from '../lib/access-control';
-import { serviceErrorResponse } from '../lib/service-error';
+import { serviceErrorResponse, badRequest, notFound, internalError } from '../lib/service-error';
 
 const nodesRoute = new Hono<{ Bindings: Env }>();
 
 // GET /nodes/:nodeId/versions - 获取节点版本（分页）
 // Note: This is a listing operation, controlled by isListed (Discovery), NOT ACL
-nodesRoute.get('/:nodeId/versions', optionalAuthMiddleware, async (c) => {
+// Authors can see all their versions, others can only see listed versions
+nodesRoute.get('/:nodeId/versions', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const nodeVersionService = new NodeVersionService(ctx);
+  const user = c.get('user');
   const nodeId = c.req.param('nodeId');
   const cursor = c.req.query('cursor') || undefined;
   const limitStr = c.req.query('limit');
   const limit = limitStr ? parseInt(limitStr, 10) : undefined;
 
-  const result = await nodeVersionService.getVersions(nodeId, { cursor, limit });
+  const result = await nodeVersionService.getVersions(nodeId, { 
+    cursor, 
+    limit,
+    viewerId: user?.id,
+  });
 
   if (!result.success) {
     return serviceErrorResponse(c, result.error);
@@ -32,7 +38,7 @@ nodesRoute.get('/:nodeId/versions', optionalAuthMiddleware, async (c) => {
 });
 
 // GET /nodes/commits/:commit - 获取特定版本详情（commit 全局唯一）
-nodesRoute.get('/commits/:commit', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+nodesRoute.get('/commits/:commit', resourceAccessMiddleware, async (c) => {
   const commit = c.req.param('commit');
 
   // ACL check: verify user can read this node version
@@ -52,7 +58,7 @@ nodesRoute.get('/commits/:commit', optionalAuthMiddleware, resourceAccessMiddlew
 });
 
 // GET /nodes/commits/:commit/children - 获取子版本（commit 全局唯一）
-nodesRoute.get('/commits/:commit/children', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+nodesRoute.get('/commits/:commit/children', resourceAccessMiddleware, async (c) => {
   const commit = c.req.param('commit');
 
   // ACL check: verify user can read this node version
@@ -65,14 +71,14 @@ nodesRoute.get('/commits/:commit/children', optionalAuthMiddleware, resourceAcce
   const result = await nodeVersionService.getChildren(commit);
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json({ versions: result.data });
 });
 
 // GET /nodes/commits/:commit/archive - 下载 VFS 归档文件（commit 全局唯一）
-nodesRoute.get('/commits/:commit/archive', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+nodesRoute.get('/commits/:commit/archive', resourceAccessMiddleware, async (c) => {
   const commit = c.req.param('commit');
 
   // ACL check: verify user can read this node version
@@ -91,20 +97,20 @@ nodesRoute.get('/commits/:commit/archive', optionalAuthMiddleware, resourceAcces
   
   // Only VFS nodes have archives
   if (version.type !== 'VFS') {
-    return c.json<ApiError>({ error: 'Archive only available for VFS nodes' }, 400);
+    return badRequest(c, 'Archive only available for VFS nodes');
   }
 
   // Get filesHash from VFS content
   const content = version.content as { filesHash: string };
   if (!content.filesHash) {
-    return c.json<ApiError>({ error: 'VFS node missing filesHash' }, 500);
+    return internalError(c, 'VFS node missing filesHash');
   }
 
   const r2Key = `vfs/${content.filesHash}/files.tar.gz`;
   const object = await c.env.R2_BUCKET.get(r2Key);
 
   if (!object) {
-    return c.json<ApiError>({ error: 'Archive not found in storage' }, 404);
+    return notFound(c, 'Archive not found in storage');
   }
 
   return new Response(object.body, {

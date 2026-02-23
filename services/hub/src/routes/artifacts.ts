@@ -1,14 +1,15 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, BatchContext, ArtifactService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, ApiError, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse } from '@pubwiki/api';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
 import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody, UpdateArtifactMetadataBody, UpdateVersionMetadataBody } from '@pubwiki/api/validate';
-import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { checkResourceAccess } from '../lib/access-control';
 import { validateQuery, validateFormDataJson, validateBody, isValidationError } from '../lib/validate';
-import { serviceErrorResponse } from '../lib/service-error';
+import { serviceErrorResponse, badRequest, notFound, commitWithConflictHandling } from '../lib/service-error';
+import { createAuditLogger } from '../lib/audit';
 import { marked } from 'marked';
 
 const artifactsRoute = new Hono<{ Bindings: Env }>();
@@ -45,14 +46,14 @@ artifactsRoute.get('/', async (c) => {
   const result = await artifactService.listPublicArtifacts(validated);
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<ListArtifactsResponse>(result.data);
 });
 
 // 获取 artifact 谱系信息
-artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+artifactsRoute.get('/:artifactId/lineage', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const artifactService = new ArtifactService(ctx);
   const artifactId = c.req.param('artifactId');
@@ -74,14 +75,14 @@ artifactsRoute.get('/:artifactId/lineage', optionalAuthMiddleware, resourceAcces
   // 获取谱系信息
   const lineageResult = await artifactService.getArtifactLineage(artifactId, lineageParams);
   if (!lineageResult.success) {
-    return c.json<ApiError>({ error: lineageResult.error.message }, 500);
+    return serviceErrorResponse(c, lineageResult.error);
   }
 
   return c.json<GetArtifactLineageResponse>(lineageResult.data);
 });
 
 // 获取 artifact 主页 HTML
-artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+artifactsRoute.get('/:artifactId/homepage', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const artifactService = new ArtifactService(ctx);
   const artifactId = c.req.param('artifactId');
@@ -89,7 +90,7 @@ artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, resourceAcce
   // 先检查 artifact 是否存在
   const artifact = await artifactService.getArtifactById(artifactId);
   if (!artifact.success) {
-    return c.json<ApiError>({ error: 'artifact not found' }, 404);
+    return serviceErrorResponse(c, artifact.error);
   }
 
   // 访问控制检查
@@ -101,7 +102,7 @@ artifactsRoute.get('/:artifactId/homepage', optionalAuthMiddleware, resourceAcce
   const object = await c.env.R2_BUCKET.get(key);
 
   if (!object) {
-    return c.json<ApiError>({ error: 'Artifact homepage not found' }, 404);
+    return notFound(c, 'Artifact homepage not found');
   }
 
   const html = await object.text();
@@ -119,7 +120,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   try {
     formData = await c.req.formData();
   } catch {
-    return c.json<ApiError>({ error: 'Invalid form data' }, 400);
+    return badRequest(c, 'Invalid form data');
   }
 
   // 使用 zod schema 校验 metadata
@@ -147,9 +148,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
         // Verify hash matches
         const computedHash = await computeSha256Hex(arrayBuffer);
         if (computedHash !== filesHash) {
-          return c.json<ApiError>({
-            error: `VFS filesHash mismatch: expected ${filesHash}, computed ${computedHash}`,
-          }, 400);
+          return badRequest(c, `VFS filesHash mismatch: expected ${filesHash}, computed ${computedHash}`);
         }
         vfsArchives.set(filesHash, arrayBuffer);
         continue;
@@ -161,9 +160,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
         // Verify hash matches
         const computedHash = await computeSha256Hex(arrayBuffer);
         if (computedHash !== quadsHash) {
-          return c.json<ApiError>({
-            error: `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`,
-          }, 400);
+          return badRequest(c, `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`);
         }
         saveArchives.set(quadsHash, arrayBuffer);
       }
@@ -202,10 +199,10 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     await ctx.commit();
   } catch (error) {
     if (error instanceof OptimisticLockError) {
-      return c.json<ApiError>(
-        { error: `Artifact ${metadata.artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.` },
-        409
-      );
+      return serviceErrorResponse(c, {
+        code: 'CONFLICT',
+        message: `Artifact ${metadata.artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.`,
+      });
     }
     throw error;
   }
@@ -239,6 +236,10 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     });
   }
 
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.create('artifact', artifactId);
+
   return c.json<CreateArtifactResponse>(
     {
       message: 'Artifact saved successfully',
@@ -249,7 +250,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
 });
 
 // 获取 artifact 节点图结构
-artifactsRoute.get('/:artifactId/graph', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+artifactsRoute.get('/:artifactId/graph', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const artifactService = new ArtifactService(ctx);
   const artifactId = c.req.param('artifactId');
@@ -278,7 +279,7 @@ artifactsRoute.delete('/:artifactId', authMiddleware, async (c) => {
 
   // Validate UUID format
   if (!artifactId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-    return c.json<ApiError>({ error: 'Invalid artifact ID format' }, 400);
+    return badRequest(c, 'Invalid artifact ID format');
   }
 
   const result = await artifactService.deleteArtifact(
@@ -291,7 +292,12 @@ artifactsRoute.delete('/:artifactId', authMiddleware, async (c) => {
   }
 
   // Commit the batch to persist changes
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Artifact was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.delete('artifact', artifactId);
 
   return c.body(null, 204);
 });
@@ -307,7 +313,7 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
   try {
     formData = await c.req.formData();
   } catch {
-    return c.json<ApiError>({ error: 'Invalid form data' }, 400);
+    return badRequest(c, 'Invalid form data');
   }
 
   // 使用 zod schema 校验 metadata
@@ -327,9 +333,7 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
         // Verify hash matches
         const computedHash = await computeSha256Hex(arrayBuffer);
         if (computedHash !== filesHash) {
-          return c.json<ApiError>({
-            error: `VFS filesHash mismatch: expected ${filesHash}, computed ${computedHash}`,
-          }, 400);
+          return badRequest(c, `VFS filesHash mismatch: expected ${filesHash}, computed ${computedHash}`);
         }
         vfsArchives.set(filesHash, arrayBuffer);
         continue;
@@ -341,9 +345,7 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
         // Verify hash matches
         const computedHash = await computeSha256Hex(arrayBuffer);
         if (computedHash !== quadsHash) {
-          return c.json<ApiError>({
-            error: `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`,
-          }, 400);
+          return badRequest(c, `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`);
         }
         saveArchives.set(quadsHash, arrayBuffer);
       }
@@ -380,10 +382,10 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     await ctx.commit();
   } catch (error) {
     if (error instanceof OptimisticLockError) {
-      return c.json<ApiError>(
-        { error: `Version with commit ${metadata.commit} already exists for artifact ${metadata.artifactId}. This indicates a duplicate patch request.` },
-        409
-      );
+      return serviceErrorResponse(c, {
+        code: 'CONFLICT',
+        message: `Version with commit ${metadata.commit} already exists for artifact ${metadata.artifactId}. This indicates a duplicate patch request.`,
+      });
     }
     throw error;
   }
@@ -415,6 +417,10 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
       httpMetadata: { contentType: 'text/html; charset=utf-8' },
     });
   }
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.create('artifact_version', patchedArtifact.latestCommit!, { artifactId });
 
   return c.json<PatchArtifactResponse>(
     {
@@ -455,13 +461,17 @@ artifactsRoute.put('/:artifactId/metadata', authMiddleware, async (c) => {
     if (error instanceof OptimisticLockError) {
       // Concurrent public→private transition detected
       // Return 409 to let client retry and discover the new state
-      return c.json<ApiError>(
-        { error: 'Concurrent modification: artifact privacy is being updated by another request' },
-        409
-      );
+      return serviceErrorResponse(c, {
+        code: 'CONFLICT',
+        message: 'Concurrent modification: artifact privacy is being updated by another request',
+      });
     }
     throw error;
   }
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.update('artifact', artifactId, { fields: Object.keys(validated) });
 
   return c.json<UpdateArtifactMetadataResponse>(result.data, 200);
 });
@@ -492,7 +502,12 @@ artifactsRoute.put('/:artifactId/versions/:commitHash/metadata', authMiddleware,
   }
 
   // Commit database operations
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Version metadata was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.update('artifact_version', commitHash, { artifactId, fields: Object.keys(validated) });
 
   return c.json({
     message: 'Version metadata updated successfully',

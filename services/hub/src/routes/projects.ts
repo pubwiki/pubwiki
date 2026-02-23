@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { BatchContext, createDb, ProjectService, PostService, type ListProjectArtifactsParams } from '@pubwiki/db';
-import type { ListProjectsResponse, ApiError, ProjectDetail, CreateProjectResponse, ProjectArtifact, ProjectPageDetail, PostDetail, ListProjectPostsResponse, CreateProjectPostResponse, UpdateProjectPostResponse, DeleteProjectPostResponse } from '@pubwiki/api';
+import type { ListProjectsResponse, ProjectDetail, CreateProjectResponse, ProjectArtifact, ProjectPageDetail, PostDetail, ListProjectPostsResponse, CreateProjectPostResponse, UpdateProjectPostResponse, DeleteProjectPostResponse } from '@pubwiki/api';
 import { ListProjectsQueryParams, CreateProjectBody, ListProjectArtifactsQueryParams, ListProjectPostsQueryParams, CreateProjectPostBody, UpdateProjectPostBody, LinkArtifactToProjectBody } from '@pubwiki/api/validate';
-import { optionalAuthMiddleware, authMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { checkResourceAccess, checkResourceWriteAccess } from '../lib/access-control';
 import { validateQuery, validateBody, isValidationError } from '../lib/validate';
-import { serviceErrorResponse } from '../lib/service-error';
+import { serviceErrorResponse, badRequest, commitWithConflictHandling } from '../lib/service-error';
+import { createAuditLogger } from '../lib/audit';
 
 const projectsRoute = new Hono<{ Bindings: Env }>();
 
@@ -23,7 +24,7 @@ projectsRoute.get('/', async (c) => {
   const result = await projectService.listPublicProjects(validated);
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<ListProjectsResponse>(result.data);
@@ -50,7 +51,8 @@ projectsRoute.post('/', authMiddleware, async (c) => {
   }
 
   // Commit the batch to persist changes
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Project was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
 
   // Now query the full project detail
   const detailCtx = new BatchContext(createDb(c.env.DB));
@@ -61,6 +63,10 @@ projectsRoute.post('/', authMiddleware, async (c) => {
     // Should not happen since we just created it
     return serviceErrorResponse(c, detailResult.error);
   }
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.create('project', result.data.projectId);
 
   return c.json<CreateProjectResponse>({
     message: 'Project created successfully',
@@ -96,7 +102,7 @@ projectsRoute.delete('/:projectId', authMiddleware, async (c) => {
 
   // Validate UUID format
   if (!projectId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-    return c.json<ApiError>({ error: 'Invalid project ID format' }, 400);
+    return badRequest(c, 'Invalid project ID format');
   }
 
   const result = await projectService.deleteProject({
@@ -109,7 +115,12 @@ projectsRoute.delete('/:projectId', authMiddleware, async (c) => {
   }
 
   // Commit the batch to persist changes
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Project was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.delete('project', projectId);
 
   return c.body(null, 204);
 });
@@ -142,10 +153,14 @@ projectsRoute.get('/:projectId/pages/:pageId', resourceAccessMiddleware, async (
 });
 
 // 获取 project 的 artifact 列表
-projectsRoute.get('/:projectId/artifacts', async (c) => {
+projectsRoute.get('/:projectId/artifacts', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const projectService = new ProjectService(ctx);
   const projectId = c.req.param('projectId');
+
+  // Check if user can read the project
+  const accessError = await checkResourceAccess(c, { type: 'project', id: projectId });
+  if (accessError) return accessError;
 
   // 使用 zod schema 校验查询参数
   const validated = validateQuery(c, ListProjectArtifactsQueryParams, c.req.query());
@@ -190,7 +205,13 @@ projectsRoute.post('/:projectId/artifacts', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Project artifact link was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.log('link', 'artifact', validated.artifactId, { projectId });
+
   return c.json<{ message: string; projectArtifact: ProjectArtifact }>({
     message: 'Artifact linked to project successfully',
     projectArtifact: result.data,
@@ -200,7 +221,7 @@ projectsRoute.post('/:projectId/artifacts', authMiddleware, async (c) => {
 // ========== Project Posts API ==========
 
 // 获取 project 的 posts 列表
-projectsRoute.get('/:projectId/posts', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+projectsRoute.get('/:projectId/posts', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const projectService = new ProjectService(ctx);
   const postService = new PostService(ctx);
@@ -222,7 +243,7 @@ projectsRoute.get('/:projectId/posts', optionalAuthMiddleware, resourceAccessMid
 
   const result = await postService.listPosts(projectId, validated);
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<ListProjectPostsResponse>(result.data);
@@ -251,11 +272,12 @@ projectsRoute.post('/:projectId/posts', authMiddleware, resourceAccessMiddleware
   });
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   // Commit the batch to persist changes
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Post was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
 
   // Query the full post detail
   const detailCtx = new BatchContext(createDb(c.env.DB));
@@ -266,6 +288,10 @@ projectsRoute.post('/:projectId/posts', authMiddleware, resourceAccessMiddleware
     return serviceErrorResponse(c, detailResult.error);
   }
 
+  // Audit log - post is a project sub-resource
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.create('node', result.data.postId, { projectId, type: 'post' });
+
   return c.json<CreateProjectPostResponse>({
     message: 'Post created successfully',
     post: detailResult.data,
@@ -273,7 +299,7 @@ projectsRoute.post('/:projectId/posts', authMiddleware, resourceAccessMiddleware
 });
 
 // 获取 post 详情
-projectsRoute.get('/:projectId/posts/:postId', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+projectsRoute.get('/:projectId/posts/:postId', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const postService = new PostService(ctx);
   const projectId = c.req.param('projectId');
@@ -311,7 +337,8 @@ projectsRoute.patch('/:projectId/posts/:postId', authMiddleware, async (c) => {
   }
 
   // Commit the batch to persist changes
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Post was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
 
   // Query the full post detail
   const detailCtx = new BatchContext(createDb(c.env.DB));
@@ -321,6 +348,10 @@ projectsRoute.patch('/:projectId/posts/:postId', authMiddleware, async (c) => {
   if (!detailResult.success) {
     return serviceErrorResponse(c, detailResult.error);
   }
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.update('node', postId, { projectId, type: 'post' });
 
   return c.json<UpdateProjectPostResponse>({
     message: 'Post updated successfully',
@@ -341,7 +372,13 @@ projectsRoute.delete('/:projectId/posts/:postId', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Post was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.delete('node', postId, { projectId, type: 'post' });
+
   return c.json<DeleteProjectPostResponse>({
     message: 'Post deleted successfully',
   });

@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { BatchContext, createDb, SaveService } from '@pubwiki/db';
-import type { ApiError, Pagination } from '@pubwiki/api';
+import type { Pagination } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
 import { ListSavesQueryParams, CreateSaveBody } from '@pubwiki/api/validate';
-import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { validateQuery, validateFormDataJson, isValidationError } from '../lib/validate';
-import { serviceErrorResponse } from '../lib/service-error';
+import { serviceErrorResponse, badRequest, forbidden, notFound, commitWithConflictHandling } from '../lib/service-error';
+import { createAuditLogger } from '../lib/audit';
 
 export const savesRoute = new Hono<{ Bindings: Env }>();
 
@@ -23,7 +24,7 @@ savesRoute.post('/', authMiddleware, async (c) => {
   try {
     formData = await c.req.formData();
   } catch {
-    return c.json<ApiError>({ error: 'Invalid multipart form data' }, 400);
+    return badRequest(c, 'Invalid multipart form data');
   }
 
   // Validate metadata JSON with zod schema
@@ -33,16 +34,14 @@ savesRoute.post('/', authMiddleware, async (c) => {
   // Get binary file
   const dataFile = formData.get('data');
   if (!dataFile || !(dataFile instanceof File)) {
-    return c.json<ApiError>({ error: 'data field is required and must be a binary file' }, 400);
+    return badRequest(c, 'data field is required and must be a binary file');
   }
 
   // Read file content and verify quadsHash
   const buffer = await dataFile.arrayBuffer();
   const computedQuadsHash = await computeSha256Hex(buffer);
   if (computedQuadsHash !== metadata.quadsHash) {
-    return c.json<ApiError>({
-      error: `quadsHash mismatch: expected ${metadata.quadsHash}, computed ${computedQuadsHash}`,
-    }, 400);
+    return badRequest(c, `quadsHash mismatch: expected ${metadata.quadsHash}, computed ${computedQuadsHash}`);
   }
 
   // Create user runtime save record
@@ -67,7 +66,8 @@ savesRoute.post('/', authMiddleware, async (c) => {
   }
 
   // Commit the batch to persist changes
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Save was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
 
   // Upload data file to R2 using quadsHash for deduplication
   const r2Key = `saves/${metadata.quadsHash}/quads.bin`;
@@ -84,11 +84,15 @@ savesRoute.post('/', authMiddleware, async (c) => {
     return serviceErrorResponse(c, detailResult.error);
   }
 
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.create('save', result.data.commit, { artifactId: metadata.artifactId });
+
   return c.json(detailResult.data, 201);
 });
 
 // GET /saves — 获取存档列表（按 stateNodeId+stateNodeCommit 或 saveId 查询）
-savesRoute.get('/', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+savesRoute.get('/', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
   const { userId } = c.get('resourceAccess');
@@ -104,10 +108,10 @@ savesRoute.get('/', optionalAuthMiddleware, resourceAccessMiddleware, async (c) 
 
   // oneOf 验证：必须提供其中一组
   if (hasStateNodeParams && hasSaveIdParam) {
-    return c.json<ApiError>({ error: 'Cannot specify both stateNodeId/stateNodeCommit and saveId. Use one or the other.' }, 400);
+    return badRequest(c, 'Cannot specify both stateNodeId/stateNodeCommit and saveId. Use one or the other.');
   }
   if (!hasStateNodeParams && !hasSaveIdParam) {
-    return c.json<ApiError>({ error: 'Must specify either stateNodeId+stateNodeCommit or saveId' }, 400);
+    return badRequest(c, 'Must specify either stateNodeId+stateNodeCommit or saveId');
   }
 
   const listParams = hasStateNodeParams
@@ -117,14 +121,14 @@ savesRoute.get('/', optionalAuthMiddleware, resourceAccessMiddleware, async (c) 
   const result = await saveService.listSaves(listParams);
 
   if (!result.success) {
-    return c.json<ApiError>({ error: result.error.message }, 500);
+    return serviceErrorResponse(c, result.error);
   }
 
   return c.json<{ saves: typeof result.data.saves; pagination: Pagination }>(result.data);
 });
 
 // GET /saves/:commit — 获取存档详情（commit 全局唯一）
-savesRoute.get('/:commit', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+savesRoute.get('/:commit', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
   const { userId } = c.get('resourceAccess');
@@ -137,9 +141,9 @@ savesRoute.get('/:commit', optionalAuthMiddleware, resourceAccessMiddleware, asy
     // Check if save exists first to return proper error code
     const result = await saveService.getSave(commit);
     if (!result.success && result.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Save not found' }, 404);
+      return notFound(c, 'Save not found');
     }
-    return c.json<ApiError>({ error: 'Access denied' }, 403);
+    return forbidden(c, 'Access denied');
   }
 
   const result = await saveService.getSave(commit);
@@ -165,7 +169,12 @@ savesRoute.delete('/:commit', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
-  await ctx.commit();
+  const conflictResponse = await commitWithConflictHandling(c, ctx, 'Save was modified concurrently. Please retry.');
+  if (conflictResponse) return conflictResponse;
+
+  // Audit log
+  const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
+  audit.delete('save', commit);
 
   // Note: R2 cleanup is deferred. Since we use content-addressed storage (quadsHash),
   // the same quads data may be shared by multiple saves. R2 objects should only be
@@ -176,7 +185,7 @@ savesRoute.delete('/:commit', authMiddleware, async (c) => {
 });
 
 // GET /saves/:commit/data — 下载 quads.bin（commit 全局唯一）
-savesRoute.get('/:commit/data', optionalAuthMiddleware, resourceAccessMiddleware, async (c) => {
+savesRoute.get('/:commit/data', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
   const { userId } = c.get('resourceAccess');
@@ -189,9 +198,9 @@ savesRoute.get('/:commit/data', optionalAuthMiddleware, resourceAccessMiddleware
     // Check if save exists first to return proper error code
     const saveResult = await saveService.getSave(commit);
     if (!saveResult.success && saveResult.error.code === 'NOT_FOUND') {
-      return c.json<ApiError>({ error: 'Save not found' }, 404);
+      return notFound(c, 'Save not found');
     }
-    return c.json<ApiError>({ error: 'Access denied' }, 403);
+    return forbidden(c, 'Access denied');
   }
 
   // 获取 quadsHash
@@ -207,7 +216,7 @@ savesRoute.get('/:commit/data', optionalAuthMiddleware, resourceAccessMiddleware
   const object = await c.env.R2_BUCKET.get(r2Key);
 
   if (!object) {
-    return c.json<ApiError>({ error: 'Save data not found in storage' }, 404);
+    return notFound(c, 'Save data not found in storage');
   }
 
   return new Response(object.body, {

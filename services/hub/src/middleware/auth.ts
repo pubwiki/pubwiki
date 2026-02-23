@@ -4,7 +4,7 @@ import { createAuth } from '../lib/auth';
 import type { ApiError } from '@pubwiki/api';
 
 // Better-Auth session 中的 user 类型
-type SessionUser = {
+export type SessionUser = {
   id: string;
   name: string;
   email: string;
@@ -20,7 +20,7 @@ type SessionUser = {
 };
 
 // Better-Auth session 类型
-type SessionData = {
+export type SessionData = {
   id: string;
   expiresAt: Date;
   token: string;
