@@ -13,7 +13,8 @@
 
   /** Chat context type */
   export interface ChatContext {
-    pubchat: PubChat
+    /** PubChat instance, or null if chat is handled externally (e.g., by Orchestrator) */
+    pubchat: PubChat | null
     messagesStore: MessagesStore
     inputStore: ChatInputStore
     activeChatStore: ActiveChatStore

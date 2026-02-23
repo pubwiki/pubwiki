@@ -90,6 +90,21 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
   private get _dir(): string {
     return this._gitProvider.getDir();
   }
+
+  /**
+   * Read file content as string.
+   * Handles both ArrayBuffer and string content types from VfsFile.
+   */
+  private async readFileAsText(path: string): Promise<string> {
+    const file = await this.readFile(path);
+    if (file.content === undefined) {
+      throw new Error(`File content is undefined: ${path}`);
+    }
+    if (typeof file.content === 'string') {
+      return file.content;
+    }
+    return new TextDecoder().decode(file.content);
+  }
   
   /**
    * Get the node ID for this VFS.
@@ -216,8 +231,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     // Read or create .gitmodules
     let gitmodules = '';
     try {
-      const content = await (fs as any).promises.readFile(`${dir}/.gitmodules`, 'utf8');
-      gitmodules = content as string;
+      gitmodules = await this.readFileAsText('/.gitmodules');
     } catch {
       // File doesn't exist, create new
     }
@@ -239,7 +253,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
 `;
     gitmodules += submoduleConfig;
 
-    await (fs as any).promises.writeFile(`${dir}/.gitmodules`, gitmodules);
+    await this.updateFile('/.gitmodules', gitmodules);
 
     // Create gitlink (special tree entry pointing to submodule commit)
     await git.updateIndex({
@@ -267,8 +281,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
 
     // Read and update .gitmodules
     try {
-      const content = await (fs as any).promises.readFile(`${dir}/.gitmodules`, 'utf8');
-      const gitmodules = content as string;
+      const gitmodules = await this.readFileAsText('/.gitmodules');
 
       // Remove the submodule section
       const lines = gitmodules.split('\n');
@@ -290,10 +303,10 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
 
       const newContent = newLines.join('\n').trim();
       if (newContent) {
-        await (fs as any).promises.writeFile(`${dir}/.gitmodules`, newContent + '\n');
+        await this.updateFile('/.gitmodules', newContent + '\n');
       } else {
         // Remove empty .gitmodules file
-        await (fs as any).promises.unlink(`${dir}/.gitmodules`);
+        await this.deleteFile('/.gitmodules');
       }
     } catch {
       // .gitmodules doesn't exist, nothing to remove
@@ -342,12 +355,9 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
    * List all submodules from .gitmodules
    */
   async listSubmodules(): Promise<SubmoduleInfo[]> {
-    const fs = this._fs;
-    const dir = this._dir;
-
     try {
-      const content = await (fs as any).promises.readFile(`${dir}/.gitmodules`, 'utf8');
-      return this.parseGitmodules(content as string);
+      const content = await this.readFileAsText('/.gitmodules');
+      return this.parseGitmodules(content);
     } catch {
       return [];
     }

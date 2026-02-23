@@ -32,6 +32,15 @@ import {
   LoaderContent,
   StateContent
 } from '../types';
+import type {
+  ArtifactNodeContent,
+  InputContentJSON,
+  PromptContentJSON,
+  GeneratedContentJSON,
+  SandboxContentJSON,
+  LoaderContentJSON,
+  StateContentJSON
+} from '@pubwiki/flow-core';
 import { getNodeVfs } from '../vfs';
 import { ensureProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
 import { computeContentHash } from '@pubwiki/flow-core';
@@ -48,11 +57,10 @@ export type ImportProgressCallback = (progress: {
 }) => void;
 
 /**
- * Node summary with content - use type assertion since API types may be slightly different
+ * Node summary with content - content field uses precise ArtifactNodeContent type
  * The API now returns content directly in the graph response
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type NodeSummaryWithContent = ArtifactNodeSummary & { content?: any; filesSummary?: { totalFiles: number; totalSize: number } };
+type NodeSummaryWithContent = ArtifactNodeSummary & { content?: ArtifactNodeContent; filesSummary?: { totalFiles: number; totalSize: number } };
 
 // ============================================================================
 // TAR.GZ Extraction Helpers
@@ -289,7 +297,7 @@ export async function convertArtifactToStudioGraph(
       case 'SANDBOX': {
         let parsedContent: SandboxContent;
         if (nodeContent) {
-          parsedContent = SandboxContent.fromJSON(nodeContent as Record<string, unknown>);
+          parsedContent = SandboxContent.fromJSON(nodeContent as SandboxContentJSON);
         } else {
           parsedContent = new SandboxContent();
         }
@@ -315,7 +323,7 @@ export async function convertArtifactToStudioGraph(
       case 'LOADER': {
         let parsedContent: LoaderContent;
         if (nodeContent) {
-          parsedContent = LoaderContent.fromJSON(nodeContent as Record<string, unknown>);
+          parsedContent = LoaderContent.fromJSON(nodeContent as LoaderContentJSON);
         } else {
           parsedContent = new LoaderContent();
         }
@@ -341,7 +349,7 @@ export async function convertArtifactToStudioGraph(
       case 'STATE': {
         let stateContent: StateContent;
         if (nodeContent) {
-          stateContent = StateContent.fromJSON(nodeContent as Record<string, unknown>);
+          stateContent = StateContent.fromJSON(nodeContent as StateContentJSON);
         } else {
           stateContent = new StateContent();
         }
@@ -367,8 +375,7 @@ export async function convertArtifactToStudioGraph(
       case 'INPUT': {
         let parsedContent: InputContent;
         if (nodeContent) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          parsedContent = InputContent.fromJSON(nodeContent as any);
+          parsedContent = InputContent.fromJSON(nodeContent as InputContentJSON);
         } else {
           parsedContent = new InputContent([]);
         }
@@ -394,8 +401,7 @@ export async function convertArtifactToStudioGraph(
       case 'PROMPT': {
         let parsedContent: PromptContent;
         if (nodeContent) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          parsedContent = PromptContent.fromJSON(nodeContent as any);
+          parsedContent = PromptContent.fromJSON(nodeContent as PromptContentJSON);
         } else {
           parsedContent = PromptContent.fromText('');
         }
@@ -421,8 +427,7 @@ export async function convertArtifactToStudioGraph(
       case 'GENERATED': {
         let parsedContent: GeneratedContent;
         if (nodeContent) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          parsedContent = GeneratedContent.fromJSON(nodeContent as any);
+          parsedContent = GeneratedContent.fromJSON(nodeContent as GeneratedContentJSON);
           // No need to remap - node IDs are preserved
         } else {
           parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);

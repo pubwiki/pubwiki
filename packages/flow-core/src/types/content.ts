@@ -33,6 +33,25 @@ export type ArtifactNodeContent =
   | { type: 'STATE' }
 
 // ============================================================================
+// JSON Type Aliases (for fromJSON parameters)
+// ============================================================================
+
+/** JSON representation for InputContent - used by fromJSON */
+export type InputContentJSON = Extract<ArtifactNodeContent, { type: 'INPUT' }>
+/** JSON representation for PromptContent - used by fromJSON */
+export type PromptContentJSON = Extract<ArtifactNodeContent, { type: 'PROMPT' }>
+/** JSON representation for GeneratedContent - used by fromJSON */
+export type GeneratedContentJSON = Extract<ArtifactNodeContent, { type: 'GENERATED' }>
+/** JSON representation for VFSContent - used by fromJSON */
+export type VFSContentJSON = Extract<ArtifactNodeContent, { type: 'VFS' }>
+/** JSON representation for SandboxContent - used by fromJSON */
+export type SandboxContentJSON = Extract<ArtifactNodeContent, { type: 'SANDBOX' }>
+/** JSON representation for LoaderContent - used by fromJSON */
+export type LoaderContentJSON = Extract<ArtifactNodeContent, { type: 'LOADER' }>
+/** JSON representation for StateContent - used by fromJSON */
+export type StateContentJSON = Extract<ArtifactNodeContent, { type: 'STATE' }>
+
+// ============================================================================
 // NodeContent Interface
 // ============================================================================
 

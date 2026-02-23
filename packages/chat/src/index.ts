@@ -73,6 +73,9 @@ export type {
   CustomToolDefinition
 } from './types'
 
+// Tool definition helper
+export { defineTool } from './types/tool'
+
 // Message utilities
 export {
   generateBlockId,

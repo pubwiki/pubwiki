@@ -22,17 +22,17 @@ export interface ChatResult {
 }
 
 /**
- * Tool registration parameters
+ * Tool registration parameters (generic version for type inference)
  */
-export interface ToolRegistrationParams {
+export interface ToolRegistrationParams<T extends z.ZodTypeAny = z.ZodTypeAny> {
   /** Tool name */
   name: string
   /** Tool description */
   description: string
   /** Zod schema for parameters */
-  schema: z.ZodTypeAny
-  /** Tool handler function */
-  handler: (args: unknown) => Promise<unknown>
+  schema: T
+  /** Tool handler function - args type is inferred from schema */
+  handler: (args: z.infer<T>) => Promise<unknown>
 }
 
 /**

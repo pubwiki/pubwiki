@@ -14,6 +14,7 @@
 	import { getAllProjects, deleteProject, setCurrentProject, type StoredProject } from '$lib/persistence';
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { createApiClient } from '@pubwiki/api/client';
+	import type { ArtifactListItem } from '@pubwiki/api';
 	import { API_BASE_URL } from '$lib/config';
 	import { importArtifactToNewProject } from '$lib/io';
 	import * as m from '$lib/paraglide/messages';
@@ -37,18 +38,11 @@
 	let localProjects = $state<StoredProject[]>([]);
 	let loadingLocal = $state(true);
 
-	// Online projects
-	interface OnlineProject {
-		id: string;
-		name: string;
-		description?: string | null;
-		visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
-		updatedAt: string;
-		createdAt: string;
-		isArchived: boolean;
+	// Online projects - extends ArtifactListItem from API with local project link
+	type OnlineProject = ArtifactListItem & {
 		/** Local project ID if already imported */
 		localProjectId?: string;
-	}
+	};
 	let onlineProjects = $state<OnlineProject[]>([]);
 	let loadingOnline = $state(false);
 	let onlineError = $state<string | null>(null);
@@ -118,14 +112,8 @@
 			}
 			const localMap = getLocalArtifactMap();
 
-			const fetched: OnlineProject[] = (data.artifacts ?? []).map((a: any) => ({
-				id: a.id,
-				name: a.name,
-				description: a.description,
-				visibility: a.visibility,
-				updatedAt: a.updatedAt,
-				createdAt: a.createdAt,
-				isArchived: a.isArchived ?? false,
+			const fetched: OnlineProject[] = (data.artifacts ?? []).map((a) => ({
+				...a,
 				localProjectId: localMap.get(a.id)?.id
 			}));
 
@@ -238,17 +226,12 @@
 		});
 	}
 
-	// Visibility badge config
-	function getVisibilityConfig(visibility: string) {
-		switch (visibility) {
-			case 'PUBLIC':
-				return { label: m.studio_projects_visibility_public(), class: 'bg-green-100 text-green-700' };
-			case 'PRIVATE':
-				return { label: m.studio_projects_visibility_private(), class: 'bg-gray-100 text-gray-600' };
-			case 'UNLISTED':
-				return { label: m.studio_projects_visibility_unlisted(), class: 'bg-yellow-100 text-yellow-700' };
-			default:
-				return { label: visibility, class: 'bg-gray-100 text-gray-600' };
+	// Listed badge config (API uses isListed boolean)
+	function getListedConfig(isListed: boolean) {
+		if (isListed) {
+			return { label: m.studio_projects_visibility_public(), class: 'bg-green-100 text-green-700' };
+		} else {
+			return { label: m.studio_projects_visibility_unlisted(), class: 'bg-yellow-100 text-yellow-700' };
 		}
 	}
 
@@ -430,7 +413,7 @@
 					{:else}
 						<div class="space-y-2">
 							{#each onlineProjects as project}
-								{@const visCfg = getVisibilityConfig(project.visibility)}
+								{@const visCfg = getListedConfig(project.isListed)}
 								<div
 									class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
 								>
@@ -443,11 +426,6 @@
 											{#if project.localProjectId}
 												<span class="px-1.5 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded">
 													{m.studio_projects_already_local()}
-												</span>
-											{/if}
-											{#if project.isArchived}
-												<span class="px-1.5 py-0.5 text-xs font-medium bg-gray-200 text-gray-500 rounded">
-													Archived
 												</span>
 											{/if}
 										</div>

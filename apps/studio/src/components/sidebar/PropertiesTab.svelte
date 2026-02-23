@@ -5,7 +5,7 @@
 	 */
 	import type { Node } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
-	import type { PromptNodeData, InputNodeData, VFSNodeData, GeneratedNodeData, StateNodeData } from '$lib/types';
+	import type { PromptNodeData, InputNodeData, VFSNodeData, GeneratedNodeData, StateNodeData, StudioNodeData } from '$lib/types';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
@@ -81,7 +81,7 @@
 		if (!selectedNode || !selectedNodeData || selectedNodeData.type !== 'INPUT') return;
 		
 		const callbacks = {
-			updateNodeData: (nodeId: string, updater: (data: any) => any) => {
+			updateNodeData: (nodeId: string, updater: (data: StudioNodeData) => StudioNodeData) => {
 				nodeStore.update(nodeId, updater);
 			},
 			updateNodes: ctx.updateNodes,
@@ -94,7 +94,7 @@
 	async function handleRegenerate() {
 		if (!selectedNode) return;
 		const callbacks = {
-			updateNodeData: (nodeId: string, updater: (data: any) => any) => {
+			updateNodeData: (nodeId: string, updater: (data: StudioNodeData) => StudioNodeData) => {
 				nodeStore.update(nodeId, updater);
 			},
 			updateNodes: ctx.updateNodes,

@@ -4,5 +4,6 @@
 	},
 	"svelte.enable-ts-plugin": true,
 	// Fucking ridiculous feature that makes terminal created by AI hidden introduced in 1.109.0
-	"chat.tools.terminal.outputLocation": "terminal"
+	"chat.tools.terminal.outputLocation": "terminal",
+	"rust-analyzer.cargo.extraArgs": ["+nightly"]
 }

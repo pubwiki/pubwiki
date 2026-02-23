@@ -145,19 +145,9 @@ export async function createPendingVfsNode(
 }
 
 // ============================================================================
-// VFS Mount Resolution
+// VFS Connection Resolution
 // ============================================================================
 
-/**
- * Find VFS nodes connected to an input node.
- * Returns a Map of mount path -> source VFS node ID.
- * 
- * NOTE: The VFS_MOUNT handle has been removed in favor of drag-to-folder mounting.
- * This function currently returns an empty Map. VFS context for generation 
- * may need to be provided through a different mechanism in the future.
- * 
- * @deprecated VFS_MOUNT handle removed. Consider using VFSContent.mounts on VFS nodes.
- */
 /**
  * Find the VFS node connected to an input node's VFS_INPUT handle.
  * Input node can only connect to a single VFS node.

@@ -106,10 +106,10 @@
   // Context Setup
   // ============================================================================
   
-  // Create a mock PubChat for context (Orchestrator handles the real chat)
-  // This allows ChatMessages and ChatInput to work
+  // Orchestrator handles the real chat, so pubchat is null
+  // ChatMessages and ChatInput still work via stores
   setContext<ChatContext>(CHAT_CONTEXT_KEY, {
-    get pubchat() { return null as any; }, // Not used directly
+    pubchat: null,
     messagesStore,
     inputStore,
     activeChatStore
