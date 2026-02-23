@@ -394,8 +394,7 @@
 				targetHandle: connection.targetHandle ?? null,
 			},
 			(nodeId) => nodeStore.get(nodeId)?.type,
-			edges,
-			(nodeId) => nodeStore.get(nodeId) as StudioNodeData | undefined
+			edges
 		);
 		return result.valid;
 	};
@@ -1285,9 +1284,6 @@
 				artifactId: metadata.artifactId,
 				baseCommit: lastCloudCommit,
 				version: metadata.version,
-				visibility: metadata.visibility,
-				name: metadata.name,
-				description: metadata.description || undefined,
 				// Tag as draft-latest for incremental sync
 				commitTags: ['draft-latest']
 			};

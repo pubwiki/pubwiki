@@ -40,6 +40,7 @@
 		"@pubwiki/api": "workspace:*",
 		"@pubwiki/bundler": "workspace:*",
 		"@pubwiki/chat": "workspace:*",
+		"@pubwiki/flow-core": "workspace:*",
 		"@pubwiki/lua": "workspace:*",
 		"@pubwiki/rdfstore": "workspace:*",
 		"@pubwiki/reader": "workspace:*",

@@ -7,12 +7,10 @@ export type {
 	ArtifactEdge,
 	ArtifactNodeType,
 	NodeFileInfo,
-	VisibilityType,
 	Tag,
 	Pagination,
 	ProjectListItem,
 	ProjectRole,
-	UserProjectRole,
 	UserProjectListItem
 } from '@pubwiki/api';
 

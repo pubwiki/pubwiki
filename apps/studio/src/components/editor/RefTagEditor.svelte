@@ -133,9 +133,9 @@
 			let hasContent = false;
 
 			for (const block of blocks) {
-				if (block.type === 'text') {
+				if (block.type === 'TextBlock') {
 					const lines = block.value.split('\n');
-					lines.forEach((line, index) => {
+					lines.forEach((line: string, index: number) => {
 						if (line) {
 							currentParagraph.append(createTextNode(line));
 							hasContent = true;
@@ -147,7 +147,7 @@
 							hasContent = false;
 						}
 					});
-				} else if (block.type === 'reftag') {
+				} else if (block.type === 'RefTagBlock') {
 					currentParagraph.append(createRefTagNode(block.name));
 					hasContent = true;
 				}
@@ -174,10 +174,10 @@
 				// Add newline between paragraphs (not before first)
 				if (paragraphIndex > 0) {
 					const last = blocks[blocks.length - 1];
-					if (last?.type === 'text') {
+					if (last?.type === 'TextBlock') {
 						last.value += '\n';
 					} else {
-						blocks.push({ type: 'text', value: '\n' });
+						blocks.push({ type: 'TextBlock', value: '\n' });
 					}
 				}
 
@@ -185,31 +185,31 @@
 				const children = paragraph.getChildren();
 				for (const node of children) {
 					if (isRefTagNode(node)) {
-						blocks.push({ type: 'reftag', name: node.getRefName() });
+						blocks.push({ type: 'RefTagBlock', name: node.getRefName() });
 					} else if (isLineBreakNode(node)) {
 						// LineBreakNode represents \n within a paragraph
 						const last = blocks[blocks.length - 1];
-						if (last?.type === 'text') {
+						if (last?.type === 'TextBlock') {
 							last.value += '\n';
 						} else {
-							blocks.push({ type: 'text', value: '\n' });
+							blocks.push({ type: 'TextBlock', value: '\n' });
 						}
 					} else if (isTabNode(node)) {
 						// TabNode represents \t
 						const last = blocks[blocks.length - 1];
-						if (last?.type === 'text') {
+						if (last?.type === 'TextBlock') {
 							last.value += '\t';
 						} else {
-							blocks.push({ type: 'text', value: '\t' });
+							blocks.push({ type: 'TextBlock', value: '\t' });
 						}
 					} else if (isTextNode(node)) {
 						const text = node.getTextContent();
 						if (text) {
 							const last = blocks[blocks.length - 1];
-							if (last?.type === 'text') {
+							if (last?.type === 'TextBlock') {
 								last.value += text;
 							} else {
-								blocks.push({ type: 'text', value: text });
+								blocks.push({ type: 'TextBlock', value: text });
 							}
 						}
 					}
@@ -244,7 +244,7 @@
 
 	// Helper to compare blocks
 	function blocksToString(blocks: ContentBlock[]): string {
-		return blocks.map(b => b.type === 'text' ? b.value : `@${b.name}`).join('');
+		return blocks.map(b => b.type === 'TextBlock' ? b.value : `@${b.name}`).join('');
 	}
 
 	// Helper to run code without disrupting global selection

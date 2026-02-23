@@ -34,7 +34,7 @@ import {
 } from '../types';
 import { getNodeVfs } from '../vfs';
 import { ensureProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
-import { computeContentHash } from '@pubwiki/api';
+import { computeContentHash } from '@pubwiki/flow-core';
 import { API_BASE_URL } from '$lib/config';
 
 /**
@@ -267,7 +267,7 @@ export async function convertArtifactToStudioGraph(
       case 'VFS': {
         // VFSContent needs projectId, which we set to targetProjectId
         const vfsContent = new VFSContent(targetProjectId);
-        const contentHash = await computeContentHash(vfsContent.toJSON());
+        const contentHash = await computeContentHash(vfsContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const vfsData: VFSNodeData = {
           id: nodeId,
           name: node.name || `Files ${index + 1}`,
@@ -293,7 +293,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new SandboxContent();
         }
-        const contentHash = await computeContentHash(parsedContent.toJSON());
+        const contentHash = await computeContentHash(parsedContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const sandboxData: SandboxNodeData = {
           id: nodeId,
           name: node.name || `Sandbox ${index + 1}`,
@@ -319,7 +319,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new LoaderContent();
         }
-        const contentHash = await computeContentHash(parsedContent.toJSON());
+        const contentHash = await computeContentHash(parsedContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const loaderData: LoaderNodeData = {
           id: nodeId,
           name: node.name || `Loader ${index + 1}`,
@@ -345,7 +345,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           stateContent = new StateContent();
         }
-        const contentHash = await computeContentHash(stateContent.toJSON());
+        const contentHash = await computeContentHash(stateContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const stateData: StateNodeData = {
           id: nodeId,
           name: node.name || `State ${index + 1}`,
@@ -372,7 +372,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new InputContent([]);
         }
-        const contentHash = await computeContentHash(parsedContent.toJSON());
+        const contentHash = await computeContentHash(parsedContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const inputData: InputNodeData = {
           id: nodeId,
           name: node.name || `Input ${index + 1}`,
@@ -399,7 +399,7 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = PromptContent.fromText('');
         }
-        const contentHash = await computeContentHash(parsedContent.toJSON());
+        const contentHash = await computeContentHash(parsedContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const promptData: PromptNodeData = {
           id: nodeId,
           name: node.name || `Prompt ${index + 1}`,
@@ -418,8 +418,7 @@ export async function convertArtifactToStudioGraph(
         };
       }
 
-      case 'GENERATED':
-      default: {
+      case 'GENERATED': {
         let parsedContent: GeneratedContent;
         if (nodeContent) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -428,11 +427,11 @@ export async function convertArtifactToStudioGraph(
         } else {
           parsedContent = new GeneratedContent([], { id: '', commit: '' }, [], []);
         }
-        const contentHash = await computeContentHash(parsedContent.toJSON());
+        const contentHash = await computeContentHash(parsedContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const generatedData: GeneratedNodeData = {
           id: nodeId,
           name: node.name || `Generated ${index + 1}`,
-          type: nodeType,
+          type: 'GENERATED' as const,
           commit,
           contentHash,
           snapshotRefs: [],
@@ -441,13 +440,22 @@ export async function convertArtifactToStudioGraph(
         };
         return {
           id: nodeId,
-          type: nodeType,
+          type: 'GENERATED' as const,
           position: { x: posX, y: posY },
           data: generatedData
         };
       }
+
+      default: {
+        // For unknown types (like SAVE), skip them
+        console.warn(`[Import] Skipping unsupported node type: ${nodeType}`);
+        return null;
+      }
     }
   }));
+
+  // Filter out null entries (unsupported node types like SAVE)
+  const validNodes = nodes.filter((n): n is NonNullable<typeof n> => n !== null);
 
   // Use original edge source/target IDs (no remapping needed)
   const edges: Edge[] = graphData.edges.map((edge: ArtifactEdge) => ({
@@ -458,7 +466,7 @@ export async function convertArtifactToStudioGraph(
     targetHandle: edge.targetHandle ?? null
   }));
 
-  return { nodes, edges };
+  return { nodes: validNodes, edges };
 }
 
 /**

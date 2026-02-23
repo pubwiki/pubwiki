@@ -1,8 +1,11 @@
 /**
  * Studio Types - Unified exports
+ * 
+ * Most types come from @pubwiki/flow-core, with Studio-specific wrappers
+ * for xyflow compatibility.
  */
 
-// Node data types
+// Node data types (flow-core types with xyflow compatibility)
 export type {
   BaseNodeData,
   InputNodeData,
@@ -18,6 +21,7 @@ export type {
   VfsMountConfig
 } from './node-data';
 
+// Content classes and factory functions
 export {
   InputContent,
   PromptContent,
@@ -36,24 +40,11 @@ export {
   createStateNodeData
 } from './node-data';
 
-// Content types (for direct access if needed)
-export type { NodeType } from './content';
-export {
-  InputContent as InputContentClass,
-  PromptContent as PromptContentClass,
-  GeneratedContent as GeneratedContentClass,
-  VFSContent as VFSContentClass,
-  SandboxContent as SandboxContentClass,
-  LoaderContent as LoaderContentClass,
-  StateContent as StateContentClass,
-  restoreContent as restoreContentFromJSON
-} from './content';
-
-// ContentBlock types (for structured reftag storage)
-export type { ContentBlock, TextBlock, RefTagBlock, InputGenerationConfig } from './content';
+// Content types (re-exported from flow-core via content.ts)
+export type { NodeType, ContentBlock, TextBlock, RefTagBlock, InputGenerationConfig } from './content';
 export { blocksToText, getRefTagNamesFromBlocks } from './content';
 
-// Flow types (for SvelteFlow rendering layer)
+// Flow types (for SvelteFlow rendering layer - Studio-specific)
 export type { FlowNodeData, FlowNode } from './flow';
 export { createFlowNode, getFlowNodeType } from './flow';
 
@@ -66,12 +57,10 @@ export type {
   ArtifactEdge,
   ArtifactNodeType,
   NodeFileInfo,
-  VisibilityType,
   Tag,
   Pagination,
   ProjectListItem,
   ProjectRole,
-  UserProjectRole,
   UserProjectListItem,
   ArtifactNodeDetail,
   ArtifactGraphData

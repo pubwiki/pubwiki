@@ -14,7 +14,6 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, VFSNodeData, StateNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
-import type { VisibilityType } from '$lib/types';
 import { StateContent } from '../types';
 import { createApiClient, type paths } from '@pubwiki/api/client';
 import { type components, computeArtifactCommit, computeNodeCommit, computeContentHash } from '@pubwiki/api';
@@ -167,7 +166,10 @@ export interface PublishMetadata {
 	name: string;
 	slug: string;
 	description: string;
-	visibility: VisibilityType;
+	/** Whether the artifact is listed in public discovery */
+	isListed: boolean;
+	/** Whether the artifact is private (only owner/authorized users can access) */
+	isPrivate: boolean;
 	version: string;
 	tags: string[];
 	/** Optional homepage content in Markdown format */
@@ -485,7 +487,8 @@ export async function publishArtifact(
 					parentCommit: metadata.parentCommit ?? null,
 					name: metadata.name,
 					description: metadata.description || undefined,
-					visibility: metadata.visibility,
+					isListed: metadata.isListed,
+					isPrivate: metadata.isPrivate,
 					version: metadata.version,
 					tags: metadata.tags.length > 0 ? metadata.tags : undefined,
 					commitTags: metadata.commitTags && metadata.commitTags.length > 0 ? metadata.commitTags : undefined
@@ -582,12 +585,6 @@ export interface PatchMetadata {
 	changelog?: string;
 	/** Optional commit tags (e.g., ["draft-latest"]) */
 	commitTags?: string[];
-	/** Optional visibility change */
-	visibility?: VisibilityType;
-	/** Optional name change */
-	name?: string;
-	/** Optional description change */
-	description?: string;
 }
 
 /**
@@ -778,18 +775,17 @@ export async function patchArtifact(
 					   addEdges.length > 0 || removeEdges.length > 0;
 
 	// Build patch request metadata
+	// Note: commit is required - if no changes, use baseCommit (no new version created)
 	const patchMetadata: components['schemas']['PatchArtifactRequest'] = {
 		artifactId: metadata.artifactId,
-		baseCommit: metadata.baseCommit
+		baseCommit: metadata.baseCommit,
+		commit: metadata.baseCommit // Default to baseCommit; will be overwritten if changes exist
 	};
 
 	// Add optional metadata fields
 	if (metadata.version) patchMetadata.version = metadata.version;
 	if (metadata.changelog) patchMetadata.changelog = metadata.changelog;
 	if (metadata.commitTags) patchMetadata.commitTags = metadata.commitTags;
-	if (metadata.visibility) patchMetadata.visibility = metadata.visibility;
-	if (metadata.name) patchMetadata.name = metadata.name;
-	if (metadata.description) patchMetadata.description = metadata.description;
 
 	// Add graph changes if any
 	if (hasChanges) {
@@ -872,9 +868,9 @@ export async function patchArtifact(
 			};
 		}
 
-		// Fetch the new commit hash (ArtifactListItem doesn't include it directly)
+		// Fetch the new commit hash from the artifact's latest version
 		let newCommit: string | undefined;
-		if (data?.versionCreated) {
+		if (hasChanges) {
 			try {
 				const graphResponse = await apiClient.GET('/artifacts/{artifactId}/graph', {
 					params: {
@@ -891,7 +887,7 @@ export async function patchArtifact(
 		return {
 			success: true,
 			newCommit,
-			versionCreated: data?.versionCreated
+			versionCreated: hasChanges
 		};
 	} catch (err) {
 		return {

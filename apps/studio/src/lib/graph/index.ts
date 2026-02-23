@@ -4,7 +4,7 @@
  * Graph layout, connection validation, and reftag handling
  */
 
-// Connection types and validation
+// Connection types and validation - re-export from flow-core
 export {
   HandleId,
   DataType,
@@ -24,9 +24,9 @@ export {
   getMountIdFromHandle,
   type HandleSpec,
   type NodeSpec
-} from './connection';
+} from '@pubwiki/flow-core';
 
-// Layout utilities
+// Layout utilities - stay in Studio (UI-specific)
 export {
   positionNewNodesFromSources,
   getNodeDimensions,
@@ -36,7 +36,7 @@ export {
   VERTICAL_GAP
 } from './auto-layout';
 
-// RefTag utilities
+// RefTag utilities - re-export from flow-core
 export {
   REFTAG_PATTERN,
   parseRefTags,
@@ -50,9 +50,6 @@ export {
   getInputTagConnections,
   getInputTagConnectionsFromSnapshotEdges,
   getSystemPromptConnection,
-  resolvePromptContent,
-  resolvePromptContentFromRefs,
-  resolveInputContent,
   getInputTagsFromBlocks,
   // New ContentBlock support
   getRefTagNamesFromBlocks,
@@ -60,4 +57,11 @@ export {
   blocksToText,
   type ParsedRefTag,
   type ResolvedPrompt
-} from './reftag';
+} from '@pubwiki/flow-core';
+
+// Content resolution utilities (Studio-specific, use nodeStore)
+export {
+  resolvePromptContent,
+  resolvePromptContentFromRefs,
+  resolveInputContent
+} from './resolve';

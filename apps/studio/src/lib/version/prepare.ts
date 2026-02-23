@@ -17,11 +17,13 @@ import type { NodeRef, HistoricalTreeResult } from './types';
 import { nodeStore } from '../persistence/node-store.svelte';
 import { 
   resolvePromptContent, 
+  resolveInputContent
+} from '../graph/resolve';
+import {
   getInputTagConnections,
   getSystemPromptConnection,
-  resolveInputContent,
   getRefTagConnections
-} from '../graph/reftag';
+} from '@pubwiki/flow-core';
 
 // Re-export types for backward compatibility
 export type { HistoricalTreeResult };

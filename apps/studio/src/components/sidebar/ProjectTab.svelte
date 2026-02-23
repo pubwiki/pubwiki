@@ -31,7 +31,8 @@
 	let slug = $state('');
 	let description = $state('');
 	let homepage = $state('');
-	let visibility: PublishMetadata['visibility'] = $state('PUBLIC');
+	let isListed = $state(true);
+	let isPrivate = $state(false);
 	let version = $state('1.0.0');
 	let tagsInput = $state('');
 	let isSubmitting = $state(false);
@@ -183,7 +184,8 @@
 				name: name.trim(),
 				slug: slug.trim(),
 				description: description.trim(),
-				visibility,
+				isListed,
+				isPrivate,
 				version: version.trim(),
 				tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
 				homepage: homepage.trim() || undefined,
@@ -316,16 +318,25 @@
 			<div class="grid grid-cols-2 gap-3">
 
 				<div>
-					<label for="visibility" class="block text-xs font-medium text-gray-500 mb-1">{m.studio_form_visibility()}</label>
-					<select
-						id="visibility"
-						bind:value={visibility}
-						class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-					>
-						<option value="PUBLIC">{m.studio_form_visibility_public()}</option>
-						<option value="UNLISTED">{m.studio_form_visibility_unlisted()}</option>
-						<option value="PRIVATE">{m.studio_form_visibility_private()}</option>
-					</select>
+					<label class="block text-xs font-medium text-gray-500 mb-1">{m.studio_form_visibility()}</label>
+					<div class="space-y-2">
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input
+								type="checkbox"
+								bind:checked={isPrivate}
+								class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+							/>
+							<span class="text-sm text-gray-700">{m.studio_form_visibility_private()}</span>
+						</label>
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input
+								type="checkbox"
+								bind:checked={isListed}
+								class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+							/>
+							<span class="text-sm text-gray-700">公开列表可见</span>
+						</label>
+					</div>
 				</div>
 			</div>
 

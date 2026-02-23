@@ -68,7 +68,7 @@
 		for (const node of nodeStore.getAll()) {
 			if (node.type === 'PROMPT' && node.content instanceof PromptContent) {
 				for (const block of node.content.blocks) {
-					if (block.type === 'reftag') {
+					if (block.type === 'RefTagBlock') {
 						names.add(block.name);
 					}
 				}

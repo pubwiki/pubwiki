@@ -1,25 +1,28 @@
 /**
  * Studio Node Types
  * 
- * Defines the data structure for graph nodes with version control support.
- * 
- * Design Philosophy:
- * - `content` field contains ALL persistent data that needs to be:
- *   - Stored in IndexedDB
- *   - Snapshotted for version control
- *   - Published to backend
- * - UI/runtime states (isEditing, isStreaming, error, etc.) are separate fields
- * - Content types are defined in content-types.ts
- * 
- * Note: Version control types (NodeRef, NodeSnapshot, etc.) are in stores/version/
+ * Extends @pubwiki/flow-core node types with xyflow compatibility.
+ * The base types come from flow-core, we only add the index signature here.
  */
 
 import { 
   type NodeRef, 
   type SnapshotPosition
 } from '../version'
-import { computeNodeCommit, computeContentHash } from '@pubwiki/api'
-import type { Edge, Node } from '@xyflow/svelte'
+import { computeNodeCommit, computeContentHash } from '@pubwiki/flow-core'
+
+// Import base types from flow-core
+import {
+  type BaseNodeData as FlowCoreBaseNodeData,
+  type InputNodeData as FlowCoreInputNodeData,
+  type PromptNodeData as FlowCorePromptNodeData,
+  type GeneratedNodeData as FlowCoreGeneratedNodeData,
+  type VFSNodeData as FlowCoreVFSNodeData,
+  type SandboxNodeData as FlowCoreSandboxNodeData,
+  type LoaderNodeData as FlowCoreLoaderNodeData,
+  type StateNodeData as FlowCoreStateNodeData,
+  type StudioNodeData as FlowCoreStudioNodeData,
+} from '@pubwiki/flow-core'
 
 // Import content classes for use in factory functions
 import {
@@ -50,116 +53,37 @@ export {
 }
 
 // ============================================================================
-// Base Node Data
+// XYFlow-Compatible Node Data Types
 // ============================================================================
 
 /**
- * Base node data interface with version control
- * 
- * Contains ONLY persistent data that should be:
- * - Stored in IndexedDB
- * - Snapshotted for version control
- * - Published to backend
- * 
- * Runtime/UI states should be managed in the component's local state.
- * 
- * In the new version control architecture:
- * - nodeId is globally unique (UUID)
- * - Importing nodes preserves original nodeId
- * - parent commit tracks version lineage
- * - No more external/originalRef distinction
- * 
- * @template T - Content type (must implement NodeContent interface)
+ * Adds xyflow index signature compatibility to node data
  */
-export interface BaseNodeData<T extends NodeContent> {
-  /** Unique node identifier (globally unique UUID, preserved on import) */
-  id: string
-  /** User-defined node name */
-  name: string
-  /** Current commit hash = computeNodeCommit(nodeId, parent, contentHash, type) */
-  commit: string
-  /** Content hash = SHA256(JSON.stringify(content.toJSON()))[:16] */
-  contentHash: string
-  /** Parent commit hash for version lineage (null for root versions) */
-  parent: string | null
-  /** References to historical snapshots (local only, not synced to cloud) */
-  snapshotRefs: NodeRef[]
-  /** Node content - implements NodeContent interface for polymorphic operations */
-  content: T
-  /** Index signature for xyflow compatibility */
-  [key: string]: unknown
-}
-
-// ============================================================================
-// Concrete Node Types
-// ============================================================================
+type XYFlowCompatible<T> = T & { [key: string]: unknown }
 
 /**
- * Input node data - represents user input that triggered generation
- * Content contains: blocks (user input text and reftags), generationConfig
+ * Base node data interface with xyflow compatibility
  */
-export interface InputNodeData extends BaseNodeData<InputContent> {
-  type: 'INPUT'
-}
+export type BaseNodeData<T extends NodeContent> = XYFlowCompatible<FlowCoreBaseNodeData<T>>
+
+// Concrete node types with xyflow compatibility
+export type InputNodeData = XYFlowCompatible<FlowCoreInputNodeData>
+export type PromptNodeData = XYFlowCompatible<FlowCorePromptNodeData>
+export type GeneratedNodeData = XYFlowCompatible<FlowCoreGeneratedNodeData>
+export type VFSNodeData = XYFlowCompatible<FlowCoreVFSNodeData>
+export type SandboxNodeData = XYFlowCompatible<FlowCoreSandboxNodeData>
+export type LoaderNodeData = XYFlowCompatible<FlowCoreLoaderNodeData>
+export type StateNodeData = XYFlowCompatible<FlowCoreStateNodeData>
 
 /**
- * Prompt node data - represents user-edited prompts/system prompts
- * Content contains: text (prompt text)
+ * Union type for all node data types (with xyflow compatibility)
  */
-export interface PromptNodeData extends BaseNodeData<PromptContent> {
-  type: 'PROMPT'
-}
+export type StudioNodeData = XYFlowCompatible<FlowCoreStudioNodeData>
 
 /**
  * Re-export MessageBlock and related types from @pubwiki/chat for display
  */
 export type { MessageBlock, MessageBlockType, ToolCallStatus } from '@pubwiki/chat'
-
-/**
- * Generated node data - represents AI-generated content
- * Content contains: blocks (MessageBlock[]), inputRef, promptRefs, indirectPromptRefs
- */
-export interface GeneratedNodeData extends BaseNodeData<GeneratedContent> {
-  type: 'GENERATED'
-}
-
-/**
- * VFS node data - represents a virtual file system
- * Content contains: projectId
- * Actual file content is stored in VFS and versioned by git
- */
-export interface VFSNodeData extends BaseNodeData<VFSContent> {
-  type: 'VFS'
-}
-
-/**
- * Sandbox node data - represents a sandbox preview of VFS content
- * Content contains: entryFile, sandboxOrigin
- */
-export interface SandboxNodeData extends BaseNodeData<SandboxContent> {
-  type: 'SANDBOX'
-}
-
-/**
- * Loader node data - Lua VM service executor
- * Content is empty (asset VFS mounts are managed via VFSContent.mounts array)
- */
-export interface LoaderNodeData extends BaseNodeData<LoaderContent> {
-  type: 'LOADER'
-}
-
-/**
- * State node data - represents an RDF triple store for Lua State API
- * Content is empty (actual data is stored in quadstore via IndexedDB)
- */
-export interface StateNodeData extends BaseNodeData<StateContent> {
-  type: 'STATE'
-}
-
-/**
- * Union type for all node data types
- */
-export type StudioNodeData = InputNodeData | PromptNodeData | GeneratedNodeData | VFSNodeData | SandboxNodeData | LoaderNodeData | StateNodeData
 
 // ============================================================================
 // Factory Functions
@@ -177,7 +101,7 @@ export async function createInputNodeData(
   // Convert text to blocks format
   const blocks = text ? [{ type: 'TextBlock' as const, value: text }] : []
   const content = new InputContent(blocks)
-  const contentHash = await computeContentHash(content.toJSON())
+  const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, parent, contentHash, 'INPUT')
   return {
     id,
@@ -201,7 +125,7 @@ export async function createPromptNodeData(
 ): Promise<PromptNodeData> {
   const id = crypto.randomUUID()
   const content = PromptContent.fromText(text)
-  const contentHash = await computeContentHash(content.toJSON())
+  const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, parent, contentHash, 'PROMPT')
   return {
     id,
@@ -231,7 +155,7 @@ export async function createGeneratedNodeData(
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
   const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs, inputVfsRef, outputVfsId, postGenerationCommit)
-  const contentHash = await computeContentHash(content.toJSON())
+  const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, parent, contentHash, 'GENERATED')
   return {
     id,
@@ -257,7 +181,7 @@ export async function createVFSNodeData(
 ): Promise<VFSNodeData> {
   const id = crypto.randomUUID()
   const content = new VFSContent(projectId)
-  const contentHash = await computeContentHash(content.toJSON())
+  const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, null, contentHash, 'VFS')
   return {
     id,
@@ -279,7 +203,7 @@ export async function createSandboxNodeData(
 ): Promise<SandboxNodeData> {
   const id = crypto.randomUUID()
   const content = new SandboxContent('index.html')
-  const contentHash = await computeContentHash(content.toJSON())
+  const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, null, contentHash, 'SANDBOX')
   return {
     id,
@@ -301,7 +225,7 @@ export async function createLoaderNodeData(
 ): Promise<LoaderNodeData> {
   const id = crypto.randomUUID()
   const content = new LoaderContent()
-  const contentHash = await computeContentHash(content.toJSON())
+  const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, null, contentHash, 'LOADER')
   return {
     id,
@@ -323,7 +247,7 @@ export async function createStateNodeData(
 ): Promise<StateNodeData> {
   const id = crypto.randomUUID()
   const content = new StateContent()
-  const contentHash = await computeContentHash(content.toJSON())
+  const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, null, contentHash, 'STATE')
   return {
     id,

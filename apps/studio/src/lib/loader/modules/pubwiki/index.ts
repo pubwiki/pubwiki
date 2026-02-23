@@ -66,7 +66,10 @@ interface PublishInput {
 	slug: string;
 	description?: string;
 	version?: string;
-	visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+	/** Whether to list in public discovery */
+	isListed?: boolean;
+	/** Whether the artifact is private */
+	isPrivate?: boolean;
 	tags?: string[];
 	homepage?: string;
 }
@@ -78,7 +81,8 @@ interface UploadArticleInput {
 	articleId?: string;
 	title: string;
 	content: ReaderContent;
-	visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+	/** Whether to list in public discovery */
+	isListed?: boolean;
 }
 
 /**
@@ -88,8 +92,8 @@ interface UploadArticleInput {
 interface UploadCheckpointInput {
 	/** Checkpoint ID of an existing local checkpoint */
 	checkpointId: string;
-	/** Visibility setting */
-	visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+	/** Whether to list in public discovery */
+	isListed?: boolean;
 }
 
 /**
@@ -99,8 +103,8 @@ interface UploadCheckpointInput {
 interface UploadCheckpointsInput {
 	/** Array of checkpoint IDs to upload */
 	checkpointIds: string[];
-	/** Default visibility for all checkpoints */
-	defaultVisibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+	/** Default isListed for all checkpoints */
+	defaultIsListed?: boolean;
 }
 
 /**
@@ -137,7 +141,8 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				slug: metadata.slug || '',
 				description: metadata.description || '',
 				version: metadata.version || '1.0.0',
-				visibility: metadata.visibility || 'PUBLIC',
+				isListed: metadata.isListed ?? true,
+				isPrivate: metadata.isPrivate ?? false,
 				homepage: metadata.homepage || ''
 			};
 
@@ -158,7 +163,8 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				slug: editedValues.slug as string,
 				description: (editedValues.description as string) || '',
 				version: (editedValues.version as string) || '1.0.0',
-				visibility: (editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED') || 'PUBLIC',
+				isListed: (editedValues.isListed as boolean) ?? true,
+				isPrivate: (editedValues.isPrivate as boolean) ?? false,
 				tags: metadata.tags || [],
 				homepage: (editedValues.homepage as string) || undefined
 			};
@@ -261,7 +267,7 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				const initialValues = {
 					name: checkpoint.title,
 					description: checkpoint.description || '',
-					visibility: data.visibility || 'PRIVATE'
+					isListed: data.isListed ?? false
 				};
 				
 				const editedValues = await requestConfirmation('uploadCheckpoint', UploadCheckpointForm, initialValues);
@@ -302,7 +308,7 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 					contentHash,
 					title: editedValues.name as string,
 					description: editedValues.description as string || undefined,
-					visibility: editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED'
+					isListed: (editedValues.isListed as boolean) ?? false
 				});
 				
 				if (!result.success) {
@@ -404,7 +410,7 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				const initialValues = {
 					count: checkpointsToUpload.length,
 					names: checkpointsToUpload.map(c => c.title).join(', '),
-					visibility: data.defaultVisibility || 'PRIVATE'
+					isListed: data.defaultIsListed ?? false
 				};
 				
 				const editedValues = await requestConfirmation('uploadCheckpoints', UploadCheckpointsForm, initialValues);
@@ -416,7 +422,7 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 					};
 				}
 				
-				const visibility = editedValues.visibility as 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+				const isListed = (editedValues.isListed as boolean) ?? false;
 				const uploadedIds: string[] = [];
 				
 				// Upload each checkpoint
@@ -450,7 +456,7 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 						contentHash,
 						title: cp.title,
 						description: cp.description,
-						visibility
+						isListed
 					});
 					
 					if (!result.success) {

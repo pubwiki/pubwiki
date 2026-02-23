@@ -13,7 +13,7 @@
 	 */
 	import { onMount } from 'svelte';
 	import type { StateNodeData } from '$lib/types';
-	import type { SaveDetail, VisibilityType } from '@pubwiki/api';
+	import type { SaveDetail } from '@pubwiki/api';
 	import { type Checkpoint as LocalCheckpoint } from '@pubwiki/rdfstore';
 	import { getNodeRDFStore, type RDFStore } from '$lib/rdf';
 	import { nodeStore } from '$lib/persistence';
@@ -47,7 +47,7 @@
 		timestamp: number;
 		quadCount: number;
 		source: 'local' | 'cloud';
-		visibility?: VisibilityType;
+		isListed?: boolean;
 		commit?: string; // Only for cloud saves
 	}
 
@@ -73,7 +73,7 @@
 	let showCreateForm = $state(false);
 	let newCheckpointTitle = $state('');
 	let newCheckpointDescription = $state('');
-	let newCheckpointVisibility = $state<VisibilityType>('PRIVATE');
+	let newCheckpointIsListed = $state(false);
 
 	// Derived: combined checkpoints based on active tab
 	let checkpoints = $derived(activeTab === 'local' ? localCheckpoints : cloudSaves);
@@ -153,7 +153,7 @@
 				timestamp: new Date(s.createdAt).getTime(),
 				quadCount: 0, // Not available from API
 				source: 'cloud' as const,
-				visibility: s.visibility
+				isListed: s.isListed
 			})).sort((a, b) => b.timestamp - a.timestamp);
 		} catch (e) {
 			console.error('Failed to refresh cloud saves:', e);
@@ -280,7 +280,7 @@
 				contentHash,
 				title: newCheckpointTitle.trim(),
 				description: newCheckpointDescription.trim() || undefined,
-				visibility: newCheckpointVisibility
+				isListed: newCheckpointIsListed
 			});
 
 			if (!result.success) {
@@ -290,7 +290,7 @@
 			// Reset form
 			newCheckpointTitle = '';
 			newCheckpointDescription = '';
-			newCheckpointVisibility = 'PRIVATE';
+			newCheckpointIsListed = false;
 			showCreateForm = false;
 
 			await refreshCloudSaves();
@@ -480,7 +480,7 @@
 				contentHash,
 				title: checkpoint.title,
 				description: checkpoint.description,
-				visibility: 'PRIVATE'
+				isListed: false
 			});
 
 			if (!result.success) {
@@ -528,13 +528,8 @@
 	}
 
 	// Get visibility label
-	function getVisibilityLabel(visibility: VisibilityType): string {
-		switch (visibility) {
-			case 'PUBLIC': return '公开';
-			case 'PRIVATE': return '私有';
-			case 'UNLISTED': return '不公开';
-			default: return visibility;
-		}
+	function getVisibilityLabel(isListed: boolean | undefined): string {
+		return isListed ? '公开列表' : '私有';
 	}
 
 	// Track if we've initialized
@@ -665,16 +660,16 @@
 			</div>
 			{#if activeTab === 'cloud' && canUseCloud}
 				<div>
-					<label for="checkpoint-visibility" class="block text-xs font-medium text-gray-600 mb-1">可见性</label>
-					<select
-						id="checkpoint-visibility"
-						bind:value={newCheckpointVisibility}
-						class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500"
-					>
-						<option value="PRIVATE">私有 - 仅自己可见</option>
-						<option value="UNLISTED">不公开 - 有链接可见</option>
-						<option value="PUBLIC">公开 - 所有人可见</option>
-					</select>
+					<label for="checkpoint-listed" class="block text-xs font-medium text-gray-600 mb-1">可见性</label>
+					<label class="flex items-center gap-2 cursor-pointer">
+						<input
+							id="checkpoint-listed"
+							type="checkbox"
+							bind:checked={newCheckpointIsListed}
+							class="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
+						/>
+						<span class="text-sm text-gray-700">公开列表中可见</span>
+					</label>
 				</div>
 			{/if}
 			<div class="flex gap-2">
@@ -734,7 +729,7 @@
 										<span class="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">本地</span>
 									{:else}
 										<span class="px-1.5 py-0.5 text-xs bg-teal-100 text-teal-700 rounded">
-											{checkpoint.visibility ? getVisibilityLabel(checkpoint.visibility) : '云端'}
+										{getVisibilityLabel(checkpoint.isListed)}
 										</span>
 									{/if}
 								</div>

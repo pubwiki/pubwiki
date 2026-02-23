@@ -6,13 +6,13 @@
  * Responsibilities:
  * - Track which nodes need contentHash/commit recalculation (dirty tracking)
  * - Avoid duplicate calculations (pending dedup)
- * - Compute and update contentHash/commit via @pubwiki/api
+ * - Compute and update contentHash/commit via @pubwiki/flow-core
  * - Manage snapshot storage
  * 
  * Design Principles:
  * - Decoupled from NodeStore, can be independently tested
  * - Does not directly modify NodeStore data, notifies via callback
- * - Uses @pubwiki/api for hash computation (single source of truth)
+ * - Uses @pubwiki/flow-core for hash computation (single source of truth)
  * - Debounced background updates + async getter for immediate access
  */
 
@@ -137,9 +137,10 @@ export class VersionService {
    * Internal: Compute and update contentHash and commit.
    */
   private async computeAndUpdate(nodeId: string, nodeData: StudioNodeData): Promise<string> {
-    // Use toJSON() to get serializable content (now strongly typed)
-    const content = nodeData.content.toJSON();
-    const newContentHash = await computeContentHash(content);
+    // Compute content hash from NodeContent object
+    // Note: toJSON() returns local storage format, cast to API format for hash computation
+    // The hash will be based on local storage format fields
+    const newContentHash = await computeContentHash(nodeData.content.toJSON() as Parameters<typeof computeContentHash>[0]);
     
     // If hash actually changed
     if (newContentHash !== nodeData.contentHash) {

@@ -14,7 +14,7 @@
 
 import type { RDFStore } from '@pubwiki/rdfstore';
 import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
-import type { SaveDetail, VisibilityType } from '@pubwiki/api';
+import type { SaveDetail } from '@pubwiki/api';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 
@@ -43,8 +43,8 @@ export interface CreateSaveOptions {
   title?: string;
   /** Save description */
   description?: string;
-  /** Visibility setting */
-  visibility?: VisibilityType;
+  /** Whether save is listed in public lists */
+  isListed?: boolean;
 }
 
 /**
@@ -87,7 +87,7 @@ export async function createSaveCheckpoint(
       contentHash: options.contentHash,
       title: options.title,
       description: options.description,
-      visibility: options.visibility ?? 'PRIVATE'
+      isListed: options.isListed ?? false
     }));
     formData.append('data', new Blob([quadsData], { type: 'application/octet-stream' }));
 

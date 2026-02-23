@@ -574,7 +574,8 @@ export function createDraftSyncService() {
       name: projectName,
       slug: `${slug}-${artifactId.slice(0, 8)}`, // Ensure uniqueness
       description: 'Draft sync',
-      visibility: 'PRIVATE', // Enforce PRIVATE
+      isListed: false, // Not discoverable
+      isPrivate: true, // Private access
       version: '0.0.1-draft',
       tags: [],
       commitTags: [DRAFT_LATEST_TAG]
@@ -628,8 +629,6 @@ export function createDraftSyncService() {
     const metadata: PatchMetadata = {
       artifactId: project.artifactId,
       baseCommit,
-      name: projectName,
-      visibility: 'PRIVATE', // Enforce PRIVATE
       commitTags: [DRAFT_LATEST_TAG]
     };
 
