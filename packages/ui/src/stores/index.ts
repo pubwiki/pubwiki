@@ -8,3 +8,4 @@ export {
 	type ApiSettings,
 	type UserSettings
 } from './settings.svelte';
+export { toastStore, type Toast } from './toast.svelte';

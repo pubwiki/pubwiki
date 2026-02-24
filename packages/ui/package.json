@@ -3,6 +3,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
+		".":  "./src/index.ts",
 		"./components": "./src/components/index.ts",
 		"./stores": "./src/stores/index.ts",
 		"./utils": "./src/utils/index.ts"

@@ -21,6 +21,8 @@ import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata } from '../io/publish';
 import { getNodeVfs, type NodeVfs } from '../vfs';
 import { SvelteMap } from 'svelte/reactivity';
+import { errorRouter } from '$lib/errors';
+import { AppError } from '$lib/errors/types';
 
 // ============================================================================
 // Constants
@@ -182,7 +184,12 @@ export function createDraftSyncService() {
           await vfs.refreshDirtyState();
           console.log('[DraftSync] VFS node tracked, isDirty:', vfs.isDirty);
         } catch (err) {
-          console.warn(`[DraftSync] Failed to track VFS node ${nodeId}:`, err);
+          errorRouter.dispatch(
+            new AppError('VFS_TRACK_FAILED', `Failed to track VFS node ${nodeId}`, 'storage', 'warning', false, {
+              nodeId,
+              operation: 'trackVfsNode'
+            })
+          );
         }
       }
     }
@@ -330,7 +337,11 @@ export function createDraftSyncService() {
       baseState.backendValidated = true;
       
     } catch (err) {
-      console.error('[DraftSync] Error validating backend state:', err);
+      errorRouter.dispatch(
+        new AppError('SYNC_VALIDATE_FAILED', 'Failed to connect to sync server', 'network', 'warning', true, {
+          operation: 'validateBackendState'
+        })
+      );
       baseState.backendValidated = false;
       baseState.error = 'Failed to connect to sync server';
     }
@@ -702,7 +713,14 @@ export function createDraftSyncService() {
         }
       });
       return data?.version?.commitHash ?? null;
-    } catch {
+    } catch (err) {
+      // Log but don't surface to user - caller handles null case
+      errorRouter.dispatch(
+        new AppError('FETCH_CLOUD_COMMIT_FAILED', 'Failed to fetch cloud commit', 'network', 'info', true, {
+          artifactId,
+          operation: 'fetchCurrentCloudCommit'
+        })
+      );
       return null;
     }
   }
