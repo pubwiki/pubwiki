@@ -35,6 +35,10 @@ const mockUsers = [
   { username: 'user_b', email: 'user_b@example.com', password: 'password123', displayName: 'User B' },
   { username: 'worldbuilder', email: 'worldbuilder@example.com', password: 'password123', displayName: 'World Builder' },
   { username: 'gamedev', email: 'gamedev@example.com', password: 'password123', displayName: 'Game Developer' },
+  { username: 'creator_alice', email: 'alice@example.com', password: 'password123', displayName: 'Alice Creator' },
+  { username: 'creator_bob', email: 'bob@example.com', password: 'password123', displayName: 'Bob Creator' },
+  { username: 'creator_carol', email: 'carol@example.com', password: 'password123', displayName: 'Carol Creator' },
+  { username: 'creator_dave', email: 'dave@example.com', password: 'password123', displayName: 'Dave Creator' },
 ];
 
 // Mock 文件类型定义
@@ -59,7 +63,6 @@ interface MockArtifactNode {
 
 interface MockArtifact {
   authorUsername: string;
-  type: 'RECIPE' | 'GAME' | 'ASSET_PACK' | 'PROMPT';
   name: string;
   slug: string;
   description: string;
@@ -514,7 +517,6 @@ async function loadMockArtifactsFromDirectory(): Promise<MockArtifact[]> {
       const configContent = fs.readFileSync(configPath, 'utf-8');
       const config = JSON.parse(configContent) as {
         authorUsername: string;
-        type: 'RECIPE' | 'GAME' | 'ASSET_PACK' | 'PROMPT';
         name: string;
         slug: string;
         description: string;
@@ -662,7 +664,6 @@ async function loadMockArtifactsFromDirectory(): Promise<MockArtifact[]> {
       
       artifacts.push({
         authorUsername: authorExists ? config.authorUsername : 'user_a',
-        type: config.type,
         name: config.name,
         slug: config.slug,
         description: config.description,
@@ -1056,6 +1057,128 @@ async function createMockPosts(): Promise<void> {
   }
 }
 
+// 生成随机 mock artifacts 的辅助数据
+const artifactPrefixes = [
+  'Awesome', 'Super', 'Ultra', 'Mega', 'Epic', 'Legendary', 'Amazing', 'Fantastic',
+  'Incredible', 'Wonderful', 'Stellar', 'Cosmic', 'Mystic', 'Magic', 'Divine',
+  'Shadow', 'Light', 'Dark', 'Bright', 'Golden', 'Silver', 'Crystal', 'Diamond',
+  'Fire', 'Ice', 'Thunder', 'Wind', 'Earth', 'Water', 'Storm', 'Frost',
+  'Dragon', 'Phoenix', 'Tiger', 'Lion', 'Eagle', 'Wolf', 'Bear', 'Hawk',
+  'Cyber', 'Neon', 'Retro', 'Future', 'Pixel', 'Vector', 'Digital', 'Quantum',
+];
+
+const artifactSuffixes = [
+  'Quest', 'Adventure', 'Journey', 'Chronicles', 'Saga', 'Tales', 'Story', 'Legend',
+  'World', 'Realm', 'Kingdom', 'Empire', 'Domain', 'Universe', 'Dimension', 'Galaxy',
+  'Battle', 'War', 'Combat', 'Fight', 'Clash', 'Strike', 'Assault', 'Siege',
+  'Runner', 'Jumper', 'Shooter', 'Racer', 'Flyer', 'Climber', 'Diver', 'Explorer',
+  'Puzzle', 'Mystery', 'Enigma', 'Riddle', 'Maze', 'Labyrinth', 'Challenge', 'Trial',
+  'Builder', 'Crafter', 'Maker', 'Creator', 'Designer', 'Architect', 'Engineer', 'Artist',
+  'Simulator', 'Manager', 'Tycoon', 'Factory', 'Farm', 'City', 'Town', 'Village',
+  'RPG', 'Arena', 'Dungeon', 'Tower', 'Castle', 'Island', 'Mountain', 'Valley',
+];
+
+const tagPool = [
+  'game', 'interactive', 'playable', 'entertainment', 'casual', 'action', 'puzzle', 'strategy', 'rpg', 'arcade', 'simulation', 'adventure',
+  'recipe', 'workflow', 'automation', 'template', 'generator', 'ai', 'creative', 'productivity', 'utility', 'tool', 'helper',
+  'assets', 'resources', 'pack', 'collection', 'sprites', 'sounds', 'textures', 'models', 'icons', 'fonts', 'themes',
+  'prompt', 'gpt', 'llm', 'writing', 'story', 'character', 'dialogue', 'narrative', 'roleplay',
+];
+
+const descriptionTemplates = [
+  'A fantastic creation that will blow your mind! Experience the ultimate {adjective} adventure.',
+  'Discover the {adjective} world of {name}. Perfect for fans of interactive content.',
+  '{name} brings you {adjective} experiences like never before. Try it now!',
+  'An {adjective} creation featuring innovative gameplay and stunning visuals.',
+  'Welcome to {name} - where {adjective} dreams become reality.',
+  'The most {adjective} artifact you will ever experience. Start your journey today!',
+  'Immerse yourself in this {adjective} masterpiece. {name} awaits you.',
+  'An {adjective} artifact crafted with love and creativity. Join thousands of players!',
+  'Experience {adjective} content that pushes the boundaries of what is possible.',
+  '{name}: The {adjective} artifact that everyone is talking about.',
+];
+
+const adjectives = [
+  'amazing', 'brilliant', 'creative', 'dynamic', 'elegant', 'fantastic', 'gorgeous', 
+  'hilarious', 'innovative', 'joyful', 'kinetic', 'legendary', 'magnificent', 'noble',
+  'outstanding', 'powerful', 'quirky', 'remarkable', 'stunning', 'thrilling', 
+  'unique', 'vibrant', 'wonderful', 'exciting', 'zen', 'epic', 'cosmic',
+];
+
+const homepageTemplates = [
+  '# {name}\n\nWelcome to **{name}**!\n\n## Features\n\n- Interactive gameplay\n- Beautiful visuals\n- Engaging content\n\n## How to Use\n\n1. Click start\n2. Follow the instructions\n3. Have fun!\n\n## Credits\n\nCreated with ❤️',
+  '# {name}\n\n> {description}\n\n## Overview\n\nThis artifact brings you an unforgettable experience.\n\n## Getting Started\n\nJust dive in and explore!\n\n---\n\n*Thank you for checking out {name}!*',
+  '# Welcome to {name}\n\n{description}\n\n### What makes this special?\n\n- Unique concept\n- Polished execution\n- Community-driven\n\n### Support\n\nIf you enjoy this, please share it with your friends!',
+];
+
+// 生成随机 artifacts
+function generateRandomArtifacts(count: number): MockArtifact[] {
+  const artifacts: MockArtifact[] = [];
+  const usedSlugs = new Set<string>();
+
+  for (let i = 0; i < count; i++) {
+    const prefix = artifactPrefixes[Math.floor(Math.random() * artifactPrefixes.length)];
+    const suffix = artifactSuffixes[Math.floor(Math.random() * artifactSuffixes.length)];
+    const name = `${prefix} ${suffix}`;
+    
+    // 生成唯一的 slug
+    let slug = `${prefix.toLowerCase()}-${suffix.toLowerCase()}-${i}`;
+    while (usedSlugs.has(slug)) {
+      slug = `${prefix.toLowerCase()}-${suffix.toLowerCase()}-${i}-${Math.floor(Math.random() * 1000)}`;
+    }
+    usedSlugs.add(slug);
+
+    const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const descTemplate = descriptionTemplates[Math.floor(Math.random() * descriptionTemplates.length)];
+    
+    const description = descTemplate
+      .replace(/\{name\}/g, name)
+      .replace(/\{adjective\}/g, adjective);
+
+    // 随机选择 tags
+    const numTags = 2 + Math.floor(Math.random() * 3); // 2-4 tags
+    const shuffledTags = [...tagPool].sort(() => Math.random() - 0.5);
+    const tags = shuffledTags.slice(0, numTags);
+
+    // 随机选择作者
+    const author = mockUsers[Math.floor(Math.random() * mockUsers.length)];
+
+    // 生成 homepage
+    const homepageTemplate = homepageTemplates[Math.floor(Math.random() * homepageTemplates.length)];
+    const homepage = homepageTemplate
+      .replace(/\{name\}/g, name)
+      .replace(/\{description\}/g, description);
+
+    // 随机 visibility（大部分是 PUBLIC）
+    const visibilityRoll = Math.random();
+    const visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 
+      visibilityRoll < 0.85 ? 'PUBLIC' : visibilityRoll < 0.95 ? 'UNLISTED' : 'PRIVATE';
+
+    // 版本号
+    const major = 1 + Math.floor(Math.random() * 3);
+    const minor = Math.floor(Math.random() * 10);
+    const patch = Math.floor(Math.random() * 10);
+    const version = `${major}.${minor}.${patch}`;
+
+    artifacts.push({
+      authorUsername: author.username,
+      name,
+      slug,
+      description,
+      visibility,
+      license: 'CC-BY-4.0',
+      version,
+      changelog: `Version ${version} - Initial release`,
+      tags,
+      nodes: [], // Will be created by createArtifact with default SANDBOX node
+      edges: [],
+      homepage,
+    });
+  }
+
+  return artifacts;
+}
+
 // 主函数
 async function main() {
   console.log('🌱 Seeding mock data via API...');
@@ -1091,16 +1214,27 @@ async function main() {
   const artifacts = await loadMockArtifactsFromDirectory();
   console.log('');
 
+  // 步骤 2.5: 生成随机 artifacts
+  console.log('🎲 Generating random artifacts...');
+  const randomArtifactCount = 300; // 生成 300 个随机 artifacts
+  const randomArtifacts = generateRandomArtifacts(randomArtifactCount);
+  console.log(`  ✓ Generated ${randomArtifacts.length} random artifacts`);
+  const allArtifacts = [...artifacts, ...randomArtifacts];
+  console.log('');
+
   // 步骤 3: 按依赖顺序创建 artifacts
   // 先创建没有外部引用的 artifacts，再创建有外部引用的
   console.log('📦 Creating artifacts...');
   
-  const artifactsWithoutExternalRefs = artifacts.filter(
+  const artifactsWithoutExternalRefs = allArtifacts.filter(
     a => !a.nodes.some(n => n.external && n.externalArtifactSlug)
   );
-  const artifactsWithExternalRefs = artifacts.filter(
+  const artifactsWithExternalRefs = allArtifacts.filter(
     a => a.nodes.some(n => n.external && n.externalArtifactSlug)
   );
+
+  let createdCount = 0;
+  const totalCount = allArtifacts.length;
 
   for (const artifact of artifactsWithoutExternalRefs) {
     const user = mockUsers.find(u => u.username === artifact.authorUsername);
@@ -1109,6 +1243,11 @@ async function main() {
     try {
       const cookie = await getOrCreateUserCookie(user);
       await createArtifact(artifact, cookie);
+      createdCount++;
+      // 每 50 个显示进度
+      if (createdCount % 50 === 0) {
+        console.log(`  📊 Progress: ${createdCount}/${totalCount}`);
+      }
     } catch (error) {
       console.error(`  ❌ ${error}`);
     }
@@ -1121,6 +1260,10 @@ async function main() {
     try {
       const cookie = await getOrCreateUserCookie(user);
       await createArtifact(artifact, cookie);
+      createdCount++;
+      if (createdCount % 50 === 0) {
+        console.log(`  📊 Progress: ${createdCount}/${totalCount}`);
+      }
     } catch (error) {
       console.error(`  ❌ ${error}`);
     }
@@ -1161,7 +1304,7 @@ async function main() {
       }
       
       // 使用 artifact 作者的 cookie 来链接（社区贡献）
-      const artifactConfig = artifacts.find(a => a.slug === link.artifactSlug);
+      const artifactConfig = allArtifacts.find(a => a.slug === link.artifactSlug);
       if (!artifactConfig) continue;
       
       const user = mockUsers.find(u => u.username === artifactConfig.authorUsername);
@@ -1195,7 +1338,7 @@ async function main() {
   console.log('');
   console.log('📊 Summary:');
   console.log(`   Users: ${mockUsers.length}`);
-  console.log(`   Artifacts: ${createdArtifacts.size}`);
+  console.log(`   Artifacts: ${createdArtifacts.size} (target: ${allArtifacts.length})`);
   console.log(`   Projects: ${createdProjects.size}`);
   console.log(`   Articles: ${createdArticles.size} (skipped)`);
 }
