@@ -23,7 +23,7 @@ import { restoreContent, type NodeType, VFSContent } from '../types/content';
 import { getNodeVfs } from '../vfs';
 import { getNodeRDFStore } from '../rdf';
 import JSZip from 'jszip';
-import type { ExportManifest, ExportedNodeData, ExportedSnapshot } from './export-local';
+import type { ExportManifest, ExportedNodeData } from './export-local';
 
 // ============================================================================
 // Import Functions

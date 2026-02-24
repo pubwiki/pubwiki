@@ -80,7 +80,8 @@ export function useLiveQuery<T>(
   const observable = liveQuery(querier);
   
   // Subscribe to the observable
-  const subscription = observable.subscribe({
+  // Keep subscription alive for the component's lifetime
+  observable.subscribe({
     next: (value) => {
       data = value;
       loading = false;
@@ -125,7 +126,8 @@ export function useObservable<T>(
   let loading = $state(true);
   let error = $state<Error | undefined>(undefined);
   
-  const subscription = observable.subscribe({
+  // Keep subscription alive for the component's lifetime
+  observable.subscribe({
     next: (value) => {
       data = value;
       loading = false;

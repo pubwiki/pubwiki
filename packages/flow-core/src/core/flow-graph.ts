@@ -6,7 +6,7 @@
  * without any framework or browser dependencies.
  */
 
-import type { Versionable, NodeRef, SnapshotEdge, SnapshotPosition, NodeSnapshot } from '../types/version'
+import type { Versionable, NodeRef, NodeSnapshot } from '../types/version'
 import type { NodeType, NodeContent } from '../types/content'
 import type { GraphEdge } from '../types/edge'
 import type { INodeStore, ISnapshotStore, SaveSnapshotOptions } from '../interfaces/store'

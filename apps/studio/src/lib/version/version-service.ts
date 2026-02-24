@@ -15,13 +15,11 @@ import type { Node, Edge } from '@xyflow/svelte'
 import type {
 	NodeRef,
 	SnapshotEdge,
-	SnapshotPosition,
 	Versionable,
 	HistoricalTreeResult
 } from './types'
-import type { FlowNodeData } from '../types/flow'
+import type { FlowNodeData } from '$lib/types'
 import { nodeStore } from '../persistence/node-store.svelte'
-import type { NodeContent } from '../types/content'
 import type { StudioNodeData } from '../types'
 import { db } from '../persistence/db'
 import { computeContentHash, type ArtifactNodeContent } from '@pubwiki/api'
@@ -411,7 +409,11 @@ export function styleEdgesForVersions<TData extends Versionable>(
 			}
 		} else if (edge.style) {
 			changed = true
-			const { style, animated, ...rest } = edge
+			// Destructure to remove style/animated properties while keeping rest
+			const edgeWithStyle = edge as Edge & { style?: unknown; animated?: unknown }
+			const { style, animated, ...rest } = edgeWithStyle
+			void style
+			void animated
 			return rest
 		}
 

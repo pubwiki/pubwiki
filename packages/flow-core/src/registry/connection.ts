@@ -5,9 +5,6 @@
  * Provides type-safe handle definitions and connection validation.
  */
 
-import type { StudioNodeData } from '../types/node'
-import type { GraphEdge } from '../types/edge'
-
 // ============================================================================
 // Data Types
 // ============================================================================

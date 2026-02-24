@@ -5,11 +5,7 @@
  * The base types come from flow-core, we only add the index signature here.
  */
 
-import { 
-  type NodeRef, 
-  type SnapshotPosition
-} from '../version'
-import { computeNodeCommit, computeContentHash } from '@pubwiki/flow-core'
+import { computeNodeCommit, computeContentHash, type NodeRef } from '@pubwiki/flow-core'
 
 // Import base types from flow-core
 import {

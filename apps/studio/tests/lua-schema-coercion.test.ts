@@ -47,10 +47,12 @@ class MemoryVfsProvider implements VfsProvider {
 	}
 
 	async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
+		void options
 		this.directories.add(this.normalizePath(path))
 	}
 
 	async readdir(path: string): Promise<string[]> {
+		void path
 		return []
 	}
 
@@ -402,7 +404,7 @@ describe('LuaBackend Schema Coercion Integration', () => {
 			await backend.listServices()
 
 			const received: unknown[] = []
-            //@ts-ignore
+            // @ts-expect-error - streamService exists but not typed
 			await backend.streamService('test:streamWithArrays', {}, async (value) => {
 				received.push(value)
 			})

@@ -12,11 +12,10 @@
  */
 
 import type { Node, Edge } from '@xyflow/svelte';
-import type { StudioNodeData, VFSNodeData, StateNodeData } from '../types';
+import type { StudioNodeData, VFSNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
-import { StateContent } from '../types';
-import { createApiClient, type paths } from '@pubwiki/api/client';
-import { type components, computeArtifactCommit, computeNodeCommit, computeContentHash } from '@pubwiki/api';
+import { createApiClient } from '@pubwiki/api/client';
+import { type components, computeArtifactCommit } from '@pubwiki/api';
 import { API_BASE_URL } from '$lib/config';
 import { getNodeVfs } from '../vfs';
 import { nodeStore } from '../persistence';
@@ -25,7 +24,6 @@ import { nodeStore } from '../persistence';
 const apiClient = createApiClient(API_BASE_URL);
 
 // API types from OpenAPI schema
-type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
 type CreateArtifactNode = components['schemas']['CreateArtifactNode'];
 type ArtifactEdgeDescriptor = components['schemas']['ArtifactEdgeDescriptor'];
 type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
@@ -395,7 +393,7 @@ export interface PublishResult {
  * in the published artifact, but cloud save sync features are not available until the
  * new Save API is fully implemented.
  */
-function validateStateNodes(_nodes: Node<StudioNodeData>[]): { valid: boolean; error?: string } {
+function validateStateNodes(): { valid: boolean; error?: string } {
 	// Cloud checkpoint validation is temporarily disabled
 	// STATE nodes can be published with local data only
 	return { valid: true };
@@ -441,7 +439,7 @@ export async function publishArtifact(
 		.filter((n): n is Node<StudioNodeData> => n !== null);
 
 	// Validate STATE nodes have checkpoints
-	const stateValidation = validateStateNodes(nodes);
+	const stateValidation = validateStateNodes();
 	if (!stateValidation.valid) {
 		return {
 			success: false,
@@ -838,7 +836,7 @@ export async function patchArtifact(
 	try {
 		// Use openapi-fetch with bodySerializer for multipart/form-data
 		// See: https://openapi-ts.dev/openapi-fetch/api#bodyserializer
-		const { data, error, response } = await apiClient.PATCH('/artifacts', {
+		const { error, response } = await apiClient.PATCH('/artifacts', {
 			body: {
 				metadata: patchMetadata,
 				// VFS archives will be added in bodySerializer

@@ -519,7 +519,8 @@ export class LoaderContent implements NodeContent {
     return { type: 'LOADER' as const }
   }
 
-  static fromJSON(_data: { type?: 'LOADER' }): LoaderContent {
+  static fromJSON(data: { type?: 'LOADER' }): LoaderContent {
+    void data
     return new LoaderContent()
   }
 }
@@ -546,7 +547,8 @@ export class StateContent implements NodeContent {
     return { type: 'STATE' as const }
   }
 
-  static fromJSON(_data: { type?: 'STATE' }): StateContent {
+  static fromJSON(data: { type?: 'STATE' }): StateContent {
+    void data
     return new StateContent()
   }
 }

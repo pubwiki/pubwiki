@@ -27,9 +27,9 @@
  */
 
 import { SvelteMap } from 'svelte/reactivity';
-import { db, type StoredNodeData, type StoredSnapshotEdge, type StoredPosition } from './db';
-import { restoreContent, type NodeType, type NodeContent } from '../types/content';
-import type { NodeRef, SnapshotEdge, SnapshotPosition } from '../version/types';
+import { db, type StoredNodeData } from './db';
+import { restoreContent, type NodeType } from '../types/content';
+import type { SnapshotEdge, SnapshotPosition } from '../version/types';
 import type { StudioNodeData } from '../types';
 import { versionService } from '../version/version-service.svelte';
 

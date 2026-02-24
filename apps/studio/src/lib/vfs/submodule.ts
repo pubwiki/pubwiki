@@ -10,7 +10,7 @@
 
 import { nodeStore } from '$lib/persistence';
 import type { VFSContent } from '$lib/types';
-import type { NodeVfs, SubmoduleInfo } from './node-vfs.svelte';
+import type { NodeVfs } from './node-vfs.svelte';
 
 // Re-export SubmoduleInfo for consumers
 export type { SubmoduleInfo } from './node-vfs.svelte';

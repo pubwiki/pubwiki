@@ -6,7 +6,6 @@
  * - Auto-creation of output VFS for file creation scenarios
  */
 
-import { tick } from 'svelte';
 import { Position, type Node, type Edge } from '@xyflow/svelte';
 import type { 
 	StudioNodeData, 
@@ -22,11 +21,9 @@ import {
 	HandleId
 } from '$lib/graph';
 import { prepareForGeneration, type SnapshotEdge } from '$lib/version';
-import { positionNewNodesFromSources } from '$lib/graph';
-import { getNodeVfs } from '$lib/vfs';
+import { getNodeVfs, type NodeVfs } from '$lib/vfs';
 import { getVfsController } from '../vfs/controller.svelte';
-import { Vfs } from '@pubwiki/vfs';
-import { generateBlockId, blocksToContent } from '@pubwiki/chat';
+import { generateBlockId } from '@pubwiki/chat';
 import { 
 	createPubChat, 
 	streamGeneration, 
@@ -82,7 +79,7 @@ export function isFileWriteTool(toolName: string): boolean {
 interface PendingVfsNode {
 	nodeData: VFSNodeData;
 	flowNode: Node<FlowNodeData>;
-	vfs: Vfs<any>;
+	vfs: NodeVfs;
 }
 
 /**
@@ -303,7 +300,7 @@ export async function generate(
 				inputVfsRef = { nodeId: vfsNodeId, commit: baseCommit.hash };
 				outputVfsId = vfsNodeId;  // Output to the same VFS
 				console.log('[Generate] Recorded input VFS ref:', inputVfsRef);
-			} catch (e) {
+			} catch {
 				// May fail if no changes to commit - get HEAD instead
 				try {
 					const head = await vfsController.vfs.getHead();
@@ -495,7 +492,7 @@ export async function generate(
 				return [...updatedBlocks, resultBlock];
 			});
 		},
-		onDone: async (nodeId, _finalContent) => {
+		onDone: async (nodeId) => {
 			// Notify streaming complete
 			notifyStreamingChange(nodeId, false);
 			
@@ -571,7 +568,7 @@ export async function generate(
 			}
 			callbacks.onComplete?.();
 		},
-		onError: (nodeId, _error) => {
+		onError: (nodeId) => {
 			// Notify streaming complete (even on error)
 			notifyStreamingChange(nodeId, false);
 			

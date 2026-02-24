@@ -15,9 +15,7 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { FlowNodeData } from '../types/flow';
 import type { StoredProject } from '../persistence/db';
-import type { VFSNodeData } from '../types';
 import { saveProject, getProject } from '../persistence/db';
-import { nodeStore } from '../persistence';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata } from '../io/publish';
@@ -114,7 +112,7 @@ export function createDraftSyncService() {
   const trackedVfsInstances = new SvelteMap<string, NodeVfs>();
   
   // Base reactive state (without hasVfsChanges - that's derived)
-  let baseState = $state<Omit<DraftSyncState, 'hasVfsChanges'>>({
+  const baseState = $state<Omit<DraftSyncState, 'hasVfsChanges'>>({
     status: 'idle',
     hasUnsyncedChanges: false,
     lastSyncedAt: null,
@@ -127,7 +125,7 @@ export function createDraftSyncService() {
   
   // Derived VFS dirty state - aggregates isDirty from all tracked VFS instances
   // SvelteMap is reactive, so iterating over it establishes dependencies
-  let hasVfsChanges = $derived.by(() => {
+  const hasVfsChanges = $derived.by(() => {
     console.log('[DraftSync] Computing hasVfsChanges, trackedVfsInstances count:', trackedVfsInstances.size);
     for (const [nodeId, vfs] of trackedVfsInstances.entries()) {
       console.log('[DraftSync] VFS node:', nodeId, 'isDirty:', vfs.isDirty);
@@ -139,7 +137,7 @@ export function createDraftSyncService() {
   });
   
   // Combined state with hasVfsChanges derived
-  let state = $derived<DraftSyncState>({
+  const state = $derived<DraftSyncState>({
     ...baseState,
     hasVfsChanges
   });
@@ -504,8 +502,7 @@ export function createDraftSyncService() {
         result = await performPatchSync(
           currentProject,
           nodes,
-          edges,
-          projectName
+          edges
         );
       } else {
         // First sync or re-sync after reset - create/recreate artifact
@@ -606,8 +603,7 @@ export function createDraftSyncService() {
   async function performPatchSync(
     project: StoredProject,
     nodes: Node<FlowNodeData>[],
-    edges: Edge[],
-    projectName: string
+    edges: Edge[]
   ): Promise<SyncResult> {
     if (!project.artifactId) {
       return { success: false, error: 'No artifact ID' };

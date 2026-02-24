@@ -17,8 +17,6 @@ import { createGraphQuery, type GraphQueryInterface } from './graph-query';
 import { createGraphMutation, type GraphMutationInterface, type FlowCallbacks, type GenerationSettings } from './graph-mutation';
 import { createOrchestratorTools } from './tools';
 import type { CopilotSettings } from './types';
-import type { Node, Edge } from '@xyflow/svelte';
-import type { FlowNodeData } from '$lib/types/flow';
 
 // Import system prompt from markdown file
 import ORCHESTRATOR_SYSTEM_PROMPT from './prompts/orchestrator.md?raw';

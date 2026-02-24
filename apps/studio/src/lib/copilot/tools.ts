@@ -139,7 +139,7 @@ export function createOrchestratorTools(
           content,
           relativeTo: relativeToId ? { nodeId: relativeToId, direction: 'left' } : undefined,
         });
-        return { success: true, nodeName: name, message: `Created Prompt node "${name}"` };
+        return { success: true, nodeId, nodeName: name, message: `Created Prompt node "${name}"` };
       },
     }),
     
@@ -220,7 +220,7 @@ export function createOrchestratorTools(
           type: 'VFS',
           name,
         });
-        return { success: true, nodeName: name, message: `Created VFS node "${name}"` };
+        return { success: true, nodeId, nodeName: name, message: `Created VFS node "${name}"` };
       },
     }),
     
@@ -317,7 +317,7 @@ export function createOrchestratorTools(
           type: 'STATE',
           name,
         });
-        return { success: true, nodeName: name, message: `Created State node "${name}"` };
+        return { success: true, nodeId, nodeName: name, message: `Created State node "${name}"` };
       },
     }),
     

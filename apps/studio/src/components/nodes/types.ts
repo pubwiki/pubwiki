@@ -2,9 +2,8 @@
  * Type definitions for node components
  */
 
-import type { Node } from '@xyflow/svelte';
-import type { StudioNodeData, BaseNodeData } from '$lib/types';
-import type { NodeRef, SnapshotEdge } from '$lib/version';
+import type { StudioNodeData } from '$lib/types';
+import type { SnapshotEdge } from '$lib/version';
 
 /**
  * Common props passed to all node types

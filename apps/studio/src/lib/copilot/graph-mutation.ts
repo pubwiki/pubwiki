@@ -21,9 +21,9 @@ import {
 } from '$lib/types';
 import { nodeStore, layoutStore } from '$lib/persistence';
 import { HandleId } from '$lib/graph';
-import { positionNewNodesFromSources, DEFAULT_NODE_WIDTH, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
-import { generate as triggerInputGeneration, type GenerationCallbacks } from '$components/nodes/input/controller.svelte';
-import { onStreamingChange, notifyStreamingChange, isNodeStreaming } from '$components/nodes/generated/controller.svelte';
+import { DEFAULT_NODE_WIDTH, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
+import { generate as triggerInputGeneration } from '$components/nodes/input/controller.svelte';
+import { onStreamingChange, isNodeStreaming } from '$components/nodes/generated/controller.svelte';
 import type {
   CreateNodeParams,
   ConnectParams,

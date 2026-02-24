@@ -282,7 +282,7 @@ export async function getVfsController(
 	}
 
 	// Check if there's already a pending creation
-	let pending = pendingControllers.get(nodeId);
+	const pending = pendingControllers.get(nodeId);
 	if (pending) {
 		console.log(`[VFS:Controller] ${nodeId} creation already pending, waiting...`);
 		const ctrl = await pending;

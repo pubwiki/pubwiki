@@ -14,8 +14,7 @@
 
 import Dexie, { type EntityTable, liveQuery, type Observable } from 'dexie';
 import type { Edge } from '@xyflow/svelte';
-import { restoreContent, type NodeType, type NodeContent } from '../types/content';
-import type { NodeRef } from '../version';
+import type { NodeType } from '$lib/types';
 
 // ============================================================================
 // Database Types
@@ -185,7 +184,7 @@ export class StudioDatabase extends Dexie {
       edges: 'id, projectId, source, target',
       // Projects: metadata
       projects: 'id, createdAt, updatedAt'
-    }).upgrade(async tx => {
+    }).upgrade(async () => {
       // Migration: convert old nodes table to new structure
       // For simplicity, we'll just let the old data be discarded
       // Users can start fresh with the new schema

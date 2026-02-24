@@ -11,9 +11,6 @@
  */
 
 import { Position, type Node, type Edge } from '@xyflow/svelte';
-import type { 
-	LoaderNodeData
-} from '$lib/types';
 import type { FlowNodeData } from '$lib/types/flow';
 import { createVFSNodeData } from '$lib/types';
 import { nodeStore, layoutStore } from '$lib/persistence';
@@ -33,9 +30,7 @@ import {
 	type LoaderBackend,
 	type BackendConfig,
 	type ServiceCallResult,
-	type JsModuleRegistry,
-	type JsModuleDefinition,
-	type GeneratedDocs
+	type JsModuleRegistry
 } from '$lib/loader';
 
 // Import module factories
@@ -187,12 +182,10 @@ export async function initializeLoader(
 		
 		// Create PubChat and LLM module if config is provided
 		// Uses RDFMessageStore when rdfStore is available, otherwise MemoryMessageStore
-		let pubchat: PubChat | undefined;
-		const { pubchat: pc, messageStore } = createPubChat({ 
+		const { pubchat, messageStore } = createPubChat({ 
 			llmConfig: llmConfig ?? {}, 
 			rdfStore: rdfStore as BackendConfig['rdfStore']
 		});
-		pubchat = pc;
 		jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore) });
 		
 		// Register PubWiki module if context is provided

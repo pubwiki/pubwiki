@@ -15,9 +15,8 @@
  * - Snapshot history is included in export for version continuity
  */
 
-import type { Edge } from '@xyflow/svelte';
-import type { StudioNodeData, VFSNodeData, StateNodeData } from '../types';
-import type { StoredProject, StoredLayout, StoredSnapshotEdge, StoredPosition } from '../persistence/db';
+import type { VFSNodeData } from '../types';
+import type { StoredSnapshotEdge, StoredPosition } from '../persistence/db';
 import { db, nodeStore, layoutStore, getProject, getEdges } from '../persistence';
 import { getNodeVfs } from '../vfs';
 import { getNodeRDFStore } from '../rdf';

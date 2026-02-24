@@ -412,78 +412,6 @@ type ConfigField = Services['my:service']['input']['config'];
 }
 
 // ============================================================================
-// JSON Schema to TypeScript Converter (for Markdown)
-// ============================================================================
-
-/**
- * Simplified version for inline type strings (used in markdown generation)
- */
-function jsonSchemaToTSType(schema: JsonSchema, name: string): string {
-  // Handle enum
-  if (schema.enum && Array.isArray(schema.enum)) {
-    return (schema.enum as unknown[]).map((v: unknown) => JSON.stringify(v)).join(' | ');
-  }
-
-  // Handle oneOf/anyOf
-  if (schema.oneOf) {
-    return schema.oneOf.map((s, i) => jsonSchemaToTSType(s, `${name}${i}`)).join(' | ');
-  }
-
-  if (schema.anyOf) {
-    return schema.anyOf.map((s, i) => jsonSchemaToTSType(s, `${name}${i}`)).join(' | ');
-  }
-
-  // Handle object
-  if (schema.type === 'object' || schema.properties) {
-    const props = schema.properties || {};
-    const required = new Set(schema.required || []);
-    
-    if (Object.keys(props).length === 0) {
-      if (schema.additionalProperties === true) {
-        return 'Record<string, unknown>';
-      }
-      return 'Record<string, never>';
-    }
-    
-    const propLines = Object.entries(props).map(([key, propSchema]) => {
-      const optional = required.has(key) ? '' : '?';
-      const type = jsonSchemaToTSType(propSchema, key);
-      return `${key}${optional}: ${type}`;
-    });
-    
-    return `{ ${propLines.join('; ')} }`;
-  }
-
-  // Handle array
-  if (schema.type === 'array') {
-    const itemType = schema.items ? jsonSchemaToTSType(schema.items, `${name}Item`) : 'unknown';
-    return `Array<${itemType}>`;
-  }
-
-  // Handle function type
-  if (schema['x-function']) {
-    const params = schema['x-params'] || {};
-    const returns = schema['x-returns'];
-    const paramStr = Object.entries(params)
-      .map(([k, v]) => `${k}: ${jsonSchemaToTSType(v as JsonSchema, k)}`)
-      .join(', ');
-    const returnStr = returns ? jsonSchemaToTSType(returns, 'Return') : 'void';
-    return `(${paramStr}) => ${returnStr}`;
-  }
-
-  // Basic type mapping
-  const typeMap: Record<string, string> = {
-    'string': 'string',
-    'number': 'number',
-    'integer': 'number',
-    'boolean': 'boolean',
-    'null': 'null',
-  };
-
-  return typeMap[schema.type || 'unknown'] || 'unknown';
-}
-
-// ============================================================================
 // Utilities
 // ============================================================================
 
@@ -496,7 +424,7 @@ function jsonSchemaToTSType(schema: JsonSchema, name: string): string {
 function sanitizeTypeName(str: string): string {
   // Replace common separators with underscores first
   let sanitized = str
-    .replace(/[.:\/\\]/g, '_')  // Replace . : / \ with _
+    .replace(/[.:/\\]/g, '_')  // Replace . : / \ with _
     .replace(/[^a-zA-Z0-9_]/g, '_')  // Replace any other invalid chars with _
     .replace(/_+/g, '_')  // Collapse multiple underscores
     .replace(/^_|_$/g, '');  // Remove leading/trailing underscores

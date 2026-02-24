@@ -21,7 +21,7 @@ export type {
 export type { NodeContent, NodeType } from '@pubwiki/flow-core';
 
 // Import for use within this module
-import type { Versionable, NodeRef, VersionHandler } from '@pubwiki/flow-core';
+import type { Versionable, VersionHandler } from '@pubwiki/flow-core';
 
 // ============================================================================
 // Version Handler Registry (Svelte-specific, stays in Studio)

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
-import { loadRunner, runLua, createLuaInstance, type LuaInstance } from '@pubwiki/lua'
+import { loadRunner, createLuaInstance, type LuaInstance } from '@pubwiki/lua'
 import { RDFStore } from '@pubwiki/rdfstore'
 import { MemoryLevel } from 'memory-level'
 import { DataFactory } from 'n3'

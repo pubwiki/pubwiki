@@ -23,7 +23,6 @@ import type {
 	QuickJSHandle
 } from 'quickjs-emscripten-core';
 import { createBundler, type BundlerService } from '@pubwiki/bundler';
-import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import type { ServiceDefinition, RpcStub } from '@pubwiki/sandbox-host';
 
 import type {
@@ -441,15 +440,11 @@ export class TsBackend implements LoaderBackend {
 				// Convert QuickJS handles to JS values
 				const jsArgs = args.map(arg => this.context!.dump(arg));
 				
-				try {
-					// Call the host function
-					const result = await Promise.resolve(func(...jsArgs));
-					
-					// Convert result back to QuickJS handle
-					return this.jsToHandle(result);
-				} catch (error) {
-					throw error;
-				}
+				// Call the host function
+				const result = await Promise.resolve(func(...jsArgs));
+				
+				// Convert result back to QuickJS handle
+				return this.jsToHandle(result);
 			});
 
 			this.context.setProp(moduleObj, funcName, funcHandle);

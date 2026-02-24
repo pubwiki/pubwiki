@@ -11,7 +11,7 @@ import type { StudioNodeData } from '$lib/types';
 import type { NodeRef } from '$lib/version';
 import { nodeStore } from '$lib/persistence';
 import { getNodeVfs } from '$lib/vfs';
-import { HandleId, isTagHandle, getTagName, isRefTagHandle, getRefTagName } from '$lib/graph';
+import { HandleId, isTagHandle, isRefTagHandle } from '$lib/graph';
 import { isVfsFolder } from '@pubwiki/vfs';
 import type {
   NodeSummary,

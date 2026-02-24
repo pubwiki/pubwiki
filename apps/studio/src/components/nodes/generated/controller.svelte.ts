@@ -16,9 +16,9 @@ import type {
 	VFSNodeData
 } from '$lib/types';
 import type { FlowNodeData } from '$lib/types/flow';
-import type { GeneratedContent, InputContent } from '$lib/types';
+import type { GeneratedContent } from '$lib/types';
 import type { MessageBlock } from '@pubwiki/chat';
-import { registerVersionHandler, type NodeRef } from '$lib/version';
+import { registerVersionHandler } from '$lib/version';
 import { resolvePromptContentFromRefs } from '$lib/graph';
 import { nodeStore, layoutStore } from '$lib/persistence';
 import { getVfsController } from '../vfs/controller.svelte';
@@ -26,8 +26,7 @@ import {
 	PubChat, 
 	MemoryMessageStore, 
 	createSystemMessage, 
-	generateBlockId, 
-	blocksToContent 
+	generateBlockId
 } from '@pubwiki/chat';
 
 // ============================================================================
@@ -510,7 +509,7 @@ export async function regenerate(
 				return [...updatedBlocks, resultBlock];
 			});
 		},
-		onDone: async (nodeId, _finalContent) => {
+		onDone: async (nodeId) => {
 			// Notify streaming complete
 			notifyStreamingChange(nodeId, false);
 			
@@ -519,7 +518,7 @@ export async function regenerate(
 			
 			callbacks.onComplete?.();
 		},
-		onError: (nodeId, _error) => {
+		onError: (nodeId) => {
 			// Notify streaming complete on error
 			notifyStreamingChange(nodeId, false);
 		}

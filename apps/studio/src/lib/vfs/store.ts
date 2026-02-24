@@ -624,7 +624,7 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
   // ========== Optional Git Operations ==========
 
-  async createBranch(name: string, ref?: string): Promise<void> {
+  async createBranch(name: string): Promise<void> {
     await git.branch({
       fs: zenfs,
       dir: this.basePath,
@@ -756,7 +756,7 @@ export class NodeVfsFactory {
     }
     
     // Check if creation is already in progress (prevent race condition)
-    let pending = this.pendingCreations.get(key);
+    const pending = this.pendingCreations.get(key);
     if (pending) {
       console.log(`[VFS:Factory] ${key} creation already pending, waiting...`);
       return pending;

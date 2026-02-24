@@ -19,7 +19,6 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { FlowNodeData } from '$lib/types/flow';
 import type { JsModuleDefinition } from '$lib/loader';
-import type { ReaderContent } from '@pubwiki/reader';
 import { API_BASE_URL } from '$lib/config';
 import { HandleId } from '$lib/graph';
 import { publishArtifact, type PublishMetadata } from '$lib/io/publish';
@@ -28,7 +27,6 @@ import { getNodeRDFStore } from '$lib/rdf';
 import { nodeStore } from '$lib/persistence';
 import { 
 	getArtifactContext, 
-	clearArtifactContext,
 	createSaveCheckpoint, 
 	computeSaveCommit 
 } from '$lib/gamesave';
@@ -72,17 +70,6 @@ interface PublishInput {
 	isPrivate?: boolean;
 	tags?: string[];
 	homepage?: string;
-}
-
-/**
- * Upload article data from Lua/TS script
- */
-interface UploadArticleInput {
-	articleId?: string;
-	title: string;
-	content: ReaderContent;
-	/** Whether to list in public discovery */
-	isListed?: boolean;
 }
 
 /**
@@ -196,7 +183,7 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 		 * Note: This feature is temporarily disabled pending the new save API architecture
 		 * which requires sourceArtifactId and sourceArtifactCommit for referencing saves.
 		 */
-		async uploadArticle(_data: UploadArticleInput): Promise<PubWikiResult> {
+		async uploadArticle(): Promise<PubWikiResult> {
 			return {
 				success: false,
 				error: 'Article upload is temporarily disabled. The new save API requires the project to be published first.'

@@ -6,13 +6,7 @@ import tseslint from 'typescript-eslint';
 export default defineConfig(
   {
     ignores: [
-        "*.ts",
         "*.mjs",
-        "*.js",
-        ".svelte-kit",
-        "project.inlang",
-        ".wrangler",
-        "src/paraglide",
     ]
   },
   eslint.configs.recommended,
