@@ -448,6 +448,11 @@ export function validateConnection(
   getNodeType: (nodeId: string) => string | undefined,
   existingEdges: ConnectionParams[]
 ): ValidationResult {
+  // Prevent self-connection (check early)
+  if (connection.source === connection.target) {
+    return { valid: false, reason: 'Self-connection not allowed' }
+  }
+
   const sourceType = getNodeType(connection.source)
   const targetType = getNodeType(connection.target)
 
@@ -505,11 +510,6 @@ export function validateConnection(
       valid: false,
       reason: `${targetHandleSpec.label} already has a connection`,
     }
-  }
-
-  // Prevent self-connection
-  if (connection.source === connection.target) {
-    return { valid: false, reason: 'Self-connection not allowed' }
   }
 
   return { valid: true }

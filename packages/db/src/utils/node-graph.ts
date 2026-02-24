@@ -1,7 +1,17 @@
+/**
+ * NodeGraph Factory
+ * 
+ * DB-specific factory methods for creating ImmutableGraph instances.
+ * The graph structure and validation logic is now in @pubwiki/flow-core.
+ * 
+ * This module provides:
+ * - DB-integrated factory methods (fromPatch, fromCommitHash)
+ * - Re-exports of ImmutableGraph and validation functions
+ */
+
 import type {
   CreateArtifactNode,
   ArtifactEdgeDescriptor,
-  CreateArtifactMetadata,
 } from '@pubwiki/api';
 import type { NodeType } from '../schema/enums';
 import type { ServiceResult } from '../services/user';
@@ -9,116 +19,87 @@ import type { BatchContext } from '../batch-context';
 import { eq } from 'drizzle-orm';
 import { artifactVersionNodes, artifactVersionEdges } from '../schema/artifact-version-graph';
 import { NodeVersionService } from '../services/node-version';
+import {
+  ImmutableGraph,
+  validateGraph,
+  validateStructure,
+  validateSaveNodes,
+  validateEntrypoint,
+  type ImmutableGraphNode,
+  type ImmutableGraphEdge,
+  type GraphValidationResult,
+  type EntrypointConfig,
+} from '@pubwiki/flow-core';
+
+// ============================================================================
+// Re-exports from @pubwiki/flow-core
+// ============================================================================
+
+export {
+  ImmutableGraph,
+  validateGraph,
+  validateStructure,
+  validateSaveNodes,
+  validateEntrypoint,
+};
+export type {
+  ImmutableGraphNode,
+  ImmutableGraphEdge,
+  GraphValidationResult,
+  EntrypointConfig,
+};
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export type NodeGraphNode = CreateArtifactNode;
-export type NodeGraphEdge = ArtifactEdgeDescriptor;
-
 /**
- * Patch input for building a NodeGraph from a base commit with modifications.
+ * Patch input for building an ImmutableGraph from a base commit with modifications.
  * 
  * Note: removeEdges only needs { source, target } because the DB schema
  * uses (commitHash, sourceNodeId, targetNodeId) as primary key.
  * Two nodes can have at most one edge between them.
  */
 export interface NodeGraphPatch {
-  addNodes?: NodeGraphNode[];
+  addNodes?: CreateArtifactNode[];
   removeNodeIds?: string[];
-  addEdges?: NodeGraphEdge[];
-  removeEdges?: NodeGraphEdge[];
+  addEdges?: ArtifactEdgeDescriptor[];
+  removeEdges?: ArtifactEdgeDescriptor[];
 }
 
 // ============================================================================
-// NodeGraph Class
+// NodeGraphFactory - DB-specific factory methods
 // ============================================================================
 
 /**
- * NodeGraph is an immutable abstraction for artifact graph structure.
- * It provides:
- * - Single source of truth for all graph queries and validations
- * - Pure validation methods without side effects
- * - Reusable logic for both createArtifact and patchArtifact
+ * Factory for creating ImmutableGraph instances from database data.
+ * 
+ * Use this factory when you need to:
+ * - Create a graph from existing artifact version data (fromCommitHash)
+ * - Apply patches to an existing artifact version (fromPatch)
+ * 
+ * For direct construction from arrays, use ImmutableGraph.fromArrays() directly.
  */
-export class NodeGraph {
-  private readonly nodeMap: Map<string, NodeGraphNode>;
-  private readonly nodesByType: Map<NodeType, NodeGraphNode[]>;
-  private readonly outgoingEdges: Map<string, NodeGraphEdge[]>;
-  private readonly incomingEdges: Map<string, NodeGraphEdge[]>;
-  private readonly edgeSet: Set<string>;
-  private readonly _nodes: readonly NodeGraphNode[];
-  private readonly _edges: readonly NodeGraphEdge[];
-
-  // ============================================================================
-  // Construction (private - use static factory methods)
-  // ============================================================================
-
-  private constructor(nodes: NodeGraphNode[], edges: NodeGraphEdge[]) {
-    this._nodes = Object.freeze([...nodes]);
-    this._edges = Object.freeze([...edges]);
-    
-    // Build node index
-    this.nodeMap = new Map(nodes.map(n => [n.nodeId, n]));
-    
-    // Build type index
-    this.nodesByType = new Map();
-    for (const node of nodes) {
-      const type = node.type as NodeType;
-      if (!this.nodesByType.has(type)) {
-        this.nodesByType.set(type, []);
-      }
-      this.nodesByType.get(type)!.push(node);
-    }
-    
-    // Build edge indexes
-    this.outgoingEdges = new Map();
-    this.incomingEdges = new Map();
-    this.edgeSet = new Set();
-    
-    for (const edge of edges) {
-      // Outgoing edges
-      if (!this.outgoingEdges.has(edge.source)) {
-        this.outgoingEdges.set(edge.source, []);
-      }
-      this.outgoingEdges.get(edge.source)!.push(edge);
-      
-      // Incoming edges
-      if (!this.incomingEdges.has(edge.target)) {
-        this.incomingEdges.set(edge.target, []);
-      }
-      this.incomingEdges.get(edge.target)!.push(edge);
-      
-      // Edge set for duplicate detection
-      this.edgeSet.add(this.edgeKey(edge.source, edge.target));
-    }
-  }
-
-  private edgeKey(source: string, target: string): string {
-    return `${source}:${target}`;
-  }
-
-  // ============================================================================
-  // Static Factory Methods
-  // ============================================================================
-
+export class NodeGraphFactory {
   /**
-   * Create from raw arrays (for createArtifact)
+   * Create from raw arrays (convenience method - delegates to ImmutableGraph)
    */
-  static fromArrays(nodes: NodeGraphNode[], edges: NodeGraphEdge[]): NodeGraph {
-    return new NodeGraph(nodes, edges);
+  static fromArrays(
+    nodes: CreateArtifactNode[],
+    edges: ArtifactEdgeDescriptor[]
+  ): ImmutableGraph {
+    return ImmutableGraph.fromArrays(nodes, edges);
   }
 
   /**
    * Create from DB snapshot + patches (for patchArtifact)
-   * This encapsulates the merge logic previously in patchArtifact
+   * This encapsulates the merge logic for artifact version patching.
    */
   static async fromPatch(
     ctx: BatchContext,
     baseCommitHash: string,
     patch: NodeGraphPatch,
-  ): Promise<ServiceResult<NodeGraph>> {
+  ): Promise<ServiceResult<ImmutableGraph>> {
     // Fetch base nodes from DB
     const baseNodes = await ctx
       .select()
@@ -133,13 +114,13 @@ export class NodeGraph {
 
     // Build sets for patches
     const removeNodeIds = new Set(patch.removeNodeIds ?? []);
-    const addNodesMap = new Map<string, NodeGraphNode>();
+    const addNodesMap = new Map<string, CreateArtifactNode>();
     for (const node of patch.addNodes ?? []) {
       addNodesMap.set(node.nodeId, node);
     }
 
     // Build merged nodes
-    const mergedNodes: NodeGraphNode[] = [];
+    const mergedNodes: CreateArtifactNode[] = [];
     const nodeVersionService = new NodeVersionService(ctx);
 
     for (const bn of baseNodes) {
@@ -186,7 +167,7 @@ export class NodeGraph {
       (patch.removeEdges ?? []).map(e => `${e.source}:${e.target}`)
     );
 
-    const mergedEdges: NodeGraphEdge[] = [];
+    const mergedEdges: ArtifactEdgeDescriptor[] = [];
     for (const be of baseEdges) {
       const key = `${be.sourceNodeId}:${be.targetNodeId}`;
       if (removeEdgeKeys.has(key)) continue;
@@ -203,7 +184,7 @@ export class NodeGraph {
 
     return {
       success: true,
-      data: new NodeGraph(mergedNodes, mergedEdges),
+      data: ImmutableGraph.fromArrays(mergedNodes, mergedEdges),
     };
   }
 
@@ -213,359 +194,7 @@ export class NodeGraph {
   static async fromCommitHash(
     ctx: BatchContext,
     commitHash: string,
-  ): Promise<ServiceResult<NodeGraph>> {
-    return NodeGraph.fromPatch(ctx, commitHash, {});
-  }
-
-  // ============================================================================
-  // Accessors
-  // ============================================================================
-
-  /** All nodes in the graph */
-  get nodes(): readonly NodeGraphNode[] {
-    return this._nodes;
-  }
-
-  /** All edges in the graph */
-  get edges(): readonly NodeGraphEdge[] {
-    return this._edges;
-  }
-
-  /** Get node by ID, returns undefined if not found */
-  getNode(nodeId: string): NodeGraphNode | undefined {
-    return this.nodeMap.get(nodeId);
-  }
-
-  /** Get all nodes of a specific type */
-  getNodesByType(type: NodeType): NodeGraphNode[] {
-    return this.nodesByType.get(type) ?? [];
-  }
-
-  /** Get outgoing edges from a node */
-  getOutgoingEdges(nodeId: string): NodeGraphEdge[] {
-    return this.outgoingEdges.get(nodeId) ?? [];
-  }
-
-  /** Get incoming edges to a node */
-  getIncomingEdges(nodeId: string): NodeGraphEdge[] {
-    return this.incomingEdges.get(nodeId) ?? [];
-  }
-
-  /** Get direct successors of a node */
-  getSuccessors(nodeId: string): NodeGraphNode[] {
-    const edges = this.getOutgoingEdges(nodeId);
-    const successors: NodeGraphNode[] = [];
-    for (const edge of edges) {
-      const node = this.getNode(edge.target);
-      if (node) successors.push(node);
-    }
-    return successors;
-  }
-
-  /** Get direct predecessors of a node */
-  getPredecessors(nodeId: string): NodeGraphNode[] {
-    const edges = this.getIncomingEdges(nodeId);
-    const predecessors: NodeGraphNode[] = [];
-    for (const edge of edges) {
-      const node = this.getNode(edge.source);
-      if (node) predecessors.push(node);
-    }
-    return predecessors;
-  }
-
-  // ============================================================================
-  // Structural Validation
-  // ============================================================================
-
-  /**
-   * Validate basic graph structure:
-   * - All edge endpoints reference existing nodes
-   * - No duplicate edges
-   */
-  validateStructure(): ServiceResult<void> {
-    // Check for duplicate edges (already detected during construction)
-    const seenEdges = new Set<string>();
-    for (const edge of this._edges) {
-      const key = this.edgeKey(edge.source, edge.target);
-      if (seenEdges.has(key)) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `Duplicate edge detected: ${edge.source} -> ${edge.target}`,
-          },
-        };
-      }
-      seenEdges.add(key);
-    }
-
-    // Check edge endpoints exist
-    for (const edge of this._edges) {
-      if (!this.nodeMap.has(edge.source)) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `Edge source node ${edge.source} does not exist in the graph`,
-          },
-        };
-      }
-      if (!this.nodeMap.has(edge.target)) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `Edge target node ${edge.target} does not exist in the graph`,
-          },
-        };
-      }
-    }
-
-    return { success: true, data: undefined };
-  }
-
-  /**
-   * Validate SAVE nodes:
-   * - Each SAVE references a STATE node present in graph
-   * - stateNodeCommit matches STATE node's commit
-   * - STATE → LOADER → SANDBOX connectivity
-   */
-  validateSaveNodes(): ServiceResult<void> {
-    const saveNodes = this.getNodesByType('SAVE');
-
-    if (saveNodes.length === 0) {
-      return { success: true, data: undefined };
-    }
-
-    // Build state node map: stateNodeId -> commit
-    const stateNodeMap = new Map<string, string>();
-    for (const node of this.getNodesByType('STATE')) {
-      stateNodeMap.set(node.nodeId, node.commit);
-    }
-
-    // Cache for graph connectivity validation results
-    const connectivityCache = new Map<string, boolean>();
-
-    for (const saveNode of saveNodes) {
-      // SAVE node content must have stateNodeId and stateNodeCommit
-      const saveContent = saveNode.content as {
-        type: 'SAVE';
-        stateNodeId: string;
-        stateNodeCommit: string;
-      };
-
-      if (!saveContent?.stateNodeId) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `SAVE node ${saveNode.nodeId} missing stateNodeId in content`,
-          },
-        };
-      }
-
-      if (!saveContent?.stateNodeCommit) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `SAVE node ${saveNode.nodeId} missing stateNodeCommit in content`,
-          },
-        };
-      }
-
-      const stateNodeId = saveContent.stateNodeId;
-      const expectedStateNodeCommit = stateNodeMap.get(stateNodeId);
-
-      // STATE node must be present in the same artifact version's nodes
-      if (!expectedStateNodeCommit) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `SAVE node ${saveNode.nodeId} references state node ${stateNodeId} which is not present in this artifact version`,
-          },
-        };
-      }
-
-      // Validate stateNodeCommit matches
-      if (saveContent.stateNodeCommit !== expectedStateNodeCommit) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `SAVE node ${saveNode.nodeId} has stateNodeCommit ${saveContent.stateNodeCommit} but STATE node ${stateNodeId} has commit ${expectedStateNodeCommit}`,
-          },
-        };
-      }
-
-      // Validate graph connectivity: STATE → LOADER → SANDBOX (with caching)
-      let hasValidPath = connectivityCache.get(stateNodeId);
-      if (hasValidPath === undefined) {
-        hasValidPath = this.hasPathThrough(stateNodeId, 'SANDBOX', ['LOADER']);
-        connectivityCache.set(stateNodeId, hasValidPath);
-      }
-      if (!hasValidPath) {
-        return {
-          success: false,
-          error: {
-            code: 'BAD_REQUEST',
-            message: `Save validation failed: state node ${stateNodeId} is not connected to a SANDBOX node through a LOADER node`,
-          },
-        };
-      }
-    }
-
-    return { success: true, data: undefined };
-  }
-
-  /**
-   * Validate entrypoint configuration:
-   * - sandboxNodeId exists and is SANDBOX type
-   * - saveCommit exists as a SAVE node
-   * - Referenced STATE is in the graph
-   */
-  validateEntrypoint(
-    entrypoint: CreateArtifactMetadata['entrypoint'],
-  ): ServiceResult<void> {
-    if (!entrypoint) {
-      return { success: true, data: undefined };
-    }
-
-    const { saveCommit, sandboxNodeId } = entrypoint;
-
-    // Verify sandboxNodeId exists and is SANDBOX type
-    const sandboxNode = this.getNode(sandboxNodeId);
-    if (!sandboxNode) {
-      return {
-        success: false,
-        error: {
-          code: 'BAD_REQUEST',
-          message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not in the graph`,
-        },
-      };
-    }
-    if (sandboxNode.type !== 'SANDBOX') {
-      return {
-        success: false,
-        error: {
-          code: 'BAD_REQUEST',
-          message: `Entrypoint sandboxNodeId ${sandboxNodeId} is not a SANDBOX node (got ${sandboxNode.type})`,
-        },
-      };
-    }
-
-    // Verify saveCommit is in the SAVE nodes
-    const saveNode = this.getNodesByType('SAVE').find(n => n.commit === saveCommit);
-    if (!saveNode) {
-      return {
-        success: false,
-        error: {
-          code: 'BAD_REQUEST',
-          message: `Entrypoint saveCommit ${saveCommit} is not found in the SAVE nodes`,
-        },
-      };
-    }
-
-    // Verify the save references a STATE node in this artifact
-    const saveContent = saveNode.content as { type: 'SAVE'; stateNodeId: string };
-    const stateNodeIds = new Set(this.getNodesByType('STATE').map(n => n.nodeId));
-    if (!stateNodeIds.has(saveContent.stateNodeId)) {
-      return {
-        success: false,
-        error: {
-          code: 'BAD_REQUEST',
-          message: `Entrypoint save references state node ${saveContent.stateNodeId} which is not in the graph`,
-        },
-      };
-    }
-
-    return { success: true, data: undefined };
-  }
-
-  /**
-   * Run all validations
-   */
-  validate(
-    entrypoint?: CreateArtifactMetadata['entrypoint'],
-  ): ServiceResult<void> {
-    // Validate basic structure first
-    const structureResult = this.validateStructure();
-    if (!structureResult.success) return structureResult;
-
-    // Validate SAVE nodes
-    const saveResult = this.validateSaveNodes();
-    if (!saveResult.success) return saveResult;
-
-    // Validate entrypoint
-    const entrypointResult = this.validateEntrypoint(entrypoint);
-    if (!entrypointResult.success) return entrypointResult;
-
-    return { success: true, data: undefined };
-  }
-
-  // ============================================================================
-  // Graph Queries (for connectivity validation)
-  // ============================================================================
-
-  /**
-   * Check if there's a path from source to target through nodes of specified types
-   * Used for STATE → LOADER → SANDBOX connectivity check
-   */
-  hasPathThrough(
-    sourceNodeId: string,
-    targetType: NodeType,
-    intermediateTypes: NodeType[],
-  ): boolean {
-    const visited = new Set<string>();
-    const queue: { nodeId: string; depth: number }[] = [{ nodeId: sourceNodeId, depth: 0 }];
-    const intermediateTypeSet = new Set(intermediateTypes);
-
-    while (queue.length > 0) {
-      const { nodeId, depth } = queue.shift()!;
-      if (visited.has(nodeId)) continue;
-      visited.add(nodeId);
-
-      const node = this.getNode(nodeId);
-      if (!node) continue;
-
-      // If we've passed through intermediate types and found target type
-      if (depth > 0 && node.type === targetType) {
-        return true;
-      }
-
-      // Continue search through intermediate type nodes
-      if (depth === 0 || intermediateTypeSet.has(node.type as NodeType)) {
-        for (const successor of this.getSuccessors(nodeId)) {
-          if (!visited.has(successor.nodeId)) {
-            queue.push({ nodeId: successor.nodeId, depth: depth + 1 });
-          }
-        }
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Find all nodes reachable from a given node via outgoing edges
-   */
-  getReachableNodes(nodeId: string): Set<string> {
-    const reachable = new Set<string>();
-    const queue = [nodeId];
-
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      if (reachable.has(currentId)) continue;
-      reachable.add(currentId);
-
-      for (const successor of this.getSuccessors(currentId)) {
-        if (!reachable.has(successor.nodeId)) {
-          queue.push(successor.nodeId);
-        }
-      }
-    }
-
-    return reachable;
+  ): Promise<ServiceResult<ImmutableGraph>> {
+    return NodeGraphFactory.fromPatch(ctx, commitHash, {});
   }
 }

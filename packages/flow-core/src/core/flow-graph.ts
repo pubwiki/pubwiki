@@ -8,11 +8,14 @@
 
 import type { Versionable, NodeRef, NodeSnapshot } from '../types/version'
 import type { NodeType, NodeContent } from '../types/content'
+import { restoreContent } from '../types/content'
 import type { GraphEdge } from '../types/edge'
 import type { INodeStore, ISnapshotStore, SaveSnapshotOptions } from '../interfaces/store'
 import type { ICryptoProvider } from '../interfaces/crypto'
 import { validateConnection, type ConnectionParams, type ValidationResult } from '../registry/connection'
 import { computeContentHash, computeNodeCommit } from '../hash'
+import type { CreateArtifactNode, ArtifactEdgeDescriptor, ArtifactNodeType } from '@pubwiki/api'
+import { ImmutableGraph } from '../graph/immutable-graph'
 
 // ============================================================================
 // Options Types
@@ -348,5 +351,73 @@ export class FlowGraphCore<T extends Versionable = Versionable, C = unknown> {
    */
   async computeHash(content: NodeContent): Promise<string> {
     return computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
+  }
+
+  // ============================================================================
+  // Conversion Methods
+  // ============================================================================
+
+  /**
+   * Export current graph state as ImmutableGraph for validation
+   * 
+   * @param edges - Current edges (managed externally by UI)
+   * @param getPosition - Optional function to get node positions
+   * @returns ImmutableGraph for validation
+   */
+  toImmutableGraph(
+    edges: GraphEdge[],
+    getPosition?: (nodeId: string) => { x: number; y: number } | undefined
+  ): ImmutableGraph {
+    const nodes: CreateArtifactNode[] = this.getAllNodes().map(node => ({
+      nodeId: node.id,
+      commit: node.commit,
+      type: node.type as ArtifactNodeType,
+      name: node.name || undefined,
+      contentHash: node.contentHash,
+      content: node.content.toJSON() as CreateArtifactNode['content'],
+      parent: node.parent ?? undefined,
+      position: getPosition?.(node.id),
+    }));
+
+    const graphEdges: ArtifactEdgeDescriptor[] = edges.map(e => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle ?? undefined,
+      targetHandle: e.targetHandle ?? undefined,
+    }));
+
+    return ImmutableGraph.fromArrays(nodes, graphEdges);
+  }
+
+  /**
+   * Create a new FlowGraphCore instance from an ImmutableGraph
+   * 
+   * @param graph - ImmutableGraph to load from
+   * @param options - FlowGraphCore options (stores, crypto, etc.)
+   * @returns New FlowGraphCore instance with loaded nodes
+   */
+  static fromImmutableGraph<T extends Versionable, C>(
+    graph: ImmutableGraph,
+    options: FlowGraphCoreOptions<T, C>
+  ): FlowGraphCore<T, C> {
+    const core = new FlowGraphCore<T, C>(options);
+    
+    for (const node of graph.nodes) {
+      const content = restoreContent(node.type as NodeType, node.content);
+      const nodeData = {
+        id: node.nodeId,
+        type: node.type,
+        name: node.name ?? '',
+        commit: node.commit,
+        contentHash: node.contentHash,
+        parent: node.parent ?? null,
+        snapshotRefs: [],
+        content,
+      } as unknown as T;
+      
+      core.nodeStore.set(node.nodeId, nodeData);
+    }
+    
+    return core;
   }
 }

@@ -23,3 +23,9 @@ export * from './hash';
 
 // ─── Core Logic ─────────────────────────────────────────────────────
 export * from './core';
+
+// ─── Graph (Immutable Graph Abstraction) ────────────────────────────
+export * from './graph';
+
+// ─── Validation (Pure Validation Functions) ─────────────────────────
+export * from './validation';

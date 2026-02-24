@@ -16,5 +16,19 @@ export function chunkArray<T>(array: T[], fieldsPerRow: number): T[][] {
   return chunks;
 }
 
-// Export NodeGraph for graph validation
-export { NodeGraph, type NodeGraphNode, type NodeGraphEdge, type NodeGraphPatch } from './node-graph';
+// Export NodeGraphFactory and ImmutableGraph for graph validation
+export {
+  NodeGraphFactory,
+  ImmutableGraph,
+  validateGraph,
+  validateStructure,
+  validateSaveNodes,
+  validateEntrypoint,
+  type NodeGraphPatch,
+  // Type exports from flow-core
+  type ImmutableGraphNode,
+  type ImmutableGraphEdge,
+  type GraphValidationResult,
+  type EntrypointConfig,
+} from './node-graph';
+

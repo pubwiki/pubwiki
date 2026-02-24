@@ -11,7 +11,7 @@ import { projectArtifacts } from '../schema/projects';
 import { user } from '../schema/auth';
 import { articles } from '../schema/articles';
 import type { ServiceResult } from './user';
-import { NodeGraph } from '../utils/node-graph';
+import { ImmutableGraph, NodeGraphFactory, validateGraph } from '../utils/node-graph';
 import type {
   ArtifactListItem,
   Pagination,
@@ -166,10 +166,12 @@ export class ArtifactService {
       const author = authorResult[0];
       const versionId = crypto.randomUUID();
 
-      // Step 3: Build and validate graph structure using NodeGraph abstraction
-      const graph = NodeGraph.fromArrays(nodes, edges);
-      const validationResult = graph.validate(metadata.entrypoint);
-      if (!validationResult.success) return validationResult;
+      // Step 3: Build and validate graph structure using ImmutableGraph
+      const graph = ImmutableGraph.fromArrays(nodes, edges);
+      const validationResult = validateGraph(graph, metadata.entrypoint);
+      if (!validationResult.success) {
+        return { success: false, error: validationResult.error! };
+      }
 
       // Determine privacy: default to false (public)
       const isPrivate = metadata.isPrivate ?? false;
@@ -1490,8 +1492,8 @@ export class ArtifactService {
       // Step 4: Use baseCommit as parentCommit (tree structure - versions branch from their base)
       const parentCommit = metadata.baseCommit;
 
-      // Step 5: Build merged graph using NodeGraph.fromPatch
-      const graphResult = await NodeGraph.fromPatch(this.ctx, baseVersion.commitHash, {
+      // Step 5: Build merged graph using NodeGraphFactory.fromPatch
+      const graphResult = await NodeGraphFactory.fromPatch(this.ctx, baseVersion.commitHash, {
         addNodes: metadata.addNodes,
         removeNodeIds: metadata.removeNodeIds,
         addEdges: metadata.addEdges,
@@ -1501,8 +1503,10 @@ export class ArtifactService {
       const graph = graphResult.data;
 
       // Step 6: Validate merged graph
-      const validationResult = graph.validate(metadata.entrypoint);
-      if (!validationResult.success) return validationResult;
+      const validationResult = validateGraph(graph, metadata.entrypoint);
+      if (!validationResult.success) {
+        return { success: false, error: validationResult.error! };
+      }
 
       // Step 7: Get merged nodes and edges
       const mergedNodes = [...graph.nodes];
