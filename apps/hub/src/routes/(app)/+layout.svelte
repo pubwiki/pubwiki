@@ -18,7 +18,7 @@
 	}
 </script>
 
-<div class="min-h-screen flex flex-col font-sans bg-[#f6f8fa] text-[#24292f]">
+<div class="min-h-screen flex flex-col font-sans bg-[#fdf8f3] text-[#24292f]">
 	<!-- Header -->
 	<header class="bg-white border-b border-gray-200 py-3">
 		<div class="mx-auto max-w-[1200px] px-4 flex items-center gap-6">

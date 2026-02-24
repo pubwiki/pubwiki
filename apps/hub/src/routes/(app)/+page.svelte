@@ -1,46 +1,180 @@
 <script lang="ts">
-	import type { ArtifactListItem } from '@pubwiki/api';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
+	import { browser } from '$app/environment';
+	import { untrack } from 'svelte';
 	import { useArtifactStore } from '$lib/stores/artifacts.svelte';
+	import VirtualGrid from '$lib/components/VirtualGrid.svelte';
+	import type { ArtifactListItem } from '@pubwiki/api';
 	import * as m from '$lib/paraglide/messages';
 
 	const artifactStore = useArtifactStore();
 
-	let activeFilter = $state('All');
-	let sortBy = $state<'New' | 'Top' | 'Trending'>('New');
+	// URL params for persistence
+	const urlParams = $derived.by(() => {
+		const params = $page.url.searchParams;
+		return {
+			page: parseInt(params.get('page') || '1'),
+			sort: (params.get('sort') || 'createdAt') as 'createdAt' | 'viewCount' | 'favCount',
+			order: (params.get('order') || 'desc') as 'asc' | 'desc',
+			tag: params.get('tag') || null
+		};
+	});
+
+	const sortMap: Record<string, 'New' | 'Top' | 'Trending'> = {
+		createdAt: 'New',
+		favCount: 'Top',
+		viewCount: 'Trending'
+	};
+
+	// Derive sortBy from URL params (no effect needed)
+	let sortBy = $derived(sortMap[urlParams.sort] || 'New');
 
 	const filters = ['All', 'Sci-Fi', 'Fantasy', 'Xianxia', 'Cyberpunk', 'Horror', 'Strategy', 'Survival'];
 	const sortOptions = ['New', 'Top', 'Trending'] as const;
 
-	// Get translated sort option labels
 	const sortLabels = {
 		'New': () => m.home_sort_new(),
 		'Top': () => m.home_sort_top(),
 		'Trending': () => m.home_sort_trending()
 	} as const;
 
-	// Map UI sort options to API sort fields
 	const sortMapping = {
 		'New': { sortBy: 'createdAt', sortOrder: 'desc' },
 		'Top': { sortBy: 'favCount', sortOrder: 'desc' },
 		'Trending': { sortBy: 'viewCount', sortOrder: 'desc' }
 	} as const;
 
-	// Fetch artifacts on mount and when sort changes
+	// Active filter from URL or default
+	let activeFilter = $derived(urlParams.tag || 'All');
+
+	// Initialize store when sort/filter changes
 	$effect(() => {
-		const mapping = sortMapping[sortBy];
-		artifactStore.fetchArtifacts({
-			sortBy: mapping.sortBy,
-			sortOrder: mapping.sortOrder
+		const currentSort = sortBy; // Read derived value
+		const currentFilter = activeFilter;
+		const mapping = sortMapping[currentSort];
+		const tagInclude = currentFilter !== 'All' ? [currentFilter] : undefined;
+		
+		// Use untrack to prevent tracking store state changes during initialize
+		untrack(() => {
+			artifactStore.initialize({
+				sortBy: mapping.sortBy,
+				sortOrder: mapping.sortOrder,
+				tagInclude
+			});
 		});
 	});
 
-	let filteredGames = $derived(
-		activeFilter === 'All'
-			? artifactStore.artifacts
-			: artifactStore.artifacts.filter((game) => 
-				game.tags?.some((tag) => tag.name.toLowerCase().includes(activeFilter.toLowerCase()))
-			)
-	);
+	// Responsive column count
+	let columnCount = $state(3);
+	$effect(() => {
+		if (!browser) return;
+		
+		const updateColumns = () => {
+			if (window.innerWidth < 768) columnCount = 1;
+			else if (window.innerWidth < 1024) columnCount = 2;
+			else columnCount = 3;
+		};
+		
+		updateColumns();
+		window.addEventListener('resize', updateColumns);
+		return () => window.removeEventListener('resize', updateColumns);
+	});
+
+	// Page size aligned with API
+	const PAGE_SIZE = 20;
+	const ITEM_HEIGHT = 220; // Card height in pixels
+
+	// Get items for virtual list
+	function getItems(startIdx: number, endIdx: number) {
+		return artifactStore.getItemsForRange(startIdx, endIdx);
+	}
+
+	// Handle page range changes - load required pages
+	async function handlePageRangeChange(startPage: number, endPage: number) {
+		await artifactStore.ensurePagesLoaded(startPage, endPage);
+		
+		// Unload distant pages to save memory
+		const currentPage = Math.floor((startPage + endPage) / 2);
+		artifactStore.unloadDistantPages(currentPage, 5);
+	}
+
+	// Handle current page change - update URL
+	function handleCurrentPageChange(pageNum: number) {
+		if (!browser) return;
+		
+		const url = new URL(window.location.href);
+		const currentUrlPage = parseInt(url.searchParams.get('page') || '1');
+		
+		if (pageNum !== currentUrlPage) {
+			url.searchParams.set('page', String(pageNum));
+			history.replaceState({}, '', url);
+		}
+	}
+
+	// Handle filter change
+	function handleFilterChange(filter: string) {
+		if (!browser) return;
+		
+		const url = new URL(window.location.href);
+		if (filter === 'All') {
+			url.searchParams.delete('tag');
+		} else {
+			url.searchParams.set('tag', filter);
+		}
+		url.searchParams.set('page', '1'); // Reset to page 1
+		goto(url.toString(), { replaceState: true, noScroll: true });
+	}
+
+	// Handle sort change
+	function handleSortChange(newSort: 'New' | 'Top' | 'Trending') {
+		if (!browser) return;
+		
+		const mapping = sortMapping[newSort];
+		
+		const url = new URL(window.location.href);
+		url.searchParams.set('sort', mapping.sortBy);
+		url.searchParams.set('order', mapping.sortOrder);
+		url.searchParams.set('page', '1'); // Reset to page 1
+		goto(url.toString(), { replaceState: true, noScroll: true });
+	}
+
+	// 3D tilt effect handler for playing card
+	let rafId: number | null = null;
+	
+	function handleCardPointerMove(e: PointerEvent) {
+		if (rafId) return;
+		
+		const card = e.currentTarget as HTMLElement;
+		const clientX = e.clientX;
+		const clientY = e.clientY;
+		
+		rafId = requestAnimationFrame(() => {
+			if (!card) { rafId = null; return; }
+			
+			const rect = card.getBoundingClientRect();
+			const x = clientX - rect.left;
+			const y = clientY - rect.top;
+			const centerX = rect.width / 2;
+			const centerY = rect.height / 2;
+			const rotateX = (y - centerY) / 4;
+			const rotateY = (centerX - x) / 4;
+			
+			card.style.setProperty('--rotateX', `${rotateX}deg`);
+			card.style.setProperty('--rotateY', `${rotateY}deg`);
+			rafId = null;
+		});
+	}
+
+	function handleCardPointerLeave(e: PointerEvent) {
+		if (rafId) {
+			cancelAnimationFrame(rafId);
+			rafId = null;
+		}
+		const card = e.currentTarget as HTMLElement;
+		card.style.setProperty('--rotateX', '0deg');
+		card.style.setProperty('--rotateY', '0deg');
+	}
 </script>
 
 <div class="mx-auto max-w-[1200px] px-4 py-6">
@@ -50,7 +184,7 @@
 			<span class="text-sm font-bold text-gray-700 whitespace-nowrap">{m.home_tags()}</span>
 			{#each filters as filter}
 				<button
-					onclick={() => (activeFilter = filter)}
+					onclick={() => handleFilterChange(filter)}
 					class="px-3 py-1 text-xs font-medium rounded-sm transition whitespace-nowrap {activeFilter === filter
 						? 'bg-[#0969da] text-white'
 						: 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
@@ -63,7 +197,8 @@
 		<div class="flex items-center gap-2">
 			<span class="text-xs text-gray-500">{m.home_sort_by()}</span>
 			<select 
-				bind:value={sortBy}
+				value={sortBy}
+				onchange={(e) => handleSortChange(e.currentTarget.value as 'New' | 'Top' | 'Trending')}
 				class="text-xs bg-gray-100 border-none rounded px-2 py-1 focus:ring-1 focus:ring-blue-500"
 			>
 				{#each sortOptions as option}
@@ -73,7 +208,7 @@
 		</div>
 	</div>
 
-	<!-- Games Grid (Steam-like compact list/grid) -->
+	<!-- Virtual Grid -->
 	{#if artifactStore.loading}
 		<div class="flex justify-center items-center py-12">
 			<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
@@ -82,60 +217,116 @@
 		<div class="text-center py-12 text-red-500">
 			{m.common_error({ message: artifactStore.error })}
 		</div>
-	{:else if filteredGames.length === 0}
+	{:else if artifactStore.totalItems === 0}
 		<div class="text-center py-12 text-gray-500">
 			{m.home_no_artifacts()}
 		</div>
 	{:else}
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-			{#each filteredGames as game}
-				<a href="/artifact/{game.id}" class="group block bg-white border border-gray-200 rounded-lg transition-all duration-200 shadow-sm hover:shadow-lg hover:-translate-y-0.5">
-					<div class="flex h-full">
-						<!-- Image -->
-						<div class="w-1/3 min-w-[120px] relative overflow-hidden rounded-l-lg">
-							<img
-								src={game.thumbnailUrl || 'https://placehold.co/800x400/222/fff?text=No+Image'}
-								alt={game.name}
-								class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-							/>
-						</div>
-						
-						<!-- Content -->
-						<div class="flex-1 p-3 flex flex-col justify-between min-w-0">
-							<div>
-								<h3 class="font-bold text-[#0969da] group-hover:underline text-sm mb-1 truncate" title={game.name}>
-									{game.name}
-								</h3>
-								<p class="text-xs text-gray-500 mb-2 truncate">{m.common_by({ author: game.author.displayName || game.author.username })}</p>
-								<div class="relative mb-2 h-6 overflow-hidden">
-									<div class="flex gap-1 absolute top-0 left-0 right-0">
-										{#each game.tags as tag}
-											<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded border border-gray-200 whitespace-nowrap">
-												{tag.name}
-											</span>
-										{/each}
+		<div>
+			<VirtualGrid
+				totalItems={artifactStore.totalItems}
+				itemHeight={ITEM_HEIGHT}
+				gap={20}
+				{columnCount}
+				pageSize={PAGE_SIZE}
+				{getItems}
+				onPageRangeChange={handlePageRangeChange}
+				onCurrentPageChange={handleCurrentPageChange}
+				initialPage={urlParams.page}
+			>
+				{#snippet children(game: ArtifactListItem, index: number)}
+					<div class="group bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-visible">
+						<div class="flex h-full">
+							<!-- Cover Image (Playing Card Style) -->
+							<div class="w-[38%] min-w-[150px] flex items-center justify-center py-4 pl-2 pr-1 relative">
+								<a 
+									href="/artifact/{game.id}" 
+									class="playing-card relative block w-[140px] h-[196px] z-10 -mt-6 -ml-6"
+									style="--rotateX: 0deg; --rotateY: 0deg;"
+									onpointermove={handleCardPointerMove}
+									onpointerleave={handleCardPointerLeave}
+								>
+									<div class="absolute inset-0 bg-black/15 rounded-lg translate-x-1 translate-y-1 blur-sm"></div>
+									<div class="relative w-full h-full bg-white rounded-lg border-2 border-gray-200 shadow-lg overflow-hidden">
+										<img
+											src={game.thumbnailUrl || 'https://placehold.co/280x392/e5e7eb/9ca3af?text=No+Cover'}
+											alt={game.name}
+											class="w-full h-full object-cover"
+										/>
+										<div class="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent pointer-events-none"></div>
 									</div>
-									<div class="absolute right-0 top-0 bottom-0 w-8 bg-linear-to-l from-white to-transparent pointer-events-none"></div>
-								</div>
+								</a>
 							</div>
 							
-							<div class="flex items-center justify-between text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
-								<div class="flex items-center gap-3">
+							<!-- Content -->
+							<div class="flex-1 p-4 flex flex-col min-w-0 bg-gradient-to-br from-white to-gray-50/50">
+								<a href="/artifact/{game.id}" class="block mb-1">
+									<h3 class="font-bold text-gray-800 group-hover:text-gray-600 text-base leading-tight line-clamp-2 h-[2.5rem] transition-colors" title={game.name}>
+										{game.name}
+									</h3>
+								</a>
+								
+								<a 
+									href="/user/{game.author.id}" 
+									class="text-xs text-gray-500 hover:text-gray-700 hover:underline mb-2 truncate transition-colors"
+									onclick={(e) => e.stopPropagation()}
+								>
+									{m.common_by({ author: game.author.displayName || game.author.username })}
+								</a>
+								
+								<p class="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2 h-[2.25rem]">
+									{game.description || ''}
+								</p>
+								
+								{#if game.tags && game.tags.length > 0}
+									<div class="relative mb-3 h-5 overflow-hidden">
+										<div class="flex gap-1 absolute top-0 left-0 right-0">
+											{#each game.tags as tag}
+												<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full whitespace-nowrap">
+													{tag.name}
+												</span>
+											{/each}
+										</div>
+										<div class="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-gray-50 to-transparent pointer-events-none"></div>
+									</div>
+								{/if}
+								
+								<div class="flex items-center gap-4 text-xs text-gray-400 pt-2 border-t border-gray-100">
 									<span class="flex items-center gap-1" title={m.common_views()}>
-										<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+										<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
 										{(game.stats?.viewCount ?? 0).toLocaleString()}
 									</span>
-									<span class="flex items-center gap-1" title={m.common_stars()}>
-										<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
+									<span class="flex items-center gap-1 text-rose-400" title={m.common_stars()}>
+										<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
 										{game.stats?.favCount ?? 0}
 									</span>
 								</div>
-								<span class="text-green-600 font-medium">{m.common_free()}</span>
 							</div>
 						</div>
 					</div>
-				</a>
-			{/each}
+				{/snippet}
+				
+				{#snippet placeholder(index: number)}
+					<div class="bg-gray-100 rounded-xl animate-pulse" style="height: {ITEM_HEIGHT}px;"></div>
+				{/snippet}
+			</VirtualGrid>
 		</div>
 	{/if}
 </div>
+
+<!-- Spacer for virtual list scroll area -->
+<div class="pb-8"></div>
+
+<style>
+	.playing-card {
+		transform-style: preserve-3d;
+		will-change: transform;
+		touch-action: none;
+		transform: perspective(800px) rotateX(var(--rotateX)) rotateY(var(--rotateY)) rotate(-6deg) scale(1);
+		transition: transform 0.15s ease-out;
+	}
+	
+	.playing-card:hover {
+		transform: perspective(800px) rotateX(var(--rotateX)) rotateY(var(--rotateY)) rotate(-6deg) scale(1.15);
+	}
+</style>

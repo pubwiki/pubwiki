@@ -4,7 +4,8 @@ import type {
 	ArtifactLineageItem,
 	ArtifactNodeSummary,
 	ArtifactEdge,
-	NodeFileInfo
+	NodeFileInfo,
+	Pagination
 } from '@pubwiki/api';
 import { apiClient } from '$lib/api';
 
@@ -45,43 +46,114 @@ export interface ArtifactDetails {
 }
 
 export class ArtifactStore {
-	artifacts = $state<ArtifactListItem[]>([]);
+	// Sparse page cache for virtual list (not deeply reactive)
+	private pageCache = new Map<number, ArtifactListItem[]>();
+	private loadingPages = new Set<number>();
+	// Trigger for cache updates
+	private cacheVersion = $state(0);
+	
+	totalItems = $state(0);
+	pageSize = $state(20);
 	loading = $state(false);
 	error = $state<string | null>(null);
+	
+	// Current query options (for consistent loading)
+	private currentOptions: {
+		typeInclude?: string[];
+		tagInclude?: string[];
+		sortBy?: 'createdAt' | 'updatedAt' | 'viewCount' | 'favCount';
+		sortOrder?: 'asc' | 'desc';
+	} = {};
 	
 	// Cache for artifact details
 	private detailsCache = new Map<string, ArtifactDetails>();
 	// Cache for node details (key: `${artifactId}:${nodeId}`)
 	private nodeDetailCache = new Map<string, ArtifactNodeDetail>();
 
-	async fetchArtifacts(options?: {
-		page?: number;
-		limit?: number;
+	get totalPages(): number {
+		return Math.ceil(this.totalItems / this.pageSize);
+	}
+	
+	get loadedPageCount(): number {
+		return this.pageCache.size;
+	}
+
+	/**
+	 * Initialize the store with query options and load first page
+	 */
+	async initialize(options?: {
 		typeInclude?: string[];
 		tagInclude?: string[];
 		sortBy?: 'createdAt' | 'updatedAt' | 'viewCount' | 'favCount';
 		sortOrder?: 'asc' | 'desc';
+		pageSize?: number;
 	}) {
-		this.loading = true;
+		// Clear existing cache on re-initialize
+		this.pageCache.clear();
+		this.loadingPages.clear();
+		this.cacheVersion++;
+		this.totalItems = 0;
 		this.error = null;
+		
+		this.currentOptions = {
+			typeInclude: options?.typeInclude,
+			tagInclude: options?.tagInclude,
+			sortBy: options?.sortBy ?? 'createdAt',
+			sortOrder: options?.sortOrder ?? 'desc'
+		};
+		
+		if (options?.pageSize) {
+			this.pageSize = options.pageSize;
+		}
+		
+		// Load first page to get total count
+		this.loading = true;
+		try {
+			const result = await this.loadPage(1);
+			if (result?.pagination) {
+				this.totalItems = result.pagination.total;
+			}
+		} finally {
+			this.loading = false;
+		}
+	}
+
+	/**
+	 * Load a specific page of artifacts
+	 */
+	async loadPage(pageNum: number): Promise<{ artifacts: ArtifactListItem[]; pagination: Pagination } | null> {
+		// Already cached or loading
+		if (this.pageCache.has(pageNum) || this.loadingPages.has(pageNum)) {
+			return null;
+		}
+		
+		// Out of range check
+		if (this.totalItems > 0 && pageNum > this.totalPages) {
+			return null;
+		}
+		
+		this.loadingPages.add(pageNum);
 		
 		try {
 			const { data, error } = await apiClient.GET('/artifacts', {
 				params: {
 					query: {
-						page: options?.page ?? 1,
-						limit: options?.limit ?? 20,
-						'type.include': options?.typeInclude as any,
-						'tag.include': options?.tagInclude,
-						sortBy: options?.sortBy ?? 'createdAt',
-						sortOrder: options?.sortOrder ?? 'desc'
+						page: pageNum,
+						limit: this.pageSize,
+						'type.include': this.currentOptions.typeInclude as any,
+						'tag.include': this.currentOptions.tagInclude,
+						sortBy: this.currentOptions.sortBy ?? 'createdAt',
+						sortOrder: this.currentOptions.sortOrder ?? 'desc'
 					}
 				}
 			});
 
 			if (data) {
-				this.artifacts = data.artifacts;
-				// Update cache with basic info
+				// Update page cache
+				this.pageCache.set(pageNum, data.artifacts);
+				this.cacheVersion++;
+				
+				// Update details cache
 				for (const artifact of data.artifacts) {
 					if (!this.detailsCache.has(artifact.id)) {
 						this.detailsCache.set(artifact.id, { artifact });
@@ -90,21 +162,110 @@ export class ArtifactStore {
 						existing.artifact = artifact;
 					}
 				}
-				return { success: true, pagination: data.pagination };
+				
+				return { artifacts: data.artifacts, pagination: data.pagination };
 			}
-
-			this.error = error?.error || 'Failed to fetch artifacts';
-			return { success: false, error: this.error };
+			
+			if (error) {
+				this.error = error.error || 'Failed to fetch artifacts';
+			}
+			return null;
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : 'Unknown error';
-			return { success: false, error: this.error };
+			return null;
 		} finally {
-			this.loading = false;
+			this.loadingPages.delete(pageNum);
 		}
 	}
 
+	/**
+	 * Ensure a range of pages are loaded (with buffer)
+	 */
+	async ensurePagesLoaded(startPage: number, endPage: number): Promise<void> {
+		const pagesToLoad: number[] = [];
+		
+		// Include 1 buffer page on each side
+		const loadStart = Math.max(1, startPage - 1);
+		const loadEnd = this.totalPages > 0 
+			? Math.min(this.totalPages, endPage + 1)
+			: endPage + 1;
+		
+		for (let p = loadStart; p <= loadEnd; p++) {
+			if (!this.pageCache.has(p) && !this.loadingPages.has(p)) {
+				pagesToLoad.push(p);
+			}
+		}
+		
+		if (pagesToLoad.length > 0) {
+			await Promise.all(pagesToLoad.map(p => this.loadPage(p)));
+		}
+	}
+
+	/**
+	 * Get items for a specific index range (for virtual list rendering)
+	 * Reading cacheVersion ensures reactivity when cache updates
+	 */
+	getItemsForRange(startIdx: number, endIdx: number): (ArtifactListItem | null)[] {
+		// Touch cacheVersion for reactivity
+		void this.cacheVersion;
+		
+		const items: (ArtifactListItem | null)[] = [];
+		const actualEnd = Math.min(endIdx, this.totalItems);
+		
+		for (let i = startIdx; i < actualEnd; i++) {
+			const page = Math.floor(i / this.pageSize) + 1;
+			const indexInPage = i % this.pageSize;
+			
+			const pageData = this.pageCache.get(page);
+			if (pageData && indexInPage < pageData.length) {
+				items.push(pageData[indexInPage]);
+			} else {
+				items.push(null); // Placeholder for loading state
+			}
+		}
+		
+		return items;
+	}
+
+	/**
+	 * Check if a page is currently loading
+	 */
+	isPageLoading(pageNum: number): boolean {
+		return this.loadingPages.has(pageNum);
+	}
+
+	/**
+	 * Unload pages that are far from the current view to save memory
+	 */
+	unloadDistantPages(currentPage: number, threshold = 5): void {
+		let removed = false;
+		const pagesToRemove: number[] = [];
+		
+		for (const page of this.pageCache.keys()) {
+			if (Math.abs(page - currentPage) > threshold) {
+				pagesToRemove.push(page);
+				removed = true;
+			}
+		}
+		
+		for (const page of pagesToRemove) {
+			this.pageCache.delete(page);
+		}
+		
+		if (removed) {
+			this.cacheVersion++;
+		}
+	}
+
+	/**
+	 * Find an artifact by ID from the page cache
+	 */
 	getArtifactById(id: string): ArtifactListItem | undefined {
-		return this.artifacts.find(a => a.id === id);
+		for (const items of this.pageCache.values()) {
+			const found = items.find(a => a.id === id);
+			if (found) return found;
+		}
+		return undefined;
 	}
 
 	async fetchHomepage(artifactId: string): Promise<string | null> {
@@ -161,10 +322,12 @@ export class ArtifactStore {
 		// Get basic artifact info first
 		let artifact = this.getArtifactById(artifactId);
 		
-		// If not in list, we need to fetch the list or handle this case
+		// If not in list, we need to initialize or handle this case
 		if (!artifact && !cached?.artifact) {
-			// Try to fetch the artifacts list first
-			await this.fetchArtifacts({ limit: 100 });
+			// Try to initialize if not already done
+			if (this.totalItems === 0) {
+				await this.initialize({ pageSize: 100 });
+			}
 			artifact = this.getArtifactById(artifactId);
 			if (!artifact) {
 				return null;
