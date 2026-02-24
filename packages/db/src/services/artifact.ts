@@ -820,7 +820,7 @@ export class ArtifactService {
       )
       .innerJoin(
         sql`node_versions as nv_parent`,
-        sql`nv_parent.commit = ${nodeVersions.derivativeOf}`
+        sql`nv_parent."commit" = ${nodeVersions.derivativeOf}`
       )
       .where(
         and(
