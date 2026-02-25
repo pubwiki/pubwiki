@@ -175,6 +175,52 @@
 		card.style.setProperty('--rotateX', '0deg');
 		card.style.setProperty('--rotateY', '0deg');
 	}
+
+	// Back to top button state
+	let showBackToTop = $state(false);
+	let savedScrollPosition: number | null = $state(null);
+	let reachedTop = $state(false); // Track if scroll has reached top after clicking "back to top"
+
+	// Track scroll position for back-to-top button
+	$effect(() => {
+		if (!browser) return;
+
+		const handleScroll = () => {
+			const scrollY = window.scrollY;
+			showBackToTop = scrollY > 400;
+			
+			// Only start tracking "scroll down to clear" after reaching top
+			if (savedScrollPosition !== null) {
+				if (scrollY < 50) {
+					reachedTop = true;
+				}
+				// Clear saved position only if user scrolls down AFTER reaching top
+				if (reachedTop && scrollY > 200) {
+					savedScrollPosition = null;
+					reachedTop = false;
+				}
+			}
+		};
+
+		window.addEventListener('scroll', handleScroll, { passive: true });
+		return () => window.removeEventListener('scroll', handleScroll);
+	});
+
+	function scrollToTop() {
+		if (!browser) return;
+		
+		// Save current position before scrolling to top
+		savedScrollPosition = window.scrollY;
+		reachedTop = false; // Reset so we wait for scroll to actually reach top
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
+	function returnToPosition() {
+		if (!browser || savedScrollPosition === null) return;
+		
+		window.scrollTo({ top: savedScrollPosition, behavior: 'smooth' });
+		savedScrollPosition = null;
+	}
 </script>
 
 <div class="mx-auto max-w-[1200px] px-4 py-6">
@@ -317,7 +363,42 @@
 <!-- Spacer for virtual list scroll area -->
 <div class="pb-8"></div>
 
+<!-- Back to Top Button -->
+{#if showBackToTop}
+	<button
+		onclick={scrollToTop}
+		class="fixed bottom-6 right-6 z-50 w-12 h-12 bg-[#0969da] rounded-full shadow-lg flex items-center justify-center text-white hover:bg-[#0860c7] transition-all hover:shadow-xl"
+		title="Back to top"
+	>
+		<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+		</svg>
+	</button>
+{/if}
+
+<!-- Return to Previous Position Button (fixed position above back-to-top) -->
+{#if savedScrollPosition !== null}
+	<button
+		onclick={returnToPosition}
+		class="fixed bottom-20 right-6 z-50 w-12 h-12 bg-white border border-gray-200 rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:bg-gray-50 hover:text-gray-800 transition-all hover:shadow-xl"
+		title="Return to previous position"
+	>
+		<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 12H5m0 0l7 7m-7-7l7-7" />
+		</svg>
+	</button>
+{/if}
+
 <style>
+	/* Hide scrollbar but keep scrolling */
+	:global(html) {
+		scrollbar-width: none; /* Firefox */
+		-ms-overflow-style: none; /* IE/Edge */
+	}
+	:global(html::-webkit-scrollbar) {
+		display: none; /* Chrome/Safari/Opera */
+	}
+
 	.playing-card {
 		transform-style: preserve-3d;
 		will-change: transform;
