@@ -1324,7 +1324,7 @@ describe('Artifacts API', () => {
 
       expect(response.status).toBe(404);
       const data = await response.json<ApiError>();
-      expect(data.error).toBe('artifact not found');
+      expect(data.error).toBe('Artifact not found');
     });
 
     it('should return 404 when homepage not created', async () => {

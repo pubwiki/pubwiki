@@ -110,6 +110,31 @@ export class BatchContext {
   }
 
   /**
+   * Execute raw SQL query and return all results (direct passthrough)
+   * Useful for FTS5 queries and other operations not supported by the query builder.
+   *
+   * @example
+   * const results = await ctx.all<{ id: string, name: string }>(
+   *   sql`SELECT id, name FROM artifacts_fts WHERE artifacts_fts MATCH ${query}`
+   * );
+   */
+  get all() {
+    return this.db.all.bind(this.db);
+  }
+
+  /**
+   * Execute raw SQL query and return a single result (direct passthrough)
+   *
+   * @example
+   * const result = await ctx.get<{ total: number }>(
+   *   sql`SELECT COUNT(*) as total FROM artifacts_fts WHERE artifacts_fts MATCH ${query}`
+   * );
+   */
+  get get() {
+    return this.db.get.bind(this.db);
+  }
+
+  /**
    * Collect write operations using chain API (not executed immediately)
    *
    * @example

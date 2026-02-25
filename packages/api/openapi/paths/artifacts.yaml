@@ -303,6 +303,94 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
+/artifacts/search:
+  get:
+    summary: 搜索公开 Artifact
+    description: |
+      全文搜索公开的 Artifact，匹配 name 和 description 字段。
+      默认按相关度排序，支持标签过滤和分页。
+      使用 SQLite FTS5 进行全文搜索。
+    operationId: searchArtifacts
+    tags:
+      - Artifacts
+    parameters:
+      - name: q
+        in: query
+        required: true
+        description: 搜索关键词（匹配 name 和 description）
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 200
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: tag.include
+        in: query
+        description: 包含的标签 slug 列表（AND 逻辑）
+        schema:
+          type: array
+          items:
+            type: string
+        style: form
+        explode: true
+      - name: tag.exclude
+        in: query
+        description: 排除的标签 slug 列表
+        schema:
+          type: array
+          items:
+            type: string
+        style: form
+        explode: true
+      - name: sortBy
+        in: query
+        description: 排序字段（默认 relevance）
+        schema:
+          type: string
+          enum: [relevance, createdAt, updatedAt, viewCount, favCount]
+          default: relevance
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          $ref: '../schemas/artifact.yaml#/SortOrder'
+    responses:
+      '200':
+        description: 成功获取搜索结果
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - artifacts
+                - pagination
+              properties:
+                artifacts:
+                  type: array
+                  items:
+                    $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '400':
+        description: 请求参数错误（如搜索词为空）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
 /artifacts/{artifactId}/homepage:
   get:
     summary: 获取 Artifact 主页 HTML

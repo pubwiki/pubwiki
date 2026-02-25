@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, BatchContext, ArtifactService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse } from '@pubwiki/api';
+import { createDb, BatchContext, ArtifactService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput, type SearchArtifactsParams } from '@pubwiki/db';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse, SearchArtifactsResponse } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
-import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody, UpdateArtifactMetadataBody, UpdateVersionMetadataBody } from '@pubwiki/api/validate';
+import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody, UpdateArtifactMetadataBody, UpdateVersionMetadataBody, SearchArtifactsQueryParams } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { checkResourceAccess } from '../lib/access-control';
@@ -50,6 +50,43 @@ artifactsRoute.get('/', async (c) => {
   }
 
   return c.json<ListArtifactsResponse>(result.data);
+});
+
+// 搜索公开 artifact (FTS5 全文搜索)
+// 注意：此路由必须在 /:artifactId 路由之前，避免 search 被当作 artifactId 匹配
+artifactsRoute.get('/search', async (c) => {
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
+
+  // 解析数组参数（URL query 中的重复参数）
+  const rawQuery = {
+    ...c.req.query(),
+    'tag.include': c.req.queries('tag.include'),
+    'tag.exclude': c.req.queries('tag.exclude'),
+  };
+
+  // 使用 zod schema 校验查询参数
+  const validated = validateQuery(c, SearchArtifactsQueryParams, rawQuery);
+  if (isValidationError(validated)) return validated;
+
+  // 构建搜索参数
+  const searchParams: SearchArtifactsParams = {
+    q: validated.q,
+    page: validated.page,
+    limit: validated.limit,
+    'tag.include': validated['tag.include'],
+    'tag.exclude': validated['tag.exclude'],
+    sortBy: validated.sortBy,
+    sortOrder: validated.sortOrder,
+  };
+
+  const result = await artifactService.searchArtifacts(searchParams);
+
+  if (!result.success) {
+    return serviceErrorResponse(c, result.error);
+  }
+
+  return c.json<SearchArtifactsResponse>(result.data);
 });
 
 // 获取 artifact 谱系信息
@@ -420,7 +457,7 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
 
   // Audit log
   const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
-  audit.create('artifact_version', patchedArtifact.latestCommit!, { artifactId });
+  audit.create('artifact_version', metadata.commit, { artifactId });
 
   return c.json<PatchArtifactResponse>(
     {

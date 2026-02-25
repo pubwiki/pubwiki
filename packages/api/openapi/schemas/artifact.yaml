@@ -72,6 +72,36 @@ Tag:
       nullable: true
       description: "颜色代码 #RRGGBB"
 
+TagListItem:
+  type: object
+  description: 标签列表项（包含使用次数）
+  required:
+    - slug
+    - name
+    - usageCount
+  properties:
+    slug:
+      type: string
+      description: "Tag slug (primary key)"
+    name:
+      type: string
+    description:
+      type: string
+      nullable: true
+    color:
+      type: string
+      nullable: true
+      description: "颜色代码 #RRGGBB"
+    usageCount:
+      type: integer
+      description: 使用次数
+
+TagSortBy:
+  type: string
+  description: Tag 列表排序字段
+  enum: [usageCount, name, createdAt]
+  default: usageCount
+
 ArtifactNodeType:
   type: string
   enum: [PROMPT, INPUT, GENERATED, VFS, LOADER, SANDBOX, STATE, SAVE]

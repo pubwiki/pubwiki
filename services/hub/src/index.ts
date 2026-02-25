@@ -10,6 +10,7 @@ import { discussionsRoute } from './routes/discussions';
 import { articlesRoute } from './routes/articles';
 import { nodesRoute } from './routes/nodes';
 import { savesRoute } from './routes/saves';
+import { tagsRoute } from './routes/tags';
 import { authMiddleware } from './middleware/auth';
 import { createDb, eq, user as userTable } from '@pubwiki/db';
 import type { HealthCheckResponse, GetMeResponse, UpdateProfileRequest, UpdateProfileResponse, ApiError } from '@pubwiki/api';
@@ -43,6 +44,9 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => {
 
 // Artifacts 路由（公开）
 app.route('/api/artifacts', artifactsRoute);
+
+// Tags 路由（公开）
+app.route('/api/tags', tagsRoute);
 
 // Projects 路由（公开）
 app.route('/api/projects', projectsRoute);

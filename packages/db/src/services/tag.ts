@@ -1,6 +1,7 @@
-import { eq, inArray, sql, and } from 'drizzle-orm';
+import { eq, inArray, sql, and, desc, asc, count } from 'drizzle-orm';
 import { tags, artifactTags } from '../schema/artifacts';
 import type { BatchContext } from '../batch-context';
+import type { ServiceResult } from './user';
 
 /**
  * Tag information structure used across the application.
@@ -22,6 +23,42 @@ export interface SyncTagsResult {
 }
 
 /**
+ * Parameters for listing tags
+ */
+export interface ListTagsParams {
+  /** Page number (1-indexed) */
+  page?: number;
+  /** Number of items per page */
+  limit?: number;
+  /** Search query to filter tags by name or slug */
+  search?: string;
+  /** Sort by field */
+  sortBy?: 'usageCount' | 'name' | 'createdAt';
+  /** Sort order */
+  sortOrder?: 'asc' | 'desc';
+}
+
+/**
+ * Tag list item with usage count
+ */
+export interface TagListItem extends TagInfo {
+  usageCount: number;
+}
+
+/**
+ * Result of listing tags with pagination
+ */
+export interface ListTagsResult {
+  tags: TagListItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+/**
  * TagService handles all tag-related operations for artifacts.
  * 
  * Responsibilities:
@@ -32,6 +69,77 @@ export interface SyncTagsResult {
  */
 export class TagService {
   constructor(private ctx: BatchContext) {}
+
+  /**
+   * List tags with optional filtering and pagination.
+   * Returns tags sorted by usage count by default.
+   */
+  async listTags(params: ListTagsParams = {}): Promise<ServiceResult<ListTagsResult>> {
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      sortBy = 'usageCount',
+      sortOrder = 'desc',
+    } = params;
+
+    const offset = (page - 1) * limit;
+
+    // Build base query conditions
+    const conditions = [];
+    if (search) {
+      // Search in both slug and name
+      conditions.push(
+        sql`(${tags.slug} LIKE ${'%' + search + '%'} OR ${tags.name} LIKE ${'%' + search + '%'})`
+      );
+    }
+
+    // Get total count
+    const countQuery = this.ctx.select({ count: count() }).from(tags);
+    if (conditions.length > 0) {
+      countQuery.where(and(...conditions));
+    }
+    const [{ count: total }] = await countQuery;
+
+    // Build sort order
+    const sortColumn = sortBy === 'usageCount' ? tags.usageCount
+      : sortBy === 'name' ? tags.name
+      : tags.createdAt;
+    const orderFn = sortOrder === 'asc' ? asc : desc;
+
+    // Get paginated results
+    const listQuery = this.ctx
+      .select({
+        slug: tags.slug,
+        name: tags.name,
+        description: tags.description,
+        color: tags.color,
+        usageCount: tags.usageCount,
+      })
+      .from(tags);
+    
+    if (conditions.length > 0) {
+      listQuery.where(and(...conditions));
+    }
+    
+    const tagList = await listQuery
+      .orderBy(orderFn(sortColumn))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      success: true,
+      data: {
+        tags: tagList,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
+    };
+  }
 
   /**
    * Fetch existing tags by their slugs.
@@ -178,6 +286,7 @@ export class TagService {
   /**
    * Add a tag to an artifact.
    * Creates the tag if it doesn't exist, otherwise increments usage count.
+   * Only increments usage count if the association doesn't already exist.
    * 
    * @param artifactId The artifact ID
    * @param slug The tag slug (also the primary key)
@@ -189,6 +298,26 @@ export class TagService {
     slug: string,
     existingTag?: TagInfo,
   ): Promise<TagInfo> {
+    // Check if association already exists to avoid duplicate counting
+    const existingAssociation = await this.ctx
+      .select({ tagSlug: artifactTags.tagSlug })
+      .from(artifactTags)
+      .where(and(
+        eq(artifactTags.artifactId, artifactId),
+        eq(artifactTags.tagSlug, slug)
+      ))
+      .limit(1);
+
+    if (existingAssociation.length > 0) {
+      // Association already exists, don't increment count
+      return existingTag ?? {
+        slug: slug,
+        name: slug,
+        description: null,
+        color: null,
+      };
+    }
+
     if (!existingTag) {
       // Create new tag (slug is the primary key)
       this.ctx.modify().insert(tags).values({

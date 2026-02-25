@@ -22,6 +22,9 @@ export const artifacts = sqliteTable(
     license: text('license', { length: 50 }),
     createdAt: text('created_at').default(currentTimestamp).notNull(),
     updatedAt: text('updated_at').default(currentTimestamp).notNull(),
+    // FTS indexing flag: set to true after optimistic lock check passes
+    // This allows FTS triggers to fire without affecting changes() count
+    searchable: integer('searchable', { mode: 'boolean' }).default(false).notNull(),
   },
   (table) => [
     index('idx_artifacts_author').on(table.authorId),

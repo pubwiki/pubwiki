@@ -17,6 +17,7 @@ export type ApiError = components['schemas']['ApiError'];
 export type PublicUser = components['schemas']['PublicUser'];
 export type UpdateProfileRequest = components['schemas']['UpdateProfileRequest'];
 export type Tag = components['schemas']['Tag'];
+export type TagListItem = components['schemas']['TagListItem'];
 export type ArtifactListItem = components['schemas']['ArtifactListItem'];
 export type Pagination = components['schemas']['Pagination'];
 export type AccessControl = components['schemas']['AccessControl'];
@@ -99,7 +100,9 @@ export type HealthCheckResponse = operations['healthCheck']['responses']['200'][
 export type GetMeResponse = operations['getMe']['responses']['200']['content']['application/json'];
 export type UpdateProfileResponse = operations['updateProfile']['responses']['200']['content']['application/json'];
 export type ListArtifactsResponse = operations['listArtifacts']['responses']['200']['content']['application/json'];
+export type SearchArtifactsResponse = operations['searchArtifacts']['responses']['200']['content']['application/json'];
 export type GetArtifactLineageResponse = operations['getArtifactLineage']['responses']['200']['content']['application/json'];
+export type ListTagsResponse = operations['listTags']['responses']['200']['content']['application/json'];
 export type ListProjectsResponse = operations['listProjects']['responses']['200']['content']['application/json'];
 export type GetProjectDetailResponse = operations['getProjectDetail']['responses']['200']['content']['application/json'];
 export type GetProjectPageResponse = operations['getProjectPage']['responses']['200']['content']['application/json'];
@@ -154,6 +157,7 @@ export type UpdateVersionMetadataRequest = components['schemas']['UpdateVersionM
 
 // 查询参数类型
 export type ListArtifactsQuery = operations['listArtifacts']['parameters']['query'];
+export type SearchArtifactsQuery = operations['searchArtifacts']['parameters']['query'];
 export type ListProjectsQuery = operations['listProjects']['parameters']['query'];
 export type GetUserArtifactsQuery = operations['getUserArtifacts']['parameters']['query'];
 export type GetUserProjectsQuery = operations['getUserProjects']['parameters']['query'];

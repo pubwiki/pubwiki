@@ -548,14 +548,14 @@ describe('Articles API', () => {
       expect(data.error).toBe('Invalid artifact ID format');
     });
 
-    it('should return empty list for non-existent artifact', async () => {
+    it('should return 404 for non-existent artifact', async () => {
       const request = new Request('http://localhost/api/articles/by-artifact/00000000-0000-0000-0000-000000000000');
       const response = await sendRequest(request);
 
-      expect(response.status).toBe(200);
-      const data = await response.json<{ articles: ArticleDetail[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>();
-      expect(data.articles).toEqual([]);
-      expect(data.pagination.total).toBe(0);
+      // Non-existent artifact has no ACL records, so canRead returns false
+      expect(response.status).toBe(404);
+      const data = await response.json<ApiError>();
+      expect(data.error).toBe('Artifact not found or no permission');
     });
 
     it('should return empty list for artifact with no articles', async () => {

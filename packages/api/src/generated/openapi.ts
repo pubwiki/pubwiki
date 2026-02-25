@@ -147,6 +147,28 @@ export interface paths {
         patch: operations["patchArtifact"];
         trace?: never;
     };
+    "/artifacts/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 搜索公开 Artifact
+         * @description 全文搜索公开的 Artifact，匹配 name 和 description 字段。
+         *     默认按相关度排序，支持标签过滤和分页。
+         *     使用 SQLite FTS5 进行全文搜索。
+         */
+        get: operations["searchArtifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/artifacts/{artifactId}/homepage": {
         parameters: {
             query?: never;
@@ -253,6 +275,27 @@ export interface paths {
          *     此 API 替代原有的 updateCommitTags API，提供更完整的版本 metadata 修改能力。
          */
         put: operations["updateVersionMetadata"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取标签列表
+         * @description 获取所有标签，支持搜索过滤和分页。
+         *     默认按使用次数降序排列。
+         */
+        get: operations["listTags"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -823,6 +866,17 @@ export interface components {
             description?: string | null;
             /** @description 颜色代码 #RRGGBB */
             color?: string | null;
+        };
+        /** @description 标签列表项（包含使用次数） */
+        TagListItem: {
+            /** @description Tag slug (primary key) */
+            slug: string;
+            name: string;
+            description?: string | null;
+            /** @description 颜色代码 #RRGGBB */
+            color?: string | null;
+            /** @description 使用次数 */
+            usageCount: number;
         };
         /** @enum {string} */
         ArtifactNodeType: "PROMPT" | "INPUT" | "GENERATED" | "VFS" | "LOADER" | "SANDBOX" | "STATE" | "SAVE";
@@ -1852,6 +1906,12 @@ export interface components {
             entrypoint?: components["schemas"]["ArtifactEntrypoint"];
         };
         /**
+         * @description Tag 列表排序字段
+         * @default usageCount
+         * @enum {string}
+         */
+        TagSortBy: "usageCount" | "name" | "createdAt";
+        /**
          * @description Discussion 列表排序字段
          * @default createdAt
          * @enum {string}
@@ -2326,6 +2386,53 @@ export interface operations {
             };
         };
     };
+    searchArtifacts: {
+        parameters: {
+            query: {
+                /** @description 搜索关键词（匹配 name 和 description） */
+                q: string;
+                /** @description 页码 */
+                page?: number;
+                /** @description 每页数量 */
+                limit?: number;
+                /** @description 包含的标签 slug 列表（AND 逻辑） */
+                "tag.include"?: string[];
+                /** @description 排除的标签 slug 列表 */
+                "tag.exclude"?: string[];
+                /** @description 排序字段（默认 relevance） */
+                sortBy?: "relevance" | "createdAt" | "updatedAt" | "viewCount" | "favCount";
+                /** @description 排序方向 */
+                sortOrder?: components["schemas"]["SortOrder"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功获取搜索结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        artifacts: components["schemas"]["ArtifactListItem"][];
+                        pagination: components["schemas"]["Pagination"];
+                    };
+                };
+            };
+            /** @description 请求参数错误（如搜索词为空） */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
     getArtifactHomepage: {
         parameters: {
             query?: never;
@@ -2613,6 +2720,49 @@ export interface operations {
             };
             /** @description Artifact 或版本不存在 */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    listTags: {
+        parameters: {
+            query?: {
+                /** @description 页码 */
+                page?: number;
+                /** @description 每页数量 */
+                limit?: number;
+                /** @description 搜索关键词（匹配 slug 或 name） */
+                search?: string;
+                /** @description 排序字段 */
+                sortBy?: components["schemas"]["TagSortBy"];
+                /** @description 排序方向 */
+                sortOrder?: components["schemas"]["SortOrder"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功获取标签列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        tags: components["schemas"]["TagListItem"][];
+                        pagination: components["schemas"]["Pagination"];
+                    };
+                };
+            };
+            /** @description 请求参数错误 */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -86,6 +86,20 @@ export interface DeleteArtifactParams {
   userId: string; // from auth context
 }
 
+// Search artifacts parameters
+export interface SearchArtifactsParams {
+  q: string;                      // Search query (required)
+  page?: number;                  // Page number, default 1
+  limit?: number;                 // Items per page, default 20
+  'tag.include'?: string[];       // Include tags (AND logic)
+  'tag.exclude'?: string[];       // Exclude tags
+  sortBy?: 'relevance' | 'createdAt' | 'updatedAt' | 'viewCount' | 'favCount';
+  sortOrder?: 'asc' | 'desc';
+}
+
+// Search artifacts result (same as list result)
+export type SearchArtifactsResult = ListArtifactsResult;
+
 export class ArtifactService {
   private readonly aclService: AclService;
   private readonly discoveryService: DiscoveryService;
@@ -246,6 +260,13 @@ export class ArtifactService {
     };
     this.ctx.modify({ expectAffected: 1, lockMsg: `Artifact ${artifactId} already exists` })
       .insert(artifacts).values(newArtifact).onConflictDoNothing();
+
+    // Mark artifact as searchable to trigger FTS indexing
+    // This UPDATE has no expectAffected check, so it won't interfere with optimistic lock
+    this.ctx.modify()
+      .update(artifacts)
+      .set({ searchable: true })
+      .where(eq(artifacts.id, artifactId));
 
     // Create discovery control record using DiscoveryService
     const isListed = metadata.isListed ?? true;
@@ -667,6 +688,302 @@ export class ArtifactService {
       };
     } catch (error) {
       console.error('List artifacts error:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+      };
+    }
+  }
+
+  /**
+   * Sanitize FTS5 query to prevent injection and syntax errors.
+   * Removes special FTS5 operators that could cause query parsing errors.
+   */
+  private sanitizeFtsQuery(query: string): string {
+    return query
+      .replace(/[*"(){}[\]^~\\:]/g, ' ')  // Remove FTS5 special characters
+      .replace(/\s+/g, ' ')                // Collapse multiple spaces
+      .trim();
+  }
+
+  /**
+   * Search public artifacts using FTS5 full-text search.
+   * Searches in artifact name and description fields.
+   * 
+   * @param params - Search parameters including query, pagination, tag filters
+   * @returns Matching artifacts sorted by relevance or specified field
+   */
+  async searchArtifacts(params: SearchArtifactsParams): Promise<ServiceResult<SearchArtifactsResult>> {
+    const {
+      q,
+      page = 1,
+      limit = 20,
+      'tag.include': tagInclude,
+      'tag.exclude': tagExclude,
+      sortBy = 'relevance',
+      sortOrder = 'desc',
+    } = params;
+
+    // Sanitize and validate query
+    const sanitizedQuery = this.sanitizeFtsQuery(q);
+    if (!sanitizedQuery) {
+      return {
+        success: false,
+        error: { code: 'BAD_REQUEST', message: 'Search query is empty after sanitization' },
+      };
+    }
+
+    // Validate pagination parameters
+    const validPage = Math.max(1, page);
+    const validLimit = Math.min(100, Math.max(1, limit));
+    const offset = (validPage - 1) * validLimit;
+
+    try {
+
+      // Hybrid search strategy:
+      // - Short queries (< 3 chars): Use LIKE for substring matching (trigram requires 3+ chars)
+      // - Long queries (>= 3 chars): Use FTS5 with trigram tokenizer
+      const useFullTextSearch = sanitizedQuery.length >= 3;
+      // FTS5 trigram query needs double quotes for phrase matching
+      const ftsQuery = `"${sanitizedQuery}"`;
+      const likePattern = `%${sanitizedQuery}%`;
+
+      // Build parameterized tag filter conditions using raw SQL fragments
+      // These will be interpolated safely via sql template
+      const tagIncludeCondition = tagInclude && tagInclude.length > 0
+        ? sql`AND (
+            SELECT count(DISTINCT at.tag_slug)
+            FROM artifact_tags at
+            WHERE at.artifact_id = a.id
+              AND at.tag_slug IN (${sql.join(tagInclude.map(t => sql`${t}`), sql`, `)})
+          ) = ${tagInclude.length}`
+        : sql``;
+
+      const tagExcludeCondition = tagExclude && tagExclude.length > 0
+        ? sql`AND NOT EXISTS (
+            SELECT 1
+            FROM artifact_tags at
+            WHERE at.artifact_id = a.id
+              AND at.tag_slug IN (${sql.join(tagExclude.map(t => sql`${t}`), sql`, `)})
+          )`
+        : sql``;
+
+      // ORDER BY clause uses fixed column names (cannot be parameterized)
+      // We validate sortBy against a whitelist and use literal SQL
+      const getOrderClause = () => {
+        const dir = sortOrder === 'asc' ? sql`ASC` : sql`DESC`;
+        const revDir = sortOrder === 'asc' ? sql`DESC` : sql`ASC`;
+        switch (sortBy) {
+          case 'relevance':
+            // bm25() returns negative values; DESC relevance means ASC bm25
+            return useFullTextSearch 
+              ? sql`bm25(artifacts_fts) ${revDir}`
+              : sql`relevance_score ASC`;
+          case 'createdAt':
+            return sql`a.created_at ${dir}`;
+          case 'updatedAt':
+            return sql`a.updated_at ${dir}`;
+          case 'viewCount':
+            return sql`s.view_count ${dir}`;
+          case 'favCount':
+            return sql`s.fav_count ${dir}`;
+          default:
+            return useFullTextSearch 
+              ? sql`bm25(artifacts_fts) ASC`
+              : sql`relevance_score ASC`;
+        }
+      };
+      const orderClauseSql = getOrderClause();
+
+      type SearchResultRow = {
+        id: string;
+        name: string;
+        description: string | null;
+        thumbnail_url: string | null;
+        license: string | null;
+        created_at: string;
+        updated_at: string;
+        author_id: string;
+        is_listed: number;
+        author_username: string;
+        author_display_name: string | null;
+        author_avatar_url: string | null;
+        view_count: number | null;
+        fav_count: number | null;
+        ref_count: number | null;
+        download_count: number | null;
+        relevance_score: number;
+      };
+
+      let searchResults: SearchResultRow[];
+      let countResult: { total: number } | undefined;
+
+      if (useFullTextSearch) {
+        // FTS5 search with trigram - all values parameterized
+        searchResults = await this.ctx.all<SearchResultRow>(sql`
+          SELECT 
+            a.id,
+            a.name,
+            a.description,
+            a.thumbnail_url,
+            a.license,
+            a.created_at,
+            a.updated_at,
+            a.author_id,
+            rdc.is_listed,
+            u.username AS author_username,
+            u.displayName AS author_display_name,
+            u.avatarUrl AS author_avatar_url,
+            s.view_count,
+            s.fav_count,
+            s.ref_count,
+            s.download_count,
+            bm25(artifacts_fts) AS relevance_score
+          FROM artifacts_fts
+          INNER JOIN artifacts a ON artifacts_fts.id = a.id
+          INNER JOIN user u ON a.author_id = u.id
+          INNER JOIN resource_discovery_control rdc 
+            ON rdc.resource_type = 'artifact' AND rdc.resource_id = a.id
+          LEFT JOIN artifact_stats s ON a.id = s.artifact_id
+          WHERE artifacts_fts MATCH ${ftsQuery}
+            AND rdc.is_listed = 1
+            ${tagIncludeCondition}
+            ${tagExcludeCondition}
+          ORDER BY ${orderClauseSql}
+          LIMIT ${validLimit} OFFSET ${offset}
+        `);
+
+        countResult = await this.ctx.get<{ total: number }>(sql`
+          SELECT COUNT(*) as total
+          FROM artifacts_fts
+          INNER JOIN artifacts a ON artifacts_fts.id = a.id
+          INNER JOIN resource_discovery_control rdc 
+            ON rdc.resource_type = 'artifact' AND rdc.resource_id = a.id
+          WHERE artifacts_fts MATCH ${ftsQuery}
+            AND rdc.is_listed = 1
+            ${tagIncludeCondition}
+            ${tagExcludeCondition}
+        `);
+      } else {
+        // LIKE search for short queries - all values parameterized
+        searchResults = await this.ctx.all<SearchResultRow>(sql`
+          SELECT 
+            a.id,
+            a.name,
+            a.description,
+            a.thumbnail_url,
+            a.license,
+            a.created_at,
+            a.updated_at,
+            a.author_id,
+            rdc.is_listed,
+            u.username AS author_username,
+            u.displayName AS author_display_name,
+            u.avatarUrl AS author_avatar_url,
+            s.view_count,
+            s.fav_count,
+            s.ref_count,
+            s.download_count,
+            CASE 
+              WHEN a.name = ${sanitizedQuery} THEN 1
+              WHEN a.name LIKE ${likePattern} THEN 2
+              ELSE 3
+            END AS relevance_score
+          FROM artifacts a
+          INNER JOIN user u ON a.author_id = u.id
+          INNER JOIN resource_discovery_control rdc 
+            ON rdc.resource_type = 'artifact' AND rdc.resource_id = a.id
+          LEFT JOIN artifact_stats s ON a.id = s.artifact_id
+          WHERE (a.name LIKE ${likePattern} OR a.description LIKE ${likePattern})
+            AND rdc.is_listed = 1
+            ${tagIncludeCondition}
+            ${tagExcludeCondition}
+          ORDER BY ${orderClauseSql}
+          LIMIT ${validLimit} OFFSET ${offset}
+        `);
+
+        countResult = await this.ctx.get<{ total: number }>(sql`
+          SELECT COUNT(*) as total
+          FROM artifacts a
+          INNER JOIN resource_discovery_control rdc 
+            ON rdc.resource_type = 'artifact' AND rdc.resource_id = a.id
+          WHERE (a.name LIKE ${likePattern} OR a.description LIKE ${likePattern})
+            AND rdc.is_listed = 1
+            ${tagIncludeCondition}
+            ${tagExcludeCondition}
+        `);
+      }
+
+      // Get total count for pagination
+
+      const total = countResult?.total ?? 0;
+      const totalPages = Math.ceil(total / validLimit);
+
+      // Get tags for all found artifacts
+      const artifactIds = searchResults.map(r => r.id);
+      const tagsMap = new Map<string, ArtifactListItem['tags']>();
+
+      if (artifactIds.length > 0) {
+        const tagResults = await this.ctx
+          .select({
+            artifactId: artifactTags.artifactId,
+            tag: {
+              slug: tags.slug,
+              name: tags.name,
+              description: tags.description,
+              color: tags.color,
+            },
+          })
+          .from(artifactTags)
+          .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
+          .where(inArray(artifactTags.artifactId, artifactIds));
+
+        for (const row of tagResults) {
+          const existing = tagsMap.get(row.artifactId) || [];
+          existing.push(row.tag);
+          tagsMap.set(row.artifactId, existing);
+        }
+      }
+
+      // Build result artifacts
+      const resultArtifacts: ArtifactListItem[] = searchResults.map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        isListed: Boolean(r.is_listed),
+        thumbnailUrl: r.thumbnail_url,
+        license: r.license,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        author: {
+          id: r.author_id,
+          username: r.author_username,
+          displayName: r.author_display_name,
+          avatarUrl: r.author_avatar_url,
+        },
+        tags: tagsMap.get(r.id) || [],
+        stats: r.view_count !== null ? {
+          viewCount: r.view_count ?? 0,
+          favCount: r.fav_count ?? 0,
+          refCount: r.ref_count ?? 0,
+          downloadCount: r.download_count ?? 0,
+        } : undefined,
+      }));
+
+      return {
+        success: true,
+        data: {
+          artifacts: resultArtifacts,
+          pagination: {
+            page: validPage,
+            limit: validLimit,
+            total,
+            totalPages,
+          },
+        },
+      };
+    } catch (error) {
+      console.error('Search artifacts error:', error);
       return {
         success: false,
         error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
@@ -2002,8 +2319,22 @@ export class ArtifactService {
       // Step 9: Delete commit tags
       this.ctx.modify().delete(artifactCommitTags).where(eq(artifactCommitTags.artifactId, artifactId));
 
-      // Step 10: Delete artifact tags
+      // Step 10: Delete artifact tags and decrement usage counts
+      // First get all tag slugs for this artifact
+      const tagSlugsToDecrement = await this.ctx
+        .select({ tagSlug: artifactTags.tagSlug })
+        .from(artifactTags)
+        .where(eq(artifactTags.artifactId, artifactId));
+
+      // Delete the associations
       this.ctx.modify().delete(artifactTags).where(eq(artifactTags.artifactId, artifactId));
+
+      // Decrement usage count for each tag
+      for (const { tagSlug } of tagSlugsToDecrement) {
+        this.ctx.modify().update(tags)
+          .set({ usageCount: sql`MAX(0, ${tags.usageCount} - 1)` })
+          .where(eq(tags.slug, tagSlug));
+      }
 
       // Step 11: Delete stats
       this.ctx.modify().delete(artifactStats).where(eq(artifactStats.artifactId, artifactId));

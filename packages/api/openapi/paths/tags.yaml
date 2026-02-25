@@ -1,0 +1,65 @@
+# Tag paths
+
+/tags:
+  get:
+    summary: 获取标签列表
+    description: |
+      获取所有标签，支持搜索过滤和分页。
+      默认按使用次数降序排列。
+    operationId: listTags
+    tags:
+      - Tags
+    parameters:
+      - name: page
+        in: query
+        description: 页码
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: limit
+        in: query
+        description: 每页数量
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: search
+        in: query
+        description: 搜索关键词（匹配 slug 或 name）
+        schema:
+          type: string
+      - name: sortBy
+        in: query
+        description: 排序字段
+        schema:
+          $ref: '../schemas/artifact.yaml#/TagSortBy'
+      - name: sortOrder
+        in: query
+        description: 排序方向
+        schema:
+          $ref: '../schemas/artifact.yaml#/SortOrder'
+    responses:
+      '200':
+        description: 成功获取标签列表
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tags
+                - pagination
+              properties:
+                tags:
+                  type: array
+                  items:
+                    $ref: '../schemas/artifact.yaml#/TagListItem'
+                pagination:
+                  $ref: '../schemas/common.yaml#/Pagination'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

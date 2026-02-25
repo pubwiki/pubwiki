@@ -713,6 +713,75 @@ export const DeleteArtifactParams = zod.object({
 
 
 /**
+ * 全文搜索公开的 Artifact，匹配 name 和 description 字段。
+默认按相关度排序，支持标签过滤和分页。
+使用 SQLite FTS5 进行全文搜索。
+
+ * @summary 搜索公开 Artifact
+ */
+export const searchArtifactsQueryQMax = 200;
+
+export const searchArtifactsQueryPageDefault = 1;
+
+export const searchArtifactsQueryLimitDefault = 20;
+export const searchArtifactsQueryLimitMax = 100;
+
+export const searchArtifactsQuerySortByDefault = `relevance`;export const searchArtifactsQuerySortOrderDefault = `desc`;
+
+export const SearchArtifactsQueryParams = zod.object({
+  "q": zod.string().min(1).max(searchArtifactsQueryQMax).describe('搜索关键词（匹配 name 和 description）'),
+  "page": zod.number().min(1).default(searchArtifactsQueryPageDefault).describe('页码'),
+  "limit": zod.number().min(1).max(searchArtifactsQueryLimitMax).default(searchArtifactsQueryLimitDefault).describe('每页数量'),
+  "tag.include": zod.array(zod.string()).optional().describe('包含的标签 slug 列表（AND 逻辑）'),
+  "tag.exclude": zod.array(zod.string()).optional().describe('排除的标签 slug 列表'),
+  "sortBy": zod.enum(['relevance', 'createdAt', 'updatedAt', 'viewCount', 'favCount']).default(searchArtifactsQuerySortByDefault).describe('排序字段（默认 relevance）'),
+  "sortOrder": zod.enum(['asc', 'desc']).default(searchArtifactsQuerySortOrderDefault).describe('排序方向')
+})
+
+
+export const searchArtifactsResponsePaginationLimitMax = 100;
+
+
+
+export const SearchArtifactsResponse = zod.object({
+  "artifacts": zod.array(zod.object({
+  "id": zod.uuid(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
+  "thumbnailUrl": zod.url().nullish(),
+  "license": zod.string().nullish(),
+  "createdAt": zod.iso.datetime({}),
+  "updatedAt": zod.iso.datetime({}),
+  "author": zod.object({
+  "id": zod.uuid(),
+  "username": zod.string(),
+  "displayName": zod.string().nullish(),
+  "avatarUrl": zod.url().nullish()
+}),
+  "tags": zod.array(zod.object({
+  "slug": zod.string().describe('Tag slug (primary key)'),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
+})).optional(),
+  "stats": zod.object({
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
+})),
+  "pagination": zod.object({
+  "page": zod.number().min(1),
+  "limit": zod.number().min(1).max(searchArtifactsResponsePaginationLimitMax),
+  "total": zod.number(),
+  "totalPages": zod.number()
+})
+})
+
+
+/**
  * 获取指定 Artifact 的只读主页 HTML 内容。
 HTML 内容存储在 R2 中，存储 key 由 artifactId 派生。
 访问权限由 ACL 系统控制，无权访问时返回 403。
@@ -1002,6 +1071,49 @@ export const UpdateVersionMetadataResponse = zod.object({
   "changelog": zod.string().nullish(),
   "publishedAt": zod.iso.datetime({}).nullish(),
   "createdAt": zod.iso.datetime({})
+})
+})
+
+
+/**
+ * 获取所有标签，支持搜索过滤和分页。
+默认按使用次数降序排列。
+
+ * @summary 获取标签列表
+ */
+export const listTagsQueryPageDefault = 1;
+
+export const listTagsQueryLimitDefault = 20;
+export const listTagsQueryLimitMax = 100;
+
+export const listTagsQuerySortByDefault = `usageCount`;export const listTagsQuerySortOrderDefault = `desc`;
+
+export const ListTagsQueryParams = zod.object({
+  "page": zod.number().min(1).default(listTagsQueryPageDefault).describe('页码'),
+  "limit": zod.number().min(1).max(listTagsQueryLimitMax).default(listTagsQueryLimitDefault).describe('每页数量'),
+  "search": zod.string().optional().describe('搜索关键词（匹配 slug 或 name）'),
+  "sortBy": zod.enum(['usageCount', 'name', 'createdAt']).default(listTagsQuerySortByDefault).describe('排序字段'),
+  "sortOrder": zod.enum(['asc', 'desc']).default(listTagsQuerySortOrderDefault).describe('排序方向')
+})
+
+
+export const listTagsResponsePaginationLimitMax = 100;
+
+
+
+export const ListTagsResponse = zod.object({
+  "tags": zod.array(zod.object({
+  "slug": zod.string().describe('Tag slug (primary key)'),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "color": zod.string().nullish().describe('颜色代码 #RRGGBB'),
+  "usageCount": zod.number().describe('使用次数')
+}).describe('标签列表项（包含使用次数）')),
+  "pagination": zod.object({
+  "page": zod.number().min(1),
+  "limit": zod.number().min(1).max(listTagsResponsePaginationLimitMax),
+  "total": zod.number(),
+  "totalPages": zod.number()
 })
 })
 

@@ -71,6 +71,8 @@ components:
     # Artifact schemas
     Tag:
       $ref: './openapi/schemas/artifact.yaml#/Tag'
+    TagListItem:
+      $ref: './openapi/schemas/artifact.yaml#/TagListItem'
     ArtifactNodeType:
       $ref: './openapi/schemas/artifact.yaml#/ArtifactNodeType'
     CreateArtifactMetadata:
@@ -222,6 +224,8 @@ paths:
   # Artifacts
   /artifacts:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts'
+  /artifacts/search:
+    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1search'
   /artifacts/{artifactId}/homepage:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1homepage'
   /artifacts/{artifactId}/lineage:
@@ -232,6 +236,10 @@ paths:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1metadata'
   /artifacts/{artifactId}/versions/{commitHash}/metadata:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}~1versions~1{commitHash}~1metadata'
+
+  # Tags
+  /tags:
+    $ref: './openapi/paths/tags.yaml#/~1tags'
 
   # Projects
   /projects:

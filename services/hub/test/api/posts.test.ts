@@ -77,7 +77,7 @@ describe('Project Posts API', () => {
     return project.id;
   }
 
-  // Helper: 添加协作者（通过 ACL 写权限）
+  // Helper: 添加协作者（通过 ACL 管理权限，可以删除其他人的 post）
   async function addCollaborator(projectId: string, userId: string): Promise<void> {
     await db.insert(resourceAcl).values({
       resourceType: 'project',
@@ -85,7 +85,7 @@ describe('Project Posts API', () => {
       userId,
       canRead: true,
       canWrite: true,
-      canManage: false,
+      canManage: true,
       grantedBy: userId,
     });
   }

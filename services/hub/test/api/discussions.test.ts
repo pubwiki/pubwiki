@@ -16,6 +16,9 @@ import {
   discussionReplies,
   artifacts,
   projects,
+  resourceDiscoveryControl,
+  resourceAcl,
+  PUBLIC_USER_ID,
   eq,
   type TestDb,
 } from './helpers';
@@ -34,6 +37,36 @@ describe('Discussions API', () => {
       authorId,
       name,
     }).returning();
+    
+    // Create discovery control record
+    await db.insert(resourceDiscoveryControl).values({
+      resourceType: 'artifact',
+      resourceId: artifact.id,
+      isListed: true,
+    });
+    
+    // Create owner ACL
+    await db.insert(resourceAcl).values({
+      resourceType: 'artifact',
+      resourceId: artifact.id,
+      userId: authorId,
+      canRead: true,
+      canWrite: true,
+      canManage: true,
+      grantedBy: authorId,
+    });
+    
+    // Create public read ACL
+    await db.insert(resourceAcl).values({
+      resourceType: 'artifact',
+      resourceId: artifact.id,
+      userId: PUBLIC_USER_ID,
+      canRead: true,
+      canWrite: false,
+      canManage: false,
+      grantedBy: authorId,
+    });
+    
     return artifact.id;
   }
 
@@ -45,6 +78,36 @@ describe('Discussions API', () => {
       slug: name.toLowerCase().replace(/\s+/g, '-'),
       topic: 'test-topic',
     }).returning();
+    
+    // Create discovery control record
+    await db.insert(resourceDiscoveryControl).values({
+      resourceType: 'project',
+      resourceId: project.id,
+      isListed: true,
+    });
+    
+    // Create owner ACL
+    await db.insert(resourceAcl).values({
+      resourceType: 'project',
+      resourceId: project.id,
+      userId: ownerId,
+      canRead: true,
+      canWrite: true,
+      canManage: true,
+      grantedBy: ownerId,
+    });
+    
+    // Create public read ACL
+    await db.insert(resourceAcl).values({
+      resourceType: 'project',
+      resourceId: project.id,
+      userId: PUBLIC_USER_ID,
+      canRead: true,
+      canWrite: false,
+      canManage: false,
+      grantedBy: ownerId,
+    });
+    
     return project.id;
   }
 

@@ -729,6 +729,7 @@ async function loadMockProjectsFromDirectory(): Promise<MockProject[]> {
 }
 
 // 从 mock 目录加载 articles
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function loadMockArticlesFromDirectory(): Promise<{ article: MockArticle; artifactSlug: string }[]> {
   const mockDir = path.join(process.cwd(), 'scripts', 'mock');
   const articles: { article: MockArticle; artifactSlug: string }[] = [];
@@ -771,6 +772,7 @@ async function loadMockArticlesFromDirectory(): Promise<{ article: MockArticle; 
 }
 
 // 创建 article
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function createArticle(
   article: MockArticle,
   sessionCookie: string
