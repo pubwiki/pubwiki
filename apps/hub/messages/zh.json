@@ -35,6 +35,10 @@
 	"home_sort_top": "热门",
 	"home_sort_trending": "趋势",
 	"home_no_artifacts": "未找到作品。",
+	"home_search_placeholder": "搜索作品...",
+	"home_search_results": "搜索 \"{query}\" 的结果",
+	"home_search_no_results": "未找到 \"{query}\" 的结果",
+	"home_search_clear": "清除搜索",
 	
 	"footer_title": "AI 游戏中心",
 	"footer_copyright": "© 2025 PubWiki. 保留所有权利。所有商标均为其在美国和其他国家/地区的各自所有者的财产。",

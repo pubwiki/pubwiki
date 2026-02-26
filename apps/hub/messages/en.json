@@ -35,6 +35,10 @@
 	"home_sort_top": "Top",
 	"home_sort_trending": "Trending",
 	"home_no_artifacts": "No artifacts found.",
+	"home_search_placeholder": "Search artifacts...",
+	"home_search_results": "Search results for \"{query}\"",
+	"home_search_no_results": "No results found for \"{query}\"",
+	"home_search_clear": "Clear search",
 	
 	"footer_title": "AI Game Hub",
 	"footer_copyright": "© 2025 PubWiki. All rights reserved. All trademarks are property of their respective owners in the US and other countries.",

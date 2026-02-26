@@ -4,21 +4,49 @@
 	import { browser } from '$app/environment';
 	import { untrack } from 'svelte';
 	import { useArtifactStore } from '$lib/stores/artifacts.svelte';
+	import { createSearchStore } from '$lib/stores/search.svelte';
+	import { apiClient } from '$lib/api';
 	import VirtualGrid from '$lib/components/VirtualGrid.svelte';
-	import type { ArtifactListItem } from '@pubwiki/api';
+	import type { ArtifactListItem, ListTagsResponse } from '@pubwiki/api';
 	import * as m from '$lib/paraglide/messages';
 
 	const artifactStore = useArtifactStore();
+	const searchStore = createSearchStore();
 
-	// URL params for persistence
+	// Search state - initialized from URL
+	let searchInput = $state('');
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	const DEBOUNCE_MS = 300;
+	let isInitialLoad = $state(true);  // Track if this is initial page load
+
+	// URL params for persistence (source of truth for both browse and search modes)
 	const urlParams = $derived.by(() => {
 		const params = $page.url.searchParams;
 		return {
 			page: parseInt(params.get('page') || '1'),
 			sort: (params.get('sort') || 'createdAt') as 'createdAt' | 'viewCount' | 'favCount',
 			order: (params.get('order') || 'desc') as 'asc' | 'desc',
-			tag: params.get('tag') || null
+			tag: params.get('tag') || null,
+			q: params.get('q') || null  // Search query from URL
 		};
+	});
+	
+	// Initialize searchInput from URL on mount
+	$effect(() => {
+		if (!browser) return;
+		const q = urlParams.q;
+		const tagInclude = urlParams.tag ? [urlParams.tag] : undefined;
+		
+		// On initial load, sync from URL and trigger search immediately (no debounce)
+		if (isInitialLoad && q !== null) {
+			searchInput = q;
+			untrack(() => {
+				searchStore.search(q, { tagInclude });
+				isInitialLoad = false;
+			});
+		} else if (isInitialLoad) {
+			isInitialLoad = false;
+		}
 	});
 
 	const sortMap: Record<string, 'New' | 'Top' | 'Trending'> = {
@@ -30,7 +58,34 @@
 	// Derive sortBy from URL params (no effect needed)
 	let sortBy = $derived(sortMap[urlParams.sort] || 'New');
 
-	const filters = ['All', 'Sci-Fi', 'Fantasy', 'Xianxia', 'Cyberpunk', 'Horror', 'Strategy', 'Survival'];
+	// Tags loaded from backend
+	type TagItem = ListTagsResponse['tags'][number];
+	let tags = $state<TagItem[]>([]);
+	let tagsLoading = $state(true);
+	let tagsExpanded = $state(false);
+
+	// Load tags from API
+	$effect(() => {
+		if (!browser) return;
+		
+		(async () => {
+			const { data, error } = await apiClient.GET('/tags', {
+				params: {
+					query: {
+						limit: 50,
+						sortBy: 'usageCount',
+						sortOrder: 'desc'
+					}
+				}
+			});
+			
+			if (data && !error) {
+				tags = data.tags;
+			}
+			tagsLoading = false;
+		})();
+	});
+
 	const sortOptions = ['New', 'Top', 'Trending'] as const;
 
 	const sortLabels = {
@@ -85,12 +140,77 @@
 	const PAGE_SIZE = 20;
 	const ITEM_HEIGHT = 220; // Card height in pixels
 
-	// Get items for virtual list
+	// Helper: update URL params without navigation
+	function updateUrlParam(key: string, value: string | null) {
+		if (!browser) return;
+		const url = new URL(window.location.href);
+		if (value === null) {
+			url.searchParams.delete(key);
+		} else {
+			url.searchParams.set(key, value);
+		}
+		history.replaceState({}, '', url);
+	}
+
+	// Debounced search effect - syncs search query to URL (skips on initial load)
+	$effect(() => {
+		if (!browser || isInitialLoad) return;
+		
+		const query = searchInput;
+		const tagInclude = activeFilter !== 'All' ? [activeFilter] : undefined;
+		
+		// Clear existing timer
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+		}
+		
+		// If empty, clear search and sync to URL
+		if (!query.trim()) {
+			untrack(() => {
+				searchStore.clear();
+				// Remove q from URL and reset page
+				updateUrlParam('q', null);
+				updateUrlParam('page', '1');
+			});
+			return;
+		}
+		
+		// Skip if this query is already active (e.g., from URL init)
+		if (searchStore.currentQuery === query.trim()) {
+			return;
+		}
+		
+		// Debounce the search
+		debounceTimer = setTimeout(() => {
+			untrack(() => {
+				// Scroll to top smoothly for new search
+				window.scrollTo({ top: 0, behavior: 'smooth' });
+				// Sync to URL first
+				updateUrlParam('q', query.trim());
+				updateUrlParam('page', '1');  // Reset to page 1 on new search
+				// Then trigger search
+				searchStore.search(query, { tagInclude });
+			});
+		}, DEBOUNCE_MS);
+		
+		return () => {
+			if (debounceTimer) {
+				clearTimeout(debounceTimer);
+			}
+		};
+	});
+
+	// Get items for virtual list (normal mode)
 	function getItems(startIdx: number, endIdx: number) {
 		return artifactStore.getItemsForRange(startIdx, endIdx);
 	}
 
-	// Handle page range changes - load required pages
+	// Get items for search virtual list
+	function getSearchItems(startIdx: number, endIdx: number) {
+		return searchStore.getItemsForRange(startIdx, endIdx);
+	}
+
+	// Handle page range changes - load required pages (normal mode)
 	async function handlePageRangeChange(startPage: number, endPage: number) {
 		await artifactStore.ensurePagesLoaded(startPage, endPage);
 		
@@ -99,16 +219,22 @@
 		artifactStore.unloadDistantPages(currentPage, 5);
 	}
 
-	// Handle current page change - update URL
+	// Handle search page range changes - load required pages
+	async function handleSearchPageRangeChange(startPage: number, endPage: number) {
+		await searchStore.ensurePagesLoaded(startPage, endPage);
+		
+		// Unload distant pages to save memory
+		const currentPage = Math.floor((startPage + endPage) / 2);
+		searchStore.unloadDistantPages(currentPage, 5);
+	}
+
+	// Unified page change handler - syncs to URL for both modes
 	function handleCurrentPageChange(pageNum: number) {
 		if (!browser) return;
 		
-		const url = new URL(window.location.href);
-		const currentUrlPage = parseInt(url.searchParams.get('page') || '1');
-		
+		const currentUrlPage = parseInt($page.url.searchParams.get('page') || '1');
 		if (pageNum !== currentUrlPage) {
-			url.searchParams.set('page', String(pageNum));
-			history.replaceState({}, '', url);
+			updateUrlParam('page', String(pageNum));
 		}
 	}
 
@@ -137,6 +263,12 @@
 		url.searchParams.set('order', mapping.sortOrder);
 		url.searchParams.set('page', '1'); // Reset to page 1
 		goto(url.toString(), { replaceState: true, noScroll: true });
+	}
+
+	// Clear search and return to normal mode
+	function clearSearch() {
+		searchInput = '';
+		searchStore.clear();
 	}
 
 	// 3D tilt effect handler for playing card
@@ -225,37 +357,229 @@
 
 <div class="mx-auto max-w-[1200px] px-4 py-6">
 	<!-- Top Bar with Filters -->
-	<div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 bg-white p-4 rounded-md border border-gray-200 shadow-sm">
-		<div class="flex items-center gap-2 overflow-x-auto pb-2 md:pb-0">
-			<span class="text-sm font-bold text-gray-700 whitespace-nowrap">{m.home_tags()}</span>
-			{#each filters as filter}
-				<button
-					onclick={() => handleFilterChange(filter)}
-					class="px-3 py-1 text-xs font-medium rounded-sm transition whitespace-nowrap {activeFilter === filter
-						? 'bg-[#0969da] text-white'
-						: 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
-				>
-					{filter === 'All' ? m.home_all() : filter}
-				</button>
-			{/each}
-		</div>
+	<div class="mb-6">
+		<div class="flex items-center gap-4">
+			<!-- Search Box -->
+			<div class="relative shrink-0">
+				<input
+					type="text"
+					bind:value={searchInput}
+					placeholder={m.home_search_placeholder()}
+					class="w-64 pl-10 pr-10 py-2 text-sm border border-gray-200 rounded-full bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+				/>
+				<!-- Search Icon / Loading Spinner -->
+				{#if searchStore.loading}
+					<div class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4">
+						<div class="animate-spin rounded-full h-4 w-4 border-2 border-gray-300 border-t-blue-500"></div>
+					</div>
+				{:else}
+					<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+					</svg>
+				{/if}
+				<!-- Clear Button -->
+				{#if searchInput || searchStore.isActive}
+					<button
+						type="button"
+						onclick={clearSearch}
+						class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 hover:text-gray-600 transition-colors"
+						title={m.home_search_clear()}
+					>
+						<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+						</svg>
+					</button>
+				{/if}
+			</div>
 
-		<div class="flex items-center gap-2">
-			<span class="text-xs text-gray-500">{m.home_sort_by()}</span>
-			<select 
-				value={sortBy}
-				onchange={(e) => handleSortChange(e.currentTarget.value as 'New' | 'Top' | 'Trending')}
-				class="text-xs bg-gray-100 border-none rounded px-2 py-1 focus:ring-1 focus:ring-blue-500"
-			>
-				{#each sortOptions as option}
-					<option value={option}>{sortLabels[option]()}</option>
-				{/each}
-			</select>
+			<!-- Divider -->
+			<div class="w-px h-5 bg-gray-200 shrink-0"></div>
+
+			<!-- Sort Dropdown -->
+			<div class="flex items-center gap-1.5 shrink-0">
+				<span class="text-xs font-semibold text-gray-400 uppercase tracking-wider">{m.home_sort_by()}</span>
+				<select 
+					value={sortBy}
+					onchange={(e) => handleSortChange(e.currentTarget.value as 'New' | 'Top' | 'Trending')}
+					class="text-sm bg-transparent text-gray-700 font-medium border-none cursor-pointer focus:ring-0 focus:outline-none hover:text-blue-600 transition-colors pr-5 -ml-1"
+				>
+					{#each sortOptions as option}
+						<option value={option}>{sortLabels[option]()}</option>
+					{/each}
+				</select>
+			</div>
+
+			<!-- Divider -->
+			<div class="w-px h-5 bg-gray-200 shrink-0"></div>
+
+			<!-- Tags -->
+			<div class="flex-1 min-w-0 {tagsExpanded ? 'flex flex-wrap items-center gap-1.5 max-h-40 overflow-y-auto' : 'flex items-center gap-1.5 overflow-hidden'}">
+				<!-- All button -->
+				<button
+					onclick={() => handleFilterChange('All')}
+					class="px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 whitespace-nowrap shrink-0 {activeFilter === 'All'
+						? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-500/25'
+						: 'bg-white text-gray-700 hover:bg-blue-50 hover:text-blue-600 border border-gray-200 hover:border-blue-300'}"
+				>
+					{m.home_all()}
+				</button>
+				
+				{#if tagsLoading}
+					<div class="flex items-center gap-1.5">
+						{#each Array(5) as _}
+							<div class="w-16 h-8 bg-gray-100 rounded-full animate-pulse shrink-0"></div>
+						{/each}
+					</div>
+				{:else}
+					{#each tags as tag}
+						<button
+							onclick={() => handleFilterChange(tag.slug)}
+							class="px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 whitespace-nowrap shrink-0 {activeFilter === tag.slug
+								? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md shadow-blue-500/25'
+								: 'bg-white text-gray-700 hover:bg-blue-50 hover:text-blue-600 border border-gray-200 hover:border-blue-300'}"
+						>
+							{tag.name}
+						</button>
+					{/each}
+				{/if}
+			</div>
+
+			<!-- Expand button -->
+			{#if !tagsLoading && tags.length > 0}
+				<button
+					onclick={() => tagsExpanded = !tagsExpanded}
+					class="shrink-0 p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+					title={tagsExpanded ? 'Collapse tags' : 'Show all tags'}
+				>
+					<svg class="w-4 h-4 transition-transform duration-200 {tagsExpanded ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+					</svg>
+				</button>
+			{/if}
 		</div>
 	</div>
 
-	<!-- Virtual Grid -->
-	{#if artifactStore.loading}
+	<!-- Search Results or Virtual Grid -->
+	{#if searchStore.isActive}
+		<!-- Search Results Header -->
+		<div class="mb-4 flex items-center justify-between">
+			<h2 class="text-lg font-semibold text-gray-700">
+				{m.home_search_results({ query: searchStore.currentQuery })}
+			</h2>
+			{#if searchStore.totalItems > 0}
+				<span class="text-sm text-gray-500">
+					{searchStore.totalItems} results
+				</span>
+			{/if}
+		</div>
+
+		{#if searchStore.loading}
+			<div class="flex justify-center items-center py-12">
+				<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
+			</div>
+		{:else if searchStore.error}
+			<div class="text-center py-12 text-red-500">
+				{m.common_error({ message: searchStore.error })}
+			</div>
+		{:else if searchStore.totalItems === 0}
+			<div class="text-center py-12 text-gray-500">
+				{m.home_search_no_results({ query: searchStore.currentQuery })}
+			</div>
+		{:else}
+			<!-- Search Results Virtual Grid -->
+			<div>
+				<VirtualGrid
+					totalItems={searchStore.totalItems}
+					itemHeight={ITEM_HEIGHT}
+					gap={20}
+					{columnCount}
+					pageSize={PAGE_SIZE}
+					getItems={getSearchItems}
+					onPageRangeChange={handleSearchPageRangeChange}
+					onCurrentPageChange={handleCurrentPageChange}
+					initialPage={urlParams.page}
+				>
+					{#snippet children(game: ArtifactListItem, index: number)}
+						<div class="group bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-visible">
+							<div class="flex h-full">
+								<!-- Cover Image (Playing Card Style) -->
+								<div class="w-[38%] min-w-[150px] flex items-center justify-center py-4 pl-2 pr-1 relative">
+									<a 
+										href="/artifact/{game.id}" 
+										class="playing-card relative block w-[140px] h-[196px] z-10 -mt-6 -ml-6"
+										style="--rotateX: 0deg; --rotateY: 0deg;"
+										onpointermove={handleCardPointerMove}
+										onpointerleave={handleCardPointerLeave}
+									>
+										<div class="absolute inset-0 bg-black/15 rounded-lg translate-x-1 translate-y-1 blur-sm"></div>
+										<div class="relative w-full h-full bg-white rounded-lg border-2 border-gray-200 shadow-lg overflow-hidden">
+											<img
+												src={game.thumbnailUrl || 'https://placehold.co/280x392/e5e7eb/9ca3af?text=No+Cover'}
+												alt={game.name}
+												class="w-full h-full object-cover"
+											/>
+											<div class="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent pointer-events-none"></div>
+										</div>
+									</a>
+								</div>
+								
+								<!-- Content -->
+								<div class="flex-1 p-4 flex flex-col min-w-0 bg-gradient-to-br from-white to-gray-50/50">
+									<a href="/artifact/{game.id}" class="block mb-1">
+										<h3 class="font-bold text-gray-800 group-hover:text-gray-600 text-base leading-tight line-clamp-2 h-[2.5rem] transition-colors" title={game.name}>
+											{game.name}
+										</h3>
+									</a>
+									
+									<a 
+										href="/user/{game.author.id}" 
+										class="text-xs text-gray-500 hover:text-gray-700 hover:underline mb-2 truncate transition-colors"
+										onclick={(e) => e.stopPropagation()}
+									>
+										{m.common_by({ author: game.author.displayName || game.author.username })}
+									</a>
+									
+									<p class="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2 h-[2.25rem]">
+										{game.description || ''}
+									</p>
+									
+									{#if game.tags && game.tags.length > 0}
+										<div class="relative mb-3 h-5 overflow-hidden">
+											<div class="flex gap-1 absolute top-0 left-0 right-0">
+												{#each game.tags as tag}
+													<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full whitespace-nowrap">
+														{tag.name}
+													</span>
+												{/each}
+											</div>
+											<div class="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-gray-50 to-transparent pointer-events-none"></div>
+										</div>
+									{/if}
+									
+									<div class="flex items-center gap-4 text-xs text-gray-400 pt-2 border-t border-gray-100">
+										<span class="flex items-center gap-1" title={m.common_views()}>
+											<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+											{(game.stats?.viewCount ?? 0).toLocaleString()}
+										</span>
+										<span class="flex items-center gap-1 text-rose-400" title={m.common_stars()}>
+											<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+											{game.stats?.favCount ?? 0}
+										</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					{/snippet}
+					
+					{#snippet placeholder(index: number)}
+						<div class="bg-gray-100 rounded-xl animate-pulse" style="height: {ITEM_HEIGHT}px;"></div>
+					{/snippet}
+				</VirtualGrid>
+			</div>
+		{/if}
+	{:else}
+		<!-- Normal Mode: Virtual Grid -->
+		{#if artifactStore.loading}
 		<div class="flex justify-center items-center py-12">
 			<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
 		</div>
@@ -357,6 +681,7 @@
 				{/snippet}
 			</VirtualGrid>
 		</div>
+	{/if}
 	{/if}
 </div>
 
