@@ -30,8 +30,8 @@ import JSZip from 'jszip';
  * Export manifest format
  */
 export interface ExportManifest {
-  /** Export format identifier */
-  format: 'pubwiki-studio';
+  /** Export format version */
+  version: 1;
   /** Export timestamp */
   exportedAt: string;
   /** Project metadata */
@@ -172,7 +172,7 @@ export async function exportProjectToZip(projectId: string): Promise<void> {
   
   // Create manifest
   const manifest: ExportManifest = {
-    format: 'pubwiki-studio',
+    version: 1,
     exportedAt: new Date().toISOString(),
     project: {
       id: project.id,

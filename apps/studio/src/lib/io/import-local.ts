@@ -100,7 +100,7 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
   const manifest: ExportManifest = JSON.parse(manifestText);
   
   // Validate manifest format
-  if (manifest.format !== 'pubwiki-studio') {
+  if (manifest.version !== 1) {
     throw new Error(`Invalid export file: unrecognized format`);
   }
   
