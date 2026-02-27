@@ -78,11 +78,15 @@
 		};
 	});
 
-	// Calculate current page based on scroll position
+	// Calculate current page based on scroll position (first visible item's page)
 	const currentPage = $derived.by(() => {
-		const centerRow = Math.floor(relativeScrollTop / rowHeight) + Math.floor(viewportHeight / rowHeight / 2);
-		const centerIndex = centerRow * columnCount;
-		return Math.floor(centerIndex / pageSize) + 1;
+		if (totalItems === 0) return 1;
+		// Use the first visible row's first item to determine current page
+		const firstVisibleRow = Math.floor(relativeScrollTop / rowHeight);
+		const firstVisibleIndex = firstVisibleRow * columnCount;
+		// Clamp to valid range
+		const clampedIndex = Math.max(0, Math.min(firstVisibleIndex, totalItems - 1));
+		return Math.floor(clampedIndex / pageSize) + 1;
 	});
 
 	// Get items for visible range

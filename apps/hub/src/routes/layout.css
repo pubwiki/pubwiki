@@ -10,8 +10,8 @@
 	--color-border: #d0d7de;
 	--color-text-primary: #24292f;
 	--color-text-secondary: #57606a;
-	--color-accent: #0969da; /* GitHub blue */
-	--color-accent-hover: #0a53be;
+	--color-accent: #d97706; /* Amber/Orange */
+	--color-accent-hover: #b45309;
 }
 
 body {

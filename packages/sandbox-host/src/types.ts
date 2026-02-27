@@ -121,6 +121,12 @@ export interface SandboxConnection {
   isConnected: boolean
 
   /**
+   * Get the bundler service for build progress tracking
+   * Returns null if not connected or no buildable project
+   */
+  getBundlerService(): BundlerService | null
+
+  /**
    * Wait for sandbox to be ready and initialized
    * @returns true if initialization succeeded
    */

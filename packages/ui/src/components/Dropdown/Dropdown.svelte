@@ -137,7 +137,7 @@
 		onkeydown={handleKeydown}
 		{disabled}
 		class="w-full {currentSize.button} border border-gray-300 rounded-lg bg-white text-left flex items-center justify-between
-			focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+			focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent
 			disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400
 			transition-colors"
 	>
@@ -164,7 +164,7 @@
 					<button
 						type="button"
 						class="w-full {currentSize.item} text-left hover:bg-gray-100 transition-colors border-b border-gray-100 last:border-b-0
-							{isSelected ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}
+							{isSelected ? 'bg-amber-50 text-amber-700' : 'text-gray-700'}
 							{isHighlighted && !isSelected ? 'bg-gray-50' : ''}"
 						onclick={() => select(item)}
 						onmouseenter={() => highlightedIndex = index}

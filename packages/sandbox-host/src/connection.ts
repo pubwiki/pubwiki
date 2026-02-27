@@ -197,6 +197,10 @@ export function createSandboxConnection(
       return connected
     },
 
+    getBundlerService() {
+      return vfsRpcHost?.getBundlerService() ?? null
+    },
+
     waitForReady(): Promise<boolean> {
       if (connected) {
         return Promise.resolve(true)

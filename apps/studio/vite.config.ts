@@ -23,6 +23,6 @@ export default defineConfig({
 	},
 
 	ssr: {
-		noExternal: ['@xyflow/svelte', '@pubwiki/chat', '@pubwiki/svelte-chat']
+		noExternal: ['@xyflow/svelte', '@pubwiki/chat', '@pubwiki/svelte-chat', '@pubwiki/api']
 	}
 });

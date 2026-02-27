@@ -167,6 +167,7 @@ export class BundlerService {
       // Cache the result
       this.lastBuildOutput = buildResult
 
+      console.log(`[BundlerService] Build finished, sending complete event, success:`, buildResult.success)
       this.notifyProgress({
         type: 'complete',
         path: tsconfigPath,
@@ -529,6 +530,7 @@ export class BundlerService {
   }
 
   private notifyProgress(event: BuildProgressEvent): void {
+    console.log(`[BundlerService #${this.instanceId}] notifyProgress:`, event.type, 'subscribers:', this.progressSubscribers.size)
     for (const subscriber of this.progressSubscribers) {
       try {
         subscriber(event)

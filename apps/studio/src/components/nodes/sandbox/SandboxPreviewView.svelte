@@ -49,6 +49,18 @@
 	}: Props = $props();
 
 	// ============================================================================
+	// Constants
+	// ============================================================================
+	
+	const DEFAULT_WIDTH = 900;
+	const DEFAULT_HEIGHT = 600;
+	const MIN_WIDTH = 400;
+	const MIN_HEIGHT = 300;
+	const MINIMIZED_WIDTH = 280;
+
+	const MINIMIZED_HEIGHT = 28;
+
+	// ============================================================================
 	// State
 	// ============================================================================
 
@@ -62,6 +74,34 @@
 	let showConsole = $state(false);
 	let consoleLogs = $state<ConsoleLogEntry[]>([]);
 	let hasNewErrors = $state(false);
+	
+	// Build progress state
+	let isCompiling = $state(false);
+	let unsubscribeBuildProgress: (() => void) | null = null;
+	
+	// Window state
+	let isMinimized = $state(false);
+	let windowWidth = $state(DEFAULT_WIDTH);
+	let windowHeight = $state(DEFAULT_HEIGHT);
+	let windowX = $state((typeof window !== 'undefined' ? window.innerWidth : 1920) / 2 - DEFAULT_WIDTH / 2);
+	let windowY = $state((typeof window !== 'undefined' ? window.innerHeight : 1080) / 2 - DEFAULT_HEIGHT / 2);
+	
+	// Drag state
+	let isDragging = $state(false);
+	let dragStartX = 0;
+	let dragStartY = 0;
+	let dragStartWindowX = 0;
+	let dragStartWindowY = 0;
+	
+	// Resize state
+	let isResizing = $state(false);
+	let resizeDirection = '';
+	let resizeStartX = 0;
+	let resizeStartY = 0;
+	let resizeStartWidth = 0;
+	let resizeStartHeight = 0;
+	let resizeStartWindowX = 0;
+	let resizeStartWindowY = 0;
 
 	// ============================================================================
 	// Derived
@@ -184,6 +224,20 @@
 				throw new Error('Failed to initialize sandbox connection');
 			}
 			
+			// Subscribe to bundler build progress for compilation indicator
+			const bundler = sandboxConnection.getBundlerService();
+			console.log('[SandboxPreviewView] getBundlerService result:', bundler);
+			if (bundler) {
+				unsubscribeBuildProgress = bundler.onBuildProgress((event) => {
+					console.log('[SandboxPreviewView] Build progress event:', event.type, event);
+					if (event.type === 'start') {
+						isCompiling = true;
+					} else if (event.type === 'complete' || event.type === 'error') {
+						isCompiling = false;
+					}
+				});
+			}
+			
 			// Load any existing logs
 			consoleLogs = sandboxConnection.getLogs();
 
@@ -200,6 +254,12 @@
 	}
 
 	function stopSandbox() {
+		// Unsubscribe from build progress
+		if (unsubscribeBuildProgress) {
+			unsubscribeBuildProgress();
+			unsubscribeBuildProgress = null;
+		}
+		
 		if (sandboxConnection) {
 			sandboxConnection.disconnect();
 			sandboxConnection = null;
@@ -222,6 +282,10 @@
 	function toggleFullscreen() {
 		isFullscreen = !isFullscreen;
 	}
+	
+	function toggleMinimize() {
+		isMinimized = !isMinimized;
+	}
 
 	function handleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape' && isFullscreen) {
@@ -229,99 +293,316 @@
 			isFullscreen = false;
 		}
 	}
+	
+	// ============================================================================
+	// Drag Handling
+	// ============================================================================
+	
+	let dragTarget: HTMLElement | null = null;
+	
+	function startDrag(event: PointerEvent) {
+		if (isFullscreen) return;
+		
+		// Only start drag on left mouse button and ignore if clicking buttons
+		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
+		
+		event.preventDefault();
+		isDragging = true;
+		dragStartX = event.clientX;
+		dragStartY = event.clientY;
+		dragStartWindowX = windowX;
+		dragStartWindowY = windowY;
+		
+		dragTarget = event.currentTarget as HTMLElement;
+		dragTarget.setPointerCapture(event.pointerId);
+	}
+	
+	function handleDrag(event: PointerEvent) {
+		if (!isDragging) return;
+		
+		const deltaX = event.clientX - dragStartX;
+		const deltaY = event.clientY - dragStartY;
+		
+		const currentWidth = isMinimized ? MINIMIZED_WIDTH : windowWidth;
+		const currentHeight = isMinimized ? MINIMIZED_HEIGHT : windowHeight;
+		
+		windowX = Math.max(0, Math.min(window.innerWidth - currentWidth, dragStartWindowX + deltaX));
+		windowY = Math.max(0, Math.min(window.innerHeight - currentHeight, dragStartWindowY + deltaY));
+	}
+	
+	function stopDrag(event: PointerEvent) {
+		if (!isDragging) return;
+		isDragging = false;
+		if (dragTarget) {
+			dragTarget.releasePointerCapture(event.pointerId);
+			dragTarget = null;
+		}
+	}
+	
+	// ============================================================================
+	// Resize Handling
+	// ============================================================================
+	
+	let resizeTarget: HTMLElement | null = null;
+	
+	function startResize(event: PointerEvent, direction: string) {
+		if (isFullscreen || isMinimized) return;
+		
+		event.preventDefault();
+		event.stopPropagation();
+		isResizing = true;
+		resizeDirection = direction;
+		resizeStartX = event.clientX;
+		resizeStartY = event.clientY;
+		resizeStartWidth = windowWidth;
+		resizeStartHeight = windowHeight;
+		resizeStartWindowX = windowX;
+		resizeStartWindowY = windowY;
+		
+		resizeTarget = event.currentTarget as HTMLElement;
+		resizeTarget.setPointerCapture(event.pointerId);
+	}
+	
+	function handleResize(event: PointerEvent) {
+		if (!isResizing) return;
+		
+		const deltaX = event.clientX - resizeStartX;
+		const deltaY = event.clientY - resizeStartY;
+		
+		let newWidth = resizeStartWidth;
+		let newHeight = resizeStartHeight;
+		let newX = resizeStartWindowX;
+		let newY = resizeStartWindowY;
+		
+		// Handle horizontal resize
+		if (resizeDirection.includes('e')) {
+			newWidth = Math.max(MIN_WIDTH, resizeStartWidth + deltaX);
+		} else if (resizeDirection.includes('w')) {
+			const maxDelta = resizeStartWidth - MIN_WIDTH;
+			const actualDelta = Math.min(deltaX, maxDelta);
+			newWidth = resizeStartWidth - actualDelta;
+			newX = resizeStartWindowX + actualDelta;
+		}
+		
+		// Handle vertical resize
+		if (resizeDirection.includes('s')) {
+			newHeight = Math.max(MIN_HEIGHT, resizeStartHeight + deltaY);
+		} else if (resizeDirection.includes('n')) {
+			const maxDelta = resizeStartHeight - MIN_HEIGHT;
+			const actualDelta = Math.min(deltaY, maxDelta);
+			newHeight = resizeStartHeight - actualDelta;
+			newY = resizeStartWindowY + actualDelta;
+		}
+		
+		// Constrain to viewport
+		newX = Math.max(0, newX);
+		newY = Math.max(0, newY);
+		
+		windowWidth = newWidth;
+		windowHeight = newHeight;
+		windowX = newX;
+		windowY = newY;
+	}
+	
+	function stopResize(event: PointerEvent) {
+		if (!isResizing) return;
+		isResizing = false;
+		resizeDirection = '';
+		if (resizeTarget) {
+			resizeTarget.releasePointerCapture(event.pointerId);
+			resizeTarget = null;
+		}
+	}
 </script>
 
 <!-- Floating Preview Panel -->
 <svelte:window onkeydown={handleKeydown} />
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
 	use:portal
-	class="fixed inset-0 bg-black/40 z-9999 flex items-center justify-center"
+	class="fixed z-9999"
+	class:inset-0={isFullscreen}
+	class:rounded-lg={isMinimized}
+	class:shadow-lg={isMinimized}
+	class:overflow-hidden={isMinimized}
+	style={isFullscreen ? '' : isMinimized 
+		? `left: ${windowX}px; top: ${windowY}px; width: ${MINIMIZED_WIDTH}px;`
+		: `left: ${windowX}px; top: ${windowY}px; width: ${windowWidth}px; height: ${windowHeight}px;`}
 	transition:fade={{ duration: 150 }}
-	onclick={isFullscreen ? undefined : handleClose}
 >
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
-		class="bg-white shadow-2xl flex flex-col overflow-hidden transition-all duration-200"
-		class:rounded-xl={!isFullscreen}
-		class:inset-0={isFullscreen}
-		class:fixed={isFullscreen}
-		style={isFullscreen ? '' : 'width: 900px; height: 600px;'}
-		onclick={(e) => e.stopPropagation()}
+		class="bg-white shadow-2xl flex flex-col overflow-hidden h-full w-full"
+		class:rounded-xl={!isFullscreen && !isMinimized}
 	>
-		<!-- Header (hidden in fullscreen) -->
-		{#if !isFullscreen}
-		<div class="flex items-center justify-between px-4 py-3 bg-orange-500 text-white">
-			<div class="flex items-center gap-3">
-				<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<!-- Header (always visible) -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div 
+			class="flex items-center justify-between bg-orange-500 text-white select-none touch-none"
+			class:px-2={isMinimized}
+			class:py-1={isMinimized}
+			class:px-3={!isMinimized}
+			class:py-1.5={!isMinimized}
+			class:cursor-move={!isDragging && !isFullscreen}
+			class:cursor-grabbing={isDragging}
+			onpointerdown={startDrag}
+			onpointermove={handleDrag}
+			onpointerup={stopDrag}
+			onpointercancel={stopDrag}
+		>
+			<div class="flex items-center gap-1.5 min-w-0" class:gap-2={!isMinimized}>
+				<svg class="shrink-0" class:w-3.5={isMinimized} class:h-3.5={isMinimized} class:w-4={!isMinimized} class:h-4={!isMinimized} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
 				</svg>
-				<span class="font-medium">{name || m.studio_node_sandbox_preview()}</span>
-				{#if isLoading}
+				<span class="font-medium truncate text-sm" class:text-xs={isMinimized}>{name || m.studio_node_sandbox_preview()}</span>
+				{#if isCompiling}
+					{#if isMinimized}
+						<svg class="w-3 h-3 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+						</svg>
+					{:else}
+						<span class="text-xs bg-white/20 px-2 py-0.5 rounded flex items-center gap-1">
+							<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+							</svg>
+							{m.studio_sandbox_compiling_short()}
+						</span>
+					{/if}
+				{:else if isLoading && !isMinimized}
 					<span class="text-xs bg-white/20 px-2 py-0.5 rounded">{m.studio_node_loading()}</span>
 				{/if}
 			</div>
-			<div class="flex items-center gap-2">
-				<!-- Fullscreen button -->
-				<button
-					class="p-1.5 hover:bg-white/20 rounded transition-colors"
-					onclick={toggleFullscreen}
-					title={m.studio_node_fullscreen()}
-				>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-					</svg>
-				</button>
-				<!-- Reload button -->
-				<button
-					class="p-1.5 hover:bg-white/20 rounded transition-colors disabled:opacity-50"
-					onclick={reloadSandbox}
-					disabled={isLoading || !!error}
-					title={m.studio_node_reload()}
-				>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-					</svg>
-				</button>
-				<!-- Console button -->
-				<button
-					class="p-1.5 hover:bg-white/20 rounded transition-colors relative"
-					onclick={toggleConsole}
-					title="Console"
-				>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-					</svg>
-					{#if errorCount > 0}
-						<span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-							{errorCount > 9 ? '9+' : errorCount}
-						</span>
-					{:else if warnCount > 0}
-						<span class="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-							{warnCount > 9 ? '9+' : warnCount}
-						</span>
-					{:else if hasNewErrors}
-						<span class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-					{/if}
-				</button>
+			<div class="flex items-center shrink-0" class:gap-0.5={isMinimized} class:gap-1={!isMinimized}>
+				{#if isMinimized}
+					<!-- Restore button -->
+					<button
+						class="p-0.5 hover:bg-white/20 rounded transition-colors"
+						onclick={toggleMinimize}
+						title={m.studio_node_restore()}
+					>
+						<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+						</svg>
+					</button>
+				{:else if isFullscreen}
+					<!-- Exit fullscreen button -->
+					<button
+						class="p-1 hover:bg-white/20 rounded transition-colors"
+						onclick={toggleFullscreen}
+						title={m.studio_node_exit_fullscreen()}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+						</svg>
+					</button>
+					<!-- Reload button -->
+					<button
+						class="p-1 hover:bg-white/20 rounded transition-colors disabled:opacity-50"
+						onclick={reloadSandbox}
+						disabled={isLoading || !!error}
+						title={m.studio_node_reload()}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+						</svg>
+					</button>
+					<!-- Console button -->
+					<button
+						class="p-1 hover:bg-white/20 rounded transition-colors relative"
+						onclick={toggleConsole}
+						title="Console"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+						</svg>
+						{#if errorCount > 0}
+							<span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+								{errorCount > 9 ? '9+' : errorCount}
+							</span>
+						{:else if warnCount > 0}
+							<span class="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+								{warnCount > 9 ? '9+' : warnCount}
+							</span>
+						{:else if hasNewErrors}
+							<span class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+						{/if}
+					</button>
+				{:else}
+					<!-- Minimize button -->
+					<button
+						class="p-1 hover:bg-white/20 rounded transition-colors"
+						onclick={toggleMinimize}
+						title={m.studio_node_minimize()}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6" />
+						</svg>
+					</button>
+					<!-- Fullscreen button -->
+					<button
+						class="p-1 hover:bg-white/20 rounded transition-colors"
+						onclick={toggleFullscreen}
+						title={m.studio_node_fullscreen()}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+						</svg>
+					</button>
+					<!-- Reload button -->
+					<button
+						class="p-1 hover:bg-white/20 rounded transition-colors disabled:opacity-50"
+						onclick={reloadSandbox}
+						disabled={isLoading || !!error}
+						title={m.studio_node_reload()}
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+						</svg>
+					</button>
+					<!-- Console button -->
+					<button
+						class="p-1 hover:bg-white/20 rounded transition-colors relative"
+						onclick={toggleConsole}
+						title="Console"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+						</svg>
+						{#if errorCount > 0}
+							<span class="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+								{errorCount > 9 ? '9+' : errorCount}
+							</span>
+						{:else if warnCount > 0}
+							<span class="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
+								{warnCount > 9 ? '9+' : warnCount}
+							</span>
+						{:else if hasNewErrors}
+							<span class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+						{/if}
+					</button>
+				{/if}
 				<!-- Close button -->
 				<button
-					class="p-1.5 hover:bg-white/20 rounded transition-colors"
+					class="hover:bg-white/20 rounded transition-colors"
+					class:p-0.5={isMinimized}
+					class:p-1={!isMinimized}
 					onclick={handleClose}
 					title={m.studio_node_close()}
 				>
-					<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<svg class:w-3.5={isMinimized} class:h-3.5={isMinimized} class:w-4={!isMinimized} class:h-4={!isMinimized} fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
 					</svg>
 				</button>
 			</div>
 		</div>
-		{/if}
 
-		<!-- Content -->
-		<div class="flex-1 relative bg-gray-100">
+		<!-- Content (hidden when minimized via CSS, not removed from DOM) -->
+		<div class="flex-1 relative bg-gray-100" class:hidden={isMinimized}>
 			{#if isLoading}
 				<!-- Loading state -->
 				<div class="absolute inset-0 flex flex-col items-center justify-center bg-white">
@@ -359,8 +640,8 @@
 			></iframe>
 		</div>
 
-		<!-- Console Panel -->
-		{#if showConsole}
+		<!-- Console Panel (hidden when minimized) -->
+		{#if showConsole && !isMinimized}
 		<div class="border-t border-gray-200 bg-gray-900 text-white flex flex-col" style="height: 200px; max-height: 50%;">
 			<!-- Console Header -->
 			<div class="flex items-center justify-between px-3 py-1.5 bg-gray-800 border-b border-gray-700">
@@ -422,12 +703,34 @@
 		</div>
 		{/if}
 
-		<!-- Footer (hidden in fullscreen) -->
-		{#if !isFullscreen}
+		<!-- Footer (hidden in fullscreen and minimized) -->
+		{#if !isFullscreen && !isMinimized}
 		<div class="px-4 py-2 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center justify-between">
 			<span>{m.studio_node_entry({ entryFile })}</span>
 			<span>{m.studio_node_origin({ origin: sandboxOrigin })}</span>
 		</div>
+		{/if}
+		
+		<!-- Resize Handles (hidden in fullscreen and minimized) -->
+		{#if !isFullscreen && !isMinimized}
+			<!-- Edge handles -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute top-0 left-2 right-2 h-1 cursor-ns-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 'n')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute bottom-0 left-2 right-2 h-1 cursor-ns-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 's')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute left-0 top-2 bottom-2 w-1 cursor-ew-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 'w')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute right-0 top-2 bottom-2 w-1 cursor-ew-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 'e')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
+			<!-- Corner handles -->
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize touch-none" onpointerdown={(e) => startResize(e, 'nw')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize touch-none" onpointerdown={(e) => startResize(e, 'ne')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize touch-none" onpointerdown={(e) => startResize(e, 'sw')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize touch-none" onpointerdown={(e) => startResize(e, 'se')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
 		{/if}
 	</div>
 </div>
