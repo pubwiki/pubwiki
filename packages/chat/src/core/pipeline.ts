@@ -8,7 +8,7 @@
  * - No postprocessing (handled by consumers)
  */
 
-import { LLMClient, type ResponseFormat } from '../llm/client'
+import { LLMClient, type ResponseFormat, type ApiMode } from '../llm/client'
 import { ToolRegistry } from '../llm/tools'
 import type { ChatMessage, ToolCall } from '../types/chat'
 import type { MessageBlock, ToolCallStatus, ReasoningDetail } from '../types/message'
@@ -80,6 +80,14 @@ export interface PipelineConfig {
    * @see https://platform.openai.com/docs/guides/reasoning
    */
   reasoning?: ReasoningConfig
+  
+  /**
+   * API mode to use
+   * - 'chat-completions': Standard Chat Completions API (widely compatible)
+   * - 'responses': OpenAI Responses API (default, for reasoning models)
+   * @default 'responses'
+   */
+  apiMode?: ApiMode
 }
 
 /**
@@ -119,7 +127,8 @@ export class ChatStreamPipeline {
     this.client = new LLMClient({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
-      organization: config.organizationId
+      organization: config.organizationId,
+      apiMode: config.apiMode
     })
   }
 

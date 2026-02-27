@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { config } from 'dotenv'
 import { PubChat, MemoryMessageStore, createSystemMessage, createVfs } from '../src/index'
-import type { ChatStreamEvent, VfsProvider, VfsStat } from '../src/index'
+import type { ChatStreamEvent, VfsProvider, VfsStat, ApiMode } from '../src/index'
 
 // Load environment variables
 config()
@@ -21,19 +21,38 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
 // Skip tests if no API key
 const describeIfApiKey = OPENROUTER_API_KEY ? describe : describe.skip
 
-describeIfApiKey('PubChat Integration Tests', () => {
+// API modes to test
+const API_MODES: ApiMode[] = ['chat-completions', 'responses']
+
+// Helper to create PubChat config for both modes
+function createPubChatConfig(apiMode: ApiMode, overrides?: Record<string, unknown>) {
+  return {
+    llm: {
+      apiKey: OPENROUTER_API_KEY!,
+      baseUrl: OPENROUTER_BASE_URL,
+      apiMode,
+      model: 'google/gemini-2.5-flash',  // Fast and cheap model for testing
+      temperature: 0,
+      ...overrides,
+    },
+  }
+}
+
+// Parameterized tests for both API modes
+describe.each(API_MODES)('PubChat Integration Tests [apiMode=%s]', (apiMode) => {
+  // Skip if no API key
+  if (!OPENROUTER_API_KEY) {
+    it.skip('skipped - no API key', () => {})
+    return
+  }
+
   let pubchat: PubChat
   let messageStore: MemoryMessageStore
   
   beforeAll(() => {
     messageStore = new MemoryMessageStore()
     pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',  // Fast and cheap model for testing
-        temperature: 0,
-      },
+      ...createPubChatConfig(apiMode),
       messageStore,
       toolCalling: {
         enabled: false,
@@ -90,6 +109,7 @@ describeIfApiKey('PubChat Integration Tests', () => {
         llm: {
           apiKey: 'invalid-key',
           baseUrl: OPENROUTER_BASE_URL,
+          apiMode,
           model: 'google/gemini-2.5-flash',
         },
         messageStore: new MemoryMessageStore(),
@@ -124,12 +144,7 @@ describeIfApiKey('PubChat Integration Tests', () => {
   describe('System prompt via addConversation', () => {
     it('should apply system prompt via addConversation', async () => {
       const pubchatWithSystem = new PubChat({
-        llm: {
-          apiKey: OPENROUTER_API_KEY!,
-          baseUrl: OPENROUTER_BASE_URL,
-          model: 'google/gemini-2.5-flash',
-          temperature: 0,
-        },
+        ...createPubChatConfig(apiMode),
         messageStore: new MemoryMessageStore(),
       })
       
@@ -162,12 +177,7 @@ describeIfApiKey('PubChat with Tool Calling', () => {
     const toolCalls: { name: string; args: unknown }[] = []
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore,
       toolCalling: {
         enabled: true,
@@ -209,12 +219,7 @@ describeIfApiKey('PubChat with Tool Calling', () => {
     const messageStore = new MemoryMessageStore()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore,
       toolCalling: {
         enabled: true,
@@ -266,11 +271,7 @@ describeIfApiKey('MemoryMessageStore', () => {
   it('should persist and retrieve messages', async () => {
     const store = new MemoryMessageStore()
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore: store,
     })
     
@@ -300,11 +301,7 @@ describeIfApiKey('MemoryMessageStore', () => {
   it('should list root conversations', async () => {
     const store = new MemoryMessageStore()
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore: store,
     })
     
@@ -324,9 +321,6 @@ describeIfApiKey('PubChat with VFS', () => {
     const dirs = new Set<string>(['/'])
     
     const provider: VfsProvider = {
-      async id(path: string): Promise<string> {
-        return `id-${path}`
-      },
       async readFile(path: string): Promise<Uint8Array> {
         const content = files.get(path)
         if (content === undefined) {
@@ -427,11 +421,7 @@ describeIfApiKey('PubChat with VFS', () => {
 
   it('should register VFS tools when setVFS is called', async () => {
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore: new MemoryMessageStore(),
       toolCalling: {
         enabled: true,
@@ -470,12 +460,7 @@ describeIfApiKey('PubChat with VFS', () => {
     setFileContent('/test.txt', 'Hello from test file!')
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore: new MemoryMessageStore(),
       toolCalling: {
         enabled: true,
@@ -501,12 +486,7 @@ describeIfApiKey('PubChat with VFS', () => {
     const { vfs, files } = createMockVFS()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore: new MemoryMessageStore(),
       toolCalling: {
         enabled: true,
@@ -530,12 +510,7 @@ describeIfApiKey('PubChat with VFS', () => {
     setFileContent('/data.txt', 'Important data: 12345')
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore: new MemoryMessageStore(),
       toolCalling: {
         enabled: true,
@@ -572,11 +547,7 @@ describeIfApiKey('PubChat with Structured Output', () => {
     const messageStore = new MemoryMessageStore()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+      ...createPubChatConfig('chat-completions', {
         responseFormat: {
           type: 'json_schema',
           json_schema: {
@@ -595,7 +566,7 @@ describeIfApiKey('PubChat with Structured Output', () => {
             strict: true
           }
         }
-      },
+      }),
       messageStore,
     })
     
@@ -619,15 +590,11 @@ describeIfApiKey('PubChat with Structured Output', () => {
     const messageStore = new MemoryMessageStore()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+      ...createPubChatConfig('chat-completions', {
         responseFormat: {
           type: 'json_object'
         }
-      },
+      }),
       messageStore,
     })
     
@@ -649,11 +616,7 @@ describeIfApiKey('PubChat with Structured Output', () => {
     const messageStore = new MemoryMessageStore()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+      ...createPubChatConfig('chat-completions', {
         responseFormat: {
           type: 'json_schema',
           json_schema: {
@@ -674,7 +637,7 @@ describeIfApiKey('PubChat with Structured Output', () => {
             strict: true
           }
         }
-      },
+      }),
       messageStore,
     })
     
@@ -705,12 +668,7 @@ describeIfApiKey('PubChat with Structured Output', () => {
     
     // Create PubChat without responseFormat
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore,
     })
     
@@ -751,16 +709,12 @@ describeIfApiKey('PubChat with Reasoning', () => {
     const messageStore = new MemoryMessageStore()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+      ...createPubChatConfig('chat-completions', {
         reasoning: {
           effort: 'low',
           summary: 'auto'
         }
-      },
+      }),
       messageStore,
     })
     
@@ -775,12 +729,7 @@ describeIfApiKey('PubChat with Reasoning', () => {
     
     // Create PubChat without reasoning config
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
-      },
+      ...createPubChatConfig('chat-completions'),
       messageStore,
     })
     
@@ -803,16 +752,12 @@ describeIfApiKey('PubChat with Reasoning', () => {
     const messageStore = new MemoryMessageStore()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+      ...createPubChatConfig('chat-completions', {
         reasoning: {
           effort: 'low',
           summary: 'detailed'
         }
-      },
+      }),
       messageStore,
     })
     
@@ -842,15 +787,11 @@ describeIfApiKey('PubChat with Reasoning', () => {
     const messageStore = new MemoryMessageStore()
     
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+      ...createPubChatConfig('chat-completions', {
         reasoning: {
           effort: 'none'
         }
-      },
+      }),
       messageStore,
     })
     
@@ -881,15 +822,11 @@ describeIfApiKey('PubChat with Reasoning', () => {
     
     // Create with high reasoning effort
     const pubchat = new PubChat({
-      llm: {
-        apiKey: OPENROUTER_API_KEY!,
-        baseUrl: OPENROUTER_BASE_URL,
-        model: 'google/gemini-2.5-flash',
-        temperature: 0,
+      ...createPubChatConfig('chat-completions', {
         reasoning: {
           effort: 'high'
         }
-      },
+      }),
       messageStore,
     })
     

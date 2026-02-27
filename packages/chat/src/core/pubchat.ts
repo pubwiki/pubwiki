@@ -20,7 +20,7 @@ import type {
   ConversationSnapshot,
 } from '../types/message'
 import { z } from 'zod'
-import type { ResponseFormat } from '../llm/client'
+import type { ResponseFormat, ApiMode } from '../llm/client'
 
 /**
  * PubChat configuration
@@ -93,6 +93,13 @@ export interface LLMConfig {
    * @see https://platform.openai.com/docs/guides/reasoning
    */
   reasoning?: ReasoningConfig
+  /**
+   * API mode to use
+   * - 'chat-completions': Standard Chat Completions API (widely compatible)
+   * - 'responses': OpenAI Responses API (default, for reasoning models with native reasoning token support)
+   * @default 'responses'
+   */
+  apiMode?: ApiMode
 }
 
 /**
@@ -271,6 +278,7 @@ export class PubChat implements ChatProvider {
         organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
         reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
+        apiMode: overrideConfig?.apiMode ?? this.config.llm.apiMode,
       }
 
       if (!llmConfig.model || !llmConfig.apiKey || !llmConfig.baseUrl) {
@@ -290,7 +298,8 @@ export class PubChat implements ChatProvider {
         onIterationLimitReached: this.config.onIterationLimitReached,
         signal: this.abortController.signal,
         responseFormat: llmConfig.responseFormat,
-        reasoning: llmConfig.reasoning
+        reasoning: llmConfig.reasoning,
+        apiMode: llmConfig.apiMode
       })
       
       // Collect assistant response
@@ -453,6 +462,7 @@ export class PubChat implements ChatProvider {
         organizationId: overrideConfig?.organizationId ?? this.config.llm.organizationId,
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
         reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
+        apiMode: overrideConfig?.apiMode ?? this.config.llm.apiMode,
       }
 
        if (!llmConfig.model || !llmConfig.apiKey || !llmConfig.baseUrl) {
@@ -472,7 +482,8 @@ export class PubChat implements ChatProvider {
         onIterationLimitReached: this.config.onIterationLimitReached,
         signal: this.abortController.signal,
         responseFormat: llmConfig.responseFormat,
-        reasoning: llmConfig.reasoning
+        reasoning: llmConfig.reasoning,
+        apiMode: llmConfig.apiMode
       })
       
       // Run non-streaming pipeline

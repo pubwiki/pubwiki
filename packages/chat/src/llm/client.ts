@@ -1,8 +1,9 @@
 /**
- * LLM Client - OpenAI Responses API client
+ * LLM Client - OpenAI API client supporting both Responses API and Chat Completions API
  * 
  * Simplified version for pubchat-core, supporting:
- * - OpenAI compatible APIs
+ * - OpenAI compatible APIs (Chat Completions API - widely supported)
+ * - OpenAI native Responses API (for reasoning models)
  * - Streaming and non-streaming chat
  * - Function/tool calling
  * - Reasoning tokens (Claude, Gemini, etc.)
@@ -20,6 +21,12 @@ import type {
   ResponseFunctionToolCallItem
 } from 'openai/resources/responses/responses'
 import type {
+  ChatCompletionMessageParam,
+  ChatCompletionTool,
+  ChatCompletionChunk,
+  ChatCompletion
+} from 'openai/resources/chat/completions'
+import type {
   ChatMessage,
   StreamChunk,
   ChatResponse,
@@ -28,11 +35,25 @@ import type {
   ReasoningDetail
 } from '../types'
 
+/**
+ * API mode for LLM client
+ * - 'chat-completions': Standard Chat Completions API (widely compatible with OpenRouter, Azure, Ollama, etc.)
+ * - 'responses': OpenAI Responses API (native support for reasoning tokens, only OpenAI)
+ */
+export type ApiMode = 'chat-completions' | 'responses'
+
 export interface LLMClientConfig {
   apiKey: string
   baseURL?: string
   organization?: string
   defaultHeaders?: Record<string, string>
+  /**
+   * API mode to use
+   * - 'chat-completions': Standard Chat Completions API (widely compatible)
+   * - 'responses': OpenAI Responses API (default, for reasoning models)
+   * @default 'responses'
+   */
+  apiMode?: ApiMode
 }
 
 /**
@@ -173,10 +194,11 @@ function getStringContent(msg: ChatMessage): string {
 }
 
 /**
- * LLM Client - Using OpenAI Responses API
+ * LLM Client - Supporting both Chat Completions API and Responses API
  */
 export class LLMClient {
   private client: OpenAI
+  private apiMode: ApiMode
 
   constructor(config: LLMClientConfig) {
     this.client = new OpenAI({
@@ -186,12 +208,118 @@ export class LLMClient {
       defaultHeaders: config.defaultHeaders,
       dangerouslyAllowBrowser: true
     })
+    this.apiMode = config.apiMode ?? 'responses'
   }
 
   /**
-   * Streaming chat completion
+   * Streaming chat completion - dispatches to appropriate API
    */
   async *streamChat(options: ChatCompletionOptions): AsyncGenerator<StreamChunk> {
+    if (this.apiMode === 'responses') {
+      yield* this.streamChatResponses(options)
+    } else {
+      yield* this.streamChatCompletions(options)
+    }
+  }
+
+  /**
+   * Chat Completions API - Streaming implementation
+   * Compatible with OpenRouter, Azure, Ollama, and other OpenAI-compatible providers
+   */
+  private async *streamChatCompletions(options: ChatCompletionOptions): AsyncGenerator<StreamChunk> {
+    const messages = this.convertToChatCompletionMessages(options.messages)
+    const tools = this.convertToChatCompletionTools(options.tools)
+
+    const params: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
+      model: options.model,
+      messages,
+      temperature: options.temperature ?? undefined,
+      max_tokens: options.max_tokens ?? undefined,
+      tools: tools,
+      tool_choice: options.tool_choice,
+      stream: true,
+      ...(options.responseFormat && { response_format: this.convertResponseFormat(options.responseFormat) }),
+    }
+
+    let stream: AsyncIterable<ChatCompletionChunk>
+    try {
+      stream = await this.client.chat.completions.create(params, {
+        signal: options.signal
+      })
+    } catch (error: unknown) {
+      if (error && typeof error === 'object') {
+        const err = error as { status?: number; message?: string; error?: unknown; body?: unknown }
+        console.error('[LLMClient] Chat Completions API Error:', {
+          status: err.status,
+          message: err.message,
+          error: err.error,
+          body: err.body
+        })
+      }
+      throw error
+    }
+
+    const currentToolCalls: Map<number, ToolCall> = new Map()
+
+    for await (const chunk of stream) {
+      const choice = chunk.choices[0]
+      if (!choice) continue
+
+      const delta = choice.delta
+
+      // Text content
+      if (delta.content) {
+        yield {
+          content: delta.content,
+          tool_calls: undefined,
+          finish_reason: null
+        }
+      }
+
+      // Tool calls (incremental accumulation)
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          const existing = currentToolCalls.get(tc.index)
+          if (existing) {
+            existing.function.arguments += tc.function?.arguments || ''
+          } else {
+            currentToolCalls.set(tc.index, {
+              id: tc.id || '',
+              type: 'function',
+              function: {
+                name: tc.function?.name || '',
+                arguments: tc.function?.arguments || ''
+              }
+            })
+          }
+        }
+      }
+
+      // Completion
+      if (choice.finish_reason) {
+        // Emit completed tool calls
+        for (const [, toolCall] of currentToolCalls) {
+          yield {
+            content: '',
+            tool_calls: [toolCall],
+            finish_reason: null
+          }
+        }
+        
+        yield {
+          content: '',
+          tool_calls: undefined,
+          finish_reason: choice.finish_reason
+        }
+      }
+    }
+  }
+
+  /**
+   * Responses API - Streaming implementation (original)
+   * For OpenAI native API with reasoning token support
+   */
+  private async *streamChatResponses(options: ChatCompletionOptions): AsyncGenerator<StreamChunk> {
     const input: Array<ResponseInputItem | EasyInputMessage | FunctionCallInputItem> = []
     
     for (const msg of options.messages) {
@@ -456,9 +584,83 @@ export class LLMClient {
   }
 
   /**
-   * Non-streaming chat completion
+   * Non-streaming chat completion - dispatches to appropriate API
    */
   async chat(options: ChatCompletionOptions): Promise<ChatResponse> {
+    if (this.apiMode === 'responses') {
+      return this.chatResponses(options)
+    } else {
+      return this.chatCompletions(options)
+    }
+  }
+
+  /**
+   * Chat Completions API - Non-streaming implementation
+   * Compatible with OpenRouter, Azure, Ollama, and other OpenAI-compatible providers
+   */
+  private async chatCompletions(options: ChatCompletionOptions): Promise<ChatResponse> {
+    const messages = this.convertToChatCompletionMessages(options.messages)
+    const tools = this.convertToChatCompletionTools(options.tools)
+
+    const params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming = {
+      model: options.model,
+      messages,
+      temperature: options.temperature ?? undefined,
+      max_tokens: options.max_tokens ?? undefined,
+      tools: tools,
+      tool_choice: options.tool_choice,
+      stream: false,
+      ...(options.responseFormat && { response_format: this.convertResponseFormat(options.responseFormat) }),
+    }
+
+    const response = await this.client.chat.completions.create(params, {
+      signal: options.signal
+    })
+
+    const choice = response.choices[0]
+    if (!choice) {
+      return {
+        content: '',
+        tool_calls: undefined,
+        finish_reason: 'stop',
+        usage: response.usage ? {
+          prompt_tokens: response.usage.prompt_tokens,
+          completion_tokens: response.usage.completion_tokens,
+          total_tokens: response.usage.total_tokens
+        } : undefined
+      }
+    }
+
+    const message = choice.message
+    const toolCalls: ToolCall[] = message.tool_calls
+      ?.filter((tc): tc is OpenAI.Chat.ChatCompletionMessageToolCall & { type: 'function' } => tc.type === 'function')
+      .map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: {
+          name: tc.function.name,
+          arguments: tc.function.arguments
+        }
+      })) ?? []
+
+    return {
+      content: message.content || '',
+      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+      reasoning_details: undefined, // Chat Completions API doesn't support reasoning natively
+      finish_reason: choice.finish_reason,
+      usage: response.usage ? {
+        prompt_tokens: response.usage.prompt_tokens,
+        completion_tokens: response.usage.completion_tokens,
+        total_tokens: response.usage.total_tokens
+      } : undefined
+    }
+  }
+
+  /**
+   * Responses API - Non-streaming implementation (original)
+   * For OpenAI native API with reasoning token support
+   */
+  private async chatResponses(options: ChatCompletionOptions): Promise<ChatResponse> {
     const input: Array<ResponseInputItem | EasyInputMessage | FunctionCallInputItem> = []
     
     for (const msg of options.messages) {
@@ -643,6 +845,124 @@ export class LLMClient {
       } : undefined
     }
   }
+
+  // ============================================
+  // Helper methods for Chat Completions API
+  // ============================================
+
+  /**
+   * Convert ChatMessage[] to ChatCompletionMessageParam[]
+   */
+  private convertToChatCompletionMessages(messages: ChatMessage[]): ChatCompletionMessageParam[] {
+    const result: ChatCompletionMessageParam[] = []
+
+    for (const msg of messages) {
+      if (msg.role === 'system') {
+        result.push({
+          role: 'system',
+          content: getStringContent(msg)
+        })
+      } else if (msg.role === 'user') {
+        // Handle multimodal content
+        if (Array.isArray(msg.content)) {
+          result.push({
+            role: 'user',
+            content: msg.content.map(part => {
+              if (part.type === 'text') {
+                return { type: 'text' as const, text: part.text || '' }
+              } else if (part.type === 'image_url' && part.image_url) {
+                return { 
+                  type: 'image_url' as const, 
+                  image_url: { 
+                    url: part.image_url.url,
+                    detail: part.image_url.detail as 'auto' | 'low' | 'high' | undefined
+                  }
+                }
+              }
+              return { type: 'text' as const, text: '' }
+            })
+          })
+        } else {
+          result.push({
+            role: 'user',
+            content: msg.content
+          })
+        }
+      } else if (msg.role === 'assistant') {
+        const assistantMsg: OpenAI.Chat.ChatCompletionAssistantMessageParam = {
+          role: 'assistant',
+          content: getStringContent(msg) || null
+        }
+        
+        // Add tool_calls if present
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          assistantMsg.tool_calls = msg.tool_calls.map(tc => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments
+            }
+          }))
+        }
+        
+        result.push(assistantMsg)
+      } else if (msg.role === 'tool') {
+        result.push({
+          role: 'tool',
+          content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+          tool_call_id: msg.tool_call_id || ''
+        })
+      }
+    }
+
+    return result
+  }
+
+  /**
+   * Convert ToolDefinition[] to ChatCompletionTool[]
+   */
+  private convertToChatCompletionTools(tools?: ToolDefinition[]): ChatCompletionTool[] | undefined {
+    if (!tools || tools.length === 0) return undefined
+    
+    return tools.map(tool => ({
+      type: 'function' as const,
+      function: {
+        name: tool.function.name,
+        description: tool.function.description,
+        parameters: tool.function.parameters as Record<string, unknown>
+      }
+    }))
+  }
+
+  /**
+   * Convert ResponseFormat to Chat Completions response_format
+   */
+  private convertResponseFormat(responseFormat: ResponseFormat): OpenAI.Chat.ChatCompletionCreateParams['response_format'] {
+    if (responseFormat.type === 'json_schema') {
+      return {
+        type: 'json_schema',
+        json_schema: {
+          name: responseFormat.json_schema.name,
+          description: responseFormat.json_schema.description,
+          schema: responseFormat.json_schema.schema,
+          strict: responseFormat.json_schema.strict ?? true
+        }
+      }
+    } else if (responseFormat.type === 'json_object') {
+      return {
+        type: 'json_object'
+      }
+    } else {
+      return {
+        type: 'text'
+      }
+    }
+  }
+
+  // ============================================
+  // Helper methods for Responses API
+  // ============================================
 
   /**
    * Build text format object for OpenAI Responses API

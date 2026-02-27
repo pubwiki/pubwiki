@@ -16,6 +16,7 @@ import { PubChat, MemoryMessageStore } from '@pubwiki/chat'
 const pubchat = new PubChat({
   llm: {
     apiKey: 'sk-xxx',
+    baseUrl: 'https://openrouter.ai/api/v1',
     model: 'gpt-4o',
   },
   messageStore: new MemoryMessageStore(),
@@ -31,6 +32,52 @@ for await (const event of pubchat.streamChat('Hello!')) {
     process.stdout.write(event.token)
   }
 }
+```
+
+## API Modes
+
+The library supports two API modes:
+
+### Responses API (Default)
+
+OpenAI native Responses API with full reasoning token support:
+
+```typescript
+const pubchat = new PubChat({
+  llm: {
+    apiKey: 'sk-xxx',
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-5',
+    // apiMode: 'responses',  // Default, can be omitted
+    reasoning: {
+      effort: 'medium',
+      summary: 'concise'
+    }
+  },
+  messageStore: new MemoryMessageStore(),
+})
+```
+
+### Chat Completions API
+
+Standard OpenAI Chat Completions API, widely compatible with:
+- OpenRouter
+- Azure OpenAI
+- Ollama
+- vLLM
+- LocalAI
+- Groq, Together.ai, Fireworks, and more
+
+```typescript
+const pubchat = new PubChat({
+  llm: {
+    apiKey: 'sk-xxx',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    model: 'google/gemini-2.5-flash',
+    apiMode: 'chat-completions',
+  },
+  messageStore: new MemoryMessageStore(),
+})
 ```
 
 ## Features

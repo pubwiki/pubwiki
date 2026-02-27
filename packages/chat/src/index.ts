@@ -120,7 +120,8 @@ export type {
   ResponseFormat,
   ResponseFormatJsonSchema,
   ResponseFormatJsonObject,
-  ResponseFormatText
+  ResponseFormatText,
+  ApiMode
 } from './llm/client'
 export { ToolRegistry } from './llm/tools'
 export type { ToolHandler as ToolRegistryHandler } from './llm/tools'
