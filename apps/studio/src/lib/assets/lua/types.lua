@@ -662,9 +662,6 @@ function Type.format(T, indent, includeDesc)
             local v = T.fields[k]
             local fieldType = Type.format(v, indent + 1, includeDesc)
             local line = string.rep("  ", indent + 1) .. k .. ": " .. fieldType
-            if includeDesc and v._desc then
-                line = line .. "  // " .. v._desc
-            end
             table.insert(lines, line)
         end
         table.insert(lines, indentStr .. "}")
