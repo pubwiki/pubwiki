@@ -10,7 +10,6 @@
  * User code runs in a nested iframe, completely isolated from bootstrap.
  */
 
-console.log('[SandboxBootstrap] Module loaded')
 
 import { SandboxMainService, newMessagePortRpcSession, RpcStub } from '@pubwiki/sandbox-service'
 import type { ConsoleLogLevel } from '@pubwiki/sandbox-service'
@@ -88,7 +87,6 @@ interface BuildError {
  * Show build error overlay
  */
 function showBuildError(errors: BuildError[]): void {
-  console.log('[SandboxBootstrap] showBuildError called with', errors.length, 'errors:', errors)
   
   const overlay = document.getElementById('build-error-overlay')
   const summary = document.getElementById('build-error-summary')
@@ -116,11 +114,9 @@ function showBuildError(errors: BuildError[]): void {
  * Hide build error overlay
  */
 function hideBuildError(): void {
-  console.log('[SandboxBootstrap] hideBuildError called')
   const overlay = document.getElementById('build-error-overlay')
   if (overlay) {
     overlay.classList.remove('show')
-    console.log('[SandboxBootstrap] Error overlay hidden')
   }
 }
 
@@ -146,7 +142,6 @@ function setupErrorOverlayListeners(): void {
 setupErrorOverlayListeners()
 
 function initSandboxMainService(port: MessagePort): RpcStub<SandboxMainService> {
-  console.log('[MainRpcClient] Initializing with port...')
 
   // Create RPC session - returns a proxy that routes calls to remote services
   const session = newMessagePortRpcSession<SandboxMainService>(port, {})
@@ -154,7 +149,6 @@ function initSandboxMainService(port: MessagePort): RpcStub<SandboxMainService> 
   // Start the port
   port.start()
 
-  console.log('[MainRpcClient] Initialized successfully')
   return session
 }
 
@@ -168,17 +162,14 @@ async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null
   }
   
   try {
-    console.log('[SandboxBootstrap] Registering Service Worker...')
     
     const registration = await navigator.serviceWorker.register('/sandbox-sw.js', {
       updateViaCache: 'none'
     })
     
-    console.log('[SandboxBootstrap] Service Worker registered')
     
     await navigator.serviceWorker.ready
     
-    console.log('[SandboxBootstrap] Service Worker ready')
     
     return registration
   } catch (error) {
@@ -209,7 +200,6 @@ function sendVfsPortToServiceWorker(): boolean {
   vfsRpcPort = null
   pendingVfsPortRequest = false
   
-  console.log('[SandboxBootstrap] VFS RPC port sent to Service Worker')
   return true
 }
 
@@ -218,13 +208,11 @@ function sendVfsPortToServiceWorker(): boolean {
  */
 function requestVfsPortFromMainSite(): void {
   if (pendingVfsPortRequest) {
-    console.log('[SandboxBootstrap] VFS port request already pending')
     return
   }
   
   const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:4000'
   
-  console.log('[SandboxBootstrap] Requesting new VFS port from main site')
   pendingVfsPortRequest = true
   
   window.parent.postMessage(
@@ -336,7 +324,6 @@ function injectConsoleInterceptor(): void {
     reportLog('error', [`Unhandled Promise Rejection: ${message}`], stack)
   })
   
-  console.log('[SandboxBootstrap] Console interceptor injected')
 }
 
 /**
@@ -350,7 +337,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
     return
   }
   
-  console.log('[SandboxBootstrap] Loading user iframe with entry:', entryFile)
   
   // Use srcdoc to create the iframe document first
   // This ensures the iframe is created and can be controlled by SW before any fetch
@@ -369,7 +355,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
     userIframe!.addEventListener('load', handler)
   })
   
-  console.log('[SandboxBootstrap] User iframe document created, waiting for SW control...')
   
   // Now wait for SW to control the iframe
   const iframeWindow = userIframe.contentWindow
@@ -389,7 +374,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
         // Not controlled yet, wait for controllerchange
         await new Promise<void>(resolve => {
           iframeWindow.navigator.serviceWorker.addEventListener('controllerchange', () => {
-            console.log('[SandboxBootstrap] User iframe controlled by SW after reload')
             resolve()
           }, { once: true })
           // Timeout protection
@@ -403,7 +387,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
       const handler = (event: MessageEvent) => {
         if (event.data.type === 'USER_IFRAME_REGISTERED') {
           navigator.serviceWorker.removeEventListener('message', handler)
-          console.log('[SandboxBootstrap] SW confirmed user iframe registration')
           resolve()
         }
       }
@@ -416,7 +399,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
         type: 'REGISTER_USER_IFRAME',
         bootstrapClientId: bootstrapClientId
       })
-      console.log('[SandboxBootstrap] Sent REGISTER_USER_IFRAME to SW, bootstrap:', bootstrapClientId)
     }
     
     // Wait for confirmation
@@ -429,15 +411,15 @@ async function loadUserIframe(entryFile: string): Promise<void> {
     showError('Failed to load user content')
   }
   
-  console.log('[SandboxBootstrap] Manually registering before loading content...')
   
   // Manually call register before loading entryFile to ensure SW is ready
   await registerUserIframe()
   
-  console.log('[SandboxBootstrap] Loading actual content...')
   
-  // Now load the actual content
-  iframeWindow.location.replace(`/${entryFile}`)
+  // Include bootstrap ID in URL for iOS Safari workaround
+  // iOS Safari doesn't provide clientId on nested iframe navigation,
+  // so we pass it via URL parameter for SW to establish the mapping
+  iframeWindow.location.replace(`/${entryFile}?_bid=${bootstrapClientId}`)
   
   // Wait for content to load
   await new Promise<void>(resolve => {
@@ -448,7 +430,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
     userIframe!.addEventListener('load', handler)
   })
   
-  console.log('[SandboxBootstrap] User iframe content loaded')
   
   // Inject console interceptor into user iframe
   injectConsoleInterceptor()
@@ -462,7 +443,6 @@ async function loadUserIframe(entryFile: string): Promise<void> {
 async function reloadUserIframe(): Promise<void> {
   if (!userIframe || !sandboxContext) return
   
-  console.log('[SandboxBootstrap] Reloading user iframe')
   
   const iframeWindow = userIframe.contentWindow
   if (iframeWindow) {
@@ -500,14 +480,12 @@ function exposeSandboxClient(): void {
   // Expose the client instance (not the raw RPC stub)
   ;(window as unknown as Record<string, unknown>)[SANDBOX_CLIENT_KEY] = sandboxClient
   
-  console.log('[SandboxBootstrap] Exposed sandbox client on window')
 }
 
 /**
  * Initialize sandbox
  */
 async function initializeSandbox(context: SandboxContext): Promise<void> {
-  console.log('[SandboxBootstrap] Initializing sandbox')
   
   if (!mainRpcClient) {
     showError('Main RPC client not initialized')
@@ -516,22 +494,15 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
   
   try {
     // Subscribe to HMR updates
-    console.log('[SandboxBootstrap] Subscribing to HMR updates...')
     await mainRpcClient.hmr.subscribe((update) => {
-      console.log('[SandboxBootstrap] HMR update received:', update)
       
       if (update.type === 'error') {
         // Build error: show overlay
-        console.log('[SandboxBootstrap] Received HMR error event:', update)
-        console.log('[SandboxBootstrap] Error message:', update.error)
-        console.log('[SandboxBootstrap] Errors array:', update.errors)
         
         if (update.errors && update.errors.length > 0) {
-          console.log('[SandboxBootstrap] Showing overlay with structured errors')
           showBuildError(update.errors)
         } else if (update.error) {
           // Fallback to simple error message
-          console.log('[SandboxBootstrap] Showing overlay with fallback error')
           showBuildError([{
             file: update.path,
             line: 0,
@@ -546,14 +517,11 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
         hideBuildError()
         
         if (update.path === '__manual_reload__') {
-          console.log('[SandboxBootstrap] Manual reload triggered')
         } else {
-          console.log('[SandboxBootstrap] File changed, reloading user iframe')
         }
         reloadUserIframe()
       }
     })
-    console.log('[SandboxBootstrap] HMR subscription established')
     
     // Expose client for user iframe to access
     exposeSandboxClient()
@@ -563,10 +531,8 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
     
     // Wait for SW to control the page
     if (!navigator.serviceWorker.controller) {
-      console.log('[SandboxBootstrap] Waiting for SW to take control...')
       await new Promise<void>((resolve) => {
         navigator.serviceWorker.addEventListener('controllerchange', () => {
-          console.log('[SandboxBootstrap] SW now controls the page')
           resolve()
         }, { once: true })
       })
@@ -590,13 +556,11 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
       })
       
       bootstrapClientId = await clientIdPromise
-      console.log('[SandboxBootstrap] Bootstrap client ID:', bootstrapClientId)
     }
     
     // Load user iframe (now async)
     await loadUserIframe(context.entryFile)
     
-    console.log('[SandboxBootstrap] Initialization complete')
     
   } catch (error) {
     console.error('[SandboxBootstrap] Initialization error:', error)
@@ -610,10 +574,8 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
 navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
   const message = event.data
   
-  console.log('[SandboxBootstrap] Received message from SW:', message?.type)
   
   if (message?.type === 'REQUEST_VFS_PORT') {
-    console.log('[SandboxBootstrap] SW requesting VFS port reconnection')
     
     if (vfsRpcPort) {
       sendVfsPortToServiceWorker()
@@ -647,11 +609,9 @@ window.addEventListener('message', (event: MessageEvent) => {
   
   const message = event.data
   
-  console.log('[SandboxBootstrap] Received message from main site:', message?.type)
   
   // Handle sandbox initialization
   if (message?.type === 'sandbox-init') {
-    console.log('[SandboxBootstrap] Received sandbox-init (dual channel)')
     
     const urlParams = new URLSearchParams(window.location.search)
     const entryFromUrl = urlParams.get('entry')
@@ -671,7 +631,6 @@ window.addEventListener('message', (event: MessageEvent) => {
       return
     }
     
-    console.log('[SandboxBootstrap] Initializing Main RPC client')
     mainRpcClient = initSandboxMainService(mainPort)
     
     vfsRpcPort = vfsPort
@@ -685,7 +644,6 @@ window.addEventListener('message', (event: MessageEvent) => {
   
   // Handle VFS port response
   if (message?.type === 'VFS_PORT_RESPONSE') {
-    console.log('[SandboxBootstrap] Received new VFS port from main site')
     
     const vfsPort = event.ports?.[0]
     
@@ -703,7 +661,6 @@ window.addEventListener('message', (event: MessageEvent) => {
 
 // Send ready message to parent
 if (window.parent !== window) {
-  console.log('[SandboxBootstrap] Sending SANDBOX_READY message to parent')
   window.parent.postMessage({ type: 'SANDBOX_READY' }, '*')
 }
 
@@ -717,4 +674,3 @@ window.addEventListener('beforeunload', () => {
   }
 })
 
-console.log('[SandboxBootstrap] Bootstrap script initialized')

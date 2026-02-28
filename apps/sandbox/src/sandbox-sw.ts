@@ -104,7 +104,6 @@ async function saveState(): Promise<void> {
     })
     
     db.close()
-    console.log('[SandboxSW] State saved to IndexedDB')
   } catch (error) {
     console.error('[SandboxSW] Failed to save state:', error)
   }
@@ -139,11 +138,8 @@ async function loadState(): Promise<PersistedState | null> {
 async function restoreStateIfNeeded(): Promise<void> {
   if (!needsStateRestoration) return
   
-  console.log('[SandboxSW] Restoring state from IndexedDB...')
-  
   const state = await loadState()
   if (!state) {
-    console.log('[SandboxSW] No saved state found')
     needsStateRestoration = false
     return
   }
@@ -160,8 +156,6 @@ async function restoreStateIfNeeded(): Promise<void> {
   for (const [userIframeId, bootstrapId] of Object.entries(state.userIframeToBootstrap)) {
     userIframeToBootstrap.set(userIframeId, bootstrapId)
   }
-  
-  console.log('[SandboxSW] State restored:', state)
   
   needsStateRestoration = false
 }
@@ -182,8 +176,6 @@ async function ensureVfsStub(bootstrapId: string): Promise<RpcStub<IVfsService> 
   }
   
   // Stub is null, need to request new port
-  console.log('[SandboxSW] VFS stub is null, requesting new port for:', bootstrapId)
-  
   try {
     await requestBootstrapClient(bootstrapId)
     return bootstrap.vfsRpcStub
@@ -211,8 +203,6 @@ async function requestBootstrapClient(bootstrapId: string): Promise<void> {
   if (pendingRequest) {
     return pendingRequest.promise
   }
-  
-  console.log('[SandboxSW] Requesting VFS port from bootstrap:', bootstrapId)
   
   // Create a promise for this request
   let resolve: () => void
@@ -260,12 +250,10 @@ async function requestBootstrapClient(bootstrapId: string): Promise<void> {
 // ========== Service Worker Lifecycle ==========
 
 self.addEventListener('install', (event) => {
-  console.log('[SandboxSW] Installing...')
   event.waitUntil(self.skipWaiting())
 })
 
 self.addEventListener('activate', (event) => {
-  console.log('[SandboxSW] Activating...')
   event.waitUntil(self.clients.claim())
 })
 
@@ -304,9 +292,6 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
       })
     }
     
-    console.log('[SandboxSW] Bootstrap client VFS port registered:', bootstrapId)
-    
-    // Persist state
     saveState()
     
     // Resolve any pending requests waiting for this bootstrap
@@ -315,7 +300,6 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
       clearTimeout(pendingRequest.timeoutId)
       pendingRequest.resolve()
       pendingBootstrapRequests.delete(bootstrapId)
-      console.log('[SandboxSW] Resolved pending request for bootstrap:', bootstrapId)
     }
     
     return
@@ -347,7 +331,6 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
         
         // If bootstrap doesn't exist, request it
         if (!bootstrap) {
-          console.log('[SandboxSW] Bootstrap not found, requesting VFS port...')
           try {
             await requestBootstrapClient(bootstrapId)
             bootstrap = bootstrapClients.get(bootstrapId)
@@ -364,10 +347,6 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
         
         // Add user iframe to bootstrap mapping (one-to-many)
         userIframeToBootstrap.set(userIframeId, bootstrapId)
-        
-        console.log('[SandboxSW] User iframe registered:', userIframeId, '-> bootstrap:', bootstrapId)
-        
-        // Persist state
         await saveState()
         
         // Notify bootstrap that registration is complete
@@ -377,7 +356,6 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
             type: 'USER_IFRAME_REGISTERED',
             userIframeId: userIframeId
           })
-          console.log('[SandboxSW] Notified bootstrap of registration completion')
         }
       })()
     )
@@ -412,7 +390,6 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
         type: 'CLIENT_ID_RESPONSE',
         clientId: clientId
       })
-      console.log('[SandboxSW] Sent client ID to bootstrap:', clientId)
     }
     return
   }
@@ -448,17 +425,13 @@ function cleanupClient(clientId: string): void {
       }
     }
     
-    // Remove bootstrap
     bootstrapClients.delete(clientId)
-    
-    console.log('[SandboxSW] Bootstrap client disconnected:', clientId)
     return
   }
   
   // If it's a user iframe, only remove from mapping
   if (userIframeToBootstrap.has(clientId)) {
     userIframeToBootstrap.delete(clientId)
-    console.log('[SandboxSW] User iframe disconnected:', clientId)
     return
   }
 }
@@ -468,18 +441,25 @@ function cleanupClient(clientId: string): void {
 self.addEventListener('fetch', (event: FetchEvent) => {
   const url = new URL(event.request.url)
   
-  // Debug: log ALL fetch events to verify SW interception
-  console.log('[SandboxSW] FETCH intercepted:', url.pathname, 'clientId:', event.clientId, 'mode:', event.request.mode)
-  
   // Only intercept same-origin requests
   if (url.origin !== self.location.origin) {
     return
   }
   
   const clientId = event.clientId
-  if (!clientId) {
-    console.log('[SandboxSW] Passthrough: no client ID')
-    return
+  
+  // iOS Safari workaround: handle navigation without clientId
+  // When nested iframe navigates, iOS Safari doesn't provide clientId,
+  // but we pass bootstrap ID via URL parameter
+  if (!clientId && event.request.mode === 'navigate') {
+    const bid = url.searchParams.get('_bid')
+    if (bid && event.resultingClientId) {
+      // iOS Safari workaround: register new client from URL param
+      userIframeToBootstrap.set(event.resultingClientId, bid)
+      saveState()
+      event.respondWith(handleNavigationRequest(event, bid))
+      return
+    }
   }
   
   // Skip Service Worker itself and bootstrap scripts
@@ -490,13 +470,34 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     url.pathname === '/src/rpc-client.ts' ||
     url.pathname.startsWith('/__')
   ) {
-    console.log('[SandboxSW] Passthrough internal:', url.pathname)
+    return
+  }
+  
+  if (!clientId) {
     return
   }
 
   // Handle file requests with state restoration
   event.respondWith(handleFetchRequest(event))
 })
+
+/**
+ * Handle navigation request when we know the bootstrap ID (iOS Safari workaround)
+ */
+async function handleNavigationRequest(event: FetchEvent, bootstrapId: string): Promise<Response> {
+  const url = new URL(event.request.url)
+  
+  await restoreStateIfNeeded()
+  
+  const pathname = url.pathname
+  const vfsStub = await ensureVfsStub(bootstrapId)
+  if (vfsStub) {
+    return handleFileRequest(vfsStub, pathname)
+  }
+  
+  console.error('[SandboxSW] Could not get VFS stub for bootstrap:', bootstrapId)
+  return new Response('Service Worker: VFS not available', { status: 503 })
+}
 
 async function handleFetchRequest(event: FetchEvent) {
   const url = new URL(event.request.url)
@@ -508,18 +509,9 @@ async function handleFetchRequest(event: FetchEvent) {
   // Handle navigation - update client ID mapping
   if (event.request.mode === 'navigate' && event.resultingClientId && event.resultingClientId !== clientId) {
     const newClientId = event.resultingClientId
-    console.log('[SandboxSW] Navigation detected, old client:', clientId, 'new client:', newClientId)
-
-    // If old client is a user iframe, add new client to same bootstrap (don't delete old)
     if (userIframeToBootstrap.has(clientId)) {
       const bootstrapId = userIframeToBootstrap.get(clientId)!
-
-      // Add new mapping (keep old one)
       userIframeToBootstrap.set(newClientId, bootstrapId)
-
-      console.log('[SandboxSW] Added new user iframe mapping:', newClientId, '-> bootstrap:', bootstrapId)
-
-      // Persist state (async, don't block navigation)
       saveState()
     }
   }
@@ -552,8 +544,6 @@ async function handleFetchRequest(event: FetchEvent) {
  * Handle file request by reading from VFS
  */
 async function handleFileRequest(vfsStub: RpcStub<IVfsService>, pathname: string): Promise<Response> {
-  console.log('[SandboxSW] File request:', pathname)
-  
   try {
     // Check if file exists
     const existsResult = await vfsStub.fileExists(pathname)
