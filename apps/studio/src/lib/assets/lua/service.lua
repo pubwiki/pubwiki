@@ -65,8 +65,8 @@ local function createBuilder(registry, kind)
         return self
     end
     
-    function builder:usage(usageText)
-        self._usage = usageText
+    function builder:usage(the_usage)
+        self._usage = the_usage
         return self
     end
 
@@ -329,7 +329,11 @@ function ServiceRegistry.exportDocByNamespace(namespace)
         if spec.usage then
             table.insert(lines, "**Usage**:")
             table.insert(lines, "```lua")
-            table.insert(lines, spec.usage)
+            local the_usage = spec.usage
+            if type(spec.usage) == "function" then
+                the_usage = spec:usage()
+            end
+            table.insert(lines, the_usage)
             table.insert(lines, "```")
             table.insert(lines, "")
         end
