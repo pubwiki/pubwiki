@@ -123,6 +123,18 @@
 	let loaded = $state(false);
 	let saving = $state(false);
 	
+	// Touch device detection for mobile-friendly canvas interaction
+	// On touch devices: single touch pans canvas, long press to select nodes
+	// On desktop: left drag selects, middle drag pans
+	let isTouchDevice = $state(false);
+	
+	$effect(() => {
+		if (browser) {
+			// Check for touch capability
+			isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+		}
+	});
+	
 	// Import state for loading overlay
 	let importing = $state(false);
 	let importProgress = $state<{
@@ -146,6 +158,9 @@
 
 	// Last cloud commit hash for Draft-Latest workflow
 	let lastCloudCommit = $state<string | undefined>(undefined);
+	
+	// Copilot panel state (controlled from sidebar button)
+	let copilotCollapsed = $state(true);
 	
 	// Draft Sync Service
 	let syncService = $state<DraftSyncService | null>(null);
@@ -1476,10 +1491,10 @@
 			bind:edges
 			{nodeTypes} 
 			fitView
-			selectionOnDrag
+			selectionOnDrag={!isTouchDevice}
 			deleteKey="Delete"
 			selectionMode={SelectionMode.Partial}
-			panOnDrag={[1]}
+			panOnDrag={isTouchDevice ? true : [1]}
 			multiSelectionKey="Shift"
 			{isValidConnection}
 			proOptions={{hideAttribution: true}}
@@ -1520,6 +1535,8 @@
 		onEnableSync={handleEnableSync}
 		onAcceptCloud={handleAcceptCloud}
 		onForcePushLocal={handleForcePushLocal}
+		copilotOpen={!copilotCollapsed}
+		onCopilotToggle={() => copilotCollapsed = !copilotCollapsed}
 	/>
 
 	<!-- VFS File Editor (Right side floating panel) -->
@@ -1533,7 +1550,7 @@
 	{/if}
 	
 	<!-- Copilot Panel (Right side chat panel) -->
-	<CopilotPanel projectId={currentProjectId} initialCollapsed={true} />
+	<CopilotPanel projectId={currentProjectId} bind:collapsed={copilotCollapsed} hideCollapsedButton={true} />
 	
 	<!-- Context Menu -->
 	{#if contextMenu}

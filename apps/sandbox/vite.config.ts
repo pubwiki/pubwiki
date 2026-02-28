@@ -2,15 +2,24 @@ import { defineConfig } from 'vite'
 import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
 
+// Check if local HTTPS certificates exist (for mobile debugging)
+const httpsConfig = existsSync('./cert.pem') && existsSync('./key.pem')
+  ? {
+    key: readFileSync('./key.pem'),
+    cert: readFileSync('./cert.pem'),
+  }
+  : undefined;
+
 export default defineConfig({
   server: {
     port: 4001,
-    host: 'localhost',
+    host: true, // Listen on all interfaces for mobile access
     cors: true,
     // 禁用 HMR，让开发环境行为与生产环境一致
     hmr: false,
+    https: httpsConfig,
     headers: {
-      'Access-Control-Allow-Origin': 'http://localhost:5173',
+      'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type'
     }

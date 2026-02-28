@@ -468,6 +468,9 @@ function cleanupClient(clientId: string): void {
 self.addEventListener('fetch', (event: FetchEvent) => {
   const url = new URL(event.request.url)
   
+  // Debug: log ALL fetch events to verify SW interception
+  console.log('[SandboxSW] FETCH intercepted:', url.pathname, 'clientId:', event.clientId, 'mode:', event.request.mode)
+  
   // Only intercept same-origin requests
   if (url.origin !== self.location.origin) {
     return

@@ -28,6 +28,9 @@ llm-docs
 src/lib/paraglide
 project.inlang/cache/
 
+# Local HTTPS certificates (for mobile debugging)
+*.pem
+
 
 target/
 dist/

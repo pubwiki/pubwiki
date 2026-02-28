@@ -12,7 +12,7 @@ export default defineConfig(
         ".svelte-kit",
         "project.inlang",
         ".wrangler",
-        "src/paraglide",
+        "src/lib/paraglide",
     ]
   },
   eslint.configs.recommended,

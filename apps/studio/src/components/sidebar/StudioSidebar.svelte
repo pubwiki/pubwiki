@@ -47,6 +47,11 @@
 		onAcceptCloud?: () => void;
 		/** Called when user chooses to force push local state to cloud */
 		onForcePushLocal?: () => void;
+		// Copilot props
+		/** Whether copilot panel is open */
+		copilotOpen?: boolean;
+		/** Callback to toggle copilot panel */
+		onCopilotToggle?: () => void;
 	}
 
 	let { 
@@ -68,7 +73,9 @@
 		onSync,
 		onEnableSync,
 		onAcceptCloud,
-		onForcePushLocal
+		onForcePushLocal,
+		copilotOpen = false,
+		onCopilotToggle
 	}: Props = $props();
 
 	// Default sync state if not provided
@@ -230,6 +237,18 @@
 				{/if}
 			</div>
 			<div class="flex items-center gap-1">
+				<!-- Copilot button -->
+				{#if onCopilotToggle}
+					<button
+						class="p-1 rounded transition-colors {copilotOpen ? 'text-purple-600 bg-purple-50 hover:bg-purple-100' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}"
+						onclick={onCopilotToggle}
+						title="Copilot"
+					>
+						<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+						</svg>
+					</button>
+				{/if}
 				<!-- Project Menu -->
 				<ProjectMenu
 					onNewProject={onNewProject}

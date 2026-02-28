@@ -57,8 +57,10 @@
 	const MIN_WIDTH = 400;
 	const MIN_HEIGHT = 300;
 	const MINIMIZED_WIDTH = 280;
-
 	const MINIMIZED_HEIGHT = 28;
+	
+	// Mobile breakpoint - force fullscreen below this width
+	const MOBILE_BREAKPOINT = 768;
 
 	// ============================================================================
 	// State
@@ -69,6 +71,9 @@
 	let isLoading = $state(true);
 	let error = $state<string | null>(null);
 	let isFullscreen = $state(false);
+	
+	// Mobile view: force fullscreen, disable window controls
+	let isMobileView = $state(false);
 	
 	// Console log state
 	let showConsole = $state(false);
@@ -133,6 +138,12 @@
 	// ============================================================================
 
 	onMount(() => {
+		// Check for mobile view
+		isMobileView = window.innerWidth < MOBILE_BREAKPOINT;
+		if (isMobileView) {
+			isFullscreen = true;
+		}
+		
 		// Start sandbox after iframe is mounted
 		startSandbox();
 	});
@@ -280,15 +291,20 @@
 	}
 
 	function toggleFullscreen() {
+		// On mobile, always stay in fullscreen
+		if (isMobileView) return;
 		isFullscreen = !isFullscreen;
 	}
 	
 	function toggleMinimize() {
+		// On mobile, minimize is disabled
+		if (isMobileView) return;
 		isMinimized = !isMinimized;
 	}
 
 	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape' && isFullscreen) {
+		// On mobile, don't allow ESC to exit fullscreen
+		if (event.key === 'Escape' && isFullscreen && !isMobileView) {
 			event.preventDefault();
 			isFullscreen = false;
 		}
@@ -301,7 +317,8 @@
 	let dragTarget: HTMLElement | null = null;
 	
 	function startDrag(event: PointerEvent) {
-		if (isFullscreen) return;
+		// Disable drag on mobile or fullscreen
+		if (isFullscreen || isMobileView) return;
 		
 		// Only start drag on left mouse button and ignore if clicking buttons
 		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
@@ -346,7 +363,8 @@
 	let resizeTarget: HTMLElement | null = null;
 	
 	function startResize(event: PointerEvent, direction: string) {
-		if (isFullscreen || isMinimized) return;
+		// Disable resize on mobile, fullscreen, or minimized
+		if (isFullscreen || isMinimized || isMobileView) return;
 		
 		event.preventDefault();
 		event.stopPropagation();
@@ -446,7 +464,7 @@
 			class:py-1={isMinimized}
 			class:px-3={!isMinimized}
 			class:py-1.5={!isMinimized}
-			class:cursor-move={!isDragging && !isFullscreen}
+			class:cursor-move={!isDragging && !isFullscreen && !isMobileView}
 			class:cursor-grabbing={isDragging}
 			onpointerdown={startDrag}
 			onpointermove={handleDrag}
@@ -490,7 +508,8 @@
 						</svg>
 					</button>
 				{:else if isFullscreen}
-					<!-- Exit fullscreen button -->
+					<!-- Exit fullscreen button (hidden on mobile) -->
+					{#if !isMobileView}
 					<button
 						class="p-1 hover:bg-white/20 rounded transition-colors"
 						onclick={toggleFullscreen}
@@ -500,6 +519,7 @@
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
 						</svg>
 					</button>
+					{/if}
 					<!-- Reload button -->
 					<button
 						class="p-1 hover:bg-white/20 rounded transition-colors disabled:opacity-50"

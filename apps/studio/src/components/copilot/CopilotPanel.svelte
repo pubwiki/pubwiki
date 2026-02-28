@@ -36,14 +36,17 @@
   interface Props {
     /** Project ID for VFS creation */
     projectId: string;
-    /** Initially collapsed state */
-    initialCollapsed?: boolean;
+    /** Collapsed state (bindable) */
+    collapsed?: boolean;
+    /** Hide the floating toggle button when collapsed (for external control) */
+    hideCollapsedButton?: boolean;
     class?: string;
   }
 
   let { 
     projectId,
-    initialCollapsed = true,
+    collapsed = $bindable(true),
+    hideCollapsedButton = false,
     class: className = ''
   }: Props = $props();
 
@@ -57,14 +60,8 @@
   // State
   // ============================================================================
   
-  let collapsed = $state(true);
   let orchestrator = $state<CopilotOrchestrator | null>(null);
   let error = $state<string | null>(null);
-  
-  // Initialize collapsed state from prop
-  $effect(() => {
-    collapsed = initialCollapsed;
-  });
   
   // Persisted width
   const MIN_WIDTH = 360;
@@ -356,8 +353,8 @@
   }
 </script>
 
-<!-- Collapsed Button (shown on the right when collapsed) -->
-{#if collapsed}
+<!-- Collapsed Button (shown on the right when collapsed, unless hidden for external control) -->
+{#if collapsed && !hideCollapsedButton}
   <button
     class="absolute top-4 right-4 z-30 p-2.5 bg-white border border-gray-200 text-gray-600 rounded-lg shadow-md hover:shadow-lg hover:border-gray-300 hover:text-gray-800 transition-all"
     onclick={toggle}
