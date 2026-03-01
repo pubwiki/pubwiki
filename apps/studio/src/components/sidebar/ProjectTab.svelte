@@ -11,6 +11,8 @@
 	import type { StudioNodeData } from '$lib/types';
 	import type { NodeRef } from '$lib/version';
 	import { type PublishMetadata } from '$lib/io';
+	import type { DraftSyncState } from '$lib/sync';
+	import { formatRelativeSyncTime } from '$lib/sync';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { getProject, saveProject } from '$lib/persistence/db';
 	import { reportSaveState } from '$lib/persistence/save-tracker.svelte';
@@ -29,9 +31,25 @@
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
 		/** Called when user edits the project name, for real-time sync with sidebar header */
 		onNameChange?: (name: string) => void;
+		// Cloud sync
+		syncState?: DraftSyncState;
+		onSync?: () => void;
+		onEnableSync?: () => void;
 	}
 
-	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onNameChange }: Props = $props();
+	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onNameChange, syncState, onSync, onEnableSync }: Props = $props();
+
+	// Cloud sync toggle handler
+	function handleSyncToggle(checked: boolean) {
+		if (checked) {
+			onEnableSync?.();
+		}
+		// Disabling sync is not supported via this toggle currently
+	}
+
+	let syncEnabled = $derived(syncState?.enabled ?? false);
+	let isSyncing = $derived(syncState?.status === 'syncing');
+	let hasAnyChanges = $derived((syncState?.hasUnsyncedChanges ?? false) || (syncState?.hasVfsChanges ?? false));
 
 	// Form state - loaded from IndexedDB, auto-persisted on change
 	let name = $state('');
@@ -257,6 +275,45 @@
 						</svg>
 					</a>
 				</div>
+			</div>
+		{/if}
+
+		<!-- Cloud Sync Section -->
+		{#if isAuthenticated}
+			<div class="space-y-2 rounded-lg border border-gray-200 p-3">
+				<Toggle
+					checked={syncEnabled}
+					label={m.sync_enable_cloud()}
+					description={syncEnabled ? undefined : m.sync_not_enabled()}
+					size="sm"
+					disabled={syncEnabled}
+					onchange={handleSyncToggle}
+				/>
+				{#if syncEnabled}
+					<div class="border-t border-gray-100 pt-2 flex items-center justify-between">
+						<div class="text-xs text-gray-500">
+							{#if syncState?.lastSyncedAt}
+								{m.sync_last_synced({ time: formatRelativeSyncTime(syncState.lastSyncedAt) })}
+							{:else}
+								{m.sync_not_enabled()}
+							{/if}
+						</div>
+						<button
+							type="button"
+							disabled={isSyncing || (!hasAnyChanges && syncState?.status !== 'error')}
+							onclick={(e) => { e.preventDefault(); onSync?.(); }}
+							class="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+						>
+							{#if isSyncing}
+								<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+									<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+									<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+								</svg>
+							{/if}
+							{m.sync_now()}
+						</button>
+					</div>
+				{/if}
 			</div>
 		{/if}
 

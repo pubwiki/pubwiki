@@ -103,6 +103,9 @@
 
 	const auth = useAuth();
 
+	// DEV: bypass auth check so cloud sync works without login
+	const devAuthenticated = $derived(import.meta.env.DEV ? true : auth.isAuthenticated);
+
 	// ============================================================================
 	// Page Data (project ID from URL)
 	// ============================================================================
@@ -1199,7 +1202,7 @@
 	// ============================================================================
 	
 	async function handleSync() {
-		if (!syncService || !auth.isAuthenticated) return;
+		if (!syncService || !devAuthenticated) return;
 		
 		// Flush any pending changes first
 		await nodeStore.flush();
@@ -1218,7 +1221,7 @@
 	}
 	
 	async function handleEnableSync() {
-		if (!syncService || !auth.isAuthenticated) return;
+		if (!syncService || !devAuthenticated) return;
 		
 		// Enable sync
 		syncService.enable();
@@ -1243,7 +1246,7 @@
 	 * This creates a new commit based on current cloud commit.
 	 */
 	async function handleForcePushLocal() {
-		if (!syncService || !auth.isAuthenticated) return;
+		if (!syncService || !devAuthenticated) return;
 		
 		// Flush any pending changes first
 		await nodeStore.flush();
@@ -1523,7 +1526,7 @@
 		projectId={currentProjectId}
 		{projectName}
 		{isDraft}
-		isAuthenticated={auth.isAuthenticated}
+		isAuthenticated={devAuthenticated}
 		{lastCloudCommit}
 		onFocusNode={handleFocusNode}
 		onPublish={handlePublish}

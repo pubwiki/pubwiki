@@ -241,6 +241,8 @@
 				<SaveStatusIndicator
 					syncState={effectiveSyncState}
 					{isAuthenticated}
+					{onSync}
+					{onEnableSync}
 				/>
 			</div>
 			<div class="flex items-center gap-1">
@@ -312,6 +314,9 @@
 					{lastCloudCommit}
 					{onPublish}
 					{onNameChange}
+					syncState={effectiveSyncState}
+					{onSync}
+					{onEnableSync}
 				/>
 			{/if}
 		</div>
