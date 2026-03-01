@@ -7,19 +7,19 @@
 		"nodejs_compat"
 	],
 	// "routes": [
-    //   {
-    //     "pattern": "api.pub.wiki",
-    //     "custom_domain": true
-    //   }
-    // ],
+	//   {
+	//     "pattern": "api.pub.wiki",
+	//     "custom_domain": true
+	//   }
+	// ],
 	"observability": {
-  	  "logs": {
-  	    "enabled": true,
-  	    "head_sampling_rate": 1,
-  	    "invocation_logs": true,
-  	    "persist": true
-  	  }
-  	},
+		"logs": {
+			"enabled": true,
+			"head_sampling_rate": 1,
+			"invocation_logs": true,
+			"persist": true
+		}
+	},
 	"vars": {
 		"BETTER_AUTH_SECRET": "your-secret-at-least-32-characters-long-change-in-production",
 		"BETTER_AUTH_URL": "http://localhost:8788"
@@ -28,7 +28,7 @@
 		{
 			"binding": "DB",
 			"database_name": "pubwiki-db",
-			"database_id": "64a2c724-fc1f-4219-af77-9cca91deff61",
+			"database_id": "407e1e81-4678-4c4e-abb4-f98983fe0ce4",
 			"migrations_dir": "../../packages/db/drizzle",
 			"remote": false
 		}
