@@ -20,10 +20,6 @@
 			"persist": true
 		}
 	},
-	"vars": {
-		"BETTER_AUTH_SECRET": "your-secret-at-least-32-characters-long-change-in-production",
-		"BETTER_AUTH_URL": "http://localhost:8788"
-	},
 	"d1_databases": [
 		{
 			"binding": "DB",
