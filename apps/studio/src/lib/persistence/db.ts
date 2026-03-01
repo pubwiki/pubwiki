@@ -147,6 +147,20 @@ export interface StoredProject {
   lastDraftSyncAt?: number;
   /** Whether draft cloud sync is enabled for this project */
   draftSyncEnabled?: boolean;
+
+  // ========== Publish Metadata (persisted locally) ==========
+  /** Project description */
+  description?: string;
+  /** Homepage content (Markdown) */
+  homepage?: string;
+  /** Comma-separated tags */
+  tags?: string;
+  /** Version string (semver) */
+  version?: string;
+  /** Whether the artifact is private */
+  isPrivate?: boolean;
+  /** Whether the artifact is unlisted (hidden from search) */
+  isUnlisted?: boolean;
 }
 
 // ============================================================================

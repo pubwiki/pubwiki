@@ -32,6 +32,7 @@ import { restoreContent, type NodeType } from '../types/content';
 import type { SnapshotEdge, SnapshotPosition } from '../version/types';
 import type { StudioNodeData } from '../types';
 import { versionService } from '../version/version-service.svelte';
+import { reportSaveState } from './save-tracker.svelte';
 
 // ============================================================================
 // Types
@@ -558,6 +559,7 @@ class NodeStore {
    * Schedule a debounced save
    */
   private scheduleSave(): void {
+    reportSaveState('nodes', 'dirty');
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
     }
@@ -568,8 +570,12 @@ class NodeStore {
    * Immediately save all dirty nodes to IndexedDB
    */
   async flush(): Promise<void> {
-    if (this.dirty.size === 0) return;
+    if (this.dirty.size === 0) {
+      reportSaveState('nodes', 'idle');
+      return;
+    }
     
+    reportSaveState('nodes', 'saving');
     console.log('[NodeStore] Flushing', this.dirty.size, 'dirty nodes to IndexedDB');
     
     const toSave: StoredNodeData[] = [];
@@ -590,6 +596,7 @@ class NodeStore {
     }
     
     this.dirty.clear();
+    reportSaveState('nodes', 'idle');
   }
   
   /**

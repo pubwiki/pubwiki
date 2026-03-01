@@ -1,7 +1,9 @@
 <script lang="ts">
 	/**
 	 * ProjectTab - Project settings and publish functionality
-	 * Replaces the PublishModal with an inline experience
+	 * 
+	 * All form fields are persisted to IndexedDB in real-time so changes
+	 * survive page refresh. Authentication is only required for publishing.
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
@@ -10,6 +12,9 @@
 	import type { NodeRef } from '$lib/version';
 	import { type PublishMetadata } from '$lib/io';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
+	import { getProject, saveProject } from '$lib/persistence/db';
+	import { reportSaveState } from '$lib/persistence/save-tracker.svelte';
+	import { Toggle } from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -22,41 +27,99 @@
 		/** Last cloud commit hash for version lineage tracking */
 		lastCloudCommit?: string;
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
+		/** Called when user edits the project name, for real-time sync with sidebar header */
+		onNameChange?: (name: string) => void;
 	}
 
-	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish }: Props = $props();
+	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onNameChange }: Props = $props();
 
-	// Form state - initialized from props but managed locally
+	// Form state - loaded from IndexedDB, auto-persisted on change
 	let name = $state('');
-	let slug = $state('');
 	let description = $state('');
 	let homepage = $state('');
-	let isListed = $state(true);
+	let isUnlisted = $state(false);
 	let isPrivate = $state(false);
 	let version = $state('1.0.0');
 	let tagsInput = $state('');
 	let isSubmitting = $state(false);
 	let errorMessage = $state('');
 	let successMessage = $state('');
-	let initialized = $state(false);
+	let loaded = $state(false);
 
-	// Category expand state
-	let expandedCategories = $state<Record<string, boolean>>({
-		PROMPT: true,
-		INPUT: false,
-		GENERATED: false,
-		VFS: false,
-		LOADER: false,
-		SANDBOX: false,
-		STATE: false
+	// Load persisted metadata from IndexedDB on mount
+	$effect(() => {
+		if (!loaded && projectId) {
+			// Use projectId as dependency, re-load if project changes
+			loadProjectMetadata();
+		}
 	});
 
-	// Initialize name from projectName prop
-	$effect(() => {
-		if (!initialized && projectName) {
+	async function loadProjectMetadata() {
+		const project = await getProject(projectId);
+		if (project) {
+			name = project.name || '';
+			description = project.description || '';
+			homepage = project.homepage || '';
+			tagsInput = project.tags || '';
+			version = project.version || '1.0.0';
+			isPrivate = project.isPrivate ?? false;
+			isUnlisted = project.isUnlisted ?? false;
+		} else {
+			// Fallback to prop
 			name = projectName;
-			slug = generateSlug(projectName);
-			initialized = true;
+		}
+		loaded = true;
+		lastPersisted = snapshotCurrent();
+	}
+
+	// Auto-persist metadata changes with debounce
+	let persistTimer: ReturnType<typeof setTimeout> | undefined;
+	
+	// Snapshot of the last persisted values to detect real user changes
+	let lastPersisted = $state<{
+		name: string; description: string; homepage: string;
+		tagsInput: string; version: string; isPrivate: boolean; isUnlisted: boolean;
+	} | null>(null);
+
+	function schedulePersist() {
+		reportSaveState('metadata', 'dirty');
+		clearTimeout(persistTimer);
+		persistTimer = setTimeout(() => persistMetadata(), 300);
+	}
+
+	async function persistMetadata() {
+		reportSaveState('metadata', 'saving');
+		const project = await getProject(projectId);
+		if (!project) return;
+		await saveProject({
+			...project,
+			name: name.trim() || project.name,
+			description,
+			homepage,
+			tags: tagsInput,
+			version,
+			isPrivate,
+			isUnlisted,
+			updatedAt: Date.now()
+		});
+		lastPersisted = { name, description, homepage, tagsInput, version, isPrivate, isUnlisted };
+		reportSaveState('metadata', 'idle');
+	}
+	
+	function snapshotCurrent() {
+		return { name, description, homepage, tagsInput, version, isPrivate, isUnlisted };
+	}
+
+	// Watch all form fields and auto-persist (skip initial load)
+	$effect(() => {
+		// Access all reactive fields to create dependencies
+		const current = snapshotCurrent();
+		if (!loaded || !lastPersisted) return;
+		// Only persist when values actually differ from last persisted state
+		const changed = (Object.keys(current) as (keyof typeof current)[])
+			.some(k => current[k] !== lastPersisted![k]);
+		if (changed) {
+			schedulePersist();
 		}
 	});
 
@@ -97,30 +160,7 @@
 			return true;
 		});
 	});
-	
 
-
-	// Group nodes by type
-	let nodesByType = $derived.by(() => {
-		const groups: Record<string, Node<FlowNodeData>[]> = {
-			PROMPT: [],
-			INPUT: [],
-			GENERATED: [],
-			VFS: [],
-			LOADER: [],
-			SANDBOX: [],
-			STATE: []
-		};
-		
-		for (const node of nodesToPublish) {
-			const nodeType = node.data.type;
-			if (nodeType in groups) {
-				groups[nodeType].push(node);
-			}
-		}
-		
-		return groups;
-	});
 
 	// Get edges to publish
 	let edgesToPublish = $derived.by(() => {
@@ -128,24 +168,21 @@
 		return edges.filter((e) => publishedIds.has(e.source) && publishedIds.has(e.target));
 	});
 
-	// Auto-generate slug from name
-	function generateSlug(name: string): string {
-		return name
+	// Generate a random slug with name prefix and random suffix
+	function generateRandomSlug(name: string): string {
+		const prefix = name
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-|-$/g, '');
+			.replace(/^-|-$/g, '')
+			.slice(0, 30);
+		const randomSuffix = crypto.randomUUID().slice(0, 8);
+		return prefix ? `${prefix}-${randomSuffix}` : randomSuffix;
 	}
 
 	function handleNameInput(e: Event) {
 		const target = e.target as HTMLInputElement;
 		name = target.value;
-		if (!slug || slug === generateSlug(name.slice(0, -1))) {
-			slug = generateSlug(name);
-		}
-	}
-
-	function toggleCategory(type: string) {
-		expandedCategories[type] = !expandedCategories[type];
+		onNameChange?.(name);
 	}
 
 	async function handleSubmit(e: Event) {
@@ -155,14 +192,6 @@
 
 		if (!name.trim()) {
 			errorMessage = m.studio_error_name_required();
-			return;
-		}
-		if (!slug.trim()) {
-			errorMessage = m.studio_error_slug_required();
-			return;
-		}
-		if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-			errorMessage = m.studio_error_slug_format();
 			return;
 		}
 		if (!/^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$/.test(version)) {
@@ -182,9 +211,9 @@
 			const metadata: PublishMetadata = {
 				artifactId: projectId,
 				name: name.trim(),
-				slug: slug.trim(),
+				slug: generateRandomSlug(name.trim()),
 				description: description.trim(),
-				isListed,
+				isListed: !isUnlisted,
 				isPrivate,
 				version: version.trim(),
 				tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
@@ -202,48 +231,7 @@
 		}
 	}
 
-	function getNodeDisplayName(node: Node<FlowNodeData>): string {
-		const nodeData = nodeStore.get(node.id);
-		return nodeData?.name || node.id.slice(0, 8);
-	}
 
-	/**
-	 * Get the selected checkpoint name for a STATE node
-	 * 
-	 * NOTE: Cloud checkpoint display is temporarily disabled pending new Save API migration.
-	 * STATE nodes use local checkpoints which are not displayed in the publish preview.
-	 */
-	function getStateCheckpointName(_node: Node<FlowNodeData>): string | null {
-		// Cloud checkpoint display is temporarily disabled
-		// Local checkpoints are stored in RDFStore and don't have named references in StateContent
-		return null;
-	}
-
-	function getCategoryLabel(type: string): string {
-		switch (type) {
-			case 'PROMPT': return m.studio_overview_prompts();
-			case 'INPUT': return m.studio_overview_inputs();
-			case 'GENERATED': return m.studio_overview_generated();
-			case 'VFS': return m.studio_overview_files();
-			case 'LOADER': return m.studio_overview_loaders();
-			case 'SANDBOX': return m.studio_overview_sandboxes();
-			case 'STATE': return m.studio_overview_states();
-			default: return type;
-		}
-	}
-
-	function getCategoryColor(type: string): string {
-		switch (type) {
-			case 'PROMPT': return 'bg-blue-100 text-blue-800';
-			case 'INPUT': return 'bg-purple-100 text-purple-800';
-			case 'GENERATED': return 'bg-green-100 text-green-800';
-			case 'VFS': return 'bg-yellow-100 text-yellow-800';
-			case 'LOADER': return 'bg-orange-100 text-orange-800';
-			case 'SANDBOX': return 'bg-pink-100 text-pink-800';
-			case 'STATE': return 'bg-cyan-100 text-cyan-800';
-			default: return 'bg-gray-100 text-gray-800';
-		}
-	}
 </script>
 
 <div class="h-full overflow-y-auto">
@@ -272,19 +260,6 @@
 			</div>
 		{/if}
 
-		<!-- Auth Required Banner -->
-		{#if !isAuthenticated}
-			<div class="rounded-lg bg-amber-50 border border-amber-200 p-3 flex items-start gap-3">
-				<svg class="w-5 h-5 text-amber-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-				</svg>
-				<div>
-					<p class="text-sm font-medium text-amber-800">{m.studio_login_required()}</p>
-					<p class="text-xs text-amber-600 mt-0.5">{m.studio_login_required_desc()}</p>
-				</div>
-			</div>
-		{/if}
-
 		<!-- Basic Info -->
 		<div class="space-y-3">
 			<div>
@@ -301,43 +276,20 @@
 				/>
 			</div>
 
-			<div>
-				<label for="slug" class="block text-xs font-medium text-gray-500 mb-1">
-					{m.studio_form_slug()} <span class="text-red-500">*</span>
-				</label>
-				<input
-					id="slug"
-					type="text"
-					bind:value={slug}
-					placeholder={m.studio_form_slug_placeholder()}
-					class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+			<div class="space-y-2 rounded-lg border border-gray-200 p-3">
+				<Toggle
+					bind:checked={isPrivate}
+					label={m.studio_form_visibility_private()}
+					description={m.studio_form_visibility_private_description()}
+					size="sm"
 				/>
-				<p class="mt-1 text-xs text-gray-400">{m.studio_form_slug_hint()}</p>
-			</div>
-
-			<div class="grid grid-cols-2 gap-3">
-
-				<div>
-					<label class="block text-xs font-medium text-gray-500 mb-1">{m.studio_form_visibility()}</label>
-					<div class="space-y-2">
-						<label class="flex items-center gap-2 cursor-pointer">
-							<input
-								type="checkbox"
-								bind:checked={isPrivate}
-								class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-							/>
-							<span class="text-sm text-gray-700">{m.studio_form_visibility_private()}</span>
-						</label>
-						<label class="flex items-center gap-2 cursor-pointer">
-							<input
-								type="checkbox"
-								bind:checked={isListed}
-								class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-							/>
-							<span class="text-sm text-gray-700">公开列表可见</span>
-						</label>
-					</div>
-				</div>
+				<div class="border-t border-gray-100"></div>
+				<Toggle
+					bind:checked={isUnlisted}
+					label={m.studio_form_visibility_unlisted()}
+					description={m.studio_form_visibility_unlisted_description()}
+					size="sm"
+				/>
 			</div>
 
 			<div>
@@ -389,70 +341,6 @@
 			</div>
 		</div>
 
-		<!-- Nodes Preview -->
-		<div class="border-t border-gray-100 pt-4">
-			<h3 class="text-xs font-medium text-gray-500 mb-2">
-				{m.studio_nodes_to_publish({ count: nodesToPublish.length })}
-			</h3>
-			
-			<div class="space-y-2">
-				{#each Object.entries(nodesByType) as [type, typeNodes]}
-					{#if typeNodes.length > 0}
-						<div class="border border-gray-200 rounded-lg overflow-hidden">
-							<button
-								type="button"
-								class="w-full px-3 py-2 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
-								onclick={() => toggleCategory(type)}
-							>
-								<div class="flex items-center gap-2">
-									<span class="px-1.5 py-0.5 text-xs font-medium rounded {getCategoryColor(type)}">
-										{getCategoryLabel(type)}
-									</span>
-									<span class="text-xs text-gray-500">{typeNodes.length}</span>
-								</div>
-								<svg
-									class="w-4 h-4 text-gray-400 transition-transform {expandedCategories[type] ? 'rotate-180' : ''}"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-								</svg>
-							</button>
-							
-							{#if expandedCategories[type]}
-								<div class="divide-y divide-gray-100">
-									{#each typeNodes as node}
-										<div class="px-3 py-1.5 flex items-center gap-2 text-xs">
-											<span class="text-gray-400 font-mono">{node.id.slice(0, 6)}</span>
-											<span class="text-gray-600 truncate">{getNodeDisplayName(node)}</span>
-											{#if type === 'STATE'}
-												{@const checkpointName = getStateCheckpointName(node)}
-												{#if checkpointName}
-													<span class="text-teal-600 text-xs">@ {checkpointName}</span>
-												{:else}
-													<span class="text-amber-600 text-xs italic">未选择存档</span>
-												{/if}
-											{/if}
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{/each}
-			</div>
-
-			{#if nodesToPublish.length === 0}
-				<div class="text-center py-6 text-gray-400">
-					<svg class="w-8 h-8 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-					</svg>
-					<p class="text-xs">{m.studio_no_nodes_to_publish()}</p>
-				</div>
-			{/if}
-		</div>
-
 		<!-- Messages -->
 		{#if errorMessage}
 			<div class="rounded-lg bg-red-50 border border-red-200 p-3 flex items-start gap-2">
@@ -469,6 +357,16 @@
 					<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
 				</svg>
 				<p class="text-xs text-green-700">{successMessage}</p>
+			</div>
+		{/if}
+
+		<!-- Auth Required Hint + Publish Button -->
+		{#if !isAuthenticated}
+			<div class="flex items-center gap-2 px-1 py-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg">
+				<svg class="w-3.5 h-3.5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+				</svg>
+				<span>{m.studio_login_required()}</span>
 			</div>
 		{/if}
 

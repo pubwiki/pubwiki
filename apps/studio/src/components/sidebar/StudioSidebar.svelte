@@ -18,7 +18,7 @@
 	import ProjectTab from './ProjectTab.svelte';
 	import ProjectMenu from './ProjectMenu.svelte';
 	import ProjectListModal from './ProjectListModal.svelte';
-	import SyncStatusIndicator from './SyncStatusIndicator.svelte';
+	import SaveStatusIndicator from './SaveStatusIndicator.svelte';
 	import { SettingsModal } from '../settings';
 	import { persist } from '@pubwiki/ui/utils';
 	import * as m from '$lib/paraglide/messages';
@@ -52,6 +52,8 @@
 		copilotOpen?: boolean;
 		/** Callback to toggle copilot panel */
 		onCopilotToggle?: () => void;
+		/** Called when user edits the project name in ProjectTab */
+		onNameChange?: (name: string) => void;
 	}
 
 	let { 
@@ -75,7 +77,8 @@
 		onAcceptCloud,
 		onForcePushLocal,
 		copilotOpen = false,
-		onCopilotToggle
+		onCopilotToggle,
+		onNameChange
 	}: Props = $props();
 
 	// Default sync state if not provided
@@ -225,7 +228,7 @@
 			<!-- Visual indicator line -->
 			<div class="w-0.5 h-8 rounded-full transition-all duration-150 {isResizing ? 'bg-blue-500 h-10 opacity-100' : 'bg-gray-400 opacity-0 group-hover:opacity-100 group-hover:h-10'}"></div>
 		</div>
-		<!-- Header with project name, settings button, and collapse button -->
+		<!-- Header with project name, save status, and action buttons -->
 		<div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
 			<div class="flex items-center gap-2 min-w-0">
 				<svg class="w-4 h-4 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -235,6 +238,10 @@
 				{#if !isDraft}
 					<span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">{m.studio_published()}</span>
 				{/if}
+				<SaveStatusIndicator
+					syncState={effectiveSyncState}
+					{isAuthenticated}
+				/>
 			</div>
 			<div class="flex items-center gap-1">
 				<!-- Copilot button -->
@@ -268,18 +275,6 @@
 					</svg>
 				</button>
 			</div>
-		</div>
-
-		<!-- Sync Status Indicator -->
-		<div class="px-4 py-2 border-b border-gray-100 bg-white">
-			<SyncStatusIndicator
-				state={effectiveSyncState}
-				{isAuthenticated}
-				onSync={() => onSync?.()}
-				onEnable={() => onEnableSync?.()}
-				onAcceptCloud={onAcceptCloud ? () => onAcceptCloud?.() : undefined}
-				onForcePushLocal={onForcePushLocal ? () => onForcePushLocal?.() : undefined}
-			/>
 		</div>
 
 		<!-- Tab Navigation -->
@@ -316,6 +311,7 @@
 					{isAuthenticated}
 					{lastCloudCommit}
 					{onPublish}
+					{onNameChange}
 				/>
 			{/if}
 		</div>

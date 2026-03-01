@@ -53,3 +53,4 @@ export {
 
 export { nodeStore, type StudioNodeData } from './node-store.svelte';
 export { layoutStore, type NodeLayout } from './layout-store';
+export { reportSaveState, getSaveStatus, type SaveState } from './save-tracker.svelte';

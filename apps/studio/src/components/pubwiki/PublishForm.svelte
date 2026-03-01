@@ -24,14 +24,12 @@
 
 	// Capture initial values once (intentionally not reactive to props changes)
 	const initName = untrack(() => (initialValues.name as string) ?? '');
-	const initSlug = untrack(() => (initialValues.slug as string) ?? '');
 	const initDescription = untrack(() => (initialValues.description as string) ?? '');
 	const initVersion = untrack(() => (initialValues.version as string) ?? '1.0.0');
 	const initVisibility = untrack(() => (initialValues.visibility as string) ?? 'PUBLIC');
 	const initHomepage = untrack(() => (initialValues.homepage as string) ?? '');
 
 	let name = $state(initName);
-	let slug = $state(initSlug);
 	let description = $state(initDescription);
 	let version = $state(initVersion);
 	let visibility = $state<VisibilityOption>(
@@ -39,11 +37,24 @@
 	);
 	let homepage = $state(initHomepage);
 
+	// Generate a random slug with name prefix and random suffix
+	function generateRandomSlug(nameStr: string): string {
+		const prefix = nameStr
+			.toLowerCase()
+			.trim()
+			.replace(/[^\w\s-]/g, '')
+			.replace(/[\s_-]+/g, '-')
+			.replace(/^-+|-+$/g, '')
+			.slice(0, 30);
+		const randomSuffix = crypto.randomUUID().slice(0, 8);
+		return prefix ? `${prefix}-${randomSuffix}` : randomSuffix;
+	}
+
 	// Notify parent when any value changes
 	$effect(() => {
 		onValuesChange({
 			name,
-			slug,
+			slug: generateRandomSlug(name),
 			description,
 			version,
 			visibility: visibility.value,
@@ -51,23 +62,9 @@
 		});
 	});
 
-	// 根据名称自动生成 slug
-	function generateSlug(nameStr: string): string {
-		return nameStr
-			.toLowerCase()
-			.trim()
-			.replace(/[^\w\s-]/g, '')
-			.replace(/[\s_-]+/g, '-')
-			.replace(/^-+|-+$/g, '');
-	}
-
 	function handleNameChange(e: Event) {
 		const target = e.target as HTMLInputElement;
 		name = target.value;
-		// 如果 slug 为空或者是自动生成的，就自动更新
-		if (!slug || slug === generateSlug(initName)) {
-			slug = generateSlug(target.value);
-		}
 	}
 </script>
 
@@ -84,20 +81,6 @@
 			oninput={handleNameChange}
 			placeholder={m.studio_pubwiki_field_name_placeholder()}
 		/>
-	</div>
-
-	<div>
-		<!-- svelte-ignore a11y_label_has_associated_control -->
-		<label class="block text-sm font-medium text-gray-700 mb-1">
-			{m.studio_pubwiki_field_slug()} <span class="text-red-500">*</span>
-		</label>
-		<input
-			type="text"
-			class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-			bind:value={slug}
-			placeholder={m.studio_pubwiki_field_slug_placeholder()}
-		/>
-		<p class="mt-1 text-xs text-gray-500">{m.studio_pubwiki_field_slug_help()}</p>
 	</div>
 
 	<div>

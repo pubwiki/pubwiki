@@ -164,7 +164,9 @@
 	"studio_form_visibility": "Visibility",
 	"studio_form_visibility_public": "Public",
 	"studio_form_visibility_unlisted": "Unlisted",
+	"studio_form_visibility_unlisted_description": "Anyone with the link can still access",
 	"studio_form_visibility_private": "Private",
+	"studio_form_visibility_private_description": "Only you and authorized users can access",
 	"studio_form_version": "Version",
 	"studio_form_version_placeholder": "1.0.0",
 	"studio_form_description": "Description",
@@ -347,6 +349,10 @@
 	"sync_enable_cloud": "Enable cloud sync",
 	"sync_now": "Sync",
 	"sync_last_synced": "Last synced {time}",
+	
+	"save_status_saved": "Saved",
+	"save_status_saving": "Saving...",
+	"save_status_unsaved": "Unsaved changes",
 	
 	"studio_today": "Today",
 	"studio_sandbox_connect_vfs": "Connect a VFS node",

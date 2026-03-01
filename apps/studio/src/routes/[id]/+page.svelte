@@ -58,7 +58,8 @@
 		getEdges,
 		deleteProject, 
 		setCurrentProject, 
-		getProject
+		getProject,
+		reportSaveState
 	} from '$lib/persistence';
 	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type NodeVfs } from '$lib/vfs';
 	import { generateUniqueNodeName } from '$lib/validation';
@@ -121,7 +122,6 @@
 	let flowApi = $state<ReturnType<typeof useSvelteFlow> | null>(null);
 	let initialized = $state(false);
 	let loaded = $state(false);
-	let saving = $state(false);
 	
 	// Touch device detection for mobile-friendly canvas interaction
 	// On touch devices: single touch pans canvas, long press to select nodes
@@ -257,12 +257,13 @@
 			return;
 		}
 		
+		reportSaveState('edges', 'dirty');
 		if (edgeSaveTimer) {
 			clearTimeout(edgeSaveTimer);
 		}
 		
 		edgeSaveTimer = setTimeout(async () => {
-			saving = true;
+			reportSaveState('edges', 'saving');
 			// Filter out historical edges (temporary edges for version preview)
 			const edgesToSave = untrack(() => edges.filter(e => !e.id.startsWith('historical-')));
 			console.log('[Studio] Saving edges to IndexedDB...', { projectId: currentProjectId, edgesCount: edgesToSave.length });
@@ -272,7 +273,7 @@
 			} catch (err) {
 				console.error('[Studio] Failed to save edges:', err);
 			} finally {
-				saving = false;
+				reportSaveState('edges', 'idle');
 			}
 		}, EDGE_SAVE_DEBOUNCE_MS);
 	}
@@ -1537,6 +1538,13 @@
 		onForcePushLocal={handleForcePushLocal}
 		copilotOpen={!copilotCollapsed}
 		onCopilotToggle={() => copilotCollapsed = !copilotCollapsed}
+		onNameChange={async (name) => {
+			projectName = name;
+			const project = await getProject(currentProjectId);
+			if (project) {
+				await saveProject({ ...project, name, updatedAt: Date.now() });
+			}
+		}}
 	/>
 
 	<!-- VFS File Editor (Right side floating panel) -->

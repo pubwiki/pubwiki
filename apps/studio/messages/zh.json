@@ -163,8 +163,10 @@
 	"studio_form_type_prompt": "提示词",
 	"studio_form_visibility": "可见性",
 	"studio_form_visibility_public": "公开",
-	"studio_form_visibility_unlisted": "不公开",
+	"studio_form_visibility_unlisted": "不出现在搜索结果中",
+	"studio_form_visibility_unlisted_description": "拥有链接的人仍可访问",
 	"studio_form_visibility_private": "私有",
+	"studio_form_visibility_private_description": "仅自己和授权用户可访问",
 	"studio_form_version": "版本",
 	"studio_form_version_placeholder": "1.0.0",
 	"studio_form_description": "描述",
@@ -337,6 +339,11 @@
 	"studio_today": "今天",
 	"studio_sandbox_connect_vfs": "连接 VFS 节点",
 	"studio_sandbox_connect_hint": "从 VFS 节点的输出拖拽连接",
+	
+	"save_status_saved": "已保存",
+	"save_status_saving": "保存中...",
+	"save_status_unsaved": "有未保存的更改",
+	
 	"studio_sandbox_detecting": "正在检测项目...",
 	"studio_sandbox_no_project": "未检测到项目",
 	"studio_sandbox_add_tsconfig": "请在 VFS 中添加 tsconfig.json",
