@@ -367,15 +367,16 @@ export function createStateModule(store: RDFStore) {
      * @param _self - Lua self reference (ignored)
      * @param checkpointId - Checkpoint ID to load
      */
-    async checkout(checkpointId: string): Promise<void> {
+    async checkout(_self: unknown, checkpointId: string): Promise<void> {
       await store.loadCheckpoint(checkpointId)
     },
 
     /**
      * List all checkpoints, sorted by timestamp descending
+     * @param _self - Lua self reference (ignored)
      * @returns Array of checkpoint info wrapped for Lua table conversion
      */
-    async listCheckpoints(): Promise<LuaTable<Array<{
+    async listCheckpoints(_self: unknown): Promise<LuaTable<Array<{
       id: string
       title: string
       description?: string

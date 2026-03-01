@@ -355,6 +355,49 @@ describe('State Module (RDF)', () => {
       expect(typeof result.result).toBe('string')
       expect(result.result.length).toBeGreaterThan(0)
     })
+
+    it('should checkout a checkpoint and restore state', async () => {
+      // Insert data, checkpoint, modify, then checkout to restore
+      const result = await instance.run(`
+        State:insert('user:alice', 'name', 'Alice')
+        local ckpt_id = State:checkpoint('before-change')
+
+        -- Modify state after checkpoint
+        State:set('user:alice', 'name', 'Bob')
+
+        -- Verify modification took effect
+        local nameAfterSet = State:get('user:alice', 'name')
+
+        -- Checkout back to checkpoint
+        State:checkout(ckpt_id)
+
+        -- Verify state is restored
+        local nameAfterCheckout = State:get('user:alice', 'name')
+
+        return {
+          nameAfterSet = nameAfterSet,
+          nameAfterCheckout = nameAfterCheckout
+        }
+      `)
+
+      expect(result.error).toBeNull()
+      expect(result.result.nameAfterSet).toBe('Bob')
+      expect(result.result.nameAfterCheckout).toBe('Alice')
+    })
+
+    it('should list checkpoints via colon syntax', async () => {
+      const result = await instance.run(`
+        State:insert('a', 'b', 'c')
+        State:checkpoint('cp1')
+        State:checkpoint('cp2')
+
+        local cps = State:listCheckpoints()
+        return #cps
+      `)
+
+      expect(result.error).toBeNull()
+      expect(result.result).toBe(2)
+    })
   })
 
   describe('Complex scenarios', () => {
