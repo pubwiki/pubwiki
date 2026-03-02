@@ -567,8 +567,8 @@ export function createDraftSyncService() {
     edges: Edge[],
     projectName: string
   ): Promise<SyncResult> {
-    // Generate artifact ID if not already set
-    const artifactId = project.artifactId ?? crypto.randomUUID();
+    // Use project ID as artifact ID to keep URL consistent
+    const artifactId = project.artifactId ?? project.id;
     
     // Create slug from project name
     const slug = projectName

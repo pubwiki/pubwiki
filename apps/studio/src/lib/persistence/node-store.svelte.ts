@@ -28,7 +28,7 @@
 
 import { SvelteMap } from 'svelte/reactivity';
 import { db, type StoredNodeData } from './db';
-import { restoreContent, type NodeType } from '../types/content';
+import { restoreContent, type NodeType, StateContent } from '../types/content';
 import type { SnapshotEdge, SnapshotPosition } from '../version/types';
 import type { StudioNodeData } from '../types';
 import { versionService } from '../version/version-service.svelte';
@@ -424,11 +424,16 @@ class NodeStore {
       return;
     }
     
-    const updated = updater(current);
+    let updated = updater(current);
     
     // Update name index if name changed
     if (current.name !== updated.name) {
       this.updateNameIndex(nodeId, current.name, updated.name);
+      
+      // For STATE nodes, sync the content's name field to match the node name
+      if (updated.type === 'STATE' && updated.content instanceof StateContent) {
+        updated = { ...updated, content: updated.content.withName(updated.name) };
+      }
     }
     
     // Detect content change (reference comparison)

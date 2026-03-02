@@ -19,9 +19,10 @@
 import type { Edge } from '@xyflow/svelte';
 import type { StoredProject, StoredNodeData, StoredLayout } from '../persistence/db';
 import { db, saveProject } from '../persistence/db';
-import { restoreContent, type NodeType, VFSContent } from '../types/content';
+import { restoreContent, type NodeType, VFSContent, StateContent } from '../types/content';
 import { getNodeVfs } from '../vfs';
 import { getNodeRDFStore } from '../rdf';
+import { computeContentHash, computeNodeCommit } from '@pubwiki/api';
 import JSZip from 'jszip';
 import type { ExportManifest, ExportedNodeData } from './export-local';
 
@@ -160,16 +161,34 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
       content = new VFSContent(newProjectId);
     }
     
+    // For STATE nodes, ensure content name matches node name
+    if (exportedNode.type === 'STATE' && content instanceof StateContent) {
+      content = content.withName(exportedNode.name || 'State');
+    }
+    
+    // Recompute contentHash from actual content (the exported value may be
+    // stale or undefined, especially for VFS nodes whose content changed).
+    const contentJson = content.toJSON();
+    const contentHash = await computeContentHash(
+      contentJson as Parameters<typeof computeContentHash>[0]
+    );
+    const commit = await computeNodeCommit(
+      preservedNodeId,
+      exportedNode.parent,
+      contentHash,
+      exportedNode.type
+    );
+    
     // Create StoredNodeData for direct DB insert
     const storedNode: StoredNodeData = {
       projectId: newProjectId,
       nodeId: preservedNodeId,
       type: exportedNode.type as NodeType,
       name: exportedNode.name,
-      commit: exportedNode.commit,
-      contentHash: exportedNode.contentHash,
+      commit,
+      contentHash,
       parent: exportedNode.parent,
-      content: content.toJSON(),
+      content: contentJson,
       timestamp: Date.now()
     };
     

@@ -349,7 +349,6 @@ describe('Artifacts API', () => {
       const parentCommit = (metadata.parentCommit as string | undefined) ?? null;
 
       const nodeId = crypto.randomUUID();
-      const contentHash = crypto.randomUUID().substring(0, 16);
       let nodes: Array<Record<string, unknown>> = [];
       let tarGz: ArrayBuffer | null = null;
       let filesHashValue: string | null = null;
@@ -361,6 +360,8 @@ describe('Artifacts API', () => {
         })));
         filesHashValue = await computeSha256Hex(tarGz);
         
+        const nodeContent = { type: 'VFS' as const, filesHash: filesHashValue, fileTree: files.map(f => ({ path: f.name, size: 0 })) };
+        const contentHash = await computeContentHash(nodeContent);
         const nodeCommit = await computeNodeCommit(nodeId, null, contentHash, 'VFS');
         nodes = [{
           nodeId,
@@ -368,7 +369,7 @@ describe('Artifacts API', () => {
           type: 'VFS',
           name: 'files',
           contentHash,
-          content: { type: 'VFS', filesHash: filesHashValue, fileTree: files.map(f => ({ path: f.name, size: 0 })) },
+          content: nodeContent,
         }];
       }
       const edges: Array<{ source: string; target: string }> = [];
@@ -403,10 +404,11 @@ describe('Artifacts API', () => {
       const parentCommit = (metadata.parentCommit as string | undefined) ?? null;
 
       const nodeId = crypto.randomUUID();
-      const contentHash = crypto.randomUUID().substring(0, 16);
       const hasContent = content !== undefined;
       let nodes: Array<Record<string, unknown>> = [];
       if (hasContent) {
+        const nodeContent = { type: 'PROMPT' as const, blocks: [] as unknown[] };
+        const contentHash = await computeContentHash(nodeContent);
         const nodeCommit = await computeNodeCommit(nodeId, null, contentHash, 'PROMPT');
         nodes = [{
           nodeId,
@@ -414,7 +416,7 @@ describe('Artifacts API', () => {
           type: 'PROMPT',
           name: 'prompt',
           contentHash,
-          content: { type: 'PROMPT', blocks: [] },
+          content: nodeContent,
         }];
       }
       const edges: Array<{ source: string; target: string }> = [];
@@ -444,10 +446,15 @@ describe('Artifacts API', () => {
       const parentCommit = (metadata.parentCommit as string | undefined) ?? null;
 
       const nodeId = crypto.randomUUID();
-      const contentHash = crypto.randomUUID().substring(0, 16);
       const hasContent = content !== undefined;
       let nodes: Array<Record<string, unknown>> = [];
       if (hasContent) {
+        const nodeContent = { 
+          type: 'GENERATED' as const, 
+          blocks: [] as unknown[],
+          inputRef: { id: crypto.randomUUID(), commit: 'dummy-input-commit' },
+        };
+        const contentHash = await computeContentHash(nodeContent);
         const nodeCommit = await computeNodeCommit(nodeId, null, contentHash, 'GENERATED');
         nodes = [{
           nodeId,
@@ -455,11 +462,7 @@ describe('Artifacts API', () => {
           type: 'GENERATED',
           name: 'output',
           contentHash,
-          content: { 
-            type: 'GENERATED', 
-            blocks: [],
-            inputRef: { id: crypto.randomUUID(), commit: 'dummy-input-commit' },
-          },
+          content: nodeContent,
         }];
       }
       const edges: Array<{ source: string; target: string }> = [];
@@ -515,7 +518,7 @@ describe('Artifacts API', () => {
           content = { type: nodeType, ...content };
         }
         
-        const contentHash = crypto.randomUUID().substring(0, 16);
+        const contentHash = await computeContentHash(content);
         const nodeCommit = await computeNodeCommit(n.id, null, contentHash, nodeType);
         
         return {

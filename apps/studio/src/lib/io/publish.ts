@@ -15,7 +15,7 @@ import type { Node, Edge } from '@xyflow/svelte';
 import type { StudioNodeData, VFSNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
 import { createApiClient } from '@pubwiki/api/client';
-import { type components, computeArtifactCommit } from '@pubwiki/api';
+import { type components, computeArtifactCommit, computeContentHash, computeNodeCommit, computeSha256Hex } from '@pubwiki/api';
 import { API_BASE_URL } from '$lib/config';
 import { getNodeVfs } from '../vfs';
 import { nodeStore } from '../persistence';
@@ -318,7 +318,7 @@ function guessMimeType(path: string): string {
 interface PreparedNodes {
 	/** Node descriptors for the API */
 	nodes: CreateArtifactNode[];
-	/** VFS nodes that need tar.gz archives uploaded (nodeId -> archive data) */
+	/** VFS archives keyed by filesHash (SHA-256 of archive) for upload */
 	vfsArchives: Map<string, Uint8Array>;
 }
 
@@ -347,28 +347,53 @@ async function prepareNodesForPublish(
 
 	for (const node of nodes) {
 		const freshData = nodeStore.get(node.id)!;
-		const nodeContent = freshData.content.toJSON() as ArtifactNodeContent;
-		
-		// VFS needs to package file archive (but no need to recompute hash,
-		// since local already includes complete info)
+		let nodeContent: ArtifactNodeContent;
+
 		if (freshData.type === 'VFS') {
+			// VFS: transform to API format with filesHash and file metadata
 			const vfsData = freshData as VFSNodeData;
-			const { archive } = await packageVfsAsTarGz(
+			const { archive, totalFiles, totalSize, files } = await packageVfsAsTarGz(
 				vfsData.content.projectId,
 				node.id
 			);
-			vfsArchives.set(node.id, archive);
+			// Compute SHA-256 of the archive for the filesHash field and form data key
+			const filesHash = await computeSha256Hex(archive.buffer as ArrayBuffer);
+			vfsArchives.set(filesHash, archive);
+
+			nodeContent = {
+				type: 'VFS' as const,
+				filesHash,
+				mounts: vfsData.content.mounts,
+				fileCount: totalFiles,
+				totalSize,
+				files
+			} as ArtifactNodeContent;
+		} else {
+			// Other types (including STATE): toJSON() matches API format
+			nodeContent = freshData.content.toJSON() as ArtifactNodeContent;
 		}
+
+		// Compute contentHash from the actual API-format content being sent.
+		// For VFS nodes this is critical: local format ({projectId}) differs from
+		// API format ({filesHash, files, ...}), so the local contentHash is invalid.
+		// For other types toJSON() == API format, so this is a no-op in practice.
+		const contentHash = await computeContentHash(nodeContent);
+		const commit = await computeNodeCommit(
+			freshData.id,
+			freshData.parent ?? null,
+			contentHash,
+			freshData.type
+		);
 
 		const apiNode: CreateArtifactNode = {
 			nodeId: freshData.id,
-			commit: freshData.commit,
-			parent: freshData.parent ?? undefined,
+			commit,
+			parent: freshData.parent ?? null,
 			type: freshData.type as ApiNodeType,
 			name: freshData.name || undefined,
 			position: { x: node.position.x, y: node.position.y },
 			content: nodeContent,
-			contentHash: freshData.contentHash  // Directly use, already up-to-date
+			contentHash
 		};
 
 		apiNodes.push(apiNode);
@@ -508,11 +533,11 @@ export async function publishArtifact(
 				formData.append('nodes', JSON.stringify(body.nodes));
 				formData.append('edges', JSON.stringify(body.edges));
 				
-				// Add VFS tar.gz archives with dynamic keys
+				// Add VFS tar.gz archives keyed by filesHash
 				const archives = body._vfsArchives as Map<string, Uint8Array>;
-				for (const [nodeId, archive] of archives.entries()) {
+				for (const [filesHash, archive] of archives.entries()) {
 					const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
-					formData.append(`vfs[${nodeId}]`, blob, `${nodeId}.tar.gz`);
+					formData.append(`vfs[${filesHash}]`, blob, `${filesHash}.tar.gz`);
 				}
 				
 				// Add homepage markdown if provided
@@ -848,11 +873,11 @@ export async function patchArtifact(
 				// Add metadata as JSON string
 				formData.append('metadata', JSON.stringify(body.metadata));
 				
-				// Add VFS tar.gz archives with dynamic keys
+				// Add VFS tar.gz archives keyed by filesHash
 				const archives = body._vfsArchives as Map<string, Uint8Array>;
-				for (const [nodeId, archive] of archives.entries()) {
+				for (const [filesHash, archive] of archives.entries()) {
 					const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
-					formData.append(`vfs[${nodeId}]`, blob, `${nodeId}.tar.gz`);
+					formData.append(`vfs[${filesHash}]`, blob, `${filesHash}.tar.gz`);
 				}
 				
 				return formData;

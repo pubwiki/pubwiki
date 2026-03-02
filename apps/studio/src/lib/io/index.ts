@@ -6,6 +6,7 @@ export {
   convertArtifactToStudioGraph,
   importArtifactToNewProject,
   addArtifactToProject,
+  type ImportArtifactOptions,
   type ImportProgressCallback
 } from './import';
 

@@ -42,7 +42,7 @@ import type {
   StateContentJSON
 } from '@pubwiki/flow-core';
 import { getNodeVfs } from '../vfs';
-import { ensureProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
+import { ensureProject, saveProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
 import { computeContentHash } from '@pubwiki/flow-core';
 import { API_BASE_URL } from '$lib/config';
 
@@ -347,11 +347,16 @@ export async function convertArtifactToStudioGraph(
       }
 
       case 'STATE': {
+        const stateName = node.name || `State ${index + 1}`;
         let stateContent: StateContent;
         if (nodeContent) {
           stateContent = StateContent.fromJSON(nodeContent as StateContentJSON);
+          // Ensure name in content matches node name
+          if (stateContent.name !== stateName) {
+            stateContent = stateContent.withName(stateName);
+          }
         } else {
-          stateContent = new StateContent();
+          stateContent = new StateContent(stateName);
         }
         const contentHash = await computeContentHash(stateContent.toJSON() as Parameters<typeof computeContentHash>[0]);
         const stateData: StateNodeData = {
@@ -475,19 +480,51 @@ export async function convertArtifactToStudioGraph(
 }
 
 /**
+ * Options for importing an artifact into a new studio project.
+ */
+export interface ImportArtifactOptions {
+  /** The artifact graph data to import */
+  graphData: ArtifactGraphData;
+  /** The source artifact ID */
+  artifactId: string;
+  /** Optional display name for the project */
+  artifactName?: string;
+  /**
+   * Whether the current user owns this artifact.
+   * - true: uses artifactId as project ID, links project to cloud artifact
+   * - false: creates a new project ID (fork), marks as draft
+   */
+  isOwned: boolean;
+}
+
+/**
  * Import an artifact into a new studio project.
- * Creates the project, converts the graph, and saves it.
+ * 
+ * For owned artifacts: uses the artifact ID as the project ID so the project
+ * is properly associated with the cloud artifact.
+ * 
+ * For others' artifacts: creates a fresh project ID (fork) with no cloud link.
  * 
  * @returns The new project ID
  */
 export async function importArtifactToNewProject(
-  graphData: ArtifactGraphData,
-  artifactId: string
+  options: ImportArtifactOptions
 ): Promise<string> {
-  const newProjectId = crypto.randomUUID();
+  const { graphData, artifactId, artifactName, isOwned } = options;
+  const newProjectId = isOwned ? artifactId : crypto.randomUUID();
   
   // Create the project first so VFS can be initialized
-  await ensureProject(newProjectId);
+  const project = await ensureProject(newProjectId);
+  
+  if (isOwned) {
+    // Link to cloud artifact so it's recognized as already imported
+    project.artifactId = artifactId;
+    project.isDraft = false;
+  }
+  if (artifactName) {
+    project.name = artifactName;
+  }
+  await saveProject(project);
   
   const { nodes, edges } = await convertArtifactToStudioGraph(
     graphData, 

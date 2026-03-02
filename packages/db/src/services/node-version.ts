@@ -7,7 +7,7 @@ import { resourceDiscoveryControl } from '../schema/discovery-control';
 import type { NodeType } from '../schema/enums';
 import type { ServiceResult } from './user';
 import type { ArtifactNodeContent, ContentBlock, NodeVersionSummary as ApiNodeVersionSummary } from '@pubwiki/api';
-import { computeNodeCommit } from '@pubwiki/api';
+import { computeNodeCommit, computeContentHash } from '@pubwiki/api';
 import { AclService, DiscoveryService } from './access-control';
 
 // ========================================================================
@@ -515,6 +515,17 @@ export class NodeVersionService {
           continue;
         }
 
+        // Validate contentHash matches content
+        const expectedContentHash = await computeContentHash(input.content);
+        if (input.contentHash !== expectedContentHash) {
+          result.errors.push(
+            `Version for node ${input.nodeId}: contentHash mismatch: expected ${expectedContentHash}, got ${input.contentHash}. ` +
+            `Client must compute contentHash using computeContentHash(content).`
+          );
+          continue;
+        }
+
+        // Validate commit matches hash(nodeId, parent, contentHash, type)
         const expectedCommit = await computeNodeCommit(
           input.nodeId,
           input.parent ?? null,

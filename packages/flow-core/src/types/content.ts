@@ -30,7 +30,7 @@ export type ArtifactNodeContent =
   | { type: 'VFS'; projectId: string; mounts?: VfsMountConfig[] }
   | { type: 'SANDBOX'; entryFile?: string }
   | { type: 'LOADER' }
-  | { type: 'STATE' }
+  | { type: 'STATE'; name: string; description?: string }
 
 // ============================================================================
 // JSON Type Aliases (for fromJSON parameters)
@@ -361,9 +361,9 @@ export class GeneratedContent implements NodeContent {
       inputRef: this.inputRef,
       promptRefs: this.promptRefs,
       indirectPromptRefs: this.indirectPromptRefs,
-      inputVfsRef: this.inputVfsRef ?? undefined,
-      outputVfsId: this.outputVfsId ?? undefined,
-      postGenerationCommit: this.postGenerationCommit ?? undefined
+      inputVfsRef: this.inputVfsRef,
+      outputVfsId: this.outputVfsId,
+      postGenerationCommit: this.postGenerationCommit
     }
   }
 
@@ -527,29 +527,38 @@ export class LoaderContent implements NodeContent {
 
 /**
  * State node content - RDF triple store
+ * 
+ * The `name` field is part of the content (not just display metadata) because
+ * the API schema requires it for StateNodeContent. This means renaming a STATE
+ * node changes its contentHash, which is semantically correct.
  */
 export class StateContent implements NodeContent {
-  constructor() {}
+  constructor(
+    public name: string = 'State'
+  ) {}
 
   getText(): string {
     return ''
   }
 
   serialize(): string {
-    return JSON.stringify({})
+    return JSON.stringify({ name: this.name })
   }
 
   clone(): StateContent {
-    return new StateContent()
+    return new StateContent(this.name)
+  }
+
+  withName(name: string): StateContent {
+    return new StateContent(name)
   }
 
   toJSON(): ArtifactNodeContent {
-    return { type: 'STATE' as const }
+    return { type: 'STATE' as const, name: this.name }
   }
 
-  static fromJSON(data: { type?: 'STATE' }): StateContent {
-    void data
-    return new StateContent()
+  static fromJSON(data: { type?: 'STATE'; name?: string }): StateContent {
+    return new StateContent(data.name ?? 'State')
   }
 }
 

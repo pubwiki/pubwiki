@@ -150,8 +150,13 @@
 				return;
 			}
 
-			// Import into a new project
-			const newProjectId = await importArtifactToNewProject(data, artifact.id);
+			// Import own online project (uses artifact ID as project ID)
+			const newProjectId = await importArtifactToNewProject({
+				graphData: data,
+				artifactId: artifact.id,
+				artifactName: artifact.name,
+				isOwned: true
+			});
 
 			// Navigate to the new project
 			setCurrentProject(newProjectId);

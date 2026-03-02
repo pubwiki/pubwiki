@@ -242,7 +242,7 @@ export async function createStateNodeData(
   name: string = 'State'
 ): Promise<StateNodeData> {
   const id = crypto.randomUUID()
-  const content = new StateContent()
+  const content = new StateContent(name)
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
   const commit = await computeNodeCommit(id, null, contentHash, 'STATE')
   return {

@@ -19,7 +19,7 @@ import {
   eq,
 } from '@pubwiki/db';
 import type { SyncNodeVersionInput } from '@pubwiki/db';
-import { computeNodeCommit } from '@pubwiki/api';
+import { computeNodeCommit, computeContentHash } from '@pubwiki/api';
 
 describe('NodeVersionService', () => {
   let db: ReturnType<typeof createDb>;
@@ -49,17 +49,17 @@ describe('NodeVersionService', () => {
     return userId;
   }
 
-  // Helper: generate a deterministic content hash
-  function makeContentHash(seed: string): string {
-    return ('ch_' + seed).padEnd(40, '0');
-  }
+  // Counter for unique default content
+  let contentSeq = 0;
 
-  // Helper: build a basic INPUT node version input (commit is computed deterministically)
-  async function inputVersion(overrides: Partial<SyncNodeVersionInput> = {}): Promise<SyncNodeVersionInput> {
+  // Helper: build a basic node version input (commit is computed deterministically from content)
+  async function inputVersion(overrides: Partial<Omit<SyncNodeVersionInput, 'contentHash'>> = {}): Promise<SyncNodeVersionInput> {
     const nodeId = overrides.nodeId ?? crypto.randomUUID();
     const parent = overrides.parent ?? null;
-    const contentHash = overrides.contentHash ?? makeContentHash(crypto.randomUUID().slice(0, 8));
     const type = overrides.type ?? 'INPUT';
+    // Default content is unique per call to avoid commit collisions
+    const content = overrides.content ?? { type: 'INPUT', blocks: [{ type: 'TextBlock', value: `test-${++contentSeq}` }] } as SyncNodeVersionInput['content'];
+    const contentHash = await computeContentHash(content);
     const commit = await computeNodeCommit(nodeId, parent, contentHash, type);
     return {
       nodeId,
@@ -69,7 +69,7 @@ describe('NodeVersionService', () => {
       sourceArtifactId: overrides.sourceArtifactId ?? crypto.randomUUID(),
       type,
       contentHash,
-      content: overrides.content ?? { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'hello' }] },
+      content,
       isListed: overrides.isListed ?? true,
       name: overrides.name ?? 'test-node',
       message: overrides.message,
@@ -87,6 +87,7 @@ describe('NodeVersionService', () => {
   }
 
   beforeEach(async () => {
+    contentSeq = 0;
     db = createDb(env.DB);
     ctx = new BatchContext(db);
     service = new NodeVersionService(ctx);
@@ -114,8 +115,7 @@ describe('NodeVersionService', () => {
   describe('syncVersions', () => {
     it('should create a single version', async () => {
       const nodeId = crypto.randomUUID();
-      const contentHash = makeContentHash('aaa');
-      const v = await inputVersion({ nodeId, contentHash });
+      const v = await inputVersion({ nodeId });
 
       const result = await service.syncVersions([v]);
 
@@ -134,15 +134,13 @@ describe('NodeVersionService', () => {
         .where(eq(nodeVersions.commit, v.commit));
       expect(rows).toHaveLength(1);
       expect(rows[0].type).toBe('INPUT');
-      expect(rows[0].contentHash).toBe(contentHash);
+      expect(rows[0].contentHash).toBe(v.contentHash);
     });
 
     it('should create multiple versions in one batch', async () => {
       const nodeId = crypto.randomUUID();
-      const ch1 = makeContentHash('b01');
-      const ch2 = makeContentHash('b02');
-      const v1 = await inputVersion({ nodeId, contentHash: ch1 });
-      const v2 = await inputVersion({ nodeId, parent: v1.commit, contentHash: ch2 });
+      const v1 = await inputVersion({ nodeId });
+      const v2 = await inputVersion({ nodeId, parent: v1.commit });
 
       const result = await service.syncVersions([v1, v2]);
 
@@ -161,8 +159,7 @@ describe('NodeVersionService', () => {
 
     it('should skip already existing versions (dedup)', async () => {
       const nodeId = crypto.randomUUID();
-      const contentHash = makeContentHash('dup');
-      const v = await inputVersion({ nodeId, contentHash });
+      const v = await inputVersion({ nodeId });
 
       // First sync
       await service.syncVersions([v]);
@@ -189,39 +186,38 @@ describe('NodeVersionService', () => {
     it('should handle content-addressed storage correctly (same contentHash = same content)', async () => {
       const nodeId1 = crypto.randomUUID();
       const nodeId2 = crypto.randomUUID();
-      const sharedHash = makeContentHash('shared');
+      const sharedContent = { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'shared content' }] } as SyncNodeVersionInput['content'];
 
-      await service.syncVersions([
-        await inputVersion({
-          nodeId: nodeId1,
-          contentHash: sharedHash,
-          content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'shared content' }] },
-        }),
-      ]);
+      const v1 = await inputVersion({
+        nodeId: nodeId1,
+        content: sharedContent,
+      });
+      await service.syncVersions([v1]);
       await commitAndReset();
 
       // Verify content was inserted
       const before = await db
         .select()
         .from(inputContents)
-        .where(eq(inputContents.contentHash, sharedHash));
+        .where(eq(inputContents.contentHash, v1.contentHash));
       expect(before).toHaveLength(1);
 
-      // Second version with same content hash (different node) - idempotent insert
-      await service.syncVersions([
-        await inputVersion({
-          nodeId: nodeId2,
-          contentHash: sharedHash,
-          content: { type: 'INPUT', blocks: [{ type: 'TextBlock', value: 'shared content' }] },
-        }),
-      ]);
+      // Second version with same content (different node) - idempotent insert
+      const v2 = await inputVersion({
+        nodeId: nodeId2,
+        content: sharedContent,
+      });
+      await service.syncVersions([v2]);
       await commitAndReset();
+
+      // Both should have the same contentHash
+      expect(v2.contentHash).toBe(v1.contentHash);
 
       // Content should still be only one row (content-addressed, ON CONFLICT DO NOTHING)
       const after = await db
         .select()
         .from(inputContents)
-        .where(eq(inputContents.contentHash, sharedHash));
+        .where(eq(inputContents.contentHash, v1.contentHash));
       expect(after).toHaveLength(1);
     });
 
@@ -235,7 +231,6 @@ describe('NodeVersionService', () => {
       // Create the input node first
       const inputV = await inputVersion({
         nodeId: inputNodeId,
-        contentHash: makeContentHash('inp'),
       });
       await service.syncVersions([inputV]);
       await commitAndReset();
@@ -244,7 +239,6 @@ describe('NodeVersionService', () => {
       const genV = await inputVersion({
         nodeId: genNodeId,
         type: 'GENERATED',
-        contentHash: makeContentHash('gen'),
         content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'generated' }], inputRef: { id: inputV.nodeId, commit: inputV.commit } },
         refs: [
           {
@@ -278,11 +272,9 @@ describe('NodeVersionService', () => {
       ];
 
       for (const { type, table, content } of types) {
-        const hash = makeContentHash(type);
         const v = await inputVersion({
           nodeId: crypto.randomUUID(),
           type,
-          contentHash: hash,
           content: content as SyncNodeVersionInput['content'],
         });
         await service.syncVersions([v]);
@@ -292,7 +284,7 @@ describe('NodeVersionService', () => {
         const rows = await db
           .select()
           .from(table)
-          .where(eq(table.contentHash, hash));
+          .where(eq(table.contentHash, v.contentHash));
         expect(rows).toHaveLength(1);
       }
     });
@@ -316,9 +308,9 @@ describe('NodeVersionService', () => {
   describe('getVersions', () => {
     it('should return all versions for a node ordered by authoredAt desc', async () => {
       const nodeId = crypto.randomUUID();
-      const v1 = await inputVersion({ nodeId, contentHash: makeContentHash('v01'), authoredAt: '2024-01-01T00:00:00Z' });
-      const v2 = await inputVersion({ nodeId, parent: v1.commit, contentHash: makeContentHash('v02'), authoredAt: '2024-01-02T00:00:00Z' });
-      const v3 = await inputVersion({ nodeId, parent: v2.commit, contentHash: makeContentHash('v03'), authoredAt: '2024-01-03T00:00:00Z' });
+      const v1 = await inputVersion({ nodeId, authoredAt: '2024-01-01T00:00:00Z' });
+      const v2 = await inputVersion({ nodeId, parent: v1.commit, authoredAt: '2024-01-02T00:00:00Z' });
+      const v3 = await inputVersion({ nodeId, parent: v2.commit, authoredAt: '2024-01-03T00:00:00Z' });
 
       await service.syncVersions([v1, v2, v3]);
       await commitAndReset();
@@ -343,11 +335,11 @@ describe('NodeVersionService', () => {
 
     it('should paginate with limit', async () => {
       const nodeId = crypto.randomUUID();
-      const v1 = await inputVersion({ nodeId, contentHash: makeContentHash('p01'), authoredAt: '2024-01-01T00:00:00Z' });
-      const v2 = await inputVersion({ nodeId, parent: v1.commit, contentHash: makeContentHash('p02'), authoredAt: '2024-01-02T00:00:00Z' });
-      const v3 = await inputVersion({ nodeId, parent: v2.commit, contentHash: makeContentHash('p03'), authoredAt: '2024-01-03T00:00:00Z' });
-      const v4 = await inputVersion({ nodeId, parent: v3.commit, contentHash: makeContentHash('p04'), authoredAt: '2024-01-04T00:00:00Z' });
-      const v5 = await inputVersion({ nodeId, parent: v4.commit, contentHash: makeContentHash('p05'), authoredAt: '2024-01-05T00:00:00Z' });
+      const v1 = await inputVersion({ nodeId, authoredAt: '2024-01-01T00:00:00Z' });
+      const v2 = await inputVersion({ nodeId, parent: v1.commit, authoredAt: '2024-01-02T00:00:00Z' });
+      const v3 = await inputVersion({ nodeId, parent: v2.commit, authoredAt: '2024-01-03T00:00:00Z' });
+      const v4 = await inputVersion({ nodeId, parent: v3.commit, authoredAt: '2024-01-04T00:00:00Z' });
+      const v5 = await inputVersion({ nodeId, parent: v4.commit, authoredAt: '2024-01-05T00:00:00Z' });
 
       await service.syncVersions([v1, v2, v3, v4, v5]);
       await commitAndReset();
@@ -381,8 +373,8 @@ describe('NodeVersionService', () => {
 
     it('should return nextCursor null when all results fit in one page', async () => {
       const nodeId = crypto.randomUUID();
-      const v1 = await inputVersion({ nodeId, contentHash: makeContentHash('fit1'), authoredAt: '2024-01-01T00:00:00Z' });
-      const v2 = await inputVersion({ nodeId, parent: v1.commit, contentHash: makeContentHash('fit2'), authoredAt: '2024-01-02T00:00:00Z' });
+      const v1 = await inputVersion({ nodeId, authoredAt: '2024-01-01T00:00:00Z' });
+      const v2 = await inputVersion({ nodeId, parent: v1.commit, authoredAt: '2024-01-02T00:00:00Z' });
 
       await service.syncVersions([v1, v2]);
       await commitAndReset();
@@ -410,9 +402,8 @@ describe('NodeVersionService', () => {
   describe('getVersion', () => {
     it('should return version detail with content', async () => {
       const nodeId = crypto.randomUUID();
-      const contentHash = makeContentHash('det');
       const blocks = [{ type: 'TextBlock' as const, value: 'hello world' }];
-      const v = await inputVersion({ nodeId, contentHash, content: { type: 'INPUT', blocks } });
+      const v = await inputVersion({ nodeId, content: { type: 'INPUT', blocks } });
 
       await service.syncVersions([v]);
       await commitAndReset();
@@ -423,7 +414,7 @@ describe('NodeVersionService', () => {
 
       expect(result.data.nodeId).toBe(nodeId);
       expect(result.data.commit).toBe(v.commit);
-      expect(result.data.contentHash).toBe(contentHash);
+      expect(result.data.contentHash).toBe(v.contentHash);
       expect(result.data.type).toBe('INPUT');
       // Content should be the API-shaped object with type discriminator, without DB-internal fields
       expect(result.data.content).toBeTruthy();
@@ -446,8 +437,8 @@ describe('NodeVersionService', () => {
   describe('getLatest', () => {
     it('should return the latest version by authoredAt', async () => {
       const nodeId = crypto.randomUUID();
-      const vOld = await inputVersion({ nodeId, contentHash: makeContentHash('old'), authoredAt: '2024-01-01T00:00:00Z' });
-      const vNew = await inputVersion({ nodeId, parent: vOld.commit, contentHash: makeContentHash('new'), authoredAt: '2024-06-01T00:00:00Z' });
+      const vOld = await inputVersion({ nodeId, authoredAt: '2024-01-01T00:00:00Z' });
+      const vNew = await inputVersion({ nodeId, parent: vOld.commit, authoredAt: '2024-06-01T00:00:00Z' });
 
       await service.syncVersions([vOld, vNew]);
       await commitAndReset();
@@ -477,13 +468,13 @@ describe('NodeVersionService', () => {
       const nodeId = crypto.randomUUID();
 
       // Create parent
-      const parentV = await inputVersion({ nodeId, contentHash: makeContentHash('par'), authoredAt: '2024-01-01T00:00:00Z' });
+      const parentV = await inputVersion({ nodeId, authoredAt: '2024-01-01T00:00:00Z' });
       await service.syncVersions([parentV]);
       await commitAndReset();
 
       // Create two children (fork)
-      const ch1 = await inputVersion({ nodeId, parent: parentV.commit, contentHash: makeContentHash('ch1'), authoredAt: '2024-01-02T00:00:00Z' });
-      const ch2 = await inputVersion({ nodeId, parent: parentV.commit, contentHash: makeContentHash('ch2'), authoredAt: '2024-01-03T00:00:00Z' });
+      const ch1 = await inputVersion({ nodeId, parent: parentV.commit, authoredAt: '2024-01-02T00:00:00Z' });
+      const ch2 = await inputVersion({ nodeId, parent: parentV.commit, authoredAt: '2024-01-03T00:00:00Z' });
       await service.syncVersions([ch1, ch2]);
       await commitAndReset();
 
@@ -500,7 +491,7 @@ describe('NodeVersionService', () => {
 
     it('should return empty for leaf versions', async () => {
       const nodeId = crypto.randomUUID();
-      const v = await inputVersion({ nodeId, contentHash: makeContentHash('leaf') });
+      const v = await inputVersion({ nodeId });
 
       await service.syncVersions([v]);
       await commitAndReset();
@@ -521,11 +512,10 @@ describe('NodeVersionService', () => {
       const promptNodeId = crypto.randomUUID();
       const genNodeId = crypto.randomUUID();
 
-      const inputV = await inputVersion({ nodeId: inputNodeId, contentHash: makeContentHash('ri1') });
+      const inputV = await inputVersion({ nodeId: inputNodeId });
       const promptV = await inputVersion({
         nodeId: promptNodeId,
         type: 'PROMPT',
-        contentHash: makeContentHash('rp1'),
         content: { type: 'PROMPT', blocks: [{ type: 'TextBlock', value: 'prompt' }] },
       });
 
@@ -537,7 +527,6 @@ describe('NodeVersionService', () => {
       const genV = await inputVersion({
         nodeId: genNodeId,
         type: 'GENERATED',
-        contentHash: makeContentHash('rg1'),
         content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'output' }], inputRef: { id: inputV.nodeId, commit: inputV.commit } },
         refs: [
           { targetCommit: inputV.commit, refType: 'input' },
@@ -558,7 +547,7 @@ describe('NodeVersionService', () => {
 
     it('should return empty for versions without refs', async () => {
       const nodeId = crypto.randomUUID();
-      const v = await inputVersion({ nodeId, contentHash: makeContentHash('nrf') });
+      const v = await inputVersion({ nodeId });
 
       await service.syncVersions([v]);
       await commitAndReset();
@@ -576,7 +565,7 @@ describe('NodeVersionService', () => {
   describe('versionExists', () => {
     it('should return true for existing version', async () => {
       const nodeId = crypto.randomUUID();
-      const v = await inputVersion({ nodeId, contentHash: makeContentHash('exi') });
+      const v = await inputVersion({ nodeId });
 
       await service.syncVersions([v]);
       await commitAndReset();
@@ -597,7 +586,7 @@ describe('NodeVersionService', () => {
   describe('filterExistingVersions', () => {
     it('should return set of existing commits', async () => {
       const nodeId = crypto.randomUUID();
-      const v1 = await inputVersion({ nodeId, contentHash: makeContentHash('fe1') });
+      const v1 = await inputVersion({ nodeId });
       const fakeCommit = 'nonexistent00000';
 
       await service.syncVersions([v1]);
@@ -624,7 +613,6 @@ describe('NodeVersionService', () => {
         const v = await inputVersion({
           nodeId,
           parent: i > 0 ? versions[i - 1].commit : null,
-          contentHash: makeContentHash(`t0${i + 1}`),
           authoredAt: `2024-01-0${i + 1}T00:00:00Z`,
         });
         versions.push(v);
@@ -653,10 +641,10 @@ describe('NodeVersionService', () => {
 
     it('should support forking (multiple children from one parent)', async () => {
       const nodeId = crypto.randomUUID();
-      const rootV = await inputVersion({ nodeId, contentHash: makeContentHash('root'), authoredAt: '2024-01-01T00:00:00Z' });
-      const fk1 = await inputVersion({ nodeId, parent: rootV.commit, contentHash: makeContentHash('fk1'), authoredAt: '2024-01-02T00:00:00Z' });
-      const fk2 = await inputVersion({ nodeId, parent: rootV.commit, contentHash: makeContentHash('fk2'), authoredAt: '2024-01-03T00:00:00Z' });
-      const fk3 = await inputVersion({ nodeId, parent: rootV.commit, contentHash: makeContentHash('fk3'), authoredAt: '2024-01-04T00:00:00Z' });
+      const rootV = await inputVersion({ nodeId, authoredAt: '2024-01-01T00:00:00Z' });
+      const fk1 = await inputVersion({ nodeId, parent: rootV.commit, authoredAt: '2024-01-02T00:00:00Z' });
+      const fk2 = await inputVersion({ nodeId, parent: rootV.commit, authoredAt: '2024-01-03T00:00:00Z' });
+      const fk3 = await inputVersion({ nodeId, parent: rootV.commit, authoredAt: '2024-01-04T00:00:00Z' });
 
       await service.syncVersions([rootV, fk1, fk2, fk3]);
       await commitAndReset();
@@ -676,7 +664,7 @@ describe('NodeVersionService', () => {
       const nodeId = crypto.randomUUID();
       
       // Create parent version first
-      const parentV = await inputVersion({ nodeId, contentHash: makeContentHash('par01') });
+      const parentV = await inputVersion({ nodeId });
       await service.syncVersions([parentV]);
       await commitAndReset();
 
@@ -684,7 +672,6 @@ describe('NodeVersionService', () => {
       const childV = await inputVersion({ 
         nodeId, 
         parent: parentV.commit, 
-        contentHash: makeContentHash('chi01') 
       });
       const result = await service.syncVersions([childV]);
 
@@ -698,11 +685,10 @@ describe('NodeVersionService', () => {
       const nodeId = crypto.randomUUID();
       
       // Create parent and child in same batch
-      const parentV = await inputVersion({ nodeId, contentHash: makeContentHash('par02') });
+      const parentV = await inputVersion({ nodeId });
       const childV = await inputVersion({ 
         nodeId, 
         parent: parentV.commit, 
-        contentHash: makeContentHash('chi02') 
       });
       
       const result = await service.syncVersions([parentV, childV]);
@@ -721,7 +707,6 @@ describe('NodeVersionService', () => {
       const childV = await inputVersion({ 
         nodeId, 
         parent: fakeParentCommit, 
-        contentHash: makeContentHash('chi03') 
       });
       const result = await service.syncVersions([childV]);
 
@@ -738,7 +723,7 @@ describe('NodeVersionService', () => {
       const nodeId2 = crypto.randomUUID();
       
       // Create parent version for node1
-      const parentV = await inputVersion({ nodeId: nodeId1, contentHash: makeContentHash('par04') });
+      const parentV = await inputVersion({ nodeId: nodeId1 });
       await service.syncVersions([parentV]);
       await commitAndReset();
 
@@ -746,7 +731,6 @@ describe('NodeVersionService', () => {
       const childV = await inputVersion({ 
         nodeId: nodeId2, 
         parent: parentV.commit, 
-        contentHash: makeContentHash('chi04') 
       });
       const result = await service.syncVersions([childV]);
 
@@ -763,11 +747,10 @@ describe('NodeVersionService', () => {
       const nodeId2 = crypto.randomUUID();
       
       // Create parent for node1 and child for node2 in same batch
-      const parentV = await inputVersion({ nodeId: nodeId1, contentHash: makeContentHash('par05') });
+      const parentV = await inputVersion({ nodeId: nodeId1 });
       const childV = await inputVersion({ 
         nodeId: nodeId2, 
         parent: parentV.commit, 
-        contentHash: makeContentHash('chi05') 
       });
       
       const result = await service.syncVersions([parentV, childV]);
@@ -787,23 +770,20 @@ describe('NodeVersionService', () => {
       const fakeParentCommit = 'nonexistent_parent_commit_0000000001';
       
       // Create a mix of valid and invalid versions
-      const validV1 = await inputVersion({ nodeId: nodeId1, contentHash: makeContentHash('mix01') });
+      const validV1 = await inputVersion({ nodeId: nodeId1 });
       const validV2 = await inputVersion({ 
         nodeId: nodeId1, 
         parent: validV1.commit, 
-        contentHash: makeContentHash('mix02') 
       });
       const invalidV1 = await inputVersion({ 
         nodeId: nodeId1, 
         parent: fakeParentCommit, 
-        contentHash: makeContentHash('mix03') 
       });
       const invalidV2 = await inputVersion({ 
         nodeId: nodeId2, 
         parent: validV1.commit,  // Wrong nodeId
-        contentHash: makeContentHash('mix04') 
       });
-      const validV3 = await inputVersion({ nodeId: nodeId2, contentHash: makeContentHash('mix05') });
+      const validV3 = await inputVersion({ nodeId: nodeId2 });
 
       const result = await service.syncVersions([validV1, validV2, invalidV1, invalidV2, validV3]);
 
@@ -828,10 +808,8 @@ describe('NodeVersionService', () => {
   // ========================================================================
   describe('typed content storage', () => {
     it('should store INPUT content with blocks and generationConfig', async () => {
-      const hash = makeContentHash('tinp');
       const v = await inputVersion({
         nodeId: crypto.randomUUID(),
-        contentHash: hash,
         type: 'INPUT',
         content: {
           type: 'INPUT',
@@ -845,7 +823,7 @@ describe('NodeVersionService', () => {
       const rows = await db
         .select()
         .from(inputContents)
-        .where(eq(inputContents.contentHash, hash));
+        .where(eq(inputContents.contentHash, v.contentHash));
       expect(rows).toHaveLength(1);
       expect(rows[0].blocks).toEqual([{ type: 'TextBlock', value: 'test input' }]);
       expect(rows[0].generationConfig).toEqual({ model: 'gpt-4', temperature: 0.7 });
@@ -853,10 +831,8 @@ describe('NodeVersionService', () => {
     });
 
     it('should store VFS content with file metadata', async () => {
-      const hash = makeContentHash('tvfs');
       const v = await inputVersion({
         nodeId: crypto.randomUUID(),
-        contentHash: hash,
         type: 'VFS',
         content: {
           type: 'VFS',
@@ -875,7 +851,7 @@ describe('NodeVersionService', () => {
       const rows = await db
         .select()
         .from(vfsContents)
-        .where(eq(vfsContents.contentHash, hash));
+        .where(eq(vfsContents.contentHash, v.contentHash));
       expect(rows).toHaveLength(1);
       expect(rows[0].fileCount).toBe(10);
       expect(rows[0].totalSize).toBe(4096);
@@ -883,10 +859,8 @@ describe('NodeVersionService', () => {
     });
 
     it('should store STATE content with name and description', async () => {
-      const hash = makeContentHash('tsta');
       const v = await inputVersion({
         nodeId: crypto.randomUUID(),
-        contentHash: hash,
         type: 'STATE',
         content: {
           type: 'STATE',
@@ -900,17 +874,15 @@ describe('NodeVersionService', () => {
       const rows = await db
         .select()
         .from(stateContents)
-        .where(eq(stateContents.contentHash, hash));
+        .where(eq(stateContents.contentHash, v.contentHash));
       expect(rows).toHaveLength(1);
       expect(rows[0].name).toBe('Game Save State');
       expect(rows[0].description).toBe('This is a test state node');
     });
 
     it('should store GENERATED content with blocks', async () => {
-      const hash = makeContentHash('tgen');
       const v = await inputVersion({
         nodeId: crypto.randomUUID(),
-        contentHash: hash,
         type: 'GENERATED',
         content: {
           type: 'GENERATED',
@@ -924,7 +896,7 @@ describe('NodeVersionService', () => {
       const rows = await db
         .select()
         .from(generatedContents)
-        .where(eq(generatedContents.contentHash, hash));
+        .where(eq(generatedContents.contentHash, v.contentHash));
       expect(rows).toHaveLength(1);
       // GENERATED blocks are MessageBlock[] format (from @pubwiki/chat), stored as-is
       expect(rows[0].blocks).toEqual([{ id: '1', type: 'text', content: 'AI response' }]);
@@ -941,7 +913,6 @@ describe('NodeVersionService', () => {
       const nodeId = crypto.randomUUID();
       const v = await inputVersion({
         nodeId,
-        contentHash: makeContentHash('tag'),
         message: 'Initial version',
         tag: '1.0.0',
       });
@@ -963,14 +934,13 @@ describe('NodeVersionService', () => {
       const nodeA = crypto.randomUUID();
       const nodeB = crypto.randomUUID();
 
-      const vA = await inputVersion({ nodeId: nodeA, contentHash: makeContentHash('xra') });
+      const vA = await inputVersion({ nodeId: nodeA });
       await service.syncVersions([vA]);
       await commitAndReset();
 
       const vB = await inputVersion({
         nodeId: nodeB,
         type: 'GENERATED',
-        contentHash: makeContentHash('xrb'),
         content: { type: 'GENERATED', blocks: [{ id: '1', type: 'text', content: 'gen' }], inputRef: { id: vA.nodeId, commit: vA.commit } },
         refs: [{ targetCommit: vA.commit, refType: 'input' }],
       });

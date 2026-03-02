@@ -110,8 +110,8 @@ export class VersionService {
       return;
     }
     
-    // Clean node - already up-to-date
-    if (!this.dirtyNodes.has(nodeId)) {
+    // Clean node - already up-to-date (but force recompute if contentHash is missing)
+    if (!this.dirtyNodes.has(nodeId) && nodeData.contentHash) {
       return;
     }
     
