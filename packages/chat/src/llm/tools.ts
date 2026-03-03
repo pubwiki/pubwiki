@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod'
-import type { ToolDefinition } from '../types'
+import type { ToolDefinition, ChatMessage } from '../types'
 
 /**
  * Tool handler function
@@ -13,20 +13,21 @@ import type { ToolDefinition } from '../types'
 export type ToolHandler = (args: unknown) => Promise<unknown>
 
 /**
- * Hook called after tool execution (pure timing notification).
+ * Hook called after tool execution.
  * 
  * Called after a tool finishes execution and the tool result message has been
  * written to chat history, but before the next LLM call begins.
  * 
- * No parameters: the tool implementer holds everything needed via closures
- * (tool state, chat history reference, etc.).
- * No return value: chat history manipulation is a direct side effect.
+ * @param messages - Mutable reference to the current messages array in the pipeline.
+ *   The hook can inspect the array (e.g., find the tool message just added) and
+ *   push additional messages (e.g., a user message with image_url) that will be
+ *   included in the next LLM call.
  * 
- * Typical use case: after a screenshot tool executes successfully, it appends
- * a user message containing image_url to the chat history via a closure reference,
- * so the LLM can "see" the screenshot.
+ * Typical use case: after a screenshot tool executes successfully, the hook
+ * pushes a user message containing image_url to the messages array,
+ * so the LLM can "see" the screenshot in the next turn.
  */
-export type AfterExecutionHook = () => void | Promise<void>
+export type AfterExecutionHook = (messages: ChatMessage[]) => void | Promise<void>
 
 /**
  * Tool Registry
@@ -138,15 +139,13 @@ export class ToolRegistry {
   /**
    * Execute afterExecution hook for a tool (if registered).
    * 
-   * Pure timing notification: no parameters, no return value.
-   * The hook accesses its needed state and chat history via closures.
-   * 
    * @param name - Tool name
+   * @param messages - Mutable reference to the current messages array
    */
-  async executeAfterHook(name: string): Promise<void> {
+  async executeAfterHook(name: string, messages: ChatMessage[]): Promise<void> {
     const hook = this.afterExecutionHooks.get(name)
     if (!hook) return
-    await hook()
+    await hook(messages)
   }
 
   /**
