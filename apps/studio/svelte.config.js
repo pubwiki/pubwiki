@@ -18,15 +18,6 @@ const config = {
 									'$components/*': 'src/components/*'
 					},
 
-				 experimental: {
-					 tracing: {
-						 server: true
-						},
-
-					 instrumentation: {
-						 server: true
-						}
-					}
 				}
 };
 
