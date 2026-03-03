@@ -183,7 +183,7 @@ export function createDraftSyncService() {
           // Trigger initial dirty state check
           await vfs.refreshDirtyState();
           console.log('[DraftSync] VFS node tracked, isDirty:', vfs.isDirty);
-        } catch (err) {
+        } catch {
           errorRouter.dispatch(
             new AppError('VFS_TRACK_FAILED', `Failed to track VFS node ${nodeId}`, 'storage', 'warning', false, {
               nodeId,
@@ -336,7 +336,7 @@ export function createDraftSyncService() {
       baseState.error = 'Local and cloud histories have diverged. Please resolve.';
       baseState.backendValidated = true;
       
-    } catch (err) {
+    } catch {
       errorRouter.dispatch(
         new AppError('SYNC_VALIDATE_FAILED', 'Failed to connect to sync server', 'network', 'warning', true, {
           operation: 'validateBackendState'
@@ -776,7 +776,7 @@ export function createDraftSyncService() {
         }
       });
       return data?.version?.commitHash ?? null;
-    } catch (err) {
+    } catch {
       // Log but don't surface to user - caller handles null case
       errorRouter.dispatch(
         new AppError('FETCH_CLOUD_COMMIT_FAILED', 'Failed to fetch cloud commit', 'network', 'info', true, {

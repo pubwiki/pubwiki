@@ -376,6 +376,7 @@ export function createStateModule(store: RDFStore) {
      * @param _self - Lua self reference (ignored)
      * @returns Array of checkpoint info wrapped for Lua table conversion
      */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async listCheckpoints(_self: unknown): Promise<LuaTable<Array<{
       id: string
       title: string

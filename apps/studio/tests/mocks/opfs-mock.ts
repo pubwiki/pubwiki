@@ -200,7 +200,7 @@ class MockDirectoryHandle {
     name: string,
     options?: { create?: boolean }
   ): Promise<MockDirectoryHandle> {
-    let child = this.dir.children.get(name);
+    const child = this.dir.children.get(name);
     if (child && child.kind === 'directory') {
       return new MockDirectoryHandle(child, this.registry, `${this.pathPrefix}/${name}`);
     }
@@ -219,7 +219,7 @@ class MockDirectoryHandle {
     name: string,
     options?: { create?: boolean }
   ): Promise<MockFileHandle> {
-    let child = this.dir.children.get(name);
+    const child = this.dir.children.get(name);
     if (child && child.kind === 'file') {
       return new MockFileHandle(child, this.registry, `${this.pathPrefix}/${name}`);
     }

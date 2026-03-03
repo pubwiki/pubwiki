@@ -10,7 +10,7 @@
  * caused the original NotReadableError bug.
  */
 
-import { describe, it, expect, beforeEach, afterEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { installOpfsMock, uninstallOpfsMock, type OpfsAuditRegistry } from '../mocks/opfs-mock';
 import { OpfsProvider, GitCompatibleFs } from '$lib/vfs/opfs-provider';
 
