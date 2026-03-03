@@ -195,6 +195,7 @@
 				{:else if selectedNodeData?.type === 'SANDBOX'}
 					<SandboxProperties
 						nodeId={selectedNode.id}
+						{projectId}
 					/>
 				{:else if selectedNodeData}
 					<DefaultProperties

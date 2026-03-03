@@ -13,6 +13,7 @@
 	import type { LoaderNodeData } from '$lib/types';
 	import { createLoaderServices } from '$lib/sandbox';
 	import { ConsoleLogStore, createLogSession, formatLogFile, downloadLogFile } from '$lib/sandbox/console-log-db';
+	import { page } from '$app/stores';
 	import VirtualConsoleList from './VirtualConsoleList.svelte';
 	import * as Sentry from '@sentry/sveltekit';
 	import * as m from '$lib/paraglide/messages';
@@ -286,7 +287,7 @@
 
 			// Create a new log session for this sandbox instance
 			const sessionName = new Date().toISOString().slice(0, 19).replace('T', ' ');
-			const sessionId = await createLogSession(sessionName);
+			const sessionId = await createLogSession(sessionName, $page.params.id ?? '');
 			logStore = new ConsoleLogStore(sessionId);
 			consoleLogs = [];
 

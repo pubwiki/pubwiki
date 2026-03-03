@@ -20,6 +20,8 @@ type ConsoleLogLevel = ConsoleLogEntry['level']
 export interface StoredLogSession {
   /** Unique session ID */
   id: string
+  /** Project ID this session belongs to */
+  projectId: string
   /** Human-readable session name */
   name: string
   /** Creation timestamp */
@@ -58,6 +60,10 @@ class ConsoleLogDatabase extends Dexie {
       sessions: 'id, createdAt',
       entries: '++id, sessionId, timestamp, [sessionId+timestamp]'
     })
+    this.version(2).stores({
+      sessions: 'id, projectId, createdAt',
+      entries: '++id, sessionId, timestamp, [sessionId+timestamp]'
+    })
   }
 }
 
@@ -72,10 +78,11 @@ const logDb = new ConsoleLogDatabase()
  * Create a new log session (bucket).
  * Returns the session ID.
  */
-export async function createLogSession(name: string): Promise<string> {
+export async function createLogSession(name: string, projectId: string): Promise<string> {
   const id = `session-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
   const session: StoredLogSession = {
     id,
+    projectId,
     name,
     createdAt: Date.now(),
     logCount: 0
@@ -87,8 +94,8 @@ export async function createLogSession(name: string): Promise<string> {
 /**
  * List all log sessions, most recent first.
  */
-export async function listLogSessions(): Promise<StoredLogSession[]> {
-  return logDb.sessions.orderBy('createdAt').reverse().toArray()
+export async function listLogSessions(projectId: string): Promise<StoredLogSession[]> {
+  return logDb.sessions.where('projectId').equals(projectId).reverse().sortBy('createdAt')
 }
 
 /**
@@ -98,6 +105,22 @@ export async function deleteLogSession(sessionId: string): Promise<void> {
   await logDb.transaction('rw', [logDb.sessions, logDb.entries], async () => {
     await logDb.entries.where('sessionId').equals(sessionId).delete()
     await logDb.sessions.delete(sessionId)
+  })
+}
+
+/**
+ * Delete all log sessions and their entries.
+ */
+export async function deleteAllLogSessions(projectId: string): Promise<void> {
+  const sessionIds = await logDb.sessions
+    .where('projectId').equals(projectId)
+    .primaryKeys()
+  if (sessionIds.length === 0) return
+  await logDb.transaction('rw', [logDb.sessions, logDb.entries], async () => {
+    for (const sid of sessionIds) {
+      await logDb.entries.where('sessionId').equals(sid).delete()
+    }
+    await logDb.sessions.bulkDelete(sessionIds)
   })
 }
 

@@ -12,6 +12,7 @@
 	import {
 		listLogSessions,
 		deleteLogSession,
+		deleteAllLogSessions,
 		getFormattedSessionLogs,
 		downloadLogFile,
 		type StoredLogSession
@@ -19,9 +20,10 @@
 
 	interface Props {
 		nodeId: string;
+		projectId: string;
 	}
 
-	let { nodeId }: Props = $props();
+	let { nodeId, projectId }: Props = $props();
 	// svelte-ignore state_referenced_locally
 	void nodeId; // For future use (filter sessions per node)
 
@@ -47,7 +49,7 @@
 	async function loadSessions() {
 		isLoading = true;
 		try {
-			sessions = await listLogSessions();
+			sessions = await listLogSessions(projectId);
 		} catch (err) {
 			console.error('[SandboxProperties] Failed to load log sessions:', err);
 		} finally {
@@ -101,6 +103,16 @@
 		}
 	}
 
+	async function handleDeleteAll() {
+		if (sessions.length === 0) return;
+		try {
+			await deleteAllLogSessions(projectId);
+			sessions = [];
+		} catch (err) {
+			console.error('[SandboxProperties] Failed to delete all sessions:', err);
+		}
+	}
+
 	function closeViewer() {
 		viewerOpen = false;
 		viewerContent = '';
@@ -133,20 +145,37 @@
 <div>
 	<div class="flex items-center justify-between mb-2">
 		<span class="text-xs font-medium text-gray-500">Log Sessions</span>
-		<button
-			class="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-			onclick={loadSessions}
-			title="Refresh"
-		>
-			<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					stroke-width="2"
-					d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-				/>
-			</svg>
-		</button>
+		<div class="flex items-center gap-1">
+			<button
+				class="text-xs text-gray-400 hover:text-red-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+				onclick={handleDeleteAll}
+				disabled={sessions.length === 0}
+				title="Delete all sessions"
+			>
+				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+					/>
+				</svg>
+			</button>
+			<button
+				class="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+				onclick={loadSessions}
+				title="Refresh"
+			>
+				<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+					/>
+				</svg>
+			</button>
+		</div>
 	</div>
 
 	{#if isLoading}
