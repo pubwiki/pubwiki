@@ -16,12 +16,13 @@
 import * as git from 'isomorphic-git';
 import type { VfsCommit, VfsDiff, VersionedVfs, VfsFile, VfsFolder, VersionedVfsProvider } from '@pubwiki/vfs';
 import { Vfs, MountedVfsProvider, normalizePath } from '@pubwiki/vfs';
+import type { GitCompatibleFs } from './opfs-provider';
 
 /**
  * Interface for providers that support low-level git operations
  */
 export interface GitCapableProvider extends VersionedVfsProvider {
-  getFs(): git.FsClient;
+  getFs(): GitCompatibleFs;
   getDir(): string;
   getNodeId(): string;
 }
@@ -83,7 +84,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     return this._baseVfs.getProvider() as GitCapableProvider;
   }
   
-  private get _fs(): git.FsClient {
+  private get _fs(): GitCompatibleFs {
     return this._gitProvider.getFs();
   }
   
@@ -647,7 +648,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
    */
   async commit(
     message: string,
-    options?: { author?: string; email?: string }
+    options?: { author?: string; email?: string; skipChangeDetails?: boolean }
   ): Promise<VfsCommit> {
     return this._baseVfs.commit(message, options);
   }

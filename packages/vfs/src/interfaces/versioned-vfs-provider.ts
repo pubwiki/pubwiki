@@ -14,6 +14,8 @@ export interface VersionedVfsProvider extends VfsProvider {
    * @param message 提交信息
    * @param options.author 作者名称
    * @param options.email 作者邮箱
+   * @param options.skipChangeDetails If true, the returned VfsCommit may have an empty `changes` array.
+   *   This skips the expensive post-commit diff and is useful for bulk/sync commits.
    * @returns 提交对象
    */
   commit(
@@ -21,6 +23,7 @@ export interface VersionedVfsProvider extends VfsProvider {
     options?: {
       author?: string
       email?: string
+      skipChangeDetails?: boolean
     }
   ): Promise<VfsCommit>
 

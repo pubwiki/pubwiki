@@ -9,7 +9,6 @@
 	 * - Checkpoint loading based on URL params
 	 */
 	import { onMount, onDestroy, untrack } from 'svelte';
-	import { browser } from '$app/environment';
 	import type { PageData } from './$types';
 	import { createApiClient } from '@pubwiki/api/client';
 	import { API_BASE_URL } from '$lib/config';
@@ -22,7 +21,7 @@
 		saveProject
 	} from '$lib/persistence';
 	import { convertArtifactToStudioGraph } from '$lib/io/import';
-	import { getNodeVfs, preInitializeZenFS, type NodeVfs } from '$lib/vfs';
+	import { getNodeVfs, type NodeVfs } from '$lib/vfs';
 	import { getNodeRDFStore, closeNodeRDFStore, type RDFStore } from '$lib/rdf';
 	import { createLoaderServices } from '$lib/sandbox';
 	import { detectProject, type ProjectConfig } from '@pubwiki/bundler';
@@ -49,14 +48,6 @@
 	import type { GetArtifactGraphResponse, ArtifactEdge } from '@pubwiki/api';
 	import PlayLoader from './PlayLoader.svelte';
 	import PlayError from './PlayError.svelte';
-
-	// ============================================================================
-	// Pre-initialize ZenFS
-	// ============================================================================
-	
-	if (browser) {
-		preInitializeZenFS();
-	}
 
 	// ============================================================================
 	// API Client

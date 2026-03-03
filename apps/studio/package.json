@@ -49,8 +49,6 @@
 		"@pubwiki/ui": "workspace:*",
 		"@pubwiki/vfs": "workspace:*",
 		"@xyflow/svelte": "catalog:",
-		"@zenfs/core": "^2.4.4",
-		"@zenfs/dom": "^1.2.6",
 		"browser-level": "catalog:",
 		"buffer": "^6.0.3",
 		"dagre": "^0.8.5",

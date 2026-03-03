@@ -537,7 +537,7 @@ export class VersionedVfs extends Vfs<VersionedVfsProvider> {
    */
   async commit(
     message: string,
-    options?: { author?: string; email?: string }
+    options?: { author?: string; email?: string; skipChangeDetails?: boolean }
   ): Promise<VfsCommit> {
     this.checkDisposed()
     const commit = await this._provider.commit(message, options)

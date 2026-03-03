@@ -527,6 +527,12 @@ export function createDraftSyncService() {
       }
 
       if (result.success) {
+        // Sync metadata to cloud (name, description, tags, visibility, etc.)
+        // This is a best-effort operation — graph is already synced.
+        await syncMetadata(currentProject).catch(err => {
+          console.warn('[DraftSync] Metadata sync failed (graph sync succeeded):', err);
+        });
+
         // Update project and state
         currentProject.lastDraftSyncCommit = result.newCommit;
         currentProject.lastDraftSyncAt = Date.now();
@@ -559,7 +565,8 @@ export function createDraftSyncService() {
   }
 
   /**
-   * First-time sync - create a new PRIVATE artifact with draft-latest tag
+   * First-time sync - create a new PRIVATE artifact with draft-latest tag.
+   * Uses the project's locally-persisted metadata (name, description, tags, etc.).
    */
   async function performFirstSync(
     project: StoredProject,
@@ -571,21 +578,28 @@ export function createDraftSyncService() {
     const artifactId = project.artifactId ?? project.id;
     
     // Create slug from project name
-    const slug = projectName
+    const effectiveName = projectName || project.name;
+    const slug = effectiveName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '')
       .slice(0, 50) || 'draft';
+
+    // Parse tags from comma-separated string
+    const tags = project.tags
+      ? project.tags.split(',').map(t => t.trim()).filter(t => t.length > 0)
+      : [];
     
     const metadata: PublishMetadata = {
       artifactId,
-      name: projectName,
+      name: effectiveName,
       slug: `${slug}-${artifactId.slice(0, 8)}`, // Ensure uniqueness
-      description: 'Draft sync',
-      isListed: false, // Not discoverable
-      isPrivate: true, // Private access
-      version: '0.0.1-draft',
-      tags: [],
+      description: project.description || '',
+      isListed: !(project.isUnlisted ?? true), // Default to unlisted for draft sync
+      isPrivate: project.isPrivate ?? true, // Default to private for draft sync
+      version: project.version || '0.0.1-draft',
+      tags,
+      homepage: project.homepage || undefined,
       commitTags: [DRAFT_LATEST_TAG]
     };
 
@@ -663,6 +677,55 @@ export function createDraftSyncService() {
       success: false,
       error: result.error ?? 'Patch failed'
     };
+  }
+
+  /**
+   * Sync project metadata to the cloud artifact.
+   * Reads the latest metadata from IndexedDB and sends it via
+   * PUT /artifacts/{artifactId}/metadata.
+   *
+   * This is called after a successful graph sync so that sidebar edits
+   * (name, description, tags, visibility, etc.) are reflected on the backend.
+   */
+  async function syncMetadata(project: StoredProject): Promise<void> {
+    if (!project.artifactId) return;
+
+    // Re-read from IndexedDB to get the latest metadata
+    // (the sidebar auto-persists changes to IndexedDB independently)
+    const freshProject = await getProject(project.id);
+    if (!freshProject) return;
+
+    const tags = freshProject.tags
+      ? freshProject.tags.split(',').map(t => t.trim()).filter(t => t.length > 0)
+      : undefined;
+
+    // Build partial update body — only include fields that have values
+    const body: {
+      name?: string;
+      description?: string;
+      isPrivate?: boolean;
+      isListed?: boolean;
+      tags?: string[];
+    } = {};
+    if (freshProject.name) body.name = freshProject.name;
+    if (freshProject.description !== undefined) body.description = freshProject.description;
+    if (freshProject.isPrivate !== undefined) body.isPrivate = freshProject.isPrivate;
+    if (freshProject.isUnlisted !== undefined) body.isListed = !freshProject.isUnlisted;
+    if (tags && tags.length > 0) body.tags = tags;
+
+    // Only call if there's something to update
+    if (Object.keys(body).length === 0) return;
+
+    const { error } = await apiClient.PUT('/artifacts/{artifactId}/metadata', {
+      params: { path: { artifactId: project.artifactId } },
+      body,
+    });
+
+    if (error) {
+      console.warn('[DraftSync] Metadata update failed:', error);
+    } else {
+      console.log('[DraftSync] Metadata synced to cloud');
+    }
   }
 
   /**

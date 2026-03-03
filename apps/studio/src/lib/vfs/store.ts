@@ -1,10 +1,10 @@
 /**
  * VFS Store for Studio
  *
- * Provides scoped VFS instances using ZenFS as the underlying file system
+ * Provides scoped VFS instances using OPFS as the underlying file system
  * and isomorphic-git for version control.
  *
- * Each node gets an isolated VFS provider scoped to /<project_id>/<node_id>/
+ * Each node gets an isolated VFS provider scoped to its own OPFS subtree.
  * 
  * API: Use getNodeVfs() to get the NodeVfs for a node. NodeVfs is the unified
  * interface that includes file operations, mount support, and version control.
@@ -16,8 +16,6 @@ if (typeof globalThis.Buffer === 'undefined') {
   globalThis.Buffer = Buffer;
 }
 
-import { configure, fs as zenfs } from '@zenfs/core';
-import { WebAccess } from '@zenfs/dom';
 import * as git from 'isomorphic-git';
 import {
   type VfsProvider,
@@ -32,62 +30,7 @@ import {
 import { NodeVfs } from './node-vfs.svelte';
 import { nodeStore } from '$lib/persistence';
 import type { VFSNodeData, VFSContent } from '$lib/types';
-
-// ============================================================================
-// ZenFS Configuration
-// ============================================================================
-
-let zenfsConfigured = false;
-let configurePromise: Promise<void> | null = null;
-
-/**
- * Configure ZenFS with OPFS backend
- */
-async function ensureZenFSConfigured(): Promise<void> {
-  if (zenfsConfigured) {
-    console.log('[VFS:ZenFS] Already configured, skipping');
-    return;
-  }
-  if (configurePromise) {
-    console.log('[VFS:ZenFS] Configuration in progress, waiting...');
-    const waitStart = performance.now();
-    await configurePromise;
-    console.log(`[VFS:ZenFS] Wait for existing config took ${(performance.now() - waitStart).toFixed(2)}ms`);
-    return;
-  }
-
-  console.log('[VFS:ZenFS] Starting configuration...');
-  
-  configurePromise = (async () => {
-    const configureStart = performance.now();
-    console.log('[VFS:ZenFS] Calling configure() with OPFS backend...');
-    
-    // Get OPFS root directory handle
-    const opfsRoot = await navigator.storage.getDirectory();
-    
-    await configure({
-      mounts: {
-        '/': { backend: WebAccess, handle: opfsRoot },
-      },
-    });
-    console.log(`[VFS:ZenFS] configure() returned in ${(performance.now() - configureStart).toFixed(2)}ms`);
-    zenfsConfigured = true;
-  })();
-
-  const awaitStart = performance.now();
-  await configurePromise;
-  console.log(`[VFS:ZenFS] First await took ${(performance.now() - awaitStart).toFixed(2)}ms`);
-}
-
-/**
- * Pre-initialize ZenFS to avoid delay on first VFS access.
- * Call this early in app startup (e.g., in layout or page load).
- * Returns immediately if already initialized or in progress.
- */
-export function preInitializeZenFS(): Promise<void> {
-  console.log('[VFS:ZenFS] preInitializeZenFS called');
-  return ensureZenFSConfigured();
-}
+import { OpfsProvider, type GitCompatibleFs } from './opfs-provider';
 
 // ============================================================================
 // Git Context for Submodule Operations
@@ -98,8 +41,8 @@ export function preInitializeZenFS(): Promise<void> {
  * This provides the minimal interface needed without exposing internals.
  */
 export interface GitContext {
-  /** The file system interface (ZenFS) */
-  fs: typeof zenfs;
+  /** The file system interface (isomorphic-git compatible) */
+  fs: GitCompatibleFs;
   /** The repository directory path */
   dir: string;
   /** The node ID for this VFS */
@@ -111,11 +54,13 @@ export interface GitContext {
 // ============================================================================
 
 /**
- * A VFS provider scoped to a specific path with git version control.
- * All operations are relative to the base path.
+ * A VFS provider scoped to a specific OPFS subtree with git version control.
+ * Each instance owns an OpfsProvider pointed at /<projectId>/<nodeId>/.
+ * All file paths are relative to the root — no path prefixing needed.
  */
 export class ScopedVfsProvider implements VersionedVfsProvider {
-  private basePath: string;
+  private provider: OpfsProvider;
+  private gitFs: GitCompatibleFs;
   private initialized = false;
   private author = { name: 'Anonymous', email: 'anonymous@pubwiki.local' };
 
@@ -123,44 +68,26 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     private projectId: string,
     private nodeId: string
   ) {
-    this.basePath = `/${projectId}/${nodeId}`;
-  }
-
-  // ========== Path Utilities ==========
-
-  private toAbsolutePath(path: string): string {
-    // Normalize the path
-    let normalized = path;
-    if (!normalized.startsWith('/')) {
-      normalized = '/' + normalized;
-    }
-    // Remove trailing slash except for root
-    if (normalized !== '/' && normalized.endsWith('/')) {
-      normalized = normalized.slice(0, -1);
-    }
-    // Join with base path
-    if (normalized === '/') {
-      return this.basePath;
-    }
-    return this.basePath + normalized;
+    this.provider = new OpfsProvider(projectId, nodeId);
+    this.gitFs = this.provider.asGitFs();
   }
 
   // ========== Submodule Support (for isomorphic-git) ==========
 
   /**
-   * Get the underlying file system interface (ZenFS)
+   * Get the underlying file system interface (isomorphic-git compatible)
    * Used by submodule.ts to call isomorphic-git directly
    */
-  getFs(): typeof zenfs {
-    return zenfs;
+  getFs(): GitCompatibleFs {
+    return this.gitFs;
   }
 
   /**
-   * Get the repository directory path
-   * Used by submodule.ts to call isomorphic-git directly
+   * Get the repository directory path.
+   * Always '/' since OpfsProvider is already scoped to the node's subtree.
    */
   getDir(): string {
-    return this.basePath;
+    return '/';
   }
 
   /**
@@ -174,178 +101,109 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
   async initialize(): Promise<void> {
     if (this.initialized) {
-      console.log(`[VFS:Provider] ${this.basePath} already initialized, skipping`);
+      console.log(`[VFS:Provider] ${this.projectId}/${this.nodeId} already initialized, skipping`);
       return;
     }
 
-    console.log(`[VFS:Provider] Initializing ${this.basePath}...`);
+    console.log(`[VFS:Provider] Initializing ${this.projectId}/${this.nodeId}...`);
     const totalStart = performance.now();
-    
-    const zenfsStart = performance.now();
-    await ensureZenFSConfigured();
-    console.log(`[VFS:Provider] ${this.basePath} ZenFS ready in ${(performance.now() - zenfsStart).toFixed(2)}ms`);
 
-    // Ensure base directory exists
-    const absPath = this.basePath;
-    const mkdirStart = performance.now();
-    try {
-      await zenfs.promises.mkdir(absPath, { recursive: true });
-    } catch (e: unknown) {
-      // Directory might already exist
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw e;
-      }
-    }
-    console.log(`[VFS:Provider] ${this.basePath} mkdir in ${(performance.now() - mkdirStart).toFixed(2)}ms`);
+    // Initialize OPFS provider (creates directory handles)
+    const opfsStart = performance.now();
+    await this.provider.initialize();
+    console.log(`[VFS:Provider] ${this.projectId}/${this.nodeId} OPFS ready in ${(performance.now() - opfsStart).toFixed(2)}ms`);
 
     // Initialize git repository if not already initialized
     const gitStart = performance.now();
     try {
       await git.init({
-        fs: zenfs,
-        dir: absPath,
+        fs: this.gitFs,
+        dir: '/',
         defaultBranch: 'main',
       });
-      console.log(`[VFS:Provider] ${this.basePath} git init (new) in ${(performance.now() - gitStart).toFixed(2)}ms`);
+      console.log(`[VFS:Provider] ${this.projectId}/${this.nodeId} git init (new) in ${(performance.now() - gitStart).toFixed(2)}ms`);
     } catch (e: unknown) {
       // Repository might already exist
       const err = e as Error;
       if (!err.message?.includes('already exists')) {
         console.warn('Git init warning:', err.message);
       }
-      console.log(`[VFS:Provider] ${this.basePath} git init (existing) in ${(performance.now() - gitStart).toFixed(2)}ms`);
+      console.log(`[VFS:Provider] ${this.projectId}/${this.nodeId} git init (existing) in ${(performance.now() - gitStart).toFixed(2)}ms`);
     }
 
     this.initialized = true;
-    console.log(`[VFS:Provider] ${this.basePath} TOTAL initialization: ${(performance.now() - totalStart).toFixed(2)}ms`);
+    console.log(`[VFS:Provider] ${this.projectId}/${this.nodeId} TOTAL initialization: ${(performance.now() - totalStart).toFixed(2)}ms`);
   }
 
   async dispose(): Promise<void> {
-    // Reset state
+    await this.provider.dispose();
     this.initialized = false;
   }
 
   // ========== File Operations ==========
 
   async readFile(path: string): Promise<Uint8Array> {
-    const absPath = this.toAbsolutePath(path);
-    const buffer = await zenfs.promises.readFile(absPath);
-    return new Uint8Array(buffer);
+    return this.provider.readFile(path);
   }
 
   async writeFile(path: string, content: Uint8Array): Promise<void> {
-    const absPath = this.toAbsolutePath(path);
-
     // Ensure parent directory exists
-    const parentDir = absPath.substring(0, absPath.lastIndexOf('/'));
-    if (parentDir && parentDir !== this.basePath) {
-      try {
-        await zenfs.promises.mkdir(parentDir, { recursive: true });
-      } catch (e: unknown) {
-        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
-          throw e;
-        }
-      }
+    const parentDir = path.substring(0, path.lastIndexOf('/'));
+    if (parentDir && parentDir !== '/') {
+      await this.provider.mkdir(parentDir, { recursive: true });
     }
 
-    await zenfs.promises.writeFile(absPath, content);
+    await this.provider.writeFile(path, content);
   }
 
   async unlink(path: string): Promise<void> {
-    const absPath = this.toAbsolutePath(path);
-    await zenfs.promises.unlink(absPath);
+    await this.provider.unlink(path);
   }
 
   // ========== Directory Operations ==========
 
   async mkdir(path: string, options?: { recursive?: boolean }): Promise<void> {
-    const absPath = this.toAbsolutePath(path);
-    try {
-      await zenfs.promises.mkdir(absPath, { recursive: options?.recursive });
-    } catch (e: unknown) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
-        throw e;
-      }
-    }
+    await this.provider.mkdir(path, options);
   }
 
   async readdir(path: string): Promise<string[]> {
-    const absPath = this.toAbsolutePath(path);
-    const entries = await zenfs.promises.readdir(absPath);
-    return entries;
+    return this.provider.readdir(path);
   }
 
   async rmdir(path: string, options?: { recursive?: boolean }): Promise<void> {
-    const absPath = this.toAbsolutePath(path);
-    if (options?.recursive) {
-      await zenfs.promises.rm(absPath, { recursive: true });
-    } else {
-      await zenfs.promises.rmdir(absPath);
-    }
+    await this.provider.rmdir(path, options);
   }
 
   // ========== Status Query ==========
 
   async stat(path: string): Promise<VfsStat> {
-    const absPath = this.toAbsolutePath(path);
-    const stats = await zenfs.promises.stat(absPath);
-    return {
-      size: stats.size,
-      isFile: stats.isFile(),
-      isDirectory: stats.isDirectory(),
-      createdAt: new Date(stats.birthtimeMs),
-      updatedAt: new Date(stats.mtimeMs),
-    };
+    return this.provider.stat(path);
   }
 
   async exists(path: string): Promise<boolean> {
-    const absPath = this.toAbsolutePath(path);
-    try {
-      await zenfs.promises.access(absPath);
-      return true;
-    } catch {
-      return false;
-    }
+    return this.provider.exists(path);
   }
 
   // ========== Move/Copy ==========
 
   async rename(from: string, to: string): Promise<void> {
-    const absFrom = this.toAbsolutePath(from);
-    const absTo = this.toAbsolutePath(to);
-
     // Ensure target parent directory exists
-    const toParent = absTo.substring(0, absTo.lastIndexOf('/'));
-    if (toParent && toParent !== this.basePath) {
-      try {
-        await zenfs.promises.mkdir(toParent, { recursive: true });
-      } catch (e: unknown) {
-        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
-          throw e;
-        }
-      }
+    const toParent = to.substring(0, to.lastIndexOf('/'));
+    if (toParent && toParent !== '/') {
+      await this.provider.mkdir(toParent, { recursive: true });
     }
 
-    await zenfs.promises.rename(absFrom, absTo);
+    await this.provider.rename(from, to);
   }
 
   async copyFile(from: string, to: string): Promise<void> {
-    const absFrom = this.toAbsolutePath(from);
-    const absTo = this.toAbsolutePath(to);
-
     // Ensure target parent directory exists
-    const toParent = absTo.substring(0, absTo.lastIndexOf('/'));
-    if (toParent && toParent !== this.basePath) {
-      try {
-        await zenfs.promises.mkdir(toParent, { recursive: true });
-      } catch (e: unknown) {
-        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
-          throw e;
-        }
-      }
+    const toParent = to.substring(0, to.lastIndexOf('/'));
+    if (toParent && toParent !== '/') {
+      await this.provider.mkdir(toParent, { recursive: true });
     }
 
-    await zenfs.promises.copyFile(absFrom, absTo);
+    await this.provider.copyFile(from, to);
   }
 
   // ========== Git Version Control ==========
@@ -362,7 +220,7 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
    */
   async commit(
     message: string,
-    options?: { author?: string; email?: string }
+    options?: { author?: string; email?: string; skipChangeDetails?: boolean }
   ): Promise<VfsCommit> {
     const author = {
       name: options?.author ?? this.author.name,
@@ -371,8 +229,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
     // Get status and stage all changes
     const statusMatrix = await git.statusMatrix({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
     });
 
     // Stage all changes
@@ -383,15 +241,15 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
       if (workdir === 0) {
         // File was deleted
         await git.remove({
-          fs: zenfs,
-          dir: this.basePath,
+          fs: this.gitFs,
+          dir: '/',
           filepath,
         });
       } else {
         // File was added or modified
         await git.add({
-          fs: zenfs,
-          dir: this.basePath,
+          fs: this.gitFs,
+          dir: '/',
           filepath,
         });
       }
@@ -399,21 +257,24 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
     // Create commit
     const sha = await git.commit({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       message,
       author,
     });
 
     // Get the commit object
     const commitObj = await git.readCommit({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       oid: sha,
     });
 
-    // Get changes for this commit
-    const changes = await this.getCommitChanges(sha);
+    // Skip expensive diff computation when caller doesn't need change details
+    // (e.g. DraftSync bulk commits)
+    const changes = options?.skipChangeDetails
+      ? []
+      : await this.getCommitChanges(sha);
 
     return {
       hash: sha,
@@ -429,8 +290,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
     try {
       const commit = await git.readCommit({
-        fs: zenfs,
-        dir: this.basePath,
+        fs: this.gitFs,
+        dir: '/',
         oid: commitOid,
       });
 
@@ -440,8 +301,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
       if (!parentOid) {
         // First commit - all files are added
         const files = await git.listFiles({
-          fs: zenfs,
-          dir: this.basePath,
+          fs: this.gitFs,
+          dir: '/',
           ref: commitOid,
         });
 
@@ -469,8 +330,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   }): Promise<VfsCommit[]> {
     try {
       const logs = await git.log({
-        fs: zenfs,
-        dir: this.basePath,
+        fs: this.gitFs,
+        dir: '/',
         depth: options?.depth ?? 50,
         ref: options?.ref ?? 'HEAD',
         filepath: options?.path?.replace(/^\//, ''),
@@ -493,8 +354,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
   async checkout(ref: string): Promise<void> {
     await git.checkout({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref,
       force: true,
     });
@@ -505,14 +366,14 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
     // Get file lists for both commits
     const filesA = await git.listFiles({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref: commitA,
     });
 
     const filesB = await git.listFiles({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref: commitB,
     });
 
@@ -538,15 +399,15 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
         // Check if modified
         try {
           const blobA = await git.readBlob({
-            fs: zenfs,
-            dir: this.basePath,
+            fs: this.gitFs,
+            dir: '/',
             oid: commitA,
             filepath: file,
           });
 
           const blobB = await git.readBlob({
-            fs: zenfs,
-            dir: this.basePath,
+            fs: this.gitFs,
+            dir: '/',
             oid: commitB,
             filepath: file,
           });
@@ -576,8 +437,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   async getCurrentBranch(): Promise<string> {
     try {
       return await git.currentBranch({
-        fs: zenfs,
-        dir: this.basePath,
+        fs: this.gitFs,
+        dir: '/',
         fullname: false,
       }) ?? 'main';
     } catch {
@@ -599,15 +460,15 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
     // Resolve the ref to an OID
     const oid = await git.resolveRef({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref,
     });
 
     // Update the branch ref to point to the target commit
     await git.writeRef({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref: `refs/heads/${currentBranch}`,
       value: oid,
       force: true,
@@ -615,8 +476,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
     // Checkout to update working directory
     await git.checkout({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref: currentBranch,
       force: true,
     });
@@ -626,8 +487,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
   async createBranch(name: string): Promise<void> {
     await git.branch({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref: name,
       checkout: false,
     });
@@ -635,24 +496,24 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
 
   async deleteBranch(name: string): Promise<void> {
     await git.deleteBranch({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       ref: name,
     });
   }
 
   async listBranches(): Promise<string[]> {
     return git.listBranches({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
     });
   }
 
   async stage(path: string): Promise<void> {
     const relativePath = path.replace(/^\//, '');
     await git.add({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       filepath: relativePath,
     });
   }
@@ -660,8 +521,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
   async unstage(path: string): Promise<void> {
     const relativePath = path.replace(/^\//, '');
     await git.resetIndex({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
       filepath: relativePath,
     });
   }
@@ -674,8 +535,8 @@ export class ScopedVfsProvider implements VersionedVfsProvider {
     }>
   > {
     const matrix = await git.statusMatrix({
-      fs: zenfs,
-      dir: this.basePath,
+      fs: this.gitFs,
+      dir: '/',
     });
 
     const results: Array<{
@@ -826,20 +687,14 @@ export class NodeVfsFactory {
    * Should be called after disposeVfs or when the VFS node is deleted.
    */
   async deleteVfsData(projectId: string, nodeId: string): Promise<void> {
-    await ensureZenFSConfigured();
-    
-    const vfsPath = `/${projectId}/${nodeId}`;
-    
     try {
-      // Check if the directory exists before attempting to delete
-      await zenfs.promises.stat(vfsPath);
-      // Recursively delete the entire VFS directory
-      await zenfs.promises.rm(vfsPath, { recursive: true });
-      console.log(`[VFS:NodeVfsFactory] Deleted VFS data at ${vfsPath}`);
+      const opfsRoot = await navigator.storage.getDirectory();
+      const projectDir = await opfsRoot.getDirectoryHandle(projectId);
+      await projectDir.removeEntry(nodeId, { recursive: true });
+      console.log(`[VFS:NodeVfsFactory] Deleted VFS data for ${projectId}/${nodeId}`);
     } catch (e) {
-      // Directory doesn't exist, nothing to delete
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
-        console.log(`[VFS:NodeVfsFactory] No VFS data to delete at ${vfsPath}`);
+      if (e instanceof DOMException && e.name === 'NotFoundError') {
+        console.log(`[VFS:NodeVfsFactory] No VFS data to delete for ${projectId}/${nodeId}`);
         return;
       }
       throw e;

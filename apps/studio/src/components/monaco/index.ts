@@ -3,6 +3,7 @@
  */
 
 export { default as VfsMonacoEditor } from './VfsMonacoEditor.svelte';
+export { default as SimpleMonacoEditor } from './SimpleMonacoEditor.svelte';
 export type { VfsMonacoEditorProps } from './types';
 
 export {

@@ -61,7 +61,7 @@
 		getProject,
 		reportSaveState
 	} from '$lib/persistence';
-	import { getNodeVfs, preInitializeZenFS, getVfsFactory, type NodeVfs } from '$lib/vfs';
+	import { getNodeVfs, getVfsFactory, type NodeVfs } from '$lib/vfs';
 	import { generateUniqueNodeName } from '$lib/validation';
 	import { requestVfsDeleteConfirmation } from '$lib/state/vfs-delete-confirm.svelte';
 	import { useAuth } from '@pubwiki/ui/stores';
@@ -72,16 +72,6 @@
 
 	// Create a singleton API client
 	const apiClient = createApiClient(API_BASE_URL);
-
-	// ============================================================================
-	// Pre-initialize ZenFS as early as possible (non-blocking, browser only)
-	// ============================================================================
-	
-	// Start ZenFS initialization immediately when this module loads in browser
-	// This runs before any component mounts, reducing perceived load time
-	if (browser) {
-		preInitializeZenFS();
-	}
 
 	// ============================================================================
 	// Node Types

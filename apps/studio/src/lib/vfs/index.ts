@@ -12,7 +12,6 @@ export {
   getVfsFactory,
   ScopedVfsProvider,
   NodeVfsFactory,
-  preInitializeZenFS,
   type VfsProvider,
   NodeVfs
 } from './store';

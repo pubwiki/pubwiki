@@ -530,12 +530,6 @@ importers:
       '@xyflow/svelte':
         specifier: 'catalog:'
         version: 1.5.0(svelte@5.46.1)
-      '@zenfs/core':
-        specifier: ^2.4.4
-        version: 2.4.4
-      '@zenfs/dom':
-        specifier: ^1.2.6
-        version: 1.2.6(@zenfs/core@2.4.4)(kerium@1.3.8)(utilium@2.5.8)
       browser-level:
         specifier: 'catalog:'
         version: 3.0.0
