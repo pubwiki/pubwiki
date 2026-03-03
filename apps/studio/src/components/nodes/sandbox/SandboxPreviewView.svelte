@@ -14,6 +14,7 @@
 	import { createLoaderServices } from '$lib/sandbox';
 	import { ConsoleLogStore, createLogSession, formatLogFile, downloadLogFile } from '$lib/sandbox/console-log-db';
 	import VirtualConsoleList from './VirtualConsoleList.svelte';
+	import * as Sentry from '@sentry/sveltekit';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
@@ -60,9 +61,23 @@
 	const MIN_HEIGHT = 300;
 	const MINIMIZED_WIDTH = 280;
 	const MINIMIZED_HEIGHT = 28;
+	const VIEWPORT_PADDING = 32;
 	
 	// Mobile breakpoint - force fullscreen below this width
 	const MOBILE_BREAKPOINT = 768;
+
+	// Clamp initial size to viewport
+	function getInitialSize() {
+		if (typeof window === 'undefined') return { w: DEFAULT_WIDTH, h: DEFAULT_HEIGHT };
+		const maxW = window.innerWidth - VIEWPORT_PADDING * 2;
+		const maxH = window.innerHeight - VIEWPORT_PADDING * 2;
+		return {
+			w: Math.max(MIN_WIDTH, Math.min(DEFAULT_WIDTH, maxW)),
+			h: Math.max(MIN_HEIGHT, Math.min(DEFAULT_HEIGHT, maxH)),
+		};
+	}
+
+	const initialSize = getInitialSize();
 
 	// ============================================================================
 	// State
@@ -89,10 +104,10 @@
 	
 	// Window state
 	let isMinimized = $state(false);
-	let windowWidth = $state(DEFAULT_WIDTH);
-	let windowHeight = $state(DEFAULT_HEIGHT);
-	let windowX = $state((typeof window !== 'undefined' ? window.innerWidth : 1920) / 2 - DEFAULT_WIDTH / 2);
-	let windowY = $state((typeof window !== 'undefined' ? window.innerHeight : 1080) / 2 - DEFAULT_HEIGHT / 2);
+	let windowWidth = $state(initialSize.w);
+	let windowHeight = $state(initialSize.h);
+	let windowX = $state((typeof window !== 'undefined' ? window.innerWidth : 1920) / 2 - initialSize.w / 2);
+	let windowY = $state((typeof window !== 'undefined' ? window.innerHeight : 1080) / 2 - initialSize.h / 2);
 	
 	// Drag state
 	let isDragging = $state(false);
@@ -212,6 +227,46 @@
 		const content = formatLogFile(consoleLogs);
 		const filename = `sandbox-${name || 'console'}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
 		downloadLogFile(content, filename);
+	}
+
+	// ============================================================================
+	// Sentry Upload
+	// ============================================================================
+
+	let showSentryConfirm = $state(false);
+	let sentryUploading = $state(false);
+	let sentryUploadDone = $state(false);
+
+	function requestSentryUpload() {
+		if (consoleLogs.length === 0) return;
+		showSentryConfirm = true;
+		sentryUploadDone = false;
+	}
+
+	async function confirmSentryUpload() {
+		sentryUploading = true;
+		try {
+			const logContent = formatLogFile(consoleLogs);
+			Sentry.withScope((scope) => {
+				scope.addAttachment({
+					filename: `sandbox-logs-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`,
+					data: logContent,
+					contentType: 'text/plain',
+				});
+				Sentry.captureMessage('User uploaded sandbox console logs', 'info');
+			});
+			sentryUploadDone = true;
+		} catch (err) {
+			console.error('[SandboxPreview] Failed to upload logs to Sentry:', err);
+			Sentry.captureException(err);
+		} finally {
+			sentryUploading = false;
+		}
+	}
+
+	function closeSentryConfirm() {
+		showSentryConfirm = false;
+		sentryUploadDone = false;
 	}
 
 	// ============================================================================
@@ -707,6 +762,16 @@
 				<div class="flex items-center gap-1">
 					<button
 						class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+						onclick={requestSentryUpload}
+						disabled={consoleLogs.length === 0}
+						title="Report to Sentry"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86c1.1 0 1.79-1.19 1.24-2.14l-6.93-12c-.55-.95-1.92-.95-2.48 0l-6.93 12C3.28 17.81 3.97 19 5.07 19z" />
+						</svg>
+					</button>
+					<button
+						class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
 						onclick={downloadLogs}
 						disabled={consoleLogs.length === 0}
 						title="Download logs"
@@ -775,3 +840,71 @@
 		{/if}
 	</div>
 </div>
+
+<!-- Sentry Upload Confirmation Modal -->
+{#if showSentryConfirm}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<div use:portal class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/50" onclick={closeSentryConfirm}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div
+			class="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4"
+			onclick={(e) => e.stopPropagation()}
+		>
+			{#if sentryUploadDone}
+				<!-- Success state -->
+				<div class="text-center">
+					<div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-3">
+						<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+						</svg>
+					</div>
+					<h3 class="text-lg font-semibold text-gray-800 mb-1">Report Sent</h3>
+					<p class="text-sm text-gray-500 mb-4">Logs have been uploaded to Sentry. Thank you!</p>
+					<button
+						class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+						onclick={closeSentryConfirm}
+					>
+						Close
+					</button>
+				</div>
+			{:else}
+				<!-- Confirmation state -->
+				<div class="flex items-start gap-3 mb-4">
+					<div class="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center shrink-0">
+						<svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86c1.1 0 1.79-1.19 1.24-2.14l-6.93-12c-.55-.95-1.92-.95-2.48 0l-6.93 12C3.28 17.81 3.97 19 5.07 19z" />
+						</svg>
+					</div>
+					<div>
+						<h3 class="text-lg font-semibold text-gray-800">Report to Sentry</h3>
+						<p class="text-sm text-gray-500 mt-1">
+							All saves and chat history will be collected to help diagnose issues. Are you sure you want to continue?
+						</p>
+					</div>
+				</div>
+				<div class="flex justify-end gap-2">
+					<button
+						class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors"
+						onclick={closeSentryConfirm}
+						disabled={sentryUploading}
+					>
+						Cancel
+					</button>
+					<button
+						class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+						onclick={confirmSentryUpload}
+						disabled={sentryUploading}
+					>
+						{#if sentryUploading}
+							Uploading...
+						{:else}
+							Confirm & Upload
+						{/if}
+					</button>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/if}

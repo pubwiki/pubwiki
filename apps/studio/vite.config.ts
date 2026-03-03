@@ -1,3 +1,4 @@
+import { sentrySvelteKit } from "@sentry/sveltekit";
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
@@ -13,11 +14,10 @@ const httpsConfig = fs.existsSync('./cert.pem') && fs.existsSync('./key.pem')
 	: undefined;
 
 export default defineConfig({
-	plugins: [
-		tailwindcss(),
-		sveltekit(),
-		paraglideVitePlugin({ project: './project.inlang', outdir: './src/lib/paraglide' })
-	],
+	plugins: [sentrySvelteKit({
+        org: "pubwiki",
+        project: "pubwiki-studio"
+    }), tailwindcss(), sveltekit(), paraglideVitePlugin({ project: './project.inlang', outdir: './src/lib/paraglide' })],
 
 	server: { 
 		fs: { allow: ['../../packages'] },

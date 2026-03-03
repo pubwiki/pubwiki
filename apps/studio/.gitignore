@@ -34,3 +34,5 @@ project.inlang/cache/
 
 target/
 dist/
+# Sentry Config File
+.env.sentry-build-plugin
