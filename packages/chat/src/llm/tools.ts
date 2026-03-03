@@ -13,11 +13,28 @@ import type { ToolDefinition } from '../types'
 export type ToolHandler = (args: unknown) => Promise<unknown>
 
 /**
+ * Hook called after tool execution (pure timing notification).
+ * 
+ * Called after a tool finishes execution and the tool result message has been
+ * written to chat history, but before the next LLM call begins.
+ * 
+ * No parameters: the tool implementer holds everything needed via closures
+ * (tool state, chat history reference, etc.).
+ * No return value: chat history manipulation is a direct side effect.
+ * 
+ * Typical use case: after a screenshot tool executes successfully, it appends
+ * a user message containing image_url to the chat history via a closure reference,
+ * so the LLM can "see" the screenshot.
+ */
+export type AfterExecutionHook = () => void | Promise<void>
+
+/**
  * Tool Registry
  */
 export class ToolRegistry {
   private handlers = new Map<string, ToolHandler>()
   private definitions = new Map<string, ToolDefinition>()
+  private afterExecutionHooks = new Map<string, AfterExecutionHook>()
 
   /**
    * Register a tool with Zod schema
@@ -26,7 +43,8 @@ export class ToolRegistry {
     name: string,
     description: string,
     schema: z.ZodTypeAny,
-    handler: ToolHandler
+    handler: ToolHandler,
+    afterExecution?: AfterExecutionHook
   ): void {
     // Convert Zod schema to JSON Schema
     const jsonSchema = z.toJSONSchema(schema)
@@ -46,6 +64,9 @@ export class ToolRegistry {
     })
 
     this.handlers.set(name, handler)
+    if (afterExecution) {
+      this.afterExecutionHooks.set(name, afterExecution)
+    }
   }
 
   /**
@@ -55,7 +76,8 @@ export class ToolRegistry {
     name: string,
     description: string,
     parameters: Record<string, unknown>,
-    handler: ToolHandler
+    handler: ToolHandler,
+    afterExecution?: AfterExecutionHook
   ): void {
     this.definitions.set(name, {
       type: 'function',
@@ -67,6 +89,9 @@ export class ToolRegistry {
     })
 
     this.handlers.set(name, handler)
+    if (afterExecution) {
+      this.afterExecutionHooks.set(name, afterExecution)
+    }
   }
 
   /**
@@ -77,9 +102,10 @@ export class ToolRegistry {
     description: string
     schema: z.ZodTypeAny
     handler: ToolHandler
+    afterExecution?: AfterExecutionHook
   }>): void {
     for (const tool of tools) {
-      this.register(tool.name, tool.description, tool.schema, tool.handler)
+      this.register(tool.name, tool.description, tool.schema, tool.handler, tool.afterExecution)
     }
   }
 
@@ -110,6 +136,20 @@ export class ToolRegistry {
   }
 
   /**
+   * Execute afterExecution hook for a tool (if registered).
+   * 
+   * Pure timing notification: no parameters, no return value.
+   * The hook accesses its needed state and chat history via closures.
+   * 
+   * @param name - Tool name
+   */
+  async executeAfterHook(name: string): Promise<void> {
+    const hook = this.afterExecutionHooks.get(name)
+    if (!hook) return
+    await hook()
+  }
+
+  /**
    * Check if tool exists
    */
   has(name: string): boolean {
@@ -123,6 +163,7 @@ export class ToolRegistry {
     const existed = this.handlers.has(name)
     this.handlers.delete(name)
     this.definitions.delete(name)
+    this.afterExecutionHooks.delete(name)
     return existed
   }
 
@@ -139,6 +180,7 @@ export class ToolRegistry {
   clear(): void {
     this.handlers.clear()
     this.definitions.clear()
+    this.afterExecutionHooks.clear()
   }
 
   /**

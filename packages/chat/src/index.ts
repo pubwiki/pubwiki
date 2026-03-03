@@ -76,6 +76,9 @@ export type {
 // Tool definition helper
 export { defineTool } from './types/tool'
 
+// AfterExecution hook type
+export type { AfterExecutionHook } from './llm/tools'
+
 // Message utilities
 export {
   generateBlockId,

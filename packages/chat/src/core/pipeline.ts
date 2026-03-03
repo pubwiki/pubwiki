@@ -436,6 +436,9 @@ export class ChatStreamPipeline {
         }
         
         currentMessages.push(result.toolMessage)
+
+        // Notify tool: execution complete, tool message written to history
+        await this.config.tools!.executeAfterHook(toolCall.function.name)
       }
       
       iterationCount++
@@ -533,6 +536,9 @@ export class ChatStreamPipeline {
         allBlocks.push(result.toolCallBlock)
         allBlocks.push(result.resultBlock)
         currentMessages.push(result.toolMessage)
+
+        // Notify tool: execution complete, tool message written to history
+        await this.config.tools!.executeAfterHook(toolCall.function.name)
       }
       
       iterationCount++
