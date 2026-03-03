@@ -9,7 +9,7 @@
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore } from '@pubwiki/ui/stores';
-	import { InputProperties, PromptProperties, GeneratedProperties, DefaultProperties, VFSProperties, StateProperties, NodeVersionHistory } from './properties';
+	import { InputProperties, PromptProperties, GeneratedProperties, DefaultProperties, VFSProperties, StateProperties, SandboxProperties, NodeVersionHistory } from './properties';
 	import { generate } from '../nodes/input/controller.svelte';
 	import { regenerate } from '../nodes/generated/controller.svelte';
 	import * as m from '$lib/paraglide/messages';
@@ -191,6 +191,10 @@
 						nodeId={selectedNode.id}
 						data={selectedNodeData as StateNodeData}
 						{projectId}
+					/>
+				{:else if selectedNodeData?.type === 'SANDBOX'}
+					<SandboxProperties
+						nodeId={selectedNode.id}
 					/>
 				{:else if selectedNodeData}
 					<DefaultProperties

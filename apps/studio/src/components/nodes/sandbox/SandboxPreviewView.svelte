@@ -12,6 +12,8 @@
 	import type { NodeVfs } from '$lib/vfs';
 	import type { LoaderNodeData } from '$lib/types';
 	import { createLoaderServices } from '$lib/sandbox';
+	import { ConsoleLogStore, createLogSession, formatLogFile, downloadLogFile } from '$lib/sandbox/console-log-db';
+	import VirtualConsoleList from './VirtualConsoleList.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	// ============================================================================
@@ -77,6 +79,7 @@
 	
 	// Console log state
 	let showConsole = $state(false);
+	let logStore = $state<ConsoleLogStore | null>(null);
 	let consoleLogs = $state<ConsoleLogEntry[]>([]);
 	let hasNewErrors = $state(false);
 	
@@ -112,8 +115,8 @@
 	// Derived
 	// ============================================================================
 	
-	const errorCount = $derived(consoleLogs.filter(l => l.level === 'error').length);
-	const warnCount = $derived(consoleLogs.filter(l => l.level === 'warn').length);
+	const errorCount = $derived(logStore?.errorCount ?? 0);
+	const warnCount = $derived(logStore?.warnCount ?? 0);
 
 	const sandboxUrl = $derived(`${sandboxOrigin}/__sandbox.html`);
 
@@ -157,7 +160,11 @@
 	// ============================================================================
 	
 	function handleLog(entry: ConsoleLogEntry) {
-		consoleLogs = [...consoleLogs, entry];
+		if (logStore) {
+			logStore.push(entry);
+			// Trigger Svelte reactivity by re-assigning the snapshot
+			consoleLogs = logStore.logs as ConsoleLogEntry[];
+		}
 		// Show indicator for new errors
 		if (entry.level === 'error' && !showConsole) {
 			hasNewErrors = true;
@@ -171,8 +178,11 @@
 		}
 	}
 	
-	function clearConsoleLogs() {
-		consoleLogs = [];
+	async function clearConsoleLogs() {
+		if (logStore) {
+			await logStore.clear();
+			consoleLogs = [];
+		}
 		sandboxConnection?.clearLogs();
 		hasNewErrors = false;
 	}
@@ -197,6 +207,13 @@
 		}
 	}
 
+	function downloadLogs() {
+		if (consoleLogs.length === 0) return;
+		const content = formatLogFile(consoleLogs);
+		const filename = `sandbox-${name || 'console'}-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.log`;
+		downloadLogFile(content, filename);
+	}
+
 	// ============================================================================
 	// Sandbox Lifecycle
 	// ============================================================================
@@ -211,6 +228,12 @@
 		try {
 			isLoading = true;
 			error = null;
+
+			// Create a new log session for this sandbox instance
+			const sessionName = new Date().toISOString().slice(0, 19).replace('T', ' ');
+			const sessionId = await createLogSession(sessionName);
+			logStore = new ConsoleLogStore(sessionId);
+			consoleLogs = [];
 
 			// Collect custom services from connected Loader nodes
 			const loaderNodeIds = loaderNodes.map(l => l.id);
@@ -249,8 +272,9 @@
 				});
 			}
 			
-			// Load any existing logs
-			consoleLogs = sandboxConnection.getLogs();
+			// handleLog callback already captured all logs during initialization,
+			// so no need to load from HMR service again.
+			consoleLogs = logStore ? (logStore.logs as ConsoleLogEntry[]) : [];
 
 			console.log('[SandboxPreviewView] Sandbox started successfully');
 
@@ -269,6 +293,12 @@
 		if (unsubscribeBuildProgress) {
 			unsubscribeBuildProgress();
 			unsubscribeBuildProgress = null;
+		}
+		
+		// Flush remaining logs to IndexedDB
+		if (logStore) {
+			logStore.dispose();
+			logStore = null;
 		}
 		
 		if (sandboxConnection) {
@@ -676,6 +706,16 @@
 				</div>
 				<div class="flex items-center gap-1">
 					<button
+						class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+						onclick={downloadLogs}
+						disabled={consoleLogs.length === 0}
+						title="Download logs"
+					>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+						</svg>
+					</button>
+					<button
 						class="p-1 hover:bg-gray-700 rounded transition-colors text-gray-400 hover:text-white"
 						onclick={clearConsoleLogs}
 						title="Clear console"
@@ -695,31 +735,12 @@
 					</button>
 				</div>
 			</div>
-			<!-- Console Content -->
-			<div class="flex-1 overflow-auto font-mono text-xs">
-				{#if consoleLogs.length === 0}
-					<div class="flex items-center justify-center h-full text-gray-500">
-						No console output
-					</div>
-				{:else}
-					{#each consoleLogs as entry, i (i)}
-						<div class="px-3 py-1 border-b border-gray-800 hover:bg-gray-800/50 {getLogLevelColor(entry.level)}">
-							<div class="flex items-start gap-2">
-								<span class="flex-shrink-0 mt-0.5">{@html getLogLevelIcon(entry.level)}</span>
-								<div class="flex-1 min-w-0">
-									<pre class="whitespace-pre-wrap break-words">{entry.message}</pre>
-									{#if entry.stack}
-										<pre class="text-gray-500 text-[10px] mt-1 whitespace-pre-wrap break-words">{entry.stack}</pre>
-									{/if}
-								</div>
-								<span class="flex-shrink-0 text-gray-600 text-[10px]">
-									{new Date(entry.timestamp).toLocaleTimeString()}
-								</span>
-							</div>
-						</div>
-					{/each}
-				{/if}
-			</div>
+			<!-- Console Content (virtualized) -->
+			<VirtualConsoleList
+				logs={consoleLogs}
+				{getLogLevelColor}
+				{getLogLevelIcon}
+			/>
 		</div>
 		{/if}
 
