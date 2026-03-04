@@ -88,6 +88,13 @@ export interface PipelineConfig {
    * @default 'responses'
    */
   apiMode?: ApiMode
+  
+  /**
+   * Extra body parameters to include in the API request.
+   * Useful for provider-specific parameters like OpenRouter's `provider` preferences
+   * or Gemini's `safety_settings`.
+   */
+  extraBody?: Record<string, unknown>
 }
 
 /**
@@ -143,7 +150,8 @@ export class ChatStreamPipeline {
       tools: this.config.tools?.getDefinitions(),
       signal: this.config.signal,
       responseFormat: this.config.responseFormat,
-      reasoning: this.config.reasoning
+      reasoning: this.config.reasoning,
+      extraBody: this.config.extraBody
     }
   }
 

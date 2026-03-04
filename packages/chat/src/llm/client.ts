@@ -121,6 +121,13 @@ export interface ChatCompletionOptions {
    * @see https://platform.openai.com/docs/guides/reasoning
    */
   reasoning?: ReasoningConfig
+  /**
+   * Extra body parameters to include in the API request.
+   * Useful for provider-specific parameters like OpenRouter's `provider` preferences
+   * or Gemini's `safety_settings`.
+   * These are merged into the request body as-is.
+   */
+  extraBody?: Record<string, unknown>
 }
 
 /**
@@ -239,6 +246,7 @@ export class LLMClient {
       tool_choice: options.tool_choice,
       stream: true,
       ...(options.responseFormat && { response_format: this.convertResponseFormat(options.responseFormat) }),
+      ...(options.extraBody),
     }
 
     let stream: AsyncIterable<ChatCompletionChunk>
@@ -431,7 +439,8 @@ export class LLMClient {
       tool_choice: options.tool_choice,
       stream: true,
       ...(textFormat && { text: textFormat }),
-      ...(reasoning && { reasoning })
+      ...(reasoning && { reasoning }),
+      ...(options.extraBody),
     }
 
     let stream: AsyncIterable<ResponseStreamEvent>
@@ -611,6 +620,7 @@ export class LLMClient {
       tool_choice: options.tool_choice,
       stream: false,
       ...(options.responseFormat && { response_format: this.convertResponseFormat(options.responseFormat) }),
+      ...(options.extraBody),
     }
 
     const response = await this.client.chat.completions.create(params, {
@@ -769,7 +779,8 @@ export class LLMClient {
       tool_choice: options.tool_choice,
       stream: false,
       ...(textFormat && { text: textFormat }),
-      ...(reasoning && { reasoning })
+      ...(reasoning && { reasoning }),
+      ...(options.extraBody),
     }
 
     const response = await this.client.responses.create(params, {
