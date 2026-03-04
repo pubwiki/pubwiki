@@ -100,6 +100,12 @@ export interface LLMConfig {
    * @default 'responses'
    */
   apiMode?: ApiMode
+  /**
+   * Extra body parameters to include in the API request.
+   * Useful for provider-specific parameters like OpenRouter's `provider` preferences
+   * or Gemini's `safety_settings`.
+   */
+  extraBody?: Record<string, unknown>
 }
 
 /**
@@ -279,6 +285,7 @@ export class PubChat implements ChatProvider {
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
         reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
         apiMode: overrideConfig?.apiMode ?? this.config.llm.apiMode,
+        extraBody: overrideConfig?.extraBody ?? this.config.llm.extraBody,
       }
 
       if (!llmConfig.model || !llmConfig.apiKey || !llmConfig.baseUrl) {
@@ -299,7 +306,8 @@ export class PubChat implements ChatProvider {
         signal: this.abortController.signal,
         responseFormat: llmConfig.responseFormat,
         reasoning: llmConfig.reasoning,
-        apiMode: llmConfig.apiMode
+        apiMode: llmConfig.apiMode,
+        extraBody: llmConfig.extraBody
       })
       
       // Collect assistant response
@@ -463,6 +471,7 @@ export class PubChat implements ChatProvider {
         responseFormat: overrideConfig?.responseFormat ?? this.config.llm.responseFormat,
         reasoning: overrideConfig?.reasoning ?? this.config.llm.reasoning,
         apiMode: overrideConfig?.apiMode ?? this.config.llm.apiMode,
+        extraBody: overrideConfig?.extraBody ?? this.config.llm.extraBody,
       }
 
        if (!llmConfig.model || !llmConfig.apiKey || !llmConfig.baseUrl) {
@@ -483,7 +492,8 @@ export class PubChat implements ChatProvider {
         signal: this.abortController.signal,
         responseFormat: llmConfig.responseFormat,
         reasoning: llmConfig.reasoning,
-        apiMode: llmConfig.apiMode
+        apiMode: llmConfig.apiMode,
+        extraBody: llmConfig.extraBody
       })
       
       // Run non-streaming pipeline
