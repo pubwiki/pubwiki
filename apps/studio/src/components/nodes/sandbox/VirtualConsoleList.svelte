@@ -200,7 +200,10 @@
 		if (logs.length === 0) {
 			expandedSet = new Set();
 			measuredHeights.clear();
-			heightVersion++;
+			// Use fixed assignment instead of heightVersion++ to avoid creating
+			// a read dependency on heightVersion, which would cause an infinite
+			// effect loop (effect_update_depth_exceeded).
+			heightVersion = 0;
 		}
 	});
 
