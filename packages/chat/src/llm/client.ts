@@ -246,6 +246,7 @@ export class LLMClient {
       tool_choice: options.tool_choice,
       stream: true,
       ...(options.responseFormat && { response_format: this.convertResponseFormat(options.responseFormat) }),
+      ...(options.reasoning?.effort && { reasoning_effort: options.reasoning.effort }),
       ...(options.extraBody),
     }
 
@@ -273,7 +274,51 @@ export class LLMClient {
       const choice = chunk.choices[0]
       if (!choice) continue
 
-      const delta = choice.delta
+      // Cast delta to extended type for OpenRouter reasoning support
+      const delta = choice.delta as ChatCompletionChunk.Choice['delta'] & {
+        reasoning?: string
+        reasoning_details?: Array<{
+          type: string
+          text?: string
+          format?: string
+          index?: number
+        }>
+      }
+
+      // OpenRouter extended reasoning fields (e.g., Gemini, Claude via OpenRouter)
+      // These fields are not in the standard OpenAI API but are added by OpenRouter
+      if (delta.reasoning || delta.reasoning_details) {
+        const reasoningDetails: ReasoningDetail[] = []
+        
+        // Handle reasoning_details array (preferred, more structured)
+        if (delta.reasoning_details && delta.reasoning_details.length > 0) {
+          for (const detail of delta.reasoning_details) {
+            reasoningDetails.push({
+              type: detail.type === 'reasoning.text' ? 'reasoning.text' 
+                : detail.type === 'reasoning.summary' ? 'reasoning.summary'
+                : 'reasoning.text',
+              text: detail.text,
+              format: detail.format,
+              index: detail.index
+            })
+          }
+        } else if (delta.reasoning) {
+          // Fallback to simple reasoning string
+          reasoningDetails.push({
+            type: 'reasoning.text',
+            text: delta.reasoning
+          })
+        }
+        
+        if (reasoningDetails.length > 0) {
+          yield {
+            content: '',
+            tool_calls: undefined,
+            finish_reason: null,
+            reasoning_details: reasoningDetails
+          }
+        }
+      }
 
       // Text content
       if (delta.content) {
@@ -620,6 +665,7 @@ export class LLMClient {
       tool_choice: options.tool_choice,
       stream: false,
       ...(options.responseFormat && { response_format: this.convertResponseFormat(options.responseFormat) }),
+      ...(options.reasoning?.effort && { reasoning_effort: options.reasoning.effort }),
       ...(options.extraBody),
     }
 
