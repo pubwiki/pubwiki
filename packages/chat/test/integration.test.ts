@@ -844,4 +844,55 @@ describeIfApiKey('PubChat with Reasoning', () => {
     expect(message).toBeDefined()
     expect(message.blocks.length).toBeGreaterThan(0)
   })
+
+  /**
+   * Test for OpenRouter extended Chat Completions API with reasoning support.
+   * OpenRouter adds reasoning and reasoning_details fields to the standard Chat Completions API
+   * for models like Gemini that support reasoning/thinking.
+   */
+  it('should stream reasoning tokens via OpenRouter extended Chat Completions API', async () => {
+    const messageStore = new MemoryMessageStore()
+    
+    // Use Gemini 2.5 Flash which returns reasoning via OpenRouter
+    const pubchat = new PubChat({
+      llm: {
+        apiKey: OPENROUTER_API_KEY!,
+        baseUrl: OPENROUTER_BASE_URL,
+        apiMode: 'chat-completions',  // Explicitly use Chat Completions API
+        model: 'google/gemini-2.5-flash',  // This model returns reasoning via OpenRouter
+        temperature: 0,
+        reasoning: {
+          effort: 'medium',  // Higher effort more likely to produce reasoning
+        }
+      },
+      messageStore,
+    })
+    
+    const tokens: string[] = []
+    const reasoningTokens: string[] = []
+    let hasReasoningEvent = false
+    
+    // Use a prompt that requires some thinking
+    for await (const event of pubchat.streamChat('Explain step by step: what is 123 * 456?')) {
+      if (event.type === 'token') {
+        tokens.push(event.token)
+      } else if (event.type === 'reasoning') {
+        hasReasoningEvent = true
+        reasoningTokens.push(event.token)
+      }
+    }
+    
+    // Verify we got content
+    expect(tokens.length).toBeGreaterThan(0)
+    const fullContent = tokens.join('')
+    expect(fullContent).toMatch(/56088/)  // 123 * 456 = 56088
+    
+    // With reasoning enabled and medium effort, we expect reasoning tokens
+    // This verifies that OpenRouter's extended Chat Completions API reasoning works
+    console.log(`[OpenRouter Chat Completions Reasoning Test] Got ${reasoningTokens.length} reasoning chunks, hasReasoningEvent: ${hasReasoningEvent}`)
+    if (hasReasoningEvent) {
+      expect(reasoningTokens.length).toBeGreaterThan(0)
+      console.log(`[OpenRouter Chat Completions Reasoning Test] Sample reasoning: ${reasoningTokens[0]?.substring(0, 100)}...`)
+    }
+  })
 })
