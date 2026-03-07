@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import type { Env } from './types';
 import { createAuth } from './lib/auth';
 import { artifactsRoute } from './routes/artifacts';
+import { buildCacheRoute } from './routes/build-cache';
 import { projectsRoute } from './routes/projects';
 import { usersRoute } from './routes/users';
 import { discussionsRoute } from './routes/discussions';
@@ -44,6 +45,9 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => {
 
 // Artifacts 路由（公开）
 app.route('/api/artifacts', artifactsRoute);
+
+// Build cache 路由（公开）
+app.route('/api/build-cache', buildCacheRoute);
 
 // Tags 路由（公开）
 app.route('/api/tags', tagsRoute);

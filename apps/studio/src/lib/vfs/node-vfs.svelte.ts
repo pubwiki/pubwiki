@@ -64,6 +64,18 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
    * This is automatically updated when files change (debounced).
    */
   isDirty = $state(false);
+
+  /**
+   * Reactive modification counter — incremented on every file/folder event.
+   *
+   * Used by the build cache system for lightweight stale detection:
+   * the build-runner records `writeVersion` at build time, and the UI
+   * re-derives status whenever the counter advances.
+   *
+   * Unlike `isDirty` (git status), this counter never resets — it only
+   * ever increases, so a simple `!==` comparison is sufficient.
+   */
+  writeVersion = $state(0);
   
   constructor(baseVfs: VersionedVfs) {
     // Create MountedVfsProvider with baseVfs as root mount
@@ -78,7 +90,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     this.setupDirtyTracking();
   }
   
-  // ========== Internal Git Access ==========
+  // ========== Git Access ==========
   
   private get _gitProvider(): GitCapableProvider {
     return this._baseVfs.getProvider() as GitCapableProvider;
@@ -90,6 +102,22 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
   
   private get _dir(): string {
     return this._gitProvider.getDir();
+  }
+
+  /**
+   * Get the isomorphic-git compatible filesystem interface.
+   * Used by computeVfsContentHash for lightweight content hashing via git.walk().
+   */
+  get gitFs(): GitCompatibleFs {
+    return this._fs;
+  }
+
+  /**
+   * Get the git repository directory path.
+   * Always '/' since each VFS node maps to its own OPFS subtree.
+   */
+  get gitDir(): string {
+    return this._dir;
   }
 
   /**
@@ -141,6 +169,8 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     
     const scheduleRefresh = (eventName: string) => () => {
       console.log('[NodeVfs] Event triggered:', eventName, 'for node:', this.getNodeId());
+      // Bump the monotonic modification counter (used by build cache stale detection)
+      this.writeVersion++;
       this.scheduleDirtyRefresh();
     };
     

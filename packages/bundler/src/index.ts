@@ -10,6 +10,21 @@ export * from './types'
 // Utils
 export * from './utils'
 
+// Build Cache Storage
+export {
+  OpfsBuildCacheStorage,
+  type BuildCacheFile,
+  type BuildCacheMetadata,
+  type BuildCacheHandle,
+} from './build-cache-storage'
+
+// Build-Aware VFS
+export {
+  createBuildAwareVfs,
+  type BuildAwareVfsConfig,
+  type RemoteBuildFetcher,
+} from './build-aware-vfs'
+
 // Service
 export {
   BundlerService,

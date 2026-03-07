@@ -24,7 +24,9 @@
 	import { getNodeVfs, type NodeVfs } from '$lib/vfs';
 	import { getNodeRDFStore, closeNodeRDFStore, type RDFStore } from '$lib/rdf';
 	import { createLoaderServices } from '$lib/sandbox';
-	import { detectProject, type ProjectConfig } from '@pubwiki/bundler';
+	import { detectProject, createBuildAwareVfs, OpfsBuildCacheStorage } from '@pubwiki/bundler';
+	import type { ProjectConfig } from '@pubwiki/bundler';
+	import { createRemoteBuildFetcher } from '$lib/io/remote-build-fetcher';
 	import { 
 		initializeLoader, 
 		destroyLoader 
@@ -92,6 +94,9 @@
 	let entryFile = $state<string>('index.ts');
 	let consoleLogs = $state<ConsoleLogEntry[]>([]);
 	let iframeSrc = $state<string>('');  // Controlled separately to avoid timing issues
+	
+	// BuildAwareVfs instance (manages build cache + transparent compilation)
+	let buildAwareVfs: import('@pubwiki/vfs').Vfs | null = null;
 	
 	// Node IDs found from the graph
 	let sandboxNodeId = $state<string | null>(null);
@@ -205,12 +210,10 @@
 				await nodeStore.flush();
 				await layoutStore.flush();
 
-				console.log('[Play] Created hidden project:', projectId);
 			} else {
 				// Load existing project
 				await nodeStore.init(projectId);
 				await layoutStore.init(projectId);
-				console.log('[Play] Loaded existing project:', projectId);
 			}
 
 			// Find nodes from edges (this sets stateNodeId to remapped ID)
@@ -235,12 +238,28 @@
 
 			vfs = await getNodeVfs(vfsNodeData.content.projectId, vfsNodeId);
 
-			// Detect project config
+			// Detect project configuration (always needed for BuildAwareVfs)
 			const config = await detectProject('/tsconfig.json', vfs);
 			if (!config || !config.isBuildable) {
 				throw new Error('Invalid project configuration');
 			}
 			projectConfig = config;
+
+			// Get buildCacheKey from the version metadata
+			const buildCacheKey = (graphData as GetArtifactGraphResponse).version?.buildCacheKey;
+
+			// Create BuildAwareVfs — transparently resolves build output through:
+			//   L0: In-memory → L1: OPFS → L2: Remote R2 → L3: Local compile
+			const buildCacheStorage = new OpfsBuildCacheStorage();
+			const remoteFetcher = createRemoteBuildFetcher(`${API_BASE_URL}/api`);
+			buildAwareVfs = createBuildAwareVfs({
+				sourceVfs: vfs,
+				projectConfig: config,
+				buildCacheStorage,
+				buildCacheKey: buildCacheKey ?? null,
+				remoteFetcher,
+				// No HMR callbacks needed for Play route (read-only)
+			});
 
 			// Get sandbox node data
 			const sandboxNodeData = nodeStore.get(sandboxNodeId) as SandboxNodeData | undefined;
@@ -293,36 +312,25 @@
 				message: 'Starting game...'
 			};
 
-			console.log('[Play] Stage 5: Starting sandbox...');
-			console.log('[Play] sandboxOrigin:', sandboxOrigin);
-			console.log('[Play] entryFile:', entryFile);
-			console.log('[Play] loaderNodeIds:', loaderNodeIds);
-			console.log('[Play] vfs:', vfs);
-			console.log('[Play] projectConfig:', projectConfig);
-
 			// Wait for iframe to be mounted
 			await new Promise(resolve => setTimeout(resolve, 100));
-			console.log('[Play] After 100ms wait, iframeRef:', iframeRef);
 
 			if (!iframeRef) {
 				throw new Error('Sandbox iframe not ready');
 			}
 
 			// Create custom services from loaders
-			console.log('[Play] Creating loader services for', loaderNodeIds.length, 'loaders...');
 			const customServices = loaderNodeIds.length > 0 ? await createLoaderServices(loaderNodeIds) : undefined;
-			console.log('[Play] customServices created:', customServices?.size ?? 0, 'services');
 
 			// Create sandbox connection
 			// Note: userInfo is passed via iframe.name, not through RPC
-			console.log('[Play] Creating sandbox connection...');
 			sandboxConnection = createSandboxConnection({
 				iframe: iframeRef,
 				basePath: '/',
-				projectConfig,
+				projectConfig: projectConfig!,
 				targetOrigin: sandboxOrigin,
 				entryFile,
-				vfs,
+				vfs: buildAwareVfs!,
 				customServices,
 				onLog: (entry) => {
 					consoleLogs = [...consoleLogs, entry];
@@ -331,12 +339,9 @@
 
 			// Now set iframe src to trigger sandbox loading
 			// This must be after createSandboxConnection to avoid missing SANDBOX_READY message
-			console.log('[Play] Setting iframe src to trigger sandbox loading...');
 			iframeSrc = `${sandboxOrigin}/__sandbox.html`;
 
-			console.log('[Play] Waiting for sandbox ready...');
 			const success = await sandboxConnection.waitForReady();
-			console.log('[Play] waitForReady returned:', success);
 			if (!success) {
 				throw new Error('Failed to initialize sandbox');
 			}
@@ -346,8 +351,6 @@
 				progress: 100,
 				message: 'Ready!'
 			};
-
-			console.log('[Play] Sandbox started successfully');
 
 		} catch (error) {
 			console.error('[Play] Initialization failed:', error);
@@ -453,12 +456,6 @@
 			}
 		}
 
-		console.log('[Play] Found nodes:', { 
-			sandboxNodeId,
-			stateNodeId,
-			vfsNodeId, 
-			loaderNodeIds 
-		});
 	}
 
 	/**
@@ -467,11 +464,8 @@
 	 */
 	async function initializeLoaders(edges: Edge[]) {
 		if (loaderNodeIds.length === 0) {
-			console.log('[Play] No loader nodes to initialize');
 			return;
 		}
-
-		console.log('[Play] Initializing', loaderNodeIds.length, 'loader nodes...');
 
 		for (const loaderId of loaderNodeIds) {
 			try {
@@ -543,9 +537,7 @@
 					undefined   // No pubwiki context in play mode
 				);
 
-				if (result.success) {
-					console.log(`[Play] Loader ${loaderId} initialized with services:`, result.services);
-				} else {
+				if (!result.success) {
 					console.warn(`[Play] Loader ${loaderId} initialization failed:`, result.error);
 				}
 			} catch (error) {
@@ -553,7 +545,6 @@
 			}
 		}
 
-		console.log('[Play] Loader initialization complete');
 	}
 
 	/**
@@ -566,7 +557,6 @@
 		if (!data.saveCommit || !rdfStore) return;
 
 		try {
-			console.log('[Play] Loading save data for commit:', data.saveCommit);
 
 			// Download save data using new Save API
 			const response = await fetch(`${API_BASE_URL}/saves/${data.saveCommit}/data`, {
@@ -587,7 +577,7 @@
 			// Replace local store contents
 			await rdfStore.clear();
 			await rdfStore.batchInsert(rdfQuads);
-			console.log('[Play] Imported save data:', rdfQuads.length, 'quads');
+
 		} catch (error) {
 			console.error('[Play] Failed to load save:', error);
 		}
@@ -604,6 +594,10 @@
 	onDestroy(() => {
 		if (sandboxConnection) {
 			sandboxConnection.disconnect();
+		}
+		if (buildAwareVfs) {
+			buildAwareVfs.dispose();
+			buildAwareVfs = null;
 		}
 		if (stateNodeId) {
 			closeNodeRDFStore(stateNodeId);

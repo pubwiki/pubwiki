@@ -47,12 +47,18 @@ export class ESBuildEngine {
   // File loader (injected from VFS adapter)
   private fileLoader?: (path: string) => Promise<string>
 
+  // Progress callback for reporting fetch activity
+  private progressCallback?: (message: string) => void
+
   // HTTP loader with caching - returns content and content-type
   private async httpLoader(url: string): Promise<{ content: string; contentType: string }> {
     const cached = await this.cache.getHttp(url)
     if (cached) {
       return cached
     }
+
+    // Notify progress — this is the slow path (uncached HTTP download)
+    this.progressCallback?.(`Downloading ${this.formatUrlForProgress(url)}`)
 
     const response = await fetch(url)
     if (!response.ok) {
@@ -96,6 +102,14 @@ export class ESBuildEngine {
    */
   setFileLoader(loader: (path: string) => Promise<string>): void {
     this.fileLoader = loader
+  }
+
+  /**
+   * Set progress callback for reporting HTTP fetch activity.
+   * Called when downloading uncached remote modules (the slow path).
+   */
+  setProgressCallback(callback: (message: string) => void): void {
+    this.progressCallback = callback
   }
 
   /**
@@ -395,8 +409,8 @@ export class ESBuildEngine {
           }
         }
       }
-      console.log("[BundlerWorker] dep graph is", this.dependencyGraph, allProjectDeps)
-      console.log("[BundlerWorker] result is ", result)
+      console.log(`[ESBuildEngine] dep graph: ${this.dependencyGraph.size} entries, ${allProjectDeps.size} project deps`)
+      console.log(`[ESBuildEngine] esbuild output: ${result.outputFiles?.length ?? 0} files, ${result.errors?.length ?? 0} errors`)
 
       // Process output files into per-entry results
       const outputs = new Map<string, FileBuildResult>()
@@ -667,5 +681,18 @@ export class ESBuildEngine {
     await this.invalidateAllContexts()
     this.initialized = false
     this.initPromise = null
+  }
+
+  /**
+   * Format a CDN URL for progress display.
+   * e.g. "https://esm.sh/react@18.2.0" → "esm.sh/react@18.2.0"
+   */
+  private formatUrlForProgress(url: string): string {
+    try {
+      const u = new URL(url)
+      return u.host + u.pathname + u.search
+    } catch {
+      return url
+    }
   }
 }

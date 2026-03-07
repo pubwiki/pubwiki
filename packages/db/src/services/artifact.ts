@@ -304,6 +304,7 @@ export class ArtifactService {
       changelog: metadata.changelog ?? null,
       publishedAt: new Date().toISOString(),
       entrypoint: metadata.entrypoint ?? null,
+      buildCacheKey: metadata.buildCacheKey ?? null,
     };
     this.ctx.modify({ expectAffected: 1, lockMsg: `Version with commit ${metadata.commit} already exists` })
       .insert(artifactVersions).values(newVersion).onConflictDoNothing();
@@ -1868,6 +1869,7 @@ export class ArtifactService {
         changelog: metadata.changelog,
         commitTags: metadata.commitTags,
         entrypoint: metadata.entrypoint,
+        buildCacheKey: metadata.buildCacheKey,
       });
 
       // Step 14: Update artifact's latestVersion
@@ -2219,6 +2221,7 @@ export class ArtifactService {
             version: version.version ?? '',
             createdAt: version.createdAt,
             entrypoint: version.entrypoint ?? undefined,
+            buildCacheKey: version.buildCacheKey ?? undefined,
           },
         },
       };

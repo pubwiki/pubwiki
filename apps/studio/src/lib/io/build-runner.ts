@@ -1,0 +1,122 @@
+/**
+ * Build Runner
+ *
+ * Runs a build for a VFS node via BuildAwareVfs.  By going through
+ * BuildAwareVfs the compiled output is automatically written to L1
+ * (OPFS) so a subsequent sandbox open will hit the cache instead of
+ * recompiling.
+ *
+ * This module is **stateless** — it does not hold build status.
+ * Transient UI state (building / error) is managed locally in the
+ * calling component (EntrypointSection).  Persistent build status
+ * is derived from OpfsBuildCacheStorage (OPFS).
+ *
+ * Hash concepts used here:
+ *
+ *   contentHash   — Lightweight hash of VFS working directory content,
+ *                   computed via isomorphic-git walk (no tar.gz).
+ *                   Fed into `computeBuildCacheKey()` for L1 OPFS cache key.
+ *
+ *   buildCacheKey — content-addressable key for the resulting build archive,
+ *                   stored on backend / R2.
+ */
+
+import { createBuildAwareVfs, OpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
+import type { ProjectBuildResult } from '@pubwiki/bundler';
+import { computeBuildCacheKey } from '@pubwiki/api';
+import { computeVfsContentHash } from './vfs-content-hash';
+import { getNodeVfs } from '$lib/vfs';
+
+/** Result returned by `runBuild()`. */
+export interface BuildRunResult {
+	success: boolean;
+	buildCacheKey: string;
+	contentHash: string;
+	error?: string;
+}
+
+/**
+ * Run a build for a VFS node.
+ *
+ * Creates a temporary BuildAwareVfs (with L0→L1→L3 cache), reads the
+ * entry files (triggering compilation + L1 write-through), and returns
+ * the result.  The OPFS cache is populated automatically by
+ * BuildAwareVfs, so no explicit store write is needed.
+ *
+ * @param params.onProgress — optional callback for progress messages
+ */
+export async function runBuild(params: {
+	vfsNodeId: string;
+	projectId: string;
+	onProgress?: (message: string) => void;
+}): Promise<BuildRunResult> {
+	const { vfsNodeId, projectId, onProgress } = params;
+
+	// 1. Resolve VFS
+	const nodeVfs = await getNodeVfs(projectId, vfsNodeId);
+
+	// 2. Detect project config
+	const projectConfig = await detectProject('/tsconfig.json', nodeVfs);
+	if (!projectConfig?.isBuildable || projectConfig.entryFiles.length === 0) {
+		return {
+			success: false,
+			buildCacheKey: '',
+			contentHash: '',
+			error: 'No buildable project detected (missing tsconfig.json or entry files)',
+		};
+	}
+
+	// 3. Compute contentHash + buildCacheKey
+	const contentHash = await computeVfsContentHash(projectId, vfsNodeId);
+	const buildCacheKey = await computeBuildCacheKey({
+		filesHash: contentHash,
+		entryFiles: projectConfig.entryFiles,
+	});
+
+	// 4. Create BuildAwareVfs — compilation goes through L0→L1→L3 cache,
+	//    so results are automatically persisted to OPFS.
+	let capturedBuildResult: ProjectBuildResult | null = null as ProjectBuildResult | null;
+
+	const buildAwareVfs = createBuildAwareVfs({
+		sourceVfs: nodeVfs,
+		projectConfig,
+		buildCacheStorage: new OpfsBuildCacheStorage(),
+		buildCacheKey,
+		filesHash: contentHash,
+		onBuildProgress: (event) => {
+			if ((event.type === 'progress' || event.type === 'start') && event.message) {
+				onProgress?.(event.message);
+			}
+			if (event.type === 'complete' && event.result) {
+				capturedBuildResult = event.result;
+			}
+		},
+	});
+
+	try {
+		// 5. Trigger compilation by reading the first entry file.
+		//    BuildAwareVfs builds all entries at once on L3 miss,
+		//    populating L0 and writing through to L1.
+		const firstEntry = projectConfig.entryFiles[0];
+		const entryPath = firstEntry.startsWith('/') ? firstEntry : `/${firstEntry}`;
+		await buildAwareVfs.readFile(entryPath);
+
+		// If L1 was hit (no compilation needed), capturedBuildResult is null.
+		// That's fine — the cache is valid and OPFS has the outputs.
+
+		// Check for build errors
+		if (capturedBuildResult && !capturedBuildResult.success) {
+			const errorMsg = [...capturedBuildResult.outputs.values()]
+				.flatMap(o => o.errors)
+				.map(e => e.message)
+				.join('\n') || 'Build failed';
+			return { success: false, buildCacheKey, contentHash, error: errorMsg };
+		}
+
+		return { success: true, buildCacheKey, contentHash };
+	} finally {
+		await buildAwareVfs.dispose();
+	}
+}
+
+

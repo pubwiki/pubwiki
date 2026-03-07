@@ -1,0 +1,22 @@
+# Build Cache schemas
+
+BuildCacheMetadataResponse:
+  type: object
+  required:
+    - cacheKey
+    - releaseHash
+    - fileHashes
+  properties:
+    cacheKey:
+      type: string
+      description: buildCacheKey (SHA-256 of canonicalized build inputs)
+    releaseHash:
+      type: string
+      description: SHA-256 of the tar.gz archive, also used as R2 storage key
+    fileHashes:
+      type: object
+      additionalProperties:
+        type: string
+      description: |
+        Per-file SHA-256 hashes for integrity verification.
+        Keys are file paths (e.g. 'index.js'), values are hex-encoded SHA-256.

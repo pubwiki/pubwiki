@@ -5,8 +5,12 @@
  *
  * Core responsibilities:
  * 1. Path isolation: basePath as virtual root directory
- * 2. Bundler integration: auto bundle TypeScript/JavaScript project files
+ * 2. Transparent build output serving via BuildAwareVfs
  * 3. Direct VFS access without intermediate layer
+ *
+ * Build compilation logic has been moved into BuildAwareVfs (packages/bundler).
+ * When the VFS passed here is a BuildAwareVfs, entry file reads transparently
+ * return compiled output from multi-level cache (L0→L1→L2→L3).
  */
 
 import { RpcTarget, newMessagePortRpcSession } from '@pubwiki/sandbox-service'
@@ -19,12 +23,9 @@ import type {
 } from '@pubwiki/sandbox-service'
 import type {
   ProjectConfig,
-  ProjectBuildResult
 } from '../types'
 import type { Vfs } from '@pubwiki/vfs'
 import { isVfsFolder } from '@pubwiki/vfs'
-import { BundlerService } from '@pubwiki/bundler'
-import type { HmrServiceImpl } from './hmr-service'
 import {
   getMimeType,
   normalizePath,
@@ -40,9 +41,7 @@ export interface VfsServiceConfig {
   basePath: string
   /** Project configuration (if running a buildable project) */
   projectConfig: ProjectConfig | null
-  /** HMR service for file change notifications */
-  hmrService: HmrServiceImpl
-  /** VFS instance */
+  /** VFS instance (may be a BuildAwareVfs that transparently handles build output) */
   vfs: Vfs
 }
 
@@ -54,15 +53,12 @@ let vfsServiceInstanceCounter = 0
  *
  * This service runs on the main site and is consumed by the
  * sandbox Service Worker for file access.
+ *
+ * When the VFS is a BuildAwareVfs, entry file reads transparently return
+ * compiled output. VfsServiceImpl only handles path resolution, MIME type
+ * detection, and entry file routing — no bundler management.
  */
 export class VfsServiceImpl extends RpcTarget implements IVfsService {
-  private bundlerService: BundlerService
-  private bundlerInitialized: boolean = false
-  private initPromise: Promise<void> | null = null
-
-  // File watching cleanup
-  private fileWatchUnsub: (() => void) | null = null
-  
   // Instance ID for debugging
   private readonly instanceId: number
   
@@ -76,10 +72,6 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
     
     this.instanceId = ++vfsServiceInstanceCounter
     
-    // Create BundlerService
-    console.log(`[VfsServiceImpl #${this.instanceId}] Creating BundlerService`)
-    this.bundlerService = new BundlerService({ vfs: config.vfs })
-    
     console.log(`[VfsServiceImpl #${this.instanceId}] Created for basePath: ${config.basePath}`, {
       projectConfig: config.projectConfig ? {
         tsconfigPath: config.projectConfig.tsconfigPath,
@@ -87,16 +79,6 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
         entryFiles: config.projectConfig.entryFiles
       } : null
     })
-
-    // Async initialization
-    this.initPromise = this.initialize()
-  }
-  
-  /**
-   * Get the bundler service for reuse
-   */
-  getBundlerService(): BundlerService {
-    return this.bundlerService
   }
   
   /**
@@ -117,36 +99,13 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
   }
 
   /**
-   * Initialize bundler
-   */
-  private async initialize(): Promise<void> {
-    try {
-      await this.bundlerService.initialize()
-      await this.bundlerService.invalidateAll()
-      console.log(`[VfsServiceImpl] Initialized for basePath: ${this.config.basePath}`)
-    } catch (error) {
-      console.error('[VfsServiceImpl] Initialization failed:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Ensure initialized
-   */
-  private async ensureInitialized(): Promise<void> {
-    if (this.initPromise) {
-      await this.initPromise
-    }
-  }
-
-  /**
    * Read a file from the virtual file system
    *
-   * For project files, returns bundler output;
+   * For entry files in buildable projects, reads from VFS which may transparently
+   * return compiled output (when VFS is a BuildAwareVfs).
    * For other files, returns raw content.
    */
   async readFile(path: string, _options?: ReadFileOptions): Promise<FileInfo> {
-    await this.ensureInitialized()
 
     // 1. Resolve path: sandbox's / corresponds to actual basePath
     const actualPath = this.resolveToActualPath(path)
@@ -215,122 +174,33 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
   }
 
   /**
-   * Read and bundle file
+   * Read entry file — delegates to VFS which transparently handles build output.
+   * When VFS is a BuildAwareVfs, this returns compiled JS from cache or compilation.
    */
   private async readBundledFile(actualPath: string): Promise<FileInfo> {
-    if (!this.config.projectConfig) {
-      throw new Error('[VfsServiceImpl] Invalid state for bundling')
-    }
-    console.log("[VfsServiceImpl] Reading bundled result for", actualPath)
+    console.log("[VfsServiceImpl] Reading entry file:", actualPath)
 
-    // Ensure bundler is initialized and watching is setup
-    if (!this.bundlerInitialized) {
-      await this.bundlerService.initialize()
-      this.bundlerInitialized = true
-      
-      // Setup file watching using the new watch API
-      // This will automatically track dependencies and trigger rebuilds
-      this.fileWatchUnsub = this.bundlerService.watch({
-        tsconfigPath: this.config.projectConfig.tsconfigPath,
-        onFileChange: (changedPath: string) => {
-          console.log(`[VfsServiceImpl #${this.instanceId}] File changed: ${changedPath}`)
-          // Trigger HMR update notification
-          this.config.hmrService.notifyUpdate({
-            type: 'update',
-            path: changedPath,
-            timestamp: Date.now()
-          })
-        },
-        onRebuild: (result) => {
-          console.log(`[VfsServiceImpl] Rebuild completed, success: ${result.success}`)
-          
-          if (!result.success) {
-            // Build failed: send error event via HMR
-            const allErrors = Array.from(result.outputs.values())
-              .flatMap(output => output.errors)
-            
-            console.log(`[VfsServiceImpl] Build failed, sending ${allErrors.length} error(s) via HMR:`, allErrors)
-            
-            this.config.hmrService.notifyUpdate({
-              type: 'error',
-              path: '__build__',
-              timestamp: Date.now(),
-              error: `Build failed with ${allErrors.length} error(s)`,
-              errors: allErrors
-            })
-            
-            console.log('[VfsServiceImpl] HMR error event sent')
-          }
-        }
-      })
-      
-      console.log('[VfsServiceImpl] Bundler initialized with file watching')
+    const file = await this.config.vfs.readFile(actualPath)
+
+    if (file.content === null || file.content === undefined) {
+      throw new Error(`No build output found for: ${actualPath}`)
     }
 
-    // If a build is in progress, wait for it using the bundler's API
-    if (this.bundlerService.isBuildInProgress()) {
-      console.log('[VfsServiceImpl] Build in progress, waiting...')
-      await this.bundlerService.waitForBuild()
+    // Convert to Uint8Array
+    let buffer: Uint8Array
+    if (file.content instanceof ArrayBuffer) {
+      buffer = new Uint8Array(file.content)
+    } else if (typeof file.content === 'string') {
+      buffer = new TextEncoder().encode(file.content)
+    } else {
+      buffer = file.content as Uint8Array
     }
-
-    // Try to get last build result first (API simplified - no projectRoot needed)
-    let result: ProjectBuildResult | null = this.bundlerService.getLastBuildOutput()
-
-    // If no cache, trigger build
-    if (!result) {
-      console.log('[VfsServiceImpl] No cached build, triggering build for:', this.config.projectConfig.tsconfigPath)
-      result = await this.bundlerService.build({
-        tsconfigPath: this.config.projectConfig.tsconfigPath,
-        options: {}
-      })
-    }
-
-    // Build failed - send error via HMR and throw
-    if (!result.success) {
-      console.error('[VfsServiceImpl] Build failed for:', actualPath)
-
-      // Collect all errors and send via HMR
-      const allErrors = Array.from(result.outputs.values()).flatMap(output => output.errors)
-      
-      console.log(`[VfsServiceImpl] Initial build failed, sending ${allErrors.length} error(s) via HMR:`, allErrors)
-      
-      this.config.hmrService.notifyUpdate({
-        type: 'error',
-        path: actualPath,
-        timestamp: Date.now(),
-        error: `Build failed with ${allErrors.length} error(s)`,
-        errors: allErrors
-      })
-      
-      console.log('[VfsServiceImpl] HMR error event sent for initial build failure')
-
-      throw new Error(`Build failed: ${allErrors.map(e => e.message).join('; ')}`)
-    }
-
-    // Find corresponding output from result
-    const output = result.outputs.get(actualPath)
-
-    if (!output || !output.code) {
-      // If no corresponding output found, return error
-      const html = createSimpleErrorPage(`No build output found for: ${actualPath}`)
-      const content = new TextEncoder().encode(html)
-
-      return {
-        path: actualPath,
-        content,
-        mimeType: 'text/html',
-        size: content.byteLength
-      }
-    }
-
-    // Return bundled code
-    const content = new TextEncoder().encode(output.code)
 
     return {
       path: actualPath,
-      content,
+      content: buffer,
       mimeType: 'application/javascript',
-      size: content.byteLength
+      size: buffer.byteLength
     }
   }
 
@@ -359,17 +229,33 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
     return {
       path: actualPath,
       content: buffer,
-      mimeType: getMimeType(actualPath),
+      mimeType: this.resolveRawFileMimeType(actualPath),
       size: buffer.byteLength
     }
+  }
+
+  /**
+   * Resolve the MIME type for a raw file.
+   * When projectConfig is null (no bundling, i.e., pre-built content),
+   * .ts/.tsx/.jsx files contain pre-built JavaScript but retain their
+   * original extension. Override to application/javascript so browsers
+   * accept them as module scripts.
+   */
+  private resolveRawFileMimeType(path: string): string {
+    const mimeType = getMimeType(path)
+    if (
+      !this.config.projectConfig?.isBuildable &&
+      (path.endsWith('.ts') || path.endsWith('.tsx') || path.endsWith('.jsx'))
+    ) {
+      return 'application/javascript'
+    }
+    return mimeType
   }
 
   /**
    * Check if a file or directory exists
    */
   async fileExists(path: string): Promise<FileExistsResult> {
-    await this.ensureInitialized()
-
     const actualPath = this.resolveToActualPath(path)
 
     console.log(`[VfsServiceImpl] fileExists: ${path} -> ${actualPath}`)
@@ -387,8 +273,6 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
    * List contents of a directory
    */
   async listDir(path: string): Promise<DirectoryEntry[]> {
-    await this.ensureInitialized()
-
     const actualPath = this.resolveToActualPath(path)
 
     console.log(`[VfsServiceImpl] listDir: ${path} -> ${actualPath}`)
@@ -418,9 +302,6 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
    * Cleanup resources
    */
   dispose(): void {
-    if (this.fileWatchUnsub) {
-      this.fileWatchUnsub()
-      this.fileWatchUnsub = null
-    }
+    // No-op: lifecycle is managed by BuildAwareVfs (if used)
   }
 }

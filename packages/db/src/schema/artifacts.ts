@@ -49,11 +49,14 @@ export const artifactVersions = sqliteTable(
     checksum: text('checksum', { length: 64 }),
     // 入口点：指定启动流图时的初始程序状态
     entrypoint: text('entrypoint', { mode: 'json' }).$type<ArtifactEntrypoint>(),
+    // 构建缓存 key（独立列，便于索引）— 逻辑外键指向 build_cache.cache_key
+    buildCacheKey: text('build_cache_key'),
   },
   (table) => [
     index('idx_artifact_versions_artifact').on(table.artifactId),
     index('idx_artifact_versions_version').on(table.artifactId, table.version),
     uniqueIndex('idx_artifact_versions_commit').on(table.artifactId, table.commitHash),
+    index('idx_artifact_versions_build_cache').on(table.buildCacheKey),
   ]
 );
 

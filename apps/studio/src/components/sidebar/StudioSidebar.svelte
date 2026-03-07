@@ -34,7 +34,7 @@
 		/** Last cloud commit hash for version lineage tracking */
 		lastCloudCommit?: string;
 		onFocusNode: (node: Node<FlowNodeData>) => void;
-		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
+		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
 		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 		onNewProject: () => void;
 		onExport: () => void;
@@ -47,6 +47,9 @@
 		onAcceptCloud?: () => void;
 		/** Called when user chooses to force push local state to cloud */
 		onForcePushLocal?: () => void;
+		// Build cache
+		selectedEntrypoint?: string | null;
+		onEntrypointChange?: (sandboxNodeId: string | null) => void;
 		// Copilot props
 		/** Whether copilot panel is open */
 		copilotOpen?: boolean;
@@ -76,6 +79,8 @@
 		onEnableSync,
 		onAcceptCloud,
 		onForcePushLocal,
+		selectedEntrypoint = null,
+		onEntrypointChange,
 		copilotOpen = false,
 		onCopilotToggle,
 		onNameChange
@@ -317,6 +322,8 @@
 					syncState={effectiveSyncState}
 					{onSync}
 					{onEnableSync}
+					{selectedEntrypoint}
+					{onEntrypointChange}
 				/>
 			{/if}
 		</div>

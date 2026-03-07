@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
-import { createDb, BatchContext, ArtifactService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput, type SearchArtifactsParams } from '@pubwiki/db';
+import { createDb, BatchContext, ArtifactService, BuildCacheService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput, type SearchArtifactsParams } from '@pubwiki/db';
 import type { ListArtifactsResponse, GetArtifactLineageResponse, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse, SearchArtifactsResponse } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
 import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody, UpdateArtifactMetadataBody, UpdateVersionMetadataBody, SearchArtifactsQueryParams } from '@pubwiki/api/validate';
@@ -172,10 +172,13 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   const edges = validateFormDataJson(c, formData, 'edges', CreateArtifactEdgesSchema);
   if (isValidationError(edges)) return edges;
 
-  // 收集 VFS 二进制文件: vfs[{filesHash}] 和 save 二进制文件: save[{quadsHash}]
+  // 收集 VFS 二进制文件: vfs[{filesHash}], save 二进制文件: save[{quadsHash}],
+  // build 缓存文件: build[{buildCacheKey}], build 元数据: buildMeta[{buildCacheKey}]
   // 使用 hash 作为 key 支持内容去重
   const vfsArchives = new Map<string, ArrayBuffer>();
   const saveArchives = new Map<string, ArrayBuffer>();
+  const buildArchives = new Map<string, ArrayBuffer>();
+  const buildFileHashes = new Map<string, Record<string, string>>();
   for (const [key, value] of formData.entries()) {
     if (value instanceof File) {
       const vfsMatch = key.match(/^vfs\[([^\]]+)\]$/);
@@ -200,6 +203,29 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
           return badRequest(c, `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`);
         }
         saveArchives.set(quadsHash, arrayBuffer);
+        continue;
+      }
+      const buildMatch = key.match(/^build\[([^\]]+)\]$/);
+      if (buildMatch) {
+        // buildCacheKey is the input-content-addressable key (NOT the archive hash)
+        const buildCacheKey = buildMatch[1];
+        const arrayBuffer = await value.arrayBuffer();
+        buildArchives.set(buildCacheKey, arrayBuffer);
+        continue;
+      }
+    }
+    // Parse build metadata (fileHashes) sent as JSON strings
+    if (typeof value === 'string') {
+      const buildMetaMatch = key.match(/^buildMeta\[([^\]]+)\]$/);
+      if (buildMetaMatch) {
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed && typeof parsed === 'object') {
+            buildFileHashes.set(buildMetaMatch[1], parsed as Record<string, string>);
+          }
+        } catch {
+          return badRequest(c, `Invalid buildMeta JSON for key ${buildMetaMatch[1]}`);
+        }
       }
     }
   }
@@ -273,6 +299,24 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     });
   }
 
+  // Upload build archives to R2 (releaseHash as key, output-content-addressable)
+  // and register in build_cache table
+  const buildCacheService = new BuildCacheService(createDb(c.env.DB));
+  for (const [buildCacheKey, archiveBuffer] of buildArchives.entries()) {
+    const releaseHash = await computeSha256Hex(archiveBuffer);
+    const fileHashes = buildFileHashes.get(buildCacheKey) ?? {};
+    // First-write-wins: register cacheKey -> releaseHash mapping.
+    // If the returned releaseHash differs from ours, another writer already
+    // registered this cacheKey — the archive is already in R2, skip upload.
+    const committed = await buildCacheService.put({ cacheKey: buildCacheKey, releaseHash, fileHashes });
+    if (committed.releaseHash === releaseHash) {
+      const r2Key = `builds/${releaseHash}`;
+      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+        httpMetadata: { contentType: 'application/gzip' },
+      });
+    }
+  }
+
   // Audit log
   const audit = createAuditLogger({ userId: user.id, ip: c.req.header('CF-Connecting-IP') });
   audit.create('artifact', artifactId);
@@ -304,6 +348,57 @@ artifactsRoute.get('/:artifactId/graph', resourceAccessMiddleware, async (c) => 
   }
 
   return c.json<GetArtifactGraphResponse>(result.data);
+});
+
+// GET: Download pre-built sandbox output archive (R2 proxy)
+artifactsRoute.get('/:artifactId/build', resourceAccessMiddleware, async (c) => {
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
+  const artifactId = c.req.param('artifactId');
+  const versionQuery = c.req.query('version');
+
+  if (!versionQuery) {
+    return badRequest(c, 'Missing required query parameter: version');
+  }
+
+  // Access control check
+  const accessError = await checkResourceAccess(c, { type: 'artifact', id: artifactId });
+  if (accessError) return accessError;
+
+  // Resolve version and get buildCacheKey from version record
+  const graphResult = await artifactService.getArtifactGraph(artifactId, versionQuery);
+  if (!graphResult.success) {
+    return serviceErrorResponse(c, graphResult.error);
+  }
+
+  const buildCacheKey = graphResult.data.version.buildCacheKey;
+  if (!buildCacheKey) {
+    return notFound(c, 'No build cache available for this version');
+  }
+
+  // Look up releaseHash from build_cache table
+  const buildCacheService = new BuildCacheService(createDb(c.env.DB));
+  const cacheEntry = await buildCacheService.get(buildCacheKey);
+  if (!cacheEntry) {
+    return notFound(c, 'Build cache metadata not found');
+  }
+
+  // Fetch build archive from R2 using releaseHash as key
+  const r2Key = `builds/${cacheEntry.releaseHash}`;
+  const object = await c.env.R2_BUCKET.get(r2Key);
+
+  if (!object) {
+    return notFound(c, 'Build archive not found in storage');
+  }
+
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'application/gzip',
+      'Content-Length': String(object.size),
+      // Content-addressed and immutable — safe to cache aggressively at edge
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  });
 });
 
 // DELETE: Delete artifact
@@ -357,10 +452,13 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
   const metadata = validateFormDataJson(c, formData, 'metadata', PatchArtifactMetadataSchema);
   if (isValidationError(metadata)) return metadata;
 
-  // 收集 VFS 二进制文件: vfs[{filesHash}] 和 save 二进制文件: save[{quadsHash}]
+  // 收集 VFS 二进制文件: vfs[{filesHash}], save 二进制文件: save[{quadsHash}],
+  // build 缓存文件: build[{buildCacheKey}], build 元数据: buildMeta[{buildCacheKey}]
   // 使用 hash 作为 key 支持内容去重
   const vfsArchives = new Map<string, ArrayBuffer>();
   const saveArchives = new Map<string, ArrayBuffer>();
+  const buildArchives = new Map<string, ArrayBuffer>();
+  const buildFileHashes = new Map<string, Record<string, string>>();
   for (const [key, value] of formData.entries()) {
     if (value instanceof File) {
       const vfsMatch = key.match(/^vfs\[([^\]]+)\]$/);
@@ -385,6 +483,29 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
           return badRequest(c, `Save quadsHash mismatch: expected ${quadsHash}, computed ${computedHash}`);
         }
         saveArchives.set(quadsHash, arrayBuffer);
+        continue;
+      }
+      const buildMatch = key.match(/^build\[([^\]]+)\]$/);
+      if (buildMatch) {
+        // buildCacheKey is the input-content-addressable key (NOT the archive hash)
+        const buildCacheKey = buildMatch[1];
+        const arrayBuffer = await value.arrayBuffer();
+        buildArchives.set(buildCacheKey, arrayBuffer);
+        continue;
+      }
+    }
+    // Parse build metadata (fileHashes) sent as JSON strings
+    if (typeof value === 'string') {
+      const buildMetaMatch = key.match(/^buildMeta\[([^\]]+)\]$/);
+      if (buildMetaMatch) {
+        try {
+          const parsed = JSON.parse(value);
+          if (parsed && typeof parsed === 'object') {
+            buildFileHashes.set(buildMetaMatch[1], parsed as Record<string, string>);
+          }
+        } catch {
+          return badRequest(c, `Invalid buildMeta JSON for key ${buildMetaMatch[1]}`);
+        }
       }
     }
   }
@@ -453,6 +574,24 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     await c.env.R2_BUCKET.put(homepageKey, homepageHtml, {
       httpMetadata: { contentType: 'text/html; charset=utf-8' },
     });
+  }
+
+  // Upload build archives to R2 (releaseHash as key, output-content-addressable)
+  // and register in build_cache table
+  const buildCacheService = new BuildCacheService(createDb(c.env.DB));
+  for (const [buildCacheKey, archiveBuffer] of buildArchives.entries()) {
+    const releaseHash = await computeSha256Hex(archiveBuffer);
+    const fileHashes = buildFileHashes.get(buildCacheKey) ?? {};
+    // First-write-wins: register cacheKey -> releaseHash mapping.
+    // If the returned releaseHash differs from ours, another writer already
+    // registered this cacheKey — the archive is already in R2, skip upload.
+    const committed = await buildCacheService.put({ cacheKey: buildCacheKey, releaseHash, fileHashes });
+    if (committed.releaseHash === releaseHash) {
+      const r2Key = `builds/${releaseHash}`;
+      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+        httpMetadata: { contentType: 'application/gzip' },
+      });
+    }
   }
 
   // Audit log

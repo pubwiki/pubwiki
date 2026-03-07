@@ -23,6 +23,9 @@ export class DependencyResolver {
   // File existence checker (injected from VFS adapter)
   private fileExistsChecker?: (path: string) => Promise<boolean>
 
+  // Progress callback for reporting package resolution
+  private progressCallback?: (message: string) => void
+
 
   constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean> }) {
     this.fileExistsChecker = options?.fileExistsChecker
@@ -54,6 +57,14 @@ export class DependencyResolver {
    */
   setFileExistsChecker(checker: (path: string) => Promise<boolean>): void {
     this.fileExistsChecker = checker
+  }
+
+  /**
+   * Set progress callback for reporting package resolution activity.
+   * Called when resolving uncached npm packages (the slow path).
+   */
+  setProgressCallback(callback: (message: string) => void): void {
+    this.progressCallback = callback
   }
 
   /**
@@ -199,6 +210,9 @@ export class DependencyResolver {
     if (cached) {
       return { path: cached, namespace: 'http' }
     }
+
+    // Notify progress — this is the slow path (uncached HEAD requests)
+    this.progressCallback?.(`Resolving ${packageName}`)
 
     // Try multiple CDNs
     for (const cdn of this.cdnConfigs) {

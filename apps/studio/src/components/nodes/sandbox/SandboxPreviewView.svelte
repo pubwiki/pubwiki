@@ -9,11 +9,15 @@
 	import { fade } from 'svelte/transition';
 	import type { SandboxConnection, ProjectConfig, ConsoleLogEntry } from '@pubwiki/sandbox-host';
 	import { createSandboxConnection } from '@pubwiki/sandbox-host';
+	import { createBuildAwareVfs, OpfsBuildCacheStorage } from '@pubwiki/bundler';
+	import { computeBuildCacheKey } from '@pubwiki/api';
+	import type { Vfs } from '@pubwiki/vfs';
 	import type { NodeVfs } from '$lib/vfs';
 	import type { LoaderNodeData } from '$lib/types';
+	import { computeVfsContentHash } from '$lib/io';
 	import { createLoaderServices } from '$lib/sandbox';
 	import { ConsoleLogStore, createLogSession, formatLogFile, downloadLogFile } from '$lib/sandbox/console-log-db';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import VirtualConsoleList from './VirtualConsoleList.svelte';
 	import * as Sentry from '@sentry/sveltekit';
 	import * as m from '$lib/paraglide/messages';
@@ -40,6 +44,10 @@
 		name: string;
 		loaderNodes?: LoaderNodeInfo[];
 		onClose: () => void;
+		/** Project ID for build cache key computation (enables L1 OPFS cache) */
+		projectId?: string;
+		/** Connected VFS node ID for build cache key computation */
+		vfsNodeId?: string;
 	}
 
 	let {
@@ -49,7 +57,9 @@
 		entryFile,
 		name,
 		loaderNodes = [],
-		onClose
+		onClose,
+		projectId,
+		vfsNodeId,
 	}: Props = $props();
 
 	// ============================================================================
@@ -100,8 +110,11 @@
 	let hasNewErrors = $state(false);
 	
 	// Build progress state
-	let isCompiling = $state(false);
-	let unsubscribeBuildProgress: (() => void) | null = null;
+	let compilingMessage = $state<string | null>(null);
+	let isCompiling = $derived(compilingMessage !== null);
+	
+	// BuildAwareVfs instance (manages build cache + compilation)
+	let buildAwareVfs: Vfs | null = null;
 	
 	// Window state
 	let isMinimized = $state(false);
@@ -134,7 +147,8 @@
 	const errorCount = $derived(logStore?.errorCount ?? 0);
 	const warnCount = $derived(logStore?.warnCount ?? 0);
 
-	const sandboxUrl = $derived(`${sandboxOrigin}/__sandbox.html`);
+	// Deferred: set AFTER createSandboxConnection to avoid missing SANDBOX_READY
+	let iframeSrc = $state<string | undefined>(undefined);
 
 	// ============================================================================
 	// Portal action
@@ -287,7 +301,7 @@
 
 			// Create a new log session for this sandbox instance
 			const sessionName = new Date().toISOString().slice(0, 19).replace('T', ' ');
-			const sessionId = await createLogSession(sessionName, $page.params.id ?? '');
+			const sessionId = await createLogSession(sessionName, page.params.id ?? '');
 			logStore = new ConsoleLogStore(sessionId);
 			consoleLogs = [];
 
@@ -295,37 +309,79 @@
 			const loaderNodeIds = loaderNodes.map(l => l.id);
 			const customServices = loaderNodeIds.length > 0 ? await createLoaderServices(loaderNodeIds) : undefined;
 
-			// Create sandbox connection - it will auto-initialize when sandbox sends SANDBOX_READY
+			// Compute buildCacheKey + contentHash so L1 (OPFS) cache is consulted
+			let buildCacheKeyValue: string | undefined;
+			let contentHashValue: string | undefined;
+			if (projectId && vfsNodeId) {
+				try {
+					const contentHash = await computeVfsContentHash(projectId, vfsNodeId);
+					contentHashValue = contentHash;
+					buildCacheKeyValue = await computeBuildCacheKey({
+						filesHash: contentHash,
+						entryFiles: projectConfig.entryFiles,
+					});
+				} catch (err) {
+					console.warn('[SandboxPreviewView] Failed to compute build cache key, L1 cache disabled:', err);
+				}
+			}
+
+			// Create BuildAwareVfs with OPFS cache + transparent compilation
+			const buildCacheStorage = new OpfsBuildCacheStorage();
+			buildAwareVfs = createBuildAwareVfs({
+				sourceVfs: vfs,
+				projectConfig,
+				buildCacheStorage,
+				buildCacheKey: buildCacheKeyValue,
+				filesHash: contentHashValue,
+				// HMR: on file change, trigger sandbox reload
+				onFileChange: (changedPath: string) => {
+					console.log(`[SandboxPreviewView] File changed: ${changedPath}`);
+					sandboxConnection?.reload();
+				},
+				// HMR: on rebuild failure, log errors
+				onRebuild: (result) => {
+					if (!result.success) {
+						const allErrors = Array.from(result.outputs.values())
+							.flatMap(output => output.errors);
+						console.error(`[SandboxPreviewView] Build failed with ${allErrors.length} error(s)`, allErrors);
+						// Trigger sandbox reload so it can display error page
+						sandboxConnection?.reload();
+					}
+				},
+				// Build progress indicator
+				onBuildProgress: (event) => {
+					if (event.type === 'start') {
+						compilingMessage = event.message || m.studio_sandbox_compiling_short();
+					} else if (event.type === 'progress') {
+						compilingMessage = event.message || compilingMessage;
+					} else if (event.type === 'complete') {
+						compilingMessage = null;
+					} else if (event.type === 'error') {
+						compilingMessage = null;
+					}
+				},
+			});
+
+			// Create sandbox connection with BuildAwareVfs (transparent build output)
 			sandboxConnection = createSandboxConnection({
 				iframe: iframeRef,
 				basePath: '/',
 				projectConfig,
 				targetOrigin: sandboxOrigin,
 				entryFile,
-				vfs,
+				vfs: buildAwareVfs,
 				customServices,
 				onLog: handleLog
 			});
+
+			// Set iframe src AFTER createSandboxConnection to avoid missing SANDBOX_READY message
+			iframeSrc = `${sandboxOrigin}/__sandbox.html`;
 
 			// Wait for sandbox to be ready and initialized
 			const success = await sandboxConnection.waitForReady();
 			
 			if (!success) {
 				throw new Error('Failed to initialize sandbox connection');
-			}
-			
-			// Subscribe to bundler build progress for compilation indicator
-			const bundler = sandboxConnection.getBundlerService();
-			console.log('[SandboxPreviewView] getBundlerService result:', bundler);
-			if (bundler) {
-				unsubscribeBuildProgress = bundler.onBuildProgress((event) => {
-					console.log('[SandboxPreviewView] Build progress event:', event.type, event);
-					if (event.type === 'start') {
-						isCompiling = true;
-					} else if (event.type === 'complete' || event.type === 'error') {
-						isCompiling = false;
-					}
-				});
 			}
 			
 			// handleLog callback already captured all logs during initialization,
@@ -345,10 +401,12 @@
 	}
 
 	function stopSandbox() {
-		// Unsubscribe from build progress
-		if (unsubscribeBuildProgress) {
-			unsubscribeBuildProgress();
-			unsubscribeBuildProgress = null;
+		// Dispose BuildAwareVfs (releases BundlerService, watch, event forwarding)
+		if (buildAwareVfs) {
+			buildAwareVfs.dispose().catch((err: unknown) => {
+				console.warn('[SandboxPreviewView] BuildAwareVfs dispose error:', err);
+			});
+			buildAwareVfs = null;
 		}
 		
 		// Flush remaining logs to IndexedDB
@@ -361,6 +419,7 @@
 			sandboxConnection.disconnect();
 			sandboxConnection = null;
 		}
+		iframeSrc = undefined;
 		console.log('[SandboxPreviewView] Sandbox stopped');
 	}
 
@@ -569,12 +628,12 @@
 							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
 						</svg>
 					{:else}
-						<span class="text-xs bg-white/20 px-2 py-0.5 rounded flex items-center gap-1">
-							<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
-								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-							</svg>
-							{m.studio_sandbox_compiling_short()}
+					<span class="text-xs bg-white/20 px-2 py-0.5 rounded flex items-center gap-1 max-w-48 truncate" title={compilingMessage ?? ''}>
+						<svg class="w-3 h-3 animate-spin shrink-0" fill="none" viewBox="0 0 24 24">
+							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+						</svg>
+						{compilingMessage || m.studio_sandbox_compiling_short()}
 						</span>
 					{/if}
 				{:else if isLoading && !isMinimized}
@@ -738,7 +797,7 @@
 			<!-- Sandbox iframe -->
 			<iframe
 				bind:this={iframeRef}
-				src={sandboxUrl}
+				src={iframeSrc}
 				class="absolute inset-0 w-full h-full border-0 {isLoading || error ? 'invisible' : 'visible'}"
 				sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
 				allow="clipboard-read; clipboard-write"

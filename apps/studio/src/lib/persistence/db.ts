@@ -161,6 +161,10 @@ export interface StoredProject {
   isPrivate?: boolean;
   /** Whether the artifact is unlisted (hidden from search) */
   isUnlisted?: boolean;
+
+  // ========== Build Cache ==========
+  /** Selected entrypoint sandbox node ID */
+  selectedEntrypoint?: string | null;
 }
 
 // ============================================================================

@@ -18,6 +18,7 @@
 	import { reportSaveState } from '$lib/persistence/save-tracker.svelte';
 	import { Toggle } from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
+	import EntrypointSection from './EntrypointSection.svelte';
 
 	interface Props {
 		nodes: Node<FlowNodeData>[];
@@ -28,16 +29,19 @@
 		isAuthenticated: boolean;
 		/** Last cloud commit hash for version lineage tracking */
 		lastCloudCommit?: string;
-		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[]) => Promise<void>;
+		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
 		/** Called when user edits the project name, for real-time sync with sidebar header */
 		onNameChange?: (name: string) => void;
 		// Cloud sync
 		syncState?: DraftSyncState;
 		onSync?: () => void;
 		onEnableSync?: () => void;
+		// Build cache
+		selectedEntrypoint?: string | null;
+		onEntrypointChange?: (sandboxNodeId: string | null) => void;
 	}
 
-	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onNameChange, syncState, onSync, onEnableSync }: Props = $props();
+	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onNameChange, syncState, onSync, onEnableSync, selectedEntrypoint = null, onEntrypointChange }: Props = $props();
 
 	// Cloud sync toggle handler
 	function handleSyncToggle(checked: boolean) {
@@ -59,7 +63,9 @@
 	let isPrivate = $state(false);
 	let version = $state('1.0.0');
 	let tagsInput = $state('');
-	let isSubmitting = $state(false);
+
+	// Build cache key resolved by EntrypointSection (avoids duplicate computation)
+	let resolvedBuildCacheKey = $state<string | null>(null);	let isSubmitting = $state(false);
 	let errorMessage = $state('');
 	let successMessage = $state('');
 	let loaded = $state(false);
@@ -240,7 +246,9 @@
 				parentCommit: lastCloudCommit ?? null
 			};
 
-			await onPublish(metadata, nodesToPublish, edgesToPublish);
+			// Use the buildCacheKey already resolved by EntrypointSection
+			// (avoids duplicating the entire contentHash → detectProject → computeBuildCacheKey pipeline)
+			await onPublish(metadata, nodesToPublish, edgesToPublish, resolvedBuildCacheKey ?? undefined);
 			successMessage = m.studio_published_success();
 		} catch (err) {
 			errorMessage = err instanceof Error ? err.message : m.studio_publish_failed();
@@ -425,6 +433,18 @@
 				</svg>
 				<span>{m.studio_login_required()}</span>
 			</div>
+		{/if}
+
+		<!-- Entrypoint Selection -->
+		{#if onEntrypointChange}
+			<EntrypointSection
+				{nodes}
+				{edges}
+				{projectId}
+				{selectedEntrypoint}
+				{onEntrypointChange}
+				onBuildCacheKeyChange={(key) => { resolvedBuildCacheKey = key; }}
+			/>
 		{/if}
 
 		<!-- Publish Button -->

@@ -16,9 +16,11 @@ import type { StudioNodeData, VFSNodeData } from '../types';
 import type { FlowNodeData } from '../types/flow';
 import { createApiClient } from '@pubwiki/api/client';
 import { type components, computeArtifactCommit, computeContentHash, computeNodeCommit, computeSha256Hex } from '@pubwiki/api';
+import type { BuildDataForPublish } from './build-output-serializer';
+import { loadBuildDataForPublish } from './build-output-serializer';
 import { API_BASE_URL } from '$lib/config';
-import { getNodeVfs } from '../vfs';
 import { nodeStore } from '../persistence';
+import { packageVfsAsTarGz } from './vfs-archive';
 
 // Create a singleton API client
 const apiClient = createApiClient(API_BASE_URL);
@@ -29,135 +31,8 @@ type ArtifactEdgeDescriptor = components['schemas']['ArtifactEdgeDescriptor'];
 type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 
 // ============================================================================
-// Simple TAR Implementation
+// Descriptor and FormData Creation
 // ============================================================================
-
-/**
- * Create a TAR header for a file
- * TAR uses 512-byte headers with ustar format
- */
-function createTarHeader(filename: string, size: number): Uint8Array {
-	const header = new Uint8Array(512);
-	const encoder = new TextEncoder();
-	
-	// Truncate filename to 100 chars (TAR limit)
-	const name = filename.slice(0, 100);
-	
-	// File name (0-99)
-	header.set(encoder.encode(name), 0);
-	
-	// File mode (100-107) - regular file with 644 permissions
-	header.set(encoder.encode('0000644\0'), 100);
-	
-	// UID (108-115) - 0
-	header.set(encoder.encode('0000000\0'), 108);
-	
-	// GID (116-123) - 0
-	header.set(encoder.encode('0000000\0'), 116);
-	
-	// File size in octal (124-135)
-	const sizeOctal = size.toString(8).padStart(11, '0') + ' ';
-	header.set(encoder.encode(sizeOctal), 124);
-	
-	// Modification time (136-147) - current time
-	const mtime = Math.floor(Date.now() / 1000).toString(8).padStart(11, '0') + ' ';
-	header.set(encoder.encode(mtime), 136);
-	
-	// Checksum placeholder (148-155) - filled with spaces for calculation
-	header.set(encoder.encode('        '), 148);
-	
-	// Type flag (156) - '0' for regular file
-	header[156] = 0x30; // '0'
-	
-	// Link name (157-256) - empty
-	
-	// Magic (257-262) - 'ustar\0'
-	header.set(encoder.encode('ustar\0'), 257);
-	
-	// Version (263-264) - '00'
-	header.set(encoder.encode('00'), 263);
-	
-	// Calculate checksum (sum of all bytes in header, treating checksum field as spaces)
-	let checksum = 0;
-	for (let i = 0; i < 512; i++) {
-		checksum += header[i];
-	}
-	const checksumStr = checksum.toString(8).padStart(6, '0') + '\0 ';
-	header.set(encoder.encode(checksumStr), 148);
-	
-	return header;
-}
-
-/**
- * Create a TAR archive from files
- */
-function createTar(files: { path: string; content: Uint8Array }[]): Uint8Array {
-	const chunks: Uint8Array[] = [];
-	
-	for (const file of files) {
-		// Create header
-		const header = createTarHeader(file.path, file.content.byteLength);
-		chunks.push(header);
-		
-		// Add file content
-		chunks.push(file.content);
-		
-		// Pad to 512-byte boundary
-		const padding = 512 - (file.content.byteLength % 512);
-		if (padding < 512) {
-			chunks.push(new Uint8Array(padding));
-		}
-	}
-	
-	// Add two empty blocks to mark end of archive
-	chunks.push(new Uint8Array(1024));
-	
-	// Concatenate all chunks
-	const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-	const result = new Uint8Array(totalLength);
-	let offset = 0;
-	for (const chunk of chunks) {
-		result.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	
-	return result;
-}
-
-/**
- * Compress data using gzip via CompressionStream API
- */
-async function gzipCompress(data: Uint8Array): Promise<Uint8Array> {
-	const stream = new CompressionStream('gzip');
-	const writer = stream.writable.getWriter();
-	// Create a new ArrayBuffer to avoid TypeScript type issues with SharedArrayBuffer
-	const buffer = new Uint8Array(data).buffer as ArrayBuffer;
-	writer.write(buffer);
-	writer.close();
-	
-	const chunks: Uint8Array[] = [];
-	const reader = stream.readable.getReader();
-	
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		chunks.push(value);
-	}
-	
-	const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-	const result = new Uint8Array(totalLength);
-	let offset = 0;
-	for (const chunk of chunks) {
-		result.set(chunk, offset);
-		offset += chunk.byteLength;
-	}
-	
-	return result;
-}
-
-/**
- * Metadata for publishing an artifact
- */
 export interface PublishMetadata {
 	/** Artifact ID - client-generated UUID, used for both create and update */
 	artifactId: string;
@@ -176,141 +51,17 @@ export interface PublishMetadata {
 	commitTags?: string[];
 	/** Parent commit hash for updates (null for initial publish) */
 	parentCommit?: string | null;
+	/** Optional entrypoint for sandbox launch */
+	entrypoint?: {
+		saveCommit: string;
+		sandboxNodeId: string;
+	};
 }
 
 /**
  * Node type for API - all studio node types are publishable
  */
 type ApiNodeType = components['schemas']['ArtifactNodeType'];
-
-/**
- * File info for VFS packaging
- */
-interface VfsFileInfo {
-	path: string;
-	content: Uint8Array;
-}
-
-/**
- * Collect all files with content from a VFS
- */
-async function collectVfsFiles(
-	projectId: string,
-	nodeId: string
-): Promise<VfsFileInfo[]> {
-	const vfs = await getNodeVfs(projectId, nodeId);
-	const files: VfsFileInfo[] = [];
-
-	async function collectRecursive(path: string): Promise<void> {
-		const items = await vfs.listFolder(path);
-		for (const item of items) {
-			if ('folderPath' in item) {
-				// It's a file - read its content
-				const file = await vfs.readFile(item.path);
-				if (file.content) {
-					const content = typeof file.content === 'string' 
-						? new TextEncoder().encode(file.content)
-						: new Uint8Array(file.content);
-					files.push({ path: item.path, content });
-				}
-			} else {
-				// It's a folder, recurse into it
-				await collectRecursive(item.path);
-			}
-		}
-	}
-
-	try {
-		await collectRecursive('/');
-	} catch {
-		// VFS might be empty or not initialized
-	}
-
-	return files;
-}
-
-/**
- * File info for VFS content in descriptor
- */
-interface VfsContentFileInfo {
-	path: string;
-	size: number;
-	mimeType?: string;
-}
-
-/**
- * Package VFS files as a tar.gz archive
- * Returns file info for descriptor content
- */
-async function packageVfsAsTarGz(
-	projectId: string,
-	nodeId: string
-): Promise<{ archive: Uint8Array; totalFiles: number; totalSize: number; files: VfsContentFileInfo[] }> {
-	const collectedFiles = await collectVfsFiles(projectId, nodeId);
-	
-	let totalSize = 0;
-	const tarFiles: { path: string; content: Uint8Array }[] = [];
-	const fileInfos: VfsContentFileInfo[] = [];
-	
-	for (const file of collectedFiles) {
-		// Remove leading slash for tar path
-		const tarPath = file.path.startsWith('/') ? file.path.slice(1) : file.path;
-		tarFiles.push({ path: tarPath, content: file.content });
-		totalSize += file.content.byteLength;
-		
-		// Build file info for descriptor content
-		fileInfos.push({
-			path: tarPath,
-			size: file.content.byteLength,
-			mimeType: guessMimeType(tarPath)
-		});
-	}
-	
-	const tarData = createTar(tarFiles);
-	const gzipped = await gzipCompress(tarData);
-	
-	return {
-		archive: gzipped,
-		totalFiles: collectedFiles.length,
-		totalSize,
-		files: fileInfos
-	};
-}
-
-/**
- * Guess MIME type from file extension
- */
-function guessMimeType(path: string): string {
-	const ext = path.split('.').pop()?.toLowerCase() ?? '';
-	const mimeTypes: Record<string, string> = {
-		'txt': 'text/plain',
-		'md': 'text/markdown',
-		'json': 'application/json',
-		'js': 'text/javascript',
-		'ts': 'text/typescript',
-		'html': 'text/html',
-		'css': 'text/css',
-		'xml': 'application/xml',
-		'yaml': 'text/yaml',
-		'yml': 'text/yaml',
-		'lua': 'text/x-lua',
-		'png': 'image/png',
-		'jpg': 'image/jpeg',
-		'jpeg': 'image/jpeg',
-		'gif': 'image/gif',
-		'svg': 'image/svg+xml',
-		'webp': 'image/webp',
-		'pdf': 'application/pdf',
-		'zip': 'application/zip',
-		'tar': 'application/x-tar',
-		'gz': 'application/gzip',
-	};
-	return mimeTypes[ext] ?? 'application/octet-stream';
-}
-
-// ============================================================================
-// Descriptor and FormData Creation
-// ============================================================================
 
 /**
  * Result of preparing nodes for publish
@@ -437,7 +188,8 @@ function validateStateNodes(): { valid: boolean; error?: string } {
 export async function publishArtifact(
 	metadata: PublishMetadata,
 	flowNodes: Node<FlowNodeData>[],
-	edges: Edge[]
+	edges: Edge[],
+	buildCacheKey?: string
 ): Promise<PublishResult> {
 	// Reconstruct full nodes with business data from nodeStore
 	let nodes: Node<StudioNodeData>[] = flowNodes
@@ -500,28 +252,43 @@ export async function publishArtifact(
 	);
 
 	try {
+		// Package build output archive from OPFS cache (lazy — not stored in memory)
+		let buildData: BuildDataForPublish | undefined;
+		if (buildCacheKey) {
+			const loaded = await loadBuildDataForPublish(buildCacheKey);
+			if (loaded) buildData = loaded;
+		}
+
+		// Build the API metadata with buildCacheKey as top-level field
+		const apiMetadata = {
+			artifactId: metadata.artifactId,
+			commit,
+			parentCommit: metadata.parentCommit ?? null,
+			name: metadata.name,
+			description: metadata.description || undefined,
+			isListed: metadata.isListed,
+			isPrivate: metadata.isPrivate,
+			version: metadata.version,
+			tags: metadata.tags.length > 0 ? metadata.tags : undefined,
+			commitTags: metadata.commitTags && metadata.commitTags.length > 0 ? metadata.commitTags : undefined,
+			entrypoint: metadata.entrypoint || undefined,
+			// buildCacheKey is now a top-level field (not inside entrypoint)
+			buildCacheKey: buildCacheKey,
+		};
+
 		// Use openapi-fetch with bodySerializer for multipart/form-data
 		// See: https://openapi-ts.dev/openapi-fetch/api#bodyserializer
 		const { data, error, response } = await apiClient.POST('/artifacts', {
 			body: {
-				metadata: {
-					artifactId: metadata.artifactId,
-					commit,
-					parentCommit: metadata.parentCommit ?? null,
-					name: metadata.name,
-					description: metadata.description || undefined,
-					isListed: metadata.isListed,
-					isPrivate: metadata.isPrivate,
-					version: metadata.version,
-					tags: metadata.tags.length > 0 ? metadata.tags : undefined,
-					commitTags: metadata.commitTags && metadata.commitTags.length > 0 ? metadata.commitTags : undefined
-				},
+				metadata: apiMetadata,
 				nodes: apiNodes,
 				edges: apiEdges,
 				// VFS archives will be added in bodySerializer
 				_vfsArchives: vfsArchives,
 				// Homepage markdown if provided
-				_homepage: metadata.homepage
+				_homepage: metadata.homepage,
+				// Pre-packaged build data from OPFS (if any)
+				_buildData: buildData
 			},
 			bodySerializer: (body) => {
 				const formData = new FormData();
@@ -538,6 +305,15 @@ export async function publishArtifact(
 				for (const [filesHash, archive] of archives.entries()) {
 					const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
 					formData.append(`vfs[${filesHash}]`, blob, `${filesHash}.tar.gz`);
+				}
+				
+				// Add build output archive + metadata if available
+				const bd = body._buildData as BuildDataForPublish | undefined;
+				if (bd) {
+					const blob = new Blob([bd.archive.buffer as ArrayBuffer], { type: 'application/gzip' });
+					formData.append(`build[${bd.buildCacheKey}]`, blob, `${bd.buildCacheKey}.tar.gz`);
+					// Send per-file hashes as JSON metadata for build_cache table
+					formData.append(`buildMeta[${bd.buildCacheKey}]`, JSON.stringify(bd.fileHashes));
 				}
 				
 				// Add homepage markdown if provided
@@ -753,7 +529,8 @@ export interface PatchResult {
 export async function patchArtifact(
 	metadata: PatchMetadata,
 	flowNodes: Node<FlowNodeData>[],
-	edges: Edge[]
+	edges: Edge[],
+	buildCacheKey?: string
 ): Promise<PatchResult> {
 	// Reconstruct full nodes with business data from nodeStore
 	const nodes: Node<StudioNodeData>[] = flowNodes
@@ -809,6 +586,8 @@ export async function patchArtifact(
 	if (metadata.version) patchMetadata.version = metadata.version;
 	if (metadata.changelog) patchMetadata.changelog = metadata.changelog;
 	if (metadata.commitTags) patchMetadata.commitTags = metadata.commitTags;
+	// Add buildCacheKey at top level if available
+	if (buildCacheKey) patchMetadata.buildCacheKey = buildCacheKey;
 
 	// Add graph changes if any
 	if (hasChanges) {
@@ -859,13 +638,22 @@ export async function patchArtifact(
 	}
 
 	try {
+		// Package build output archive from OPFS cache (lazy — not stored in memory)
+		let buildData: BuildDataForPublish | undefined;
+		if (buildCacheKey) {
+			const loaded = await loadBuildDataForPublish(buildCacheKey);
+			if (loaded) buildData = loaded;
+		}
+
 		// Use openapi-fetch with bodySerializer for multipart/form-data
 		// See: https://openapi-ts.dev/openapi-fetch/api#bodyserializer
 		const { error, response } = await apiClient.PATCH('/artifacts', {
 			body: {
 				metadata: patchMetadata,
 				// VFS archives will be added in bodySerializer
-				_vfsArchives: patchVfsArchives
+				_vfsArchives: patchVfsArchives,
+				// Pre-packaged build data from OPFS (if any)
+				_buildData: buildData
 			},
 			bodySerializer: (body) => {
 				const formData = new FormData();
@@ -878,6 +666,15 @@ export async function patchArtifact(
 				for (const [filesHash, archive] of archives.entries()) {
 					const blob = new Blob([new Uint8Array(archive).buffer as ArrayBuffer], { type: 'application/gzip' });
 					formData.append(`vfs[${filesHash}]`, blob, `${filesHash}.tar.gz`);
+				}
+
+				// Add build output archive + metadata if available
+				const bd = body._buildData as BuildDataForPublish | undefined;
+				if (bd) {
+					const blob = new Blob([bd.archive.buffer as ArrayBuffer], { type: 'application/gzip' });
+					formData.append(`build[${bd.buildCacheKey}]`, blob, `${bd.buildCacheKey}.tar.gz`);
+					// Send per-file hashes as JSON metadata for build_cache table
+					formData.append(`buildMeta[${bd.buildCacheKey}]`, JSON.stringify(bd.fileHashes));
 				}
 				
 				return formData;

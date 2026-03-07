@@ -72,7 +72,6 @@ export class BundlerService {
   constructor(options: BundlerOptions) {
     this.instanceId = ++instanceCounter
     console.log(`[BundlerService #${this.instanceId}] Created`)
-    console.trace(`[BundlerService #${this.instanceId}] Creation stack trace`)
     
     this.vfs = options.vfs
     this.cache = new BundleCache()
@@ -101,6 +100,14 @@ export class BundlerService {
 
       this.engine.setFileLoader(fileLoader)
       this.resolver.setFileExistsChecker(fileExistsChecker)
+
+      // Wire progress callbacks so resolver/engine activity is surfaced
+      this.resolver.setProgressCallback((message) => {
+        this.notifyProgress({ type: 'progress', path: '', message })
+      })
+      this.engine.setProgressCallback((message) => {
+        this.notifyProgress({ type: 'progress', path: '', message })
+      })
 
       // Initialize cache and engine
       await this.cache.init()

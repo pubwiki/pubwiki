@@ -64,8 +64,8 @@ export interface VfsRpcHost {
   id: string
   /** Check if host is connected */
   isConnected: boolean
-  /** Get the bundler service for reuse */
-  getBundlerService: () => BundlerService
+  /** Get the bundler service for reuse (null when BuildAwareVfs is used) */
+  getBundlerService: () => BundlerService | null
   /** Create a new MessagePort for SW reconnection, rebinding the service */
   createNewPort: () => MessagePort
   /** Disconnect and cleanup */

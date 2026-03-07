@@ -12,3 +12,6 @@ export { SaveService, type SaveDetail, type CreateRuntimeSaveParams, type ListSa
 
 // Access Control
 export * from './access-control';
+
+// Build Cache
+export { BuildCacheService, type BuildCacheMetadata } from './build-cache';

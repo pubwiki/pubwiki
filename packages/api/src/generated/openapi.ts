@@ -282,6 +282,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/artifacts/{artifactId}/build": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download pre-built sandbox output archive
+         * @description Returns the pre-built build output archive (tar.gz) for the specified version
+         *     of the artifact. Returns 404 if no build cache is available.
+         *     Content-addressed and immutable — safe to cache aggressively.
+         */
+        get: operations["getArtifactBuild"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/build-cache/{cacheKey}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get build cache metadata
+         * @description Returns metadata for a build cache entry, including the releaseHash (R2 storage key)
+         *     and fileHashes (per-file SHA-256 for integrity verification).
+         *     Used by consumers to: 1) get releaseHash for downloading the archive from R2,
+         *     2) get fileHashes for verifying local OPFS cache integrity.
+         */
+        get: operations["getBuildCacheMetadata"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/build-cache/{cacheKey}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download build cache archive
+         * @description Downloads the pre-built build output archive (tar.gz) for the given cache key.
+         *     Resolves the releaseHash internally and streams the archive from R2.
+         *     Content-addressed and immutable — safe to cache aggressively.
+         */
+        get: operations["getBuildCacheArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tags": {
         parameters: {
             query?: never;
@@ -927,6 +994,11 @@ export interface components {
             tags?: string[];
             /** @description 可选入口点，指定启动流图时的初始程序状态 */
             entrypoint?: components["schemas"]["ArtifactEntrypoint"];
+            /**
+             * @description Content-addressable key for pre-built sandbox output.
+             *     Set when build output archive is included in the publish request.
+             */
+            buildCacheKey?: string;
             /**
              * @description 用户可分配的版本标签列表（如 ["stable", "beta", "v1.0"]）。
              *     同一 artifact 内每个 tag 唯一，一个 commit 可以有多个 tag。
@@ -1858,6 +1930,8 @@ export interface components {
             commitTags?: string[];
             /** @description 可选入口点 */
             entrypoint?: components["schemas"]["ArtifactEntrypoint"];
+            /** @description Content-addressable key for pre-built sandbox output */
+            buildCacheKey?: string;
         };
         /**
          * @description 修改 artifact 的 metadata（不涉及 graph 结构变更）。
@@ -1904,6 +1978,19 @@ export interface components {
             commitTags?: string[];
             /** @description 入口点配置 */
             entrypoint?: components["schemas"]["ArtifactEntrypoint"];
+        };
+        BuildCacheMetadataResponse: {
+            /** @description buildCacheKey (SHA-256 of canonicalized build inputs) */
+            cacheKey: string;
+            /** @description SHA-256 of the tar.gz archive, also used as R2 storage key */
+            releaseHash: string;
+            /**
+             * @description Per-file SHA-256 hashes for integrity verification.
+             *     Keys are file paths (e.g. 'index.js'), values are hex-encoded SHA-256.
+             */
+            fileHashes: {
+                [key: string]: string;
+            };
         };
         /**
          * @description Tag 列表排序字段
@@ -2562,6 +2649,12 @@ export interface operations {
                             version: string;
                             /** @description 该版本的入口点（如有） */
                             entrypoint?: components["schemas"]["ArtifactEntrypoint"];
+                            /**
+                             * @description Content-addressable key for pre-built sandbox output.
+                             *     If present, consumers can fetch build cache via GET /build-cache/{cacheKey}.
+                             *     If absent, consumers fall back to local compilation.
+                             */
+                            buildCacheKey?: string;
                             /** Format: date-time */
                             createdAt: string;
                         };
@@ -2719,6 +2812,126 @@ export interface operations {
                 };
             };
             /** @description Artifact 或版本不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getArtifactBuild: {
+        parameters: {
+            query: {
+                /**
+                 * @description Version identifier: commitHash, commitTag, or 'latest'.
+                 *     Same semantics as GET /artifacts/{artifactId}/graph?version=.
+                 */
+                version: string;
+            };
+            header?: never;
+            path: {
+                /** @description Artifact ID */
+                artifactId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Build archive (tar.gz) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gzip": string;
+                };
+            };
+            /** @description Missing required query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权访问 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description No build cache available for this version */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getBuildCacheMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description buildCacheKey (SHA-256 of canonicalized build inputs) */
+                cacheKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Build cache metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildCacheMetadataResponse"];
+                };
+            };
+            /** @description No build cache found for this key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getBuildCacheArchive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description buildCacheKey (SHA-256 of canonicalized build inputs) */
+                cacheKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Build archive (tar.gz) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/gzip": string;
+                };
+            };
+            /** @description No build cache or archive found */
             404: {
                 headers: {
                     [name: string]: unknown;

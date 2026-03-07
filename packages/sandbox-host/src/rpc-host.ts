@@ -64,7 +64,6 @@ export function createVfsRpcHost(
   const vfsServiceConfig: VfsServiceConfig = {
     basePath: config.basePath,
     projectConfig: config.projectConfig,
-    hmrService: config.hmrService,
     vfs: config.vfs
   }
 
@@ -81,7 +80,8 @@ export function createVfsRpcHost(
       return connected
     },
     getBundlerService() {
-      return vfsService.getBundlerService()
+      // BundlerService is now managed by BuildAwareVfs, not VfsServiceImpl
+      return null
     },
     createNewPort() {
       // Create new channel

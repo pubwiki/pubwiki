@@ -6,7 +6,6 @@ export {
   convertArtifactToStudioGraph,
   importArtifactToNewProject,
   addArtifactToProject,
-  type ImportArtifactOptions,
   type ImportProgressCallback
 } from './import';
 
@@ -15,19 +14,14 @@ export {
   patchArtifact,
   type PublishMetadata,
   type PatchMetadata,
-  type PublishResult,
-  type PatchResult
 } from './publish';
 
 // Local file import/export
-export {
-  exportProjectToZip,
-  type ExportManifest,
-  type ExportedNodeData
-} from './export-local';
+export { exportProjectToZip } from './export-local';
+export { importProjectFromZip } from './import-local';
 
-export {
-  importProjectFromZip,
-  importFromZipFile,
-  type ImportResult
-} from './import-local';
+// Build output
+export { runBuild } from './build-runner';
+
+// Lightweight VFS content hash (local build cache: git walk based)
+export { computeVfsContentHash } from './vfs-content-hash';

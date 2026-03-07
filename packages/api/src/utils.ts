@@ -143,3 +143,52 @@ export async function computeArtifactCommit(
   return sha256Hex(payload);
 }
 
+// ─── Build Cache Key ────────────────────────────────────────────────
+
+/**
+ * Compute a build cache key from VFS filesHash and build configuration.
+ *
+ * Uses RFC 8785 JCS (via `canonicalize`) for deterministic serialization,
+ * consistent with all other hash functions in this module.
+ *
+ * The key is deterministic: same source + same config = same key.
+ * This enables content-addressable deduplication across artifacts sharing VFS.
+ *
+ * @param params.filesHash    - SHA-256 hex of the VFS archive.
+ * @param params.entryFiles   - Entry file paths (will be sorted internally).
+ * @param params.buildTarget  - esbuild target (default: 'es2020').
+ * @param params.jsx          - JSX transform mode (default: 'automatic').
+ * @param params.jsxImportSource - JSX import source (default: 'react').
+ * @param params.minify       - Whether to minify output (default: false).
+ * @returns 64-char hex string (full SHA-256).
+ *
+ * **Stability contract**: The default values below are baked into the cache
+ * key, so they MUST stay in sync with `BundlerService.build()` defaults.
+ * If either side changes a default without the other, the same source code
+ * will produce a different cacheKey and miss the existing cache.
+ *
+ * **Default divergence risk**: `computeBuildCacheKey` defaults
+ * (target: 'es2020', jsx: 'automatic', jsxImportSource: 'react', minify: false)
+ * are duplicated literals — not imported from a shared config.
+ * If `BundlerService` changes its build defaults, this function must be
+ * updated in lockstep or cache hits will silently break.
+ */
+export async function computeBuildCacheKey(params: {
+  filesHash: string;
+  entryFiles: string[];
+  buildTarget?: string;
+  jsx?: string;
+  jsxImportSource?: string;
+  minify?: boolean;
+}): Promise<string> {
+  const normalized = {
+    filesHash: params.filesHash,
+    entryFiles: [...params.entryFiles].sort(),
+    target: params.buildTarget ?? 'es2020',
+    jsx: params.jsx ?? 'automatic',
+    jsxImportSource: params.jsxImportSource ?? 'react',
+    minify: params.minify ?? false,
+  };
+  const payload = canonicalize(normalized);
+  return sha256Hex(payload);
+}

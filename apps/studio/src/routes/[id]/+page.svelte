@@ -151,6 +151,9 @@
 	
 	// Copilot panel state (controlled from sidebar button)
 	let copilotCollapsed = $state(true);
+
+	// Build cache state
+	let selectedEntrypoint = $state<string | null>(null);
 	
 	// Draft Sync Service
 	let syncService = $state<DraftSyncService | null>(null);
@@ -366,7 +369,7 @@
 		
 		onRestore,
 		
-		getPreviewState: (nodeId) => previewCtrl?.getPreviewState(nodeId) ?? null
+		getPreviewState: (nodeId) => previewCtrl?.getPreviewState(nodeId) ?? null,
 	};
 	
 	setStudioContext(studioContext);
@@ -982,6 +985,7 @@
 					projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
 					isDraft = localProject?.isDraft ?? true;
 					lastCloudCommit = localProject?.lastCloudCommit;
+					selectedEntrypoint = localProject?.selectedEntrypoint ?? null;
 					
 					// Create local project record if not exists
 					if (!localProject) {
@@ -1280,7 +1284,8 @@
 	async function handlePublish(
 		metadata: PublishMetadata,
 		nodesToPublish: Node<FlowNodeData>[],
-		edgesToPublish: Edge[]
+		edgesToPublish: Edge[],
+		buildCacheKey?: string
 	) {
 		let newCommit: string | undefined;
 
@@ -1294,14 +1299,14 @@
 				commitTags: ['draft-latest']
 			};
 
-			const patchResult = await patchArtifact(patchMetadata, nodesToPublish, edgesToPublish);
+			const patchResult = await patchArtifact(patchMetadata, nodesToPublish, edgesToPublish, buildCacheKey);
 			
 			if (patchResult.success) {
 				newCommit = patchResult.newCommit;
 			} else {
 				// Fall back to full publish if patch fails
 				console.warn('[Studio] PATCH failed, falling back to full publish:', patchResult.error);
-				const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish);
+				const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, buildCacheKey);
 				if (!result.success) {
 					throw new Error(result.error || 'Failed to publish');
 				}
@@ -1309,7 +1314,7 @@
 			}
 		} else {
 			// Full publish for new artifacts or first-time publish
-			const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish);
+			const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, buildCacheKey);
 			if (!result.success) {
 				throw new Error(result.error || 'Failed to publish');
 			}
@@ -1322,11 +1327,13 @@
 		await saveEdges(edges, currentProjectId);
 		
 		// Update project metadata with lastCloudCommit for future incremental updates
+		const existingProject = await getProject(currentProjectId);
 		await saveProject({
+			...existingProject,
 			id: currentProjectId,
 			name: metadata.name,
 			artifactId: metadata.artifactId,
-			createdAt: Date.now(),
+			createdAt: existingProject?.createdAt ?? Date.now(),
 			updatedAt: Date.now(),
 			isDraft: false,
 			lastCloudCommit: newCommit
@@ -1526,6 +1533,14 @@
 		onEnableSync={handleEnableSync}
 		onAcceptCloud={handleAcceptCloud}
 		onForcePushLocal={handleForcePushLocal}
+		{selectedEntrypoint}
+		onEntrypointChange={async (id) => {
+			selectedEntrypoint = id;
+			const project = await getProject(currentProjectId);
+			if (project) {
+				await saveProject({ ...project, selectedEntrypoint: id, updatedAt: Date.now() });
+			}
+		}}
 		copilotOpen={!copilotCollapsed}
 		onCopilotToggle={() => copilotCollapsed = !copilotCollapsed}
 		onNameChange={async (name) => {

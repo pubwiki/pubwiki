@@ -407,7 +407,7 @@ describe('Artifacts API', () => {
       const hasContent = content !== undefined;
       let nodes: Array<Record<string, unknown>> = [];
       if (hasContent) {
-        const nodeContent = { type: 'PROMPT' as const, blocks: [] as unknown[] };
+        const nodeContent = { type: 'PROMPT' as const, blocks: [] as { type: 'TextBlock'; value: string }[] };
         const contentHash = await computeContentHash(nodeContent);
         const nodeCommit = await computeNodeCommit(nodeId, null, contentHash, 'PROMPT');
         nodes = [{
@@ -451,7 +451,7 @@ describe('Artifacts API', () => {
       if (hasContent) {
         const nodeContent = { 
           type: 'GENERATED' as const, 
-          blocks: [] as unknown[],
+          blocks: [] as { id: string; type: 'text'; content: string }[],
           inputRef: { id: crypto.randomUUID(), commit: 'dummy-input-commit' },
         };
         const contentHash = await computeContentHash(nodeContent);
@@ -518,7 +518,7 @@ describe('Artifacts API', () => {
           content = { type: nodeType, ...content };
         }
         
-        const contentHash = await computeContentHash(content);
+        const contentHash = await computeContentHash(content as Parameters<typeof computeContentHash>[0]);
         const nodeCommit = await computeNodeCommit(n.id, null, contentHash, nodeType);
         
         return {

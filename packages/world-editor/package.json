@@ -1,0 +1,24 @@
+{
+  "name": "@pubwiki/world-editor",
+  "version": "0.0.1",
+  "type": "module",
+  "svelte": "./src/lib/index.ts",
+  "types": "./src/lib/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/lib/index.ts",
+      "svelte": "./src/lib/index.ts",
+      "import": "./src/lib/index.ts"
+    },
+    "./types": {
+      "types": "./src/lib/types/index.ts",
+      "import": "./src/lib/types/index.ts"
+    }
+  },
+  "peerDependencies": {
+    "svelte": "catalog:"
+  },
+  "devDependencies": {
+    "svelte": "catalog:"
+  }
+}

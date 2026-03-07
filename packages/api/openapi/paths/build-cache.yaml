@@ -1,0 +1,65 @@
+# Build Cache API paths
+
+/build-cache/{cacheKey}:
+  get:
+    operationId: getBuildCacheMetadata
+    summary: Get build cache metadata
+    description: |
+      Returns metadata for a build cache entry, including the releaseHash (R2 storage key)
+      and fileHashes (per-file SHA-256 for integrity verification).
+      Used by consumers to: 1) get releaseHash for downloading the archive from R2,
+      2) get fileHashes for verifying local OPFS cache integrity.
+    tags:
+      - BuildCache
+    parameters:
+      - name: cacheKey
+        in: path
+        required: true
+        schema:
+          type: string
+        description: buildCacheKey (SHA-256 of canonicalized build inputs)
+    responses:
+      '200':
+        description: Build cache metadata
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/build-cache.yaml#/BuildCacheMetadataResponse'
+      '404':
+        description: No build cache found for this key
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/build-cache/{cacheKey}/archive:
+  get:
+    operationId: getBuildCacheArchive
+    summary: Download build cache archive
+    description: |
+      Downloads the pre-built build output archive (tar.gz) for the given cache key.
+      Resolves the releaseHash internally and streams the archive from R2.
+      Content-addressed and immutable — safe to cache aggressively.
+    tags:
+      - BuildCache
+    parameters:
+      - name: cacheKey
+        in: path
+        required: true
+        schema:
+          type: string
+        description: buildCacheKey (SHA-256 of canonicalized build inputs)
+    responses:
+      '200':
+        description: Build archive (tar.gz)
+        content:
+          application/gzip:
+            schema:
+              type: string
+              format: binary
+      '404':
+        description: No build cache or archive found
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

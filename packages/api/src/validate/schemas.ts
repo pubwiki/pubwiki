@@ -365,6 +365,7 @@ export const CreateArtifactBody = zod.object({
   "saveCommit": zod.string().describe('Save 的 commit hash，指定启动时加载的存档'),
   "sandboxNodeId": zod.uuid().describe('沙箱节点 ID')
 }).optional(),
+  "buildCacheKey": zod.string().optional().describe('Content-addressable key for pre-built sandbox output.\nSet when build output archive is included in the publish request.\n'),
   "commitTags": zod.array(zod.string()).optional().describe('用户可分配的版本标签列表（如 [\"stable\", \"beta\", \"v1.0\"]）。\n同一 artifact 内每个 tag 唯一，一个 commit 可以有多个 tag。\n如果某个 tag 已被其他 commit 使用，则自动从旧 commit 上移除（override 语义）。\n')
 }),
   "nodes": zod.array(zod.object({
@@ -658,7 +659,8 @@ export const PatchArtifactBody = zod.object({
   "entrypoint": zod.object({
   "saveCommit": zod.string().describe('Save 的 commit hash，指定启动时加载的存档'),
   "sandboxNodeId": zod.uuid().describe('沙箱节点 ID')
-}).optional()
+}).optional(),
+  "buildCacheKey": zod.string().optional().describe('Content-addressable key for pre-built sandbox output')
 }).describe('基于已有的 commit 和增量补丁创建新的 artifact 版本（仅 graph 变更）。\n客户端提交 baseCommit（基准版本）和需要变更的 nodes\/edges，\n服务端将基准版本的完整 graph 与 patch 合并后创建新版本。\n'),
   "homepage": zod.instanceof(File).optional().describe('可选的主页 Markdown 文件')
 })
@@ -992,6 +994,7 @@ export const GetArtifactGraphResponse = zod.object({
   "saveCommit": zod.string().describe('Save 的 commit hash，指定启动时加载的存档'),
   "sandboxNodeId": zod.uuid().describe('沙箱节点 ID')
 }).nullish(),
+  "buildCacheKey": zod.string().optional().describe('Content-addressable key for pre-built sandbox output.\nIf present, consumers can fetch build cache via GET \/build-cache\/{cacheKey}.\nIf absent, consumers fall back to local compilation.\n'),
   "createdAt": zod.iso.datetime({})
 })
 })
@@ -1072,6 +1075,53 @@ export const UpdateVersionMetadataResponse = zod.object({
   "publishedAt": zod.iso.datetime({}).nullish(),
   "createdAt": zod.iso.datetime({})
 })
+})
+
+
+/**
+ * Returns the pre-built build output archive (tar.gz) for the specified version
+of the artifact. Returns 404 if no build cache is available.
+Content-addressed and immutable — safe to cache aggressively.
+
+ * @summary Download pre-built sandbox output archive
+ */
+export const GetArtifactBuildParams = zod.object({
+  "artifactId": zod.uuid().describe('Artifact ID')
+})
+
+export const GetArtifactBuildQueryParams = zod.object({
+  "version": zod.string().describe('Version identifier: commitHash, commitTag, or \'latest\'.\nSame semantics as GET \/artifacts\/{artifactId}\/graph?version=.\n')
+})
+
+
+/**
+ * Returns metadata for a build cache entry, including the releaseHash (R2 storage key)
+and fileHashes (per-file SHA-256 for integrity verification).
+Used by consumers to: 1) get releaseHash for downloading the archive from R2,
+2) get fileHashes for verifying local OPFS cache integrity.
+
+ * @summary Get build cache metadata
+ */
+export const GetBuildCacheMetadataParams = zod.object({
+  "cacheKey": zod.string().describe('buildCacheKey (SHA-256 of canonicalized build inputs)')
+})
+
+export const GetBuildCacheMetadataResponse = zod.object({
+  "cacheKey": zod.string().describe('buildCacheKey (SHA-256 of canonicalized build inputs)'),
+  "releaseHash": zod.string().describe('SHA-256 of the tar.gz archive, also used as R2 storage key'),
+  "fileHashes": zod.record(zod.string(), zod.string()).describe('Per-file SHA-256 hashes for integrity verification.\nKeys are file paths (e.g. \'index.js\'), values are hex-encoded SHA-256.\n')
+})
+
+
+/**
+ * Downloads the pre-built build output archive (tar.gz) for the given cache key.
+Resolves the releaseHash internally and streams the archive from R2.
+Content-addressed and immutable — safe to cache aggressively.
+
+ * @summary Download build cache archive
+ */
+export const GetBuildCacheArchiveParams = zod.object({
+  "cacheKey": zod.string().describe('buildCacheKey (SHA-256 of canonicalized build inputs)')
 })
 
 

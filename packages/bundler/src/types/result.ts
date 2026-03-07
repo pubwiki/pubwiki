@@ -54,3 +54,14 @@ export interface ProjectBuildResult {
   /** 所有依赖文件的路径（用于监听） */
   dependencies: string[]
 }
+
+/**
+ * Manifest structure included in build archives and OPFS cache.
+ * Maps entry file paths to their output filenames.
+ */
+export interface BuildManifest {
+  version: number
+  buildCacheKey: string
+  filesHash: string
+  entries: Record<string, { jsPath: string; cssPath?: string }>
+}

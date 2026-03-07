@@ -571,6 +571,12 @@
                       $ref: '../schemas/artifact.yaml#/ArtifactEntrypoint'
                       nullable: true
                       description: 该版本的入口点（如有）
+                    buildCacheKey:
+                      type: string
+                      description: |
+                        Content-addressable key for pre-built sandbox output.
+                        If present, consumers can fetch build cache via GET /build-cache/{cacheKey}.
+                        If absent, consumers fall back to local compilation.
                     createdAt:
                       type: string
                       format: date-time
@@ -722,6 +728,59 @@
               $ref: '../schemas/common.yaml#/ApiError'
       '404':
         description: Artifact 或版本不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/artifacts/{artifactId}/build:
+  get:
+    summary: Download pre-built sandbox output archive
+    description: |
+      Returns the pre-built build output archive (tar.gz) for the specified version
+      of the artifact. Returns 404 if no build cache is available.
+      Content-addressed and immutable — safe to cache aggressively.
+    operationId: getArtifactBuild
+    tags:
+      - Artifacts
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        description: Artifact ID
+        schema:
+          type: string
+          format: uuid
+      - name: version
+        in: query
+        required: true
+        description: |
+          Version identifier: commitHash, commitTag, or 'latest'.
+          Same semantics as GET /artifacts/{artifactId}/graph?version=.
+        schema:
+          type: string
+    responses:
+      '200':
+        description: Build archive (tar.gz)
+        content:
+          application/gzip:
+            schema:
+              type: string
+              format: binary
+      '400':
+        description: Missing required query parameter
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '403':
+        description: 无权访问
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: No build cache available for this version
         content:
           application/json:
             schema:

@@ -25,3 +25,6 @@ export * from './article-refs';
 // ACL - New access control model
 export * from './discovery-control';
 export * from './acl';
+
+// Build cache
+export * from './build-cache';

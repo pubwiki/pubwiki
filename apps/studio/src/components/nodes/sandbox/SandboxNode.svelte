@@ -335,6 +335,8 @@
 		name={nodeData.name}
 		loaderNodes={connectedLoaderNodes}
 		onClose={closePreview}
+		projectId={connectedVfsNode?.content.projectId}
+		vfsNodeId={connectedVfsNodeId ?? undefined}
 	/>
 {/if}
 
