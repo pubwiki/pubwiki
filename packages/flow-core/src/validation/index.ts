@@ -54,6 +54,16 @@ function validateConnections(graph: ImmutableGraph): GraphValidationResult {
 }
 
 /**
+ * Options for graph validation beyond structural checks
+ */
+export interface ValidateGraphOptions {
+  /** Entrypoint configuration (optional) */
+  entrypoint?: EntrypointConfig;
+  /** Build cache key — required when entrypoint is present */
+  buildCacheKey?: string;
+}
+
+/**
  * Validate an artifact graph
  * 
  * Runs all validations in order:
@@ -61,14 +71,15 @@ function validateConnections(graph: ImmutableGraph): GraphValidationResult {
  * 2. Connection validation (handle compatibility, cardinality)
  * 3. SAVE node validation (STATE references, connectivity)
  * 4. Entrypoint validation (if provided)
+ * 5. Build cache requirement (entrypoint requires buildCacheKey)
  * 
  * @param graph - Graph to validate
- * @param entrypoint - Optional entrypoint configuration
+ * @param options - Optional validation options (entrypoint, buildCacheKey)
  * @returns Validation result
  */
 export function validateGraph(
   graph: ImmutableGraph,
-  entrypoint?: EntrypointConfig,
+  options?: ValidateGraphOptions,
 ): GraphValidationResult {
   // Validate basic structure first
   const structureResult = validateStructure(graph);
@@ -83,8 +94,19 @@ export function validateGraph(
   if (!saveResult.success) return saveResult;
 
   // Validate entrypoint
-  const entrypointResult = validateEntrypoint(graph, entrypoint);
+  const entrypointResult = validateEntrypoint(graph, options?.entrypoint);
   if (!entrypointResult.success) return entrypointResult;
+
+  // Entrypoint requires build cache
+  if (options?.entrypoint && !options.buildCacheKey) {
+    return {
+      success: false,
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'buildCacheKey is required when entrypoint is specified. Please build the entrypoint before publishing.',
+      },
+    };
+  }
 
   return { success: true, data: undefined };
 }

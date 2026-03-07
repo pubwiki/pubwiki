@@ -121,7 +121,7 @@ describe('validateGraph - Complete valid scenarios', () => {
       saveCommit,
       sandboxNodeId: 'sandbox1',
     }
-    const result = validateGraph(graph, entrypoint)
+    const result = validateGraph(graph, { entrypoint, buildCacheKey: 'test-build-key' })
     expect(result.success).toBe(true)
   })
 
@@ -161,7 +161,7 @@ describe('validateGraph - Complete valid scenarios', () => {
       saveCommit: saveCommit1,
       sandboxNodeId: 'sandbox1',
     }
-    const result = validateGraph(graph, entrypoint)
+    const result = validateGraph(graph, { entrypoint, buildCacheKey: 'test-build-key' })
     expect(result.success).toBe(true)
   })
 })
@@ -231,7 +231,7 @@ describe('validateGraph - Validation order', () => {
       saveCommit: 'save-v1',
       sandboxNodeId: 'sandbox1',
     }
-    const result = validateGraph(graph, entrypoint)
+    const result = validateGraph(graph, { entrypoint, buildCacheKey: 'test-build-key' })
     
     expect(result.success).toBe(false)
     expect(result.error?.message).toContain('missing-state')
@@ -378,7 +378,7 @@ describe('validateGraph - Entrypoint validation', () => {
       saveCommit,
       sandboxNodeId: 'nonexistent',
     }
-    const result = validateGraph(graph, entrypoint)
+    const result = validateGraph(graph, { entrypoint, buildCacheKey: 'test-build-key' })
     
     expect(result.success).toBe(false)
     expect(result.error?.message).toContain('nonexistent')
@@ -402,7 +402,7 @@ describe('validateGraph - Entrypoint validation', () => {
       saveCommit: 'wrong-save',
       sandboxNodeId: 'sandbox1',
     }
-    const result = validateGraph(graph, entrypoint)
+    const result = validateGraph(graph, { entrypoint, buildCacheKey: 'test-build-key' })
     
     expect(result.success).toBe(false)
     expect(result.error?.message).toContain('wrong-save')
@@ -423,6 +423,54 @@ describe('validateGraph - Entrypoint validation', () => {
     const graph = ImmutableGraph.fromArrays(nodes, edges)
     
     const result = validateGraph(graph, undefined)
+    expect(result.success).toBe(true)
+  })
+})
+
+// ============================================================================
+// Build Cache Requirement Tests
+// ============================================================================
+
+describe('validateGraph - Build cache requirement', () => {
+  function createValidEntrypointGraph() {
+    const stateCommit = 'state-v1'
+    const saveCommit = 'save-v1'
+    const nodes = [
+      createStateNode('state1', stateCommit),
+      createSaveNode('save1', 'state1', stateCommit, saveCommit),
+      createLoaderNode('loader1'),
+      createSandboxNode('sandbox1'),
+    ]
+    const edges = [
+      createEdge('state1', 'loader1'),
+      createEdge('loader1', 'sandbox1'),
+    ]
+    return {
+      graph: ImmutableGraph.fromArrays(nodes, edges),
+      entrypoint: { saveCommit, sandboxNodeId: 'sandbox1' } as EntrypointConfig,
+    }
+  }
+
+  it('should reject entrypoint without buildCacheKey', () => {
+    const { graph, entrypoint } = createValidEntrypointGraph()
+    const result = validateGraph(graph, { entrypoint })
+
+    expect(result.success).toBe(false)
+    expect(result.error?.code).toBe('BAD_REQUEST')
+    expect(result.error?.message).toContain('buildCacheKey')
+  })
+
+  it('should accept entrypoint with buildCacheKey', () => {
+    const { graph, entrypoint } = createValidEntrypointGraph()
+    const result = validateGraph(graph, { entrypoint, buildCacheKey: 'abc123' })
+
+    expect(result.success).toBe(true)
+  })
+
+  it('should accept no entrypoint without buildCacheKey', () => {
+    const { graph } = createValidEntrypointGraph()
+    const result = validateGraph(graph)
+
     expect(result.success).toBe(true)
   })
 })
@@ -509,7 +557,7 @@ describe('validateGraph - Edge cases', () => {
       sandboxNodeId: 'sandbox1',
     }
     
-    const result = validateGraph(graph, entrypoint)
+    const result = validateGraph(graph, { entrypoint, buildCacheKey: 'test-build-key' })
     expect(result.success).toBe(true)
   })
 })

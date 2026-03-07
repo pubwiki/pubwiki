@@ -7,14 +7,10 @@
 	 *
 	 * Build status is derived from:
 	 *   - Local transient state: building / error (component-scoped $state)
-	 *   - OPFS cache:  checked on mount, after builds, and when
-	 *     writeVersion changes.  OpfsBuildCacheStorage is the source
-	 *     of truth for whether a valid build exists.
-	 *
-	 * Stale detection uses NodeVfs.writeVersion — a monotonic counter
-	 * bumped on every file event.  After a successful OPFS check (or
-	 * build), we record the writeVersion.  If the live value differs
-	 * later, we mark the build as stale.
+	 *   - OPFS cache: checked on mount and after builds.
+	 *   - Stale detection: listens to VFS file events directly.
+	 *     After a successful OPFS check (or build), we clear the stale
+	 *     flag. Any subsequent file event sets it back to true.
 	 */
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
@@ -84,26 +80,30 @@
 		return null;
 	});
 
-	// ---- VFS writeVersion for stale detection ----
-	// Two-phase reactive pattern:
-	//   1. $effect resolves the NodeVfs instance (async) → stored in $state
-	//   2. $derived reads .writeVersion from the instance (reactive — writeVersion is $state)
-	let nodeVfs: { writeVersion: number } | null = $state(null);
+	// ---- Stale detection via VFS events ----
+	// When we have a valid build cache, any file event marks the build as stale.
+	let buildStale = $state(false);
 	$effect(() => {
 		const vfsId = connectedVfsNodeId;
-		if (!vfsId) { nodeVfs = null; return; }
+		if (!vfsId) return;
 		const data = nodeStore.get(vfsId) as VFSNodeData | undefined;
-		if (!data || data.type !== 'VFS') { nodeVfs = null; return; }
+		if (!data || data.type !== 'VFS') return;
 		let cancelled = false;
+		const unsubs: Array<() => void> = [];
 		getNodeVfs(data.content.projectId, vfsId).then(vfs => {
-			if (!cancelled) nodeVfs = vfs;
+			if (cancelled) return;
+			const markStale = () => { buildStale = true; };
+			unsubs.push(
+				vfs.events.on('file:created', markStale),
+				vfs.events.on('file:updated', markStale),
+				vfs.events.on('file:deleted', markStale),
+				vfs.events.on('file:moved', markStale),
+				vfs.events.on('folder:created', markStale),
+				vfs.events.on('folder:deleted', markStale),
+				vfs.events.on('folder:moved', markStale),
+			);
 		});
-		return () => { cancelled = true; };
-	});
-
-	let currentWriteVersion = $derived.by(() => {
-		const vfs = nodeVfs;
-		return vfs ? vfs.writeVersion : 0;
+		return () => { cancelled = true; unsubs.forEach(u => u()); };
 	});
 
 	// ---- Transient build state (component-local) ----
@@ -112,10 +112,6 @@
 	let buildError = $state<string | null>(null);
 
 	// ---- OPFS cache status ----
-	// The writeVersion at which we last confirmed a valid OPFS cache.
-	// When currentWriteVersion diverges, the build is considered stale.
-	let cacheCheckWriteVersion = $state<number | null>(null);
-	// Whether the OPFS cache matched at cacheCheckWriteVersion.
 	let opfsCacheValid = $state(false);
 	// The buildCacheKey from the last successful check (for publish).
 	let lastBuildCacheKey = $state<string | null>(null);
@@ -130,7 +126,7 @@
 
 	/**
 	 * Check whether OPFS has a valid build for the current VFS content.
-	 * Sets opfsCacheValid + cacheCheckWriteVersion on success.
+	 * Sets opfsCacheValid and clears stale flag on success.
 	 */
 	async function checkOpfsCache(vfsId: string): Promise<void> {
 		try {
@@ -151,7 +147,7 @@
 			const hasCached = await buildCacheStorage.has(key);
 			opfsCacheValid = hasCached;
 			lastBuildCacheKey = hasCached ? key : null;
-			cacheCheckWriteVersion = nodeVfsInstance.writeVersion;
+			if (hasCached) buildStale = false;
 		} catch {
 			opfsCacheValid = false;
 		}
@@ -162,14 +158,13 @@
 		const vfsId = connectedVfsNodeId;
 		if (!vfsId) {
 			opfsCacheValid = false;
-			cacheCheckWriteVersion = null;
 			lastBuildCacheKey = null;
+			buildStale = false;
 			return;
 		}
 		let cancelled = false;
 		checkOpfsCache(vfsId).then(() => {
 			if (cancelled) return;
-			// cacheCheckWriteVersion is set inside checkOpfsCache
 		});
 		return () => { cancelled = true; };
 	});
@@ -178,10 +173,8 @@
 	let buildStatus: BuildStatus = $derived.by(() => {
 		if (building) return { state: 'building' as const, message: buildingMessage };
 		if (buildError) return { state: 'error' as const, message: buildError };
-		if (opfsCacheValid && cacheCheckWriteVersion !== null) {
-			if (currentWriteVersion !== cacheCheckWriteVersion) {
-				return { state: 'stale' as const };
-			}
+		if (opfsCacheValid) {
+			if (buildStale) return { state: 'stale' as const };
 			return { state: 'ready' as const };
 		}
 		return { state: 'none' as const };
@@ -204,7 +197,7 @@
 				// Refresh OPFS status after successful build
 				lastBuildCacheKey = result.buildCacheKey;
 				opfsCacheValid = true;
-				cacheCheckWriteVersion = nodeVfs?.writeVersion ?? currentWriteVersion;
+				buildStale = false;
 			}
 		} catch (err) {
 			buildError = err instanceof Error ? err.message : 'Build failed';

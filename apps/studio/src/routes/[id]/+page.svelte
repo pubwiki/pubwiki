@@ -43,7 +43,7 @@
 	} from '$lib/version';
 	import { validateConnection, HandleId, createVfsMountHandleId } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
-	import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata, exportProjectToZip, importProjectFromZip, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
+	import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata, exportProjectToZip, selectZipFile, importFromZipFile, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
 	import { createDraftSyncService, type DraftSyncService, type DraftSyncState } from '$lib/sync';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
@@ -1270,13 +1270,29 @@
 
 	async function handleImport() {
 		try {
-			const result = await importProjectFromZip();
-			if (result) {
-				// Use hard navigation to ensure full page reload (same as ProjectListModal)
-				window.location.href = `/${result.projectId}`;
-			}
+			const file = await selectZipFile();
+			if (!file) return;
+
+			// Show overlay only after user has selected a file
+			importing = true;
+			importProgress = {
+				phase: 'processing',
+				currentStep: 1,
+				totalSteps: 2
+			};
+
+			const result = await importFromZipFile(file);
+			importProgress = {
+				phase: 'refreshing',
+				currentStep: 2,
+				totalSteps: 2
+			};
+			// Use hard navigation to ensure full page reload (same as ProjectListModal)
+			window.location.href = `/${result.projectId}`;
 		} catch (err) {
 			console.error('[Studio] Import failed:', err);
+			importing = false;
+			importProgress = null;
 			alert(err instanceof Error ? err.message : 'Import failed');
 		}
 	}

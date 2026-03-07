@@ -235,6 +235,7 @@
 	"studio_publish_node_singular": "node",
 	"studio_publish_node_plural": "nodes",
 	"studio_publish_no_nodes_hint": "External nodes and nodes referencing historical versions are excluded",
+	"studio_publish_build_required": "Build is required before publishing. Please build the entrypoint first.",
 	"studio_publish_failed": "Failed to publish",
 	
 	"studio_overview_tab": "Overview",

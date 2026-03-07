@@ -18,7 +18,7 @@ export {
 
 // Local file import/export
 export { exportProjectToZip } from './export-local';
-export { importProjectFromZip } from './import-local';
+export { importProjectFromZip, selectZipFile, importFromZipFile } from './import-local';
 
 // Build output
 export { runBuild } from './build-runner';

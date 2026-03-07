@@ -58,7 +58,7 @@ export async function importProjectFromZip(): Promise<ImportResult | null> {
 /**
  * Open file selection dialog
  */
-function selectZipFile(): Promise<File | null> {
+export function selectZipFile(): Promise<File | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';

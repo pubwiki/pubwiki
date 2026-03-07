@@ -22,6 +22,12 @@
  *   - No tar packing or gzip compression
  *   - Unchanged files (matching git index stat) require zero file I/O
  *   - Memory: only a small [path, oid] list (~KB) instead of full archive (~MB)
+ *
+ * **Hash stability**: The resulting hash depends on isomorphic-git's
+ * blob OID algorithm (currently SHA-1 with git's `blob <size>\0` header).
+ * If isomorphic-git ever changes to SHA-256 (git's planned transition),
+ * all existing OPFS cache entries will miss. This is acceptable — it only
+ * triggers a one-time rebuild, not data corruption.
  */
 
 import * as git from 'isomorphic-git';

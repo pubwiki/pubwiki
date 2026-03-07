@@ -182,7 +182,10 @@ export class ArtifactService {
 
       // Step 3: Build and validate graph structure using ImmutableGraph
       const graph = ImmutableGraph.fromArrays(nodes, edges);
-      const validationResult = validateGraph(graph, metadata.entrypoint);
+      const validationResult = validateGraph(graph, {
+        entrypoint: metadata.entrypoint,
+        buildCacheKey: metadata.buildCacheKey,
+      });
       if (!validationResult.success) {
         return { success: false, error: validationResult.error! };
       }
@@ -1821,7 +1824,10 @@ export class ArtifactService {
       const graph = graphResult.data;
 
       // Step 6: Validate merged graph
-      const validationResult = validateGraph(graph, metadata.entrypoint);
+      const validationResult = validateGraph(graph, {
+        entrypoint: metadata.entrypoint,
+        buildCacheKey: metadata.buildCacheKey,
+      });
       if (!validationResult.success) {
         return { success: false, error: validationResult.error! };
       }

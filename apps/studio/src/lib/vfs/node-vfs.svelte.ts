@@ -64,18 +64,6 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
    * This is automatically updated when files change (debounced).
    */
   isDirty = $state(false);
-
-  /**
-   * Reactive modification counter — incremented on every file/folder event.
-   *
-   * Used by the build cache system for lightweight stale detection:
-   * the build-runner records `writeVersion` at build time, and the UI
-   * re-derives status whenever the counter advances.
-   *
-   * Unlike `isDirty` (git status), this counter never resets — it only
-   * ever increases, so a simple `!==` comparison is sufficient.
-   */
-  writeVersion = $state(0);
   
   constructor(baseVfs: VersionedVfs) {
     // Create MountedVfsProvider with baseVfs as root mount
@@ -165,28 +153,23 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
    * When files change, we schedule a debounced status refresh.
    */
   private setupDirtyTracking(): void {
-    console.log('[NodeVfs] setupDirtyTracking for node:', this.getNodeId());
-    
-    const scheduleRefresh = (eventName: string) => () => {
-      console.log('[NodeVfs] Event triggered:', eventName, 'for node:', this.getNodeId());
-      // Bump the monotonic modification counter (used by build cache stale detection)
-      this.writeVersion++;
+    const scheduleRefresh = () => {
       this.scheduleDirtyRefresh();
     };
     
     // Track file changes
     this._dirtyTrackingUnsubscribers.push(
-      this.events.on('file:created', scheduleRefresh('file:created')),
-      this.events.on('file:updated', scheduleRefresh('file:updated')),
-      this.events.on('file:deleted', scheduleRefresh('file:deleted')),
-      this.events.on('file:moved', scheduleRefresh('file:moved')),
-      this.events.on('folder:created', scheduleRefresh('folder:created')),
-      this.events.on('folder:deleted', scheduleRefresh('folder:deleted')),
-      this.events.on('folder:moved', scheduleRefresh('folder:moved')),
+      this.events.on('file:created', scheduleRefresh),
+      this.events.on('file:updated', scheduleRefresh),
+      this.events.on('file:deleted', scheduleRefresh),
+      this.events.on('file:moved', scheduleRefresh),
+      this.events.on('folder:created', scheduleRefresh),
+      this.events.on('folder:deleted', scheduleRefresh),
+      this.events.on('folder:moved', scheduleRefresh),
       // Also track commits (status should be cleared after commit)
-      this.events.on('version:commit', scheduleRefresh('version:commit')),
-      this.events.on('version:checkout', scheduleRefresh('version:checkout')),
-      this.events.on('version:revert', scheduleRefresh('version:revert'))
+      this.events.on('version:commit', scheduleRefresh),
+      this.events.on('version:checkout', scheduleRefresh),
+      this.events.on('version:revert', scheduleRefresh)
     );
   }
   
@@ -194,8 +177,6 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
    * Schedule a debounced dirty state refresh.
    */
   private scheduleDirtyRefresh(): void {
-    console.log('[NodeVfs] scheduleDirtyRefresh called for node:', this.getNodeId());
-    
     // Clear existing timer
     if (this._dirtyRefreshTimer) {
       clearTimeout(this._dirtyRefreshTimer);
@@ -204,7 +185,6 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     // Schedule new refresh with 300ms debounce
     this._dirtyRefreshTimer = setTimeout(async () => {
       this._dirtyRefreshTimer = null;
-      console.log('[NodeVfs] Debounce timer fired, refreshing dirty state for node:', this.getNodeId());
       await this.refreshDirtyState();
     }, 300);
   }
@@ -215,9 +195,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
   async refreshDirtyState(): Promise<void> {
     try {
       const status = await this.getStatus();
-      const wasDirty = this.isDirty;
       this.isDirty = status.length > 0;
-      console.log('[NodeVfs] refreshDirtyState for node:', this.getNodeId(), '- status count:', status.length, '- isDirty:', wasDirty, '->', this.isDirty);
     } catch (err) {
       // On error, assume dirty to be safe
       console.warn('[NodeVfs] Failed to refresh dirty state:', err);
