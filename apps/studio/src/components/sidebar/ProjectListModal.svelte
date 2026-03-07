@@ -258,6 +258,18 @@
 	];
 </script>
 
+<!-- Full-screen import overlay (above the modal) -->
+{#if importingId}
+	<div class="fixed inset-0 bg-black/60 flex flex-col items-center justify-center z-[100]">
+		<svg class="w-10 h-10 animate-spin text-white mb-4" fill="none" viewBox="0 0 24 24">
+			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+		</svg>
+		<p class="text-white text-lg font-medium">{m.studio_import_title()}</p>
+		<p class="text-white/70 text-sm mt-1">{m.studio_projects_importing()}</p>
+	</div>
+{/if}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
