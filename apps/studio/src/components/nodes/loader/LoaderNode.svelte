@@ -334,7 +334,8 @@
 				assetMounts,
 				rdfStore,
 				llmConfig,
-				pubwikiContext
+				pubwikiContext,
+				stateNodeId ?? undefined
 			);
 			
 			// Update local state with result

@@ -589,7 +589,7 @@ navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
  * Listen for messages from parent (main site)
  */
 window.addEventListener('message', (event: MessageEvent) => {
-  const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173'
+  const allowedOrigins = (import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173').split(',')
   
   // Ignore messages from user iframe (context is accessed directly via parent window)
   if (userIframe && event.source === userIframe.contentWindow) {
@@ -602,7 +602,7 @@ window.addEventListener('message', (event: MessageEvent) => {
   }
   
   // Verify origin for messages from main site
-  if (event.origin !== mainOrigin) {
+  if (!allowedOrigins.includes(event.origin)) {
     console.warn('[SandboxBootstrap] Invalid origin:', event.origin)
     return
   }
@@ -635,7 +635,7 @@ window.addEventListener('message', (event: MessageEvent) => {
     
     vfsRpcPort = vfsPort
     
-    window.parent.postMessage({ type: 'RPC_READY' }, mainOrigin)
+    window.parent.postMessage({ type: 'RPC_READY' }, event.origin)
     
     initializeSandbox(sandboxContext)
     

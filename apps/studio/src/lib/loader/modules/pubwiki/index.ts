@@ -27,12 +27,16 @@ import { getNodeRDFStore } from '$lib/rdf';
 import { nodeStore } from '$lib/persistence';
 import { 
 	getArtifactContext, 
-	createSaveCheckpoint, 
-	computeSaveCommit 
+	createSaveCheckpoint 
 } from '$lib/gamesave';
 import PublishForm from '$components/pubwiki/PublishForm.svelte';
 import UploadCheckpointForm from '$components/pubwiki/UploadCheckpointForm.svelte';
 import UploadCheckpointsForm from '$components/pubwiki/UploadCheckpointsForm.svelte';
+import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
+import { createApiClient } from '@pubwiki/api/client';
+import type { ReaderContentBlock, ReaderContent } from '@pubwiki/api';
+
+const apiClient = createApiClient(API_BASE_URL);
 
 // ============================================================================
 // Types
@@ -92,6 +96,28 @@ interface UploadCheckpointsInput {
 	checkpointIds: string[];
 	/** Default isListed for all checkpoints */
 	defaultIsListed?: boolean;
+}
+
+/**
+ * Content block as provided from Lua script.
+ * game_ref blocks reference local checkpointId (not yet uploaded saveCommit).
+ */
+type InputContentBlock =
+	| { type: 'text'; id: string; text: string }
+	| { type: 'game_ref'; textId: string; checkpointId?: string };
+
+/**
+ * Upload article data from Lua/TS script
+ */
+interface UploadArticleInput {
+	/** Article ID (generated if not provided) */
+	articleId?: string;
+	/** Article title */
+	title?: string;
+	/** Content blocks (text + game_ref with local checkpointId) */
+	content: InputContentBlock[];
+	/** Visibility: PUBLIC, PRIVATE, or UNLISTED */
+	visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
 }
 
 /**
@@ -179,15 +205,179 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 
 		/**
 		 * Upload an article
-		 * 
-		 * Note: This feature is temporarily disabled pending the new save API architecture
-		 * which requires sourceArtifactId and sourceArtifactCommit for referencing saves.
+		 *
+		 * Creates cloud saves for game_ref blocks, shows a confirmation dialog
+		 * with an editable Lexical editor, then calls PUT /articles/{articleId}.
+		 *
+		 * Requires:
+		 * - Project to be published (has artifactId)
+		 * - User to be authenticated
+		 * - STATE node connected to Loader
 		 */
-		async uploadArticle(): Promise<PubWikiResult> {
-			return {
-				success: false,
-				error: 'Article upload is temporarily disabled. The new save API requires the project to be published first.'
+		async uploadArticle(data: UploadArticleInput): Promise<PubWikiResult> {
+			// --- Validate prerequisites (local checks only, no network) ---
+			const nodes = context.getNodes();
+			const edges = context.getEdges();
+			const stateNodeId = findConnectedStateNode(context.loaderNodeId, nodes, edges);
+
+			if (!stateNodeId) {
+				return {
+					success: false,
+					error: 'No State node connected to this Loader. Please connect a State node via the state input.'
+				};
+			}
+
+			const artifactCtx = await getArtifactContext(context.projectId);
+			if (!artifactCtx.isPublished || !artifactCtx.artifactId || !artifactCtx.artifactCommit) {
+				return {
+					success: false,
+					error: 'Project must be published before uploading articles.'
+				};
+			}
+
+			const userId = context.getCurrentUserId?.();
+			if (!userId) {
+				return {
+					success: false,
+					error: 'Please log in to upload articles.'
+				};
+			}
+
+			const stateNodeData = nodeStore.get(stateNodeId);
+			const stateNodeCommit = stateNodeData?.commit;
+			if (!stateNodeCommit) {
+				return {
+					success: false,
+					error: 'Cannot get STATE node version information.'
+				};
+			}
+
+			// --- Convert InputContentBlock[] → ReaderContent for the editor preview ---
+			// game_ref blocks use a placeholder saveCommit; actual upload happens after confirmation.
+			const previewContent: ReaderContent = [];
+			const gameRefMap = new Map<string, InputContentBlock & { type: 'game_ref' }>();
+
+			for (const block of data.content) {
+				if (block.type === 'text') {
+					previewContent.push({ type: 'text', id: block.id, text: block.text });
+				} else {
+					// Use checkpointId as placeholder saveCommit for editor display
+					const placeholderCommit = block.checkpointId ?? '__pending__';
+					previewContent.push({
+						type: 'game_ref',
+						textId: block.textId,
+						saveCommit: placeholderCommit,
+					});
+					gameRefMap.set(block.textId, block);
+				}
+			}
+
+			// --- Show confirmation dialog FIRST (no network before this) ---
+			const initialValues = {
+				title: data.title ?? '',
+				visibility: data.visibility ?? 'PUBLIC',
+				content: previewContent
 			};
+
+			const editedValues = await requestConfirmation('uploadArticle', UploadArticleForm, initialValues);
+
+			if (editedValues === null) {
+				return {
+					success: false,
+					error: 'User cancelled the operation'
+				};
+			}
+
+			// --- Process content blocks AFTER confirmation ---
+			try {
+				const store = await getNodeRDFStore(stateNodeId);
+				const editedContent = (editedValues.content as ReaderContentBlock[]) ?? previewContent;
+				const finalContent: ReaderContentBlock[] = [];
+
+				for (const block of editedContent) {
+					if (block.type === 'text') {
+						finalContent.push(block);
+						continue;
+					}
+
+					// game_ref block — upload checkpoint to cloud
+					const originalInput = gameRefMap.get(block.textId);
+					const checkpointId = originalInput?.checkpointId ?? null;
+
+					if (checkpointId) {
+						// Try to load existing local checkpoint
+						const checkpoint = await store.getCheckpoint(checkpointId);
+						if (checkpoint) {
+							await store.loadCheckpoint(checkpointId);
+						} else {
+							// Checkpoint lost (cleared DB, page reload, etc.) — fall back to current state
+							console.warn(`[uploadArticle] Checkpoint "${checkpointId}" not found, using current state as fallback.`);
+							await store.checkpoint({ title: `Article fallback save (${block.textId})` });
+						}
+					} else {
+						// Create new checkpoint of current state
+						await store.checkpoint({ title: 'Article auto-save' });
+					}
+
+					const saveResult = await createSaveCheckpoint(store, {
+						stateNodeId,
+						stateNodeCommit,
+						artifactId: artifactCtx.artifactId,
+						artifactCommit: artifactCtx.artifactCommit,
+						title: `Article save (${block.textId})`,
+					});
+
+					if (!saveResult.success || !saveResult.save) {
+						return {
+							success: false,
+							error: saveResult.error || 'Failed to upload checkpoint to cloud.'
+						};
+					}
+
+					finalContent.push({
+						type: 'game_ref',
+						textId: block.textId,
+						saveCommit: saveResult.save.commit,
+					});
+				}
+
+				// --- Call PUT /articles/{articleId} ---
+				const articleId = data.articleId ?? crypto.randomUUID();
+				const editedTitle = editedValues.title as string;
+				const editedVisibility = (editedValues.visibility as string) ?? 'PUBLIC';
+
+				const isListed = editedVisibility === 'PUBLIC';
+				const isPrivate = editedVisibility === 'PRIVATE';
+
+				const { error } = await apiClient.PUT('/articles/{articleId}', {
+					params: { path: { articleId } },
+					body: {
+						title: editedTitle,
+						artifactId: artifactCtx.artifactId,
+						artifactCommit: artifactCtx.artifactCommit,
+						content: finalContent,
+						isListed,
+						isPrivate,
+					}
+				});
+
+				if (error) {
+					return {
+						success: false,
+						error: `Failed to create article: ${JSON.stringify(error)}`
+					};
+				}
+
+				return {
+					success: true,
+					articleId
+				};
+			} catch (err) {
+				return {
+					success: false,
+					error: err instanceof Error ? err.message : String(err)
+				};
+			}
 		},
 
 		/**
@@ -266,22 +456,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 					};
 				}
 				
-				// Compute save commit
-				const commit = await computeSaveCommit(
-					stateNodeId,
-					stateNodeCommit,
-					userId,
-					artifactCtx.artifactId,
-					artifactCtx.artifactCommit
-				);
-				
-				// Compute content hash
-				const quads = await store.getAllQuads();
-				const quadsJson = JSON.stringify(quads);
-				const contentHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(quadsJson));
-				const contentHashArray = Array.from(new Uint8Array(contentHashBuffer));
-				const contentHash = contentHashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
-				
 				// Load checkpoint state temporarily to upload
 				await store.loadCheckpoint(data.checkpointId);
 				
@@ -289,10 +463,8 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				const result = await createSaveCheckpoint(store, {
 					stateNodeId,
 					stateNodeCommit,
-					commit,
-					sourceArtifactId: artifactCtx.artifactId,
-					sourceArtifactCommit: artifactCtx.artifactCommit,
-					contentHash,
+					artifactId: artifactCtx.artifactId,
+					artifactCommit: artifactCtx.artifactCommit,
 					title: editedValues.name as string,
 					description: editedValues.description as string || undefined,
 					isListed: (editedValues.isListed as boolean) ?? false
@@ -417,30 +589,12 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 					// Load checkpoint state
 					await store.loadCheckpoint(cp.id);
 					
-					// Compute save commit
-					const commit = await computeSaveCommit(
-						stateNodeId,
-						stateNodeCommit,
-						userId,
-						artifactCtx.artifactId!,
-						artifactCtx.artifactCommit!
-					);
-					
-					// Compute content hash
-					const quads = await store.getAllQuads();
-					const quadsJson = JSON.stringify(quads);
-					const contentHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(quadsJson));
-					const contentHashArray = Array.from(new Uint8Array(contentHashBuffer));
-					const contentHash = contentHashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
-					
 					// Create cloud save
 					const result = await createSaveCheckpoint(store, {
 						stateNodeId,
 						stateNodeCommit,
-						commit,
-						sourceArtifactId: artifactCtx.artifactId!,
-						sourceArtifactCommit: artifactCtx.artifactCommit!,
-						contentHash,
+						artifactId: artifactCtx.artifactId!,
+						artifactCommit: artifactCtx.artifactCommit!,
 						title: cp.title,
 						description: cp.description,
 						isListed

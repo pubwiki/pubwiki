@@ -18,9 +18,15 @@
   },
   "dependencies": {
     "@pubwiki/api": "workspace:*",
-    "@pubwiki/chat": "workspace:*"
+    "@pubwiki/chat": "workspace:*",
+    "@pubwiki/lua": "workspace:*",
+    "@pubwiki/rdfstore": "workspace:*",
+    "@pubwiki/vfs": "workspace:*",
+    "jsonrepair": "^3.13.2",
+    "n3": "catalog:"
   },
   "devDependencies": {
+    "@types/n3": "catalog:",
     "typescript": "^5.7.2",
     "vitest": "^3.0.4"
   }

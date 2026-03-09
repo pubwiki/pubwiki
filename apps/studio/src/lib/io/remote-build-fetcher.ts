@@ -7,7 +7,7 @@
 
 import type { RemoteBuildFetcher, BuildCacheFile } from '@pubwiki/bundler'
 import type { BuildManifest } from '@pubwiki/bundler'
-import { extractTarGz } from './tar'
+import { extractTarGz } from '@pubwiki/flow-core'
 
 /**
  * Create a RemoteBuildFetcher that uses the PubWiki API.

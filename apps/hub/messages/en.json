@@ -385,6 +385,7 @@
 	"artifact_views": "{count} views",
 	"artifact_downloads": "{count} downloads",
 	"artifact_use": "Use Artifact",
+	"artifact_play": "Play",
 	"artifact_add_to_project": "Add to Current Project",
 	"artifact_use_in_new": "Use in New Project",
 	"artifact_dependencies": "Dependencies",

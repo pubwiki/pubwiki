@@ -29,3 +29,6 @@ export * from './graph';
 
 // ─── Validation (Pure Validation Functions) ─────────────────────────
 export * from './validation';
+
+// ─── Runtime (Graph Execution Engine) ───────────────────────────────
+export * from './runtime';

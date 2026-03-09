@@ -6,7 +6,7 @@
  */
 
 import { OpfsBuildCacheStorage } from '@pubwiki/bundler';
-import { createTar, gzipCompress } from './tar';
+import { createTar, gzipCompress } from '@pubwiki/flow-core';
 
 /**
  * Data needed by publish to upload a build alongside the artifact.

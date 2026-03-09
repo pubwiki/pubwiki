@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import { loadRunner, createLuaInstance, type LuaInstance } from '@pubwiki/lua'
-import { createStringModule } from '$lib/loader/modules/string'
+import { createStringModule } from '$lib/loader/modules'
 
 describe('String Module (Integration)', () => {
   let instance: LuaInstance

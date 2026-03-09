@@ -23,6 +23,7 @@ packages:
   - apps/homepage
   - apps/docs
   - apps/coming-soon
+  - apps/player
   - services/hub
 
 catalog:

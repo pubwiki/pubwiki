@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import { loadRunner, createLuaInstance, type LuaInstance } from '@pubwiki/lua'
-import { createJsonModule } from '$lib/loader/modules/json'
+import { createJsonModule } from '$lib/loader/modules'
 
 describe('JSON Module', () => {
   let instance: LuaInstance

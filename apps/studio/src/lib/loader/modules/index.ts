@@ -2,37 +2,19 @@
  * Loader Modules
  * 
  * JS modules that can be registered with Loader backends.
+ * Shared modules are re-exported from @pubwiki/flow-core.
  */
 
-// LLM Module
+// Shared modules from flow-core
 export {
   createLLMModule,
   createPubChat,
   RDFMessageStore,
   CHAT_HISTORY_GRAPH_URI,
-  type LLMModuleConfig
-} from './llm'
-
-// PubWiki Module
-export {
-  createPubWikiModule,
-  createPubWikiContext,
-  type PubWikiModuleContext
-} from './pubwiki'
-
-// Partial JSON Module
-export {
+  type LLMModuleConfig,
   createPartialJsonModule,
-} from './partial-json'
-
-// JSON Module
-export {
   createJsonModule,
-  JSON_NULL
-} from './json'
-
-// RDF State Module
-export {
+  JSON_NULL,
   createStateModule,
   luaValueToRdf,
   rdfToLuaValue,
@@ -40,27 +22,13 @@ export {
   XSD_INTEGER,
   XSD_DOUBLE,
   XSD_BOOLEAN,
-  PUBWIKI_LUAVALUE
-} from './rdf'
-
-// String Module
-export {
+  PUBWIKI_LUAVALUE,
   createStringModule,
-  len,
-  sub,
-  reverse,
-  upper,
-  lower,
-  char_at,
-  chars,
-  byte,
-  char,
-  find,
-  match,
-  gmatch,
-  gsub,
-  rep,
-  format,
-  toGraphemes,
-  luaIndexToJs
-} from './string'
+} from '@pubwiki/flow-core';
+
+// Studio-specific: PubWiki Module (depends on Svelte)
+export {
+  createPubWikiModule,
+  createPubWikiContext,
+  type PubWikiModuleContext
+} from './pubwiki'

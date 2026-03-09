@@ -522,6 +522,7 @@
 	"studio_pubwiki_field_homepage_help": "项目首页的 Markdown 内容",
 	"studio_pubwiki_field_title": "标题",
 	"studio_pubwiki_field_title_placeholder": "文章标题",
+	"studio_pubwiki_field_content": "文章内容",
 	"studio_pubwiki_field_sandbox_node": "Sandbox 节点 ID",
 	"studio_pubwiki_field_sandbox_node_help": "与此文章关联的 Sandbox 节点",
 	"studio_pubwiki_checkpoint_name": "存档名称",

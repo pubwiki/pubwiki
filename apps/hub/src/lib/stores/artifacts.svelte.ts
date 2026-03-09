@@ -56,6 +56,7 @@ export class ArtifactStore {
 	pageSize = $state(20);
 	loading = $state(false);
 	error = $state<string | null>(null);
+	initialized = $state(false);
 	
 	// Current query options (for consistent loading)
 	private currentOptions: {
@@ -94,6 +95,7 @@ export class ArtifactStore {
 		this.cacheVersion++;
 		this.totalItems = 0;
 		this.error = null;
+		this.initialized = false;
 		
 		this.currentOptions = {
 			typeInclude: options?.typeInclude,
@@ -115,6 +117,7 @@ export class ArtifactStore {
 			}
 		} finally {
 			this.loading = false;
+			this.initialized = true;
 		}
 	}
 
@@ -127,8 +130,8 @@ export class ArtifactStore {
 			return null;
 		}
 		
-		// Out of range check
-		if (this.totalItems > 0 && pageNum > this.totalPages) {
+		// Out of range check (only after first load when we know total)
+		if (this.initialized && pageNum > this.totalPages) {
 			return null;
 		}
 		
@@ -319,22 +322,51 @@ export class ArtifactStore {
 			return cached;
 		}
 
-		// Get basic artifact info first
-		let artifact = this.getArtifactById(artifactId);
-		
-		// If not in list, we need to initialize or handle this case
-		if (!artifact && !cached?.artifact) {
-			// Try to initialize if not already done
-			if (this.totalItems === 0) {
-				await this.initialize({ pageSize: 100 });
-			}
-			artifact = this.getArtifactById(artifactId);
-			if (!artifact) {
+		let artifact = this.getArtifactById(artifactId) ?? cached?.artifact;
+
+		// If artifact info is not cached (e.g. direct URL navigation),
+		// use the graph endpoint as an existence check instead of loading
+		// the entire artifact list (which causes reactive state loops).
+		if (!artifact) {
+			const graphResult = await this.fetchGraph(artifactId);
+			if (!graphResult) {
+				// Graph returned 404 — artifact does not exist
 				return null;
 			}
+
+			// Artifact exists; try to get basic list info from page cache
+			if (!this.pageCache.has(1)) {
+				await this.loadPage(1);
+			}
+			artifact = this.getArtifactById(artifactId);
+
+			if (!artifact) {
+				// Artifact exists but not in page 1 of the list.
+				// Without a dedicated single-artifact endpoint we cannot
+				// obtain the full ArtifactListItem metadata.
+				return null;
+			}
+
+			// Fetch remaining sub-resources (graph already fetched)
+			const [homepageResult, lineageResult] = await Promise.all([
+				this.fetchHomepage(artifactId),
+				apiClient.GET('/artifacts/{artifactId}/lineage', {
+					params: { path: { artifactId } }
+				})
+			]);
+
+			const details: ArtifactDetails = {
+				artifact,
+				homepage: homepageResult ?? undefined,
+				graph: graphResult,
+				parents: lineageResult.data?.parents,
+				children: lineageResult.data?.children
+			};
+			this.detailsCache.set(artifactId, details);
+			return details;
 		}
-		
-		// Fetch homepage, graph and lineage in parallel
+
+		// Normal path: basic artifact info already in cache
 		const [homepageResult, graphResult, lineageResult] = await Promise.all([
 			this.fetchHomepage(artifactId),
 			this.fetchGraph(artifactId),
@@ -344,7 +376,7 @@ export class ArtifactStore {
 		]);
 
 		const details: ArtifactDetails = {
-			artifact: artifact || cached!.artifact,
+			artifact,
 			homepage: homepageResult ?? undefined,
 			graph: graphResult ?? undefined,
 			parents: lineageResult.data?.parents,

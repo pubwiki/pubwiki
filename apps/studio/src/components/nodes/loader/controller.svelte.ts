@@ -22,6 +22,7 @@ import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import type { LLMConfig, PubChat } from '@pubwiki/chat';
 import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
 import type { RDFStore } from '@pubwiki/rdfstore';
+import { getNodeRDFStore } from '$lib/rdf';
 
 // Import loader backend abstraction
 import {
@@ -153,7 +154,8 @@ export async function initializeLoader(
 	assetMounts: Map<string, Vfs<VfsProvider>>,
 	rdfStore: RDFStore | undefined,
 	llmConfig: LLMConfig | undefined,
-	pubwikiContext?: PubWikiModuleContext
+	pubwikiContext?: PubWikiModuleContext,
+	stateNodeId?: string
 ): Promise<LoaderInitResult> {
 	try {
 		// Clean up existing runtime if any
@@ -176,8 +178,9 @@ export async function initializeLoader(
 		jsModules.set('json', { module: createJsonModule(), mode: 'global' });
 		
 		// Register State module if RDF store is available (preload - available globally)
-		if (rdfStore) {
-			jsModules.set('State', { module: createStateModule(rdfStore), mode: 'global' });
+		if (rdfStore && stateNodeId) {
+			const sid = stateNodeId;
+			jsModules.set('State', { module: createStateModule(() => getNodeRDFStore(sid)), mode: 'global' });
 		}
 		
 		// Create PubChat and LLM module if config is provided

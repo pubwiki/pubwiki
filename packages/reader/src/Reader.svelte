@@ -11,20 +11,13 @@
 	 */
 	import { onMount } from 'svelte';
 	import { Composer, ContentEditable, RichTextPlugin } from 'svelte-lexical';
-	import {
-		$getRoot as getRoot,
-		$createParagraphNode as createParagraphNode,
-		$createTextNode as createTextNode,
-		type LexicalEditor,
-	} from 'lexical';
-	import { HeadingNode, $createHeadingNode as createHeadingNode } from '@lexical/rich-text';
+	import { type LexicalEditor } from 'lexical';
 	import {
 		GameRefParagraphNode,
-		$createGameRefParagraphNode as createGameRefParagraphNode,
 		setReaderContext,
 	} from './nodes/GameRefParagraphNode.js';
+	import { HeadingNode, initializeContent } from './content.js';
 	import type { ReaderContent, GameRef } from '@pubwiki/api';
-	import { getTextWithRefs } from './utils.js';
 
 	interface Props {
 		/** Structured reader content */
@@ -82,69 +75,13 @@
 
 			// Initialize content
 			if (Array.isArray(content) && content.length > 0) {
-				initializeContent(editor, content);
+				editor.update(
+					() => initializeContent(content),
+					{ discrete: true }
+				);
 			}
 		}
 	});
-
-	/**
-	 * Parse ReaderContent and initialize editor
-	 */
-	function initializeContent(editor: LexicalEditor, readerContent: ReaderContent) {
-		editor.update(
-			() => {
-				const root = getRoot();
-				root.clear();
-
-				const textWithRefs = getTextWithRefs(readerContent);
-
-				for (const { text, gameRef } of textWithRefs) {
-					const lines = text.text.split('\n');
-					// Track if we've already used the gameRef for this text block
-					let gameRefUsed = false;
-
-					for (const line of lines) {
-						// Check for headings (simple markdown support)
-						if (line.startsWith('# ')) {
-							const heading = createHeadingNode('h1');
-							heading.append(createTextNode(line.slice(2)));
-							root.append(heading);
-						} else if (line.startsWith('## ')) {
-							const heading = createHeadingNode('h2');
-							heading.append(createTextNode(line.slice(3)));
-							root.append(heading);
-						} else if (line.startsWith('### ')) {
-							const heading = createHeadingNode('h3');
-							heading.append(createTextNode(line.slice(4)));
-							root.append(heading);
-						} else if (line.startsWith('---')) {
-							// Horizontal rule
-							const hr = createParagraphNode();
-							hr.append(createTextNode('⸻'));
-							root.append(hr);
-						} else if (line.trim()) {
-							// Regular paragraph - use GameRefParagraphNode only for the first paragraph
-							if (gameRef && !gameRefUsed) {
-								const paragraph = createGameRefParagraphNode(gameRef);
-								paragraph.append(createTextNode(line));
-								root.append(paragraph);
-								gameRefUsed = true;
-							} else {
-								const paragraph = createParagraphNode();
-								paragraph.append(createTextNode(line));
-								root.append(paragraph);
-							}
-						} else {
-							// Empty line
-							const paragraph = createParagraphNode();
-							root.append(paragraph);
-						}
-					}
-				}
-			},
-			{ discrete: true }
-		);
-	}
 </script>
 
 <div class="reader {className}">

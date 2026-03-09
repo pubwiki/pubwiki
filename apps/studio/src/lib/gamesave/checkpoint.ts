@@ -8,13 +8,14 @@
  * - GET /saves/{commit}/data - Download save data
  * - DELETE /saves/{commit} - Delete save
  * 
- * Save commit is globally unique and computed from:
- * hash(stateNodeId, stateNodeCommit, userId, sourceArtifactId, sourceArtifactCommit)
+ * Save commit is globally unique and computed via computeNodeCommit(saveId, parent, contentHash, 'SAVE').
+ * contentHash is computed via computeContentHash(saveContent) from the SAVE metadata object.
  */
 
 import type { RDFStore } from '@pubwiki/rdfstore';
 import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
 import type { SaveDetail } from '@pubwiki/api';
+import { computeContentHash, computeNodeCommit } from '@pubwiki/api';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 
@@ -29,16 +30,14 @@ export interface CreateSaveOptions {
   stateNodeId: string;
   /** STATE node commit hash */
   stateNodeCommit: string;
-  /** Save commit hash (client-computed) */
-  commit: string;
   /** Parent save commit (optional) */
   parent?: string | null;
-  /** Source artifact ID */
-  sourceArtifactId: string;
-  /** Source artifact commit hash */
-  sourceArtifactCommit: string;
-  /** Content hash of the quads data */
-  contentHash: string;
+  /** Artifact ID */
+  artifactId: string;
+  /** Artifact commit hash */
+  artifactCommit: string;
+  /** Save node ID (client-generated UUID, auto-generated if omitted) */
+  saveId?: string;
   /** Save title */
   title?: string;
   /** Save description */
@@ -68,6 +67,8 @@ export async function createSaveCheckpoint(
   options: CreateSaveOptions
 ): Promise<CreateSaveResult> {
   try {
+    const saveId = options.saveId ?? crypto.randomUUID();
+
     // 1. Export current state as RDF quads
     const rdfQuads = await store.getAllQuads();
     
@@ -75,23 +76,45 @@ export async function createSaveCheckpoint(
     const quadsJson = JSON.stringify(rdfQuads.map(fromRdfQuad));
     const quadsData = new TextEncoder().encode(quadsJson);
 
-    // 3. Create FormData for multipart upload
-    const formData = new FormData();
-    formData.append('metadata', JSON.stringify({
+    // 3. Compute quadsHash (SHA-256 of the binary data)
+    const quadsHashBuffer = await crypto.subtle.digest('SHA-256', quadsData);
+    const quadsHash = Array.from(new Uint8Array(quadsHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // 4. Build the SAVE content object (must match server-side SaveNodeContent exactly)
+    const saveContent = {
+      type: 'SAVE' as const,
       stateNodeId: options.stateNodeId,
       stateNodeCommit: options.stateNodeCommit,
-      commit: options.commit,
+      artifactId: options.artifactId,
+      artifactCommit: options.artifactCommit,
+      quadsHash,
+      title: options.title ?? null,
+      description: options.description ?? null,
+    };
+
+    // 5. Compute contentHash and commit using the same algorithms as the backend
+    const contentHash = await computeContentHash(saveContent);
+    const commit = await computeNodeCommit(saveId, options.parent ?? null, contentHash, 'SAVE');
+
+    // 6. Create FormData for multipart upload
+    const formData = new FormData();
+    formData.append('metadata', JSON.stringify({
+      saveId,
+      stateNodeId: options.stateNodeId,
+      stateNodeCommit: options.stateNodeCommit,
+      commit,
       parent: options.parent ?? null,
-      sourceArtifactId: options.sourceArtifactId,
-      sourceArtifactCommit: options.sourceArtifactCommit,
-      contentHash: options.contentHash,
+      artifactId: options.artifactId,
+      artifactCommit: options.artifactCommit,
+      contentHash,
+      quadsHash,
       title: options.title,
       description: options.description,
       isListed: options.isListed ?? false
     }));
     formData.append('data', new Blob([quadsData], { type: 'application/octet-stream' }));
 
-    // 4. POST to /saves
+    // 7. POST to /saves
     const response = await fetch(`${API_BASE_URL}/saves`, {
       method: 'POST',
       body: formData,
@@ -218,28 +241,6 @@ export async function deleteSave(commit: string): Promise<void> {
 }
 
 /**
- * Compute save commit hash.
- * This should match the backend computation.
- * 
- * @param stateNodeId - STATE node ID
- * @param stateNodeCommit - STATE node commit
- * @param userId - User ID
- * @param sourceArtifactId - Source artifact ID
- * @param sourceArtifactCommit - Source artifact commit
- * @returns Computed commit hash
+ * @deprecated computeSaveCommit is no longer needed. createSaveCheckpoint now
+ * computes contentHash and commit internally using computeContentHash/computeNodeCommit.
  */
-export async function computeSaveCommit(
-  stateNodeId: string,
-  stateNodeCommit: string,
-  userId: string,
-  sourceArtifactId: string,
-  sourceArtifactCommit: string
-): Promise<string> {
-  const payload = `${stateNodeId}:${stateNodeCommit}:${userId}:${sourceArtifactId}:${sourceArtifactCommit}`;
-  const encoder = new TextEncoder();
-  const data = encoder.encode(payload);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex.slice(0, 40); // First 40 chars like backend
-}

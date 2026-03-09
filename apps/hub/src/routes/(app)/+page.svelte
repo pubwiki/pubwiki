@@ -539,7 +539,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 			{/if}
 		</div>
 
-		{#if searchStore.loading}
+		{#if searchStore.loading || !searchStore.initialized}
 			<div class="flex justify-center items-center py-12">
 				<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600"></div>
 			</div>
@@ -645,7 +645,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 		{/if}
 	{:else}
 		<!-- Normal Mode: Virtual Grid -->
-		{#if artifactStore.loading}
+		{#if artifactStore.loading || !artifactStore.initialized}
 		<div class="flex justify-center items-center py-12">
 			<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-600"></div>
 		</div>

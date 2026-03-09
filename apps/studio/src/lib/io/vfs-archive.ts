@@ -13,7 +13,7 @@
  */
 
 import { computeSha256Hex } from '@pubwiki/api';
-import { createTar, gzipCompress, type TarEntry } from './tar';
+import { createTar, gzipCompress, type TarEntry } from '@pubwiki/flow-core';
 import { getNodeVfs } from '$lib/vfs';
 
 // ============================================================================

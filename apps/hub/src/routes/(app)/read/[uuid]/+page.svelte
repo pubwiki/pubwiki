@@ -5,7 +5,11 @@
 	import type { ArticleDetail, GameRef } from '@pubwiki/api';
 	import { Reader, type ReaderContent, extractToc } from '@pubwiki/reader';
 	import { useArticleStore } from '$lib/stores/articles.svelte';
+	import { PUBLIC_STUDIO_URL, PUBLIC_PLAY_URL } from '$env/static/public';
 	import * as m from '$lib/paraglide/messages';
+
+	const studioUrl = PUBLIC_STUDIO_URL || 'http://localhost:5174';
+	const playUrl = PUBLIC_PLAY_URL || 'http://localhost:5175';
 
 	const articleStore = useArticleStore();
 	
@@ -258,7 +262,7 @@
 	>
 		<Reader 
 			content={content} 
-			buildPlaybackUrl={(gameRef: GameRef) => `/${article!.artifactId}/play?save_commit=${gameRef.saveCommit}`}
+			buildPlaybackUrl={(gameRef: GameRef) => `${playUrl}/${article!.artifactId}/play?save=${gameRef.saveCommit}`}
 		/>
 	</main>
 

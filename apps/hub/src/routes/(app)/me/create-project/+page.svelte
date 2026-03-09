@@ -273,7 +273,7 @@
 						/>
 					</div>
 
-					{#if artifactsLoading}
+					{#if artifactsLoading || !artifactsLoaded}
 						<div class="text-center py-8 text-gray-500">Loading artifacts...</div>
 					{:else if userArtifacts.length === 0}
 						<div class="text-center py-8 text-gray-500">

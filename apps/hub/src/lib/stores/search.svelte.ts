@@ -15,6 +15,7 @@ export class SearchStore {
 	pageSize = $state(20);
 	loading = $state(false);
 	error = $state<string | null>(null);
+	initialized = $state(false);
 	
 	// Current search options
 	private currentOptions: {
@@ -59,6 +60,7 @@ export class SearchStore {
 		this.cacheVersion++;
 		this.totalItems = 0;
 		this.error = null;
+		this.initialized = false;
 		
 		this.currentQuery = trimmedQuery;
 		this.isActive = true;
@@ -82,6 +84,7 @@ export class SearchStore {
 			}
 		} finally {
 			this.loading = false;
+			this.initialized = true;
 		}
 	}
 
@@ -99,8 +102,8 @@ export class SearchStore {
 			return null;
 		}
 		
-		// Out of range check
-		if (this.totalItems > 0 && pageNum > this.totalPages) {
+		// Out of range check (only after first load when we know total)
+		if (this.initialized && pageNum > this.totalPages) {
 			return null;
 		}
 		
@@ -231,6 +234,7 @@ export class SearchStore {
 		this.error = null;
 		this.currentQuery = '';
 		this.isActive = false;
+		this.initialized = false;
 		this.currentOptions = { query: '' };
 	}
 }

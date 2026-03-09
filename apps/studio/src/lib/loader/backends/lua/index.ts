@@ -34,8 +34,8 @@ import { registerBackendFactory } from '../../types';
 import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
 import typesLuaCode from '$lib/assets/lua/types.lua?raw';
 
-// Schema-based type coercion
-import { coerceToSchema, coerceOutputs, getIteratorYieldSchema } from './schema-coercion';
+// Schema-based type coercion (from flow-core)
+import { coerceToSchema, coerceOutputs, getIteratorYieldSchema } from '@pubwiki/flow-core';
 
 // ============================================================================
 // MemoryVfsProvider - Simple in-memory VFS implementation

@@ -10,8 +10,8 @@ import { loadRunner, createLuaInstance, type LuaInstance } from '@pubwiki/lua'
 import { RDFStore } from '@pubwiki/rdfstore'
 import { MemoryLevel } from 'memory-level'
 import { DataFactory } from 'n3'
-import { createStateModule } from '$lib/loader/modules/rdf'
-import { createJsonModule } from '$lib/loader/modules/json'
+import { createStateModule } from '$lib/loader/modules'
+import { createJsonModule } from '$lib/loader/modules'
 
 const { namedNode, literal } = DataFactory
 
@@ -62,7 +62,7 @@ describe('State Module (RDF)', () => {
     instance = createLuaInstance()
     
     // Register the State module
-    instance.registerJsModule('State', createStateModule(store), { mode: 'global' })
+    instance.registerJsModule('State', createStateModule(async () => store), { mode: 'global' })
     
     // Register the json module  
     instance.registerJsModule('json', createJsonModule(), { mode: 'global' })
@@ -447,7 +447,7 @@ describe('RDF state persistence', () => {
   beforeEach(async () => {
     store = await createMemoryStore()
     instance = createLuaInstance()
-    instance.registerJsModule('State', createStateModule(store), { mode: 'global' })
+    instance.registerJsModule('State', createStateModule(async () => store), { mode: 'global' })
   })
 
   afterEach(async () => {

@@ -30,10 +30,17 @@ export {
 // Export Reader component
 export { default as Reader } from './Reader.svelte';
 
+// Export Editor component
+export { default as Editor } from './Editor.svelte';
+
+// Export content utilities
+export { initializeContent, exportContent } from './content.js';
+
 // Export Lexical nodes for advanced usage
 export {
 	GameRefParagraphNode,
 	$createGameRefParagraphNode,
 	$isGameRefParagraphNode,
+	setEditorMode,
 	type SerializedGameRefParagraphNode,
 } from './nodes/GameRefParagraphNode.js';

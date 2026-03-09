@@ -21,6 +21,9 @@ import { READER_CONTEXT_KEY } from '../context.js';
 // This is set by the Reader component via setReaderContext
 let _readerContext: ReaderContext | null = null;
 
+// Whether nodes are created in editor (writable) mode
+let _editorMode = false;
+
 /**
  * Set the reader context for building playback URLs
  * This should be called by the Reader component before creating GameRefParagraphNodes
@@ -36,6 +39,13 @@ export function getReaderContext(): ReaderContext | null {
 	return _readerContext;
 }
 
+/**
+ * Set editor mode — when true, GameRefParagraphNode renders a save badge instead of a play button
+ */
+export function setEditorMode(editable: boolean): void {
+	_editorMode = editable;
+}
+
 export type SerializedGameRefParagraphNode = Spread<
 	{
 		type: 'game-ref-paragraph';
@@ -46,7 +56,7 @@ export type SerializedGameRefParagraphNode = Spread<
 >;
 
 /**
- * Create play button element
+ * Create play button element (reader mode)
  */
 function createPlayButton(gameRef: GameRef): HTMLAnchorElement | null {
 	const ctx = _readerContext;
@@ -71,6 +81,34 @@ function createPlayButton(gameRef: GameRef): HTMLAnchorElement | null {
 		</svg>
 	`;
 	return button;
+}
+
+/**
+ * Create save badge element (editor mode)
+ */
+function createSaveBadge(): HTMLSpanElement {
+	const badge = document.createElement('span');
+	badge.className = 'game-ref-badge';
+	badge.contentEditable = 'false';
+	badge.title = '关联游戏存档';
+	badge.innerHTML = `
+		<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+			<polyline points="17 21 17 13 7 13 7 21"/>
+			<polyline points="7 3 7 8 15 8"/>
+		</svg>
+	`;
+	return badge;
+}
+
+/**
+ * Create the appropriate decoration element based on current mode
+ */
+function createDecoration(gameRef: GameRef): HTMLElement | null {
+	if (_editorMode) {
+		return createSaveBadge();
+	}
+	return createPlayButton(gameRef);
 }
 
 export class GameRefParagraphNode extends ParagraphNode {
@@ -108,25 +146,25 @@ export class GameRefParagraphNode extends ParagraphNode {
 		const dom = super.createDOM(config);
 		// Add game-ref class for styling
 		dom.classList.add('game-ref-paragraph');
-		// Add play button if URL is available
-		const button = createPlayButton(this.__gameRef);
-		if (button) {
-			dom.appendChild(button);
+		// Add decoration (play button in reader mode, save badge in editor mode)
+		const decoration = createDecoration(this.__gameRef);
+		if (decoration) {
+			dom.appendChild(decoration);
 		}
 		return dom;
 	}
 
 	updateDOM(prevNode: GameRefParagraphNode, dom: HTMLElement, config: EditorConfig): boolean {
 		const needsUpdate = super.updateDOM(prevNode, dom, config);
-		// Update button if gameRef changed
+		// Update decoration if gameRef changed
 		if (prevNode.__gameRef !== this.__gameRef) {
-			const existingButton = dom.querySelector('.game-ref-button');
+			const existingButton = dom.querySelector('.game-ref-button, .game-ref-badge');
 			if (existingButton) {
 				existingButton.remove();
 			}
-			const button = createPlayButton(this.__gameRef);
-			if (button) {
-				dom.appendChild(button);
+			const decoration = createDecoration(this.__gameRef);
+			if (decoration) {
+				dom.appendChild(decoration);
 			}
 		}
 		return needsUpdate;

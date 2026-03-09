@@ -10,7 +10,7 @@ import {
 	coerceToSchema, 
 	coerceOutputs, 
 	getIteratorYieldSchema 
-} from '$lib/loader/backends/lua/schema-coercion'
+} from '@pubwiki/flow-core'
 import type { JsonSchema } from '@pubwiki/sandbox-host'
 
 describe('coerceToSchema', () => {

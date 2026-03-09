@@ -3,13 +3,14 @@
 	import type { ArticleDetail } from '@pubwiki/api';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { useArtifactStore, type ArtifactDetails, type ArtifactGraphData } from '$lib/stores/artifacts.svelte';
 	import { useArticleStore } from '$lib/stores/articles.svelte';
 	import ArtifactCard from '$lib/components/ArtifactCard.svelte';
 	import ArticleCard from '$lib/components/ArticleCard.svelte';
 	import LineageGraph from '$lib/components/LineageGraph.svelte';
 	import NodeCard from '$lib/components/NodeCard.svelte';
-	import { PUBLIC_STUDIO_URL } from '$env/static/public';
+	import { PUBLIC_STUDIO_URL, PUBLIC_PLAY_URL } from '$env/static/public';
 	import * as m from '$lib/paraglide/messages';
 
 	let { data } = $props<{ data: PageData }>();
@@ -19,6 +20,8 @@
 	
 	// Studio URL - defaults to localhost for development
 	const studioUrl = PUBLIC_STUDIO_URL || 'http://localhost:5174';
+	// Player URL - defaults to localhost for development
+	const playUrl = PUBLIC_PLAY_URL || 'http://localhost:5175';
 	
 	let details = $state<ArtifactDetails | null>(null);
 	let loading = $state(true);
@@ -81,30 +84,35 @@
 	$effect(() => {
 		const artifactId = data.artifactId;
 		const requestedVersion = data.version;
-		loading = true;
-		error = null;
-		
-		artifactStore.fetchArtifactDetails(artifactId).then(async (result) => {
-			if (result) {
-				details = result;
-				currentGraph = result.graph ?? null;
-				currentVersion = result.graph?.version?.commitHash ?? 'latest';
-				
-				// If a specific version was requested, fetch it
-				if (requestedVersion && requestedVersion !== 'latest' && result.graph?.version?.commitHash !== requestedVersion) {
-					const graph = await artifactStore.fetchGraphByVersion(artifactId, requestedVersion);
-					if (graph) {
-						currentGraph = graph;
-						currentVersion = requestedVersion;
+
+		// Use untrack to prevent store's internal $state changes (e.g. totalItems)
+		// from re-triggering this effect and causing infinite request loops
+		untrack(() => {
+			loading = true;
+			error = null;
+			
+			artifactStore.fetchArtifactDetails(artifactId).then(async (result) => {
+				if (result) {
+					details = result;
+					currentGraph = result.graph ?? null;
+					currentVersion = result.graph?.version?.commitHash ?? 'latest';
+					
+					// If a specific version was requested, fetch it
+					if (requestedVersion && requestedVersion !== 'latest' && result.graph?.version?.commitHash !== requestedVersion) {
+						const graph = await artifactStore.fetchGraphByVersion(artifactId, requestedVersion);
+						if (graph) {
+							currentGraph = graph;
+							currentVersion = requestedVersion;
+						}
 					}
+				} else {
+					error = 'Artifact not found';
 				}
-			} else {
-				error = 'Artifact not found';
-			}
-			loading = false;
-		}).catch((e) => {
-			error = e instanceof Error ? e.message : m.artifact_not_found_message();
-			loading = false;
+				loading = false;
+			}).catch((e) => {
+				error = e instanceof Error ? e.message : m.artifact_not_found_message();
+				loading = false;
+			});
 		});
 	});
 
@@ -269,20 +277,20 @@
 				<!-- LEFT COLUMN: Preview & Tabs (2/3 width) -->
 				<div class="lg:col-span-2 space-y-6">
 					
-					<!-- Preview Area -->
-					<div class="bg-black rounded-lg overflow-hidden shadow-sm border border-gray-200 aspect-video relative group">
+					<!-- Preview Area (clickable → Play) -->
+					<a href="{playUrl}/{artifact.id}/play" target="_blank" rel="noopener" class="block bg-black rounded-lg overflow-hidden shadow-sm border border-gray-200 aspect-video relative group">
 						<img 
 							src={artifact.thumbnailUrl || 'https://placehold.co/800x400/222/fff?text=No+Image'} 
 							alt={artifact.name} 
 							class="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition duration-500" 
 						/>
-						<!-- Play Icon Overlay (Optional) -->
+						<!-- Play Icon Overlay -->
 						<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
 							<div class="bg-black/50 rounded-full p-4 opacity-0 group-hover:opacity-100 transition duration-300">
 								<svg class="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
 							</div>
 						</div>
-					</div>
+					</a>
 
 					<!-- Tabs Navigation -->
 					<div class="border-b border-gray-200">
@@ -439,6 +447,16 @@
 
 					<!-- 2. Action Buttons -->
 					<div class="space-y-2">
+						<!-- Play button -->
+						<a 
+							href="{playUrl}/{artifact.id}/play"
+							target="_blank"
+							rel="noopener"
+							class="w-full bg-[#2da44e] hover:bg-[#218838] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
+						>
+							<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+							{m.artifact_play()}
+						</a>
 						<!-- Open in Studio button -->
 						<button 
 							onclick={handleUseArtifact}

@@ -535,6 +535,7 @@
 	"studio_pubwiki_field_homepage_help": "Markdown content for the project homepage",
 	"studio_pubwiki_field_title": "Title",
 	"studio_pubwiki_field_title_placeholder": "Article title",
+	"studio_pubwiki_field_content": "Content",
 	"studio_pubwiki_field_sandbox_node": "Sandbox Node ID",
 	"studio_pubwiki_field_sandbox_node_help": "The sandbox node associated with this article",
 	"studio_pubwiki_checkpoint_name": "Checkpoint Name",

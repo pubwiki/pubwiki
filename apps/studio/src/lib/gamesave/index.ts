@@ -11,7 +11,6 @@ export {
   fetchSaves,
   getSave,
   deleteSave,
-  computeSaveCommit,
   type CreateSaveOptions,
   type CreateSaveResult
 } from './checkpoint';

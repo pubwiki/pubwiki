@@ -72,7 +72,7 @@
 	</div>
 
 	<!-- Projects List -->
-	{#if projectStore.loading}
+	{#if projectStore.loading || !projectStore.initialized}
 		<div class="flex justify-center items-center py-12">
 			<div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#0969da]"></div>
 		</div>

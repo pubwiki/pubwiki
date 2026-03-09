@@ -385,6 +385,7 @@
 	"artifact_views": "{count} 次浏览",
 	"artifact_downloads": "{count} 次下载",
 	"artifact_use": "使用作品",
+	"artifact_play": "开始游玩",
 	"artifact_add_to_project": "添加到当前项目",
 	"artifact_use_in_new": "在新项目中使用",
 	"artifact_dependencies": "依赖项",

@@ -9,6 +9,7 @@ export class ProjectStore {
 	pagination = $state<Pagination | null>(null);
 	loading = $state(false);
 	error = $state<string | null>(null);
+	initialized = $state(false);
 
 	async fetchProjects(options?: {
 		page?: number;
@@ -46,6 +47,7 @@ export class ProjectStore {
 			return { success: false, error: this.error };
 		} finally {
 			this.loading = false;
+			this.initialized = true;
 		}
 	}
 

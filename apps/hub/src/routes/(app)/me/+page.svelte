@@ -199,7 +199,7 @@
 							<h2 class="text-lg font-semibold text-gray-900">{m.me_your_artifacts()}</h2>
 						</div>
 						
-						{#if artifactsLoading}
+						{#if artifactsLoading || !artifactsLoaded}
 							<div class="p-8 text-center text-gray-500">{m.common_loading()}</div>
 						{:else if artifacts.length === 0}
 							<div class="p-8 text-center text-gray-500">
@@ -273,7 +273,7 @@
 							</a>
 						</div>
 						
-						{#if projectsLoading}
+						{#if projectsLoading || !projectsLoaded}
 							<div class="p-8 text-center text-gray-500">{m.common_loading()}</div>
 						{:else if projects.length === 0}
 							<div class="p-8 text-center text-gray-500">

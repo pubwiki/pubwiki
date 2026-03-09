@@ -24,7 +24,7 @@
 		restoreFromSave,
 		fetchSaves,
 		deleteSave,
-		computeSaveCommit,
+
 		type ArtifactContext
 	} from '$lib/gamesave';
 	import * as m from '$lib/paraglide/messages';
@@ -254,30 +254,12 @@
 				store = await getNodeRDFStore(nodeId);
 			}
 
-			// Compute save commit
-			const commit = await computeSaveCommit(
-				nodeId,
-				nodeCommit,
-				auth.user.id,
-				artifactContext.artifactId,
-				artifactContext.artifactCommit
-			);
-
-			// Compute content hash
-			const quads = await store.getAllQuads();
-			const quadsJson = JSON.stringify(quads);
-			const contentHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(quadsJson));
-			const contentHashArray = Array.from(new Uint8Array(contentHashBuffer));
-			const contentHash = contentHashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
-
 			// Create cloud save
 			const result = await createSaveCheckpoint(store, {
 				stateNodeId: nodeId,
 				stateNodeCommit: nodeCommit,
-				commit,
-				sourceArtifactId: artifactContext.artifactId,
-				sourceArtifactCommit: artifactContext.artifactCommit,
-				contentHash,
+				artifactId: artifactContext.artifactId,
+				artifactCommit: artifactContext.artifactCommit,
 				title: newCheckpointTitle.trim(),
 				description: newCheckpointDescription.trim() || undefined,
 				isListed: newCheckpointIsListed
@@ -454,30 +436,12 @@
 			// Load the checkpoint first
 			await store.loadCheckpoint(checkpoint.id);
 
-			// Compute save commit
-			const commit = await computeSaveCommit(
-				nodeId,
-				nodeCommit,
-				auth.user.id,
-				artifactContext.artifactId,
-				artifactContext.artifactCommit
-			);
-
-			// Compute content hash
-			const quads = await store.getAllQuads();
-			const quadsJson = JSON.stringify(quads);
-			const contentHashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(quadsJson));
-			const contentHashArray = Array.from(new Uint8Array(contentHashBuffer));
-			const contentHash = contentHashArray.map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 40);
-
 			// Create cloud save
 			const result = await createSaveCheckpoint(store, {
 				stateNodeId: nodeId,
 				stateNodeCommit: nodeCommit,
-				commit,
-				sourceArtifactId: artifactContext.artifactId,
-				sourceArtifactCommit: artifactContext.artifactCommit,
-				contentHash,
+				artifactId: artifactContext.artifactId,
+				artifactCommit: artifactContext.artifactCommit,
 				title: checkpoint.title,
 				description: checkpoint.description,
 				isListed: false
