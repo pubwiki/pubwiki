@@ -1,0 +1,17 @@
+{
+  "name": "@pubwiki/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:hub": "playwright test --project=hub",
+    "test:studio": "playwright test --project=studio",
+    "test:integration": "playwright test --project=integration",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@pubwiki/api": "workspace:*",
+    "@types/node": "catalog:"
+  }
+}

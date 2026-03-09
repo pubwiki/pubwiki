@@ -29,7 +29,6 @@ declare module '$env/static/private' {
 	export const SHELL: string;
 	export const npm_command: string;
 	export const COLORTERM: string;
-	export const VSCODE_DEBUGPY_ADAPTER_ENDPOINTS: string;
 	export const XDG_MENU_PREFIX: string;
 	export const TERM_PROGRAM_VERSION: string;
 	export const FNM_ARCH: string;
@@ -40,22 +39,20 @@ declare module '$env/static/private' {
 	export const npm_config_verify_deps_before_run: string;
 	export const npm_config__jsr_registry: string;
 	export const MEMORY_PRESSURE_WRITE: string;
-	export const PYDEVD_DISABLE_FILE_VALIDATION: string;
 	export const FNM_NODE_DIST_MIRROR: string;
-	export const HOMEBREW_PREFIX: string;
 	export const XMODIFIERS: string;
+	export const HOMEBREW_PREFIX: string;
 	export const DESKTOP_SESSION: string;
 	export const NO_AT_BRIDGE: string;
 	export const npm_config_globalconfig: string;
 	export const EDITOR: string;
 	export const PWD: string;
-	export const LOGNAME: string;
 	export const XDG_SESSION_DESKTOP: string;
+	export const LOGNAME: string;
 	export const XDG_SESSION_TYPE: string;
 	export const npm_config_catalogs: string;
 	export const PNPM_HOME: string;
 	export const SYSTEMD_EXEC_PID: string;
-	export const BUNDLED_DEBUGPY_PATH: string;
 	export const npm_config_catalog: string;
 	export const XAUTHORITY: string;
 	export const VSCODE_GIT_ASKPASS_NODE: string;
@@ -131,7 +128,6 @@ declare module '$env/static/private' {
 	export const GIO_LAUNCHED_DESKTOP_FILE: string;
 	export const FNM_LOGLEVEL: string;
 	export const TERM_PROGRAM: string;
-	export const NODE_ENV: string;
 }
 
 /**
@@ -165,7 +161,6 @@ declare module '$env/dynamic/private' {
 		SHELL: string;
 		npm_command: string;
 		COLORTERM: string;
-		VSCODE_DEBUGPY_ADAPTER_ENDPOINTS: string;
 		XDG_MENU_PREFIX: string;
 		TERM_PROGRAM_VERSION: string;
 		FNM_ARCH: string;
@@ -176,22 +171,20 @@ declare module '$env/dynamic/private' {
 		npm_config_verify_deps_before_run: string;
 		npm_config__jsr_registry: string;
 		MEMORY_PRESSURE_WRITE: string;
-		PYDEVD_DISABLE_FILE_VALIDATION: string;
 		FNM_NODE_DIST_MIRROR: string;
-		HOMEBREW_PREFIX: string;
 		XMODIFIERS: string;
+		HOMEBREW_PREFIX: string;
 		DESKTOP_SESSION: string;
 		NO_AT_BRIDGE: string;
 		npm_config_globalconfig: string;
 		EDITOR: string;
 		PWD: string;
-		LOGNAME: string;
 		XDG_SESSION_DESKTOP: string;
+		LOGNAME: string;
 		XDG_SESSION_TYPE: string;
 		npm_config_catalogs: string;
 		PNPM_HOME: string;
 		SYSTEMD_EXEC_PID: string;
-		BUNDLED_DEBUGPY_PATH: string;
 		npm_config_catalog: string;
 		XAUTHORITY: string;
 		VSCODE_GIT_ASKPASS_NODE: string;
@@ -267,7 +260,6 @@ declare module '$env/dynamic/private' {
 		GIO_LAUNCHED_DESKTOP_FILE: string;
 		FNM_LOGLEVEL: string;
 		TERM_PROGRAM: string;
-		NODE_ENV: string;
 		[key: `PUBLIC_${string}`]: undefined;
 		[key: `${string}`]: string | undefined;
 	}

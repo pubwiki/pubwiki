@@ -35,9 +35,9 @@
 	let isSubmitting = $state(false);
 	let profileInitialized = false;
 
-	// Redirect if not authenticated
+	// Redirect if not authenticated (wait for session to load first)
 	$effect(() => {
-		if (browser && !auth.isAuthenticated) {
+		if (browser && auth.isSessionLoaded && !auth.isAuthenticated) {
 			goto('/login');
 		}
 	});

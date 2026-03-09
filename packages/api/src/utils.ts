@@ -20,13 +20,15 @@ export type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 
 /**
  * SaveContent type for SAVE node content hash calculation.
- * Save is independent from ArtifactNodeContent in the API layer.
+ * Must match SaveNodeContent from OpenAPI schema exactly.
  */
 export interface SaveContent {
   type: 'SAVE';
   stateNodeId: string;
   stateNodeCommit: string;
-  sourceArtifactCommit: string;
+  artifactId: string;
+  artifactCommit: string;
+  quadsHash: string;
   title: string | null | undefined;
   description: string | null | undefined;
 }

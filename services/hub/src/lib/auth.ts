@@ -27,9 +27,9 @@ export const createAuth = (env: Env) => {
     baseURL: env.BETTER_AUTH_URL,
     basePath: '/api/auth',
     secret: env.BETTER_AUTH_SECRET,
-    // 在开发环境，信任所有 localhost 端口
+    // 在开发环境，信任所有 localhost 端口（HTTP + HTTPS）
     trustedOrigins: isDev 
-      ? ['http://localhost:*', 'http://127.0.0.1:*']
+      ? ['http://localhost:*', 'http://127.0.0.1:*', 'https://localhost:*', 'https://127.0.0.1:*']
       : (env.BETTER_AUTH_TRUSTED_ORIGINS
           ? env.BETTER_AUTH_TRUSTED_ORIGINS.split(',')
           : []),

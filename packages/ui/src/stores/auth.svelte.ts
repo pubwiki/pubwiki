@@ -7,6 +7,7 @@ const AUTH_KEY = Symbol('auth');
 export class AuthStore {
 	private _user = $state<PublicUser | null>(null);
 	private _isAuthenticated = $state(false);
+	private _isSessionLoaded = $state(false);
 	private _authClient: ReturnType<typeof createAuthClient>;
 	private _apiBaseUrl: string;
 
@@ -31,6 +32,10 @@ export class AuthStore {
 		return this._isAuthenticated;
 	}
 
+	get isSessionLoaded() {
+		return this._isSessionLoaded;
+	}
+
 	get currentUser() {
 		return this._user;
 	}
@@ -43,14 +48,18 @@ export class AuthStore {
 	 * 获取当前会话状态
 	 */
 	async fetchSession() {
-		const { data } = await this._authClient.getSession();
-		if (data?.session) {
-			this._isAuthenticated = true;
-			// 从 API 获取完整用户信息
-			await this.fetchUser();
-		} else {
-			this._isAuthenticated = false;
-			this._user = null;
+		try {
+			const { data } = await this._authClient.getSession();
+			if (data?.session) {
+				this._isAuthenticated = true;
+				// 从 API 获取完整用户信息
+				await this.fetchUser();
+			} else {
+				this._isAuthenticated = false;
+				this._user = null;
+			}
+		} finally {
+			this._isSessionLoaded = true;
 		}
 	}
 

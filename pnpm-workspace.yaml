@@ -25,6 +25,7 @@ packages:
   - apps/coming-soon
   - apps/player
   - services/hub
+  - e2e
 
 catalog:
   '@cloudflare/vitest-pool-workers': ^0.12.4
