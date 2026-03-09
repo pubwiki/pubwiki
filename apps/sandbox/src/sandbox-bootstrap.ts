@@ -25,6 +25,11 @@ let bootstrapClientId: string | null = null
 let userIframe: HTMLIFrameElement | null = null
 let pendingVfsPortRequest = false
 
+// Parse allowed origins at module scope so Vite inlining + minification
+// cannot fold the .split() away into a single-string comparison.
+const _rawOrigins: string = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173'
+const allowedOrigins: string[] = _rawOrigins.split(',')
+
 /**
  * Show/hide UI elements
  */
@@ -211,13 +216,13 @@ function requestVfsPortFromMainSite(): void {
     return
   }
   
-  const mainOrigin = import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:4000'
-  
   pendingVfsPortRequest = true
   
+  // Use '*' because the parent could be any of the allowed origins.
+  // Incoming messages are validated against allowedOrigins separately.
   window.parent.postMessage(
     { type: 'REQUEST_VFS_PORT' },
-    mainOrigin
+    '*'
   )
 }
 
@@ -589,7 +594,6 @@ navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
  * Listen for messages from parent (main site)
  */
 window.addEventListener('message', (event: MessageEvent) => {
-  const allowedOrigins = (import.meta.env.VITE_MAIN_ORIGIN || 'http://localhost:5173').split(',')
   
   // Ignore messages from user iframe (context is accessed directly via parent window)
   if (userIframe && event.source === userIframe.contentWindow) {
