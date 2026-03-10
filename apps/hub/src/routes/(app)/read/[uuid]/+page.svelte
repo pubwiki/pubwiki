@@ -262,7 +262,7 @@
 	>
 		<Reader 
 			content={content} 
-			buildPlaybackUrl={(gameRef: GameRef) => `${playUrl}/${article!.artifactId}/play?save=${gameRef.saveCommit}`}
+			buildPlaybackUrl={(gameRef: GameRef) => `${playUrl}/${article!.artifactId}?save=${gameRef.saveCommit}`}
 		/>
 	</main>
 

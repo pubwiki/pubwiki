@@ -278,7 +278,7 @@
 				<div class="lg:col-span-2 space-y-6">
 					
 					<!-- Preview Area (clickable → Play) -->
-					<a href="{playUrl}/{artifact.id}/play" target="_blank" rel="noopener" class="block bg-black rounded-lg overflow-hidden shadow-sm border border-gray-200 aspect-video relative group">
+					<a href="{playUrl}/{artifact.id}" target="_blank" rel="noopener" class="block bg-black rounded-lg overflow-hidden shadow-sm border border-gray-200 aspect-video relative group">
 						<img 
 							src={artifact.thumbnailUrl || 'https://placehold.co/800x400/222/fff?text=No+Image'} 
 							alt={artifact.name} 
@@ -449,7 +449,7 @@
 					<div class="space-y-2">
 						<!-- Play button -->
 						<a 
-							href="{playUrl}/{artifact.id}/play"
+							href="{playUrl}/{artifact.id}"
 							target="_blank"
 							rel="noopener"
 							class="w-full bg-[#2da44e] hover:bg-[#218838] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
