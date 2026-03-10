@@ -18,7 +18,10 @@
 	import { reportSaveState } from '$lib/persistence/save-tracker.svelte';
 	import { Toggle } from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
+	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import EntrypointSection from './EntrypointSection.svelte';
+
+	const hubUrl = PUBLIC_HUB_URL || 'http://localhost:5173';
 
 	interface Props {
 		nodes: Node<FlowNodeData>[];
@@ -274,7 +277,7 @@
 					<p class="text-sm font-medium text-green-800">{m.studio_published_banner()}</p>
 					<p class="text-xs text-green-600 mt-0.5">{m.studio_published_desc()}</p>
 					<a
-						href="/artifact/{projectId}"
+						href="{hubUrl}/artifact/{projectId}"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex items-center gap-1 text-xs text-green-700 hover:text-green-800 mt-2 font-medium"
