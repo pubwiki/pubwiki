@@ -39,7 +39,16 @@ export function createPubChat(config: LLMModuleConfig): {
     : new MemoryMessageStore()
   
   const pubchat = new PubChat({
-    llm: llmConfig,
+    llm: {
+      ...llmConfig,
+      headers: {
+        'HTTP-Referer': 'https://pub.wiki',
+        'X-OpenRouter-Title': 'PubWiki',
+        'X-Title': 'PubWiki',
+        'X-OpenRouter-Category': 'roleplay',
+        ...llmConfig.headers,
+      },
+    },
     messageStore,
     toolCalling: { enabled: false }
   })

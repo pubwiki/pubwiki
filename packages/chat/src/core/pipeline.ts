@@ -95,6 +95,11 @@ export interface PipelineConfig {
    * or Gemini's `safety_settings`.
    */
   extraBody?: Record<string, unknown>
+  /**
+   * Custom HTTP headers to include in API requests.
+   * Useful for provider-specific authentication or routing headers.
+   */
+  headers?: Record<string, string>
 }
 
 /**
@@ -135,7 +140,8 @@ export class ChatStreamPipeline {
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
       organization: config.organizationId,
-      apiMode: config.apiMode
+      apiMode: config.apiMode,
+      defaultHeaders: config.headers
     })
   }
 

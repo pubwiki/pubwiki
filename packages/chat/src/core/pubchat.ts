@@ -106,6 +106,11 @@ export interface LLMConfig {
    * or Gemini's `safety_settings`.
    */
   extraBody?: Record<string, unknown>
+  /**
+   * Custom HTTP headers to include in API requests.
+   * Useful for provider-specific authentication or routing headers.
+   */
+  headers?: Record<string, string>
 }
 
 /**
@@ -307,7 +312,8 @@ export class PubChat implements ChatProvider {
         responseFormat: llmConfig.responseFormat,
         reasoning: llmConfig.reasoning,
         apiMode: llmConfig.apiMode,
-        extraBody: llmConfig.extraBody
+        extraBody: llmConfig.extraBody,
+        headers: this.config.llm.headers
       })
       
       // Collect assistant response
@@ -493,7 +499,8 @@ export class PubChat implements ChatProvider {
         responseFormat: llmConfig.responseFormat,
         reasoning: llmConfig.reasoning,
         apiMode: llmConfig.apiMode,
-        extraBody: llmConfig.extraBody
+        extraBody: llmConfig.extraBody,
+        headers: this.config.llm.headers
       })
       
       // Run non-streaming pipeline
