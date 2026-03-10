@@ -2,8 +2,6 @@
  * Loader Initialization for Player
  *
  * Thin wrapper over flow-core's loader backends and modules.
- * Provides Lua source code injection (via Vite ?raw imports)
- * and app-specific registry setup.
  */
 
 import {
@@ -19,16 +17,12 @@ import {
 } from '@pubwiki/flow-core';
 import type { Vfs } from '@pubwiki/vfs';
 
-// Lua source code — injected via Vite ?raw
-import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
-import typesLuaCode from '$lib/assets/lua/types.lua?raw';
-
 /**
  * Create a pre-configured BackendRegistry with Player's backends.
  */
 export function createPlayerRegistry(): BackendRegistry {
 	const registry = new BackendRegistry();
-	registry.register('lua', createLuaBackendFactory({ serviceLuaCode, typesLuaCode }));
+	registry.register('lua', createLuaBackendFactory());
 	return registry;
 }
 

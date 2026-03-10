@@ -80,8 +80,7 @@ export type {
 } from './save/gamesave';
 
 // ─── Lua Backend ────────────────────────────────────────────────────
-export { LuaBackend, createLuaBackendFactory } from './backends/lua';
-export type { LuaBackendOptions } from './backends/lua';
+export { LuaBackend, createLuaBackendFactory, serviceLuaCode, typesLuaCode } from './backends/lua';
 export { coerceToSchema, coerceOutputs, getIteratorYieldSchema } from './backends/lua/schema-coercion';
 
 // ─── Loader Modules (JS modules for backends) ──────────────────────

@@ -2,8 +2,7 @@
  * Lua Backend for flow-core
  *
  * Implements LoaderBackend using @pubwiki/lua for Lua VM execution.
- * Lua source code (service.lua, types.lua) is injected — not embedded —
- * so flow-core stays free of Vite-specific imports.
+ * Lua source code (service.lua, types.lua) is embedded via Vite ?raw imports.
  */
 
 import {
@@ -33,20 +32,12 @@ import type {
 
 import { coerceOutputs, coerceToSchema, getIteratorYieldSchema } from './schema-coercion';
 
-// ============================================================================
-// Lua Source Options
-// ============================================================================
+// Embedded Lua source code
+import serviceLuaCode from './sources/service.lua?raw';
+import typesLuaCode from './sources/types.lua?raw';
 
-/**
- * Options for creating a LuaBackend.
- * Lua source code for core libraries must be provided by the app layer.
- */
-export interface LuaBackendOptions {
-	/** Content of service.lua (ServiceRegistry + ServiceBuilder) */
-	serviceLuaCode: string;
-	/** Content of types.lua (Type system) */
-	typesLuaCode: string;
-}
+// Re-export for consumers that may need the raw source
+export { serviceLuaCode, typesLuaCode };
 
 // ============================================================================
 // MemoryVfsProvider — in-memory VFS for embedding core Lua files
@@ -179,11 +170,6 @@ export class LuaBackend implements LoaderBackend {
 	private ready = false;
 	private currentConfig: BackendConfig | null = null;
 	private serviceSchemas = new Map<string, ServiceDefinition>();
-	private readonly options: LuaBackendOptions;
-
-	constructor(options: LuaBackendOptions) {
-		this.options = options;
-	}
 
 	async initialize(config: BackendConfig): Promise<BackendInitResult> {
 		try {
@@ -199,8 +185,8 @@ export class LuaBackend implements LoaderBackend {
 
 			// Mount core Lua libraries
 			const coreVfs = createMemoryVfs();
-			await (coreVfs.getProvider() as MemoryVfsProvider).createFile('/service.lua', this.options.serviceLuaCode);
-			await (coreVfs.getProvider() as MemoryVfsProvider).createFile('/types.lua', this.options.typesLuaCode);
+			await (coreVfs.getProvider() as MemoryVfsProvider).createFile('/service.lua', serviceLuaCode);
+			await (coreVfs.getProvider() as MemoryVfsProvider).createFile('/types.lua', typesLuaCode);
 			provider.mount('/core', coreVfs);
 
 			// Mount backend VFS (the user's Lua code)
@@ -363,9 +349,8 @@ export class LuaBackend implements LoaderBackend {
 // ============================================================================
 
 /**
- * Create a BackendFactory that produces LuaBackend instances
- * with the given Lua source code.
+ * Create a BackendFactory that produces LuaBackend instances.
  */
-export function createLuaBackendFactory(options: LuaBackendOptions): BackendFactory {
-	return () => new LuaBackend(options);
+export function createLuaBackendFactory(): BackendFactory {
+	return () => new LuaBackend();
 }

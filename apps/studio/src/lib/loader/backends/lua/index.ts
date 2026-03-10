@@ -30,9 +30,8 @@ import type {
 } from '../../types';
 import { registerBackendFactory } from '../../types';
 
-// Core Lua code (embedded)
-import serviceLuaCode from '$lib/assets/lua/service.lua?raw';
-import typesLuaCode from '$lib/assets/lua/types.lua?raw';
+// Core Lua code (from flow-core)
+import { serviceLuaCode, typesLuaCode } from '@pubwiki/flow-core';
 
 // Schema-based type coercion (from flow-core)
 import { coerceToSchema, coerceOutputs, getIteratorYieldSchema } from '@pubwiki/flow-core';
