@@ -1,0 +1,26 @@
+# Image upload schemas
+
+ImagePurpose:
+  type: string
+  enum: [avatar, thumbnail, article, general]
+  description: |
+    图片用途，决定 R2 存储前缀和大小限制：
+    - avatar: 用户头像（最大 2MB）
+    - thumbnail: Artifact 封面（最大 5MB）
+    - article: 文章配图（最大 10MB）
+    - general: 通用图片（最大 10MB）
+
+UploadImageResponse:
+  type: object
+  required:
+    - url
+    - key
+  properties:
+    url:
+      type: string
+      description: 图片的访问路径（相对于 API base）
+      example: /api/images/avatar/a1b2c3d4e5f6.webp
+    key:
+      type: string
+      description: 图片的 R2 存储 key（不包含 images/ 前缀）
+      example: avatar/a1b2c3d4e5f6.webp

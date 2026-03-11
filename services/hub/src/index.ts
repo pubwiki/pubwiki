@@ -12,6 +12,7 @@ import { articlesRoute } from './routes/articles';
 import { nodesRoute } from './routes/nodes';
 import { savesRoute } from './routes/saves';
 import { tagsRoute } from './routes/tags';
+import { imagesRoute } from './routes/images';
 import { authMiddleware } from './middleware/auth';
 import { createDb, eq, user as userTable } from '@pubwiki/db';
 import type { HealthCheckResponse, GetMeResponse, UpdateProfileRequest, UpdateProfileResponse, ApiError } from '@pubwiki/api';
@@ -69,6 +70,9 @@ app.route('/api/nodes', nodesRoute);
 
 // Saves 路由（存档）
 app.route('/api/saves', savesRoute);
+
+// Images 路由（图片上传）
+app.route('/api/images', imagesRoute);
 
 // 需要认证的路由 - 获取当前用户信息
 app.get('/api/me', authMiddleware, async (c) => {

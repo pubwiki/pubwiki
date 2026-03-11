@@ -206,6 +206,12 @@ components:
     NodeVersionRef:
       $ref: './openapi/schemas/node-version.yaml#/NodeVersionRef'
 
+    # Image schemas
+    ImagePurpose:
+      $ref: './openapi/schemas/image.yaml#/ImagePurpose'
+    UploadImageResponse:
+      $ref: './openapi/schemas/image.yaml#/UploadImageResponse'
+
 
 
 paths:
@@ -300,5 +306,11 @@ paths:
     $ref: './openapi/paths/nodes.yaml#/~1nodes~1commits~1{commit}~1children'
   /nodes/commits/{commit}/archive:
     $ref: './openapi/paths/nodes.yaml#/~1nodes~1commits~1{commit}~1archive'
+
+  # Images
+  /images:
+    $ref: './openapi/paths/images.yaml#/~1images'
+  /images/{key}:
+    $ref: './openapi/paths/images.yaml#/~1images~1{key}'
 
 

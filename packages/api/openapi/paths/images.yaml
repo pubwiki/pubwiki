@@ -1,0 +1,85 @@
+# Image paths
+
+/images:
+  post:
+    operationId: uploadImage
+    summary: 上传图片
+    description: |
+      上传图片到 R2 存储。使用 multipart/form-data 上传图片文件。
+      支持 JPEG、PNG、WebP、GIF 格式。文件名由服务端基于内容哈希生成，天然去重。
+      返回的 url 可直接用于 avatarUrl、thumbnailUrl 等字段。
+    tags: [Images]
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required:
+              - file
+            properties:
+              file:
+                type: string
+                format: binary
+                description: 图片文件（JPEG、PNG、WebP、GIF）
+              purpose:
+                $ref: '../schemas/image.yaml#/ImagePurpose'
+          encoding:
+            file:
+              contentType: image/jpeg, image/png, image/webp, image/gif
+    responses:
+      '200':
+        description: 上传成功
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/image.yaml#/UploadImageResponse'
+      '400':
+        description: 文件类型不支持或缺少文件
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '413':
+        description: 文件过大
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
+/images/{key}:
+  get:
+    operationId: getImage
+    summary: 获取图片
+    description: |
+      通过 key 获取 R2 中存储的图片。内容寻址，支持永久缓存。
+    tags: [Images]
+    parameters:
+      - name: key
+        in: path
+        required: true
+        description: 图片 key（如 avatar/a1b2c3d4.webp）
+        schema:
+          type: string
+    responses:
+      '200':
+        description: 图片内容
+        content:
+          image/*:
+            schema:
+              type: string
+              format: binary
+      '404':
+        description: 图片不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'

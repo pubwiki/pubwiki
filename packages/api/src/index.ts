@@ -93,6 +93,10 @@ export type NodeVersionSummary = components['schemas']['NodeVersionSummary'];
 export type NodeVersionDetail = components['schemas']['NodeVersionDetail'];
 export type NodeVersionRef = components['schemas']['NodeVersionRef'];
 
+// Image 相关类型
+export type ImagePurpose = components['schemas']['ImagePurpose'];
+export type UploadImageResponse = components['schemas']['UploadImageResponse'];
+
 // 请求类型
 
 // 响应类型
@@ -147,6 +151,9 @@ export type GetSaveResponse = operations['getSave']['responses']['200']['content
 export type GetNodeVersionsResponse = operations['getNodeVersions']['responses']['200']['content']['application/json'];
 export type GetNodeVersionResponse = operations['getNodeVersion']['responses']['200']['content']['application/json'];
 export type GetNodeVersionChildrenResponse = operations['getNodeVersionChildren']['responses']['200']['content']['application/json'];
+
+// Image 响应类型
+export type UploadImageApiResponse = operations['uploadImage']['responses']['200']['content']['application/json'];
 
 // Schema 类型（用于请求体）
 export type CreateArtifactMetadata = components['schemas']['CreateArtifactMetadata'];
