@@ -13,6 +13,7 @@ export * from './utils'
 // Build Cache Storage
 export {
   OpfsBuildCacheStorage,
+  getOpfsBuildCacheStorage,
   type BuildCacheFile,
   type BuildCacheMetadata,
   type BuildCacheHandle,

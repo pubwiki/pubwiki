@@ -31,7 +31,7 @@
 	import type { GetArtifactGraphResponse } from '@pubwiki/api';
 	import { getNodeVfs, disposeAllVfs } from '$lib/vfs/store';
 	import { getNodeRDFStore, closeAllRDFStores, type RDFStore } from '$lib/rdf/store';
-	import { detectProject, createBuildAwareVfs, OpfsBuildCacheStorage } from '@pubwiki/bundler';
+	import { detectProject, createBuildAwareVfs, getOpfsBuildCacheStorage } from '@pubwiki/bundler';
 	import type { ProjectConfig } from '@pubwiki/bundler';
 	import { createRemoteBuildFetcher } from '$lib/io/remote-build-fetcher';
 	import { fetchAndPopulateVfs } from '@pubwiki/flow-core';
@@ -147,7 +147,7 @@
 			}
 
 			// Create BuildAwareVfs (L0: memory → L1: OPFS → L2: remote → L3: local compile)
-			const buildCacheStorage = new OpfsBuildCacheStorage();
+			const buildCacheStorage = getOpfsBuildCacheStorage();
 			const remoteFetcher = createRemoteBuildFetcher(API_BASE_URL);
 			buildAwareVfs = createBuildAwareVfs({
 				sourceVfs: vfs,

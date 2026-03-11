@@ -9,7 +9,7 @@
 	import { fade } from 'svelte/transition';
 	import type { SandboxConnection, ProjectConfig, ConsoleLogEntry } from '@pubwiki/sandbox-host';
 	import { createSandboxConnection } from '@pubwiki/sandbox-host';
-	import { createBuildAwareVfs, OpfsBuildCacheStorage } from '@pubwiki/bundler';
+	import { createBuildAwareVfs, getOpfsBuildCacheStorage } from '@pubwiki/bundler';
 	import { computeBuildCacheKey } from '@pubwiki/api';
 	import type { Vfs } from '@pubwiki/vfs';
 	import type { NodeVfs } from '$lib/vfs';
@@ -326,7 +326,7 @@
 			}
 
 			// Create BuildAwareVfs with OPFS cache + transparent compilation
-			const buildCacheStorage = new OpfsBuildCacheStorage();
+			const buildCacheStorage = getOpfsBuildCacheStorage();
 			buildAwareVfs = createBuildAwareVfs({
 				sourceVfs: vfs,
 				projectConfig,

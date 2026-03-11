@@ -19,7 +19,7 @@
 	import { Dropdown } from '@pubwiki/ui/components';
 	import { runBuild } from '$lib/io/build-runner';
 	import { getNodeVfs } from '$lib/vfs';
-	import { OpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
+	import { getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
 	import { computeBuildCacheKey } from '@pubwiki/api';
 	import { computeVfsContentHash } from '$lib/io/vfs-content-hash';
 
@@ -121,8 +121,7 @@
 		onBuildCacheKeyChange?.(lastBuildCacheKey);
 	});
 
-	// Shared OpfsBuildCacheStorage singleton (lazy, session-scoped)
-	const buildCacheStorage = new OpfsBuildCacheStorage();
+	const buildCacheStorage = getOpfsBuildCacheStorage();
 
 	/**
 	 * Check whether OPFS has a valid build for the current VFS content.

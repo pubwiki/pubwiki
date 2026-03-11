@@ -469,7 +469,6 @@ export const CreateArtifactBody = zod.object({
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
-  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
@@ -620,7 +619,6 @@ export const PatchArtifactBody = zod.object({
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
-  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
@@ -971,7 +969,6 @@ export const GetArtifactGraphResponse = zod.object({
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
-  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
@@ -2242,7 +2239,6 @@ export const CreateSaveBody = zod.object({
   "metadata": zod.object({
   "saveId": zod.uuid().describe('Save 节点 ID（客户端自由提供）'),
   "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
-  "stateNodeCommit": zod.string().describe('关联的 STATE 节点版本 commit hash'),
   "commit": zod.string().describe('Save 版本 commit hash（客户端计算）'),
   "parent": zod.string().nullish().describe('父版本 commit hash（可选）'),
   "artifactId": zod.uuid().describe('关联的 artifact ID'),
@@ -2259,7 +2255,7 @@ export const CreateSaveBody = zod.object({
 
 /**
  * 查询存档列表，支持两种查询方式（二选一）：
-1. 按 STATE 节点版本查询：同时提供 stateNodeId + stateNodeCommit
+1. 按 STATE 节点查询：提供 stateNodeId
 2. 按 Save 节点 ID 查询：提供 saveId
 
 两组参数必须提供其中一组，不能同时提供或都不提供。
@@ -2274,9 +2270,8 @@ export const listSavesQueryLimitMax = 100;
 
 
 export const ListSavesQueryParams = zod.object({
-  "stateNodeId": zod.uuid().optional().describe('STATE 节点 ID（与 stateNodeCommit 一起使用）'),
-  "stateNodeCommit": zod.string().optional().describe('STATE 节点的 commit hash（与 stateNodeId 一起使用）'),
-  "saveId": zod.uuid().optional().describe('Save 节点 ID（单独使用，与 stateNodeId\/stateNodeCommit 互斥）'),
+  "stateNodeId": zod.uuid().optional().describe('STATE 节点 ID'),
+  "saveId": zod.uuid().optional().describe('Save 节点 ID（单独使用，与 stateNodeId 互斥）'),
   "author": zod.uuid().optional().describe('按作者 ID 过滤'),
   "page": zod.number().min(1).default(listSavesQueryPageDefault).describe('页码（从1开始）'),
   "limit": zod.number().min(1).max(listSavesQueryLimitMax).default(listSavesQueryLimitDefault).describe('每页数量')
@@ -2289,13 +2284,12 @@ export const listSavesResponsePaginationLimitMax = 100;
 
 export const ListSavesResponse = zod.object({
   "saves": zod.array(zod.object({
-  "saveId": zod.string().describe('Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)）'),
+  "saveId": zod.string().describe('Save 节点 ID（客户端提供）'),
   "commit": zod.string().describe('Save 版本 commit hash'),
   "parent": zod.string().nullish().describe('父版本 commit hash'),
   "authorId": zod.uuid(),
   "authoredAt": zod.iso.datetime({}),
   "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
-  "stateNodeCommit": zod.string().describe('关联的 STATE 节点版本 commit hash'),
   "artifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
@@ -2323,13 +2317,12 @@ export const GetSaveParams = zod.object({
 })
 
 export const GetSaveResponse = zod.object({
-  "saveId": zod.string().describe('Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)）'),
+  "saveId": zod.string().describe('Save 节点 ID（客户端提供）'),
   "commit": zod.string().describe('Save 版本 commit hash'),
   "parent": zod.string().nullish().describe('父版本 commit hash'),
   "authorId": zod.uuid(),
   "authoredAt": zod.iso.datetime({}),
   "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
-  "stateNodeCommit": zod.string().describe('关联的 STATE 节点版本 commit hash'),
   "artifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
@@ -2519,7 +2512,6 @@ export const GetNodeVersionResponse = zod.object({
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
-  "stateNodeCommit": zod.string().describe('引用的 STATE 节点版本 commit hash'),
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
@@ -2569,4 +2561,32 @@ commit 是全局唯一主键，无需额外的 nodeId。
  */
 export const GetNodeVersionArchiveParams = zod.object({
   "commit": zod.string().describe('节点版本 commit hash')
+})
+
+
+/**
+ * 上传图片到 R2 存储。使用 multipart/form-data 上传图片文件。
+支持 JPEG、PNG、WebP、GIF 格式。文件名由服务端基于内容哈希生成，天然去重。
+返回的 url 可直接用于 avatarUrl、thumbnailUrl 等字段。
+
+ * @summary 上传图片
+ */
+export const UploadImageBody = zod.object({
+  "file": zod.instanceof(File),
+  "purpose": zod.enum(['avatar', 'thumbnail', 'article', 'general']).optional().describe('图片用途，决定 R2 存储前缀和大小限制：\n- avatar: 用户头像（最大 2MB）\n- thumbnail: Artifact 封面（最大 5MB）\n- article: 文章配图（最大 10MB）\n- general: 通用图片（最大 10MB）\n')
+})
+
+export const UploadImageResponse = zod.object({
+  "url": zod.string().describe('图片的访问路径（相对于 API base）'),
+  "key": zod.string().describe('图片的 R2 存储 key（不包含 images\/ 前缀）')
+})
+
+
+/**
+ * 通过 key 获取 R2 中存储的图片。内容寻址，支持永久缓存。
+
+ * @summary 获取图片
+ */
+export const GetImageParams = zod.object({
+  "key": zod.string().describe('图片 key（如 avatar\/a1b2c3d4.webp）')
 })

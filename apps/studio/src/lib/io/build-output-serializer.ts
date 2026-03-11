@@ -5,7 +5,7 @@
  * tar.gz archive for upload to the backend.
  */
 
-import { OpfsBuildCacheStorage } from '@pubwiki/bundler';
+import { getOpfsBuildCacheStorage } from '@pubwiki/bundler';
 import { createTar, gzipCompress } from '@pubwiki/flow-core';
 
 /**
@@ -31,7 +31,7 @@ export interface BuildDataForPublish {
 export async function loadBuildDataForPublish(
 	buildCacheKey: string
 ): Promise<BuildDataForPublish | null> {
-	const storage = new OpfsBuildCacheStorage();
+	const storage = getOpfsBuildCacheStorage();
 	const handle = await storage.get(buildCacheKey);
 	if (!handle) return null;
 

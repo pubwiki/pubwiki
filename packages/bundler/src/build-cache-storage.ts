@@ -294,3 +294,17 @@ export class OpfsBuildCacheStorage {
     }
   }
 }
+
+// ============================================================================
+// Singleton
+// ============================================================================
+
+let _instance: OpfsBuildCacheStorage | null = null
+
+/** Get the global singleton OpfsBuildCacheStorage instance. */
+export function getOpfsBuildCacheStorage(): OpfsBuildCacheStorage {
+  if (!_instance) {
+    _instance = new OpfsBuildCacheStorage()
+  }
+  return _instance
+}

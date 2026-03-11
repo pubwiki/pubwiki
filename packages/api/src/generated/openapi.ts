@@ -728,7 +728,7 @@ export interface paths {
         /**
          * 获取存档列表
          * @description 查询存档列表，支持两种查询方式（二选一）：
-         *     1. 按 STATE 节点版本查询：同时提供 stateNodeId + stateNodeCommit
+         *     1. 按 STATE 节点查询：提供 stateNodeId
          *     2. 按 Save 节点 ID 查询：提供 saveId
          *
          *     两组参数必须提供其中一组，不能同时提供或都不提供。
@@ -867,6 +867,48 @@ export interface paths {
          *     commit 是全局唯一主键，无需额外的 nodeId。
          */
         get: operations["getNodeVersionArchive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传图片
+         * @description 上传图片到 R2 存储。使用 multipart/form-data 上传图片文件。
+         *     支持 JPEG、PNG、WebP、GIF 格式。文件名由服务端基于内容哈希生成，天然去重。
+         *     返回的 url 可直接用于 avatarUrl、thumbnailUrl 等字段。
+         */
+        post: operations["uploadImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/images/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 获取图片
+         * @description 通过 key 获取 R2 中存储的图片。内容寻址，支持永久缓存。
+         */
+        get: operations["getImage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1629,7 +1671,7 @@ export interface components {
             isPrivate: boolean;
         };
         SaveDetail: {
-            /** @description Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)） */
+            /** @description Save 节点 ID（客户端提供） */
             saveId: string;
             /** @description Save 版本 commit hash */
             commit: string;
@@ -1644,8 +1686,6 @@ export interface components {
              * @description 关联的 STATE 节点 ID
              */
             stateNodeId: string;
-            /** @description 关联的 STATE 节点版本 commit hash */
-            stateNodeCommit: string;
             /**
              * Format: uuid
              * @description 创建此 Save 的 artifact ID
@@ -1673,8 +1713,6 @@ export interface components {
              * @description 关联的 STATE 节点 ID
              */
             stateNodeId: string;
-            /** @description 关联的 STATE 节点版本 commit hash */
-            stateNodeCommit: string;
             /** @description Save 版本 commit hash（客户端计算） */
             commit: string;
             /** @description 父版本 commit hash（可选） */
@@ -1749,6 +1787,27 @@ export interface components {
             targetNodeId: string;
             targetCommit: string;
             refType: components["schemas"]["NodeVersionRefType"];
+        };
+        /**
+         * @description 图片用途，决定 R2 存储前缀和大小限制：
+         *     - avatar: 用户头像（最大 2MB）
+         *     - thumbnail: Artifact 封面（最大 5MB）
+         *     - article: 文章配图（最大 10MB）
+         *     - general: 通用图片（最大 10MB）
+         * @enum {string}
+         */
+        ImagePurpose: "avatar" | "thumbnail" | "article" | "general";
+        UploadImageResponse: {
+            /**
+             * @description 图片的访问路径（相对于 API base）
+             * @example /api/images/avatar/a1b2c3d4e5f6.webp
+             */
+            url: string;
+            /**
+             * @description 图片的 R2 存储 key（不包含 images/ 前缀）
+             * @example avatar/a1b2c3d4e5f6.webp
+             */
+            key: string;
         };
         /**
          * @description Artifact 列表排序字段
@@ -1880,8 +1939,6 @@ export interface components {
              * @description 引用的 STATE 节点 ID
              */
             stateNodeId: string;
-            /** @description 引用的 STATE 节点版本 commit hash */
-            stateNodeCommit: string;
             /**
              * Format: uuid
              * @description 创建此存档的 artifact ID
@@ -4330,11 +4387,9 @@ export interface operations {
     listSaves: {
         parameters: {
             query?: {
-                /** @description STATE 节点 ID（与 stateNodeCommit 一起使用） */
+                /** @description STATE 节点 ID */
                 stateNodeId?: string;
-                /** @description STATE 节点的 commit hash（与 stateNodeId 一起使用） */
-                stateNodeCommit?: string;
-                /** @description Save 节点 ID（单独使用，与 stateNodeId/stateNodeCommit 互斥） */
+                /** @description Save 节点 ID（单独使用，与 stateNodeId 互斥） */
                 saveId?: string;
                 /** @description 按作者 ID 过滤 */
                 author?: string;
@@ -4686,6 +4741,96 @@ export interface operations {
                 };
             };
             /** @description 节点版本或归档文件不存在 */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    uploadImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description 图片文件（JPEG、PNG、WebP、GIF）
+                     */
+                    file: string;
+                    purpose?: components["schemas"]["ImagePurpose"];
+                };
+            };
+        };
+        responses: {
+            /** @description 上传成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadImageResponse"];
+                };
+            };
+            /** @description 文件类型不支持或缺少文件 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 文件过大 */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 图片 key（如 avatar/a1b2c3d4.webp） */
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 图片内容 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/*": string;
+                };
+            };
+            /** @description 图片不存在 */
             404: {
                 headers: {
                     [name: string]: unknown;

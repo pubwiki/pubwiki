@@ -21,7 +21,7 @@
  *                   stored on backend / R2.
  */
 
-import { createBuildAwareVfs, OpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
+import { createBuildAwareVfs, getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
 import type { ProjectBuildResult } from '@pubwiki/bundler';
 import { computeBuildCacheKey } from '@pubwiki/api';
 import { computeVfsContentHash } from './vfs-content-hash';
@@ -80,7 +80,7 @@ export async function runBuild(params: {
 	const buildAwareVfs = createBuildAwareVfs({
 		sourceVfs: nodeVfs,
 		projectConfig,
-		buildCacheStorage: new OpfsBuildCacheStorage(),
+		buildCacheStorage: getOpfsBuildCacheStorage(),
 		buildCacheKey,
 		filesHash: contentHash,
 		onBuildProgress: (event) => {
