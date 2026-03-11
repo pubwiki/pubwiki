@@ -3,7 +3,7 @@
  * 
  * Manages save checkpoints using the new save API:
  * - POST /saves - Create save with quads.bin data
- * - GET /saves - List saves by stateNodeId + stateNodeCommit
+ * - GET /saves - List saves by stateNodeId
  * - GET /saves/{commit} - Get save details
  * - GET /saves/{commit}/data - Download save data
  * - DELETE /saves/{commit} - Delete save
@@ -28,8 +28,6 @@ const apiClient = createApiClient(API_BASE_URL);
 export interface CreateSaveOptions {
   /** STATE node ID */
   stateNodeId: string;
-  /** STATE node commit hash */
-  stateNodeCommit: string;
   /** Parent save commit (optional) */
   parent?: string | null;
   /** Artifact ID */
@@ -84,7 +82,6 @@ export async function createSaveCheckpoint(
     const saveContent = {
       type: 'SAVE' as const,
       stateNodeId: options.stateNodeId,
-      stateNodeCommit: options.stateNodeCommit,
       artifactId: options.artifactId,
       artifactCommit: options.artifactCommit,
       quadsHash,
@@ -101,7 +98,6 @@ export async function createSaveCheckpoint(
     formData.append('metadata', JSON.stringify({
       saveId,
       stateNodeId: options.stateNodeId,
-      stateNodeCommit: options.stateNodeCommit,
       commit,
       parent: options.parent ?? null,
       artifactId: options.artifactId,
@@ -176,20 +172,18 @@ export async function restoreFromSave(
 }
 
 /**
- * Fetch saves for a STATE node version.
+ * Fetch saves for a STATE node.
  * 
  * @param stateNodeId - The STATE node ID
- * @param stateNodeCommit - The STATE node commit hash
  * @returns List of saves
  */
 export async function fetchSaves(
   stateNodeId: string,
-  stateNodeCommit: string
 ): Promise<SaveDetail[]> {
   try {
     const { data, error } = await apiClient.GET('/saves', {
       params: {
-        query: { stateNodeId, stateNodeCommit }
+        query: { stateNodeId }
       }
     });
 

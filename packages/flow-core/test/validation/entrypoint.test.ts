@@ -36,7 +36,6 @@ function createStateNode(nodeId: string, commit: string): ImmutableGraphNode {
 function createSaveNode(
   nodeId: string,
   stateNodeId: string,
-  stateNodeCommit: string,
   commit?: string
 ): ImmutableGraphNode {
   return createNode(nodeId, 'SAVE', {
@@ -44,7 +43,6 @@ function createSaveNode(
     content: {
       type: 'SAVE',
       stateNodeId,
-      stateNodeCommit,
     } as ImmutableGraphNode['content'],
   })
 }
@@ -96,11 +94,10 @@ describe('validateEntrypoint - No entrypoint', () => {
 
 describe('validateEntrypoint - Valid configurations', () => {
   it('should accept valid entrypoint configuration', () => {
-    const stateCommit = 'state-v1'
     const saveCommit = 'save-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, saveCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', saveCommit),
       createNode('loader1', 'LOADER'),
       createSandboxNode('sandbox1'),
     ]
@@ -119,13 +116,12 @@ describe('validateEntrypoint - Valid configurations', () => {
   })
 
   it('should accept entrypoint with multiple SAVE nodes', () => {
-    const stateCommit = 'state-v1'
     const saveCommit1 = 'save-v1'
     const saveCommit2 = 'save-v2'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, saveCommit1),
-      createSaveNode('save2', 'state1', stateCommit, saveCommit2),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', saveCommit1),
+      createSaveNode('save2', 'state1', saveCommit2),
       createNode('loader1', 'LOADER'),
       createSandboxNode('sandbox1'),
     ]
@@ -151,11 +147,10 @@ describe('validateEntrypoint - Valid configurations', () => {
 
 describe('validateEntrypoint - Sandbox validation', () => {
   it('should reject non-existent sandbox node', () => {
-    const stateCommit = 'state-v1'
     const saveCommit = 'save-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, saveCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', saveCommit),
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
     
@@ -172,11 +167,10 @@ describe('validateEntrypoint - Sandbox validation', () => {
   })
 
   it('should reject sandbox node that is not SANDBOX type', () => {
-    const stateCommit = 'state-v1'
     const saveCommit = 'save-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, saveCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', saveCommit),
       createNode('notSandbox', 'LOADER'), // Wrong type
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
@@ -195,11 +189,10 @@ describe('validateEntrypoint - Sandbox validation', () => {
   })
 
   it('should reject when sandbox node is PROMPT type', () => {
-    const stateCommit = 'state-v1'
     const saveCommit = 'save-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, saveCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', saveCommit),
       createNode('prompt1', 'PROMPT'),
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
@@ -221,10 +214,9 @@ describe('validateEntrypoint - Sandbox validation', () => {
 
 describe('validateEntrypoint - Save commit validation', () => {
   it('should reject non-existent save commit', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, 'actual-save-commit'),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', 'actual-save-commit'),
       createSandboxNode('sandbox1'),
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
@@ -261,10 +253,9 @@ describe('validateEntrypoint - Save commit validation', () => {
   })
 
   it('should match exact save commit, not partial', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, 'save-commit-full'),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', 'save-commit-full'),
       createSandboxNode('sandbox1'),
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
@@ -286,7 +277,7 @@ describe('validateEntrypoint - Save commit validation', () => {
 describe('validateEntrypoint - Save STATE reference validation', () => {
   it('should reject when SAVE references STATE not in graph', () => {
     const nodes = [
-      createSaveNode('save1', 'missing-state', 'some-commit', 'save-v1'),
+      createSaveNode('save1', 'missing-state', 'save-v1'),
       createSandboxNode('sandbox1'),
       // Note: No STATE node present
     ]
@@ -305,10 +296,9 @@ describe('validateEntrypoint - Save STATE reference validation', () => {
   })
 
   it('should accept when SAVE references valid STATE in graph', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, 'save-v1'),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', 'save-v1'),
       createSandboxNode('sandbox1'),
       createNode('loader1', 'LOADER'),
     ]
@@ -333,11 +323,10 @@ describe('validateEntrypoint - Save STATE reference validation', () => {
 
 describe('validateEntrypoint - Edge cases', () => {
   it('should handle multiple SANDBOX nodes', () => {
-    const stateCommit = 'state-v1'
     const saveCommit = 'save-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit, saveCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1', saveCommit),
       createSandboxNode('sandbox1'),
       createSandboxNode('sandbox2'),
       createNode('loader1', 'LOADER'),
@@ -362,7 +351,7 @@ describe('validateEntrypoint - Edge cases', () => {
     // sandbox should be checked first
     const nodes = [
       createStateNode('state1', 'state-v1'),
-      createSaveNode('save1', 'state1', 'state-v1', 'actual-save'),
+      createSaveNode('save1', 'state1', 'actual-save'),
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
     

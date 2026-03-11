@@ -25,7 +25,6 @@ export type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 export interface SaveContent {
   type: 'SAVE';
   stateNodeId: string;
-  stateNodeCommit: string;
   artifactId: string;
   artifactCommit: string;
   quadsHash: string;

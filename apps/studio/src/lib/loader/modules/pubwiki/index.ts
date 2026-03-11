@@ -243,15 +243,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				};
 			}
 
-			const stateNodeData = nodeStore.get(stateNodeId);
-			const stateNodeCommit = stateNodeData?.commit;
-			if (!stateNodeCommit) {
-				return {
-					success: false,
-					error: 'Cannot get STATE node version information.'
-				};
-			}
-
 			// --- Convert InputContentBlock[] → ReaderContent for the editor preview ---
 			// game_ref blocks use a placeholder saveCommit; actual upload happens after confirmation.
 			const previewContent: ReaderContent = [];
@@ -321,7 +312,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 
 					const saveResult = await createSaveCheckpoint(store, {
 						stateNodeId,
-						stateNodeCommit,
 						artifactId: artifactCtx.artifactId,
 						artifactCommit: artifactCtx.artifactCommit,
 						title: `Article save (${block.textId})`,
@@ -419,16 +409,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				};
 			}
 			
-			// Get STATE node commit
-			const stateNodeData = nodeStore.get(stateNodeId);
-			const stateNodeCommit = stateNodeData?.commit;
-			if (!stateNodeCommit) {
-				return {
-					success: false,
-					error: 'Cannot get STATE node version information.'
-				};
-			}
-			
 			try {
 				const store = await getNodeRDFStore(stateNodeId);
 				const checkpoint = await store.getCheckpoint(data.checkpointId);
@@ -462,7 +442,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				// Create cloud save
 				const result = await createSaveCheckpoint(store, {
 					stateNodeId,
-					stateNodeCommit,
 					artifactId: artifactCtx.artifactId,
 					artifactCommit: artifactCtx.artifactCommit,
 					title: editedValues.name as string,
@@ -535,16 +514,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 				};
 			}
 			
-			// Get STATE node commit
-			const stateNodeData = nodeStore.get(stateNodeId);
-			const stateNodeCommit = stateNodeData?.commit;
-			if (!stateNodeCommit) {
-				return {
-					success: false,
-					error: 'Cannot get STATE node version information.'
-				};
-			}
-			
 			try {
 				const store = await getNodeRDFStore(stateNodeId);
 				
@@ -592,7 +561,6 @@ export function createPubWikiModule(context: PubWikiModuleContext): JsModuleDefi
 					// Create cloud save
 					const result = await createSaveCheckpoint(store, {
 						stateNodeId,
-						stateNodeCommit,
 						artifactId: artifactCtx.artifactId!,
 						artifactCommit: artifactCtx.artifactCommit!,
 						title: cp.title,

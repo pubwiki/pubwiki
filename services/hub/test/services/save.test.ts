@@ -145,7 +145,6 @@ describe('SaveService', () => {
     it('should reject save with non-existent stateNodeId', async () => {
       const artifactId = crypto.randomUUID();
       const stateNodeId = crypto.randomUUID();
-      const fakeStateNodeCommit = 'fake-commit-that-does-not-exist';
 
       // Create artifact without any STATE node
       const now = new Date().toISOString();
@@ -177,7 +176,6 @@ describe('SaveService', () => {
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit: fakeStateNodeCommit,
         artifactId,
         artifactCommit,
         quadsHash,
@@ -189,11 +187,10 @@ describe('SaveService', () => {
       const saveId = crypto.randomUUID();
       const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
 
-      // Try to create save with non-existent stateNodeId + stateNodeCommit
+      // Try to create save with non-existent stateNodeId
       const result = await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit: fakeStateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
@@ -206,7 +203,7 @@ describe('SaveService', () => {
         isListed: false,
       });
 
-      // Should fail because stateNodeId + stateNodeCommit does not exist
+      // Should fail because stateNodeId does not exist
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.code).toBe('BAD_REQUEST');
@@ -214,60 +211,7 @@ describe('SaveService', () => {
       }
     });
 
-    it('should reject save with mismatched stateNodeCommit', async () => {
-      const artifactId = crypto.randomUUID();
-      const stateNodeId = crypto.randomUUID();
-
-      // Create a real STATE node
-      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
-
-      // Create artifact with the STATE node
-      const artifactCommit = await createArtifact(artifactId, stateNodeId, stateNodeCommit);
-
-      // Compute save contentHash with WRONG stateNodeCommit
-      const wrongStateNodeCommit = 'wrong-commit-hash';
-      const quadsHash = 'abcd1234'.repeat(8);
-      const saveContentHash = await computeContentHash({
-        type: 'SAVE',
-        stateNodeId,
-        stateNodeCommit: wrongStateNodeCommit,
-        artifactId,
-        artifactCommit,
-        quadsHash,
-        title: 'Test Save',
-        description: null,
-      });
-
-      // Compute save commit
-      const saveId = crypto.randomUUID();
-      const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
-
-      // Try to create save with wrong stateNodeCommit
-      const result = await service.createRuntimeSave({
-        saveId,
-        stateNodeId,
-        stateNodeCommit: wrongStateNodeCommit,
-        commit: saveCommit,
-        parent: null,
-        authorId: testUserId,
-        artifactId,
-        artifactCommit,
-        contentHash: saveContentHash,
-        quadsHash,
-        title: 'Test Save',
-        description: 'This should fail',
-        isListed: false,
-      });
-
-      // Should fail because stateNodeCommit does not match
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.code).toBe('BAD_REQUEST');
-        expect(result.error.message).toContain('STATE node');
-      }
-    });
-
-    it('should create save successfully with valid stateNodeId and stateNodeCommit', async () => {
+    it('should create save successfully with valid stateNodeId', async () => {
       const artifactId = crypto.randomUUID();
       const stateNodeId = crypto.randomUUID();
 
@@ -282,7 +226,6 @@ describe('SaveService', () => {
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         quadsHash,
@@ -294,11 +237,10 @@ describe('SaveService', () => {
       const saveId = crypto.randomUUID();
       const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
 
-      // Create save with valid stateNodeId + stateNodeCommit
+      // Create save with valid stateNodeId
       const result = await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
@@ -332,7 +274,6 @@ describe('SaveService', () => {
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit: fakeArtifactCommit,
         quadsHash,
@@ -348,7 +289,6 @@ describe('SaveService', () => {
       const result = await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
@@ -384,7 +324,6 @@ describe('SaveService', () => {
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         quadsHash,
@@ -398,7 +337,6 @@ describe('SaveService', () => {
       const result = await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
@@ -436,7 +374,6 @@ describe('SaveService', () => {
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         quadsHash,
@@ -449,7 +386,6 @@ describe('SaveService', () => {
       await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
@@ -497,7 +433,6 @@ describe('SaveService', () => {
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         quadsHash,
@@ -513,7 +448,6 @@ describe('SaveService', () => {
       await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,
@@ -596,18 +530,16 @@ describe('SaveService', () => {
       artifactIsPublic: boolean;
       authorId: string;
       stateNodeId: string;
-      stateNodeCommit: string;
       artifactId: string;
       artifactCommit: string;
       title: string;
     }) {
-      const { saveIsListed, authorId, stateNodeId, stateNodeCommit, artifactId, artifactCommit, title } = opts;
+      const { saveIsListed, authorId, stateNodeId, artifactId, artifactCommit, title } = opts;
 
       const quadsHash = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         quadsHash,
@@ -623,7 +555,6 @@ describe('SaveService', () => {
       await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId,
@@ -655,7 +586,6 @@ describe('SaveService', () => {
         artifactIsPublic: false,
         authorId: testUserId,
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         title: 'Listed Save',
@@ -667,16 +597,14 @@ describe('SaveService', () => {
         artifactIsPublic: false,
         authorId: testUserId,
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         title: 'Unlisted Save',
       });
 
-      // Author should see both saves when querying by stateNodeId + stateNodeCommit
+      // Author should see both saves when querying by stateNodeId
       const result = await service.listSaves({
         stateNodeId,
-        stateNodeCommit,
         userId: testUserId,
       });
 
@@ -701,7 +629,6 @@ describe('SaveService', () => {
         artifactIsPublic: false,
         authorId: testUserId,
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         title: 'Listed Save',
@@ -713,7 +640,6 @@ describe('SaveService', () => {
         artifactIsPublic: false,
         authorId: testUserId,
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         title: 'Unlisted Save',
@@ -725,7 +651,6 @@ describe('SaveService', () => {
       // Other user should only see the listed save (regardless of artifact ACL)
       const result = await service.listSaves({
         stateNodeId,
-        stateNodeCommit,
         userId: otherUserId,
       });
 
@@ -751,7 +676,6 @@ describe('SaveService', () => {
         artifactIsPublic: false,
         authorId: testUserId,
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         title: 'Listed Save',
@@ -763,7 +687,6 @@ describe('SaveService', () => {
         artifactIsPublic: false,
         authorId: testUserId,
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         title: 'Unlisted Save',
@@ -772,7 +695,6 @@ describe('SaveService', () => {
       // Anonymous user should only see the listed save (regardless of artifact ACL)
       const result = await service.listSaves({
         stateNodeId,
-        stateNodeCommit,
         userId: undefined,
       });
 
@@ -797,7 +719,6 @@ describe('SaveService', () => {
       const saveContentHash = await computeContentHash({
         type: 'SAVE',
         stateNodeId,
-        stateNodeCommit,
         artifactId,
         artifactCommit,
         quadsHash,
@@ -810,7 +731,6 @@ describe('SaveService', () => {
       await service.createRuntimeSave({
         saveId,
         stateNodeId,
-        stateNodeCommit,
         commit: saveCommit,
         parent: null,
         authorId: testUserId,

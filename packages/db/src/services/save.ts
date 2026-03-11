@@ -16,7 +16,6 @@ export type { SaveDetail };
 export interface CreateRuntimeSaveParams {
   saveId: string;          // Client-provided saveId (freely chosen)
   stateNodeId: string;
-  stateNodeCommit: string;
   commit: string;
   parent?: string | null;
   authorId: string;
@@ -37,8 +36,8 @@ export type ListSavesParams = {
   /** Current user ID for access control filtering */
   userId?: string;
 } & (
-  | { stateNodeId: string; stateNodeCommit: string; saveId?: undefined }
-  | { saveId: string; stateNodeId?: undefined; stateNodeCommit?: undefined }
+  | { stateNodeId: string; saveId?: undefined }
+  | { saveId: string; stateNodeId?: undefined }
 );
 
 // 列表响应
@@ -67,7 +66,6 @@ export class SaveService {
     const {
       saveId,
       stateNodeId,
-      stateNodeCommit,
       commit,
       parent,
       authorId,
@@ -81,28 +79,27 @@ export class SaveService {
     } = params;
 
     try {
-      // Validate stateNodeId + stateNodeCommit exists and is a STATE type node
-      // Use NodeVersionService to check version existence and type
-      const stateNodeResult = await this.nodeVersionService.getVersion(stateNodeCommit);
-      if (!stateNodeResult.success) {
+      // Validate stateNodeId exists and is a STATE type node
+      // Query node_versions for the stateNodeId to check it exists with STATE type
+      const [stateNodeRow] = await this.ctx.select({
+        nodeId: nodeVersions.nodeId,
+        type: nodeVersions.type,
+      })
+        .from(nodeVersions)
+        .where(eq(nodeVersions.nodeId, stateNodeId))
+        .limit(1);
+
+      if (!stateNodeRow) {
         return {
           success: false,
-          error: { code: 'BAD_REQUEST', message: `STATE node not found: ${stateNodeId}@${stateNodeCommit}` },
+          error: { code: 'BAD_REQUEST', message: `STATE node not found: ${stateNodeId}` },
         };
       }
 
-      const stateNode = stateNodeResult.data;
-      if (stateNode.nodeId !== stateNodeId) {
+      if (stateNodeRow.type !== 'STATE') {
         return {
           success: false,
-          error: { code: 'BAD_REQUEST', message: `STATE node commit ${stateNodeCommit} does not belong to node ${stateNodeId}` },
-        };
-      }
-
-      if (stateNode.type !== 'STATE') {
-        return {
-          success: false,
-          error: { code: 'BAD_REQUEST', message: `Node ${stateNodeId}@${stateNodeCommit} is not a STATE node (got ${stateNode.type})` },
+          error: { code: 'BAD_REQUEST', message: `Node ${stateNodeId} is not a STATE node (got ${stateNodeRow.type})` },
         };
       }
 
@@ -141,7 +138,6 @@ export class SaveService {
         content: {
           type: 'SAVE',
           stateNodeId,
-          stateNodeCommit,
           artifactId,
           artifactCommit,
           quadsHash,
@@ -175,7 +171,7 @@ export class SaveService {
     }
   }
 
-  // 查询 SAVE 版本列表（按 stateNodeId+stateNodeCommit 或 saveId）
+  // 查询 SAVE 版本列表（按 stateNodeId 或 saveId）
   // Access control:
   // - Author sees all their saves regardless of isListed
   // - Non-author only sees saves where isListed=true AND can read artifact
@@ -192,9 +188,8 @@ export class SaveService {
       ];
       if (params.saveId) {
         baseConditions.push(eq(nodeVersions.nodeId, params.saveId));
-      } else if (params.stateNodeId && params.stateNodeCommit) {
+      } else if (params.stateNodeId) {
         baseConditions.push(eq(saveContents.stateNodeId, params.stateNodeId));
-        baseConditions.push(eq(saveContents.stateNodeCommit, params.stateNodeCommit));
       }
       if (author) {
         baseConditions.push(eq(nodeVersions.authorId, author));
@@ -249,7 +244,6 @@ export class SaveService {
           isListed: resourceDiscoveryControl.isListed,
           // save content fields
           stateNodeId: saveContents.stateNodeId,
-          stateNodeCommit: saveContents.stateNodeCommit,
           artifactId: saveContents.artifactId,
           artifactCommit: saveContents.artifactCommit,
           quadsHash: saveContents.quadsHash,
@@ -281,7 +275,6 @@ export class SaveService {
         authorId: r.authorId,
         authoredAt: r.authoredAt,
         stateNodeId: r.stateNodeId,
-        stateNodeCommit: r.stateNodeCommit,
         artifactId: r.artifactId,
         artifactCommit: r.artifactCommit,
         quadsHash: r.quadsHash,
@@ -324,7 +317,6 @@ export class SaveService {
           contentHash: nodeVersions.contentHash,
           isListed: resourceDiscoveryControl.isListed,
           stateNodeId: saveContents.stateNodeId,
-          stateNodeCommit: saveContents.stateNodeCommit,
           artifactId: saveContents.artifactId,
           artifactCommit: saveContents.artifactCommit,
           quadsHash: saveContents.quadsHash,
@@ -368,7 +360,6 @@ export class SaveService {
           authorId: row.authorId,
           authoredAt: row.authoredAt,
           stateNodeId: row.stateNodeId,
-          stateNodeCommit: row.stateNodeCommit,
           artifactId: row.artifactId,
           artifactCommit: row.artifactCommit,
           quadsHash: row.quadsHash,

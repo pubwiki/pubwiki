@@ -273,7 +273,7 @@ LoaderNodeContent:
 
 # STATE 节点内容
 # 存储状态节点的名称和描述
-# Save 与 STATE 节点的关系通过 save_contents.stateNodeId 和 save_contents.stateNodeCommit 反向引用
+# Save 与 STATE 节点的关系通过 save_contents.stateNodeId 反向引用
 StateNodeContent:
   type: object
   required:
@@ -373,7 +373,6 @@ SaveNodeContent:
   required:
     - type
     - stateNodeId
-    - stateNodeCommit
     - artifactId
     - artifactCommit
     - quadsHash
@@ -385,9 +384,6 @@ SaveNodeContent:
       type: string
       format: uuid
       description: 引用的 STATE 节点 ID
-    stateNodeCommit:
-      type: string
-      description: 引用的 STATE 节点版本 commit hash
     artifactId:
       type: string
       format: uuid

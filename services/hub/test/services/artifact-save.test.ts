@@ -95,16 +95,14 @@ describe('ArtifactService - SAVE node validation', () => {
   // Helper: create SAVE node data
   async function createSaveNode(
     stateNodeId: string,
-    stateNodeCommit: string,
     artifactId: string,
     artifactCommit: string,
     title = 'Test Save',
-  ): Promise<{ nodeId: string; commit: string; contentHash: string; content: { type: 'SAVE'; stateNodeId: string; stateNodeCommit: string; artifactId: string; artifactCommit: string; quadsHash: string; title: string; description: null } }> {
+  ): Promise<{ nodeId: string; commit: string; contentHash: string; content: { type: 'SAVE'; stateNodeId: string; artifactId: string; artifactCommit: string; quadsHash: string; title: string; description: null } }> {
     const quadsHash = 'abcd1234'.repeat(8); // 64 char hex hash placeholder
     const content = {
       type: 'SAVE' as const,
       stateNodeId,
-      stateNodeCommit,
       artifactId,
       artifactCommit,
       quadsHash,
@@ -174,7 +172,7 @@ describe('ArtifactService - SAVE node validation', () => {
     const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
 
     // Create SAVE node data referencing the STATE node (uses baseCommit as the artifact commit it references)
-    const saveData = await createSaveNode(stateNodeId, stateNodeCommit, artifactId, baseCommit);
+    const saveData = await createSaveNode(stateNodeId, artifactId, baseCommit);
 
     // Now compute final commit including the SAVE node
     const allCommitNodes = [
@@ -273,7 +271,7 @@ describe('ArtifactService - SAVE node validation', () => {
     const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
 
     // Create SAVE node referencing the existing STATE node (uses baseCommit)
-    const saveData = await createSaveNode(existingStateNodeId, existingStateNodeCommit, artifactId, baseCommit);
+    const saveData = await createSaveNode(existingStateNodeId, artifactId, baseCommit);
 
     // Compute final artifact commit including SAVE node
     const allCommitNodes = [
@@ -338,7 +336,6 @@ describe('ArtifactService - SAVE node validation', () => {
     // Create artifact with SAVE referencing a STATE node that doesn't exist
     const artifactId = crypto.randomUUID();
     const fakeStateNodeId = crypto.randomUUID();
-    const fakeStateNodeCommit = 'fake-commit-that-does-not-exist';
     const sandboxNodeId = crypto.randomUUID();
     const loaderNodeId = crypto.randomUUID();
 
@@ -368,7 +365,6 @@ describe('ArtifactService - SAVE node validation', () => {
     const saveContent = {
       type: 'SAVE' as const,
       stateNodeId: fakeStateNodeId,
-      stateNodeCommit: fakeStateNodeCommit,
       artifactId,
       artifactCommit: baseCommit,
       quadsHash,
@@ -436,122 +432,6 @@ describe('ArtifactService - SAVE node validation', () => {
     }
   });
 
-  it('should reject SAVE node with mismatched stateNodeCommit', async () => {
-    // Create artifact with SAVE referencing a STATE node with wrong commit
-    const artifactId = crypto.randomUUID();
-    const stateNodeId = crypto.randomUUID();
-    const sandboxNodeId = crypto.randomUUID();
-    const loaderNodeId = crypto.randomUUID();
-
-    // Create node data
-    const stateContent = { type: 'STATE' as const, name: 'Game State' };
-    const stateContentHash = await computeContentHash(stateContent);
-    const stateNodeCommit = await computeNodeCommit(stateNodeId, null, stateContentHash, 'STATE');
-
-    const sandboxData = await createSandboxNode(sandboxNodeId);
-    const loaderData = await createLoaderNode(loaderNodeId);
-
-    // Edges
-    const edges: ArtifactEdgeDescriptor[] = [
-      { source: stateNodeId, target: loaderNodeId },
-      { source: loaderNodeId, target: sandboxNodeId },
-    ];
-
-    // Compute base artifact commit
-    const baseCommitNodes = [
-      { nodeId: stateNodeId, commit: stateNodeCommit },
-      { nodeId: sandboxNodeId, commit: sandboxData.commit },
-      { nodeId: loaderNodeId, commit: loaderData.commit },
-    ];
-    const commitEdges = edges.map(e => ({
-      source: e.source,
-      target: e.target,
-      sourceHandle: null,
-      targetHandle: null,
-    }));
-    const baseCommit = await computeArtifactCommit(artifactId, null, baseCommitNodes, commitEdges);
-
-    // Create SAVE node with WRONG stateNodeCommit (uses baseCommit)
-    const wrongStateNodeCommit = 'wrong-commit-hash';
-    const quadsHash = 'abcd1234'.repeat(8);
-    const saveContent = {
-      type: 'SAVE' as const,
-      stateNodeId,
-      stateNodeCommit: wrongStateNodeCommit, // WRONG!
-      artifactId,
-      artifactCommit: baseCommit,
-      quadsHash,
-      title: 'Test Save',
-      description: null,
-    };
-    const saveContentHash = await computeContentHash(saveContent);
-    const saveId = crypto.randomUUID();
-    const saveCommit = await computeNodeCommit(saveId, null, saveContentHash, 'SAVE');
-
-    // Compute final artifact commit including SAVE node
-    const allCommitNodes = [
-      ...baseCommitNodes,
-      { nodeId: saveId, commit: saveCommit },
-    ];
-    const artifactCommit = await computeArtifactCommit(artifactId, null, allCommitNodes, commitEdges);
-
-    const nodes: CreateArtifactNode[] = [
-      {
-        nodeId: stateNodeId,
-        commit: stateNodeCommit,
-        type: 'STATE',
-        name: 'state',
-        contentHash: stateContentHash,
-        content: stateContent,
-      },
-      {
-        nodeId: sandboxNodeId,
-        commit: sandboxData.commit,
-        type: 'SANDBOX',
-        name: 'sandbox',
-        contentHash: sandboxData.contentHash,
-        content: sandboxData.content,
-      },
-      {
-        nodeId: loaderNodeId,
-        commit: loaderData.commit,
-        type: 'LOADER',
-        name: 'loader',
-        contentHash: loaderData.contentHash,
-        content: loaderData.content,
-      },
-      {
-        nodeId: saveId,
-        commit: saveCommit,
-        type: 'SAVE',
-        name: 'save',
-        contentHash: saveContentHash,
-        content: saveContent,
-      },
-    ];
-
-    const artifactService = new ArtifactService(ctx);
-    const result = await artifactService.createArtifact({
-      authorId: testUserId,
-      metadata: {
-        artifactId,
-        commit: artifactCommit,
-        name: 'Artifact with mismatched SAVE commit',
-        isListed: true,
-        isPrivate: false,
-      },
-      nodes,
-      edges,
-    });
-
-    // Should fail because stateNodeCommit doesn't match
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.code).toBe('BAD_REQUEST');
-      expect(result.error.message).toContain('stateNodeCommit');
-    }
-  });
-
   it('should reject SAVE node missing stateNodeId in content', async () => {
     const artifactId = crypto.randomUUID();
     const sandboxNodeId = crypto.randomUUID();
@@ -581,7 +461,6 @@ describe('ArtifactService - SAVE node validation', () => {
     const invalidSaveContent: any = {
       type: 'SAVE' as const,
       // stateNodeId: missing!
-      stateNodeCommit: 'some-commit',
       artifactId,
       artifactCommit: baseCommit,
       quadsHash: 'abcd1234'.repeat(8),

@@ -807,7 +807,7 @@ export class NodeVersionService {
    * Note: This collects the operation into BatchContext, not executed immediately.
    * 
    * For SAVE nodes, the content is expected to have additional fields
-   * (stateNodeCommit, sourceArtifactCommit) populated by artifact.ts.
+   * (sourceArtifactCommit) populated by artifact.ts.
    */
   private insertContent(contentHash: string, content: ArtifactNodeContent): void {
     // Using type narrowing via the discriminated union's `type` field
@@ -903,7 +903,6 @@ export class NodeVersionService {
           .values({
             contentHash,
             stateNodeId: content.stateNodeId,
-            stateNodeCommit: content.stateNodeCommit,
             artifactId: content.artifactId,
             artifactCommit: content.artifactCommit,
             quadsHash: content.quadsHash,

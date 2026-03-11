@@ -528,7 +528,6 @@ describe('ImmutableGraph - Edge Cases', () => {
     const content = {
       type: 'SAVE',
       stateNodeId: 'state-123',
-      stateNodeCommit: 'commit-abc',
       nested: {
         deep: {
           value: true,

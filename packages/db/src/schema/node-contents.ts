@@ -126,7 +126,7 @@ export const loaderContents = sqliteTable('loader_contents', {
 // ────────────────────────────────────────────────────────────
 // 7) STATE 节点内容
 // 内容：Artifact 中的状态节点，存储名称和描述
-// Save 与 STATE 的关系通过 save_contents.stateNodeId + stateNodeCommit 反向引用
+// Save 与 STATE 的关系通过 save_contents.stateNodeId 反向引用
 // ────────────────────────────────────────────────────────────
 export const stateContents = sqliteTable('state_contents', {
   contentHash: text('content_hash').primaryKey(),              // SHA-256
@@ -147,7 +147,6 @@ export const saveContents = sqliteTable('save_contents', {
 
   // 关联的 STATE 节点信息
   stateNodeId: text('state_node_id').notNull(),                // 关联的 STATE 节点 ID
-  stateNodeCommit: text('state_node_commit').notNull(),        // 关联的 STATE 节点版本 commit
 
   // 创建此 Save 的 artifact 信息
   artifactId: text('artifact_id').notNull(),                   // 创建此 Save 的 artifact ID

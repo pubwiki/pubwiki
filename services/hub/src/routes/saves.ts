@@ -48,7 +48,6 @@ savesRoute.post('/', authMiddleware, async (c) => {
   const result = await saveService.createRuntimeSave({
     saveId: metadata.saveId,
     stateNodeId: metadata.stateNodeId,
-    stateNodeCommit: metadata.stateNodeCommit,
     artifactCommit: metadata.artifactCommit,
     commit: metadata.commit,
     parent: metadata.parent ?? null,
@@ -91,7 +90,7 @@ savesRoute.post('/', authMiddleware, async (c) => {
   return c.json(detailResult.data, 201);
 });
 
-// GET /saves — 获取存档列表（按 stateNodeId+stateNodeCommit 或 saveId 查询）
+// GET /saves — 获取存档列表（按 stateNodeId 或 saveId 查询）
 savesRoute.get('/', resourceAccessMiddleware, async (c) => {
   const ctx = new BatchContext(createDb(c.env.DB));
   const saveService = new SaveService(ctx);
@@ -101,21 +100,21 @@ savesRoute.get('/', resourceAccessMiddleware, async (c) => {
   const validated = validateQuery(c, ListSavesQueryParams, c.req.query());
   if (isValidationError(validated)) return validated;
 
-  const { stateNodeId, stateNodeCommit, saveId, author, page, limit } = validated;
+  const { stateNodeId, saveId, author, page, limit } = validated;
 
-  const hasStateNodeParams = stateNodeId && stateNodeCommit;
+  const hasStateNodeParams = !!stateNodeId;
   const hasSaveIdParam = !!saveId;
 
   // oneOf 验证：必须提供其中一组
   if (hasStateNodeParams && hasSaveIdParam) {
-    return badRequest(c, 'Cannot specify both stateNodeId/stateNodeCommit and saveId. Use one or the other.');
+    return badRequest(c, 'Cannot specify both stateNodeId and saveId. Use one or the other.');
   }
   if (!hasStateNodeParams && !hasSaveIdParam) {
-    return badRequest(c, 'Must specify either stateNodeId+stateNodeCommit or saveId');
+    return badRequest(c, 'Must specify either stateNodeId or saveId');
   }
 
   const listParams = hasStateNodeParams
-    ? { stateNodeId, stateNodeCommit, author, page, limit, userId: userId ?? undefined }
+    ? { stateNodeId: stateNodeId!, author, page, limit, userId: userId ?? undefined }
     : { saveId: saveId!, author, page, limit, userId: userId ?? undefined };
 
   const result = await saveService.listSaves(listParams);

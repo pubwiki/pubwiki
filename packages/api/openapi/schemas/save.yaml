@@ -8,7 +8,6 @@ SaveDetail:
     - authorId
     - authoredAt
     - stateNodeId
-    - stateNodeCommit
     - artifactId
     - artifactCommit
     - quadsHash
@@ -17,7 +16,7 @@ SaveDetail:
   properties:
     saveId:
       type: string
-      description: Save 节点 ID（服务端计算：hash(stateNodeId, stateNodeCommit, userId, artifactId, artifactCommit)）
+      description: Save 节点 ID（客户端提供）
     commit:
       type: string
       description: Save 版本 commit hash
@@ -35,9 +34,6 @@ SaveDetail:
       type: string
       format: uuid
       description: 关联的 STATE 节点 ID
-    stateNodeCommit:
-      type: string
-      description: 关联的 STATE 节点版本 commit hash
     artifactId:
       type: string
       format: uuid
@@ -68,7 +64,6 @@ CreateSaveRequest:
   required:
     - saveId
     - stateNodeId
-    - stateNodeCommit
     - commit
     - artifactId
     - artifactCommit
@@ -83,9 +78,6 @@ CreateSaveRequest:
       type: string
       format: uuid
       description: 关联的 STATE 节点 ID
-    stateNodeCommit:
-      type: string
-      description: 关联的 STATE 节点版本 commit hash
     commit:
       type: string
       description: Save 版本 commit hash（客户端计算）

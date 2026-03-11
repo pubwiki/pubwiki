@@ -44,7 +44,6 @@ export interface QuadSerializers {
  */
 export interface CreateSaveOptions {
 	stateNodeId: string;
-	stateNodeCommit: string;
 	parent?: string | null;
 	artifactId: string;
 	artifactCommit: string;
@@ -101,7 +100,6 @@ export async function createSaveCheckpoint(
 		const saveContent = {
 			type: 'SAVE' as const,
 			stateNodeId: options.stateNodeId,
-			stateNodeCommit: options.stateNodeCommit,
 			artifactId: options.artifactId,
 			artifactCommit: options.artifactCommit,
 			quadsHash,
@@ -125,7 +123,6 @@ export async function createSaveCheckpoint(
 			JSON.stringify({
 				saveId,
 				stateNodeId: options.stateNodeId,
-				stateNodeCommit: options.stateNodeCommit,
 				commit,
 				parent: options.parent ?? null,
 				artifactId: options.artifactId,
@@ -202,17 +199,15 @@ export async function restoreFromSave(
 // ============================================================================
 
 /**
- * Fetch saves for a STATE node version.
+ * Fetch saves for a STATE node.
  */
 export async function fetchSaves(
 	stateNodeId: string,
-	stateNodeCommit: string,
 	apiBaseUrl: string,
 ): Promise<SaveDetail[]> {
 	try {
 		const url = new URL(`${apiBaseUrl}/api/saves`);
 		url.searchParams.set('stateNodeId', stateNodeId);
-		url.searchParams.set('stateNodeCommit', stateNodeCommit);
 
 		const response = await fetch(url.toString(), { credentials: 'include' });
 		if (!response.ok) return [];

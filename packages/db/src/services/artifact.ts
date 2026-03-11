@@ -243,8 +243,8 @@ export class ArtifactService {
    * Create new artifact record.
    * Uses AclService and DiscoveryService for proper abstraction.
    * 
-   * Uses ON CONFLICT DO NOTHING with optimistic lock to detect conflicts.
-   * If artifact already exists, the optimistic lock will fail at commit time.
+   * If artifact already exists, the UNIQUE constraint violation will cause
+   * the entire batch to rollback at commit time.
    */
   private createArtifactRecord(
     artifactId: string,
@@ -261,8 +261,8 @@ export class ArtifactService {
       thumbnailUrl: metadata.thumbnailUrl ?? null,
       license: metadata.license ?? null,
     };
-    this.ctx.modify({ expectAffected: 1, lockMsg: `Artifact ${artifactId} already exists` })
-      .insert(artifacts).values(newArtifact).onConflictDoNothing();
+    this.ctx.modify()
+      .insert(artifacts).values(newArtifact);
 
     // Mark artifact as searchable to trigger FTS indexing
     // This UPDATE has no expectAffected check, so it won't interfere with optimistic lock
@@ -291,8 +291,8 @@ export class ArtifactService {
   /**
    * Step 3: Create version record
    * 
-   * Uses ON CONFLICT DO NOTHING with optimistic lock to detect conflicts.
-   * If version with same commitHash already exists, the optimistic lock will fail at commit time.
+   * If version with same commitHash already exists, the UNIQUE constraint
+   * violation will cause the entire batch to rollback at commit time.
    */
   private createVersionRecord(
     artifactId: string,
@@ -309,8 +309,8 @@ export class ArtifactService {
       entrypoint: metadata.entrypoint ?? null,
       buildCacheKey: metadata.buildCacheKey ?? null,
     };
-    this.ctx.modify({ expectAffected: 1, lockMsg: `Version with commit ${metadata.commit} already exists` })
-      .insert(artifactVersions).values(newVersion).onConflictDoNothing();
+    this.ctx.modify()
+      .insert(artifactVersions).values(newVersion);
   }
 
   /**
@@ -356,7 +356,7 @@ export class ArtifactService {
     const nodeVersionService = new NodeVersionService(this.ctx);
 
     // Sync all nodes together
-    // SAVE nodes now have all required fields in their content (stateNodeCommit, artifactId, artifactCommit)
+    // SAVE nodes now have all required fields in their content (artifactId, artifactCommit)
     const syncInputs: SyncNodeVersionInput[] = nodes.map(n => ({
       nodeId: n.nodeId,
       commit: n.commit,

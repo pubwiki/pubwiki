@@ -35,7 +35,6 @@ function createStateNode(nodeId: string, commit: string): ImmutableGraphNode {
 function createSaveNode(
   nodeId: string,
   stateNodeId: string,
-  stateNodeCommit: string,
   commit?: string
 ): ImmutableGraphNode {
   return createNode(nodeId, 'SAVE', {
@@ -43,7 +42,6 @@ function createSaveNode(
     content: {
       type: 'SAVE',
       stateNodeId,
-      stateNodeCommit,
     } as ImmutableGraphNode['content'],
   })
 }
@@ -103,10 +101,9 @@ describe('validateSaveNodes - No SAVE nodes', () => {
 
 describe('validateSaveNodes - Valid SAVE configurations', () => {
   it('should accept valid SAVE node with matching STATE', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1'),
       createNode('loader1', 'LOADER'),
       createNode('sandbox1', 'SANDBOX'),
     ]
@@ -120,13 +117,11 @@ describe('validateSaveNodes - Valid SAVE configurations', () => {
   })
 
   it('should accept multiple valid SAVE nodes', () => {
-    const stateCommit1 = 'state-v1'
-    const stateCommit2 = 'state-v2'
     const nodes = [
-      createStateNode('state1', stateCommit1),
-      createStateNode('state2', stateCommit2),
-      createSaveNode('save1', 'state1', stateCommit1),
-      createSaveNode('save2', 'state2', stateCommit2),
+      createStateNode('state1', 'state-v1'),
+      createStateNode('state2', 'state-v2'),
+      createSaveNode('save1', 'state1'),
+      createSaveNode('save2', 'state2'),
       createNode('loader1', 'LOADER'),
       createNode('loader2', 'LOADER'),
       createNode('sandbox1', 'SANDBOX'),
@@ -143,11 +138,10 @@ describe('validateSaveNodes - Valid SAVE configurations', () => {
   })
 
   it('should accept multiple SAVE nodes referencing same STATE', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit),
-      createSaveNode('save2', 'state1', stateCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1'),
+      createSaveNode('save2', 'state1'),
       createNode('loader1', 'LOADER'),
       createNode('sandbox1', 'SANDBOX'),
     ]
@@ -173,7 +167,6 @@ describe('validateSaveNodes - Missing content fields', () => {
         content: {
           type: 'SAVE',
           // stateNodeId missing
-          stateNodeCommit: 'commit-state1',
         } as ImmutableGraphNode['content'],
       }),
     ]
@@ -184,26 +177,6 @@ describe('validateSaveNodes - Missing content fields', () => {
     expect(result.error?.code).toBe('BAD_REQUEST')
     expect(result.error?.message).toContain('save1')
     expect(result.error?.message).toContain('stateNodeId')
-  })
-
-  it('should reject SAVE node missing stateNodeCommit', () => {
-    const nodes = [
-      createStateNode('state1', 'commit-state1'),
-      createNode('save1', 'SAVE', {
-        content: {
-          type: 'SAVE',
-          stateNodeId: 'state1',
-          // stateNodeCommit missing
-        } as ImmutableGraphNode['content'],
-      }),
-    ]
-    const graph = ImmutableGraph.fromArrays(nodes, [])
-    const result = validateSaveNodes(graph)
-    
-    expect(result.success).toBe(false)
-    expect(result.error?.code).toBe('BAD_REQUEST')
-    expect(result.error?.message).toContain('save1')
-    expect(result.error?.message).toContain('stateNodeCommit')
   })
 
   it('should reject SAVE node with empty content', () => {
@@ -226,7 +199,7 @@ describe('validateSaveNodes - Missing content fields', () => {
 describe('validateSaveNodes - Missing STATE reference', () => {
   it('should reject SAVE referencing non-existent STATE node', () => {
     const nodes = [
-      createSaveNode('save1', 'nonexistent-state', 'some-commit'),
+      createSaveNode('save1', 'nonexistent-state'),
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
     const result = validateSaveNodes(graph)
@@ -241,7 +214,7 @@ describe('validateSaveNodes - Missing STATE reference', () => {
   it('should reject SAVE referencing STATE not in graph', () => {
     const nodes = [
       createStateNode('state1', 'commit-state1'),
-      createSaveNode('save1', 'state2', 'commit-state2'), // state2 doesn't exist
+      createSaveNode('save1', 'state2'), // state2 doesn't exist
     ]
     const graph = ImmutableGraph.fromArrays(nodes, [])
     const result = validateSaveNodes(graph)
@@ -253,42 +226,14 @@ describe('validateSaveNodes - Missing STATE reference', () => {
 })
 
 // ============================================================================
-// Commit Mismatch Tests
-// ============================================================================
-
-describe('validateSaveNodes - Commit mismatch', () => {
-  it('should reject SAVE with mismatched stateNodeCommit', () => {
-    const nodes = [
-      createStateNode('state1', 'actual-commit-v1'),
-      createSaveNode('save1', 'state1', 'wrong-commit-v2'),
-      createNode('loader1', 'LOADER'),
-      createNode('sandbox1', 'SANDBOX'),
-    ]
-    const edges = [
-      createEdge('state1', 'loader1'),
-      createEdge('loader1', 'sandbox1'),
-    ]
-    const graph = ImmutableGraph.fromArrays(nodes, edges)
-    const result = validateSaveNodes(graph)
-    
-    expect(result.success).toBe(false)
-    expect(result.error?.code).toBe('BAD_REQUEST')
-    expect(result.error?.message).toContain('save1')
-    expect(result.error?.message).toContain('wrong-commit-v2')
-    expect(result.error?.message).toContain('actual-commit-v1')
-  })
-})
-
-// ============================================================================
 // Connectivity Tests (STATE → LOADER → SANDBOX)
 // ============================================================================
 
 describe('validateSaveNodes - Graph connectivity', () => {
   it('should reject STATE without path to SANDBOX', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1'),
       createNode('loader1', 'LOADER'),
       createNode('sandbox1', 'SANDBOX'),
       // No edge from state1 to loader1
@@ -304,10 +249,9 @@ describe('validateSaveNodes - Graph connectivity', () => {
   })
 
   it('should reject STATE directly connected to SANDBOX (bypassing LOADER)', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1'),
       createNode('sandbox1', 'SANDBOX'),
     ]
     const edges = [
@@ -322,10 +266,9 @@ describe('validateSaveNodes - Graph connectivity', () => {
   })
 
   it('should reject STATE connected only to LOADER without SANDBOX', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1'),
       createNode('loader1', 'LOADER'),
       // No SANDBOX node
     ]
@@ -340,10 +283,9 @@ describe('validateSaveNodes - Graph connectivity', () => {
   })
 
   it('should accept STATE → LOADER → LOADER → SANDBOX', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1'),
       createNode('loader1', 'LOADER'),
       createNode('loader2', 'LOADER'),
       createNode('sandbox1', 'SANDBOX'),
@@ -359,12 +301,11 @@ describe('validateSaveNodes - Graph connectivity', () => {
   })
 
   it('should cache connectivity results for multiple SAVE nodes', () => {
-    const stateCommit = 'state-v1'
     const nodes = [
-      createStateNode('state1', stateCommit),
-      createSaveNode('save1', 'state1', stateCommit),
-      createSaveNode('save2', 'state1', stateCommit),
-      createSaveNode('save3', 'state1', stateCommit),
+      createStateNode('state1', 'state-v1'),
+      createSaveNode('save1', 'state1'),
+      createSaveNode('save2', 'state1'),
+      createSaveNode('save3', 'state1'),
       createNode('loader1', 'LOADER'),
       createNode('sandbox1', 'SANDBOX'),
     ]

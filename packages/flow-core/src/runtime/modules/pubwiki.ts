@@ -189,7 +189,6 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 
 				const result = await config.createSaveCheckpoint(store, {
 					stateNodeId,
-					stateNodeCommit: stateNode.commit,
 					artifactId: artifactCtx.artifactId,
 					artifactCommit: artifactCtx.artifactCommit,
 					title: (edited.name ?? checkpoint.title) as string,
@@ -268,7 +267,6 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 
 					const result = await config.createSaveCheckpoint(store, {
 						stateNodeId,
-						stateNodeCommit: stateNode.commit,
 						artifactId: artifactCtx.artifactId!,
 						artifactCommit: artifactCtx.artifactCommit!,
 						title: cp.title,
@@ -372,7 +370,6 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 
 					const saveResult = await config.createSaveCheckpoint(store, {
 						stateNodeId,
-						stateNodeCommit: stateNode.commit,
 						artifactId: artifactCtx.artifactId!,
 						artifactCommit: artifactCtx.artifactCommit!,
 						title: `Article save (${textId})`,

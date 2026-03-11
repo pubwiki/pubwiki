@@ -137,14 +137,8 @@
 			return;
 		}
 
-		const nodeCommit = getNodeCommit();
-		if (!nodeCommit) {
-			cloudSaves = [];
-			return;
-		}
-
 		try {
-			const saves = await fetchSaves(nodeId, nodeCommit);
+			const saves = await fetchSaves(nodeId);
 			cloudSaves = saves.map(s => ({
 				id: s.commit, // Use commit as ID for cloud saves
 				commit: s.commit,
@@ -257,7 +251,6 @@
 			// Create cloud save
 			const result = await createSaveCheckpoint(store, {
 				stateNodeId: nodeId,
-				stateNodeCommit: nodeCommit,
 				artifactId: artifactContext.artifactId,
 				artifactCommit: artifactContext.artifactCommit,
 				title: newCheckpointTitle.trim(),
@@ -439,7 +432,6 @@
 			// Create cloud save
 			const result = await createSaveCheckpoint(store, {
 				stateNodeId: nodeId,
-				stateNodeCommit: nodeCommit,
 				artifactId: artifactContext.artifactId,
 				artifactCommit: artifactContext.artifactCommit,
 				title: checkpoint.title,
