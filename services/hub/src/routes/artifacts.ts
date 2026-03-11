@@ -8,7 +8,7 @@ import { authMiddleware } from '../middleware/auth';
 import { resourceAccessMiddleware } from '../middleware/resource-access';
 import { checkResourceAccess } from '../lib/access-control';
 import { validateQuery, validateFormDataJson, validateBody, isValidationError } from '../lib/validate';
-import { serviceErrorResponse, badRequest, notFound, commitWithConflictHandling } from '../lib/service-error';
+import { serviceErrorResponse, badRequest, notFound, conflict, commitWithConflictHandling, isUniqueConstraintError } from '../lib/service-error';
 import { createAuditLogger } from '../lib/audit';
 import { marked } from 'marked';
 
@@ -257,15 +257,13 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
   }
 
   // Commit database operations
-  // OptimisticLockError is thrown here if artifact already exists (idempotent creation)
+  // UNIQUE constraint violation is thrown here if artifact or version already exists,
+  // causing the entire batch to rollback (no orphan records)
   try {
     await ctx.commit();
   } catch (error) {
-    if (error instanceof OptimisticLockError) {
-      return serviceErrorResponse(c, {
-        code: 'CONFLICT',
-        message: `Artifact ${metadata.artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.`,
-      });
+    if (isUniqueConstraintError(error)) {
+      return conflict(c, `Artifact ${metadata.artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.`);
     }
     throw error;
   }
@@ -535,15 +533,13 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
   }
 
   // Commit database operations
-  // OptimisticLockError is thrown here if version with same commit already exists (idempotent patch)
+  // UNIQUE constraint violation is thrown here if version with same commit already exists,
+  // causing the entire batch to rollback (no orphan records)
   try {
     await ctx.commit();
   } catch (error) {
-    if (error instanceof OptimisticLockError) {
-      return serviceErrorResponse(c, {
-        code: 'CONFLICT',
-        message: `Version with commit ${metadata.commit} already exists for artifact ${metadata.artifactId}. This indicates a duplicate patch request.`,
-      });
+    if (isUniqueConstraintError(error)) {
+      return conflict(c, `Version with commit ${metadata.commit} already exists for artifact ${metadata.artifactId}. This indicates a duplicate patch request.`);
     }
     throw error;
   }

@@ -1,0 +1,1 @@
+ALTER TABLE `save_contents` DROP COLUMN `state_node_commit`;

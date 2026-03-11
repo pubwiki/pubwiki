@@ -1320,13 +1320,7 @@
 			if (patchResult.success) {
 				newCommit = patchResult.newCommit;
 			} else {
-				// Fall back to full publish if patch fails
-				console.warn('[Studio] PATCH failed, falling back to full publish:', patchResult.error);
-				const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, buildCacheKey);
-				if (!result.success) {
-					throw new Error(result.error || 'Failed to publish');
-				}
-				newCommit = result.latestCommit;
+				throw new Error(patchResult.error || 'Failed to update artifact');
 			}
 		} else {
 			// Full publish for new artifacts or first-time publish

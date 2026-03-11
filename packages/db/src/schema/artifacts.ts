@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, primaryKey, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, primaryKey, uniqueIndex, check } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { user } from './auth';
 import type { ArtifactEntrypoint } from '@pubwiki/api'
@@ -57,6 +57,7 @@ export const artifactVersions = sqliteTable(
     index('idx_artifact_versions_version').on(table.artifactId, table.version),
     uniqueIndex('idx_artifact_versions_commit').on(table.artifactId, table.commitHash),
     index('idx_artifact_versions_build_cache').on(table.buildCacheKey),
+    check('chk_entrypoint_requires_build_cache', sql`entrypoint IS NULL OR build_cache_key IS NOT NULL`),
   ]
 );
 

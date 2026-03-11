@@ -17,6 +17,15 @@ export default defineWorkersConfig({
     // 将迁移 SQL 注入到 Workers 环境
     '__MIGRATIONS__': JSON.stringify(migrations),
   },
+  resolve: {
+    alias: {
+      // readable-stream@4.7.0 tries to redefine non-configurable
+      // Symbol(nodejs.util.promisify.custom) on pipeline/eos, which crashes
+      // in the workerd runtime where nodejs_compat already provides these.
+      // Redirect to the built-in node:stream to avoid the conflict.
+      'readable-stream': 'node:stream',
+    },
+  },
   test: {
     poolOptions: {
       workers: {

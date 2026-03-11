@@ -64,6 +64,19 @@ export function internalError(c: Context, message: string): Response {
 }
 
 // ============================================================================
+// D1/SQLite constraint error detection
+// ============================================================================
+
+/**
+ * Check if an error is a D1/SQLite UNIQUE constraint violation.
+ * When a UNIQUE/PRIMARY KEY constraint is violated inside db.batch(),
+ * the entire batch rolls back and this error is thrown.
+ */
+export function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('UNIQUE constraint failed');
+}
+
+// ============================================================================
 // BatchContext commit helper with OptimisticLockError handling
 // ============================================================================
 
