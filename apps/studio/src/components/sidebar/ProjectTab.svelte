@@ -10,7 +10,7 @@
 	import type { GeneratedNodeData } from '$lib/types';
 	import type { StudioNodeData } from '$lib/types';
 	import type { NodeRef } from '$lib/version';
-	import { type PublishMetadata } from '$lib/io';
+	import { type PublishMetadata, type PatchMetadata } from '$lib/io';
 	import type { DraftSyncState } from '$lib/sync';
 	import { formatRelativeSyncTime } from '$lib/sync';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
@@ -25,6 +25,16 @@
 
 	const hubUrl = PUBLIC_HUB_URL || 'http://localhost:5173';
 
+	/**
+	 * Metadata for updating an existing artifact (PATCH).
+	 * Separated from PublishMetadata to avoid coupling.
+	 */
+	export interface UpdateMetadata {
+		version: string;
+		name: string;
+		entrypoint?: { saveCommit: string; sandboxNodeId: string };
+	}
+
 	interface Props {
 		nodes: Node<FlowNodeData>[];
 		edges: Edge[];
@@ -34,7 +44,10 @@
 		isAuthenticated: boolean;
 		/** Last cloud commit hash for version lineage tracking */
 		lastCloudCommit?: string;
+		/** Called for first-time publish (POST) of a draft artifact */
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
+		/** Called for incremental update (PATCH) of an already-published artifact */
+		onUpdate: (metadata: UpdateMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
 		/** Called when user edits the project name, for real-time sync with sidebar header */
 		onNameChange?: (name: string) => void;
 		// Cloud sync
@@ -46,7 +59,7 @@
 		onEntrypointChange?: (sandboxNodeId: string | null) => void;
 	}
 
-	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onNameChange, syncState, onSync, onEnableSync, selectedEntrypoint = null, onEntrypointChange }: Props = $props();
+	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onUpdate, onNameChange, syncState, onSync, onEnableSync, selectedEntrypoint = null, onEntrypointChange }: Props = $props();
 
 	// Cloud sync toggle handler
 	function handleSyncToggle(checked: boolean) {
@@ -218,78 +231,91 @@
 		onNameChange?.(name);
 	}
 
-	async function handleSubmit(e: Event) {
-		e.preventDefault();
+	/** Resolve the entrypoint save commit, uploading local checkpoint if needed */
+	async function resolveEntrypoint(): Promise<{ saveCommit: string; sandboxNodeId: string } | undefined> {
+		if (!selectedEntrypoint || !selectedSave) return undefined;
+
+		let saveCommit: string;
+		if (selectedSave.source === 'cloud' && selectedSave.saveCommit) {
+			saveCommit = selectedSave.saveCommit;
+		} else if (selectedSave.source === 'local' && selectedSave.checkpointId) {
+			const ctx = await getArtifactContext(projectId);
+			if (!ctx.isPublished || !ctx.artifactId || !ctx.artifactCommit) {
+				throw new Error('Cannot upload save: artifact not yet published. Please publish first without an entrypoint, then update with one.');
+			}
+			const store = await getNodeRDFStore(selectedSave.stateNodeId);
+			await store.loadCheckpoint(selectedSave.checkpointId);
+			const result = await createSaveCheckpoint(store, {
+				stateNodeId: selectedSave.stateNodeId,
+				artifactId: ctx.artifactId,
+				artifactCommit: ctx.artifactCommit,
+				title: selectedSave.title,
+			});
+			if (!result.success || !result.save) {
+				throw new Error(result.error || 'Failed to upload save checkpoint');
+			}
+			saveCommit = result.save.commit;
+		} else {
+			throw new Error('Invalid save selection');
+		}
+		return { sandboxNodeId: selectedEntrypoint, saveCommit };
+	}
+
+	/** Validate common form fields before submit */
+	function validateForm(): boolean {
 		errorMessage = '';
 		successMessage = '';
-
 		if (!name.trim()) {
 			errorMessage = m.studio_error_name_required();
-			return;
+			return false;
 		}
 		if (!/^\d+\.\d+\.\d+(-[a-zA-Z0-9]+)?$/.test(version)) {
 			errorMessage = m.studio_error_version_format();
-			return;
+			return false;
 		}
 		if (nodesToPublish.length === 0) {
 			errorMessage = m.studio_error_no_nodes();
-			return;
+			return false;
 		}
+		return true;
+	}
+
+	async function handleSubmit(e: Event) {
+		e.preventDefault();
+		if (!validateForm()) return;
 
 		isSubmitting = true;
-
 		try {
-			// Resolve save commit for entrypoint (upload local checkpoint if needed)
-			let resolvedEntrypoint: PublishMetadata['entrypoint'];
-			if (selectedEntrypoint && selectedSave) {
-				let saveCommit: string;
-				if (selectedSave.source === 'cloud' && selectedSave.saveCommit) {
-					saveCommit = selectedSave.saveCommit;
-				} else if (selectedSave.source === 'local' && selectedSave.checkpointId) {
-					// Upload local checkpoint as cloud save before publishing
-					const ctx = await getArtifactContext(projectId);
-					if (!ctx.isPublished || !ctx.artifactId || !ctx.artifactCommit) {
-						throw new Error('Cannot upload save: artifact not yet published. Please publish first without an entrypoint, then update with one.');
-					}
-					const store = await getNodeRDFStore(selectedSave.stateNodeId);
-					await store.loadCheckpoint(selectedSave.checkpointId);
-					const result = await createSaveCheckpoint(store, {
-						stateNodeId: selectedSave.stateNodeId,
-						artifactId: ctx.artifactId,
-						artifactCommit: ctx.artifactCommit,
-						title: selectedSave.title,
-					});
-					if (!result.success || !result.save) {
-						throw new Error(result.error || 'Failed to upload save checkpoint');
-					}
-					saveCommit = result.save.commit;
-				} else {
-					throw new Error('Invalid save selection');
-				}
-				resolvedEntrypoint = { sandboxNodeId: selectedEntrypoint, saveCommit };
+			const resolvedEntrypoint = await resolveEntrypoint();
+			const buildKey = resolvedBuildCacheKey ?? undefined;
+
+			if (isDraft) {
+				// First-time publish (POST)
+				const metadata: PublishMetadata = {
+					artifactId: projectId,
+					name: name.trim(),
+					slug: generateRandomSlug(name.trim()),
+					description: description.trim(),
+					isListed: !isUnlisted,
+					isPrivate,
+					version: version.trim(),
+					tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
+					homepage: homepage.trim() || undefined,
+					parentCommit: null,
+					entrypoint: resolvedEntrypoint,
+				};
+				await onPublish(metadata, nodesToPublish, edgesToPublish, buildKey);
+				successMessage = m.studio_published_success();
+			} else {
+				// Incremental update (PATCH)
+				const metadata: UpdateMetadata = {
+					version: version.trim(),
+					name: name.trim(),
+					entrypoint: resolvedEntrypoint,
+				};
+				await onUpdate(metadata, nodesToPublish, edgesToPublish, buildKey);
+				successMessage = m.studio_published_success();
 			}
-
-			// Always use existing projectId as artifactId
-			// Draft projects already have a UUID as their projectId
-			const metadata: PublishMetadata = {
-				artifactId: projectId,
-				name: name.trim(),
-				slug: generateRandomSlug(name.trim()),
-				description: description.trim(),
-				isListed: !isUnlisted,
-				isPrivate,
-				version: version.trim(),
-				tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
-				homepage: homepage.trim() || undefined,
-				// Track version lineage for updates
-				parentCommit: lastCloudCommit ?? null,
-				entrypoint: resolvedEntrypoint,
-			};
-
-			// Use the buildCacheKey already resolved by EntrypointSection
-			// (avoids duplicating the entire contentHash → detectProject → computeBuildCacheKey pipeline)
-			await onPublish(metadata, nodesToPublish, edgesToPublish, resolvedBuildCacheKey ?? undefined);
-			successMessage = m.studio_published_success();
 		} catch (err) {
 			errorMessage = err instanceof Error ? err.message : m.studio_publish_failed();
 		} finally {

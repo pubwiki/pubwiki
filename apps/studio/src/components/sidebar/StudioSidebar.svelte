@@ -12,6 +12,7 @@
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
 	import type { PublishMetadata } from '$lib/io';
+	import type { UpdateMetadata } from './ProjectTab.svelte';
 	import type { DraftSyncState } from '$lib/sync';
 	import OverviewTab from './OverviewTab.svelte';
 	import PropertiesTab from './PropertiesTab.svelte';
@@ -35,6 +36,8 @@
 		lastCloudCommit?: string;
 		onFocusNode: (node: Node<FlowNodeData>) => void;
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
+		/** Called for incremental update (PATCH) of an already-published artifact */
+		onUpdate: (metadata: UpdateMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
 		onOpenVfsFile?: (nodeId: string, filePath: string) => void;
 		onNewProject: () => void;
 		onExport: () => void;
@@ -70,6 +73,7 @@
 		lastCloudCommit,
 		onFocusNode,
 		onPublish,
+		onUpdate,
 		onOpenVfsFile,
 		onNewProject,
 		onExport,
@@ -318,6 +322,7 @@
 					{isAuthenticated}
 					{lastCloudCommit}
 					{onPublish}
+					{onUpdate}
 					{onNameChange}
 					syncState={effectiveSyncState}
 					{onSync}

@@ -574,12 +574,41 @@ export async function patchArtifact(
 	const hasChanges = addNodes.length > 0 || removeNodeIds.length > 0 || 
 					   addEdges.length > 0 || removeEdges.length > 0;
 
+	// Compute merged graph (base + patch) for commit hash computation.
+	// This must always be done — even when hasChanges is false — because the server
+	// computes expectedCommit using parentCommit=baseCommit, which differs from
+	// the baseCommit itself (which was computed with its own original parentCommit).
+	const addNodeIds = new Set(addNodes.map(n => n.nodeId));
+	const patchedNodes = [
+		...baseGraph.nodes.filter(n => !removeNodeIds.includes(n.id) && !addNodeIds.has(n.id)),
+		...addNodes
+	];
+	const patchedEdges = [
+		...baseGraph.edges.filter(e => !removeEdges.some(re => re.source === e.source && re.target === e.target)),
+		...addEdges
+	];
+	const commitNodes = patchedNodes.map(n => ({
+		nodeId: 'nodeId' in n ? n.nodeId : n.id,
+		commit: n.commit
+	}));
+	const commitEdges = patchedEdges.map(e => ({
+		source: e.source,
+		target: e.target,
+		sourceHandle: e.sourceHandle ?? null,
+		targetHandle: e.targetHandle ?? null
+	}));
+	const commit = await computeArtifactCommit(
+		metadata.artifactId,
+		metadata.baseCommit,
+		commitNodes,
+		commitEdges
+	);
+
 	// Build patch request metadata
-	// Note: commit is required - if no changes, use baseCommit (no new version created)
 	const patchMetadata: components['schemas']['PatchArtifactRequest'] = {
 		artifactId: metadata.artifactId,
 		baseCommit: metadata.baseCommit,
-		commit: metadata.baseCommit // Default to baseCommit; will be overwritten if changes exist
+		commit
 	};
 
 	// Add optional metadata fields
@@ -591,49 +620,22 @@ export async function patchArtifact(
 
 	// Add graph changes if any
 	if (hasChanges) {
-		// addNodes is already CreateArtifactNode[]
 		patchMetadata.addNodes = addNodes;
 		if (removeNodeIds.length > 0) patchMetadata.removeNodeIds = removeNodeIds;
 		if (addEdges.length > 0) patchMetadata.addEdges = addEdges;
 		if (removeEdges.length > 0) patchMetadata.removeEdges = removeEdges;
-
-		// Compute commit hash for the patched version
-		// Merge base graph with changes
-		// Note: addNodes may include both new nodes and modified nodes (nodes with different commits)
-		// We need to exclude modified nodes from baseGraph to avoid duplicates
-		const addNodeIds = new Set(addNodes.map(n => n.nodeId));
-		const patchedNodes = [
-			...baseGraph.nodes.filter(n => !removeNodeIds.includes(n.id) && !addNodeIds.has(n.id)),
-			...addNodes
-		];
-		const patchedEdges = [
-			...baseGraph.edges.filter(e => !removeEdges.some(re => re.source === e.source && re.target === e.target)),
-			...addEdges
-		];
-		const commitNodes = patchedNodes.map(n => ({
-			nodeId: 'nodeId' in n ? n.nodeId : n.id,
-			commit: n.commit
-		}));
-		const commitEdges = patchedEdges.map(e => ({
-			source: e.source,
-			target: e.target,
-			sourceHandle: e.sourceHandle ?? null,
-			targetHandle: e.targetHandle ?? null
-		}));
-		patchMetadata.commit = await computeArtifactCommit(
-			metadata.artifactId,
-			metadata.baseCommit,
-			commitNodes,
-			commitEdges
-		);
 	}
 
-	// Collect VFS archives for new/modified VFS nodes
-	const vfsAddNodeIds = new Set(addNodes.map(n => n.nodeId));
+	// Collect VFS archives for new/modified VFS nodes (filter by filesHash from addNodes' content)
+	const addFilesHashes = new Set(
+		addNodes
+			.filter(n => n.type === 'VFS')
+			.map(n => (n.content as { filesHash: string }).filesHash)
+	);
 	const patchVfsArchives = new Map<string, Uint8Array>();
-	for (const [nodeId, archive] of vfsArchives.entries()) {
-		if (vfsAddNodeIds.has(nodeId)) {
-			patchVfsArchives.set(nodeId, archive);
+	for (const [filesHash, archive] of vfsArchives.entries()) {
+		if (addFilesHashes.has(filesHash)) {
+			patchVfsArchives.set(filesHash, archive);
 		}
 	}
 
