@@ -73,8 +73,9 @@ export interface NodeContent {
   clone(): NodeContent
   
   /** 
-   * Get raw data for persistence (JSON-serializable)
-   * Must include 'type' field to match ArtifactNodeContent schema
+   * Get an owned, deep-copied snapshot for persistence (JSON-serializable).
+   * Must include 'type' field to match ArtifactNodeContent schema.
+   * Callers may safely mutate or hash the result without affecting the source.
    */
   toJSON(): ArtifactNodeContent
 }
@@ -214,8 +215,8 @@ export class InputContent implements NodeContent {
   toJSON(): ArtifactNodeContent {
     return { 
       type: 'INPUT' as const,
-      blocks: this.blocks,
-      generationConfig: this.generationConfig 
+      blocks: structuredClone(this.blocks),
+      generationConfig: structuredClone(this.generationConfig) 
     }
   }
 
@@ -253,7 +254,7 @@ export class PromptContent implements NodeContent {
   toJSON(): ArtifactNodeContent {
     return { 
       type: 'PROMPT' as const,
-      blocks: this.blocks
+      blocks: structuredClone(this.blocks)
     }
   }
 
@@ -355,7 +356,7 @@ export class GeneratedContent implements NodeContent {
   }
 
   toJSON(): ArtifactNodeContent {
-    return {
+    return structuredClone({
       type: 'GENERATED' as const,
       blocks: this.blocks,
       inputRef: this.inputRef,
@@ -364,7 +365,7 @@ export class GeneratedContent implements NodeContent {
       inputVfsRef: this.inputVfsRef,
       outputVfsId: this.outputVfsId,
       postGenerationCommit: this.postGenerationCommit
-    }
+    })
   }
 
   static fromJSON(data: {
@@ -452,7 +453,7 @@ export class VFSContent implements NodeContent {
     return {
       type: 'VFS' as const,
       projectId: this.projectId,
-      mounts: this.mounts
+      mounts: structuredClone(this.mounts)
     }
   }
 
