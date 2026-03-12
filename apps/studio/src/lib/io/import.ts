@@ -44,7 +44,10 @@ import type {
 import { getNodeVfs } from '../vfs';
 import { ensureProject, saveProject, saveEdges, getEdges, nodeStore, layoutStore } from '../persistence';
 import { computeContentHash } from '@pubwiki/flow-core';
+import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
+
+const apiClient = createApiClient(API_BASE_URL);
 
 /**
  * Progress callback for import operations
@@ -153,16 +156,16 @@ async function fetchAndExtractVfsArchive(
   commit: string
 ): Promise<{ path: string; content: Uint8Array }[]> {
   try {
-    const response = await fetch(
-      `${API_BASE_URL}/versions/${commit}/archive`
-    );
-    if (!response.ok) {
-      console.warn(`Failed to fetch VFS archive for commit ${commit}: ${response.status}`);
+    const { data, error } = await apiClient.GET('/nodes/commits/{commit}/archive', {
+      params: { path: { commit } },
+      parseAs: 'arrayBuffer',
+    });
+    if (error || !data) {
+      console.warn(`Failed to fetch VFS archive for commit ${commit}:`, error);
       return [];
     }
     
-    const gzippedData = await response.arrayBuffer();
-    const tarData = await gzipDecompress(gzippedData);
+    const tarData = await gzipDecompress(data);
     return parseTar(tarData);
   } catch (error) {
     console.error(`Error fetching VFS archive for commit ${commit}:`, error);

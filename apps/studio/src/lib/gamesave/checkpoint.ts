@@ -93,39 +93,39 @@ export async function createSaveCheckpoint(
     const contentHash = await computeContentHash(saveContent);
     const commit = await computeNodeCommit(saveId, options.parent ?? null, contentHash, 'SAVE');
 
-    // 6. Create FormData for multipart upload
-    const formData = new FormData();
-    formData.append('metadata', JSON.stringify({
-      saveId,
-      stateNodeId: options.stateNodeId,
-      commit,
-      parent: options.parent ?? null,
-      artifactId: options.artifactId,
-      artifactCommit: options.artifactCommit,
-      contentHash,
-      quadsHash,
-      title: options.title,
-      description: options.description,
-      isListed: options.isListed ?? false
-    }));
-    formData.append('data', new Blob([quadsData], { type: 'application/octet-stream' }));
-
-    // 7. POST to /saves
-    const response = await fetch(`${API_BASE_URL}/saves`, {
-      method: 'POST',
-      body: formData,
-      credentials: 'include'
+    // 6. POST to /saves
+    const { data: save, error: postError } = await apiClient.POST('/saves', {
+      body: {
+        metadata: {
+          saveId,
+          stateNodeId: options.stateNodeId,
+          commit,
+          parent: options.parent ?? null,
+          artifactId: options.artifactId,
+          artifactCommit: options.artifactCommit,
+          contentHash,
+          quadsHash,
+          title: options.title,
+          description: options.description,
+          isListed: options.isListed ?? false
+        },
+        data: new Blob([quadsData], { type: 'application/octet-stream' })
+      } as any,
+      bodySerializer: (body: any) => {
+        const fd = new FormData();
+        fd.append('metadata', JSON.stringify(body.metadata));
+        fd.append('data', body.data);
+        return fd;
+      },
     });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+    if (postError || !save) {
       return {
         success: false,
-        error: errorData.error || `创建存档失败: ${response.status}`
+        error: (postError as any)?.error || '创建存档失败'
       };
     }
 
-    const save: SaveDetail = await response.json();
     return { success: true, save };
   } catch (e) {
     return {
@@ -148,17 +148,17 @@ export async function restoreFromSave(
 ): Promise<boolean> {
   try {
     // Download save data
-    const response = await fetch(`${API_BASE_URL}/saves/${commit}/data`, {
-      credentials: 'include'
+    const { data: quadsText, error: fetchError } = await apiClient.GET('/saves/{commit}/data', {
+      params: { path: { commit } },
+      parseAs: 'text',
     });
 
-    if (!response.ok) {
+    if (fetchError || !quadsText) {
       return false;
     }
 
     // Parse quads from response
-    const quadsJson = await response.text();
-    const apiQuads = JSON.parse(quadsJson);
+    const apiQuads = JSON.parse(quadsText as string);
     const rdfQuads = apiQuads.map(toRdfQuad);
 
     // Replace local store contents
