@@ -67,7 +67,14 @@ async function sha256Hex(data: string): Promise<string> {
  * @returns 64-char hex string (full SHA-256)
  */
 export async function computeContentHash(content: ArtifactNodeContent | SaveContent): Promise<string> {
-  const payload = canonicalize(content);
+  // Strip null values before canonicalization — DB nullable columns produce
+  // null for absent optional fields, but the original content omitted them.
+  // Including null would change the canonical JSON and produce a different hash.
+  const stripped: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(content)) {
+    if (value != null) stripped[key] = value;
+  }
+  const payload = canonicalize(stripped);
   return sha256Hex(payload);
 }
 

@@ -460,12 +460,7 @@ export const CreateArtifactBody = zod.object({
   "path": zod.string().describe('文件路径'),
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件目录树'),
-  "files": zod.array(zod.object({
-  "path": zod.string().describe('文件路径'),
-  "size": zod.number().optional().describe('文件大小 (bytes)'),
-  "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件列表（用于 API 验证）')
+})).optional().describe('文件目录树')
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
@@ -610,12 +605,7 @@ export const PatchArtifactBody = zod.object({
   "path": zod.string().describe('文件路径'),
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件目录树'),
-  "files": zod.array(zod.object({
-  "path": zod.string().describe('文件路径'),
-  "size": zod.number().optional().describe('文件大小 (bytes)'),
-  "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件列表（用于 API 验证）')
+})).optional().describe('文件目录树')
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
@@ -960,12 +950,7 @@ export const GetArtifactGraphResponse = zod.object({
   "path": zod.string().describe('文件路径'),
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件目录树'),
-  "files": zod.array(zod.object({
-  "path": zod.string().describe('文件路径'),
-  "size": zod.number().optional().describe('文件大小 (bytes)'),
-  "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件列表（用于 API 验证）')
+})).optional().describe('文件目录树')
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),
@@ -2503,12 +2488,7 @@ export const GetNodeVersionResponse = zod.object({
   "path": zod.string().describe('文件路径'),
   "size": zod.number().optional().describe('文件大小 (bytes)'),
   "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件目录树'),
-  "files": zod.array(zod.object({
-  "path": zod.string().describe('文件路径'),
-  "size": zod.number().optional().describe('文件大小 (bytes)'),
-  "mimeType": zod.string().optional().describe('MIME 类型')
-})).optional().describe('文件列表（用于 API 验证）')
+})).optional().describe('文件目录树')
 }),zod.object({
   "type": zod.enum(['SAVE']),
   "stateNodeId": zod.uuid().describe('引用的 STATE 节点 ID'),

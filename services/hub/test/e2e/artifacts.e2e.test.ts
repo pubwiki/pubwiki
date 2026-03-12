@@ -275,7 +275,7 @@ describe('E2E: Artifacts API', () => {
         id: defaultNodeId, 
         type: 'VFS', 
         name: 'files',
-        content: { files: vfsFiles.map(f => ({ path: f.name })) }
+        content: { fileTree: vfsFiles.map(f => ({ path: f.name })) }
       }] : [],
       edges: [],
     };
@@ -308,7 +308,7 @@ describe('E2E: Artifacts API', () => {
         id: defaultNodeId, 
         type: 'VFS', 
         name: 'files',
-        content: { files: vfsFiles.map(f => ({ path: f.name })) }
+        content: { fileTree: vfsFiles.map(f => ({ path: f.name })) }
       }] : [],
       edges: [],
     };
@@ -396,7 +396,7 @@ describe('E2E: Artifacts API', () => {
             id: vfsNodeId, 
             type: 'VFS', 
             name: 'files',
-            content: { files: [{ path: 'prompt.md', mimeType: 'text/markdown' }] }
+            content: { fileTree: [{ path: 'prompt.md', mimeType: 'text/markdown' }] }
           }],
           edges: [],
         }
@@ -502,7 +502,7 @@ describe('E2E: Artifacts API', () => {
       expect(data.error).toContain('semver');
     });
 
-    it('should return 400 for VFS node without files array in content', async () => {
+    it('should return 400 for VFS node without fileTree array in content', async () => {
       const slug = `vfs-no-files-${Date.now()}`;
       const vfsNodeId = crypto.randomUUID();
       const formData = new FormData();
@@ -520,7 +520,7 @@ describe('E2E: Artifacts API', () => {
           id: vfsNodeId, 
           type: 'VFS', 
           name: 'invalid-vfs',
-          // Invalid content - missing 'files' array, has random projectId instead
+          // Invalid content - missing 'fileTree' array, has random projectId instead
           content: { projectId: 'some-random-id' }
         }],
         edges: [],
@@ -541,10 +541,10 @@ describe('E2E: Artifacts API', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json() as { error: string };
-      expect(data.error).toContain('files');
+      expect(data.error).toContain('filesHash');
     });
 
-    it('should return 400 for VFS node with invalid files array item', async () => {
+    it('should return 400 for VFS node with invalid fileTree array item', async () => {
       const slug = `vfs-invalid-file-${Date.now()}`;
       const vfsNodeId = crypto.randomUUID();
       const formData = new FormData();
@@ -562,8 +562,8 @@ describe('E2E: Artifacts API', () => {
           id: vfsNodeId, 
           type: 'VFS', 
           name: 'invalid-vfs',
-          // Invalid content - files array item missing 'path'
-          content: { files: [{ name: 'file.txt' }] }
+          // Invalid content - fileTree array item missing 'path'
+          content: { fileTree: [{ name: 'file.txt' }] }
         }],
         edges: [],
       }));
@@ -1147,7 +1147,7 @@ describe('E2E: Artifacts API', () => {
             id: vfsNodeId, 
             type: 'VFS', 
             name: 'test-vfs',
-            content: { files: [
+            content: { fileTree: [
               { path: 'file1.txt', size: 11, mimeType: 'text/plain' },
               { path: 'subdir/file2.txt', size: 19, mimeType: 'text/plain' },
             ]}
@@ -1180,18 +1180,18 @@ describe('E2E: Artifacts API', () => {
       
       // VFS node should have content with files array
       expect(nodeDetail.content).toBeDefined();
-      // content should be VfsNodeContent with files
-      const content = nodeDetail.content as { files?: { path: string; size?: number; mimeType?: string }[] };
-      expect(content.files).toBeDefined();
-      expect(Array.isArray(content.files)).toBe(true);
-      expect(content.files!.length).toBe(2);
+      // content should be VfsNodeContent with fileTree
+      const content = nodeDetail.content as { fileTree?: { path: string; size?: number; mimeType?: string }[] };
+      expect(content.fileTree).toBeDefined();
+      expect(Array.isArray(content.fileTree)).toBe(true);
+      expect(content.fileTree!.length).toBe(2);
       
       // Verify file structure
-      const file1 = content.files!.find(f => f.path === 'file1.txt');
+      const file1 = content.fileTree!.find(f => f.path === 'file1.txt');
       expect(file1).toBeDefined();
       expect(file1!.mimeType).toBe('text/plain');
       
-      const file2 = content.files!.find(f => f.path === 'subdir/file2.txt');
+      const file2 = content.fileTree!.find(f => f.path === 'subdir/file2.txt');
       expect(file2).toBeDefined();
     });
 
@@ -1254,7 +1254,7 @@ describe('E2E: Artifacts API', () => {
         {
           version: 1,
           exportedAt: new Date().toISOString(),
-          nodes: [{ id: vfsNodeId, type: 'VFS', name: 'vfs', content: { files: [{ path: 'file.txt' }] } }],
+          nodes: [{ id: vfsNodeId, type: 'VFS', name: 'vfs', content: { fileTree: [{ path: 'file.txt' }] } }],
           edges: [],
         }
       );
@@ -1317,7 +1317,7 @@ describe('E2E: Artifacts API', () => {
             id: vfsNodeId, 
             type: 'VFS', 
             name: 'files',
-            content: { files: [{ path: 'file1.txt' }, { path: 'file2.txt' }] }
+            content: { fileTree: [{ path: 'file1.txt' }, { path: 'file2.txt' }] }
           }],
           edges: [],
         }
@@ -1433,7 +1433,7 @@ describe('E2E: Artifacts API', () => {
             id: vfsNodeId, 
             type: 'VFS', 
             name: 'files',
-            content: { files: [{ path: 'secret.txt' }] }
+            content: { fileTree: [{ path: 'secret.txt' }] }
           }],
           edges: [],
         }

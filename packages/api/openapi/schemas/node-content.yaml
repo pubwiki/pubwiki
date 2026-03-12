@@ -357,11 +357,6 @@ VfsNodeContent:
       description: 文件目录树
       items:
         $ref: '#/VfsFileInfo'
-    files:
-      type: array
-      description: 文件列表（用于 API 验证）
-      items:
-        $ref: '#/VfsFileInfo'
 
 # ============================================================================
 # Save Node Content

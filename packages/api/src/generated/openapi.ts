@@ -1278,8 +1278,6 @@ export interface components {
             totalSize?: number;
             /** @description 文件目录树 */
             fileTree?: components["schemas"]["VfsFileInfo"][];
-            /** @description 文件列表（用于 API 验证） */
-            files?: components["schemas"]["VfsFileInfo"][];
         };
         ArtifactNodeContent: components["schemas"]["InputNodeContent"] | components["schemas"]["PromptNodeContent"] | components["schemas"]["GeneratedNodeContent"] | components["schemas"]["SandboxNodeContent"] | components["schemas"]["LoaderNodeContent"] | components["schemas"]["StateNodeContent"] | components["schemas"]["VfsNodeContent"] | components["schemas"]["SaveNodeContent"];
         ProjectRole: {

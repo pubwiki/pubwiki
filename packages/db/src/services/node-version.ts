@@ -505,19 +505,44 @@ export class NodeVersionService {
     const result: SyncResult = { created: 0, skipped: 0, errors: [] };
 
     try {
-      // ========== Phase 1: Validate all inputs and deduplicate by commit ==========
+      // ========== Phase 1: Deduplicate, skip existing, then validate ==========
       
-      // Use Map to validate and deduplicate in one pass (keeps first occurrence)
-      const validatedInputMap = new Map<string, SyncNodeVersionInput>();
+      // Deduplicate by commit within the batch (keeps first occurrence)
+      const deduplicatedMap = new Map<string, SyncNodeVersionInput>();
       for (const input of inputs) {
-        // Skip duplicates
-        if (validatedInputMap.has(input.commit)) {
-          continue;
+        if (!deduplicatedMap.has(input.commit)) {
+          deduplicatedMap.set(input.commit, input);
         }
+      }
 
+      // Batch query existing commits FIRST to skip already-existing versions
+      // before running expensive hash validation. This is correct because existing
+      // versions were already validated when they were first created.
+      const allCommits = [...deduplicatedMap.keys()];
+      const existingVersions = allCommits.length > 0
+        ? await this.ctx.select({ commit: nodeVersions.commit })
+            .from(nodeVersions)
+            .where(inArray(nodeVersions.commit, allCommits))
+        : [];
+
+      const existingCommitSet = new Set(existingVersions.map(v => v.commit));
+      for (const commit of existingCommitSet) {
+        deduplicatedMap.delete(commit);
+        result.skipped++;
+      }
+
+      // Validate only NEW versions (not yet in DB)
+      const validatedInputMap = new Map<string, SyncNodeVersionInput>();
+      for (const input of deduplicatedMap.values()) {
         // Validate contentHash matches content
         const expectedContentHash = await computeContentHash(input.content);
         if (input.contentHash !== expectedContentHash) {
+          // Log diagnostic info for debugging content hash mismatches
+          console.error(`[syncVersions] contentHash mismatch for node ${input.nodeId} (type: ${input.type}):`);
+          console.error(`  expected: ${expectedContentHash}`);
+          console.error(`  received: ${input.contentHash}`);
+          console.error(`  content keys: ${JSON.stringify(Object.keys(input.content))}`);
+          console.error(`  content: ${JSON.stringify(input.content).substring(0, 500)}`);
           result.errors.push(
             `Version for node ${input.nodeId}: contentHash mismatch: expected ${expectedContentHash}, got ${input.contentHash}. ` +
             `Client must compute contentHash using computeContentHash(content).`
@@ -540,20 +565,6 @@ export class NodeVersionService {
           continue;
         }
         validatedInputMap.set(input.commit, input);
-      }
-
-      // Batch query existing commits to filter out already-existing versions
-      const commits = [...validatedInputMap.keys()];
-      const existingVersions = commits.length > 0
-        ? await this.ctx.select({ commit: nodeVersions.commit })
-            .from(nodeVersions)
-            .where(inArray(nodeVersions.commit, commits))
-        : [];
-
-      // Remove existing versions from map
-      for (const v of existingVersions) {
-        validatedInputMap.delete(v.commit);
-        result.skipped++;
       }
 
       const newInputs = [...validatedInputMap.values()];
@@ -793,6 +804,7 @@ export class NodeVersionService {
     // 需要在此注入 type 使结构匹配。
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { contentHash: _contentHash, createdAt: _createdAt, ...contentFields } = result[0];
+
     return { type, ...contentFields } as ArtifactNodeContent;
   }
 

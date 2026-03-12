@@ -117,7 +117,7 @@ async function prepareNodesForPublish(
 				mounts: vfsData.content.mounts,
 				fileCount: totalFiles,
 				totalSize,
-				files
+				fileTree: files
 			} as ArtifactNodeContent;
 		} else {
 			// Other types (including STATE): toJSON() matches API format

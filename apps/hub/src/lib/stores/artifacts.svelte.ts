@@ -426,9 +426,9 @@ export class ArtifactStore {
 		// Extract files from VFS content if applicable
 		let files: NodeFileInfo[] | undefined;
 		if (node.type === 'VFS' && node.content) {
-			const vfsContent = node.content as { type: 'VFS'; files?: { path: string; size?: number; mimeType?: string }[] };
-			if (vfsContent.files && Array.isArray(vfsContent.files)) {
-				files = vfsContent.files.map(f => ({
+			const vfsContent = node.content as { type: 'VFS'; fileTree?: { path: string; size?: number; mimeType?: string }[] };
+			if (vfsContent.fileTree && Array.isArray(vfsContent.fileTree)) {
+				files = vfsContent.fileTree.map(f => ({
 					filepath: f.path,
 					filename: f.path.split('/').pop() || f.path,
 					mimeType: f.mimeType ?? null,
