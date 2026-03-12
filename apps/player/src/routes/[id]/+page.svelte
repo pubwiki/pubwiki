@@ -271,12 +271,15 @@
 			// Stage 3: Load state (RDF store + optional checkpoint restore)
 			loadingState = { stage: 'loading-state', progress: 50, message: 'Loading game state...' };
 
+			// Determine which save to load: URL param takes priority, fallback to entrypoint
+			const saveCommitToLoad = data.saveCommit ?? graph.entrypoint?.saveCommit ?? null;
+
 			if (stateNode) {
 				rdfStore = await getNodeRDFStore(stateNode.id);
 
 				// Restore from save if commit is provided
-				if (data.saveCommit) {
-					await loadSaveData(data.saveCommit);
+				if (saveCommitToLoad) {
+					await loadSaveData(saveCommitToLoad);
 				}
 			}
 
@@ -285,7 +288,7 @@
 				isLoggedIn: auth.isAuthenticated,
 				userId: auth.user?.id ?? null,
 				username: auth.user?.displayName ?? auth.user?.username ?? null,
-				sourceSaveCommit: data.saveCommit,
+				sourceSaveCommit: saveCommitToLoad,
 				userSaveCommit: null,
 			};
 
