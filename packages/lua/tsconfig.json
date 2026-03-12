@@ -9,6 +9,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "lib": ["DOM", "ES2020"],
+    "types": ["node"],
     "strict": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
