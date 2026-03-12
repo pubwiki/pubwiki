@@ -44,6 +44,7 @@
 	import { validateConnection, HandleId, createVfsMountHandleId } from '$lib/graph';
 	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
 	import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata, exportProjectToZip, selectZipFile, importFromZipFile, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
+	import type { UpdateMetadata } from '$components/sidebar/ProjectTab.svelte';
 	import { createDraftSyncService, type DraftSyncService, type DraftSyncState } from '$lib/sync';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
@@ -1297,61 +1298,68 @@
 		}
 	}
 
+	/** Shared post-commit logic: flush local stores and update project metadata */
+	async function finalizeAfterCommit(newCommit: string | undefined, projectName: string) {
+		await nodeStore.flush();
+		await layoutStore.flush();
+		await saveEdges(edges, currentProjectId);
+
+		const existingProject = await getProject(currentProjectId);
+		await saveProject({
+			...existingProject,
+			id: currentProjectId,
+			name: projectName,
+			artifactId: currentProjectId,
+			createdAt: existingProject?.createdAt ?? Date.now(),
+			updatedAt: Date.now(),
+			isDraft: false,
+			lastCloudCommit: newCommit
+		});
+
+		isDraft = false;
+		lastCloudCommit = newCommit;
+	}
+
+	/** First-time publish (POST) for draft artifacts */
 	async function handlePublish(
 		metadata: PublishMetadata,
 		nodesToPublish: Node<FlowNodeData>[],
 		edgesToPublish: Edge[],
 		buildCacheKey?: string
 	) {
-		let newCommit: string | undefined;
-
-		// Try incremental update if we have a previous commit and artifact is not new
-		if (!isDraft && lastCloudCommit && metadata.artifactId) {
-			const patchMetadata: PatchMetadata = {
-				artifactId: metadata.artifactId,
-				baseCommit: lastCloudCommit,
-				version: metadata.version,
-				// Tag as draft-latest for incremental sync
-				commitTags: ['draft-latest']
-			};
-
-			const patchResult = await patchArtifact(patchMetadata, nodesToPublish, edgesToPublish, buildCacheKey);
-			
-			if (patchResult.success) {
-				newCommit = patchResult.newCommit;
-			} else {
-				throw new Error(patchResult.error || 'Failed to update artifact');
-			}
-		} else {
-			// Full publish for new artifacts or first-time publish
-			const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, buildCacheKey);
-			if (!result.success) {
-				throw new Error(result.error || 'Failed to publish');
-			}
-			newCommit = result.latestCommit;
+		const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, buildCacheKey);
+		if (!result.success) {
+			throw new Error(result.error || 'Failed to publish');
 		}
-		
-		// Flush pending changes to IndexedDB
-		await nodeStore.flush();
-		await layoutStore.flush();
-		await saveEdges(edges, currentProjectId);
-		
-		// Update project metadata with lastCloudCommit for future incremental updates
-		const existingProject = await getProject(currentProjectId);
-		await saveProject({
-			...existingProject,
-			id: currentProjectId,
-			name: metadata.name,
-			artifactId: metadata.artifactId,
-			createdAt: existingProject?.createdAt ?? Date.now(),
-			updatedAt: Date.now(),
-			isDraft: false,
-			lastCloudCommit: newCommit
-		});
-		
-		// Update local state
-		isDraft = false;
-		lastCloudCommit = newCommit;
+
+		await finalizeAfterCommit(result.latestCommit, metadata.name);
+		projectName = metadata.name;
+	}
+
+	/** Incremental update (PATCH) for already-published artifacts */
+	async function handleUpdate(
+		metadata: UpdateMetadata,
+		nodesToPublish: Node<FlowNodeData>[],
+		edgesToPublish: Edge[],
+		buildCacheKey?: string
+	) {
+		if (!lastCloudCommit) {
+			throw new Error('No base commit for update. Please try a full publish instead.');
+		}
+
+		const patchMeta: PatchMetadata = {
+			artifactId: currentProjectId,
+			baseCommit: lastCloudCommit,
+			version: metadata.version,
+			commitTags: ['draft-latest']
+		};
+
+		const patchResult = await patchArtifact(patchMeta, nodesToPublish, edgesToPublish, buildCacheKey);
+		if (!patchResult.success) {
+			throw new Error(patchResult.error || 'Failed to update artifact');
+		}
+
+		await finalizeAfterCommit(patchResult.newCommit, metadata.name);
 		projectName = metadata.name;
 	}
 
@@ -1534,6 +1542,7 @@
 		{lastCloudCommit}
 		onFocusNode={handleFocusNode}
 		onPublish={handlePublish}
+		onUpdate={handleUpdate}
 		onOpenVfsFile={handleOpenVfsFile}
 		onNewProject={handleNewProject}
 		onExport={handleExport}

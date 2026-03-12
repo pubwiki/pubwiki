@@ -242,6 +242,19 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
+  // Validate: every VFS node must have its archive in the request
+  for (const node of nodes) {
+    if (node.type === 'VFS') {
+      const filesHash = (node.content as { filesHash?: string }).filesHash;
+      if (!filesHash) {
+        return badRequest(c, `VFS node ${node.nodeId} missing filesHash in content`);
+      }
+      if (!vfsArchives.has(filesHash)) {
+        return badRequest(c, `VFS node ${node.nodeId} references filesHash ${filesHash} but no matching archive was uploaded`);
+      }
+    }
+  }
+
   // 创建 artifact（内部同步 node versions + 创建 artifact version）
   // SAVE nodes are now first-class artifact nodes and are included in the nodes array
   // 使用类型断言：zod 推断的类型和 openapi-typescript 生成的类型结构等价，但 TypeScript 认为不兼容
@@ -256,6 +269,36 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
+  const { artifact: createdArtifact } = result.data;
+  const artifactId = createdArtifact.id;
+
+  // Upload R2 objects BEFORE committing DB, so that when DB records become
+  // visible to readers the referenced archives are already available.
+  // Content-addressed keys make this idempotent — orphans from a later
+  // failed commit are harmless.
+  for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
+    const r2Key = `vfs/${filesHash}/files.tar.gz`;
+    await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+      httpMetadata: { contentType: 'application/gzip' },
+    });
+  }
+
+  for (const [quadsHash, saveBuffer] of saveArchives.entries()) {
+    const r2Key = `saves/${quadsHash}/quads.bin`;
+    await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
+      httpMetadata: { contentType: 'application/octet-stream' },
+    });
+  }
+
+  if (homepageHtml) {
+    const homepageKey = getArtifactHomepageKey(artifactId);
+    await c.env.R2_BUCKET.put(homepageKey, homepageHtml, {
+      httpMetadata: {
+        contentType: 'text/html; charset=utf-8',
+      },
+    });
+  }
+
   // Commit database operations
   // UNIQUE constraint violation is thrown here if artifact or version already exists,
   // causing the entire batch to rollback (no orphan records)
@@ -266,35 +309,6 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
       return conflict(c, `Artifact ${metadata.artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.`);
     }
     throw error;
-  }
-
-  const { artifact: createdArtifact } = result.data;
-  const artifactId = createdArtifact.id;
-
-  // 上传 VFS 归档到 R2（filesHash 作为 key，支持去重）
-  for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
-    const r2Key = `vfs/${filesHash}/files.tar.gz`;
-    await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
-      httpMetadata: { contentType: 'application/gzip' },
-    });
-  }
-
-  // 上传 save 数据到 R2（quadsHash 作为 key，支持去重）
-  for (const [quadsHash, saveBuffer] of saveArchives.entries()) {
-    const r2Key = `saves/${quadsHash}/quads.bin`;
-    await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
-      httpMetadata: { contentType: 'application/octet-stream' },
-    });
-  }
-
-  // 上传主页 HTML 到 R2
-  if (homepageHtml) {
-    const homepageKey = getArtifactHomepageKey(artifactId);
-    await c.env.R2_BUCKET.put(homepageKey, homepageHtml, {
-      httpMetadata: {
-        contentType: 'text/html; charset=utf-8',
-      },
-    });
   }
 
   // Upload build archives to R2 (releaseHash as key, output-content-addressable)
@@ -520,6 +534,26 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     }
   }
 
+  // Validate: every VFS addNode must have its archive in the request or already in R2
+  if (metadata.addNodes) {
+    for (const node of metadata.addNodes) {
+      if (node.type === 'VFS') {
+        const filesHash = (node.content as { filesHash?: string }).filesHash;
+        if (!filesHash) {
+          return badRequest(c, `VFS node ${node.nodeId} missing filesHash in content`);
+        }
+        if (!vfsArchives.has(filesHash)) {
+          // Content-addressed dedup: archive may already exist from a prior version
+          const r2Key = `vfs/${filesHash}/files.tar.gz`;
+          const existing = await c.env.R2_BUCKET.head(r2Key);
+          if (!existing) {
+            return badRequest(c, `VFS node ${node.nodeId} references filesHash ${filesHash} but no matching archive was uploaded or found in storage`);
+          }
+        }
+      }
+    }
+  }
+
   // 执行 patch
   // SAVE nodes are now first-class artifact nodes, included in metadata.nodes if graph update is needed
   // 使用类型断言：zod 推断的类型和 openapi-typescript 生成的类型结构等价，但 TypeScript 认为不兼容
@@ -532,6 +566,34 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     return serviceErrorResponse(c, result.error);
   }
 
+  const { artifact: patchedArtifact } = result.data;
+  const artifactId = patchedArtifact.id;
+
+  // Upload R2 objects BEFORE committing DB, so that when DB records become
+  // visible to readers the referenced archives are already available.
+  // Content-addressed keys make this idempotent — orphans from a later
+  // failed commit are harmless.
+  for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
+    const r2Key = `vfs/${filesHash}/files.tar.gz`;
+    await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+      httpMetadata: { contentType: 'application/gzip' },
+    });
+  }
+
+  for (const [quadsHash, saveBuffer] of saveArchives.entries()) {
+    const r2Key = `saves/${quadsHash}/quads.bin`;
+    await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
+      httpMetadata: { contentType: 'application/octet-stream' },
+    });
+  }
+
+  if (homepageHtml) {
+    const homepageKey = getArtifactHomepageKey(artifactId);
+    await c.env.R2_BUCKET.put(homepageKey, homepageHtml, {
+      httpMetadata: { contentType: 'text/html; charset=utf-8' },
+    });
+  }
+
   // Commit database operations
   // UNIQUE constraint violation is thrown here if version with same commit already exists,
   // causing the entire batch to rollback (no orphan records)
@@ -542,34 +604,6 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
       return conflict(c, `Version with commit ${metadata.commit} already exists for artifact ${metadata.artifactId}. This indicates a duplicate patch request.`);
     }
     throw error;
-  }
-
-  const { artifact: patchedArtifact } = result.data;
-  const artifactId = patchedArtifact.id;
-
-  // Upload VFS archives to R2 (filesHash as key, supports deduplication)
-  // PATCH always creates a new version, so always upload VFS archives
-  for (const [filesHash, archiveBuffer] of vfsArchives.entries()) {
-    const r2Key = `vfs/${filesHash}/files.tar.gz`;
-    await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
-      httpMetadata: { contentType: 'application/gzip' },
-    });
-  }
-
-  // Upload save data to R2 (quadsHash as key, supports deduplication)
-  for (const [quadsHash, saveBuffer] of saveArchives.entries()) {
-    const r2Key = `saves/${quadsHash}/quads.bin`;
-    await c.env.R2_BUCKET.put(r2Key, saveBuffer, {
-      httpMetadata: { contentType: 'application/octet-stream' },
-    });
-  }
-
-  // 上传主页 HTML 到 R2
-  if (homepageHtml) {
-    const homepageKey = getArtifactHomepageKey(artifactId);
-    await c.env.R2_BUCKET.put(homepageKey, homepageHtml, {
-      httpMetadata: { contentType: 'text/html; charset=utf-8' },
-    });
   }
 
   // Upload build archives to R2 (releaseHash as key, output-content-addressable)
