@@ -32,7 +32,7 @@
 		type ConfirmationHandler,
 		type PubWikiModuleConfig,
 	} from '@pubwiki/flow-core';
-	import type { GetArtifactGraphResponse } from '@pubwiki/api';
+	import { computeArtifactCommit, type GetArtifactGraphResponse } from '@pubwiki/api';
 	import { getNodeVfs, disposeAllVfs } from '$lib/vfs/store';
 	import { detectStorageBackend } from '$lib/vfs/detect';
 	import { getNodeRDFStore, closeAllRDFStores, type RDFStore } from '$lib/rdf/store';
@@ -94,6 +94,7 @@
 	let buildAwareVfs: Vfs | null = null;
 	let backends = new Map<string, LoaderBackend>();
 	let rdfStore: RDFStore | null = null;
+	let storedGraphData: GetArtifactGraphResponse | null = null;
 	let iframeSrc = $state<string>('');
 	let consoleLogs = $state<ConsoleLogEntry[]>([]);
 
@@ -105,6 +106,98 @@
 		sourceSaveCommit: null as string | null,
 		userSaveCommit: null as string | null,
 	});
+
+	// ============================================================================
+	// Publish Support
+	// ============================================================================
+
+	/**
+	 * Publish the current artifact graph as a new artifact.
+	 * Re-uses existing node data and VFS archives (content-addressable in R2).
+	 */
+	async function playerPublishArtifact(
+		metadata: { name: string; slug: string; description?: string; version?: string; isListed?: boolean; isPrivate?: boolean; tags?: string[]; homepage?: string },
+		graphData: GetArtifactGraphResponse,
+	): Promise<{ success: boolean; artifactId?: string; error?: string }> {
+		const newArtifactId = crypto.randomUUID();
+
+		// Convert ArtifactNodeSummary[] → CreateArtifactNode[]
+		const nodes = graphData.nodes
+			.filter((n) => n.content != null)
+			.map((n) => ({
+				nodeId: n.id,
+				commit: n.commit,
+				parent: null as string | null,
+				type: n.type,
+				name: n.name ?? undefined,
+				contentHash: n.contentHash,
+				content: n.content!,
+				position: n.position,
+			}));
+
+		const edges = graphData.edges.map((e) => ({
+			source: e.source,
+			target: e.target,
+			sourceHandle: e.sourceHandle ?? undefined,
+			targetHandle: e.targetHandle ?? undefined,
+		}));
+
+		// Compute artifact commit
+		const commitNodes = nodes.map((n) => ({ nodeId: n.nodeId, commit: n.commit }));
+		const commitEdges = edges.map((e) => ({
+			source: e.source,
+			target: e.target,
+			sourceHandle: e.sourceHandle ?? null,
+			targetHandle: e.targetHandle ?? null,
+		}));
+		const commit = await computeArtifactCommit(newArtifactId, null, commitNodes, commitEdges);
+
+		const apiMetadata = {
+			artifactId: newArtifactId,
+			commit,
+			parentCommit: null,
+			name: metadata.name,
+			description: metadata.description || undefined,
+			isListed: metadata.isListed ?? true,
+			isPrivate: metadata.isPrivate ?? false,
+			version: metadata.version || '1.0.0',
+			tags: metadata.tags && metadata.tags.length > 0 ? metadata.tags : undefined,
+			entrypoint: graphData.version?.entrypoint ?? undefined,
+			buildCacheKey: graphData.version?.buildCacheKey ?? undefined,
+		};
+
+		try {
+			const formData = new FormData();
+			formData.append('metadata', JSON.stringify(apiMetadata));
+			formData.append('nodes', JSON.stringify(nodes));
+			formData.append('edges', JSON.stringify(edges));
+
+			if (metadata.homepage && metadata.homepage.trim().length > 0) {
+				formData.append('homepage', new Blob([metadata.homepage], { type: 'text/markdown' }), 'homepage.md');
+			}
+
+			const response = await fetch(`${API_BASE_URL}/api/artifacts`, {
+				method: 'POST',
+				credentials: 'include',
+				body: formData,
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json().catch(() => ({}));
+				return {
+					success: false,
+					error: (errorData as { error?: string }).error || `HTTP ${response.status}`,
+				};
+			}
+
+			return { success: true, artifactId: newArtifactId };
+		} catch (err) {
+			return {
+				success: false,
+				error: err instanceof Error ? err.message : String(err),
+			};
+		}
+	}
 
 	// ============================================================================
 	// Initialization
@@ -126,8 +219,11 @@
 				throw new Error('Failed to fetch artifact graph');
 			}
 
+			// Store graph data for publish support
+			storedGraphData = graphData as GetArtifactGraphResponse;
+
 			// Convert to RuntimeGraph
-			const graph = loadArtifactGraph(graphData as GetArtifactGraphResponse);
+			const graph = loadArtifactGraph(storedGraphData);
 			const sandboxNodeId = graph.entrypoint?.sandboxNodeId || undefined;
 			const discovery = discoverEntryNodes(graph, sandboxNodeId);
 
@@ -260,6 +356,9 @@
 								API_BASE_URL,
 								quadSerializers,
 							);
+						},
+						publishArtifact: async (metadata) => {
+							return playerPublishArtifact(metadata, storedGraphData!);
 						},
 					};
 					const pubwikiModule = createPubWikiModule(pubwikiConfig);
