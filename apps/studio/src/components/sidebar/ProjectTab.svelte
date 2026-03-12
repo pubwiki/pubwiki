@@ -19,7 +19,9 @@
 	import { Toggle } from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
-	import EntrypointSection from './EntrypointSection.svelte';
+	import EntrypointSection, { type SelectedSave } from './EntrypointSection.svelte';
+	import { createSaveCheckpoint, getArtifactContext } from '$lib/gamesave';
+	import { getNodeRDFStore } from '$lib/rdf';
 
 	const hubUrl = PUBLIC_HUB_URL || 'http://localhost:5173';
 
@@ -69,6 +71,8 @@
 
 	// Build cache key resolved by EntrypointSection (avoids duplicate computation)
 	let resolvedBuildCacheKey = $state<string | null>(null);
+	// Selected save from EntrypointSection
+	let selectedSave = $state<SelectedSave | null>(null);
 	// Publishing requires a valid build when an entrypoint is selected
 	let needsBuild = $derived(selectedEntrypoint != null && resolvedBuildCacheKey == null);	let isSubmitting = $state(false);
 	let errorMessage = $state('');
@@ -235,6 +239,36 @@
 		isSubmitting = true;
 
 		try {
+			// Resolve save commit for entrypoint (upload local checkpoint if needed)
+			let resolvedEntrypoint: PublishMetadata['entrypoint'];
+			if (selectedEntrypoint && selectedSave) {
+				let saveCommit: string;
+				if (selectedSave.source === 'cloud' && selectedSave.saveCommit) {
+					saveCommit = selectedSave.saveCommit;
+				} else if (selectedSave.source === 'local' && selectedSave.checkpointId) {
+					// Upload local checkpoint as cloud save before publishing
+					const ctx = await getArtifactContext(projectId);
+					if (!ctx.isPublished || !ctx.artifactId || !ctx.artifactCommit) {
+						throw new Error('Cannot upload save: artifact not yet published. Please publish first without an entrypoint, then update with one.');
+					}
+					const store = await getNodeRDFStore(selectedSave.stateNodeId);
+					await store.loadCheckpoint(selectedSave.checkpointId);
+					const result = await createSaveCheckpoint(store, {
+						stateNodeId: selectedSave.stateNodeId,
+						artifactId: ctx.artifactId,
+						artifactCommit: ctx.artifactCommit,
+						title: selectedSave.title,
+					});
+					if (!result.success || !result.save) {
+						throw new Error(result.error || 'Failed to upload save checkpoint');
+					}
+					saveCommit = result.save.commit;
+				} else {
+					throw new Error('Invalid save selection');
+				}
+				resolvedEntrypoint = { sandboxNodeId: selectedEntrypoint, saveCommit };
+			}
+
 			// Always use existing projectId as artifactId
 			// Draft projects already have a UUID as their projectId
 			const metadata: PublishMetadata = {
@@ -248,7 +282,8 @@
 				tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
 				homepage: homepage.trim() || undefined,
 				// Track version lineage for updates
-				parentCommit: lastCloudCommit ?? null
+				parentCommit: lastCloudCommit ?? null,
+				entrypoint: resolvedEntrypoint,
 			};
 
 			// Use the buildCacheKey already resolved by EntrypointSection

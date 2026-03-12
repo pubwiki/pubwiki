@@ -1,9 +1,9 @@
 <script lang="ts">
 	/**
-	 * EntrypointSection - Entrypoint selection and build status UI
+	 * EntrypointSection - Entrypoint selection, save selector, and build status UI
 	 *
 	 * Displays a dropdown of sandbox nodes in the graph, resolves the
-	 * connected VFS node, and shows build status / actions.
+	 * connected VFS and STATE nodes, shows a save selector, and build status / actions.
 	 *
 	 * Build status is derived from:
 	 *   - Local transient state: building / error (component-scoped $state)
@@ -15,20 +15,39 @@
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
 	import type { VFSNodeData } from '$lib/types';
+	import type { Checkpoint as LocalCheckpoint } from '@pubwiki/rdfstore';
+	import type { SaveDetail } from '@pubwiki/api';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { Dropdown } from '@pubwiki/ui/components';
+	import { HandleId } from '$lib/graph';
 	import { runBuild } from '$lib/io/build-runner';
 	import { getNodeVfs } from '$lib/vfs';
 	import { getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
 	import { computeBuildCacheKey } from '@pubwiki/api';
 	import { computeVfsContentHash } from '$lib/io/vfs-content-hash';
+	import { getNodeRDFStore } from '$lib/rdf';
+	import { fetchSaves, getArtifactContext } from '$lib/gamesave';
 
 	export type BuildStatus =
 		| { state: 'none' }
+		| { state: 'checking' }
 		| { state: 'building'; message?: string }
 		| { state: 'ready' }
 		| { state: 'stale' }
 		| { state: 'error'; message: string };
+
+	/** Represents a selected save for publish */
+	export interface SelectedSave {
+		source: 'local' | 'cloud';
+		/** Local checkpoint ID (for local saves) */
+		checkpointId?: string;
+		/** Cloud save commit (for cloud saves) */
+		saveCommit?: string;
+		/** STATE node ID this save belongs to */
+		stateNodeId: string;
+		/** Display title */
+		title: string;
+	}
 
 	interface Props {
 		nodes: Node<FlowNodeData>[];
@@ -39,9 +58,11 @@
 		onEntrypointChange: (sandboxNodeId: string | null) => void;
 		/** Called when the resolved buildCacheKey changes (null = no valid cache). */
 		onBuildCacheKeyChange?: (key: string | null) => void;
+		/** Called when the selected save changes */
+		onSaveChange?: (save: SelectedSave | null) => void;
 	}
 
-	let { nodes, edges, projectId, selectedEntrypoint, onEntrypointChange, onBuildCacheKeyChange }: Props = $props();
+	let { nodes, edges, projectId, selectedEntrypoint, onEntrypointChange, onBuildCacheKeyChange, onSaveChange }: Props = $props();
 
 	// Dropdown item type: null represents "No entrypoint"
 	interface EntrypointItem {
@@ -80,6 +101,196 @@
 		return null;
 	});
 
+	// Resolve the STATE node connected to the selected sandbox:
+	// SANDBOX ←[SERVICE_INPUT]── LOADER ←[LOADER_STATE]── STATE
+	let connectedStateNodeId = $derived.by(() => {
+		if (!selectedEntrypoint) return null;
+		// Find LOADER node(s) connected to sandbox via service-input
+		for (const edge of edges) {
+			if (edge.target === selectedEntrypoint && edge.targetHandle === HandleId.SERVICE_INPUT) {
+				const loaderData = nodeStore.get(edge.source);
+				if (loaderData?.type !== 'LOADER') continue;
+				// Find STATE node connected to this loader via loader-state
+				for (const e2 of edges) {
+					if (e2.target === edge.source && e2.targetHandle === HandleId.LOADER_STATE) {
+						const stateData = nodeStore.get(e2.source);
+						if (stateData?.type === 'STATE') return e2.source;
+					}
+				}
+			}
+		}
+		return null;
+	});
+
+	// ---- Save selector state ----
+	interface SaveItem {
+		id: string;
+		label: string;
+		source: 'local' | 'cloud';
+		checkpointId?: string;
+		saveCommit?: string;
+		timestamp: number;
+	}
+
+	let saveItems = $state<SaveItem[]>([]);
+	let loadingSaves = $state(false);
+	let selectedSaveId = $state<string | null>(null);
+	let showCreateForm = $state(false);
+	let newSaveTitle = $state('');
+	let newSaveDescription = $state('');
+	let isCreatingSave = $state(false);
+
+	const CREATE_NEW_ID = '__create_new__';
+	const NONE_ID = '__none__';
+
+	// Build the save dropdown items: "No save" + saves + "Create New"
+	let saveDropdownItems = $derived.by(() => {
+		const items: SaveItem[] = [
+			{ id: NONE_ID, label: 'No save selected', source: 'local', timestamp: Infinity },
+		];
+		items.push(...saveItems);
+		items.push({
+			id: CREATE_NEW_ID,
+			label: '+ Create New Save',
+			source: 'local',
+			timestamp: -1,
+		});
+		return items;
+	});
+
+	let selectedSaveItem = $derived(
+		saveDropdownItems.find(item => item.id === selectedSaveId) ?? saveDropdownItems[0]
+	);
+
+	// Load saves when STATE node changes
+	$effect(() => {
+		const stateId = connectedStateNodeId;
+		if (!stateId) {
+			saveItems = [];
+			selectedSaveId = null;
+			showCreateForm = false;
+			onSaveChange?.(null);
+			return;
+		}
+		let cancelled = false;
+		loadingSaves = true;
+		loadSaveItems(stateId).then(items => {
+			if (cancelled) return;
+			saveItems = items;
+			loadingSaves = false;
+			// Auto-select the most recent save if available
+			if (items.length > 0 && !selectedSaveId) {
+				selectedSaveId = items[0].id;
+			}
+		}).catch(() => {
+			if (cancelled) return;
+			saveItems = [];
+			loadingSaves = false;
+		});
+		return () => { cancelled = true; };
+	});
+
+	// Notify parent when selected save changes
+	$effect(() => {
+		const stateId = connectedStateNodeId;
+		if (!stateId || !selectedSaveId || selectedSaveId === NONE_ID || selectedSaveId === CREATE_NEW_ID) {
+			onSaveChange?.(null);
+			return;
+		}
+		const item = saveItems.find(s => s.id === selectedSaveId);
+		if (!item) {
+			onSaveChange?.(null);
+			return;
+		}
+		onSaveChange?.({
+			source: item.source,
+			checkpointId: item.checkpointId,
+			saveCommit: item.saveCommit,
+			stateNodeId: stateId,
+			title: item.label,
+		});
+	});
+
+	async function loadSaveItems(stateNodeId: string): Promise<SaveItem[]> {
+		const items: SaveItem[] = [];
+
+		// Load local checkpoints
+		try {
+			const store = await getNodeRDFStore(stateNodeId);
+			const checkpoints = await store.listCheckpoints();
+			for (const cp of checkpoints) {
+				items.push({
+					id: `local:${cp.id}`,
+					label: cp.title,
+					source: 'local',
+					checkpointId: cp.id,
+					timestamp: cp.timestamp,
+				});
+			}
+		} catch { /* ignore */ }
+
+		// Load cloud saves (only if published)
+		try {
+			const ctx = await getArtifactContext(projectId);
+			if (ctx.isPublished) {
+				const saves = await fetchSaves(stateNodeId);
+				for (const s of saves) {
+					items.push({
+						id: `cloud:${s.commit}`,
+						label: s.title ?? `Save ${s.commit.slice(0, 8)}`,
+						source: 'cloud',
+						saveCommit: s.commit,
+						timestamp: new Date(s.createdAt).getTime(),
+					});
+				}
+			}
+		} catch { /* ignore */ }
+
+		// Sort by timestamp descending (most recent first)
+		items.sort((a, b) => b.timestamp - a.timestamp);
+		return items;
+	}
+
+	function handleSaveSelect(item: SaveItem) {
+		if (item.id === CREATE_NEW_ID) {
+			showCreateForm = true;
+			return;
+		}
+		showCreateForm = false;
+		selectedSaveId = item.id;
+	}
+
+	async function handleCreateSave() {
+		const stateId = connectedStateNodeId;
+		if (!stateId || !newSaveTitle.trim()) return;
+
+		isCreatingSave = true;
+		try {
+			const store = await getNodeRDFStore(stateId);
+			await store.checkpoint({ title: newSaveTitle.trim(), description: newSaveDescription.trim() || undefined });
+			// Reload saves and select the newly created one
+			const items = await loadSaveItems(stateId);
+			saveItems = items;
+			// The newest checkpoint should be first
+			if (items.length > 0) {
+				selectedSaveId = items[0].id;
+			}
+			newSaveTitle = '';
+			newSaveDescription = '';
+			showCreateForm = false;
+		} catch (err) {
+			console.error('Failed to create save:', err);
+		} finally {
+			isCreatingSave = false;
+		}
+	}
+
+	function handleCancelCreate() {
+		showCreateForm = false;
+		newSaveTitle = '';
+		newSaveDescription = '';
+	}
+
 	// ---- Stale detection via VFS events ----
 	// When we have a valid build cache, any file event marks the build as stale.
 	let buildStale = $state(false);
@@ -112,6 +323,7 @@
 	let buildError = $state<string | null>(null);
 
 	// ---- OPFS cache status ----
+	let checkingCache = $state(false);
 	let opfsCacheValid = $state(false);
 	// The buildCacheKey from the last successful check (for publish).
 	let lastBuildCacheKey = $state<string | null>(null);
@@ -159,11 +371,14 @@
 			opfsCacheValid = false;
 			lastBuildCacheKey = null;
 			buildStale = false;
+			checkingCache = false;
 			return;
 		}
 		let cancelled = false;
+		checkingCache = true;
 		checkOpfsCache(vfsId).then(() => {
 			if (cancelled) return;
+			checkingCache = false;
 		});
 		return () => { cancelled = true; };
 	});
@@ -172,6 +387,7 @@
 	let buildStatus: BuildStatus = $derived.by(() => {
 		if (building) return { state: 'building' as const, message: buildingMessage };
 		if (buildError) return { state: 'error' as const, message: buildError };
+		if (checkingCache) return { state: 'checking' as const };
 		if (opfsCacheValid) {
 			if (buildStale) return { state: 'stale' as const };
 			return { state: 'ready' as const };
@@ -261,6 +477,14 @@
 					class="ml-auto px-2 py-0.5 text-xs text-white bg-red-500 hover:bg-red-600 rounded shrink-0">
 					Retry
 				</button>
+			{:else if buildStatus.state === 'checking'}
+				<span class="text-gray-500 flex items-center gap-1">
+					<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+					Checking build cache…
+				</span>
 			{:else}
 				<!-- state === 'none' -->
 				<span class="text-gray-500">No build yet</span>
@@ -272,5 +496,67 @@
 		</div>
 	{:else if selectedEntrypoint && !connectedVfsNodeId}
 		<p class="text-xs text-amber-600">No VFS node connected to this sandbox</p>
+	{/if}
+
+	<!-- Save selector -->
+	{#if selectedEntrypoint && connectedStateNodeId}
+		<div class="space-y-1.5">
+			<span class="block text-xs font-medium text-gray-500">Save</span>
+			{#if loadingSaves}
+				<div class="flex items-center gap-1 text-xs text-gray-500">
+					<svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+					Loading saves…
+				</div>
+			{:else}
+				<Dropdown
+					items={saveDropdownItems}
+					value={selectedSaveItem}
+					placeholder="No save selected"
+					size="sm"
+					getLabel={(item) => {
+						if (item.id === NONE_ID || item.id === CREATE_NEW_ID) return item.label;
+						const badge = item.source === 'cloud' ? '☁️' : '💾';
+						return `${badge} ${item.label}`;
+					}}
+					getKey={(item) => item.id}
+					onchange={handleSaveSelect}
+				/>
+			{/if}
+
+			<!-- Create new save form -->
+			{#if showCreateForm}
+				<div class="rounded border border-gray-200 bg-gray-50 p-2 space-y-2">
+					<input
+						type="text"
+						bind:value={newSaveTitle}
+						placeholder="Save title"
+						class="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+					<input
+						type="text"
+						bind:value={newSaveDescription}
+						placeholder="Description (optional)"
+						class="w-full text-xs px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+					<div class="flex gap-1.5 justify-end">
+						<button type="button" onclick={handleCancelCreate}
+							class="px-2 py-0.5 text-xs text-gray-600 bg-gray-200 hover:bg-gray-300 rounded"
+							disabled={isCreatingSave}>
+							Cancel
+						</button>
+						<button type="button" onclick={handleCreateSave}
+							class="px-2 py-0.5 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded disabled:opacity-50"
+							disabled={isCreatingSave || !newSaveTitle.trim()}>
+							{#if isCreatingSave}Creating…{:else}Create{/if}
+						</button>
+					</div>
+				</div>
+			{/if}
+		</div>
+	{:else if selectedEntrypoint && !connectedStateNodeId}
+		<p class="text-xs text-amber-600">No STATE node connected — saves unavailable</p>
 	{/if}
 </div>
