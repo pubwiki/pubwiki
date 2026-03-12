@@ -108,7 +108,7 @@
 	"me_saving": "保存中...",
 	"me_edit_artifact": "编辑作品",
 	"me_delete_artifact": "删除作品",
-	"me_delete_artifact_confirm": "确定要删除"{name}"吗？此操作无法撤销。",
+	"me_delete_artifact_confirm": "确定要删除\"{name}\"吗？此操作无法撤销。",
 	"me_artifact_name": "名称",
 	"me_artifact_description": "描述",
 	"me_artifact_description_placeholder": "描述您的作品...",
