@@ -24,14 +24,20 @@
 		findConnectedStateNode,
 		createPubChat,
 		createLLMModule,
+		createPubWikiModule,
+		createSaveCheckpoint,
 		type RuntimeGraph,
 		type RuntimeNode,
 		type LoaderBackend,
+		type ConfirmationHandler,
+		type PubWikiModuleConfig,
 	} from '@pubwiki/flow-core';
 	import type { GetArtifactGraphResponse } from '@pubwiki/api';
 	import { getNodeVfs, disposeAllVfs } from '$lib/vfs/store';
+	import { detectStorageBackend } from '$lib/vfs/detect';
 	import { getNodeRDFStore, closeAllRDFStores, type RDFStore } from '$lib/rdf/store';
-	import { detectProject, createBuildAwareVfs, getOpfsBuildCacheStorage } from '@pubwiki/bundler';
+	import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
+	import { detectProject, createBuildAwareVfs, getOpfsBuildCacheStorage, getIdbBuildCacheStorage, type BuildCacheStorage } from '@pubwiki/bundler';
 	import type { ProjectConfig } from '@pubwiki/bundler';
 	import { createRemoteBuildFetcher } from '$lib/io/remote-build-fetcher';
 	import { fetchAndPopulateVfs } from '@pubwiki/flow-core';
@@ -146,8 +152,11 @@
 				throw new Error('Invalid project configuration');
 			}
 
-			// Create BuildAwareVfs (L0: memory → L1: OPFS → L2: remote → L3: local compile)
-			const buildCacheStorage = getOpfsBuildCacheStorage();
+			// Create BuildAwareVfs (L0: memory → L1: persistent cache → L2: remote → L3: local compile)
+			const storageBackend = await detectStorageBackend();
+			const buildCacheStorage: BuildCacheStorage = storageBackend === 'opfs'
+				? getOpfsBuildCacheStorage()
+				: getIdbBuildCacheStorage();
 			const remoteFetcher = createRemoteBuildFetcher(API_BASE_URL);
 			buildAwareVfs = createBuildAwareVfs({
 				sourceVfs: vfs,
@@ -223,11 +232,44 @@
 						? (loaderStateNodeId === stateNode?.id ? rdfStore : await getNodeRDFStore(loaderStateNodeId))
 						: undefined;
 
+					// Build PubWiki module for this loader
+					const artifactCommit = (graphData as GetArtifactGraphResponse).version?.commitHash;
+					const autoConfirm: ConfirmationHandler = {
+						async confirm(_action, initialValues) {
+							return initialValues;
+						}
+					};
+					const quadSerializers = { fromRdfQuad, toRdfQuad };
+					const pubwikiConfig: PubWikiModuleConfig = {
+						getGraph: () => graph,
+						projectId: data.artifactId,
+						loaderNodeId: loaderNode.id,
+						apiBaseUrl: API_BASE_URL,
+						getCurrentUserId: () => auth.user?.id ?? null,
+						confirmation: autoConfirm,
+						getArtifactContext: async () => ({
+							isPublished: true,
+							artifactId: data.artifactId,
+							artifactCommit: artifactCommit,
+						}),
+						getRDFStore: async (nodeId: string) => getNodeRDFStore(nodeId),
+						createSaveCheckpoint: async (store, options) => {
+							return createSaveCheckpoint(
+								store,
+								options,
+								API_BASE_URL,
+								quadSerializers,
+							);
+						},
+					};
+					const pubwikiModule = createPubWikiModule(pubwikiConfig);
+
 					// Build JS modules
 					const jsModules = buildJsModules({
 						rdfStore: loaderRdfStore ?? undefined,
 						stateNodeId: loaderStateNodeId ?? undefined,
 						getNodeRDFStore,
+						pubwikiModule,
 					});
 
 					// Register LLM module (always register so Lua require('LLM') doesn't fail)

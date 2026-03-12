@@ -17,7 +17,7 @@ import { BundlerService } from './service/bundler-service'
 import type { ProjectConfig } from './service/project-detector'
 import type { ProjectBuildResult, BuildManifest } from './types/result'
 import type { BuildProgressEvent } from './types/service'
-import type { OpfsBuildCacheStorage, BuildCacheFile } from './build-cache-storage'
+import type { BuildCacheStorage, BuildCacheFile } from './cache'
 
 // ============================================================================
 // Types
@@ -52,8 +52,8 @@ export interface BuildAwareVfsConfig {
   sourceVfs: Vfs
   /** Detected project configuration (entry files, tsconfig path) */
   projectConfig: ProjectConfig
-  /** OPFS-backed build cache storage */
-  buildCacheStorage: OpfsBuildCacheStorage
+  /** Build cache storage (OPFS or IndexedDB) */
+  buildCacheStorage: BuildCacheStorage
   /** Pre-computed buildCacheKey (Play route has it from graph; Studio may compute lazily) */
   buildCacheKey?: string | null
   /** Hash of the source files content (used in manifest and cache metadata) */
@@ -120,26 +120,39 @@ class BuildAwareVfsProvider implements VfsProvider {
   private async resolveCompiledOutput(path: string): Promise<Uint8Array> {
     // L0: In-memory cache
     const cached = this.compiledCache.get(path)
-    if (cached) return cached
+    if (cached) {
+      console.log(`[BuildAwareVfs] L0 hit for ${path}`)
+      return cached
+    }
 
     // Ensure buildCacheKey is available
     if (!this.buildCacheKey && this.config.computeBuildCacheKey) {
       this.buildCacheKey = await this.config.computeBuildCacheKey()
     }
 
+    console.log(`[BuildAwareVfs] resolving ${path}, buildCacheKey: ${this.buildCacheKey ? this.buildCacheKey.slice(0, 12) + '...' : 'null'}`)
+
     if (this.buildCacheKey) {
       // L1: OPFS cache
       const opfsResult = await this.resolveFromOpfs(path, this.buildCacheKey)
-      if (opfsResult) return opfsResult
+      if (opfsResult) {
+        console.log(`[BuildAwareVfs] L1 (OPFS) hit for ${path}`)
+        return opfsResult
+      }
 
       // L2: Remote cache
       if (this.config.remoteFetcher) {
         const remoteResult = await this.resolveFromRemote(path, this.buildCacheKey)
-        if (remoteResult) return remoteResult
+        if (remoteResult) {
+          console.log(`[BuildAwareVfs] L2 (remote) hit for ${path}`)
+          return remoteResult
+        }
+        console.log(`[BuildAwareVfs] L2 (remote) miss for ${path}`)
       }
     }
 
     // L3: Local compilation
+    console.log(`[BuildAwareVfs] L3 (compile) fallback for ${path}`)
     return this.resolveFromBundler(path)
   }
 

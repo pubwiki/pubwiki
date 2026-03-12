@@ -12,12 +12,21 @@ export * from './utils'
 
 // Build Cache Storage
 export {
-  OpfsBuildCacheStorage,
-  getOpfsBuildCacheStorage,
+  type BuildCacheStorage,
   type BuildCacheFile,
   type BuildCacheMetadata,
-  type BuildCacheHandle,
-} from './build-cache-storage'
+  type BuildCacheEntry,
+} from './cache'
+
+export {
+  OpfsBuildCacheStorage,
+  getOpfsBuildCacheStorage,
+} from './cache/opfs'
+
+export {
+  IdbBuildCacheStorage,
+  getIdbBuildCacheStorage,
+} from './cache/idb'
 
 // Build-Aware VFS
 export {

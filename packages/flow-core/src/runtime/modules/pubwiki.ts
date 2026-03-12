@@ -8,7 +8,7 @@
 
 import type { RuntimeGraph, ConfirmationHandler, ArtifactContext, JsModuleDefinition } from '../types';
 import { findConnectedStateNode } from '../graph/artifact-loader';
-import type { CreateSaveOptions, CreateSaveResult } from '../save/gamesave';
+import type { CreateSaveOptions, CreateSaveResult, SaveRDFStore } from '../save/gamesave';
 
 // ============================================================================
 // RDF Store interface (subset needed by this module)
@@ -16,11 +16,12 @@ import type { CreateSaveOptions, CreateSaveResult } from '../save/gamesave';
 
 /**
  * Minimal RDF store interface consumed by the pubwiki module.
+ * Extends SaveRDFStore so the same object can be passed to createSaveCheckpoint.
  */
-export interface PubWikiRDFStore {
+export interface PubWikiRDFStore extends SaveRDFStore {
 	getCheckpoint(id: string): Promise<{ id: string; title: string; description?: string } | null>;
 	loadCheckpoint(id: string): Promise<void>;
-	checkpoint(opts: { title: string }): Promise<void>;
+	checkpoint(opts: { title: string }): Promise<{ id: string; title: string }>;
 }
 
 // ============================================================================

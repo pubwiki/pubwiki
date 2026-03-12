@@ -14,10 +14,10 @@ export function createRemoteBuildFetcher(apiBaseUrl: string): RemoteBuildFetcher
 	return {
 		async getMetadata(cacheKey: string) {
 			try {
-				const response = await fetch(
-					`${apiBaseUrl}/build-cache/${encodeURIComponent(cacheKey)}`,
-					{ credentials: 'include' },
-				);
+				const url = `${apiBaseUrl}/build-cache/${encodeURIComponent(cacheKey)}`;
+				console.log('[RemoteBuildFetcher] getMetadata:', url);
+				const response = await fetch(url, { credentials: 'include' });
+				console.log('[RemoteBuildFetcher] getMetadata response:', response.status);
 				if (!response.ok) return null;
 				return (await response.json()) as {
 					releaseHash: string;
@@ -31,10 +31,10 @@ export function createRemoteBuildFetcher(apiBaseUrl: string): RemoteBuildFetcher
 
 		async fetchArchive(cacheKey: string) {
 			try {
-				const response = await fetch(
-					`${apiBaseUrl}/build-cache/${encodeURIComponent(cacheKey)}/archive`,
-					{ credentials: 'include' },
-				);
+				const url = `${apiBaseUrl}/build-cache/${encodeURIComponent(cacheKey)}/archive`;
+				console.log('[RemoteBuildFetcher] fetchArchive:', url);
+				const response = await fetch(url, { credentials: 'include' });
+				console.log('[RemoteBuildFetcher] fetchArchive response:', response.status);
 				if (!response.ok) return null;
 
 				const archiveBuffer = await response.arrayBuffer();

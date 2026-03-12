@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createBuildAwareVfs, type RemoteBuildFetcher, type BuildAwareVfsConfig } from '../src/build-aware-vfs'
-import type { OpfsBuildCacheStorage, BuildCacheFile, BuildCacheHandle, BuildCacheMetadata } from '../src/build-cache-storage'
+import type { BuildCacheStorage, BuildCacheFile, BuildCacheEntry, BuildCacheMetadata } from '../src/cache'
 import type { BuildManifest } from '../src/types/result'
 import type { ProjectConfig } from '../src/service/project-detector'
 import { createTestVfs, addFile, readFileContent } from './helpers'
@@ -17,7 +17,7 @@ import type { Vfs } from '@pubwiki/vfs'
 // Mock factories
 // ============================================================================
 
-function createMockBuildCacheStorage(): OpfsBuildCacheStorage {
+function createMockBuildCacheStorage(): BuildCacheStorage {
   return {
     get: vi.fn().mockResolvedValue(null),
     put: vi.fn().mockResolvedValue(undefined),
@@ -27,7 +27,7 @@ function createMockBuildCacheStorage(): OpfsBuildCacheStorage {
     evict: vi.fn().mockResolvedValue(0),
     updateMetadata: vi.fn().mockResolvedValue(undefined),
     readFile: vi.fn().mockResolvedValue(null),
-  } as unknown as OpfsBuildCacheStorage
+  } as unknown as BuildCacheStorage
 }
 
 function createMockRemoteFetcher(): RemoteBuildFetcher {
@@ -66,7 +66,7 @@ function decode(buf: Uint8Array): string {
 
 describe('BuildAwareVfs', () => {
   let sourceVfs: Vfs
-  let storage: OpfsBuildCacheStorage
+  let storage: BuildCacheStorage
   let projectConfig: ProjectConfig
 
   beforeEach(async () => {
@@ -134,9 +134,8 @@ describe('BuildAwareVfs', () => {
     it('returns L0 cached content on second read', async () => {
       // Set up L1 to return data on first call
       const manifest = createTestManifest()
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValueOnce(handle)
@@ -164,9 +163,8 @@ describe('BuildAwareVfs', () => {
   describe('L1 OPFS cache', () => {
     it('returns compiled output from OPFS when cache hit', async () => {
       const manifest = createTestManifest()
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -199,9 +197,8 @@ describe('BuildAwareVfs', () => {
           '/src/other.ts': { jsPath: 'other.js' },
         },
       })
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -293,9 +290,8 @@ describe('BuildAwareVfs', () => {
     it('clears L0 cache on writeFile', async () => {
       // Populate L0 via L1
       const manifest = createTestManifest()
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -319,9 +315,8 @@ describe('BuildAwareVfs', () => {
 
     it('clears L0 cache on unlink', async () => {
       const manifest = createTestManifest()
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -351,9 +346,8 @@ describe('BuildAwareVfs', () => {
 
     it('clears L0 cache on rename', async () => {
       const manifest = createTestManifest()
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -389,9 +383,8 @@ describe('BuildAwareVfs', () => {
           '/src/index.ts': { jsPath: 'index.js' },
         },
       })
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -411,9 +404,8 @@ describe('BuildAwareVfs', () => {
           'src/index.ts': { jsPath: 'index.js' }, // no leading slash in manifest
         },
       })
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -436,9 +428,8 @@ describe('BuildAwareVfs', () => {
 
       // Set up L1 to respond for the lazy key
       const manifest = createTestManifest({ buildCacheKey: 'lazy-key' })
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -460,9 +451,8 @@ describe('BuildAwareVfs', () => {
       const computeFn = vi.fn().mockResolvedValue('lazy-key')
 
       const manifest = createTestManifest({ buildCacheKey: 'lazy-key' })
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -567,9 +557,8 @@ describe('BuildAwareVfs', () => {
           '/src/main.ts': { jsPath: 'main.js' },
         },
       })
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)
@@ -599,9 +588,8 @@ describe('BuildAwareVfs', () => {
     it('is not called for L1 cache hits', async () => {
       const onBuildProgress = vi.fn()
       const manifest = createTestManifest()
-      const handle: BuildCacheHandle = {
+      const handle: BuildCacheEntry = {
         manifest,
-        dirHandle: {} as FileSystemDirectoryHandle,
         metadata: {} as BuildCacheMetadata,
       }
       vi.mocked(storage.get).mockResolvedValue(handle)

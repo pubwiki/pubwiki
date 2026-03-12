@@ -1,5 +1,5 @@
 /**
- * BuildCacheStorage — OPFS-backed build cache persistence layer.
+ * OpfsBuildCacheStorage — OPFS-backed build cache implementation.
  *
  * Stores build outputs (JS/CSS files) individually in OPFS for zero-decompression
  * reads. Each build is keyed by `buildCacheKey` (input-content-addressable SHA-256).
@@ -14,35 +14,13 @@
  *         index.css           — compiled CSS (optional)
  */
 
-import type { BuildManifest } from './types/result'
-
-// ============================================================================
-// Types
-// ============================================================================
-
-/** A single file to store in the build cache. */
-export interface BuildCacheFile {
-  path: string         // e.g. 'index.js', 'index.css'
-  content: Uint8Array
-}
-
-/** Metadata for a build cache entry, persisted in index.json. */
-export interface BuildCacheMetadata {
-  buildCacheKey: string
-  filesHash: string
-  totalSize: number           // sum of all file sizes (for LRU eviction)
-  builtAt: number
-  lastAccessedAt: number
-  fileHashes?: Record<string, string>  // { [filePath]: sha256hex }
-  verified?: boolean                    // whether local files passed integrity check (session-scoped)
-}
-
-/** Lazy handle returned by get() — does not read file contents eagerly. */
-export interface BuildCacheHandle {
-  manifest: BuildManifest
-  dirHandle: FileSystemDirectoryHandle
-  metadata: BuildCacheMetadata
-}
+import type { BuildManifest } from '../types/result'
+import type {
+  BuildCacheStorage,
+  BuildCacheFile,
+  BuildCacheMetadata,
+  BuildCacheEntry,
+} from './index'
 
 // ============================================================================
 // OpfsBuildCacheStorage
@@ -52,7 +30,7 @@ const BUILD_CACHE_DIR = '__build_cache__'
 const INDEX_FILE = 'index.json'
 const MANIFEST_FILE = 'manifest.json'
 
-export class OpfsBuildCacheStorage {
+export class OpfsBuildCacheStorage implements BuildCacheStorage {
   private rootHandle: FileSystemDirectoryHandle | null = null
   /** In-memory copy of the metadata index, loaded once per session. */
   private index: Map<string, BuildCacheMetadata> = new Map()
@@ -167,12 +145,12 @@ export class OpfsBuildCacheStorage {
   }
 
   /**
-   * Get a lazy handle to a cached build. Does NOT read file contents —
-   * only reads the manifest and returns the OPFS directory handle.
+   * Get a cached build entry. Does NOT read file contents eagerly —
+   * only reads the manifest and metadata.
    *
-   * @returns handle with manifest + dirHandle + metadata, or null if not cached
+   * @returns entry with manifest + metadata, or null if not cached
    */
-  async get(key: string): Promise<BuildCacheHandle | null> {
+  async get(key: string): Promise<BuildCacheEntry | null> {
     const root = await this.ensureInitialized()
 
     const metadata = this.index.get(key)
@@ -192,7 +170,7 @@ export class OpfsBuildCacheStorage {
       // Fire-and-forget index flush (non-critical)
       this.flushIndex().catch(() => {})
 
-      return { manifest, dirHandle, metadata }
+      return { manifest, metadata }
     } catch {
       // Directory or manifest missing/corrupt — remove stale index entry
       this.index.delete(key)
