@@ -45,7 +45,7 @@ export function createPubChat(config: LLMModuleConfig): {
         'HTTP-Referer': 'https://pub.wiki',
         'X-OpenRouter-Title': 'PubWiki',
         'X-Title': 'PubWiki',
-        'X-OpenRouter-Category': 'roleplay',
+        'X-OpenRouter-Categories': 'roleplay',
         ...llmConfig.headers,
       },
     },
