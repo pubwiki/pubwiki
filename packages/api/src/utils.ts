@@ -200,3 +200,28 @@ export async function computeBuildCacheKey(params: {
   const payload = canonicalize(normalized);
   return sha256Hex(payload);
 }
+
+/**
+ * Compute config key — SHA-256 of build config WITHOUT filesHash.
+ *
+ * Used by BuildCacheStorage.resolve() to match builds with the same
+ * config but different file contents. Two builds with the same configKey
+ * are guaranteed to use the same entry files, target, jsx settings, etc.
+ */
+export async function computeConfigKey(params: {
+  entryFiles: string[];
+  buildTarget?: string;
+  jsx?: string;
+  jsxImportSource?: string;
+  minify?: boolean;
+}): Promise<string> {
+  const normalized = {
+    entryFiles: [...params.entryFiles].sort(),
+    target: params.buildTarget ?? 'es2020',
+    jsx: params.jsx ?? 'automatic',
+    jsxImportSource: params.jsxImportSource ?? 'react',
+    minify: params.minify ?? false,
+  };
+  const payload = canonicalize(normalized);
+  return sha256Hex(payload);
+}

@@ -23,8 +23,8 @@
 	import { runBuild } from '$lib/io/build-runner';
 	import { getNodeVfs } from '$lib/vfs';
 	import { getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
-	import { computeBuildCacheKey } from '@pubwiki/api';
-	import { computeVfsContentHash } from '$lib/io/vfs-content-hash';
+	import { computeBuildCacheKey, computeConfigKey } from '@pubwiki/api';
+	import { computeVfsFileHashes, deriveFilesHash } from '$lib/io/vfs-content-hash';
 	import { getNodeRDFStore } from '$lib/rdf';
 	import { fetchSaves, getArtifactContext } from '$lib/gamesave';
 
@@ -292,8 +292,10 @@
 	}
 
 	// ---- Stale detection via VFS events ----
-	// When we have a valid build cache, any file event marks the build as stale.
+	// When we have a valid build cache, only dependency file changes mark the build as stale.
 	let buildStale = $state(false);
+	/** Known dependency file paths from the last cache check/build — used for smart stale detection. */
+	let buildDeps = $state<Set<string>>(new Set());
 	$effect(() => {
 		const vfsId = connectedVfsNodeId;
 		if (!vfsId) return;
@@ -303,15 +305,16 @@
 		const unsubs: Array<() => void> = [];
 		getNodeVfs(data.content.projectId, vfsId).then(vfs => {
 			if (cancelled) return;
-			const markStale = () => { buildStale = true; };
+			const markStaleIfDep = (event: { path: string }) => {
+				// If no deps known yet (first load, legacy), mark stale on any change
+				if (buildDeps.size === 0 || buildDeps.has(event.path)) {
+					buildStale = true;
+				}
+			};
 			unsubs.push(
-				vfs.events.on('file:created', markStale),
-				vfs.events.on('file:updated', markStale),
-				vfs.events.on('file:deleted', markStale),
-				vfs.events.on('file:moved', markStale),
-				vfs.events.on('folder:created', markStale),
-				vfs.events.on('folder:deleted', markStale),
-				vfs.events.on('folder:moved', markStale),
+				vfs.events.on('file:created', markStaleIfDep),
+				vfs.events.on('file:updated', markStaleIfDep),
+				vfs.events.on('file:deleted', markStaleIfDep),
 			);
 		});
 		return () => { cancelled = true; unsubs.forEach(u => u()); };
@@ -337,7 +340,8 @@
 
 	/**
 	 * Check whether OPFS has a valid build for the current VFS content.
-	 * Sets opfsCacheValid and clears stale flag on success.
+	 * Uses smart resolve() — may hit even when non-dep files changed.
+	 * Sets opfsCacheValid, buildDeps, and clears stale flag on success.
 	 */
 	async function checkOpfsCache(vfsId: string): Promise<void> {
 		try {
@@ -345,20 +349,33 @@
 			if (!data || data.type !== 'VFS') { opfsCacheValid = false; return; }
 
 			const nodeVfsInstance = await getNodeVfs(data.content.projectId, vfsId);
-			const contentHash = await computeVfsContentHash(data.content.projectId, vfsId);
 			const config = await detectProject('/tsconfig.json', nodeVfsInstance);
 			if (!config?.isBuildable || config.entryFiles.length === 0) {
 				opfsCacheValid = false;
 				return;
 			}
+
+			const fileHashes = await computeVfsFileHashes(data.content.projectId, vfsId);
+			const contentHash = await deriveFilesHash(fileHashes);
 			const key = await computeBuildCacheKey({
 				filesHash: contentHash,
 				entryFiles: config.entryFiles,
 			});
-			const hasCached = await buildCacheStorage.has(key);
-			opfsCacheValid = hasCached;
-			lastBuildCacheKey = hasCached ? key : null;
-			if (hasCached) buildStale = false;
+
+			// Smart resolve — dependency-aware cache lookup
+			const entry = await buildCacheStorage.resolve(key, fileHashes);
+			if (entry) {
+				opfsCacheValid = true;
+				lastBuildCacheKey = key;
+				buildStale = false;
+				// Update known deps for smart stale detection
+				if (entry.metadata.dependencies?.length) {
+					buildDeps = new Set(entry.metadata.dependencies);
+				}
+			} else {
+				opfsCacheValid = false;
+				lastBuildCacheKey = null;
+			}
 		} catch {
 			opfsCacheValid = false;
 		}

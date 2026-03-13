@@ -182,6 +182,8 @@
 	"studio_publish": "Publish",
 	"studio_update": "Update",
 	"studio_published_success": "Published successfully!",
+	"studio_updated_success": "Updated successfully!",
+	"studio_no_changes_hint": "No changes since last update",
 	"studio_error_name_required": "Name is required",
 	"studio_error_slug_required": "Slug is required",
 	"studio_error_slug_format": "Slug must be lowercase letters and numbers, separated by hyphens",

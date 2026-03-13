@@ -8,7 +8,7 @@
 
 import * as esbuild from 'esbuild-wasm'
 import { DependencyResolver } from './dependency-resolver'
-import { BundleCache } from './bundle-cache'
+import type { BuildCacheStorage } from '../cache'
 import type { ProjectBuildResult, FileBuildResult, BuildError, BundleOptions } from '../types'
 import type { LoaderType } from './types'
 
@@ -33,7 +33,7 @@ export class ESBuildEngine {
   private initialized = false
   private initPromise: Promise<void> | null = null
   private resolver: DependencyResolver
-  private cache: BundleCache
+  private cache: BuildCacheStorage
 
   // Build context for incremental compilation (keyed by projectRoot)
   private buildContexts = new Map<string, esbuild.BuildContext>()
@@ -92,7 +92,7 @@ export class ESBuildEngine {
     return ''
   }
 
-  constructor(resolver: DependencyResolver, cache: BundleCache) {
+  constructor(resolver: DependencyResolver, cache: BuildCacheStorage) {
     this.resolver = resolver
     this.cache = cache
   }

@@ -2357,6 +2357,8 @@ export interface operations {
                         /** @example Artifact created successfully */
                         message: string;
                         artifact: components["schemas"]["ArtifactListItem"];
+                        /** @description 新创建版本的 commit hash */
+                        commitHash: string;
                     };
                 };
             };
@@ -2478,6 +2480,8 @@ export interface operations {
                         /** @example Artifact patched successfully */
                         message: string;
                         artifact: components["schemas"]["ArtifactListItem"];
+                        /** @description 新版本的 commit hash */
+                        commitHash: string;
                     };
                 };
             };

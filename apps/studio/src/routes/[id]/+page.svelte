@@ -46,6 +46,7 @@
 	import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata, exportProjectToZip, selectZipFile, importFromZipFile, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
 	import type { UpdateMetadata } from '$components/sidebar/ProjectTab.svelte';
 	import { createDraftSyncService, type DraftSyncService, type DraftSyncState } from '$lib/sync';
+	import { createPublishState } from '$lib/state/publish-state.svelte';
 	import { setStudioContext, type StudioContext } from '$lib/state';
 	import { getPendingConfirmation, respondConfirmation } from '$lib/state/pubwiki-confirm.svelte';
 	import { PubWikiConfirmDialog } from '$components/pubwiki';
@@ -142,13 +143,10 @@
 	} | null>(null);
 
 	// Whether this project is a draft (not yet published)
-	let isDraft = $state(true);
+	const publishState = createPublishState();
 	
-	// Project name
+	// Project name (display, updated on every keystroke)
 	let projectName = $state('');
-
-	// Last cloud commit hash for Draft-Latest workflow
-	let lastCloudCommit = $state<string | undefined>(undefined);
 	
 	// Copilot panel state (controlled from sidebar button)
 	let copilotCollapsed = $state(true);
@@ -984,8 +982,7 @@
 					
 					// Set initial state from local project
 					projectName = localProject?.name ?? `Project ${currentProjectId.substring(0, 8)}`;
-					isDraft = localProject?.isDraft ?? true;
-					lastCloudCommit = localProject?.lastCloudCommit;
+					publishState.init(localProject?.isDraft ?? true, localProject?.lastCloudCommit);
 					selectedEntrypoint = localProject?.selectedEntrypoint ?? null;
 					
 					// Create local project record if not exists
@@ -1078,7 +1075,7 @@
 					checkArtifactExists(currentProjectId).then(async (existsOnBackend) => {
 						console.log('[Studio] Backend check complete, exists:', existsOnBackend);
 						if (existsOnBackend) {
-							isDraft = false;
+							publishState.setDraft(false);
 							// Update local project record
 							const project = await getProject(currentProjectId);
 							if (project && project.isDraft) {
@@ -1299,7 +1296,7 @@
 	}
 
 	/** Shared post-commit logic: flush local stores and update project metadata */
-	async function finalizeAfterCommit(newCommit: string | undefined, projectName: string) {
+	async function finalizeAfterCommit(newCommit: string, projectName: string) {
 		await nodeStore.flush();
 		await layoutStore.flush();
 		await saveEdges(edges, currentProjectId);
@@ -1316,8 +1313,7 @@
 			lastCloudCommit: newCommit
 		});
 
-		isDraft = false;
-		lastCloudCommit = newCommit;
+		publishState.markPublished(newCommit);
 	}
 
 	/** First-time publish (POST) for draft artifacts */
@@ -1328,12 +1324,18 @@
 		buildCacheKey?: string
 	) {
 		const result = await publishArtifact(metadata, nodesToPublish, edgesToPublish, buildCacheKey);
-		if (!result.success) {
+		if (!result.success || !result.latestCommit) {
 			throw new Error(result.error || 'Failed to publish');
 		}
 
 		await finalizeAfterCommit(result.latestCommit, metadata.name);
 		projectName = metadata.name;
+
+		// Keep draft sync in sync with published state
+		initialModificationCount = nodeStore.modificationCount;
+		if (syncService?.state.enabled) {
+			await handleSync();
+		}
 	}
 
 	/** Incremental update (PATCH) for already-published artifacts */
@@ -1343,24 +1345,45 @@
 		edgesToPublish: Edge[],
 		buildCacheKey?: string
 	) {
-		if (!lastCloudCommit) {
+		if (!publishState.state.lastCloudCommit) {
 			throw new Error('No base commit for update. Please try a full publish instead.');
 		}
 
 		const patchMeta: PatchMetadata = {
 			artifactId: currentProjectId,
-			baseCommit: lastCloudCommit,
+			baseCommit: publishState.state.lastCloudCommit,
 			version: metadata.version,
 			commitTags: ['draft-latest']
 		};
 
 		const patchResult = await patchArtifact(patchMeta, nodesToPublish, edgesToPublish, buildCacheKey);
-		if (!patchResult.success) {
+		if (!patchResult.success || !patchResult.newCommit) {
 			throw new Error(patchResult.error || 'Failed to update artifact');
 		}
 
-		await finalizeAfterCommit(patchResult.newCommit, metadata.name);
+		if (patchResult.hasGraphChanges) {
+			await finalizeAfterCommit(patchResult.newCommit, metadata.name);
+		}
+
+		// Always sync all metadata to server (idempotent)
+		await apiClient.PUT('/artifacts/{artifactId}/metadata', {
+			params: { path: { artifactId: currentProjectId } },
+			body: {
+				name: metadata.name,
+				description: metadata.description,
+				isListed: metadata.isListed,
+				isPrivate: metadata.isPrivate,
+				tags: metadata.tags,
+			},
+		});
+
 		projectName = metadata.name;
+
+		// Keep draft sync in sync with published state
+		initialModificationCount = nodeStore.modificationCount;
+		if (syncService?.state.enabled) {
+			await handleSync();
+		}
 	}
 
 	
@@ -1537,9 +1560,8 @@
 		{selectedNodes}
 		projectId={currentProjectId}
 		{projectName}
-		{isDraft}
+		{publishState}
 		isAuthenticated={auth.isAuthenticated}
-		{lastCloudCommit}
 		onFocusNode={handleFocusNode}
 		onPublish={handlePublish}
 		onUpdate={handleUpdate}

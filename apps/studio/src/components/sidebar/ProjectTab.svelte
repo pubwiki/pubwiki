@@ -12,6 +12,7 @@
 	import type { NodeRef } from '$lib/version';
 	import { type PublishMetadata, type PatchMetadata } from '$lib/io';
 	import type { DraftSyncState } from '$lib/sync';
+	import type { PublishStateService } from '$lib/state/publish-state.svelte';
 	import { formatRelativeSyncTime } from '$lib/sync';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { getProject, saveProject } from '$lib/persistence/db';
@@ -32,6 +33,10 @@
 	export interface UpdateMetadata {
 		version: string;
 		name: string;
+		description: string;
+		isListed: boolean;
+		isPrivate: boolean;
+		tags: string[];
 		entrypoint?: { saveCommit: string; sandboxNodeId: string };
 	}
 
@@ -40,10 +45,8 @@
 		edges: Edge[];
 		projectId: string;
 		projectName: string;
-		isDraft: boolean;
+		publishState: PublishStateService;
 		isAuthenticated: boolean;
-		/** Last cloud commit hash for version lineage tracking */
-		lastCloudCommit?: string;
 		/** Called for first-time publish (POST) of a draft artifact */
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
 		/** Called for incremental update (PATCH) of an already-published artifact */
@@ -59,7 +62,7 @@
 		onEntrypointChange?: (sandboxNodeId: string | null) => void;
 	}
 
-	let { nodes, edges, projectId, projectName, isDraft, isAuthenticated, lastCloudCommit, onPublish, onUpdate, onNameChange, syncState, onSync, onEnableSync, selectedEntrypoint = null, onEntrypointChange }: Props = $props();
+	let { nodes, edges, projectId, projectName, publishState, isAuthenticated, onPublish, onUpdate, onNameChange, syncState, onSync, onEnableSync, selectedEntrypoint = null, onEntrypointChange }: Props = $props();
 
 	// Cloud sync toggle handler
 	function handleSyncToggle(checked: boolean) {
@@ -116,6 +119,9 @@
 		}
 		loaded = true;
 		lastPersisted = snapshotCurrent();
+		if (!publishState.state.isDraft) {
+			publishState.setMetadataBaseline(snapshotCurrent());
+		}
 	}
 
 	// Auto-persist metadata changes with debounce
@@ -155,6 +161,13 @@
 	function snapshotCurrent() {
 		return { name, description, homepage, tagsInput, version, isPrivate, isUnlisted };
 	}
+
+	// Feed metadata changes to the centralized publish state service
+	$effect(() => {
+		const current = snapshotCurrent();
+		if (!loaded) return;
+		publishState.updateCurrentMetadata(current);
+	});
 
 	// Watch all form fields and auto-persist (skip initial load)
 	$effect(() => {
@@ -289,7 +302,7 @@
 			const resolvedEntrypoint = await resolveEntrypoint();
 			const buildKey = resolvedBuildCacheKey ?? undefined;
 
-			if (isDraft) {
+			if (publishState.state.isDraft) {
 				// First-time publish (POST)
 				const metadata: PublishMetadata = {
 					artifactId: projectId,
@@ -311,11 +324,16 @@
 				const metadata: UpdateMetadata = {
 					version: version.trim(),
 					name: name.trim(),
+					description: description.trim(),
+					isListed: !isUnlisted,
+					isPrivate,
+					tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
 					entrypoint: resolvedEntrypoint,
 				};
 				await onUpdate(metadata, nodesToPublish, edgesToPublish, buildKey);
-				successMessage = m.studio_published_success();
+				successMessage = m.studio_updated_success();
 			}
+			publishState.setMetadataBaseline(snapshotCurrent());
 		} catch (err) {
 			errorMessage = err instanceof Error ? err.message : m.studio_publish_failed();
 		} finally {
@@ -329,7 +347,7 @@
 <div class="h-full overflow-y-auto">
 	<form id="project-form" onsubmit={handleSubmit} class="p-4 space-y-4">
 		<!-- Published Status Banner -->
-		{#if !isDraft}
+		{#if !publishState.state.isDraft}
 			<div class="rounded-lg bg-green-50 border border-green-200 p-3 flex items-start gap-3">
 				<svg class="w-5 h-5 text-green-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -519,9 +537,14 @@
 		{/if}
 
 		<!-- Publish Button -->
+		<!-- No changes hint (shown when Update button is disabled due to no changes) -->
+		{#if !publishState.state.isDraft && !publishState.state.hasPublishableChanges}
+			<p class="text-xs text-gray-500">{m.studio_no_changes_hint()}</p>
+		{/if}
+
 		<button
 			type="submit"
-			disabled={isSubmitting || nodesToPublish.length === 0 || !isAuthenticated || needsBuild}
+			disabled={isSubmitting || nodesToPublish.length === 0 || !isAuthenticated || needsBuild || !publishState.state.hasPublishableChanges}
 			class="w-full py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 		>
 			{#if isSubmitting}
@@ -534,7 +557,7 @@
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
 				</svg>
-				{isDraft ? m.studio_publish() : m.studio_update()}
+				{publishState.state.isDraft ? m.studio_publish() : m.studio_update()}
 			{/if}
 		</button>
 	</form>

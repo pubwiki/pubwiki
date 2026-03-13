@@ -156,7 +156,7 @@ async function prepareNodesForPublish(
 export interface PublishResult {
 	success: boolean;
 	artifactId?: string;
-	/** Latest commit hash after publish */
+	/** Commit hash of the created version */
 	latestCommit?: string;
 	error?: string;
 }
@@ -334,29 +334,10 @@ export async function publishArtifact(
 			};
 		}
 
-		const artifactId = data?.artifact?.id;
-
-		// Fetch the latest commit hash
-		let latestCommit: string | undefined;
-		if (artifactId) {
-			try {
-				const graphResponse = await apiClient.GET('/artifacts/{artifactId}/graph', {
-					params: {
-						path: { artifactId },
-						query: { version: 'latest' }
-					}
-				});
-				latestCommit = graphResponse.data?.version?.commitHash;
-			} catch {
-				// Non-fatal: continue without commit hash
-				console.warn('Failed to fetch latest commit hash after publish');
-			}
-		}
-
 		return {
 			success: true,
-			artifactId,
-			latestCommit
+			artifactId: data?.artifact?.id,
+			latestCommit: data?.commitHash
 		};
 	} catch (err) {
 		return {
@@ -509,10 +490,10 @@ function computeGraphDiff(
 
 export interface PatchResult {
 	success: boolean;
-	/** New commit hash if a new version was created */
+	/** New commit hash from the response */
 	newCommit?: string;
-	/** Whether a new version was created (false = metadata-only update) */
-	versionCreated?: boolean;
+	/** Whether graph changes were sent (addNodes/removeNodes/addEdges/removeEdges) */
+	hasGraphChanges?: boolean;
 	error?: string;
 }
 
@@ -574,10 +555,16 @@ export async function patchArtifact(
 	const hasChanges = addNodes.length > 0 || removeNodeIds.length > 0 || 
 					   addEdges.length > 0 || removeEdges.length > 0;
 
+	// No graph changes: skip PATCH, return current baseCommit
+	if (!hasChanges) {
+		return {
+			success: true,
+			newCommit: metadata.baseCommit,
+			hasGraphChanges: false
+		};
+	}
+
 	// Compute merged graph (base + patch) for commit hash computation.
-	// This must always be done — even when hasChanges is false — because the server
-	// computes expectedCommit using parentCommit=baseCommit, which differs from
-	// the baseCommit itself (which was computed with its own original parentCommit).
 	const addNodeIds = new Set(addNodes.map(n => n.nodeId));
 	const patchedNodes = [
 		...baseGraph.nodes.filter(n => !removeNodeIds.includes(n.id) && !addNodeIds.has(n.id)),
@@ -618,13 +605,11 @@ export async function patchArtifact(
 	// Add buildCacheKey at top level if available
 	if (buildCacheKey) patchMetadata.buildCacheKey = buildCacheKey;
 
-	// Add graph changes if any
-	if (hasChanges) {
-		patchMetadata.addNodes = addNodes;
-		if (removeNodeIds.length > 0) patchMetadata.removeNodeIds = removeNodeIds;
-		if (addEdges.length > 0) patchMetadata.addEdges = addEdges;
-		if (removeEdges.length > 0) patchMetadata.removeEdges = removeEdges;
-	}
+	// Add graph changes
+	patchMetadata.addNodes = addNodes;
+	if (removeNodeIds.length > 0) patchMetadata.removeNodeIds = removeNodeIds;
+	if (addEdges.length > 0) patchMetadata.addEdges = addEdges;
+	if (removeEdges.length > 0) patchMetadata.removeEdges = removeEdges;
 
 	// Collect VFS archives for new/modified VFS nodes (filter by filesHash from addNodes' content)
 	const addFilesHashes = new Set(
@@ -649,7 +634,7 @@ export async function patchArtifact(
 
 		// Use openapi-fetch with bodySerializer for multipart/form-data
 		// See: https://openapi-ts.dev/openapi-fetch/api#bodyserializer
-		const { error, response } = await apiClient.PATCH('/artifacts', {
+		const { data, error, response } = await apiClient.PATCH('/artifacts', {
 			body: {
 				metadata: patchMetadata,
 				// VFS archives will be added in bodySerializer
@@ -690,26 +675,10 @@ export async function patchArtifact(
 			};
 		}
 
-		// Fetch the new commit hash from the artifact's latest version
-		let newCommit: string | undefined;
-		if (hasChanges) {
-			try {
-				const graphResponse = await apiClient.GET('/artifacts/{artifactId}/graph', {
-					params: {
-						path: { artifactId: metadata.artifactId },
-						query: { version: 'latest' }
-					}
-				});
-				newCommit = graphResponse.data?.version?.commitHash;
-			} catch {
-				console.warn('Failed to fetch new commit hash after patch');
-			}
-		}
-
 		return {
 			success: true,
-			newCommit,
-			versionCreated: hasChanges
+			newCommit: data?.commitHash,
+			hasGraphChanges: true
 		};
 	} catch (err) {
 		return {

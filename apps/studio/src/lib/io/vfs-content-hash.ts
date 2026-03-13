@@ -36,6 +36,49 @@ import { computeSha256Hex } from '@pubwiki/api';
 import { getNodeVfs } from '$lib/vfs';
 
 /**
+ * Compute per-file hashes for all files in a VFS node's working directory.
+ *
+ * Returns a map of { [filepath]: oid } where oid is the git blob SHA-1.
+ * This is the primitive used by both `computeVfsContentHash` (aggregate)
+ * and `BuildCacheStorage.resolve()` (per-dep comparison).
+ */
+export async function computeVfsFileHashes(
+	projectId: string,
+	nodeId: string,
+): Promise<Record<string, string>> {
+	const nodeVfs = await getNodeVfs(projectId, nodeId);
+
+	const entries: [string, string][] = await git.walk({
+		fs: nodeVfs.gitFs,
+		dir: nodeVfs.gitDir,
+		trees: [WORKDIR()],
+		map: async (filepath: string, [entry]: Array<git.WalkerEntry | null>) => {
+			if (!entry || filepath === '.') return undefined;
+
+			const type = await entry.type();
+			if (type !== 'blob') return undefined;
+
+			const oid = await entry.oid();
+			return [filepath, oid] as [string, string];
+		},
+	});
+
+	return Object.fromEntries(entries);
+}
+
+/**
+ * Derive an aggregate content hash from per-file hashes.
+ *
+ * Deterministic: sorts entries alphabetically, JSON-serializes, SHA-256.
+ * This produces the same result as the old computeVfsContentHash.
+ */
+export async function deriveFilesHash(fileHashes: Record<string, string>): Promise<string> {
+	const sorted = Object.entries(fileHashes).sort(([a], [b]) => a.localeCompare(b));
+	const payload = JSON.stringify(sorted);
+	return computeSha256Hex(new TextEncoder().encode(payload).buffer as ArrayBuffer);
+}
+
+/**
  * Compute a lightweight content hash for a VFS node's working directory.
  *
  * Uses isomorphic-git's WORKDIR walker to enumerate all files and their
@@ -49,30 +92,6 @@ export async function computeVfsContentHash(
 	projectId: string,
 	nodeId: string,
 ): Promise<string> {
-	const nodeVfs = await getNodeVfs(projectId, nodeId);
-
-	const entries: [string, string][] = await git.walk({
-		fs: nodeVfs.gitFs,
-		dir: nodeVfs.gitDir,
-		trees: [WORKDIR()],
-		map: async (filepath: string, [entry]: Array<git.WalkerEntry | null>) => {
-			// Skip root directory entry
-			if (!entry || filepath === '.') return undefined;
-
-			const type = await entry.type();
-			// Only include blob (file) entries, skip trees (directories)
-			if (type !== 'blob') return undefined;
-
-			// entry.oid() uses git index stat cache when available:
-			// if stat matches index → return cached oid (zero I/O)
-			// if stat differs → read file content → SHA-1 hash
-			const oid = await entry.oid();
-			return [filepath, oid] as [string, string];
-		},
-	});
-
-	// walk() returns entries in alphabetical order → deterministic
-	// Hash the full [path, oid] list to produce a single content hash
-	const payload = JSON.stringify(entries);
-	return computeSha256Hex(new TextEncoder().encode(payload).buffer as ArrayBuffer);
+	const fileHashes = await computeVfsFileHashes(projectId, nodeId);
+	return deriveFilesHash(fileHashes);
 }

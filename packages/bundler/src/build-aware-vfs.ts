@@ -58,6 +58,10 @@ export interface BuildAwareVfsConfig {
   buildCacheKey?: string | null
   /** Hash of the source files content (used in manifest and cache metadata) */
   filesHash?: string
+  /** Per-file hashes at build time { [filePath]: oid } — passed to put() for dep matching */
+  fileHashes?: Record<string, string>
+  /** SHA-256 of build config (entryFiles + target + ...) — used for dep matching in resolve() */
+  configKey?: string
   /** Optional remote fetcher for L2 resolution */
   remoteFetcher?: RemoteBuildFetcher
   /** Callback when a file changes during HMR (L3 watch mode) */
@@ -191,7 +195,9 @@ class BuildAwareVfsProvider implements VfsProvider {
         totalSize,
         builtAt: Date.now(),
         lastAccessedAt: Date.now(),
-        fileHashes: metadata?.fileHashes,
+        dependencies: result.manifest.dependencies ?? [],
+        fileHashes: metadata?.fileHashes ?? {},
+        configKey: this.config.configKey ?? '',
         verified: true, // just fetched from authoritative source
       })
 
@@ -287,6 +293,9 @@ class BuildAwareVfsProvider implements VfsProvider {
         totalSize,
         builtAt: Date.now(),
         lastAccessedAt: Date.now(),
+        dependencies: buildResult.dependencies,
+        fileHashes: this.config.fileHashes ?? {},
+        configKey: this.config.configKey ?? '',
         verified: true,
       }).then(() => {
         // LRU eviction — best-effort
@@ -376,6 +385,7 @@ class BuildAwareVfsProvider implements VfsProvider {
       buildCacheKey: this.buildCacheKey ?? '',
       filesHash: this.config.filesHash ?? '',
       entries,
+      dependencies: buildResult.dependencies,
     }
   }
 

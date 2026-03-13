@@ -14,7 +14,8 @@
 import type { Vfs } from '@pubwiki/vfs'
 import { ESBuildEngine } from '../core/esbuild-engine'
 import { DependencyResolver } from '../core/dependency-resolver'
-import { BundleCache } from '../core/bundle-cache'
+import type { BuildCacheStorage } from '../cache'
+import { getOpfsBuildCacheStorage } from '../cache/opfs'
 import type {
   BundleRequest,
   DirectBuildRequest,
@@ -47,7 +48,7 @@ export class BundlerService {
   private vfs: Vfs
 
   // Core components
-  private cache: BundleCache
+  private cache: BuildCacheStorage
   private resolver: DependencyResolver
   private engine: ESBuildEngine
 
@@ -74,8 +75,8 @@ export class BundlerService {
     console.log(`[BundlerService #${this.instanceId}] Created`)
     
     this.vfs = options.vfs
-    this.cache = new BundleCache()
-    this.resolver = new DependencyResolver()
+    this.cache = getOpfsBuildCacheStorage()
+    this.resolver = new DependencyResolver({ cache: this.cache })
     this.engine = new ESBuildEngine(this.resolver, this.cache)
   }
 
@@ -109,8 +110,7 @@ export class BundlerService {
         this.notifyProgress({ type: 'progress', path: '', message })
       })
 
-      // Initialize cache and engine
-      await this.cache.init()
+      // Initialize engine
       await this.engine.initialize()
 
       this.isInitialized = true

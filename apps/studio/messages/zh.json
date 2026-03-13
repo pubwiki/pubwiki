@@ -182,6 +182,8 @@
 	"studio_publish": "发布",
 	"studio_update": "更新",
 	"studio_published_success": "发布成功！",
+	"studio_updated_success": "更新成功！",
+	"studio_no_changes_hint": "上次更新后没有改动",
 	"studio_error_name_required": "名称为必填项",
 	"studio_error_slug_required": "标识符为必填项",
 	"studio_error_slug_format": "标识符必须是小写字母和数字，用连字符分隔",

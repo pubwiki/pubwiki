@@ -10,7 +10,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { Vfs } from '@pubwiki/vfs'
 import { ESBuildEngine } from '../../src/core/esbuild-engine'
 import { DependencyResolver } from '../../src/core/dependency-resolver'
-import { BundleCache } from '../../src/core/bundle-cache'
 import { createTestVfs } from '../helpers'
 import {
   createComplexDependencyProject,
@@ -149,29 +148,4 @@ describe('ESBuildEngine', () => {
     })
   })
 
-  describe('BundleCache', () => {
-    it('should initialize and have transform methods', async () => {
-      const cache = new BundleCache()
-      
-      // Verify the cache has expected methods
-      expect(typeof cache.getTransform).toBe('function')
-      expect(typeof cache.setTransform).toBe('function')
-      expect(typeof cache.deleteTransform).toBe('function')
-      expect(typeof cache.clearTransformCache).toBe('function')
-    })
-
-    it('should have HTTP cache methods', () => {
-      const cache = new BundleCache()
-      
-      expect(typeof cache.getHttp).toBe('function')
-      expect(typeof cache.setHttp).toBe('function')
-    })
-
-    it('should have statistics methods', () => {
-      const cache = new BundleCache()
-      
-      expect(typeof cache.getStats).toBe('function')
-      expect(typeof cache.clearAll).toBe('function')
-    })
-  })
 })

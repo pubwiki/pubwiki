@@ -64,4 +64,6 @@ export interface BuildManifest {
   buildCacheKey: string
   filesHash: string
   entries: Record<string, { jsPath: string; cssPath?: string }>
+  /** VFS dependency file paths from esbuild dependency graph. */
+  dependencies: string[]
 }

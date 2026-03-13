@@ -682,7 +682,8 @@ export const PatchArtifactResponse = zod.object({
   "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
   "downloadCount": zod.number().optional().describe('下载次数')
 }).optional().describe('Artifact 统计信息')
-})
+}),
+  "commitHash": zod.string().describe('新版本的 commit hash')
 })
 
 

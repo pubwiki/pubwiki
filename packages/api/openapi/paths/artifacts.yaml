@@ -146,12 +146,16 @@
               required:
                 - message
                 - artifact
+                - commitHash
               properties:
                 message:
                   type: string
                   example: Artifact created successfully
                 artifact:
                   $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+                commitHash:
+                  type: string
+                  description: 新创建版本的 commit hash
       '400':
         description: 请求参数错误
         content:
@@ -221,12 +225,16 @@
               required:
                 - message
                 - artifact
+                - commitHash
               properties:
                 message:
                   type: string
                   example: Artifact patched successfully
                 artifact:
                   $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+                commitHash:
+                  type: string
+                  description: 新版本的 commit hash
       '400':
         description: 请求参数错误（如 baseCommit 不存在）
         content:

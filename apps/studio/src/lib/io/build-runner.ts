@@ -23,8 +23,8 @@
 
 import { createBuildAwareVfs, getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
 import type { ProjectBuildResult } from '@pubwiki/bundler';
-import { computeBuildCacheKey } from '@pubwiki/api';
-import { computeVfsContentHash } from './vfs-content-hash';
+import { computeBuildCacheKey, computeConfigKey } from '@pubwiki/api';
+import { computeVfsFileHashes, deriveFilesHash } from './vfs-content-hash';
 import { getNodeVfs } from '$lib/vfs';
 
 /** Result returned by `runBuild()`. */
@@ -66,12 +66,26 @@ export async function runBuild(params: {
 		};
 	}
 
-	// 3. Compute contentHash + buildCacheKey
-	const contentHash = await computeVfsContentHash(projectId, vfsNodeId);
-	const buildCacheKey = await computeBuildCacheKey({
-		filesHash: contentHash,
-		entryFiles: projectConfig.entryFiles,
-	});
+	// 3. Compute per-file hashes, aggregate filesHash, buildCacheKey, and configKey
+	const fileHashes = await computeVfsFileHashes(projectId, vfsNodeId);
+	const contentHash = await deriveFilesHash(fileHashes);
+	const [buildCacheKey, configKey] = await Promise.all([
+		computeBuildCacheKey({
+			filesHash: contentHash,
+			entryFiles: projectConfig.entryFiles,
+		}),
+		computeConfigKey({
+			entryFiles: projectConfig.entryFiles,
+		}),
+	]);
+
+	// 3b. Smart cache resolution — may hit even when buildCacheKey differs
+	//     (non-dependency files changed but all deps are identical).
+	const buildCacheStorage = getOpfsBuildCacheStorage();
+	const cached = await buildCacheStorage.resolve(buildCacheKey, fileHashes);
+	if (cached) {
+		return { success: true, buildCacheKey, contentHash };
+	}
 
 	// 4. Create BuildAwareVfs — compilation goes through L0→L1→L3 cache,
 	//    so results are automatically persisted to OPFS.
@@ -80,9 +94,11 @@ export async function runBuild(params: {
 	const buildAwareVfs = createBuildAwareVfs({
 		sourceVfs: nodeVfs,
 		projectConfig,
-		buildCacheStorage: getOpfsBuildCacheStorage(),
+		buildCacheStorage,
 		buildCacheKey,
 		filesHash: contentHash,
+		fileHashes,
+		configKey,
 		onBuildProgress: (event) => {
 			if ((event.type === 'progress' || event.type === 'start') && event.message) {
 				onProgress?.(event.message);

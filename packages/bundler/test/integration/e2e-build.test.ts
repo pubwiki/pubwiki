@@ -9,8 +9,8 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import type { Vfs } from '@pubwiki/vfs'
 import { ESBuildEngine } from '../../src/core/esbuild-engine'
 import { DependencyResolver } from '../../src/core/dependency-resolver'
-import { BundleCache } from '../../src/core/bundle-cache'
-import { createTestVfs, addFile } from '../helpers'
+import type { BuildCacheStorage } from '../../src/cache'
+import { createTestVfs, addFile, MockBuildCacheStorage } from '../helpers'
 import {
   createSimpleProject,
   createMultiEntryProject,
@@ -22,12 +22,12 @@ import {
 
 describe('End-to-End Build Tests', () => {
   let resolver: DependencyResolver
-  let cache: BundleCache
+  let cache: BuildCacheStorage
   let vfs: Vfs
 
   beforeEach(() => {
     vfs = createTestVfs()
-    cache = new BundleCache()
+    cache = new MockBuildCacheStorage()
     resolver = new DependencyResolver()
   })
 

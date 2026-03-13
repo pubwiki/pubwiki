@@ -14,6 +14,7 @@
 	import type { PublishMetadata } from '$lib/io';
 	import type { UpdateMetadata } from './ProjectTab.svelte';
 	import type { DraftSyncState } from '$lib/sync';
+	import type { PublishStateService } from '$lib/state/publish-state.svelte';
 	import OverviewTab from './OverviewTab.svelte';
 	import PropertiesTab from './PropertiesTab.svelte';
 	import ProjectTab from './ProjectTab.svelte';
@@ -30,10 +31,8 @@
 		selectedNodes: Node<FlowNodeData>[];
 		projectId: string;
 		projectName: string;
-		isDraft: boolean;
+		publishState: PublishStateService;
 		isAuthenticated: boolean;
-		/** Last cloud commit hash for version lineage tracking */
-		lastCloudCommit?: string;
 		onFocusNode: (node: Node<FlowNodeData>) => void;
 		onPublish: (metadata: PublishMetadata, nodes: Node<FlowNodeData>[], edges: Edge[], buildCacheKey?: string) => Promise<void>;
 		/** Called for incremental update (PATCH) of an already-published artifact */
@@ -68,9 +67,8 @@
 		selectedNodes, 
 		projectId, 
 		projectName,
-		isDraft,
+		publishState,
 		isAuthenticated,
-		lastCloudCommit,
 		onFocusNode,
 		onPublish,
 		onUpdate,
@@ -87,7 +85,7 @@
 		onEntrypointChange,
 		copilotOpen = false,
 		onCopilotToggle,
-		onNameChange
+		onNameChange,
 	}: Props = $props();
 
 	// Default sync state if not provided
@@ -244,7 +242,7 @@
 					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
 				</svg>
 				<span class="font-medium text-gray-700 truncate">{projectName || m.studio_untitled_project()}</span>
-				{#if !isDraft}
+				{#if !publishState.state.isDraft}
 					<span class="px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">{m.studio_published()}</span>
 				{/if}
 				<SaveStatusIndicator
@@ -318,9 +316,8 @@
 					{edges} 
 					{projectId}
 					{projectName}
-					{isDraft}
+					{publishState}
 					{isAuthenticated}
-					{lastCloudCommit}
 					{onPublish}
 					{onUpdate}
 					{onNameChange}

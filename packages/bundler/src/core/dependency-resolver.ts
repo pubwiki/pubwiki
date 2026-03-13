@@ -11,6 +11,7 @@
  */
 
 import type { ResolveResult, CDNConfig } from './types'
+import type { BuildCacheStorage } from '../cache'
 
 /**
  * Dependency Resolver
@@ -18,7 +19,7 @@ import type { ResolveResult, CDNConfig } from './types'
 export class DependencyResolver {
   private cdnConfigs: CDNConfig[]
   private resolveCache = new Map<string, ResolveResult>()
-  private cdnCache = new Map<string, string>() // packageName -> resolved CDN URL
+  private cache?: BuildCacheStorage
 
   // File existence checker (injected from VFS adapter)
   private fileExistsChecker?: (path: string) => Promise<boolean>
@@ -27,8 +28,9 @@ export class DependencyResolver {
   private progressCallback?: (message: string) => void
 
 
-  constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean> }) {
+  constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean>; cache?: BuildCacheStorage }) {
     this.fileExistsChecker = options?.fileExistsChecker
+    this.cache = options?.cache
 
     // CDN configurations, sorted by priority
     this.cdnConfigs = [
@@ -205,10 +207,12 @@ export class DependencyResolver {
    * Resolve npm package
    */
   private async resolveNpmPackage(packageName: string): Promise<ResolveResult> {
-    // Check CDN cache
-    const cached = this.cdnCache.get(packageName)
-    if (cached) {
-      return { path: cached, namespace: 'http' }
+    // Check persistent CDN cache
+    if (this.cache) {
+      const cached = await this.cache.getCdnUrl(packageName)
+      if (cached) {
+        return { path: cached, namespace: 'http' }
+      }
     }
 
     // Notify progress — this is the slow path (uncached HEAD requests)
@@ -223,7 +227,9 @@ export class DependencyResolver {
         const response = await fetch(url, { method: 'HEAD' })
 
         if (response.ok) {
-          this.cdnCache.set(packageName, url)
+          if (this.cache) {
+            this.cache.setCdnUrl(packageName, url).catch(() => {})
+          }
           return { path: url, namespace: 'http' }
         }
       } catch {
@@ -243,16 +249,14 @@ export class DependencyResolver {
    */
   clearCache(): void {
     this.resolveCache.clear()
-    this.cdnCache.clear()
   }
 
   /**
    * Get cache statistics
    */
-  getCacheStats(): { resolveCache: number; cdnCache: number } {
+  getCacheStats(): { resolveCache: number } {
     return {
       resolveCache: this.resolveCache.size,
-      cdnCache: this.cdnCache.size
     }
   }
 }

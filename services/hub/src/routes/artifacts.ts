@@ -337,6 +337,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     {
       message: 'Artifact saved successfully',
       artifact: createdArtifact,
+      commitHash: metadata.commit,
     },
     200
   );
@@ -632,6 +633,7 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     {
       message: 'Artifact patched successfully',
       artifact: patchedArtifact,
+      commitHash: metadata.commit,
     },
     200
   );
