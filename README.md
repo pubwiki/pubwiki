@@ -1,38 +1,69 @@
-# sv
+# PubWiki
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+An AI-powered UGC (User-Generated Content) platform featuring a visual flow-graph editor (**Studio**) for creating interactive AI-powered content, and a marketplace (**Hub**) for publishing and discovering community artifacts.
 
-## Creating a project
+> [!WARNING]
+> **This project is in early development and is NOT production-ready.** APIs, database schemas, and features may change at any time without notice. Use at your own risk. We make no guarantees about stability, backward compatibility, or data persistence at this stage.
 
-If you're seeing this, you've probably already done this step. Congrats!
+## Architecture
 
-```sh
-# create a new project in the current directory
-npx sv create
+PubWiki is a TypeScript monorepo managed with [pnpm](https://pnpm.io/).
 
-# create a new project in my-app
-npx sv create my-app
+| Directory | Description |
+|-----------|-------------|
+| `apps/hub` | SvelteKit frontend — user-facing marketplace |
+| `apps/studio` | SvelteKit frontend — flow-graph content editor |
+| `apps/player` | SvelteKit frontend — artifact player |
+| `packages/api` | OpenAPI types, Zod schemas, typed API client |
+| `packages/db` | Drizzle ORM schema and service layer |
+| `packages/ui` | Shared Svelte UI components |
+| `packages/flow-core` | Node graph logic |
+| `packages/vfs` | Virtual filesystem abstractions |
+| `services/hub` | Cloudflare Workers backend (Hono) |
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) (v20+)
+- [pnpm](https://pnpm.io/) (v9+)
+- [Rust toolchain](https://rustup.rs/) (for native packages, if applicable)
+
+## Getting Started
+
+```bash
+# Install dependencies
+pnpm install
+
+# Generate API types (required before first build)
+cd packages/api && pnpm generate
+
+# Start the backend dev server
+cd services/hub && pnpm dev
+
+# Start a frontend dev server (in a separate terminal)
+cd apps/hub && pnpm dev      # Hub
+cd apps/studio && pnpm dev   # Studio
 ```
 
-## Developing
+## Testing
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+```bash
+# Unit tests (backend, uses Cloudflare Workers pool)
+cd services/hub && pnpm test:unit
 
-```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+# E2E tests
+cd services/hub && pnpm test:e2e
 ```
 
-## Building
+## Linting
 
-To create a production version of your app:
-
-```sh
-npm run build
+```bash
+npx eslint <package_dir>
 ```
 
-You can preview the production build with `npm run preview`.
+## License
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+This project is licensed under the [Functional Source License, Version 1.1, ALv2 Future License (FSL-1.1-ALv2)](LICENSE.md).
+
+This means you can use, copy, modify, and redistribute the software for any purpose **except** competing use. After two years from each version's release date, that version automatically becomes available under the [Apache License 2.0](http://www.apache.org/licenses/LICENSE-2.0).
+
+See [LICENSE.md](LICENSE.md) for the full license text and [fsl.software](https://fsl.software/) for more information about FSL.
