@@ -367,7 +367,7 @@
 					const pubwikiModule = createPubWikiModule(pubwikiConfig);
 
 					// Build JS modules
-					const jsModules = buildJsModules({
+					const jsModules = await buildJsModules({
 						rdfStore: loaderRdfStore ?? undefined,
 						stateNodeId: loaderStateNodeId ?? undefined,
 						getNodeRDFStore,

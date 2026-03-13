@@ -102,6 +102,7 @@ export {
 	createPubChat,
 	RDFMessageStore,
 	CHAT_HISTORY_GRAPH_URI,
+	createHashModule,
 } from './modules';
 export type { LLMModuleConfig } from './modules';
 

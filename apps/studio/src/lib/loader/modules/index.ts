@@ -7,6 +7,7 @@
 
 // Shared modules from flow-core
 export {
+  buildJsModules,
   createLLMModule,
   createPubChat,
   RDFMessageStore,

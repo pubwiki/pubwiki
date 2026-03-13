@@ -31,17 +31,14 @@ import {
 	type LoaderBackend,
 	type BackendConfig,
 	type ServiceCallResult,
-	type JsModuleRegistry
 } from '$lib/loader';
 
 // Import module factories
 import { 
+	buildJsModules,
 	createLLMModule, 
 	createPubChat, 
 	createPubWikiModule,
-	createPartialJsonModule,
-	createJsonModule,
-	createStateModule,
 	type PubWikiModuleContext 
 } from '$lib/loader/modules';
 
@@ -171,33 +168,23 @@ export async function initializeLoader(
 			};
 		}
 		
-		// Build JS modules registry
-		const jsModules: JsModuleRegistry = new Map();
+		// Build JS modules registry (json, State, partial-json, hash, pubwiki)
+		const pubwikiModule = pubwikiContext
+			? createPubWikiModule(pubwikiContext) as unknown as Parameters<typeof buildJsModules>[0]['pubwikiModule']
+			: undefined;
+		const jsModules = await buildJsModules({
+			rdfStore,
+			stateNodeId,
+			getNodeRDFStore,
+			pubwikiModule,
+		});
 		
-		// Register JSON module (preload - available globally)
-		jsModules.set('json', { module: createJsonModule(), mode: 'global' });
-		
-		// Register State module if RDF store is available (preload - available globally)
-		if (rdfStore && stateNodeId) {
-			const sid = stateNodeId;
-			jsModules.set('State', { module: createStateModule(() => getNodeRDFStore(sid)), mode: 'global' });
-		}
-		
-		// Create PubChat and LLM module if config is provided
-		// Uses RDFMessageStore when rdfStore is available, otherwise MemoryMessageStore
+		// Register LLM module (needs PubChat which is Studio/Player specific)
 		const { pubchat, messageStore } = createPubChat({ 
 			llmConfig: llmConfig ?? {}, 
 			rdfStore: rdfStore as BackendConfig['rdfStore']
 		});
 		jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore) });
-		
-		// Register PubWiki module if context is provided
-		if (pubwikiContext) {
-			jsModules.set('pubwiki', { module: createPubWikiModule(pubwikiContext) });
-		}
-		
-		// Register partial-json module (always available)
-		jsModules.set('partial-json', { module: createPartialJsonModule() });
 		
 		// Build backend config
 		const config: BackendConfig = {

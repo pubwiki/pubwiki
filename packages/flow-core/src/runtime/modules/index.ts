@@ -7,6 +7,7 @@
 
 import type { RDFStore } from '@pubwiki/rdfstore';
 import type { JsModuleDefinition, JsModuleRegistry } from '../types';
+import { createHashModule } from './hash';
 import { createJsonModule } from './json';
 import { createPartialJsonModule } from './partial-json';
 import { createStateModule } from './rdf';
@@ -24,6 +25,7 @@ export {
 	type LLMModuleConfig,
 } from './llm';
 export { RDFMessageStore as LLMRDFMessageStore } from './llm-rdf-store';
+export { createHashModule } from './hash';
 
 /**
  * Build the JS module registry for a loader node.
@@ -31,12 +33,12 @@ export { RDFMessageStore as LLMRDFMessageStore } from './llm-rdf-store';
  * Registers: json (global), State (global, if RDF store available),
  * partial-json, and optionally a pubwiki module.
  */
-export function buildJsModules(options: {
+export async function buildJsModules(options: {
 	rdfStore?: RDFStore;
 	stateNodeId?: string;
 	getNodeRDFStore: (nodeId: string) => Promise<RDFStore>;
 	pubwikiModule?: JsModuleDefinition;
-}): JsModuleRegistry {
+}): Promise<JsModuleRegistry> {
 	const modules: JsModuleRegistry = new Map();
 
 	// JSON module (preloaded globally)
@@ -53,6 +55,9 @@ export function buildJsModules(options: {
 
 	// Partial JSON module
 	modules.set('partial-json', { module: createPartialJsonModule() });
+
+	// Hash module (xxhash via WASM)
+	modules.set('hash', { module: await createHashModule() as unknown as JsModuleDefinition });
 
 	// PubWiki module (optional)
 	if (options.pubwikiModule) {
