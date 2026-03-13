@@ -401,7 +401,9 @@ export class ESBuildEngine {
       }
 
       // Collect all dependencies for entries from the dependency graph
+      // Entry files themselves are part of the dep graph — changes to them invalidate the build.
       for (const entry of entryFiles) {
+        allProjectDeps.add(entry)
         const allDeps = this.dependencyGraph.get(entry)
         if (allDeps) {
           for (const dep of allDeps) {

@@ -59,7 +59,9 @@ export async function computeVfsFileHashes(
 			if (type !== 'blob') return undefined;
 
 			const oid = await entry.oid();
-			return [filepath, oid] as [string, string];
+			// Prefix with '/' to match esbuild's absolute VFS paths (e.g. '/src/App.tsx')
+			const normalizedPath = filepath.startsWith('/') ? filepath : '/' + filepath;
+			return [normalizedPath, oid] as [string, string];
 		},
 	});
 
