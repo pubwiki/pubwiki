@@ -53,9 +53,19 @@
 	></div>
 
 	<!-- Main content -->
-	<h1
-		class="gradient-text text-5xl sm:text-6xl md:text-8xl lg:text-9xl font-extrabold tracking-tight select-none z-10 leading-relaxed"
-	>
-		Coming Soon
-	</h1>
+	<div class="z-10 text-center px-6">
+		<h1
+			class="gradient-text text-5xl sm:text-6xl md:text-8xl lg:text-9xl font-extrabold tracking-tight select-none leading-relaxed whitespace-nowrap"
+		>
+			Coming Soon
+		</h1>
+		<p class="mt-6 text-lg sm:text-xl md:text-2xl text-slate-600 font-medium max-w-3xl mx-auto">
+			The official site is under construction, but you can have a try
+			<a
+				href="https://try.pub.wiki"
+				class="text-violet-600 hover:text-violet-800 underline underline-offset-4 transition-colors"
+				>here</a
+			>.
+		</p>
+	</div>
 </main>
