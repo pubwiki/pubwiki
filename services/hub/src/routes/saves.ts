@@ -222,6 +222,8 @@ savesRoute.get('/:commit/data', resourceAccessMiddleware, async (c) => {
     headers: {
       'Content-Type': 'application/octet-stream',
       'Content-Length': String(object.size),
+      // Content-addressed by quadsHash (immutable) — safe to cache aggressively
+      'Cache-Control': 'public, max-age=31536000, immutable',
     },
   });
 });

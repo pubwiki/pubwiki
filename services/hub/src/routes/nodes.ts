@@ -117,6 +117,8 @@ nodesRoute.get('/commits/:commit/archive', resourceAccessMiddleware, async (c) =
     headers: {
       'Content-Type': 'application/gzip',
       'Content-Length': String(object.size),
+      // Content-addressed by filesHash (immutable) — safe to cache aggressively
+      'Cache-Control': 'public, max-age=31536000, immutable',
     },
   });
 });
