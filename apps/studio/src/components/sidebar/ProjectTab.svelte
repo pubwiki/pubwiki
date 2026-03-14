@@ -17,7 +17,7 @@
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { getProject, saveProject } from '$lib/persistence/db';
 	import { reportSaveState } from '$lib/persistence/save-tracker.svelte';
-	import { Toggle } from '@pubwiki/ui/components';
+	import { ArtifactEditPreview, Toggle } from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import EntrypointSection, { type SelectedSave } from './EntrypointSection.svelte';
@@ -80,10 +80,11 @@
 	let name = $state('');
 	let description = $state('');
 	let homepage = $state('');
-	let isUnlisted = $state(false);
+	let isListed = $state(true);
 	let isPrivate = $state(false);
 	let version = $state('1.0.0');
 	let tagsInput = $state('');
+	let thumbnailUrl = $state('');
 
 	// Build cache key resolved by EntrypointSection (avoids duplicate computation)
 	let resolvedBuildCacheKey = $state<string | null>(null);
@@ -112,7 +113,8 @@
 			tagsInput = project.tags || '';
 			version = project.version || '1.0.0';
 			isPrivate = project.isPrivate ?? false;
-			isUnlisted = project.isUnlisted ?? false;
+			isListed = !(project.isUnlisted ?? false);
+			thumbnailUrl = project.thumbnailUrl || '';
 		} else {
 			// Fallback to prop
 			name = projectName;
@@ -131,6 +133,7 @@
 	let lastPersisted = $state<{
 		name: string; description: string; homepage: string;
 		tagsInput: string; version: string; isPrivate: boolean; isUnlisted: boolean;
+		thumbnailUrl: string;
 	} | null>(null);
 
 	function schedulePersist() {
@@ -151,15 +154,16 @@
 			tags: tagsInput,
 			version,
 			isPrivate,
-			isUnlisted,
+			isUnlisted: !isListed,
+			thumbnailUrl,
 			updatedAt: Date.now()
 		});
-		lastPersisted = { name, description, homepage, tagsInput, version, isPrivate, isUnlisted };
+		lastPersisted = snapshotCurrent();
 		reportSaveState('metadata', 'idle');
 	}
 	
 	function snapshotCurrent() {
-		return { name, description, homepage, tagsInput, version, isPrivate, isUnlisted };
+		return { name, description, homepage, tagsInput, version, isPrivate, isUnlisted: !isListed, thumbnailUrl };
 	}
 
 	// Feed metadata changes to the centralized publish state service
@@ -238,12 +242,6 @@
 		return prefix ? `${prefix}-${randomSuffix}` : randomSuffix;
 	}
 
-	function handleNameInput(e: Event) {
-		const target = e.target as HTMLInputElement;
-		name = target.value;
-		onNameChange?.(name);
-	}
-
 	/** Resolve the entrypoint save commit, uploading local checkpoint if needed */
 	async function resolveEntrypoint(): Promise<{ saveCommit: string; sandboxNodeId: string } | undefined> {
 		if (!selectedEntrypoint || !selectedSave) return undefined;
@@ -309,7 +307,7 @@
 					name: name.trim(),
 					slug: generateRandomSlug(name.trim()),
 					description: description.trim(),
-					isListed: !isUnlisted,
+					isListed,
 					isPrivate,
 					version: version.trim(),
 					tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
@@ -325,7 +323,7 @@
 					version: version.trim(),
 					name: name.trim(),
 					description: description.trim(),
-					isListed: !isUnlisted,
+					isListed,
 					isPrivate,
 					tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
 					entrypoint: resolvedEntrypoint,
@@ -409,38 +407,36 @@
 			</div>
 		{/if}
 
-		<!-- Basic Info -->
+		<!-- Artifact Info (shared edit form + preview card) -->
+		<ArtifactEditPreview
+			bind:name
+			bind:description
+			bind:tags={tagsInput}
+			bind:isListed
+			bind:isPrivate
+			bind:thumbnailUrl
+			layout="vertical"
+			cardVariant="marketplace"
+			previewLabel={m.studio_form_preview()}
+			onNameChange={(v) => onNameChange?.(v)}
+			labels={{
+				name: m.studio_form_name(),
+				namePlaceholder: m.studio_form_name_placeholder(),
+				description: m.studio_form_description(),
+				descriptionPlaceholder: m.studio_form_description_placeholder(),
+				tags: m.studio_form_tags(),
+				tagsPlaceholder: m.studio_form_tags_placeholder(),
+				listed: m.studio_form_visibility_unlisted(),
+				listedDescription: m.studio_form_visibility_unlisted_description(),
+				private: m.studio_form_visibility_private(),
+				privateDescription: m.studio_form_visibility_private_description(),
+				thumbnailUrl: m.studio_form_thumbnail(),
+				thumbnailUrlPlaceholder: m.studio_form_thumbnail_placeholder(),
+			}}
+		/>
+
+		<!-- Studio-specific fields -->
 		<div class="space-y-3">
-			<div>
-				<label for="name" class="block text-xs font-medium text-gray-500 mb-1">
-					{m.studio_form_name()} <span class="text-red-500">*</span>
-				</label>
-				<input
-					id="name"
-					type="text"
-					value={name}
-					oninput={handleNameInput}
-					placeholder={m.studio_form_name_placeholder()}
-					class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-				/>
-			</div>
-
-			<div class="space-y-2 rounded-lg border border-gray-200 p-3">
-				<Toggle
-					bind:checked={isPrivate}
-					label={m.studio_form_visibility_private()}
-					description={m.studio_form_visibility_private_description()}
-					size="sm"
-				/>
-				<div class="border-t border-gray-100"></div>
-				<Toggle
-					bind:checked={isUnlisted}
-					label={m.studio_form_visibility_unlisted()}
-					description={m.studio_form_visibility_unlisted_description()}
-					size="sm"
-				/>
-			</div>
-
 			<div>
 				<label for="version" class="block text-xs font-medium text-gray-500 mb-1">
 					{m.studio_form_version()} <span class="text-red-500">*</span>
@@ -450,28 +446,6 @@
 					type="text"
 					bind:value={version}
 					placeholder={m.studio_form_version_placeholder()}
-					class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-				/>
-			</div>
-
-			<div>
-				<label for="description" class="block text-xs font-medium text-gray-500 mb-1">{m.studio_form_description()}</label>
-				<textarea
-					id="description"
-					bind:value={description}
-					placeholder={m.studio_form_description_placeholder()}
-					rows="2"
-					class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-				></textarea>
-			</div>
-
-			<div>
-				<label for="tags" class="block text-xs font-medium text-gray-500 mb-1">{m.studio_form_tags()}</label>
-				<input
-					id="tags"
-					type="text"
-					bind:value={tagsInput}
-					placeholder={m.studio_form_tags_placeholder()}
 					class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 				/>
 			</div>

@@ -24,6 +24,7 @@ export type MetadataSnapshot = {
 	version: string;
 	isPrivate: boolean;
 	isUnlisted: boolean;
+	thumbnailUrl: string;
 };
 
 export interface PublishState {
