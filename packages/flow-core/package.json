@@ -23,7 +23,8 @@
     "@pubwiki/rdfstore": "workspace:*",
     "@pubwiki/vfs": "workspace:*",
     "jsonrepair": "^3.13.2",
-    "n3": "catalog:"
+    "n3": "catalog:",
+    "xxhash-wasm": "^1.1.0"
   },
   "devDependencies": {
     "@types/n3": "catalog:",
