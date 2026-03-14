@@ -98,6 +98,10 @@
 	let iframeSrc = $state<string>('');
 	let consoleLogs = $state<ConsoleLogEntry[]>([]);
 
+	// Runtime-resolved publish metadata (set during initialization)
+	let resolvedSandboxNodeId: string | null = null;
+	let resolvedBuildCacheKey: string | null = null;
+
 	// User info passed to sandbox via iframe.name
 	let userInfo = $state({
 		isLoggedIn: false,
@@ -152,6 +156,12 @@
 		}));
 		const commit = await computeArtifactCommit(newArtifactId, null, commitNodes, commitEdges);
 
+		// Construct entrypoint from runtime state: use current save commit + discovered sandbox node
+		const saveCommit = userInfo.userSaveCommit ?? userInfo.sourceSaveCommit;
+		const entrypoint = saveCommit && resolvedSandboxNodeId
+			? { saveCommit, sandboxNodeId: resolvedSandboxNodeId }
+			: graphData.version?.entrypoint ?? undefined;
+
 		const apiMetadata = {
 			artifactId: newArtifactId,
 			commit,
@@ -162,8 +172,8 @@
 			isPrivate: metadata.isPrivate ?? false,
 			version: metadata.version || '1.0.0',
 			tags: metadata.tags && metadata.tags.length > 0 ? metadata.tags : undefined,
-			entrypoint: graphData.version?.entrypoint ?? undefined,
-			buildCacheKey: graphData.version?.buildCacheKey ?? undefined,
+			entrypoint,
+			buildCacheKey: resolvedBuildCacheKey ?? graphData.version?.buildCacheKey ?? undefined,
 		};
 
 		try {
@@ -228,6 +238,10 @@
 			const discovery = discoverEntryNodes(graph, sandboxNodeId);
 
 			const { sandboxNode, vfsNodes, loaderNodes, stateNode } = discovery;
+
+			// Store resolved values for publish support
+			resolvedSandboxNodeId = sandboxNode.id;
+			resolvedBuildCacheKey = graph.buildCacheKey;
 
 			if (vfsNodes.length === 0) {
 				throw new Error('No VFS node found connected to sandbox');
@@ -353,12 +367,16 @@
 						}),
 						getRDFStore: async (nodeId: string) => getNodeRDFStore(nodeId),
 						createSaveCheckpoint: async (store, options) => {
-							return createSaveCheckpoint(
+							const result = await createSaveCheckpoint(
 								store,
 								options,
 								API_BASE_URL,
 								quadSerializers,
 							);
+							if (result.success && result.save?.commit) {
+								userInfo.userSaveCommit = result.save.commit;
+							}
+							return result;
 						},
 						publishArtifact: async (metadata) => {
 							return playerPublishArtifact(metadata, storedGraphData!);

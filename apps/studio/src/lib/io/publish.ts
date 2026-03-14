@@ -365,6 +365,11 @@ export interface PatchMetadata {
 	changelog?: string;
 	/** Optional commit tags (e.g., ["draft-latest"]) */
 	commitTags?: string[];
+	/** Optional entrypoint for sandbox launch */
+	entrypoint?: {
+		saveCommit: string;
+		sandboxNodeId: string;
+	};
 }
 
 /**
@@ -604,6 +609,7 @@ export async function patchArtifact(
 	if (metadata.commitTags) patchMetadata.commitTags = metadata.commitTags;
 	// Add buildCacheKey at top level if available
 	if (buildCacheKey) patchMetadata.buildCacheKey = buildCacheKey;
+	if (metadata.entrypoint) patchMetadata.entrypoint = metadata.entrypoint;
 
 	// Add graph changes
 	patchMetadata.addNodes = addNodes;

@@ -18,6 +18,7 @@
 	import { getProject, saveProject } from '$lib/persistence/db';
 	import { reportSaveState } from '$lib/persistence/save-tracker.svelte';
 	import { ArtifactEditPreview, Toggle } from '@pubwiki/ui/components';
+	import { useAuth } from '@pubwiki/ui/stores';
 	import * as m from '$lib/paraglide/messages';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import EntrypointSection, { type SelectedSave } from './EntrypointSection.svelte';
@@ -25,6 +26,7 @@
 	import { getNodeRDFStore } from '$lib/rdf';
 
 	const hubUrl = PUBLIC_HUB_URL || 'http://localhost:5173';
+	const auth = useAuth();
 
 	/**
 	 * Metadata for updating an existing artifact (PATCH).
@@ -415,6 +417,7 @@
 			bind:isListed
 			bind:isPrivate
 			bind:thumbnailUrl
+			authorName={auth.user?.displayName || auth.user?.username || 'Anonymous'}
 			layout="vertical"
 			cardVariant="marketplace"
 			previewLabel={m.studio_form_preview()}

@@ -1353,7 +1353,8 @@
 			artifactId: currentProjectId,
 			baseCommit: publishState.state.lastCloudCommit,
 			version: metadata.version,
-			commitTags: ['draft-latest']
+			commitTags: ['draft-latest'],
+			entrypoint: metadata.entrypoint,
 		};
 
 		const patchResult = await patchArtifact(patchMeta, nodesToPublish, edgesToPublish, buildCacheKey);
@@ -1363,6 +1364,14 @@
 
 		if (patchResult.hasGraphChanges) {
 			await finalizeAfterCommit(patchResult.newCommit, metadata.name);
+		} else if (metadata.entrypoint) {
+			// No graph changes but entrypoint needs updating on existing version
+			await apiClient.PUT('/artifacts/{artifactId}/versions/{commitHash}/metadata', {
+				params: { path: { artifactId: currentProjectId, commitHash: patchResult.newCommit } },
+				body: {
+					entrypoint: metadata.entrypoint,
+				},
+			});
 		}
 
 		// Always sync all metadata to server (idempotent)
