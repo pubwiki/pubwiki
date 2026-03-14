@@ -230,6 +230,8 @@ paths:
   # Artifacts
   /artifacts:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts'
+  /artifacts/{artifactId}:
+    $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1{artifactId}'
   /artifacts/search:
     $ref: './openapi/paths/artifacts.yaml#/~1artifacts~1search'
   /artifacts/{artifactId}/homepage:

@@ -266,6 +266,7 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
+/artifacts/{artifactId}:
   delete:
     summary: 删除 Artifact
     description: |

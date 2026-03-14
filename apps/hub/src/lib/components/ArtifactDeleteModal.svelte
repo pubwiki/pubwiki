@@ -24,7 +24,7 @@
 		errorMsg = '';
 
 		try {
-			const { error } = await apiClient.DELETE('/artifacts', {
+			const { error } = await apiClient.DELETE('/artifacts/{artifactId}', {
 				params: { path: { artifactId: artifact.id } }
 			});
 
