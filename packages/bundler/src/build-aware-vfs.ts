@@ -463,6 +463,23 @@ class BuildAwareVfsProvider implements VfsProvider {
 
   // ---- Lifecycle ----
 
+  /**
+   * Eagerly resolve all entry files through the cache hierarchy (L1→L2→L3).
+   * Call this before the consumer starts reading entry files so that
+   * compiled output is already warm in L0 by the time readFile() is invoked.
+   *
+   * This turns the otherwise-lazy cache resolution into an upfront cost
+   * that can be shown to the user via a progress indicator.
+   */
+  async warmup(): Promise<void> {
+    const entries = [...this.entryFilePaths]
+    console.log(`[BuildAwareVfs] Warming up ${entries.length} entry file(s)`)
+    for (const path of entries) {
+      await this.resolveCompiledOutput(path)
+    }
+    console.log('[BuildAwareVfs] Warmup complete')
+  }
+
   async dispose(): Promise<void> {
     if (this.watchUnsub) {
       this.watchUnsub()
@@ -491,9 +508,9 @@ class BuildAwareVfsProvider implements VfsProvider {
  * @param config - Configuration including source VFS, project config, cache storage
  * @returns A Vfs instance backed by the BuildAwareVfsProvider
  */
-export function createBuildAwareVfs(config: BuildAwareVfsConfig): Vfs<BuildAwareVfsProvider> {
+export function createBuildAwareVfs(config: BuildAwareVfsConfig): Vfs<BuildAwareVfsProvider> & { warmup(): Promise<void> } {
   const provider = new BuildAwareVfsProvider(config)
-  const vfs = new Vfs(provider)
+  const vfs = new Vfs(provider) as Vfs<BuildAwareVfsProvider> & { warmup(): Promise<void> }
 
   // Forward events from source VFS to the new VFS
   const unsubCreate = config.sourceVfs.events.on('file:created', (event) => {
@@ -515,6 +532,9 @@ export function createBuildAwareVfs(config: BuildAwareVfsConfig): Vfs<BuildAware
     await provider.dispose()
     await originalDispose()
   }
+
+  // Expose warmup — eagerly resolves all entry files through cache hierarchy
+  vfs.warmup = () => provider.warmup()
 
   return vfs
 }

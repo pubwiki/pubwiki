@@ -91,7 +91,7 @@
 
 	let iframeRef = $state<HTMLIFrameElement | null>(null);
 	let sandboxConnection = $state<SandboxConnection | null>(null);
-	let buildAwareVfs: Vfs | null = null;
+	let buildAwareVfs: (Vfs & { warmup(): Promise<void> }) | null = null;
 	let backends = new Map<string, LoaderBackend>();
 	let rdfStore: RDFStore | null = null;
 	let storedGraphData: GetArtifactGraphResponse | null = null;
@@ -275,6 +275,11 @@
 				buildCacheKey: graph.buildCacheKey,
 				remoteFetcher,
 			});
+
+			// Eagerly resolve all entry files through the cache hierarchy
+			// (L1→L2→L3) so compiled output is warm before the sandbox starts.
+			loadingState = { stage: 'loading-vfs', progress: 40, message: 'Preparing build...' };
+			await buildAwareVfs.warmup();
 
 			// Get sandbox entry file
 			const sandboxContent = sandboxNode.content instanceof SandboxContent
