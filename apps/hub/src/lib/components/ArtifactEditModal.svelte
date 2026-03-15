@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fade, fly } from 'svelte/transition';
 	import type { ArtifactListItem } from '@pubwiki/api';
+	import { ArtifactEditPreview } from '@pubwiki/ui/components';
 	import { apiClient } from '$lib/api';
 	import * as m from '$lib/paraglide/messages';
 
@@ -18,8 +19,32 @@
 	let description = $state(artifact.description || '');
 	// svelte-ignore state_referenced_locally
 	let isListed = $state(artifact.isListed);
+	let isPrivate = $state(false);
+	// svelte-ignore state_referenced_locally
+	let tagsInput = $state(artifact.tags?.map(t => t.slug).join(', ') || '');
+	// svelte-ignore state_referenced_locally
+	let thumbnailUrl = $state(artifact.thumbnailUrl || '');
 	let isSaving = $state(false);
 	let errorMsg = $state('');
+
+	let authorName = $derived(
+		artifact.author.displayName || artifact.author.username || 'Unknown'
+	);
+
+	const labels = $derived({
+		name: m.me_artifact_name(),
+		namePlaceholder: m.me_artifact_name(),
+		description: m.me_artifact_description(),
+		descriptionPlaceholder: m.me_artifact_description_placeholder(),
+		tags: m.me_artifact_tags(),
+		tagsPlaceholder: m.me_artifact_tags_placeholder(),
+		listed: m.me_artifact_listed(),
+		listedDescription: m.me_artifact_listed_description(),
+		private: m.me_artifact_private(),
+		privateDescription: m.me_artifact_private_description(),
+		thumbnailUrl: m.me_artifact_thumbnail(),
+		thumbnailUrlPlaceholder: m.me_artifact_thumbnail_placeholder(),
+	});
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') onclose();
@@ -31,12 +56,16 @@
 		errorMsg = '';
 
 		try {
+			const parsedTags = tagsInput.split(',').map(t => t.trim()).filter(t => t.length > 0);
 			const { error } = await apiClient.PUT('/artifacts/{artifactId}/metadata', {
 				params: { path: { artifactId: artifact.id } },
 				body: {
 					name,
 					description: description || undefined,
-					isListed
+					isListed,
+					isPrivate,
+					tags: parsedTags.length > 0 ? parsedTags : undefined,
+					thumbnailUrl: thumbnailUrl || undefined,
 				}
 			});
 
@@ -64,7 +93,7 @@
 	<!-- Modal Panel -->
 	<div class="flex min-h-full items-center justify-center p-4">
 		<div
-			class="relative w-full max-w-lg bg-white rounded-xl shadow-xl"
+			class="relative w-full max-w-4xl bg-white rounded-xl shadow-xl"
 			transition:fly={{ y: 30, duration: 200 }}
 			onclick={(e) => e.stopPropagation()}
 			onkeydown={(e) => e.stopPropagation()}
@@ -88,47 +117,18 @@
 					</div>
 				{/if}
 
-				<!-- Name -->
-				<div>
-					<label for="artifact-name" class="block text-sm font-medium text-gray-700 mb-1">
-						{m.me_artifact_name()}
-					</label>
-					<input
-						type="text"
-						id="artifact-name"
-						bind:value={name}
-						required
-						maxlength={100}
-						class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-[#0969da] focus:border-[#0969da] shadow-sm"
-					/>
-				</div>
-
-				<!-- Description -->
-				<div>
-					<label for="artifact-description" class="block text-sm font-medium text-gray-700 mb-1">
-						{m.me_artifact_description()}
-					</label>
-					<textarea
-						id="artifact-description"
-						bind:value={description}
-						rows="3"
-						placeholder={m.me_artifact_description_placeholder()}
-						class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-[#0969da] focus:border-[#0969da] shadow-sm"
-					></textarea>
-				</div>
-
-				<!-- Listed toggle -->
-				<div class="flex items-center gap-3">
-					<input
-						type="checkbox"
-						id="artifact-listed"
-						bind:checked={isListed}
-						class="h-4 w-4 text-[#0969da] border-gray-300 rounded focus:ring-[#0969da]"
-					/>
-					<label for="artifact-listed" class="text-sm text-gray-700">
-						{m.me_artifact_listed()}
-					</label>
-				</div>
+				<ArtifactEditPreview
+					bind:name
+					bind:description
+					bind:tags={tagsInput}
+					bind:isListed
+					bind:isPrivate
+					bind:thumbnailUrl
+					{authorName}
+					layout="horizontal"
+					{labels}
+					previewLabel={m.me_artifact_preview()}
+				/>
 
 				<!-- Footer -->
 				<div class="flex justify-end gap-3 pt-2">

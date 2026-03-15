@@ -1081,6 +1081,14 @@
 							if (project && project.isDraft) {
 								await saveProject({ ...project, isDraft: false, artifactId: currentProjectId });
 							}
+						} else {
+							// Artifact not found or inaccessible — reset to draft if locally marked as published
+							const project = await getProject(currentProjectId);
+							if (project && !project.isDraft) {
+								console.log('[Studio] Artifact deleted on backend, resetting to draft');
+								publishState.init(true, undefined);
+								await saveProject({ ...project, isDraft: true, lastCloudCommit: undefined });
+							}
 						}
 					});
 				} catch (err) {

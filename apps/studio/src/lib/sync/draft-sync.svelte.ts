@@ -163,8 +163,8 @@ export function createDraftSyncService() {
     console.log('[DraftSync] updateTrackedVfsNodes called, nodes count:', nodes.length);
     currentNodes = nodes;
     
-    if (!baseState.enabled || !currentProject) {
-      console.log('[DraftSync] updateTrackedVfsNodes skipped - enabled:', baseState.enabled, 'project:', !!currentProject);
+    if (!currentProject) {
+      console.log('[DraftSync] updateTrackedVfsNodes skipped - project not initialized');
       return;
     }
     
@@ -287,9 +287,9 @@ export function createDraftSyncService() {
         }
       });
       
-      if (response.status === 404) {
-        // Artifact doesn't exist on backend - reset all sync state
-        console.info('[DraftSync] Artifact not found on backend, resetting sync state');
+      if (response.status === 404 || response.status === 403) {
+        // Artifact doesn't exist on backend (404) or ACL records were deleted along with artifact (403)
+        console.info('[DraftSync] Artifact not found on backend (status:', response.status, '), resetting sync state');
         await resetSyncStateForMissingArtifact();
         baseState.backendValidated = true;
         return;

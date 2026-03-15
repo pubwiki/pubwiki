@@ -161,6 +161,8 @@ export interface StoredProject {
   isPrivate?: boolean;
   /** Whether the artifact is unlisted (hidden from search) */
   isUnlisted?: boolean;
+  /** Thumbnail URL for the artifact */
+  thumbnailUrl?: string;
 
   // ========== Build Cache ==========
   /** Selected entrypoint sandbox node ID */

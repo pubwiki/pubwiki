@@ -1,3 +1,6 @@
+export * from './ArtifactCard';
+export * from './ArtifactEditForm';
+export * from './ArtifactEditPreview';
 export * from './FileTree';
 export * from './ItemTree';
 export * from './Dropdown';

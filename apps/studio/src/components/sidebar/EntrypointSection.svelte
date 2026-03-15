@@ -24,7 +24,7 @@
 	import { getNodeVfs } from '$lib/vfs';
 	import { getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
 	import { computeBuildCacheKey, computeConfigKey } from '@pubwiki/api';
-	import { computeVfsFileHashes, deriveFilesHash } from '$lib/io/vfs-content-hash';
+	import { computeVfsFileHashes, computeVfsContentHash } from '$lib/io/vfs-content-hash';
 	import { getNodeRDFStore } from '$lib/rdf';
 	import { fetchSaves, getArtifactContext } from '$lib/gamesave';
 
@@ -355,8 +355,10 @@
 				return;
 			}
 
-			const fileHashes = await computeVfsFileHashes(data.content.projectId, vfsId);
-			const contentHash = await deriveFilesHash(fileHashes);
+			const [contentHash, fileHashes] = await Promise.all([
+				computeVfsContentHash(data.content.projectId, vfsId),
+				computeVfsFileHashes(data.content.projectId, vfsId),
+			]);
 			const key = await computeBuildCacheKey({
 				filesHash: contentHash,
 				entryFiles: config.entryFiles,

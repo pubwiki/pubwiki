@@ -5,9 +5,10 @@
  * Tracks whether a project has publishable changes by comparing the current
  * state against the last successful publish/update.
  *
- * Two dimensions of change:
+ * Three dimensions of change:
  * 1. Graph changes — nodeStore.modificationCount vs baseline
  * 2. Metadata changes — form snapshot vs published baseline
+ * 3. VFS file changes — tracked via external getter (from DraftSyncService)
  */
 
 import { nodeStore } from '$lib/persistence/node-store.svelte';
@@ -25,6 +26,7 @@ export type MetadataSnapshot = {
 	isPrivate: boolean;
 	isUnlisted: boolean;
 	thumbnailUrl: string;
+	entrypointKey: string;
 };
 
 export interface PublishState {
@@ -36,6 +38,8 @@ export interface PublishState {
 	readonly hasGraphChanges: boolean;
 	/** Whether metadata has changed since last publish/update */
 	readonly hasMetadataChanges: boolean;
+	/** Whether VFS files have been modified since last publish/update */
+	readonly hasVfsChanges: boolean;
 	/** Combined: whether there are any changes worth publishing */
 	readonly hasPublishableChanges: boolean;
 }
@@ -65,15 +69,22 @@ export function createPublishState() {
 			.some(k => currentMeta![k] !== publishedMeta![k]);
 	});
 
-	let hasPublishableChanges = $derived(
-		isDraft || hasGraphChanges || hasMetadataChanges
-	);
+	// VFS file change tracking: supplied by external getter (DraftSyncService)
+	let vfsChangesGetter = $state<(() => boolean) | null>(null);
+	let hasVfsChanges = $derived(vfsChangesGetter ? vfsChangesGetter() : false);
+
+	let hasPublishableChanges = $derived.by(() => {
+		const result = isDraft || hasGraphChanges || hasMetadataChanges || hasVfsChanges;
+		console.log('[PublishState] hasPublishableChanges:', result, '{ isDraft:', isDraft, ', hasGraphChanges:', hasGraphChanges, ', hasMetadataChanges:', hasMetadataChanges, ', hasVfsChanges:', hasVfsChanges, '}');
+		return result;
+	});
 
 	const state: PublishState = {
 		get isDraft() { return isDraft; },
 		get lastCloudCommit() { return lastCloudCommit; },
 		get hasGraphChanges() { return hasGraphChanges; },
 		get hasMetadataChanges() { return hasMetadataChanges; },
+		get hasVfsChanges() { return hasVfsChanges; },
 		get hasPublishableChanges() { return hasPublishableChanges; },
 	};
 
@@ -123,6 +134,11 @@ export function createPublishState() {
 		/** Update lastCloudCommit */
 		setLastCloudCommit(commit: string | undefined) {
 			lastCloudCommit = commit;
+		},
+
+		/** Bind a getter for VFS changes (call once after DraftSyncService is available). */
+		setVfsChangesGetter(getter: () => boolean) {
+			vfsChangesGetter = getter;
 		},
 	};
 }

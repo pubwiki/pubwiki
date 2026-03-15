@@ -7,6 +7,7 @@
 	import { createSearchStore } from '$lib/stores/search.svelte';
 	import { apiClient } from '$lib/api';
 	import VirtualGrid from '$lib/components/VirtualGrid.svelte';
+	import ArtifactCard from '$lib/components/ArtifactCard.svelte';
 	import type { ArtifactListItem, ListTagsResponse } from '@pubwiki/api';
 	import { Dropdown } from '@pubwiki/ui';
 	import * as m from '$lib/paraglide/messages';
@@ -140,7 +141,26 @@
 
 	// Page size aligned with API
 	const PAGE_SIZE = 20;
-	const ITEM_HEIGHT = 220; // Card height in pixels
+	const CARD_ASPECT_RATIO = 9 / 4; // width:height ratio, must match ArtifactCard's aspect-ratio
+	const CARD_PROTRUSION = 0;
+	const GAP = 20;
+	let gridContainerEl = $state<HTMLDivElement | null>(null);
+	let gridContainerWidth = $state(0);
+
+	$effect(() => {
+		if (!gridContainerEl) return;
+		const ro = new ResizeObserver((entries) => {
+			gridContainerWidth = entries[0].contentRect.width;
+		});
+		ro.observe(gridContainerEl);
+		return () => ro.disconnect();
+	});
+
+	let ITEM_HEIGHT = $derived(
+		gridContainerWidth > 0
+			? Math.round((gridContainerWidth - (columnCount - 1) * GAP) / columnCount / CARD_ASPECT_RATIO + CARD_PROTRUSION)
+			: 268
+	);
 
 	// Helper: update URL params without triggering navigation (shallow URL update)
 	// Uses native history API - this only updates the displayed URL without affecting SvelteKit routing
@@ -296,43 +316,6 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 		searchStore.clear();
 	}
 
-	// 3D tilt effect handler for playing card
-	let rafId: number | null = null;
-	
-	function handleCardPointerMove(e: PointerEvent) {
-		if (rafId) return;
-		
-		const card = e.currentTarget as HTMLElement;
-		const clientX = e.clientX;
-		const clientY = e.clientY;
-		
-		rafId = requestAnimationFrame(() => {
-			if (!card) { rafId = null; return; }
-			
-			const rect = card.getBoundingClientRect();
-			const x = clientX - rect.left;
-			const y = clientY - rect.top;
-			const centerX = rect.width / 2;
-			const centerY = rect.height / 2;
-			const rotateX = (y - centerY) / 4;
-			const rotateY = (centerX - x) / 4;
-			
-			card.style.setProperty('--rotateX', `${rotateX}deg`);
-			card.style.setProperty('--rotateY', `${rotateY}deg`);
-			rafId = null;
-		});
-	}
-
-	function handleCardPointerLeave(e: PointerEvent) {
-		if (rafId) {
-			cancelAnimationFrame(rafId);
-			rafId = null;
-		}
-		const card = e.currentTarget as HTMLElement;
-		card.style.setProperty('--rotateX', '0deg');
-		card.style.setProperty('--rotateY', '0deg');
-	}
-
 	// Back to top button state
 	let showBackToTop = $state(false);
 	let savedScrollPosition: number | null = $state(null);
@@ -380,7 +363,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 	}
 </script>
 
-<div class="mx-auto max-w-[1200px] px-4 py-6">
+<div bind:this={gridContainerEl} class="mx-auto max-w-[1200px] px-4 py-6">
 	<!-- Top Bar with Filters -->
 	<div class="mb-6">
 		<div class="flex items-center gap-4">
@@ -557,7 +540,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 				<VirtualGrid
 					totalItems={searchStore.totalItems}
 					itemHeight={ITEM_HEIGHT}
-					gap={20}
+					gap={GAP}
 					{columnCount}
 					pageSize={PAGE_SIZE}
 					getItems={getSearchItems}
@@ -566,75 +549,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 					initialPage={urlParams.page}
 				>
 					{#snippet children(game: ArtifactListItem, index: number)}
-						<div class="group bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-visible">
-							<div class="flex h-full">
-								<!-- Cover Image (Playing Card Style) -->
-								<div class="w-[38%] min-w-[150px] flex items-center justify-center py-4 pl-2 pr-1 relative">
-									<a 
-										href="/artifact/{game.id}" 
-										class="playing-card relative block w-[140px] h-[196px] z-10 -mt-6 -ml-6"
-										style="--rotateX: 0deg; --rotateY: 0deg;"
-										onpointermove={handleCardPointerMove}
-										onpointerleave={handleCardPointerLeave}
-									>
-										<div class="absolute inset-0 bg-black/15 rounded-lg translate-x-1 translate-y-1 blur-sm"></div>
-										<div class="relative w-full h-full bg-white rounded-lg border-2 border-gray-200 shadow-lg overflow-hidden">
-											<img
-												src={game.thumbnailUrl || 'https://placehold.co/280x392/e5e7eb/9ca3af?text=No+Cover'}
-												alt={game.name}
-												class="w-full h-full object-cover"
-											/>
-											<div class="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent pointer-events-none"></div>
-										</div>
-									</a>
-								</div>
-								
-								<!-- Content -->
-								<div class="flex-1 p-4 flex flex-col min-w-0 bg-gradient-to-br from-white to-gray-50/50">
-									<a href="/artifact/{game.id}" class="block mb-1">
-										<h3 class="font-bold text-gray-800 group-hover:text-gray-600 text-base leading-tight line-clamp-2 h-[2.5rem] transition-colors" title={game.name}>
-											{game.name}
-										</h3>
-									</a>
-									
-									<a 
-										href="/user/{game.author.id}" 
-										class="text-xs text-gray-500 hover:text-gray-700 hover:underline mb-2 truncate transition-colors"
-										onclick={(e) => e.stopPropagation()}
-									>
-										{m.common_by({ author: game.author.displayName || game.author.username })}
-									</a>
-									
-									<p class="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2 h-[2.25rem]">
-										{game.description || ''}
-									</p>
-									
-									{#if game.tags && game.tags.length > 0}
-										<div class="relative mb-3 h-5 overflow-hidden">
-											<div class="flex gap-1 absolute top-0 left-0 right-0">
-												{#each game.tags as tag}
-													<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full whitespace-nowrap">
-														{tag.name}
-													</span>
-												{/each}
-											</div>
-											<div class="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-gray-50 to-transparent pointer-events-none"></div>
-										</div>
-									{/if}
-									
-									<div class="flex items-center gap-4 text-xs text-gray-400 pt-2 border-t border-gray-100">
-										<span class="flex items-center gap-1" title={m.common_views()}>
-											<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-											{(game.stats?.viewCount ?? 0).toLocaleString()}
-										</span>
-										<span class="flex items-center gap-1 text-rose-400" title={m.common_stars()}>
-											<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-											{game.stats?.favCount ?? 0}
-										</span>
-									</div>
-								</div>
-							</div>
-						</div>
+						<ArtifactCard artifact={game} variant="marketplace" />
 					{/snippet}
 					
 					{#snippet placeholder(index: number)}
@@ -662,7 +577,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 			<VirtualGrid
 				totalItems={artifactStore.totalItems}
 				itemHeight={ITEM_HEIGHT}
-				gap={20}
+				gap={GAP}
 				{columnCount}
 				pageSize={PAGE_SIZE}
 				{getItems}
@@ -671,75 +586,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 				initialPage={urlParams.page}
 			>
 				{#snippet children(game: ArtifactListItem, index: number)}
-					<div class="group bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-visible">
-						<div class="flex h-full">
-							<!-- Cover Image (Playing Card Style) -->
-							<div class="w-[38%] min-w-[150px] flex items-center justify-center py-4 pl-2 pr-1 relative">
-								<a 
-									href="/artifact/{game.id}" 
-									class="playing-card relative block w-[140px] h-[196px] z-10 -mt-6 -ml-6"
-									style="--rotateX: 0deg; --rotateY: 0deg;"
-									onpointermove={handleCardPointerMove}
-									onpointerleave={handleCardPointerLeave}
-								>
-									<div class="absolute inset-0 bg-black/15 rounded-lg translate-x-1 translate-y-1 blur-sm"></div>
-									<div class="relative w-full h-full bg-white rounded-lg border-2 border-gray-200 shadow-lg overflow-hidden">
-										<img
-											src={game.thumbnailUrl || 'https://placehold.co/280x392/e5e7eb/9ca3af?text=No+Cover'}
-											alt={game.name}
-											class="w-full h-full object-cover"
-										/>
-										<div class="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent pointer-events-none"></div>
-									</div>
-								</a>
-							</div>
-							
-							<!-- Content -->
-							<div class="flex-1 p-4 flex flex-col min-w-0 bg-gradient-to-br from-white to-gray-50/50">
-								<a href="/artifact/{game.id}" class="block mb-1">
-									<h3 class="font-bold text-gray-800 group-hover:text-gray-600 text-base leading-tight line-clamp-2 h-[2.5rem] transition-colors" title={game.name}>
-										{game.name}
-									</h3>
-								</a>
-								
-								<a 
-									href="/user/{game.author.id}" 
-									class="text-xs text-gray-500 hover:text-gray-700 hover:underline mb-2 truncate transition-colors"
-									onclick={(e) => e.stopPropagation()}
-								>
-									{m.common_by({ author: game.author.displayName || game.author.username })}
-								</a>
-								
-								<p class="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-2 h-[2.25rem]">
-									{game.description || ''}
-								</p>
-								
-								{#if game.tags && game.tags.length > 0}
-									<div class="relative mb-3 h-5 overflow-hidden">
-										<div class="flex gap-1 absolute top-0 left-0 right-0">
-											{#each game.tags as tag}
-												<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full whitespace-nowrap">
-													{tag.name}
-												</span>
-											{/each}
-										</div>
-										<div class="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-gray-50 to-transparent pointer-events-none"></div>
-									</div>
-								{/if}
-								
-								<div class="flex items-center gap-4 text-xs text-gray-400 pt-2 border-t border-gray-100">
-									<span class="flex items-center gap-1" title={m.common_views()}>
-										<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-										{(game.stats?.viewCount ?? 0).toLocaleString()}
-									</span>
-									<span class="flex items-center gap-1 text-rose-400" title={m.common_stars()}>
-										<svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-										{game.stats?.favCount ?? 0}
-									</span>
-								</div>
-							</div>
-						</div>
-					</div>
+					<ArtifactCard artifact={game} variant="marketplace" />
 				{/snippet}
 				
 				{#snippet placeholder(index: number)}
@@ -790,15 +637,4 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 		display: none; /* Chrome/Safari/Opera */
 	}
 
-	.playing-card {
-		transform-style: preserve-3d;
-		will-change: transform;
-		touch-action: none;
-		transform: perspective(800px) rotateX(var(--rotateX)) rotateY(var(--rotateY)) rotate(-6deg) scale(1);
-		transition: transform 0.15s ease-out;
-	}
-	
-	.playing-card:hover {
-		transform: perspective(800px) rotateX(var(--rotateX)) rotateY(var(--rotateY)) rotate(-6deg) scale(1.15);
-	}
 </style>

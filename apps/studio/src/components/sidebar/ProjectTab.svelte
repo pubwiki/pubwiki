@@ -19,6 +19,8 @@
 	import { reportSaveState } from '$lib/persistence/save-tracker.svelte';
 	import { ArtifactEditPreview, Toggle } from '@pubwiki/ui/components';
 	import { useAuth } from '@pubwiki/ui/stores';
+	import { createApiClient } from '@pubwiki/api/client';
+	import { API_BASE_URL } from '$lib/config';
 	import * as m from '$lib/paraglide/messages';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import EntrypointSection, { type SelectedSave } from './EntrypointSection.svelte';
@@ -27,6 +29,27 @@
 
 	const hubUrl = PUBLIC_HUB_URL || 'http://localhost:5173';
 	const auth = useAuth();
+	const apiClient = createApiClient(API_BASE_URL);
+
+	async function handleUploadThumbnail(file: File): Promise<string | null> {
+		const baseUrl = API_BASE_URL.replace(/\/api\/?$/, '');
+		try {
+			const { data, error } = await apiClient.POST('/images', {
+				// @ts-expect-error openapi-fetch types file as string, but bodySerializer handles actual File
+				body: { file, purpose: 'thumbnail' },
+				bodySerializer: (body) => {
+					const formData = new FormData();
+					formData.append('file', body.file as unknown as File);
+					if (body.purpose) formData.append('purpose', body.purpose);
+					return formData;
+				},
+			});
+			if (error || !data) return null;
+			return `${baseUrl}${data.url}`;
+		} catch {
+			return null;
+		}
+	}
 
 	/**
 	 * Metadata for updating an existing artifact (PATCH).
@@ -39,6 +62,7 @@
 		isListed: boolean;
 		isPrivate: boolean;
 		tags: string[];
+		thumbnailUrl?: string;
 		entrypoint?: { saveCommit: string; sandboxNodeId: string };
 	}
 
@@ -132,11 +156,7 @@
 	let persistTimer: ReturnType<typeof setTimeout> | undefined;
 	
 	// Snapshot of the last persisted values to detect real user changes
-	let lastPersisted = $state<{
-		name: string; description: string; homepage: string;
-		tagsInput: string; version: string; isPrivate: boolean; isUnlisted: boolean;
-		thumbnailUrl: string;
-	} | null>(null);
+	let lastPersisted = $state<ReturnType<typeof snapshotCurrent> | null>(null);
 
 	function schedulePersist() {
 		reportSaveState('metadata', 'dirty');
@@ -165,7 +185,10 @@
 	}
 	
 	function snapshotCurrent() {
-		return { name, description, homepage, tagsInput, version, isPrivate, isUnlisted: !isListed, thumbnailUrl };
+		const entrypointKey = selectedSave
+			? `${selectedSave.stateNodeId}:${selectedSave.saveCommit || selectedSave.checkpointId || ''}`
+			: '';
+		return { name, description, homepage, tagsInput, version, isPrivate, isUnlisted: !isListed, thumbnailUrl, entrypointKey };
 	}
 
 	// Feed metadata changes to the centralized publish state service
@@ -328,6 +351,7 @@
 					isListed,
 					isPrivate,
 					tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
+					thumbnailUrl: thumbnailUrl.trim() || undefined,
 					entrypoint: resolvedEntrypoint,
 				};
 				await onUpdate(metadata, nodesToPublish, edgesToPublish, buildKey);
@@ -418,10 +442,12 @@
 			bind:isPrivate
 			bind:thumbnailUrl
 			authorName={auth.user?.displayName || auth.user?.username || 'Anonymous'}
+			stats={{ viewCount: 128, favCount: 12 }}
 			layout="vertical"
 			cardVariant="marketplace"
 			previewLabel={m.studio_form_preview()}
 			onNameChange={(v) => onNameChange?.(v)}
+			onUploadThumbnail={handleUploadThumbnail}
 			labels={{
 				name: m.studio_form_name(),
 				namePlaceholder: m.studio_form_name_placeholder(),
@@ -433,8 +459,6 @@
 				listedDescription: m.studio_form_visibility_unlisted_description(),
 				private: m.studio_form_visibility_private(),
 				privateDescription: m.studio_form_visibility_private_description(),
-				thumbnailUrl: m.studio_form_thumbnail(),
-				thumbnailUrlPlaceholder: m.studio_form_thumbnail_placeholder(),
 			}}
 		/>
 
@@ -505,6 +529,7 @@
 				{selectedEntrypoint}
 				{onEntrypointChange}
 				onBuildCacheKeyChange={(key) => { resolvedBuildCacheKey = key; }}
+				onSaveChange={(save) => { selectedSave = save; }}
 			/>
 		{/if}
 
