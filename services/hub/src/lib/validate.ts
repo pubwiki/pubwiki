@@ -3,6 +3,27 @@ import type { z } from 'zod';
 import type { ApiError } from '@pubwiki/api';
 
 /**
+ * Format a single Zod issue into a readable string,
+ * expanding invalid_union errors to show per-variant details.
+ */
+function formatIssue(issue: z.core.$ZodIssue, depth = 0): string {
+  const prefix = issue.path.length ? `${issue.path.join('.')}: ` : '';
+  if (issue.code === 'invalid_union' && 'errors' in issue) {
+    const variantErrors = (issue as z.core.$ZodIssueInvalidUnion).errors;
+    const details = variantErrors.map((variantIssues, i) => {
+      const msgs = variantIssues.map(vi => formatIssue(vi, depth + 1));
+      return `  variant ${i + 1}: ${msgs.join('; ')}`;
+    }).join('\n');
+    return `${prefix}No matching union variant:\n${details}`;
+  }
+  return `${prefix}${issue.message}`;
+}
+
+function formatZodErrors(issues: z.core.$ZodIssue[]): string {
+  return issues.map(issue => formatIssue(issue)).join('; ');
+}
+
+/**
  * 校验请求参数并返回校验后的数据
  * 失败时返回 400 错误响应
  */
@@ -16,10 +37,7 @@ export function validateQuery<T extends z.ZodType>(
   
   const result = schema.safeParse(processedQuery);
   if (!result.success) {
-    const errors = result.error.issues.map(issue => 
-      `${issue.path.join('.')}: ${issue.message}`
-    ).join('; ');
-    return c.json<ApiError>({ error: `Validation error: ${errors}` }, 400);
+    return c.json<ApiError>({ error: `Validation error: ${formatZodErrors(result.error.issues)}` }, 400);
   }
   return result.data;
 }
@@ -41,10 +59,7 @@ export async function validateBody<T extends z.ZodType>(
 
   const result = schema.safeParse(body);
   if (!result.success) {
-    const errors = result.error.issues.map(issue => 
-      `${issue.path.join('.')}: ${issue.message}`
-    ).join('; ');
-    return c.json<ApiError>({ error: `Validation error: ${errors}` }, 400);
+    return c.json<ApiError>({ error: `Validation error: ${formatZodErrors(result.error.issues)}` }, 400);
   }
   return result.data;
 }
@@ -112,10 +127,7 @@ export function validateFormDataJson<T extends z.ZodType>(
   // 使用 schema 校验
   const result = schema.safeParse(parsed);
   if (!result.success) {
-    const errors = result.error.issues.map(issue => 
-      `${issue.path.join('.')}: ${issue.message}`
-    ).join('; ');
-    return c.json<ApiError>({ error: `Validation error in ${fieldName}: ${errors}` }, 400);
+    return c.json<ApiError>({ error: `Validation error in ${fieldName}: ${formatZodErrors(result.error.issues)}` }, 400);
   }
 
   return result.data;
@@ -131,10 +143,7 @@ export function validateParams<T extends z.ZodType>(
 ): z.infer<T> | Response {
   const result = schema.safeParse(params);
   if (!result.success) {
-    const errors = result.error.issues.map(issue => 
-      `${issue.path.join('.')}: ${issue.message}`
-    ).join('; ');
-    return c.json<ApiError>({ error: `Validation error: ${errors}` }, 400);
+    return c.json<ApiError>({ error: `Validation error: ${formatZodErrors(result.error.issues)}` }, 400);
   }
   return result.data;
 }
