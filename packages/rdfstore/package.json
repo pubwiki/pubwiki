@@ -35,7 +35,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@pubwiki/api": "workspace:*",
     "@rdfjs/types": "^2.0.1",
     "abstract-level": "catalog:",
     "dexie": "catalog:",

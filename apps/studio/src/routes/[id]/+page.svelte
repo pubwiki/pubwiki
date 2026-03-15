@@ -1383,6 +1383,7 @@
 			version: metadata.version,
 			commitTags: ['draft-latest'],
 			entrypoint: metadata.entrypoint,
+			saveData: metadata.saveData,
 		};
 
 		const patchResult = await patchArtifact(patchMeta, nodesToPublish, edgesToPublish, buildCacheKey);

@@ -9,6 +9,8 @@
 import type { RuntimeGraph, ConfirmationHandler, ArtifactContext, JsModuleDefinition } from '../types';
 import { findConnectedStateNode } from '../graph/artifact-loader';
 import type { CreateSaveOptions, CreateSaveResult, SaveRDFStore } from '../save/gamesave';
+import type { createApiClient } from '@pubwiki/api/client';
+import type { ReaderContentBlock } from '@pubwiki/api';
 
 // ============================================================================
 // RDF Store interface (subset needed by this module)
@@ -38,8 +40,8 @@ export interface PubWikiModuleConfig {
 	projectId: string;
 	/** Loader node ID (used for graph queries) */
 	loaderNodeId: string;
-	/** API base URL */
-	apiBaseUrl: string;
+	/** Typed API client from @pubwiki/api */
+	apiClient: ReturnType<typeof createApiClient>;
 	/** Get current authenticated user ID */
 	getCurrentUserId: () => string | null;
 	/** UI confirmation handler */
@@ -319,7 +321,7 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 			}
 
 			// Build preview content — game_ref blocks use placeholder saveCommit
-			const previewContent: Record<string, unknown>[] = [];
+			const previewContent: ReaderContentBlock[] = [];
 			const gameRefMap = new Map<string, InputContentBlock & { type: 'game_ref' }>();
 
 			for (const block of data.content) {
@@ -345,16 +347,16 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 
 			try {
 				const store = await config.getRDFStore(stateNodeId);
-				const editedContent = (edited.content as Record<string, unknown>[]) ?? previewContent;
-				const finalContent: Record<string, unknown>[] = [];
+				const editedContent = (edited.content as ReaderContentBlock[]) ?? previewContent;
+				const finalContent: ReaderContentBlock[] = [];
 
 				for (const block of editedContent) {
-					if ((block as { type: string }).type === 'text') {
+					if (block.type === 'text') {
 						finalContent.push(block);
 						continue;
 					}
 
-					const textId = (block as { textId: string }).textId;
+					const textId = block.type === 'game_ref' ? block.textId : '';
 					const originalInput = gameRefMap.get(textId);
 					const checkpointId = originalInput?.checkpointId ?? null;
 
@@ -394,26 +396,22 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 				const isListed = editedVisibility === 'PUBLIC';
 				const isPrivate = editedVisibility === 'PRIVATE';
 
-				// Call API — use fetch directly since we're framework-agnostic
-				const response = await fetch(`${config.apiBaseUrl}/articles/${articleId}`, {
-					method: 'PUT',
-					headers: { 'Content-Type': 'application/json' },
-					credentials: 'include',
-					body: JSON.stringify({
+				const { error } = await config.apiClient.PUT('/articles/{articleId}', {
+					params: { path: { articleId } },
+					body: {
 						title: editedTitle,
 						artifactId: artifactCtx.artifactId,
 						artifactCommit: artifactCtx.artifactCommit,
 						content: finalContent,
 						isListed,
 						isPrivate,
-					}),
+					},
 				});
 
-				if (!response.ok) {
-					const errorData = await response.json().catch(() => ({}));
+				if (error) {
 					return {
 						success: false,
-						error: `Failed to create article: ${JSON.stringify(errorData)}`,
+						error: `Failed to create article: ${JSON.stringify(error)}`,
 					};
 				}
 
@@ -422,5 +420,5 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 				return { success: false, error: err instanceof Error ? err.message : String(err) };
 			}
 		},
-	} as unknown as JsModuleDefinition;
+	};
 }

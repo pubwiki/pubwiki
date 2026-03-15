@@ -1,33 +1,28 @@
 <script lang="ts">
 	/**
-	 * SavePanel - Combined local and cloud checkpoint management for State nodes
+	 * SavePanel - Unified save management for State nodes
 	 * 
-	 * Features:
-	 * - Local checkpoints: Always available, stored in IndexedDB via RDFStore
-	 * - Cloud saves: Available when project is published, synced to backend
-	 * 
-	 * Cloud saves require:
-	 * - Project to be published (has artifactId)
-	 * - Artifact commit (fetched from backend)
-	 * - STATE node commit (from nodeStore)
+	 * Shows a single list of saves with sync status badges:
+	 * - local-only: Only in IndexedDB
+	 * - synced: Both local and cloud
+	 * - cloud-only: Only on server (can be downloaded)
 	 */
 	import { onMount } from 'svelte';
 	import type { StateNodeData } from '$lib/types';
-	import type { SaveDetail } from '@pubwiki/api';
-	import { type Checkpoint as LocalCheckpoint } from '@pubwiki/rdfstore';
 	import { getNodeRDFStore, type RDFStore } from '$lib/rdf';
-	import { nodeStore } from '$lib/persistence';
 	import { useAuth } from '@pubwiki/ui/stores';
 	import {
 		getArtifactContext,
-		createSaveCheckpoint,
+		listUnifiedSaves,
+		uploadSaveToCloud,
+		pullSaveFromCloud,
 		restoreFromSave,
-		fetchSaves,
 		deleteSave,
-
-		type ArtifactContext
+		fetchSaves,
+		type ArtifactContext,
+		type UnifiedSave,
+		type SyncStatus,
 	} from '$lib/gamesave';
-	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
 		nodeId: string;
@@ -39,44 +34,24 @@
 
 	const auth = useAuth();
 
-	// Combined checkpoint entry (local or cloud)
-	interface CheckpointEntry {
-		id: string;
-		title: string;
-		description?: string;
-		timestamp: number;
-		quadCount: number;
-		source: 'local' | 'cloud';
-		isListed?: boolean;
-		commit?: string; // Only for cloud saves
-	}
-
 	// State
-	let localCheckpoints = $state<CheckpointEntry[]>([]);
-	let cloudSaves = $state<CheckpointEntry[]>([]);
+	let saves = $state<UnifiedSave[]>([]);
 	let isLoading = $state(false);
 	let isApplying = $state(false);
 	let isCreating = $state(false);
-	let isUploading = $state(false);
+	let isSyncing = $state(false);
 	let error = $state<string | null>(null);
 	let successMessage = $state<string | null>(null);
 	let store = $state<RDFStore | null>(null);
 	let artifactContext = $state<ArtifactContext | null>(null);
 
-	// Tab state: 'local' or 'cloud'
-	let activeTab = $state<'local' | 'cloud'>('local');
-
-	// Menu state for each checkpoint
+	// Menu state for each save
 	let openMenuId = $state<string | null>(null);
 
 	// Create form state
 	let showCreateForm = $state(false);
 	let newCheckpointTitle = $state('');
 	let newCheckpointDescription = $state('');
-	let newCheckpointIsListed = $state(false);
-
-	// Derived: combined checkpoints based on active tab
-	let checkpoints = $derived(activeTab === 'local' ? localCheckpoints : cloudSaves);
 
 	// Derived: can use cloud saves?
 	let canUseCloud = $derived(artifactContext?.isPublished && auth.isAuthenticated);
@@ -93,12 +68,6 @@
 		error = null;
 	}
 
-	// Get current node commit from nodeStore
-	function getNodeCommit(): string | null {
-		const nodeData = nodeStore.get(nodeId);
-		return nodeData?.commit ?? null;
-	}
-
 	// Refresh artifact context
 	async function refreshArtifactContext() {
 		try {
@@ -109,63 +78,22 @@
 		}
 	}
 
-	// Refresh local checkpoints
-	async function refreshLocalCheckpoints() {
-		try {
-			if (!store) {
-				store = await getNodeRDFStore(nodeId);
-			}
-
-			const checkpoints = await store.listCheckpoints();
-			localCheckpoints = checkpoints.map(cp => ({
-				id: cp.id,
-				title: cp.title,
-				description: cp.description,
-				timestamp: cp.timestamp,
-				quadCount: cp.quadCount,
-				source: 'local' as const
-			})).sort((a, b) => b.timestamp - a.timestamp);
-		} catch (e) {
-			console.error('Failed to refresh local checkpoints:', e);
+	async function ensureStore(): Promise<RDFStore> {
+		if (!store) {
+			store = await getNodeRDFStore(nodeId);
 		}
+		return store;
 	}
 
-	// Refresh cloud saves
-	async function refreshCloudSaves() {
-		if (!artifactContext?.isPublished) {
-			cloudSaves = [];
-			return;
-		}
-
-		try {
-			const saves = await fetchSaves(nodeId);
-			cloudSaves = saves.map(s => ({
-				id: s.commit, // Use commit as ID for cloud saves
-				commit: s.commit,
-				title: s.title ?? `存档 ${s.commit.slice(0, 8)}`,
-				description: s.description ?? undefined,
-				timestamp: new Date(s.createdAt).getTime(),
-				quadCount: 0, // Not available from API
-				source: 'cloud' as const,
-				isListed: s.isListed
-			})).sort((a, b) => b.timestamp - a.timestamp);
-		} catch (e) {
-			console.error('Failed to refresh cloud saves:', e);
-			cloudSaves = [];
-		}
-	}
-
-	// Refresh all
-	async function refreshAll() {
+	// Refresh saves using unified merge logic
+	async function refreshSaves() {
 		isLoading = true;
 		error = null;
 
 		try {
 			await refreshArtifactContext();
-			await Promise.all([
-				refreshLocalCheckpoints(),
-				refreshCloudSaves()
-			]);
+			const s = await ensureStore();
+			saves = await listUnifiedSaves(s, nodeId);
 		} catch (e) {
 			error = e instanceof Error ? e.message : '获取存档失败';
 			clearMessages();
@@ -186,15 +114,10 @@
 		error = null;
 
 		try {
-			if (!store) {
-				store = await getNodeRDFStore(nodeId);
-			}
-
-			const checkpointId = crypto.randomUUID();
-			await store.checkpoint({
-				id: checkpointId,
+			const s = await ensureStore();
+			await s.checkpoint({
 				title: newCheckpointTitle.trim(),
-				description: newCheckpointDescription.trim() || undefined
+				description: newCheckpointDescription.trim() || undefined,
 			});
 
 			// Reset form
@@ -202,7 +125,7 @@
 			newCheckpointDescription = '';
 			showCreateForm = false;
 
-			await refreshLocalCheckpoints();
+			await refreshSaves();
 			successMessage = '本地存档创建成功';
 			clearMessages();
 		} catch (e) {
@@ -213,93 +136,24 @@
 		}
 	}
 
-	// Create a cloud save
-	async function createCloudSave() {
-		if (!newCheckpointTitle.trim()) {
-			error = '请输入存档标题';
-			clearMessages();
-			return;
-		}
-
-		if (!artifactContext?.isPublished || !artifactContext.artifactId || !artifactContext.artifactCommit) {
-			error = '项目未发布，无法创建云存档';
-			clearMessages();
-			return;
-		}
-
-		if (!auth.user?.id) {
-			error = '请先登录';
-			clearMessages();
-			return;
-		}
-
-		const nodeCommit = getNodeCommit();
-		if (!nodeCommit) {
-			error = '无法获取节点版本信息';
-			clearMessages();
-			return;
-		}
-
-		isCreating = true;
-		error = null;
-
-		try {
-			if (!store) {
-				store = await getNodeRDFStore(nodeId);
-			}
-
-			// Create cloud save
-			const result = await createSaveCheckpoint(store, {
-				stateNodeId: nodeId,
-				artifactId: artifactContext.artifactId,
-				artifactCommit: artifactContext.artifactCommit,
-				title: newCheckpointTitle.trim(),
-				description: newCheckpointDescription.trim() || undefined,
-				isListed: newCheckpointIsListed
-			});
-
-			if (!result.success) {
-				throw new Error(result.error || '创建云存档失败');
-			}
-
-			// Reset form
-			newCheckpointTitle = '';
-			newCheckpointDescription = '';
-			newCheckpointIsListed = false;
-			showCreateForm = false;
-
-			await refreshCloudSaves();
-			successMessage = '云存档创建成功';
-			clearMessages();
-		} catch (e) {
-			error = e instanceof Error ? e.message : '创建云存档失败';
-			clearMessages();
-		} finally {
-			isCreating = false;
-		}
-	}
-
-	// Create checkpoint based on active tab
-	async function createCheckpoint() {
-		if (activeTab === 'local') {
-			await createLocalCheckpoint();
-		} else {
-			await createCloudSave();
-		}
-	}
-
-	// Apply a local checkpoint
-	async function applyLocalCheckpoint(checkpoint: CheckpointEntry) {
+	// Apply a save (local or cloud)
+	async function applySave(save: UnifiedSave) {
 		isApplying = true;
 		error = null;
 
 		try {
-			if (!store) {
-				store = await getNodeRDFStore(nodeId);
+			const s = await ensureStore();
+
+			if (save.syncStatus === 'cloud-only' && save.cloudCommit) {
+				// Download and restore from cloud
+				const success = await restoreFromSave(s, save.cloudCommit);
+				if (!success) throw new Error('恢复云存档失败');
+			} else {
+				// Load from local checkpoint
+				await s.loadCheckpoint(save.id);
 			}
 
-			await store.loadCheckpoint(checkpoint.id);
-			successMessage = `已应用本地存档: ${checkpoint.title}`;
+			successMessage = `已应用存档: ${save.title}`;
 			clearMessages();
 		} catch (e) {
 			error = e instanceof Error ? e.message : '应用存档失败';
@@ -309,57 +163,32 @@
 		}
 	}
 
-	// Apply a cloud save
-	async function applyCloudSave(checkpoint: CheckpointEntry) {
-		if (!checkpoint.commit) {
-			error = '无效的云存档';
-			clearMessages();
-			return;
-		}
-
-		isApplying = true;
-		error = null;
+	// Delete a save
+	async function handleDelete(save: UnifiedSave) {
+		const confirmMsg = save.syncStatus === 'cloud-only'
+			? `确定要删除云存档 "${save.title}" 吗？此操作不可恢复。`
+			: `确定要删除存档 "${save.title}" 吗？`;
+		if (!confirm(confirmMsg)) return;
 
 		try {
-			if (!store) {
-				store = await getNodeRDFStore(nodeId);
+			const s = await ensureStore();
+
+			// Delete local checkpoint if exists
+			if (save.syncStatus !== 'cloud-only') {
+				await s.deleteCheckpoint(save.id);
 			}
 
-			const success = await restoreFromSave(store, checkpoint.commit);
-			if (!success) {
-				throw new Error('恢复云存档失败');
+			// Delete cloud save if exists
+			if (save.cloudCommit) {
+				try {
+					await deleteSave(save.cloudCommit);
+				} catch {
+					// Cloud delete may fail if not authorized — still remove locally
+				}
 			}
 
-			successMessage = `已应用云存档: ${checkpoint.title}`;
-			clearMessages();
-		} catch (e) {
-			error = e instanceof Error ? e.message : '应用云存档失败';
-			clearMessages();
-		} finally {
-			isApplying = false;
-		}
-	}
-
-	// Apply checkpoint based on source
-	async function applyCheckpoint(checkpoint: CheckpointEntry) {
-		if (checkpoint.source === 'local') {
-			await applyLocalCheckpoint(checkpoint);
-		} else {
-			await applyCloudSave(checkpoint);
-		}
-	}
-
-	// Delete a local checkpoint
-	async function deleteLocalCheckpoint(checkpoint: CheckpointEntry) {
-		if (!confirm(`确定要删除本地存档 "${checkpoint.title}" 吗？`)) return;
-
-		try {
-			if (!store) {
-				store = await getNodeRDFStore(nodeId);
-			}
-			await store.deleteCheckpoint(checkpoint.id);
-			await refreshLocalCheckpoints();
-			successMessage = '本地存档已删除';
+			await refreshSaves();
+			successMessage = '存档已删除';
 			clearMessages();
 		} catch (e) {
 			error = e instanceof Error ? e.message : '删除失败';
@@ -367,94 +196,64 @@
 		}
 	}
 
-	// Delete a cloud save
-	async function deleteCloudSave(checkpoint: CheckpointEntry) {
-		if (!checkpoint.commit) {
-			error = '无效的云存档';
-			clearMessages();
-			return;
-		}
-
-		if (!confirm(`确定要删除云存档 "${checkpoint.title}" 吗？此操作不可恢复。`)) return;
-
-		try {
-			await deleteSave(checkpoint.commit);
-			await refreshCloudSaves();
-			successMessage = '云存档已删除';
-			clearMessages();
-		} catch (e) {
-			error = e instanceof Error ? e.message : '删除云存档失败';
-			clearMessages();
-		}
-	}
-
-	// Delete checkpoint based on source
-	async function deleteCheckpoint(checkpoint: CheckpointEntry) {
-		if (checkpoint.source === 'local') {
-			await deleteLocalCheckpoint(checkpoint);
-		} else {
-			await deleteCloudSave(checkpoint);
-		}
-	}
-
-	// Upload a local checkpoint to cloud
-	async function uploadToCloud(checkpoint: CheckpointEntry) {
+	// Upload a local-only save to cloud
+	async function handleUpload(save: UnifiedSave) {
 		if (!artifactContext?.isPublished || !artifactContext.artifactId || !artifactContext.artifactCommit) {
 			error = '项目未发布，无法上传到云端';
 			clearMessages();
 			return;
 		}
 
-		if (!auth.user?.id) {
-			error = '请先登录';
-			clearMessages();
-			return;
-		}
-
-		const nodeCommit = getNodeCommit();
-		if (!nodeCommit) {
-			error = '无法获取节点版本信息';
-			clearMessages();
-			return;
-		}
-
-		isUploading = true;
+		isSyncing = true;
 		error = null;
 
 		try {
-			if (!store) {
-				store = await getNodeRDFStore(nodeId);
-			}
-
-			// Load the checkpoint first
-			await store.loadCheckpoint(checkpoint.id);
-
-			// Create cloud save
-			const result = await createSaveCheckpoint(store, {
+			const s = await ensureStore();
+			await uploadSaveToCloud(s, save.id, {
 				stateNodeId: nodeId,
 				artifactId: artifactContext.artifactId,
 				artifactCommit: artifactContext.artifactCommit,
-				title: checkpoint.title,
-				description: checkpoint.description,
-				isListed: false
 			});
 
-			if (!result.success) {
-				throw new Error(result.error || '上传失败');
-			}
-
-			await refreshCloudSaves();
-			successMessage = `已上传到云端: ${checkpoint.title}`;
+			await refreshSaves();
+			successMessage = `已上传到云端: ${save.title}`;
 			clearMessages();
 		} catch (e) {
 			error = e instanceof Error ? e.message : '上传到云端失败';
 			clearMessages();
 		} finally {
-			isUploading = false;
+			isSyncing = false;
 		}
 	}
 
-	// Toggle menu for a checkpoint
+	// Download a cloud-only save to local
+	async function handleDownload(save: UnifiedSave) {
+		if (!save.cloudCommit) return;
+
+		isSyncing = true;
+		error = null;
+
+		try {
+			const s = await ensureStore();
+			// Fetch the full SaveDetail for pull
+			const cloudSaves = await fetchSaves(nodeId);
+			const detail = cloudSaves.find(cs => cs.commit === save.cloudCommit);
+			if (!detail) throw new Error('云存档未找到');
+
+			await pullSaveFromCloud(s, detail);
+
+			await refreshSaves();
+			successMessage = `已下载到本地: ${save.title}`;
+			clearMessages();
+		} catch (e) {
+			error = e instanceof Error ? e.message : '下载失败';
+			clearMessages();
+		} finally {
+			isSyncing = false;
+		}
+	}
+
+	// Toggle menu for a save
 	function toggleMenu(id: string) {
 		openMenuId = openMenuId === id ? null : id;
 	}
@@ -483,20 +282,27 @@
 		});
 	}
 
-	// Get visibility label
-	function getVisibilityLabel(isListed: boolean | undefined): string {
-		return isListed ? '公开列表' : '私有';
+	// Sync status badge config
+	function getBadge(status: SyncStatus): { label: string; classes: string } {
+		switch (status) {
+			case 'synced':
+				return { label: '已同步', classes: 'bg-green-100 text-green-700' };
+			case 'local-only':
+				return { label: '仅本地', classes: 'bg-gray-100 text-gray-600' };
+			case 'cloud-only':
+				return { label: '仅云端', classes: 'bg-blue-100 text-blue-700' };
+		}
 	}
 
 	// Track if we've initialized
 	let hasInitialized = $state(false);
 
-	// Auto-load checkpoints on mount
+	// Auto-load on mount
 	$effect(() => {
 		const currentNodeId = nodeId;
 		if (!hasInitialized && currentNodeId) {
 			hasInitialized = true;
-			refreshAll();
+			refreshSaves();
 		}
 	});
 
@@ -506,34 +312,16 @@
 		return () => {
 			hasInitialized = false;
 			store = null;
-			localCheckpoints = [];
-			cloudSaves = [];
+			saves = [];
 			artifactContext = null;
 		};
 	});
 </script>
 
 <div class="space-y-3">
-	<!-- Header with tabs -->
+	<!-- Header -->
 	<div class="flex items-center justify-between">
-		<div class="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-			<button
-				type="button"
-				onclick={() => activeTab = 'local'}
-				class="px-3 py-1 text-xs font-medium rounded-md transition-colors {activeTab === 'local' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}"
-			>
-				本地 ({localCheckpoints.length})
-			</button>
-			<button
-				type="button"
-				onclick={() => activeTab = 'cloud'}
-				disabled={!canUseCloud}
-				class="px-3 py-1 text-xs font-medium rounded-md transition-colors {activeTab === 'cloud' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'} disabled:text-gray-400 disabled:cursor-not-allowed"
-				title={!canUseCloud ? (artifactContext?.isPublished ? '请先登录' : '项目未发布') : ''}
-			>
-				云端 ({cloudSaves.length})
-			</button>
-		</div>
+		<span class="text-xs font-medium text-gray-500">存档 ({saves.length})</span>
 		<div class="flex items-center gap-2">
 			{#if !showCreateForm}
 				<button
@@ -549,7 +337,7 @@
 			{/if}
 			<button
 				type="button"
-				onclick={refreshAll}
+				onclick={refreshSaves}
 				disabled={isLoading}
 				class="text-sm text-teal-600 hover:text-teal-700 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center gap-1"
 			>
@@ -580,7 +368,7 @@
 			<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
 			</svg>
-			<span>登录后可使用云端存档</span>
+			<span>登录后可使用云端同步</span>
 		</div>
 	{/if}
 
@@ -591,7 +379,7 @@
 		</div>
 	{/if}
 
-	<!-- Create checkpoint form -->
+	<!-- Create form -->
 	{#if showCreateForm}
 		<div class="p-3 bg-gray-50 rounded-lg border border-gray-200 space-y-3">
 			<div>
@@ -614,31 +402,17 @@
 					class="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"
 				></textarea>
 			</div>
-			{#if activeTab === 'cloud' && canUseCloud}
-				<div>
-					<label for="checkpoint-listed" class="block text-xs font-medium text-gray-600 mb-1">可见性</label>
-					<label class="flex items-center gap-2 cursor-pointer">
-						<input
-							id="checkpoint-listed"
-							type="checkbox"
-							bind:checked={newCheckpointIsListed}
-							class="w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500"
-						/>
-						<span class="text-sm text-gray-700">公开列表中可见</span>
-					</label>
-				</div>
-			{/if}
 			<div class="flex gap-2">
 				<button
 					type="button"
-					onclick={createCheckpoint}
+					onclick={createLocalCheckpoint}
 					disabled={isCreating || !newCheckpointTitle.trim()}
 					class="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-teal-600 hover:bg-teal-700 disabled:bg-gray-400 disabled:cursor-not-allowed rounded-lg transition-colors"
 				>
 					{#if isCreating}
 						创建中...
 					{:else}
-						创建{activeTab === 'cloud' ? '云' : '本地'}存档
+						创建存档
 					{/if}
 				</button>
 				<button
@@ -669,41 +443,38 @@
 		</div>
 	{/if}
 
-	<!-- Checkpoint list -->
+	<!-- Unified save list -->
 	<div class="rounded-lg border border-gray-200">
-		{#if checkpoints.length > 0}
+		{#if saves.length > 0}
 			<div class="divide-y divide-gray-100">
-				{#each checkpoints as checkpoint (checkpoint.id)}
+				{#each saves as save (save.id)}
+					{@const badge = getBadge(save.syncStatus)}
 					<div class="p-3 hover:bg-gray-50 transition-colors">
 						<div class="flex items-start justify-between gap-2">
 							<div class="flex-1 min-w-0">
 								<div class="flex items-center gap-2 flex-wrap">
 									<span class="text-sm font-medium text-gray-800 truncate">
-										{checkpoint.title}
+										{save.title}
 									</span>
-									{#if checkpoint.source === 'local'}
-										<span class="px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">本地</span>
-									{:else}
-										<span class="px-1.5 py-0.5 text-xs bg-teal-100 text-teal-700 rounded">
-										{getVisibilityLabel(checkpoint.isListed)}
-										</span>
-									{/if}
+									<span class="px-1.5 py-0.5 text-xs rounded {badge.classes}">
+										{badge.label}
+									</span>
 								</div>
 								<div class="text-xs text-gray-500 mt-0.5">
-									{formatDate(checkpoint.timestamp)}
-									{#if checkpoint.source === 'local'}
-										 · {checkpoint.quadCount} 条数据
+									{formatDate(save.timestamp)}
+									{#if save.quadCount > 0}
+										 · {save.quadCount} 条数据
 									{/if}
 								</div>
-								{#if checkpoint.description}
-									<p class="text-xs text-gray-500 mt-1 line-clamp-2">{checkpoint.description}</p>
+								{#if save.description}
+									<p class="text-xs text-gray-500 mt-1 line-clamp-2">{save.description}</p>
 								{/if}
 							</div>
 							<!-- Three-dot menu -->
 							<div class="relative checkpoint-menu shrink-0">
 								<button
 									type="button"
-									onclick={() => toggleMenu(checkpoint.id)}
+									onclick={() => toggleMenu(save.id)}
 									class="p-1.5 text-gray-500 hover:bg-gray-100 rounded transition-colors"
 									title="更多操作"
 								>
@@ -713,11 +484,11 @@
 										<circle cx="12" cy="19" r="2" />
 									</svg>
 								</button>
-								{#if openMenuId === checkpoint.id}
+								{#if openMenuId === save.id}
 									<div class="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
 										<button
 											type="button"
-											onclick={() => { openMenuId = null; applyCheckpoint(checkpoint); }}
+											onclick={() => { openMenuId = null; applySave(save); }}
 											disabled={isApplying}
 											class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400 flex items-center gap-2"
 										>
@@ -726,11 +497,11 @@
 											</svg>
 											回退
 										</button>
-										{#if checkpoint.source === 'local' && canUseCloud}
+										{#if save.syncStatus === 'local-only' && canUseCloud}
 											<button
 												type="button"
-												onclick={() => { openMenuId = null; uploadToCloud(checkpoint); }}
-												disabled={isUploading}
+												onclick={() => { openMenuId = null; handleUpload(save); }}
+												disabled={isSyncing}
 												class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400 flex items-center gap-2"
 											>
 												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -739,9 +510,22 @@
 												上传云端
 											</button>
 										{/if}
+										{#if save.syncStatus === 'cloud-only'}
+											<button
+												type="button"
+												onclick={() => { openMenuId = null; handleDownload(save); }}
+												disabled={isSyncing}
+												class="w-full px-3 py-1.5 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:text-gray-400 flex items-center gap-2"
+											>
+												<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10" />
+												</svg>
+												下载到本地
+											</button>
+										{/if}
 										<button
 											type="button"
-											onclick={() => { openMenuId = null; deleteCheckpoint(checkpoint); }}
+											onclick={() => { openMenuId = null; handleDelete(save); }}
 											class="w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
 										>
 											<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -758,7 +542,7 @@
 			</div>
 		{:else if !isLoading}
 			<div class="px-3 py-6 text-sm text-gray-400 text-center">
-				{activeTab === 'local' ? '暂无本地存档' : '暂无云端存档'}
+				暂无存档
 			</div>
 		{:else}
 			<div class="px-3 py-6 text-sm text-gray-400 text-center">

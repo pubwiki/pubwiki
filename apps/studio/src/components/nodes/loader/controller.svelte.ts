@@ -170,7 +170,7 @@ export async function initializeLoader(
 		
 		// Build JS modules registry (json, State, partial-json, hash, pubwiki)
 		const pubwikiModule = pubwikiContext
-			? createPubWikiModule(pubwikiContext) as unknown as Parameters<typeof buildJsModules>[0]['pubwikiModule']
+			? createPubWikiModule(pubwikiContext)
 			: undefined;
 		const jsModules = await buildJsModules({
 			rdfStore,

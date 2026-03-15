@@ -14,6 +14,7 @@ export {
   patchArtifact,
   type PublishMetadata,
   type PatchMetadata,
+  type SaveDataForPublish,
 } from './publish';
 
 // Local file import/export

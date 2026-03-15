@@ -14,18 +14,11 @@ import type { Checkpoint } from '../types.js'
 
 // ============ Database Records ============
 
-export interface CheckpointRecord {
-  /** Primary key - unique checkpoint ID */
-  id: string
-  /** User-provided title */
-  title: string
-  /** Optional description */
-  description?: string
-  /** Creation timestamp */
-  timestamp: number
-  /** Number of quads in checkpoint */
-  quadCount: number
-}
+/**
+ * Dexie record type — currently identical to Checkpoint.
+ * Kept as alias so store internals don't depend on the domain type directly.
+ */
+export type CheckpointRecord = Checkpoint
 
 export interface CheckpointDataRecord {
   /** Primary key - checkpoint ID */
@@ -92,29 +85,14 @@ export class CheckpointStore {
    * Save checkpoint metadata
    */
   async saveCheckpoint(checkpoint: Checkpoint): Promise<void> {
-    await this.db.checkpoints.put({
-      id: checkpoint.id,
-      title: checkpoint.title,
-      description: checkpoint.description,
-      timestamp: checkpoint.timestamp,
-      quadCount: checkpoint.quadCount
-    })
+    await this.db.checkpoints.put(checkpoint)
   }
 
   /**
    * Get checkpoint metadata by id
    */
   async getCheckpoint(id: string): Promise<Checkpoint | null> {
-    const record = await this.db.checkpoints.get(id)
-    if (!record) return null
-    
-    return {
-      id: record.id,
-      title: record.title,
-      description: record.description,
-      timestamp: record.timestamp,
-      quadCount: record.quadCount
-    }
+    return await this.db.checkpoints.get(id) ?? null
   }
 
   /**
@@ -129,18 +107,10 @@ export class CheckpointStore {
    * List all checkpoints, sorted by timestamp descending
    */
   async listCheckpoints(): Promise<Checkpoint[]> {
-    const records = await this.db.checkpoints
+    return this.db.checkpoints
       .orderBy('timestamp')
       .reverse()
       .toArray()
-    
-    return records.map(record => ({
-      id: record.id,
-      title: record.title,
-      description: record.description,
-      timestamp: record.timestamp,
-      quadCount: record.quadCount
-    }))
   }
 
   /**

@@ -53,6 +53,23 @@ async function sha256Hex(data: string): Promise<string> {
   return computeSha256Hex(encoded.buffer as ArrayBuffer);
 }
 
+// ─── Quads Hash ─────────────────────────────────────────────────────
+
+/**
+ * Compute a content-addressable hash for serialized RDF quads.
+ *
+ * Uses RFC 8785 JCS for deterministic serialization, then SHA-256.
+ * This is the **single source of truth** for quadsHash — both client
+ * (studio save upload) and server (save verification) MUST use this.
+ *
+ * @param quads - Array of serialized quad objects (e.g. `{ subject, predicate, object, graph? }`)
+ * @returns 64-char hex string (full SHA-256)
+ */
+export async function computeQuadsHash(quads: unknown[]): Promise<string> {
+  const payload = canonicalize(quads);
+  return sha256Hex(payload);
+}
+
 // ─── Content Hash ───────────────────────────────────────────────────
 
 /**

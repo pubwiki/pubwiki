@@ -33,6 +33,20 @@ type ArtifactNodeContent = components['schemas']['ArtifactNodeContent'];
 // ============================================================================
 // Descriptor and FormData Creation
 // ============================================================================
+
+/**
+ * Save data prepared for inclusion in an artifact publish/patch request.
+ * The SAVE node is included as a first-class graph node alongside VFS, STATE, etc.
+ */
+export interface SaveDataForPublish {
+	/** The SAVE node to include in the graph */
+	node: CreateArtifactNode;
+	/** Serialized quads binary data (quads.bin) */
+	archive: Uint8Array;
+	/** SHA-256 hex hash of the archive (used as form data key) */
+	quadsHash: string;
+}
+
 export interface PublishMetadata {
 	/** Artifact ID - client-generated UUID, used for both create and update */
 	artifactId: string;
@@ -56,6 +70,8 @@ export interface PublishMetadata {
 		saveCommit: string;
 		sandboxNodeId: string;
 	};
+	/** Optional save data to include in the artifact graph */
+	saveData?: SaveDataForPublish;
 }
 
 /**
@@ -227,6 +243,11 @@ export async function publishArtifact(
 	// Prepare nodes and VFS archives
 	const { nodes: apiNodes, vfsArchives } = await prepareNodesForPublish(nodes);
 
+	// Include SAVE node from save data if present
+	if (metadata.saveData) {
+		apiNodes.push(metadata.saveData.node);
+	}
+
 	// Convert edges to API format
 	const apiEdges: ArtifactEdgeDescriptor[] = edges.map((edge) => ({
 		source: edge.source,
@@ -288,7 +309,9 @@ export async function publishArtifact(
 				// Homepage markdown if provided
 				_homepage: metadata.homepage,
 				// Pre-packaged build data from OPFS (if any)
-				_buildData: buildData
+				_buildData: buildData,
+				// Save quads archive if present
+				_saveData: metadata.saveData
 			},
 			bodySerializer: (body) => {
 				const formData = new FormData();
@@ -316,6 +339,13 @@ export async function publishArtifact(
 					formData.append(`buildMeta[${bd.buildCacheKey}]`, JSON.stringify(bd.fileHashes));
 				}
 				
+				// Add save quads archive if present
+				const sd = body._saveData as SaveDataForPublish | undefined;
+				if (sd) {
+					const blob = new Blob([sd.archive.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+					formData.append(`save[${sd.quadsHash}]`, blob, `${sd.quadsHash}.bin`);
+				}
+
 				// Add homepage markdown if provided
 				const homepage = body._homepage as string | undefined;
 				if (homepage && homepage.trim().length > 0) {
@@ -370,6 +400,8 @@ export interface PatchMetadata {
 		saveCommit: string;
 		sandboxNodeId: string;
 	};
+	/** Optional save data to include in the artifact graph */
+	saveData?: SaveDataForPublish;
 }
 
 /**
@@ -549,6 +581,11 @@ export async function patchArtifact(
 		targetHandle: edge.targetHandle ?? undefined
 	}));
 
+	// Include SAVE node from save data if present
+	if (metadata.saveData) {
+		currentNodes.push(metadata.saveData.node);
+	}
+
 	// Compute diff
 	const { addNodes, removeNodeIds, addEdges, removeEdges } = computeGraphDiff(
 		currentNodes,
@@ -646,7 +683,9 @@ export async function patchArtifact(
 				// VFS archives will be added in bodySerializer
 				_vfsArchives: patchVfsArchives,
 				// Pre-packaged build data from OPFS (if any)
-				_buildData: buildData
+				_buildData: buildData,
+				// Save quads archive if present
+				_saveData: metadata.saveData
 			},
 			bodySerializer: (body) => {
 				const formData = new FormData();
@@ -668,6 +707,13 @@ export async function patchArtifact(
 					formData.append(`build[${bd.buildCacheKey}]`, blob, `${bd.buildCacheKey}.tar.gz`);
 					// Send per-file hashes as JSON metadata for build_cache table
 					formData.append(`buildMeta[${bd.buildCacheKey}]`, JSON.stringify(bd.fileHashes));
+				}
+
+				// Add save quads archive if present
+				const sd = body._saveData as SaveDataForPublish | undefined;
+				if (sd) {
+					const blob = new Blob([sd.archive.buffer as ArrayBuffer], { type: 'application/octet-stream' });
+					formData.append(`save[${sd.quadsHash}]`, blob, `${sd.quadsHash}.bin`);
 				}
 				
 				return formData;

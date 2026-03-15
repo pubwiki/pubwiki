@@ -295,6 +295,13 @@ export class RDFStore {
     return this.checkpointManager.hasCheckpoint(id)
   }
 
+  /**
+   * Get raw serialized quad data for a checkpoint (for upload without deserialization)
+   */
+  async getCheckpointRawData(id: string): Promise<import('./convert.js').SerializedQuad[] | null> {
+    return this.checkpointManager.getCheckpointRawData(id)
+  }
+
   // ========== Events ==========
 
   /**

@@ -42,7 +42,7 @@ export async function buildJsModules(options: {
 	const modules: JsModuleRegistry = new Map();
 
 	// JSON module (preloaded globally)
-	modules.set('json', { module: createJsonModule() as unknown as JsModuleDefinition, mode: 'global' });
+	modules.set('json', { module: createJsonModule(), mode: 'global' });
 
 	// State module (global, if RDF store is available)
 	if (options.rdfStore && options.stateNodeId) {
@@ -57,7 +57,7 @@ export async function buildJsModules(options: {
 	modules.set('partial-json', { module: createPartialJsonModule() });
 
 	// Hash module (xxhash via WASM)
-	modules.set('hash', { module: await createHashModule() as unknown as JsModuleDefinition });
+	modules.set('hash', { module: await createHashModule() });
 
 	// PubWiki module (optional)
 	if (options.pubwikiModule) {

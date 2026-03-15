@@ -1,12 +1,10 @@
 /**
  * Save Checkpoint Service
  * 
- * Manages save checkpoints using the new save API:
- * - POST /saves - Create save with quads.bin data
- * - GET /saves - List saves by stateNodeId
- * - GET /saves/{commit} - Get save details
- * - GET /saves/{commit}/data - Download save data
- * - DELETE /saves/{commit} - Delete save
+ * Manages save checkpoints with unified local/cloud model:
+ * - Local checkpoints stored in IndexedDB via RDFStore (always available)
+ * - Cloud saves uploaded to backend via POST /saves (requires published artifact)
+ * - Unified list merges both sources with sync status badges
  * 
  * Save commit is globally unique and computed via computeNodeCommit(saveId, parent, contentHash, 'SAVE').
  * contentHash is computed via computeContentHash(saveContent) from the SAVE metadata object.
@@ -14,10 +12,19 @@
 
 import type { RDFStore } from '@pubwiki/rdfstore';
 import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
-import type { SaveDetail } from '@pubwiki/api';
-import { computeContentHash, computeNodeCommit } from '@pubwiki/api';
+import type { SaveDetail, CreateArtifactNode } from '@pubwiki/api';
+import { computeContentHash, computeNodeCommit, computeQuadsHash } from '@pubwiki/api';
 import { createApiClient } from '@pubwiki/api/client';
+import { canonicalize } from 'json-canonicalize';
 import { API_BASE_URL } from '$lib/config';
+import {
+  putSyncMetadata,
+  getSyncMetadata,
+  updateSyncMetadata,
+  findSyncMetadataByQuadsHash,
+  getSyncMetadataBatch,
+  deleteSyncMetadata,
+} from './sync-metadata-store';
 
 // Create a singleton API client
 const apiClient = createApiClient(API_BASE_URL);
@@ -54,7 +61,257 @@ export interface CreateSaveResult {
 }
 
 /**
- * Create a save checkpoint by uploading RDF quads to the backend.
+ * Sync status for a unified save entry
+ */
+export type SyncStatus = 'local-only' | 'synced' | 'cloud-only';
+
+/**
+ * Unified save entry that merges local checkpoint and cloud save data
+ */
+export interface UnifiedSave {
+  /** Checkpoint ID (= saveId = nodeId) */
+  id: string;
+  title: string;
+  description?: string;
+  timestamp: number;
+  quadCount: number;
+  quadsHash?: string;
+  cloudCommit?: string;
+  syncStatus: SyncStatus;
+  isListed?: boolean;
+}
+
+/**
+ * Options for uploading a local checkpoint to cloud
+ */
+export interface UploadSaveOptions {
+  /** STATE node ID */
+  stateNodeId: string;
+  /** Artifact ID */
+  artifactId: string;
+  /** Artifact commit hash */
+  artifactCommit: string;
+  /** Parent save commit (optional) */
+  parent?: string | null;
+  /** Whether save is listed in public lists */
+  isListed?: boolean;
+}
+
+/**
+ * Upload a local checkpoint to the cloud.
+ * Uses the checkpoint's ID as saveId to maintain ID consistency.
+ * After successful upload, updates the local checkpoint's sync state.
+ */
+export async function uploadSaveToCloud(
+  store: RDFStore,
+  checkpointId: string,
+  options: UploadSaveOptions
+): Promise<{ commit: string }> {
+  // 1. Get checkpoint metadata and raw data
+  const checkpoint = await store.getCheckpoint(checkpointId);
+  if (!checkpoint) throw new Error(`Checkpoint not found: ${checkpointId}`);
+
+  const rawData = await store.getCheckpointRawData(checkpointId);
+  if (!rawData) throw new Error(`Checkpoint data not found: ${checkpointId}`);
+
+  // 2. Serialize to binary format using canonical JSON
+  const canonicalJson = canonicalize(rawData);
+  const quadsData = new TextEncoder().encode(canonicalJson);
+
+  // 3. Compute quadsHash (reuse from sync metadata if available)
+  const existingMeta = await getSyncMetadata(checkpointId);
+  const quadsHash = existingMeta?.quadsHash
+    ?? await computeQuadsHash(rawData);
+
+  // 4. Build the SAVE content object
+  const saveContent = {
+    type: 'SAVE' as const,
+    stateNodeId: options.stateNodeId,
+    artifactId: options.artifactId,
+    artifactCommit: options.artifactCommit,
+    quadsHash,
+    title: checkpoint.title ?? null,
+    description: checkpoint.description ?? null,
+  };
+
+  // 5. Compute contentHash and commit
+  const contentHash = await computeContentHash(saveContent);
+  const commit = await computeNodeCommit(checkpointId, options.parent ?? null, contentHash, 'SAVE');
+
+  // 6. POST to /saves
+  const { error: postError } = await apiClient.POST('/saves', {
+    body: {
+      metadata: {
+        saveId: checkpointId,
+        stateNodeId: options.stateNodeId,
+        commit,
+        parent: options.parent ?? null,
+        artifactId: options.artifactId,
+        artifactCommit: options.artifactCommit,
+        contentHash,
+        quadsHash,
+        title: checkpoint.title,
+        description: checkpoint.description,
+        isListed: options.isListed ?? false
+      },
+      data: new Blob([quadsData], { type: 'application/octet-stream' })
+    } as any,
+    bodySerializer: (body: any) => {
+      const fd = new FormData();
+      fd.append('metadata', JSON.stringify(body.metadata));
+      fd.append('data', body.data);
+      return fd;
+    },
+  });
+
+  if (postError) {
+    throw new Error((postError as any)?.error || '上传存档失败');
+  }
+
+  // 7. Update sync metadata at studio layer
+  await putSyncMetadata({
+    checkpointId,
+    quadsHash,
+    cloudCommit: commit,
+    cloudSyncedAt: Date.now(),
+  });
+
+  return { commit };
+}
+
+/**
+ * Pull a cloud-only save to local storage.
+ * If a local checkpoint with matching quadsHash already exists, just update its sync state.
+ */
+export async function pullSaveFromCloud(
+  store: RDFStore,
+  save: SaveDetail
+): Promise<void> {
+  // 1. Check if we already have a local checkpoint with matching quadsHash
+  const existingMeta = await findSyncMetadataByQuadsHash(save.quadsHash);
+  if (existingMeta) {
+    await updateSyncMetadata(existingMeta.checkpointId, {
+      cloudCommit: save.commit,
+      cloudSyncedAt: Date.now(),
+    });
+    return;
+  }
+
+  // 2. Download quad data from cloud
+  const { data: quadsText, error: fetchError } = await apiClient.GET('/saves/{commit}/data', {
+    params: { path: { commit: save.commit } },
+    parseAs: 'text',
+  });
+
+  if (fetchError || !quadsText) {
+    throw new Error('下载存档数据失败');
+  }
+
+  const quads = JSON.parse(quadsText as string);
+
+  // 3. Create a local checkpoint with the cloud data
+  const rdfQuads = quads.map(toRdfQuad);
+  await store.clear();
+  await store.batchInsert(rdfQuads);
+  const cp = await store.checkpoint({
+    id: save.saveId,
+    title: save.title ?? `Save ${save.commit.slice(0, 8)}`,
+    description: save.description ?? undefined,
+  });
+
+  // 4. Save sync metadata at studio layer
+  await putSyncMetadata({
+    checkpointId: cp.id,
+    quadsHash: save.quadsHash,
+    cloudCommit: save.commit,
+    cloudSyncedAt: Date.now(),
+  });
+}
+
+/**
+ * List unified saves by merging local checkpoints and cloud saves.
+ * Matches by cloudCommit first, then by quadsHash as fallback.
+ */
+export async function listUnifiedSaves(
+  store: RDFStore,
+  stateNodeId: string,
+): Promise<UnifiedSave[]> {
+  // Parallel fetch
+  const [localCheckpoints, cloudSaves] = await Promise.all([
+    store.listCheckpoints(),
+    fetchSaves(stateNodeId).catch(() => [] as SaveDetail[]),
+  ]);
+
+  // Batch-fetch sync metadata for all local checkpoints
+  const syncMap = await getSyncMetadataBatch(localCheckpoints.map(cp => cp.id));
+
+  // Build indexes for cloud saves
+  const cloudByCommit = new Map(cloudSaves.map(s => [s.commit, s]));
+  const cloudByHash = new Map(cloudSaves.map(s => [s.quadsHash, s]));
+
+  const result: UnifiedSave[] = [];
+  const matchedCloudCommits = new Set<string>();
+
+  // 1. Process local checkpoints, try to match against cloud
+  for (const cp of localCheckpoints) {
+    const meta = syncMap.get(cp.id);
+    let cloudMatch: SaveDetail | undefined;
+
+    if (meta?.cloudCommit) {
+      cloudMatch = cloudByCommit.get(meta.cloudCommit);
+    }
+    if (!cloudMatch && meta?.quadsHash) {
+      cloudMatch = cloudByHash.get(meta.quadsHash);
+    }
+
+    if (cloudMatch) {
+      matchedCloudCommits.add(cloudMatch.commit);
+      result.push({
+        id: cp.id,
+        title: cp.title,
+        description: cp.description,
+        timestamp: cp.timestamp,
+        quadCount: cp.quadCount,
+        quadsHash: meta?.quadsHash,
+        cloudCommit: cloudMatch.commit,
+        syncStatus: 'synced',
+        isListed: cloudMatch.isListed,
+      });
+    } else {
+      result.push({
+        id: cp.id,
+        title: cp.title,
+        description: cp.description,
+        timestamp: cp.timestamp,
+        quadCount: cp.quadCount,
+        quadsHash: meta?.quadsHash,
+        syncStatus: 'local-only',
+      });
+    }
+  }
+
+  // 2. Cloud-only saves (not matched by any local checkpoint)
+  for (const save of cloudSaves) {
+    if (!matchedCloudCommits.has(save.commit)) {
+      result.push({
+        id: save.saveId,
+        title: save.title ?? `Save ${save.commit.slice(0, 8)}`,
+        description: save.description ?? undefined,
+        timestamp: new Date(save.createdAt).getTime(),
+        quadCount: 0,
+        quadsHash: save.quadsHash,
+        cloudCommit: save.commit,
+        syncStatus: 'cloud-only',
+        isListed: save.isListed,
+      });
+    }
+  }
+
+  return result.sort((a, b) => b.timestamp - a.timestamp);
+}
+
+/**
+ * Create a save checkpoint by first creating a local checkpoint, then uploading to cloud.
  * 
  * @param store - The local RDF store
  * @param options - Save options
@@ -67,66 +324,26 @@ export async function createSaveCheckpoint(
   try {
     const saveId = options.saveId ?? crypto.randomUUID();
 
-    // 1. Export current state as RDF quads
-    const rdfQuads = await store.getAllQuads();
-    
-    // 2. Serialize quads to binary format
-    const quadsJson = JSON.stringify(rdfQuads.map(fromRdfQuad));
-    const quadsData = new TextEncoder().encode(quadsJson);
-
-    // 3. Compute quadsHash (SHA-256 of the binary data)
-    const quadsHashBuffer = await crypto.subtle.digest('SHA-256', quadsData);
-    const quadsHash = Array.from(new Uint8Array(quadsHashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
-
-    // 4. Build the SAVE content object (must match server-side SaveNodeContent exactly)
-    const saveContent = {
-      type: 'SAVE' as const,
-      stateNodeId: options.stateNodeId,
-      artifactId: options.artifactId,
-      artifactCommit: options.artifactCommit,
-      quadsHash,
-      title: options.title ?? null,
-      description: options.description ?? null,
-    };
-
-    // 5. Compute contentHash and commit using the same algorithms as the backend
-    const contentHash = await computeContentHash(saveContent);
-    const commit = await computeNodeCommit(saveId, options.parent ?? null, contentHash, 'SAVE');
-
-    // 6. POST to /saves
-    const { data: save, error: postError } = await apiClient.POST('/saves', {
-      body: {
-        metadata: {
-          saveId,
-          stateNodeId: options.stateNodeId,
-          commit,
-          parent: options.parent ?? null,
-          artifactId: options.artifactId,
-          artifactCommit: options.artifactCommit,
-          contentHash,
-          quadsHash,
-          title: options.title,
-          description: options.description,
-          isListed: options.isListed ?? false
-        },
-        data: new Blob([quadsData], { type: 'application/octet-stream' })
-      } as any,
-      bodySerializer: (body: any) => {
-        const fd = new FormData();
-        fd.append('metadata', JSON.stringify(body.metadata));
-        fd.append('data', body.data);
-        return fd;
-      },
+    // 1. Create local checkpoint first
+    const cp = await store.checkpoint({
+      id: saveId,
+      title: options.title ?? 'Untitled Save',
+      description: options.description ?? undefined,
     });
 
-    if (postError || !save) {
-      return {
-        success: false,
-        error: (postError as any)?.error || '创建存档失败'
-      };
-    }
+    // 2. Upload to cloud
+    const { commit } = await uploadSaveToCloud(store, cp.id, {
+      stateNodeId: options.stateNodeId,
+      parent: options.parent,
+      artifactId: options.artifactId,
+      artifactCommit: options.artifactCommit,
+      isListed: options.isListed,
+    });
 
-    return { success: true, save };
+    // 3. Fetch the created save detail from the backend
+    const save = await getSave(commit);
+
+    return { success: true, save: save ?? undefined };
   } catch (e) {
     return {
       success: false,
@@ -238,3 +455,74 @@ export async function deleteSave(commit: string): Promise<void> {
  * @deprecated computeSaveCommit is no longer needed. createSaveCheckpoint now
  * computes contentHash and commit internally using computeContentHash/computeNodeCommit.
  */
+
+/**
+ * Data prepared for including a SAVE node in an artifact publish/patch request.
+ * The SAVE node is included as a first-class artifact node instead of being
+ * uploaded separately via the runtime saves API.
+ */
+export interface PreparedSaveData {
+  /** Computed save commit hash (used as entrypoint.saveCommit) */
+  saveCommit: string;
+  /** The SAVE node to include in the artifact graph's nodes array */
+  saveNode: CreateArtifactNode;
+  /** Serialized quads binary data (quads.bin) */
+  quadsData: Uint8Array;
+  /** SHA-256 hex hash of quadsData (used as form data key: save[{quadsHash}]) */
+  quadsHash: string;
+}
+
+/**
+ * Prepare a local save checkpoint for inclusion in an artifact publish/patch request.
+ *
+ * Unlike createSaveCheckpoint() which uploads to the runtime saves API (POST /saves),
+ * this function only prepares the data locally. The caller is responsible for including
+ * the SAVE node in the artifact's nodes array and the binary data in the form data.
+ *
+ * Uses canonical JSON for deterministic quadsHash computation.
+ */
+export async function prepareSaveForPublish(
+  store: RDFStore,
+  options: CreateSaveOptions,
+): Promise<PreparedSaveData> {
+  const saveId = options.saveId ?? crypto.randomUUID();
+
+  // 1. Export current state as RDF quads
+  const rdfQuads = await store.getAllQuads();
+
+  // 2. Serialize quads using canonical JSON for deterministic hashing
+  const serialized = rdfQuads.map(fromRdfQuad);
+  const canonicalJson = canonicalize(serialized);
+  const quadsData = new TextEncoder().encode(canonicalJson);
+
+  // 3. Compute quadsHash via shared utility
+  const quadsHash = await computeQuadsHash(serialized);
+
+  // 4. Build the SAVE content object
+  const saveContent = {
+    type: 'SAVE' as const,
+    stateNodeId: options.stateNodeId,
+    artifactId: options.artifactId,
+    artifactCommit: options.artifactCommit,
+    quadsHash,
+    title: options.title ?? null,
+    description: options.description ?? null,
+  };
+
+  // 5. Compute contentHash and commit
+  const contentHash = await computeContentHash(saveContent);
+  const commit = await computeNodeCommit(saveId, null, contentHash, 'SAVE');
+
+  // 6. Build the CreateArtifactNode
+  const saveNode: CreateArtifactNode = {
+    nodeId: saveId,
+    commit,
+    parent: null,
+    type: 'SAVE' as CreateArtifactNode['type'],
+    name: options.title || undefined,
+    content: saveContent as CreateArtifactNode['content'],
+    contentHash,
+  };
+
+  return { saveCommit: commit, saveNode, quadsData, quadsHash };
+}

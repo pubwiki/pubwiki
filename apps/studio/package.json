@@ -58,6 +58,7 @@
 		"flowbite-svelte": "catalog:",
 		"ignore": "^7.0.5",
 		"isomorphic-git": "^1.36.1",
+		"json-canonicalize": "^2.0.0",
 		"jsonrepair": "^3.13.2",
 		"jszip": "^3.10.1",
 		"lexical": "catalog:",

@@ -191,6 +191,7 @@ InputNodeContent:
         $ref: '#/Mountpoint'
     generationConfig:
       $ref: '#/InputGenerationConfig'
+      nullable: true
 
 # PROMPT 节点内容
 PromptNodeContent:
@@ -213,7 +214,6 @@ GeneratedNodeContent:
   required:
     - type
     - blocks
-    - inputRef
   properties:
     type:
       type: string
@@ -288,6 +288,7 @@ StateNodeContent:
       description: 状态节点的名称
     description:
       type: string
+      nullable: true
       description: 状态节点的描述
 
 # VFS 挂载配置
@@ -344,17 +345,21 @@ VfsNodeContent:
     mounts:
       type: array
       description: VfsMountConfig[] 挂载配置
+      nullable: true
       items:
         $ref: '#/VfsMountConfig'
     fileCount:
       type: integer
       description: 文件总数
+      nullable: true
     totalSize:
       type: integer
       description: 总大小 (bytes)
+      nullable: true
     fileTree:
       type: array
       description: 文件目录树
+      nullable: true
       items:
         $ref: '#/VfsFileInfo'
 

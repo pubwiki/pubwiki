@@ -71,6 +71,9 @@ export class CheckpointManager {
     this.ensureOpen()
     const id = options.id ?? crypto.randomUUID()
     
+    // Convert RDF.js Quads to serializable format
+    const data = quads.map(fromRdfQuad)
+
     // Save checkpoint metadata
     const checkpoint: Checkpoint = {
       id,
@@ -81,8 +84,7 @@ export class CheckpointManager {
     }
     await this.store.saveCheckpoint(checkpoint)
 
-    // Save checkpoint data (convert RDF.js Quads to simple Quads)
-    const data = quads.map(fromRdfQuad)
+    // Save checkpoint data
     await this.store.saveCheckpointData(id, data)
 
     return checkpoint
@@ -130,6 +132,14 @@ export class CheckpointManager {
   async hasCheckpoint(id: string): Promise<boolean> {
     this.ensureOpen()
     return this.store.hasCheckpoint(id)
+  }
+
+  /**
+   * Get raw serialized quad data for a checkpoint (for upload)
+   */
+  async getCheckpointRawData(id: string): Promise<import('../convert.js').SerializedQuad[] | null> {
+    this.ensureOpen()
+    return this.store.getCheckpointData(id)
   }
 }
 

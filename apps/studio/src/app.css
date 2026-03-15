@@ -3,6 +3,6 @@
 @plugin '@tailwindcss/typography';
 
 /* Include classes from external packages */
-@source "../../packages/svelte-chat/src/**/*.svelte";
-@source "../../packages/ui/src/**/*.svelte";
-@source "../../packages/world-editor/src/**/*.svelte";
+@source "../../../packages/svelte-chat/src/**/*.svelte";
+@source "../../../packages/ui/src/**/*.svelte";
+@source "../../../packages/world-editor/src/**/*.svelte";

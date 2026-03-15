@@ -1241,7 +1241,7 @@ export interface components {
              */
             type: "GENERATED";
             blocks: components["schemas"]["MessageBlock"][];
-            inputRef: components["schemas"]["NodeRef"];
+            inputRef?: components["schemas"]["NodeRef"];
             promptRefs?: components["schemas"]["NodeRef"][];
             indirectPromptRefs?: components["schemas"]["NodeRef"][];
             inputVfsRef?: components["schemas"]["VfsRef"];
@@ -1276,7 +1276,7 @@ export interface components {
             /** @description 状态节点的名称 */
             name: string;
             /** @description 状态节点的描述 */
-            description?: string;
+            description?: string | null;
         };
         VfsNodeContent: {
             /**
@@ -1287,13 +1287,13 @@ export interface components {
             /** @description files.tar.gz 的 SHA-256，用于 R2 路径 vfs/{filesHash}/files.tar.gz */
             filesHash: string;
             /** @description VfsMountConfig[] 挂载配置 */
-            mounts?: components["schemas"]["VfsMountConfig"][];
+            mounts?: components["schemas"]["VfsMountConfig"][] | null;
             /** @description 文件总数 */
-            fileCount?: number;
+            fileCount?: number | null;
             /** @description 总大小 (bytes) */
-            totalSize?: number;
+            totalSize?: number | null;
             /** @description 文件目录树 */
-            fileTree?: components["schemas"]["VfsFileInfo"][];
+            fileTree?: components["schemas"]["VfsFileInfo"][] | null;
         };
         ArtifactNodeContent: components["schemas"]["InputNodeContent"] | components["schemas"]["PromptNodeContent"] | components["schemas"]["GeneratedNodeContent"] | components["schemas"]["SandboxNodeContent"] | components["schemas"]["LoaderNodeContent"] | components["schemas"]["StateNodeContent"] | components["schemas"]["VfsNodeContent"] | components["schemas"]["SaveNodeContent"];
         ProjectRole: {

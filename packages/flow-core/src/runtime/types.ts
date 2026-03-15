@@ -7,9 +7,10 @@
 
 import type { NodeType, NodeContent } from '../types';
 import type { EntrypointConfig } from '../validation';
+import type { JsModuleDefinition } from '@pubwiki/lua';
 
 // Re-export for runtime consumers
-export type { EntrypointConfig };
+export type { EntrypointConfig, JsModuleDefinition };
 
 // ============================================================================
 // Runtime Graph
@@ -69,14 +70,6 @@ export interface JsModuleEntry {
  * JS module registry — name to module entry.
  */
 export type JsModuleRegistry = Map<string, JsModuleEntry>;
-
-/**
- * A JS module definition that can be registered with a backend.
- * Functions are exposed as callable methods in the backend runtime (Lua/TS).
- */
-export interface JsModuleDefinition {
-	[key: string]: (...args: never[]) => unknown;
-}
 
 // ============================================================================
 // Backend Configuration

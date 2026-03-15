@@ -1,4 +1,4 @@
 @import 'tailwindcss';
 
 /* Include classes from external packages */
-@source "../../packages/ui/src/**/*.svelte";
+@source "../../../packages/ui/src/**/*.svelte";

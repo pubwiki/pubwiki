@@ -24,7 +24,8 @@
 	import * as m from '$lib/paraglide/messages';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import EntrypointSection, { type SelectedSave } from './EntrypointSection.svelte';
-	import { createSaveCheckpoint, getArtifactContext } from '$lib/gamesave';
+	import { prepareSaveForPublish, getArtifactContext, putSyncMetadata } from '$lib/gamesave';
+	import type { SaveDataForPublish } from '$lib/io';
 	import { getNodeRDFStore } from '$lib/rdf';
 
 	const hubUrl = PUBLIC_HUB_URL || 'http://localhost:5173';
@@ -64,6 +65,7 @@
 		tags: string[];
 		thumbnailUrl?: string;
 		entrypoint?: { saveCommit: string; sandboxNodeId: string };
+		saveData?: SaveDataForPublish;
 	}
 
 	interface Props {
@@ -186,7 +188,7 @@
 	
 	function snapshotCurrent() {
 		const entrypointKey = selectedSave
-			? `${selectedSave.stateNodeId}:${selectedSave.saveCommit || selectedSave.checkpointId || ''}`
+			? `${selectedSave.stateNodeId}:${selectedSave.checkpointId}`
 			: '';
 		return { name, description, homepage, tagsInput, version, isPrivate, isUnlisted: !isListed, thumbnailUrl, entrypointKey };
 	}
@@ -267,34 +269,37 @@
 		return prefix ? `${prefix}-${randomSuffix}` : randomSuffix;
 	}
 
-	/** Resolve the entrypoint save commit, uploading local checkpoint if needed */
-	async function resolveEntrypoint(): Promise<{ saveCommit: string; sandboxNodeId: string } | undefined> {
+	/** Resolve the entrypoint save commit, preparing SAVE node data for the artifact graph */
+	async function resolveEntrypoint(): Promise<{ saveCommit: string; sandboxNodeId: string; saveData?: SaveDataForPublish } | undefined> {
 		if (!selectedEntrypoint || !selectedSave) return undefined;
 
 		let saveCommit: string;
-		if (selectedSave.source === 'cloud' && selectedSave.saveCommit) {
-			saveCommit = selectedSave.saveCommit;
-		} else if (selectedSave.source === 'local' && selectedSave.checkpointId) {
+		let saveData: SaveDataForPublish | undefined;
+		if (selectedSave.cloudCommit) {
+			// Save already synced to cloud — use existing commit
+			saveCommit = selectedSave.cloudCommit;
+		} else {
+			// Local-only save — need to upload first
 			const ctx = await getArtifactContext(projectId);
 			if (!ctx.isPublished || !ctx.artifactId || !ctx.artifactCommit) {
 				throw new Error('Cannot upload save: artifact not yet published. Please publish first without an entrypoint, then update with one.');
 			}
 			const store = await getNodeRDFStore(selectedSave.stateNodeId);
 			await store.loadCheckpoint(selectedSave.checkpointId);
-			const result = await createSaveCheckpoint(store, {
+			const prepared = await prepareSaveForPublish(store, {
 				stateNodeId: selectedSave.stateNodeId,
 				artifactId: ctx.artifactId,
 				artifactCommit: ctx.artifactCommit,
 				title: selectedSave.title,
 			});
-			if (!result.success || !result.save) {
-				throw new Error(result.error || 'Failed to upload save checkpoint');
-			}
-			saveCommit = result.save.commit;
-		} else {
-			throw new Error('Invalid save selection');
+			saveCommit = prepared.saveCommit;
+			saveData = {
+				node: prepared.saveNode,
+				archive: prepared.quadsData,
+				quadsHash: prepared.quadsHash,
+			};
 		}
-		return { sandboxNodeId: selectedEntrypoint, saveCommit };
+		return { sandboxNodeId: selectedEntrypoint, saveCommit, saveData };
 	}
 
 	/** Validate common form fields before submit */
@@ -325,6 +330,12 @@
 			const resolvedEntrypoint = await resolveEntrypoint();
 			const buildKey = resolvedBuildCacheKey ?? undefined;
 
+			// Extract entrypoint without saveData for metadata
+			const entrypoint = resolvedEntrypoint
+				? { saveCommit: resolvedEntrypoint.saveCommit, sandboxNodeId: resolvedEntrypoint.sandboxNodeId }
+				: undefined;
+			const saveData = resolvedEntrypoint?.saveData;
+
 			if (publishState.state.isDraft) {
 				// First-time publish (POST)
 				const metadata: PublishMetadata = {
@@ -338,7 +349,8 @@
 					tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
 					homepage: homepage.trim() || undefined,
 					parentCommit: null,
-					entrypoint: resolvedEntrypoint,
+					entrypoint,
+					saveData,
 				};
 				await onPublish(metadata, nodesToPublish, edgesToPublish, buildKey);
 				successMessage = m.studio_published_success();
@@ -352,12 +364,27 @@
 					isPrivate,
 					tags: tagsInput.split(',').map((t) => t.trim()).filter((t) => t.length > 0),
 					thumbnailUrl: thumbnailUrl.trim() || undefined,
-					entrypoint: resolvedEntrypoint,
+					entrypoint,
+					saveData,
 				};
 				await onUpdate(metadata, nodesToPublish, edgesToPublish, buildKey);
 				successMessage = m.studio_updated_success();
 			}
 			publishState.setMetadataBaseline(snapshotCurrent());
+
+			// Update local checkpoint sync state if we uploaded a local save during publish
+			if (resolvedEntrypoint?.saveData && selectedSave) {
+				try {
+					await putSyncMetadata({
+						checkpointId: selectedSave.checkpointId,
+						quadsHash: resolvedEntrypoint.saveData.quadsHash,
+						cloudCommit: resolvedEntrypoint.saveCommit,
+						cloudSyncedAt: Date.now(),
+					});
+				} catch {
+					// Non-critical — sync state update failure shouldn't block publish success
+				}
+			}
 		} catch (err) {
 			errorMessage = err instanceof Error ? err.message : m.studio_publish_failed();
 		} finally {

@@ -6,7 +6,7 @@ export type { paths, components, operations } from './generated/openapi';
 export type { TextContent, GameRef, ReaderContentBlock, ReaderContent } from './types/content';
 
 // 共享工具函数（客户端 & 服务端通用）
-export { computeContentHash, computeNodeCommit, computeArtifactCommit, computeSha256Hex, computeBuildCacheKey, computeConfigKey } from './utils';
+export { computeContentHash, computeNodeCommit, computeArtifactCommit, computeSha256Hex, computeBuildCacheKey, computeConfigKey, computeQuadsHash } from './utils';
 export type { ArtifactCommitNode, ArtifactCommitEdge, SaveContent } from './utils';
 
 // 便捷类型别名
