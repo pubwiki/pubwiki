@@ -26,6 +26,7 @@ import type { ProjectBuildResult } from '@pubwiki/bundler';
 import { computeBuildCacheKey, computeConfigKey } from '@pubwiki/api';
 import { computeVfsFileHashes, computeVfsContentHash } from './vfs-content-hash';
 import { getNodeVfs } from '$lib/vfs';
+import { ImportMapManager } from '../../components/monaco/import-map';
 
 /** Result returned by `runBuild()`. */
 export interface BuildRunResult {
@@ -131,7 +132,33 @@ export async function runBuild(params: {
 			return { success: false, buildCacheKey, contentHash, error: errorMsg };
 		}
 
-		return { success: true, buildCacheKey, contentHash };
+		// 6. Write resolved package versions back to importmap.json.
+		//    The import map serves as a lightweight lockfile for CDN-resolved packages.
+		//    Only populated when an L3 (local compile) build occurred.
+		//    After writing, we recompute hashes so the returned buildCacheKey reflects
+		//    the actual VFS state. The smart cache (resolve() dep matching) will reuse
+		//    the existing build output under the new key on next lookup.
+		const resolvedVersions = buildAwareVfs.getResolvedPackageVersions();
+		let finalBuildCacheKey = buildCacheKey;
+		let finalContentHash = contentHash;
+
+		if (resolvedVersions.size > 0) {
+			try {
+				const importMapManager = new ImportMapManager(nodeVfs);
+				await importMapManager.mergeResolvedPackages(resolvedVersions);
+
+				// Recompute hashes since importmap.json was modified.
+				finalContentHash = await computeVfsContentHash(projectId, vfsNodeId);
+				finalBuildCacheKey = await computeBuildCacheKey({
+					filesHash: finalContentHash,
+					entryFiles: projectConfig.entryFiles,
+				});
+			} catch (err) {
+				console.warn('[buildRunner] Failed to write back import map:', err);
+			}
+		}
+
+		return { success: true, buildCacheKey: finalBuildCacheKey, contentHash: finalContentHash };
 	} finally {
 		await buildAwareVfs.dispose();
 	}

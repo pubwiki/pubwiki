@@ -317,6 +317,11 @@ export class ESBuildEngine {
                 this.addDependency(currentEntry, resolved.path)
               }
 
+              // External namespace — pass through without bundling
+              if (resolved.namespace === 'external') {
+                return { path: resolved.path, external: true }
+              }
+
               return {
                 path: resolved.path,
                 namespace: resolved.namespace,

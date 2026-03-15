@@ -47,6 +47,13 @@ export {
   type TsConfigContent
 } from './service'
 
+// Package version resolution
+export {
+  PackageVersionResolver,
+  type FileReader as PackageFileReader,
+  type VersionMap,
+} from './core/package-version-resolver'
+
 // Factory function
 import type { BundlerOptions } from './types'
 import { BundlerService } from './service'

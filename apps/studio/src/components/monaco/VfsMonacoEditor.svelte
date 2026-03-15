@@ -10,6 +10,7 @@
 	import { VfsMonacoAdapter } from '$lib/vfs/monaco-adapter';
 	import { getLanguageFromPath, isScriptFile } from './language';
 	import { ImportMapManager } from './import-map';
+	import { PackageVersionResolver } from '@pubwiki/bundler';
 	import type { VfsMonacoEditorProps } from './types';
 
 	// ============================================================================
@@ -130,10 +131,35 @@
 			vfsAdapter = new VfsMonacoAdapter(vfs, instanceId);
 			
 			// Initialize import map manager if auto-imports is enabled
+			let importMapForLsp = { imports: {} as Record<string, string>, scopes: {} as Record<string, Record<string, string>> };
 			if (autoImports) {
-				importMapManager = new ImportMapManager(vfs);
+				// Load package versions from package.json / lock files
+				const versionResolver = new PackageVersionResolver(
+					{
+						readTextFile: async (path: string) => {
+							try {
+								const file = await vfs.readFile(path);
+								if (file.content === null) return null;
+								if (file.content instanceof ArrayBuffer) {
+									return new TextDecoder().decode(file.content);
+								}
+								return file.content as string;
+							} catch {
+								return null;
+							}
+						},
+						exists: (path: string) => vfs.exists(path),
+					},
+					'/'
+				);
+				await versionResolver.load();
+
+				importMapManager = new ImportMapManager(vfs, {
+					packageVersionResolver: versionResolver.hasVersions() ? versionResolver : undefined,
+				});
 				await importMapManager.initializeKnownImports();
 				await importMapManager.ensureImportMapExists();
+				importMapForLsp = await importMapManager.buildImportMapForLsp();
 			}
 			
 			// Create Workspace with customFS using our VFS adapter
@@ -151,18 +177,7 @@
 				lsp: {
 					typescript: {
 						compilerOptions: getTypeScriptCompilerOptions(),
-						importMap: {
-							imports: {
-								// React is needed for JSX support detection by modern-monaco
-								'react': 'https://esm.sh/react@18',
-								'react/': 'https://esm.sh/react@18/',
-								'react-dom': 'https://esm.sh/react-dom@18',
-								'react-dom/': 'https://esm.sh/react-dom@18/',
-								'@pubwiki/sandbox-client': 'https://esm.sh/@pubwiki/sandbox-client@2',
-								'@pubwiki/sandbox-client/': 'https://esm.sh/@pubwiki/sandbox-client@2/',
-							},
-							scopes: {},
-						},
+						importMap: importMapForLsp,
 					},
 				},
 			});

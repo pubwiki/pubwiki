@@ -14,6 +14,7 @@
 import type { Vfs } from '@pubwiki/vfs'
 import { ESBuildEngine } from '../core/esbuild-engine'
 import { DependencyResolver } from '../core/dependency-resolver'
+import { PackageVersionResolver } from '../core/package-version-resolver'
 import type { BuildCacheStorage } from '../cache'
 import { getOpfsBuildCacheStorage } from '../cache/opfs'
 import type {
@@ -101,6 +102,17 @@ export class BundlerService {
 
       this.engine.setFileLoader(fileLoader)
       this.resolver.setFileExistsChecker(fileExistsChecker)
+
+      // Load package version info from package.json / lock files
+      const versionResolver = new PackageVersionResolver(
+        this.createVersionFileReader(),
+        '/'
+      )
+      await versionResolver.load()
+      if (versionResolver.hasVersions()) {
+        this.resolver.setPackageVersionResolver(versionResolver)
+        console.log('[BundlerService] Package versions loaded from project files')
+      }
 
       // Wire progress callbacks so resolver/engine activity is surfaced
       this.resolver.setProgressCallback((message) => {
@@ -478,6 +490,14 @@ export class BundlerService {
   }
 
   /**
+   * Get all resolved npm package versions collected during builds.
+   * Used for writing resolved versions back to importmap.json.
+   */
+  getResolvedPackageVersions(): ReadonlyMap<string, string> {
+    return this.resolver.getResolvedPackageVersions()
+  }
+
+  /**
    * Check if a build is currently in progress
    */
   isBuildInProgress(): boolean {
@@ -569,6 +589,29 @@ export class BundlerService {
   private createFileExistsChecker() {
     return async (path: string): Promise<boolean> => {
       return this.vfs.exists(path)
+    }
+  }
+
+  /**
+   * Create a FileReader adapter for PackageVersionResolver from VFS
+   */
+  private createVersionFileReader() {
+    return {
+      readTextFile: async (path: string): Promise<string | null> => {
+        try {
+          const file = await this.vfs.readFile(path)
+          if (file.content === null) return null
+          if (file.content instanceof ArrayBuffer) {
+            return new TextDecoder().decode(file.content)
+          }
+          return file.content as string
+        } catch {
+          return null
+        }
+      },
+      exists: async (path: string): Promise<boolean> => {
+        return this.vfs.exists(path)
+      }
     }
   }
 }

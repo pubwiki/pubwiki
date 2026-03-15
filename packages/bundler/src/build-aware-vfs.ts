@@ -492,6 +492,14 @@ class BuildAwareVfsProvider implements VfsProvider {
     }
     this.compiledCache.clear()
   }
+
+  /**
+   * Get all resolved npm package versions from the bundler.
+   * Returns an empty map if no L3 build was performed (cache hit).
+   */
+  getResolvedPackageVersions(): ReadonlyMap<string, string> {
+    return this.bundlerService?.getResolvedPackageVersions() ?? new Map()
+  }
 }
 
 // ============================================================================
@@ -508,9 +516,9 @@ class BuildAwareVfsProvider implements VfsProvider {
  * @param config - Configuration including source VFS, project config, cache storage
  * @returns A Vfs instance backed by the BuildAwareVfsProvider
  */
-export function createBuildAwareVfs(config: BuildAwareVfsConfig): Vfs<BuildAwareVfsProvider> & { warmup(): Promise<void> } {
+export function createBuildAwareVfs(config: BuildAwareVfsConfig): Vfs<BuildAwareVfsProvider> & { warmup(): Promise<void>; getResolvedPackageVersions(): ReadonlyMap<string, string> } {
   const provider = new BuildAwareVfsProvider(config)
-  const vfs = new Vfs(provider) as Vfs<BuildAwareVfsProvider> & { warmup(): Promise<void> }
+  const vfs = new Vfs(provider) as Vfs<BuildAwareVfsProvider> & { warmup(): Promise<void>; getResolvedPackageVersions(): ReadonlyMap<string, string> }
 
   // Forward events from source VFS to the new VFS
   const unsubCreate = config.sourceVfs.events.on('file:created', (event) => {
@@ -535,6 +543,9 @@ export function createBuildAwareVfs(config: BuildAwareVfsConfig): Vfs<BuildAware
 
   // Expose warmup — eagerly resolves all entry files through cache hierarchy
   vfs.warmup = () => provider.warmup()
+
+  // Expose resolved package versions — available after L3 build
+  vfs.getResolvedPackageVersions = () => provider.getResolvedPackageVersions()
 
   return vfs
 }

@@ -3,6 +3,7 @@
  */
 
 import type { Vfs, VfsProvider } from '@pubwiki/vfs';
+import type { PackageVersionResolver } from '@pubwiki/bundler';
 
 // ============================================================================
 // Types
@@ -22,6 +23,8 @@ export interface ImportMapConfig {
 	builtinPackages?: Set<string>;
 	/** Default import map to use when creating a new file */
 	defaultImports?: Record<string, string>;
+	/** Optional package version resolver for pinning dependency versions */
+	packageVersionResolver?: PackageVersionResolver;
 }
 
 // ============================================================================
@@ -80,6 +83,7 @@ export class ImportMapManager {
 	
 	private knownImports = new Set<string>();
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private readonly packageVersionResolver?: PackageVersionResolver;
 
 	constructor(
 		private readonly vfs: Vfs<VfsProvider>,
@@ -88,15 +92,8 @@ export class ImportMapManager {
 		this.importMapPath = config.path ?? DEFAULT_IMPORTMAP_PATH;
 		this.cdnUrl = config.cdnUrl ?? DEFAULT_CDN_URL;
 		this.builtinPackages = config.builtinPackages ?? DEFAULT_BUILTIN_PACKAGES;
-		this.defaultImports = config.defaultImports ?? {
-			// React is needed for JSX support detection by modern-monaco
-			'react': `${this.cdnUrl}/react@18`,
-			'react/': `${this.cdnUrl}/react@18/`,
-			'react-dom': `${this.cdnUrl}/react-dom@18`,
-			'react-dom/': `${this.cdnUrl}/react-dom@18/`,
-			'@pubwiki/sandbox-client': `${this.cdnUrl}/@pubwiki/sandbox-client@2`,
-			'@pubwiki/sandbox-client/': `${this.cdnUrl}/@pubwiki/sandbox-client@2/`,
-		};
+		this.packageVersionResolver = config.packageVersionResolver;
+		this.defaultImports = config.defaultImports ?? this.buildDefaultImports();
 	}
 
 	/**
@@ -185,12 +182,13 @@ export class ImportMapManager {
 		let hasChanges = false;
 		for (const pkg of newImports) {
 			if (!importMap.imports[pkg]) {
-				// Map package to CDN
-				importMap.imports[pkg] = `${this.cdnUrl}/${pkg}`;
+				// Map package to CDN with version if available
+				const versionedPkg = this.applyVersion(pkg);
+				importMap.imports[pkg] = `${this.cdnUrl}/${versionedPkg}`;
 				// Also add path mapping for subpath imports
-				importMap.imports[`${pkg}/`] = `${this.cdnUrl}/${pkg}/`;
+				importMap.imports[`${pkg}/`] = `${this.cdnUrl}/${versionedPkg}/`;
 				hasChanges = true;
-				console.log('[ImportMapManager] Auto-added import mapping:', pkg);
+				console.log('[ImportMapManager] Auto-added import mapping:', pkg, '->', versionedPkg);
 			}
 		}
 		
@@ -232,5 +230,84 @@ export class ImportMapManager {
 	dispose(): void {
 		this.cancelPendingDetection();
 		this.knownImports.clear();
+	}
+
+	/**
+	 * Merge resolved package versions from the bundler into the import map.
+	 * Called after a build to persist resolved CDN URLs as a lightweight lockfile.
+	 *
+	 * @param resolvedVersions - Map of base package name → versioned name (e.g. "react" → "react@18.2.0")
+	 */
+	async mergeResolvedPackages(resolvedVersions: ReadonlyMap<string, string>): Promise<void> {
+		if (resolvedVersions.size === 0) return;
+
+		const importMap = await this.readImportMap();
+		let hasChanges = false;
+
+		for (const [pkg, versionedPkg] of resolvedVersions) {
+			const expectedUrl = `${this.cdnUrl}/${versionedPkg}`;
+			if (importMap.imports[pkg] !== expectedUrl) {
+				importMap.imports[pkg] = expectedUrl;
+				importMap.imports[`${pkg}/`] = `${expectedUrl}/`;
+				hasChanges = true;
+			}
+		}
+
+		if (hasChanges) {
+			await this.writeImportMap(importMap);
+			console.log('[ImportMapManager] Merged resolved package versions into importmap.json');
+		}
+	}
+
+	/**
+	 * Build the current import map as a plain object, suitable for passing
+	 * to modern-monaco's LSP `importMap` option at init time.
+	 * This reads from the persisted importmap.json.
+	 */
+	async buildImportMapForLsp(): Promise<ImportMap> {
+		const stored = await this.readImportMap();
+		// If nothing stored yet, use defaults
+		if (Object.keys(stored.imports).length === 0) {
+			return { imports: { ...this.defaultImports }, scopes: {} };
+		}
+		return stored;
+	}
+
+	// ============================================================================
+	// Private helpers
+	// ============================================================================
+
+	/**
+	 * Build default import mappings, using versions from PackageVersionResolver
+	 * when available, falling back to hard-coded major versions.
+	 */
+	private buildDefaultImports(): Record<string, string> {
+		const v = (pkg: string, fallbackVersion: string): string => {
+			return this.applyVersion(pkg, fallbackVersion);
+		};
+
+		return {
+			// React is needed for JSX support detection by modern-monaco
+			'react': `${this.cdnUrl}/${v('react', '18')}`,
+			'react/': `${this.cdnUrl}/${v('react', '18')}/`,
+			'react-dom': `${this.cdnUrl}/${v('react-dom', '18')}`,
+			'react-dom/': `${this.cdnUrl}/${v('react-dom', '18')}/`,
+			'@pubwiki/sandbox-client': `${this.cdnUrl}/${v('@pubwiki/sandbox-client', '2')}`,
+			'@pubwiki/sandbox-client/': `${this.cdnUrl}/${v('@pubwiki/sandbox-client', '2')}/`,
+		};
+	}
+
+	/**
+	 * Apply a resolved version to a package name.
+	 * Returns "pkg@version" if a version is available, otherwise "pkg" (or "pkg@fallback").
+	 */
+	private applyVersion(pkg: string, fallbackVersion?: string): string {
+		const version = this.packageVersionResolver?.getVersion(pkg);
+		if (version) {
+			console.log(`[ImportMap] Resolved ${pkg} → ${version} (from lock/package.json)`);
+			return `${pkg}@${version}`;
+		}
+		if (fallbackVersion) return `${pkg}@${fallbackVersion}`;
+		return pkg;
 	}
 }

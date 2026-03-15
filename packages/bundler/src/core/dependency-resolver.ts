@@ -12,6 +12,7 @@
 
 import type { ResolveResult, CDNConfig } from './types'
 import type { BuildCacheStorage } from '../cache'
+import type { PackageVersionResolver } from './package-version-resolver'
 
 /**
  * Dependency Resolver
@@ -27,6 +28,12 @@ export class DependencyResolver {
   // Progress callback for reporting package resolution
   private progressCallback?: (message: string) => void
 
+  // Package version resolver for pinned dependency versions
+  private packageVersionResolver?: PackageVersionResolver
+
+  // Resolved npm packages for importmap write-back (basePkg → versionedName, e.g. "react" → "react@18.2.0")
+  private resolvedPackageVersions = new Map<string, string>()
+
 
   constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean>; cache?: BuildCacheStorage }) {
     this.fileExistsChecker = options?.fileExistsChecker
@@ -37,7 +44,8 @@ export class DependencyResolver {
       {
         name: 'esm.sh',
         url: (pkg) => {
-          return `https://esm.sh/${pkg}`
+          const ext = this.getEsmShExternalParam()
+          return `https://esm.sh/${pkg}${ext}`
         },
         priority: 1
       },
@@ -67,6 +75,15 @@ export class DependencyResolver {
    */
   setProgressCallback(callback: (message: string) => void): void {
     this.progressCallback = callback
+  }
+
+  /**
+   * Set the package version resolver for pinning dependency versions.
+   * When set, resolved versions are appended to CDN URLs.
+   */
+  setPackageVersionResolver(resolver: PackageVersionResolver): void {
+    this.packageVersionResolver = resolver
+    this.esmShExternalParam = null // Reset cached param so it's recomputed
   }
 
   /**
@@ -104,7 +121,11 @@ export class DependencyResolver {
     else if (specifier.startsWith('http://') || specifier.startsWith('https://')) {
       result = { path: specifier, namespace: 'http' }
     }
-    // 4. npm packages
+    // 4. data: URIs — mark external, not resolvable as packages
+    else if (specifier.startsWith('data:')) {
+      result = { path: specifier, namespace: 'external' }
+    }
+    // 5. npm packages
     else {
       result = await this.resolveNpmPackage(specifier)
     }
@@ -204,23 +225,37 @@ export class DependencyResolver {
   }
 
   /**
-   * Resolve npm package
+   * Resolve npm package.
+   * 
+   * When a PackageVersionResolver is available, the resolved version is
+   * appended to the bare package name so CDN URLs pin to a specific version
+   * (e.g. `react` → `react@18.2.0`).
    */
   private async resolveNpmPackage(packageName: string): Promise<ResolveResult> {
+    // Build a versioned specifier if we have version info
+    const versionedName = this.applyVersion(packageName)
+
+    // Track resolved package for importmap write-back
+    this.trackResolvedPackage(packageName)
+
+    // Cache key includes esm.sh external params so entries invalidate when deps change
+    const esmExt = this.getEsmShExternalParam()
+    const cacheKey = esmExt ? `${versionedName}${esmExt}` : versionedName
+
     // Check persistent CDN cache
     if (this.cache) {
-      const cached = await this.cache.getCdnUrl(packageName)
+      const cached = await this.cache.getCdnUrl(cacheKey)
       if (cached) {
         return { path: cached, namespace: 'http' }
       }
     }
 
     // Notify progress — this is the slow path (uncached HEAD requests)
-    this.progressCallback?.(`Resolving ${packageName}`)
+    this.progressCallback?.(`Resolving ${versionedName}`)
 
     // Try multiple CDNs
     for (const cdn of this.cdnConfigs) {
-      const url = cdn.url(packageName)
+      const url = cdn.url(versionedName)
 
       try {
         // HEAD request to check if resource exists
@@ -228,7 +263,7 @@ export class DependencyResolver {
 
         if (response.ok) {
           if (this.cache) {
-            this.cache.setCdnUrl(packageName, url).catch(() => {})
+            this.cache.setCdnUrl(cacheKey, url).catch(() => {})
           }
           return { path: url, namespace: 'http' }
         }
@@ -239,9 +274,85 @@ export class DependencyResolver {
     }
 
     // All CDNs failed, use fallback
-    const fallbackUrl = this.cdnConfigs[0].url(packageName)
-    console.warn(`[Resolver] All CDNs failed for ${packageName}, using fallback`)
+    const fallbackUrl = this.cdnConfigs[0].url(versionedName)
+    console.warn(`[Resolver] All CDNs failed for ${versionedName}, using fallback`)
     return { path: fallbackUrl, namespace: 'http' }
+  }
+
+  /**
+   * Append version from PackageVersionResolver to a bare package name.
+   *
+   * Handles both bare names (`react`) and deep imports (`react/jsx-runtime`).
+   * If the specifier already contains a version (`react@18`), it is returned as-is.
+   */
+  private applyVersion(specifier: string): string {
+    if (!this.packageVersionResolver) return specifier
+
+    // Already has an explicit version (e.g. react@18)
+    // For scoped packages (@scope/pkg@ver), the version @ is after the first /
+    const hasExplicitVersion = specifier.startsWith('@')
+      ? specifier.slice(specifier.indexOf('/') + 1).includes('@')
+      : specifier.includes('@')
+    if (hasExplicitVersion) return specifier
+
+    // Extract the bare package name (handle deep imports like react/jsx-runtime)
+    let pkgName: string
+    if (specifier.startsWith('@')) {
+      // Scoped: @scope/name or @scope/name/sub/path
+      const parts = specifier.split('/')
+      pkgName = parts.slice(0, 2).join('/')
+    } else {
+      pkgName = specifier.split('/')[0]
+    }
+
+    const version = this.packageVersionResolver.getVersion(pkgName)
+    if (!version) return specifier
+
+    // Insert version after the package name
+    const subpath = specifier.slice(pkgName.length) // e.g. "/jsx-runtime" or ""
+    const result = `${pkgName}@${version}${subpath}`
+    console.log(`[Resolver] Pinned version: ${specifier} → ${result}`)
+    return result
+  }
+
+  /**
+   * Track a resolved npm package for importmap.json write-back.
+   * Only records packages where a version was resolved.
+   */
+  private trackResolvedPackage(specifier: string): void {
+    if (!this.packageVersionResolver) return
+
+    // Extract the bare package name (handle deep imports like react/jsx-runtime)
+    const basePkg = specifier.startsWith('@')
+      ? specifier.split('/').slice(0, 2).join('/')
+      : specifier.split('/')[0]
+
+    if (this.resolvedPackageVersions.has(basePkg)) return
+
+    const version = this.packageVersionResolver.getVersion(basePkg)
+    if (version) {
+      this.resolvedPackageVersions.set(basePkg, `${basePkg}@${version}`)
+    }
+  }
+
+  /**
+   * Build the `?external=` query parameter for esm.sh URLs.
+   *
+   * Without this, esm.sh resolves shared dependencies (e.g. React) to its own
+   * internal paths, causing our bundler to load duplicate module instances.
+   * With `?external=pkg1,pkg2,...`, esm.sh keeps those as bare import specifiers,
+   * so our bundler resolves them through `resolveNpmPackage` to a single canonical URL.
+   */
+  private esmShExternalParam: string | null = null
+  private getEsmShExternalParam(): string {
+    if (this.esmShExternalParam !== null) return this.esmShExternalParam
+    if (!this.packageVersionResolver?.hasVersions()) return ''
+
+    const allPkgs = [...this.packageVersionResolver.getVersionMap().keys()].sort()
+    if (allPkgs.length === 0) return ''
+
+    this.esmShExternalParam = `?external=${allPkgs.join(',')}`
+    return this.esmShExternalParam
   }
 
   /**
@@ -249,6 +360,16 @@ export class DependencyResolver {
    */
   clearCache(): void {
     this.resolveCache.clear()
+    this.resolvedPackageVersions.clear()
+  }
+
+  /**
+   * Get all resolved npm package versions collected during resolution.
+   * Returns a map of base package name → versioned name (e.g. "react" → "react@18.2.0").
+   * Used for writing resolved versions back to importmap.json as a lockfile.
+   */
+  getResolvedPackageVersions(): ReadonlyMap<string, string> {
+    return this.resolvedPackageVersions
   }
 
   /**

@@ -123,6 +123,30 @@ export interface paths {
          *     注意：vfs[xxx] 和 save[xxx] 是动态 key，在 OpenAPI 中通过 additionalProperties 描述。
          */
         post: operations["createArtifact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * 基于已有版本和增量补丁创建新 Artifact 版本
+         * @description 增量更新：客户端提交 baseCommit 和变更内容（新增/删除 nodes/edges），
+         *     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
+         *
+         *     此接口仅用于 graph 变更，不支持 metadata 修改。
+         *     如需修改 artifact metadata，请使用 PUT /artifacts/{id}/metadata
+         */
+        patch: operations["patchArtifact"];
+        trace?: never;
+    };
+    "/artifacts/{artifactId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
         /**
          * 删除 Artifact
          * @description 删除指定 Artifact。需要认证且具有 manage 权限。
@@ -136,15 +160,7 @@ export interface paths {
         delete: operations["deleteArtifact"];
         options?: never;
         head?: never;
-        /**
-         * 基于已有版本和增量补丁创建新 Artifact 版本
-         * @description 增量更新：客户端提交 baseCommit 和变更内容（新增/删除 nodes/edges），
-         *     服务端将基准版本的完整 graph 与 patch 合并后创建新版本。
-         *
-         *     此接口仅用于 graph 变更，不支持 metadata 修改。
-         *     如需修改 artifact metadata，请使用 PUT /artifacts/{id}/metadata
-         */
-        patch: operations["patchArtifact"];
+        patch?: never;
         trace?: never;
     };
     "/artifacts/search": {
@@ -2400,54 +2416,6 @@ export interface operations {
             };
         };
     };
-    deleteArtifact: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Artifact ID */
-                artifactId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 删除成功 */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description 未认证 */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description 无权限 */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            /** @description Artifact 不存在 */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-        };
-    };
     patchArtifact: {
         parameters: {
             query?: never;
@@ -2523,6 +2491,54 @@ export interface operations {
             };
             /** @description Commit hash 冲突（该版本已存在） */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    deleteArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact ID */
+                artifactId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 删除成功 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 无权限 */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Artifact 不存在 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

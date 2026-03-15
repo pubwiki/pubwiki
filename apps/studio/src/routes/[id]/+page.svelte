@@ -1057,6 +1057,9 @@
 					await syncService.init(currentProjectId);
 					console.log('[Studio] Draft Sync Service initialized');
 					
+					// Wire VFS change tracking into publish state
+					publishState.setVfsChangesGetter(() => syncService!.state.hasVfsChanges);
+					
 					// VFS change tracking is automatically setup by the $effect
 					// when syncService becomes available
 					
@@ -1321,6 +1324,23 @@
 			lastCloudCommit: newCommit
 		});
 
+		// Commit all VFS changes locally so isDirty resets
+		const vfsNodes = nodes.filter(n => n.data.type === 'VFS');
+		console.log('[Studio] finalizeAfterCommit: VFS nodes to commit:', vfsNodes.length);
+		for (const node of vfsNodes) {
+			try {
+				const vfs = await getNodeVfs(currentProjectId, node.id);
+				const status = await vfs.getStatus();
+				console.log(`[Studio] VFS node ${node.id}: status entries=${status.length}, isDirty=${vfs.isDirty}`);
+				if (status.length > 0) {
+					await vfs.commit(`Published ${newCommit}`);
+					console.log(`[Studio] VFS node ${node.id}: committed, isDirty now=${vfs.isDirty}`);
+				}
+			} catch (err) {
+				console.warn(`[Studio] Failed to commit VFS node ${node.id} after publish:`, err);
+			}
+		}
+
 		publishState.markPublished(newCommit);
 	}
 
@@ -1370,9 +1390,7 @@
 			throw new Error(patchResult.error || 'Failed to update artifact');
 		}
 
-		if (patchResult.hasGraphChanges) {
-			await finalizeAfterCommit(patchResult.newCommit, metadata.name);
-		} else if (metadata.entrypoint) {
+		if (!patchResult.hasGraphChanges && metadata.entrypoint) {
 			// No graph changes but entrypoint needs updating on existing version
 			await apiClient.PUT('/artifacts/{artifactId}/versions/{commitHash}/metadata', {
 				params: { path: { artifactId: currentProjectId, commitHash: patchResult.newCommit } },
@@ -1381,6 +1399,8 @@
 				},
 			});
 		}
+
+		await finalizeAfterCommit(patchResult.newCommit, metadata.name);
 
 		// Always sync all metadata to server (idempotent)
 		await apiClient.PUT('/artifacts/{artifactId}/metadata', {
@@ -1391,6 +1411,7 @@
 				isListed: metadata.isListed,
 				isPrivate: metadata.isPrivate,
 				tags: metadata.tags,
+				thumbnailUrl: metadata.thumbnailUrl,
 			},
 		});
 
