@@ -67,6 +67,7 @@ export type {
 // ─── Game Save ──────────────────────────────────────────────────────
 export {
 	createSaveCheckpoint,
+	createSaveFromQuads,
 	restoreFromSave,
 	fetchSaves,
 	getSave,

@@ -296,6 +296,14 @@ export class RDFStore {
   }
 
   /**
+   * Get a checkpoint's quads without modifying the active store data.
+   * Unlike loadCheckpoint(), this is a read-only operation.
+   */
+  async getCheckpointQuads(id: string): Promise<Quad[] | null> {
+    return this.checkpointManager.loadCheckpointData(id)
+  }
+
+  /**
    * Get raw serialized quad data for a checkpoint (for upload without deserialization)
    */
   async getCheckpointRawData(id: string): Promise<import('./convert.js').SerializedQuad[] | null> {

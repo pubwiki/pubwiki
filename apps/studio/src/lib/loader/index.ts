@@ -43,9 +43,8 @@ export {
 	RDFMessageStore,
 	CHAT_HISTORY_GRAPH_URI,
 	createPubWikiModule,
-	createPubWikiContext,
 	type LLMModuleConfig,
-	type PubWikiModuleContext
+	type PubWikiModuleConfig
 } from './modules';
 
 // Export documentation generator

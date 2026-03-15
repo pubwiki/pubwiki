@@ -26,6 +26,7 @@
 		createLLMModule,
 		createPubWikiModule,
 		createSaveCheckpoint,
+		createSaveFromQuads,
 		type RuntimeGraph,
 		type RuntimeNode,
 		type LoaderBackend,
@@ -447,6 +448,14 @@
 								userInfo.userSaveCommit = result.save.commit;
 							}
 							return result;
+						},
+						createSaveFromQuads: async (quads, options) => {
+							return createSaveFromQuads(
+								quads,
+								options,
+								API_BASE_URL,
+								quadSerializers,
+							);
 						},
 						publishArtifact: async (metadata) => {
 							return playerPublishArtifact(metadata, storedGraphData!);

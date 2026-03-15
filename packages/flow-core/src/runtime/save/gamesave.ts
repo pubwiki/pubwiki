@@ -67,15 +67,12 @@ export interface CreateSaveResult {
 // ============================================================================
 
 /**
- * Create a save checkpoint by uploading RDF quads to the backend.
- * 
- * @param store - Local RDF store
- * @param options - Save metadata
- * @param apiBaseUrl - Backend API base URL (injected)
- * @param serializers - Quad serialisation helpers (injected from @pubwiki/rdfstore)
+ * Create a save checkpoint from explicit quads (without reading from a store).
+ * Use this when you already have the quads (e.g. from a checkpoint snapshot)
+ * and don't want to modify the active store state.
  */
-export async function createSaveCheckpoint(
-	store: SaveRDFStore,
+export async function createSaveFromQuads(
+	quads: RdfQuad[],
 	options: CreateSaveOptions,
 	apiBaseUrl: string,
 	serializers: QuadSerializers,
@@ -83,20 +80,17 @@ export async function createSaveCheckpoint(
 	try {
 		const saveId = options.saveId ?? crypto.randomUUID();
 
-		// 1. Export quads
-		const rdfQuads = await store.getAllQuads();
-
-		// 2. Serialize to binary
-		const quadsJson = JSON.stringify(rdfQuads.map(q => serializers.fromRdfQuad(q)));
+		// 1. Serialize to binary
+		const quadsJson = JSON.stringify(quads.map(q => serializers.fromRdfQuad(q)));
 		const quadsData = new TextEncoder().encode(quadsJson);
 
-		// 3. Compute quadsHash
+		// 2. Compute quadsHash
 		const hashBuffer = await crypto.subtle.digest('SHA-256', quadsData);
 		const quadsHash = Array.from(new Uint8Array(hashBuffer))
 			.map(b => b.toString(16).padStart(2, '0'))
 			.join('');
 
-		// 4. Build SAVE content
+		// 3. Build SAVE content
 		const saveContent = {
 			type: 'SAVE' as const,
 			stateNodeId: options.stateNodeId,
@@ -107,7 +101,7 @@ export async function createSaveCheckpoint(
 			description: options.description ?? null,
 		};
 
-		// 5. Compute hashes
+		// 4. Compute hashes
 		const contentHash = await computeContentHash(saveContent);
 		const commit = await computeNodeCommit(
 			saveId,
@@ -116,7 +110,7 @@ export async function createSaveCheckpoint(
 			'SAVE',
 		);
 
-		// 6. Upload
+		// 5. Upload
 		const formData = new FormData();
 		formData.append(
 			'metadata',
@@ -161,6 +155,25 @@ export async function createSaveCheckpoint(
 			error: e instanceof Error ? e.message : 'Save failed',
 		};
 	}
+}
+
+/**
+ * Create a save checkpoint by uploading RDF quads to the backend.
+ * Reads the current active quads from the store via getAllQuads().
+ * 
+ * @param store - Local RDF store
+ * @param options - Save metadata
+ * @param apiBaseUrl - Backend API base URL (injected)
+ * @param serializers - Quad serialisation helpers (injected from @pubwiki/rdfstore)
+ */
+export async function createSaveCheckpoint(
+	store: SaveRDFStore,
+	options: CreateSaveOptions,
+	apiBaseUrl: string,
+	serializers: QuadSerializers,
+): Promise<CreateSaveResult> {
+	const rdfQuads = await store.getAllQuads();
+	return createSaveFromQuads(rdfQuads, options, apiBaseUrl, serializers);
 }
 
 // ============================================================================

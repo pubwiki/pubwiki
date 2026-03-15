@@ -581,7 +581,25 @@ export async function patchArtifact(
 		targetHandle: edge.targetHandle ?? undefined
 	}));
 
-	// Include SAVE node from save data if present
+	// Carry forward existing SAVE nodes from base graph — they are server-managed
+	// graph nodes not present in the studio workspace. Without this, computeGraphDiff
+	// would treat them as removed since they're never in currentNodes.
+	const newSaveNodeId = metadata.saveData?.node.nodeId;
+	for (const baseNode of baseGraph.nodes) {
+		if (baseNode.type === 'SAVE' && baseNode.id !== newSaveNodeId) {
+			currentNodes.push({
+				nodeId: baseNode.id,
+				commit: baseNode.commit,
+				parent: null,
+				type: baseNode.type as CreateArtifactNode['type'],
+				name: baseNode.name ?? undefined,
+				content: baseNode.content as CreateArtifactNode['content'],
+				contentHash: baseNode.contentHash,
+			});
+		}
+	}
+
+	// Include new/updated SAVE node if present
 	if (metadata.saveData) {
 		currentNodes.push(metadata.saveData.node);
 	}

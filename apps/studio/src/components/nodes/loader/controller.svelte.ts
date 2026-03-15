@@ -39,7 +39,7 @@ import {
 	createLLMModule, 
 	createPubChat, 
 	createPubWikiModule,
-	type PubWikiModuleContext 
+	type PubWikiModuleConfig 
 } from '$lib/loader/modules';
 
 // Re-exports for consumers
@@ -142,7 +142,7 @@ function notifyReloadCallbacks(nodeId: string, result: LoaderInitResult): void {
  * @param assetMounts - Map of mount paths to VFS instances
  * @param rdfStore - Optional RDF store for State API
  * @param llmConfig - LLM configuration from user settings (apiKey, model, baseUrl)
- * @param pubwikiContext - Optional context for PubWiki module (publish/article upload)
+ * @param pubwikiConfig - Optional config for PubWiki module (publish/article upload)
  * @returns LoaderInitResult with success, services, and error
  */
 export async function initializeLoader(
@@ -151,7 +151,7 @@ export async function initializeLoader(
 	assetMounts: Map<string, Vfs<VfsProvider>>,
 	rdfStore: RDFStore | undefined,
 	llmConfig: LLMConfig | undefined,
-	pubwikiContext?: PubWikiModuleContext,
+	pubwikiConfig?: PubWikiModuleConfig,
 	stateNodeId?: string
 ): Promise<LoaderInitResult> {
 	try {
@@ -169,8 +169,8 @@ export async function initializeLoader(
 		}
 		
 		// Build JS modules registry (json, State, partial-json, hash, pubwiki)
-		const pubwikiModule = pubwikiContext
-			? createPubWikiModule(pubwikiContext)
+		const pubwikiModule = pubwikiConfig
+			? createPubWikiModule(pubwikiConfig)
 			: undefined;
 		const jsModules = await buildJsModules({
 			rdfStore,

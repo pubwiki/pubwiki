@@ -36,7 +36,24 @@
 		generateDocs,
 		type DocsGenerationCallbacks
 	} from './controller.svelte';
-	import { createPubWikiContext } from '$lib/loader/modules';
+	import { createApiClient } from '@pubwiki/api/client';
+	import { API_BASE_URL } from '$lib/config';
+	import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
+	import {
+		createSaveCheckpoint as flowCoreSaveCheckpoint,
+		createSaveFromQuads as flowCoreSaveFromQuads,
+		type PubWikiModuleConfig,
+		type RuntimeGraph,
+		type RuntimeNode,
+		type RuntimeEdge,
+	} from '@pubwiki/flow-core';
+	import { getArtifactContext } from '$lib/gamesave';
+	import { publishArtifact as studioPublishArtifact, type PublishMetadata } from '$lib/io/publish';
+	import { requestConfirmation } from '$lib/state/pubwiki-confirm.svelte';
+	import PublishForm from '$components/pubwiki/PublishForm.svelte';
+	import UploadCheckpointForm from '$components/pubwiki/UploadCheckpointForm.svelte';
+	import UploadCheckpointsForm from '$components/pubwiki/UploadCheckpointsForm.svelte';
+	import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
 	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
 	// ============================================================================
@@ -318,14 +335,76 @@
 				baseUrl: settings.effectiveBaseUrl
 			} : undefined;
 			
-			// Create PubWiki context for publish/article upload functionality
-			const pubwikiContext = createPubWikiContext(
-				backendVfsContent.projectId,
-				id,
-				() => ctx.nodes,
-				() => ctx.edges,
-				() => auth.user?.id ?? null
-			);
+			// Create PubWiki module config (flow-core's unified module)
+			const quadSerializers = { fromRdfQuad, toRdfQuad };
+			const formComponents: Record<string, typeof PublishForm> = {
+				publish: PublishForm,
+				uploadCheckpoint: UploadCheckpointForm,
+				uploadCheckpoints: UploadCheckpointsForm,
+				uploadArticle: UploadArticleForm,
+			};
+			const pubwikiConfig: PubWikiModuleConfig = {
+				getGraph: (): RuntimeGraph => {
+					const runtimeNodes = new Map<string, RuntimeNode>();
+					for (const n of ctx.nodes) {
+						runtimeNodes.set(n.id, {
+							id: n.id,
+							type: n.data.type,
+							name: '',
+							content: {} as never,
+							commit: '',
+							contentHash: '',
+						});
+					}
+					const runtimeEdges: RuntimeEdge[] = ctx.edges.map(e => ({
+						source: e.source,
+						target: e.target,
+						sourceHandle: e.sourceHandle ?? '',
+						targetHandle: e.targetHandle ?? '',
+					}));
+					return { nodes: runtimeNodes, edges: runtimeEdges, entrypoint: null, buildCacheKey: null };
+				},
+				projectId: backendVfsContent.projectId,
+				loaderNodeId: id,
+				apiClient: createApiClient(`${API_BASE_URL}/api`),
+				getCurrentUserId: () => auth.user?.id ?? null,
+				confirmation: {
+					async confirm(action, initialValues) {
+						const FormComponent = formComponents[action];
+						if (!FormComponent) return null;
+						return requestConfirmation(
+							action as 'publish' | 'uploadArticle' | 'uploadCheckpoint' | 'uploadCheckpoints',
+							FormComponent,
+							initialValues as Record<string, unknown>,
+						) as Promise<typeof initialValues | null>;
+					},
+				},
+				getArtifactContext: (projectId) => getArtifactContext(projectId),
+				getRDFStore: async (nodeId) => getNodeRDFStore(nodeId),
+				createSaveCheckpoint: (store, options) =>
+					flowCoreSaveCheckpoint(store, options, API_BASE_URL, quadSerializers),
+				createSaveFromQuads: (quads, options) =>
+					flowCoreSaveFromQuads(quads, options, API_BASE_URL, quadSerializers),
+				publishArtifact: async (metadata) => {
+					const finalMetadata: PublishMetadata = {
+						artifactId: crypto.randomUUID(),
+						name: metadata.name,
+						slug: metadata.slug,
+						description: metadata.description || '',
+						version: metadata.version || '1.0.0',
+						isListed: metadata.isListed ?? true,
+						isPrivate: metadata.isPrivate ?? false,
+						tags: metadata.tags || [],
+						homepage: metadata.homepage || undefined,
+					};
+					const result = await studioPublishArtifact(finalMetadata, ctx.nodes, ctx.edges);
+					return {
+						success: result.success,
+						artifactId: result.artifactId,
+						error: result.error,
+					};
+				},
+			};
 			
 			// Initialize loader and get result
 			const result = await initializeLoader(
@@ -334,7 +413,7 @@
 				assetMounts,
 				rdfStore,
 				llmConfig,
-				pubwikiContext,
+				pubwikiConfig,
 				stateNodeId ?? undefined
 			);
 			

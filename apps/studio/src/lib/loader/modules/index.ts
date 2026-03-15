@@ -27,9 +27,8 @@ export {
   createStringModule,
 } from '@pubwiki/flow-core';
 
-// Studio-specific: PubWiki Module (depends on Svelte)
+// PubWiki Module (from flow-core, generic)
 export {
   createPubWikiModule,
-  createPubWikiContext,
-  type PubWikiModuleContext
-} from './pubwiki'
+  type PubWikiModuleConfig
+} from '@pubwiki/flow-core'

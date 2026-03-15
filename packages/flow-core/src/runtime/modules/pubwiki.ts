@@ -8,7 +8,7 @@
 
 import type { RuntimeGraph, ConfirmationHandler, ArtifactContext, JsModuleDefinition } from '../types';
 import { findConnectedStateNode } from '../graph/artifact-loader';
-import type { CreateSaveOptions, CreateSaveResult, SaveRDFStore } from '../save/gamesave';
+import type { CreateSaveOptions, CreateSaveResult, SaveRDFStore, RdfQuad } from '../save/gamesave';
 import type { createApiClient } from '@pubwiki/api/client';
 import type { ReaderContentBlock } from '@pubwiki/api';
 
@@ -22,6 +22,7 @@ import type { ReaderContentBlock } from '@pubwiki/api';
  */
 export interface PubWikiRDFStore extends SaveRDFStore {
 	getCheckpoint(id: string): Promise<{ id: string; title: string; description?: string } | null>;
+	getCheckpointQuads(id: string): Promise<RdfQuad[] | null>;
 	loadCheckpoint(id: string): Promise<void>;
 	checkpoint(opts: { title: string }): Promise<{ id: string; title: string }>;
 }
@@ -50,9 +51,14 @@ export interface PubWikiModuleConfig {
 	getArtifactContext: (projectId: string) => Promise<ArtifactContext>;
 	/** Get RDF store for a state node */
 	getRDFStore: (nodeId: string) => Promise<PubWikiRDFStore>;
-	/** Create a cloud save checkpoint */
+	/** Create a cloud save from the store's current active quads */
 	createSaveCheckpoint: (
 		store: PubWikiRDFStore,
+		options: CreateSaveOptions,
+	) => Promise<CreateSaveResult>;
+	/** Create a cloud save from explicit quads (without touching active state) */
+	createSaveFromQuads: (
+		quads: RdfQuad[],
 		options: CreateSaveOptions,
 	) => Promise<CreateSaveResult>;
 	/** Publish the current project (app-specific logic) */
@@ -188,9 +194,13 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 					return { success: false, error: 'User cancelled the operation' };
 				}
 
-				await store.loadCheckpoint(data.checkpointId);
+				// Read checkpoint quads directly without modifying active store state
+				const quads = await store.getCheckpointQuads(data.checkpointId);
+				if (!quads) {
+					return { success: false, error: `Checkpoint data "${data.checkpointId}" not found.` };
+				}
 
-				const result = await config.createSaveCheckpoint(store, {
+				const result = await config.createSaveFromQuads(quads, {
 					stateNodeId,
 					artifactId: artifactCtx.artifactId,
 					artifactCommit: artifactCtx.artifactCommit,
@@ -266,9 +276,17 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 				const uploadedIds: string[] = [];
 
 				for (const cp of toUpload) {
-					await store.loadCheckpoint(cp.id);
+					// Read checkpoint quads directly without modifying active store state
+					const quads = await store.getCheckpointQuads(cp.id);
+					if (!quads) {
+						return {
+							success: false,
+							checkpointIds: uploadedIds,
+							error: `Checkpoint data "${cp.title}" not found.`,
+						};
+					}
 
-					const result = await config.createSaveCheckpoint(store, {
+					const result = await config.createSaveFromQuads(quads, {
 						stateNodeId,
 						artifactId: artifactCtx.artifactId!,
 						artifactCommit: artifactCtx.artifactCommit!,
@@ -360,18 +378,21 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 					const originalInput = gameRefMap.get(textId);
 					const checkpointId = originalInput?.checkpointId ?? null;
 
+					// Get quads: from specific checkpoint or from current active state
+					let saveQuads: RdfQuad[];
 					if (checkpointId) {
-						const checkpoint = await store.getCheckpoint(checkpointId);
-						if (checkpoint) {
-							await store.loadCheckpoint(checkpointId);
+						const cpQuads = await store.getCheckpointQuads(checkpointId);
+						if (cpQuads) {
+							saveQuads = cpQuads;
 						} else {
-							await store.checkpoint({ title: `Article fallback save (${textId})` });
+							// Checkpoint not found, fall back to current active state
+							saveQuads = await store.getAllQuads();
 						}
 					} else {
-						await store.checkpoint({ title: 'Article auto-save' });
+						saveQuads = await store.getAllQuads();
 					}
 
-					const saveResult = await config.createSaveCheckpoint(store, {
+					const saveResult = await config.createSaveFromQuads(saveQuads, {
 						stateNodeId,
 						artifactId: artifactCtx.artifactId!,
 						artifactCommit: artifactCtx.artifactCommit!,

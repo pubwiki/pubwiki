@@ -11,7 +11,7 @@ import { projectArtifacts } from '../schema/projects';
 import { user } from '../schema/auth';
 import { articles } from '../schema/articles';
 import type { ServiceResult } from './user';
-import { ImmutableGraph, NodeGraphFactory, validateGraph } from '../utils/node-graph';
+import { ImmutableGraph, NodeGraphFactory, validateGraph, validateEntrypoint } from '../utils/node-graph';
 import type {
   ArtifactListItem,
   Pagination,
@@ -1651,6 +1651,13 @@ export class ArtifactService {
         updateFields.changelog = data.changelog;
       }
       if (data.entrypoint !== undefined) {
+        // Validate entrypoint against the version's graph
+        const graphResult = await NodeGraphFactory.fromCommitHash(this.ctx, commitHash);
+        if (!graphResult.success) return graphResult;
+        const entrypointResult = validateEntrypoint(graphResult.data, data.entrypoint);
+        if (!entrypointResult.success) {
+          return { success: false, error: entrypointResult.error! };
+        }
         updateFields.entrypoint = data.entrypoint;
       }
 
