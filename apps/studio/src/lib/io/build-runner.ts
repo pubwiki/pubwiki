@@ -24,7 +24,7 @@
 import { createBuildAwareVfs, getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
 import type { ProjectBuildResult } from '@pubwiki/bundler';
 import { computeBuildCacheKey, computeConfigKey } from '@pubwiki/api';
-import { computeVfsFileHashes, deriveFilesHash } from './vfs-content-hash';
+import { computeVfsFileHashes, computeVfsContentHash } from './vfs-content-hash';
 import { getNodeVfs } from '$lib/vfs';
 
 /** Result returned by `runBuild()`. */
@@ -66,9 +66,11 @@ export async function runBuild(params: {
 		};
 	}
 
-	// 3. Compute per-file hashes, aggregate filesHash, buildCacheKey, and configKey
-	const fileHashes = await computeVfsFileHashes(projectId, vfsNodeId);
-	const contentHash = await deriveFilesHash(fileHashes);
+	// 3. Compute content hash (git-native fast path), per-file hashes, buildCacheKey, and configKey
+	const [contentHash, fileHashes] = await Promise.all([
+		computeVfsContentHash(projectId, vfsNodeId),
+		computeVfsFileHashes(projectId, vfsNodeId),
+	]);
 	const [buildCacheKey, configKey] = await Promise.all([
 		computeBuildCacheKey({
 			filesHash: contentHash,

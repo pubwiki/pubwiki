@@ -1,33 +1,18 @@
 /**
- * Lightweight VFS content hash using isomorphic-git walk.
+ * Lightweight VFS content hashing for local build cache key derivation (L1 OPFS).
  *
- * Unlike computeVfsFilesHash() (tar.gz-based), this avoids packaging
- * and leverages the git index stat cache for unchanged files.
+ * Two strategies:
  *
- * The resulting hash is used ONLY for local build cache key derivation
- * (L1 OPFS). It intentionally differs from the archive-based filesHash
- * used by publish.ts for R2 storage.
+ * **Fast path** (HEAD exists, i.e. at least one commit):
+ *   Uses HEAD commit hash + dirty file OIDs. The commit hash already encodes
+ *   the full tree state of all committed files (this is what git was designed for),
+ *   so we only need to additionally hash the uncommitted changes.
  *
- * How it works:
- *   1. `git.walk(WORKDIR())` traverses all files in the working directory
- *      (including uncommitted changes).
- *   2. For each file, `entry.oid()` returns the git blob SHA-1 hash.
- *      - If the file's stat matches the git index entry, the oid is
- *        returned directly from the index (zero I/O, fast path).
- *      - Otherwise, the file content is read and hashed (slow path).
- *   3. All `[filepath, oid]` pairs are JSON-serialized and SHA-256'd
- *      to produce the final content hash.
+ * **Slow path** (unborn branch, no commits yet):
+ *   Falls back to full WORKDIR walk — all files are "dirty" anyway.
  *
- * Performance vs tar.gz:
- *   - No tar packing or gzip compression
- *   - Unchanged files (matching git index stat) require zero file I/O
- *   - Memory: only a small [path, oid] list (~KB) instead of full archive (~MB)
- *
- * **Hash stability**: The resulting hash depends on isomorphic-git's
- * blob OID algorithm (currently SHA-1 with git's `blob <size>\0` header).
- * If isomorphic-git ever changes to SHA-256 (git's planned transition),
- * all existing OPFS cache entries will miss. This is acceptable — it only
- * triggers a one-time rebuild, not data corruption.
+ * `computeVfsFileHashes` (full per-file map) is kept separate for callers
+ * that need individual file OIDs (e.g. incremental build cache resolution).
  */
 
 import * as git from 'isomorphic-git';
@@ -39,8 +24,10 @@ import { getNodeVfs } from '$lib/vfs';
  * Compute per-file hashes for all files in a VFS node's working directory.
  *
  * Returns a map of { [filepath]: oid } where oid is the git blob SHA-1.
- * This is the primitive used by both `computeVfsContentHash` (aggregate)
- * and `BuildCacheStorage.resolve()` (per-dep comparison).
+ *
+ * Fast path (HEAD exists): reads committed tree OIDs directly from git objects
+ * (zero file I/O for unchanged files), then overlays dirty file hashes.
+ * Slow path (unborn branch): full WORKDIR walk.
  */
 export async function computeVfsFileHashes(
 	projectId: string,
@@ -48,23 +35,74 @@ export async function computeVfsFileHashes(
 ): Promise<Record<string, string>> {
 	const nodeVfs = await getNodeVfs(projectId, nodeId);
 
+	// Try fast path: committed tree + dirty overlay
+	let headCommit: string;
+	try {
+		headCommit = await git.resolveRef({ fs: nodeVfs.gitFs, dir: nodeVfs.gitDir, ref: 'HEAD' });
+	} catch {
+		// Unborn branch — fall back to full WORKDIR walk
+		return computeVfsFileHashesSlow(nodeVfs);
+	}
+
+	// Read committed tree — all file OIDs come from git objects, no file I/O
+	const commitObj = await git.readCommit({ fs: nodeVfs.gitFs, dir: nodeVfs.gitDir, oid: headCommit });
+	const fileMap = new Map<string, string>();
+
+	await git.walk({
+		fs: nodeVfs.gitFs,
+		dir: nodeVfs.gitDir,
+		trees: [git.TREE({ ref: commitObj.commit.tree })],
+		map: async (filepath: string, [entry]: Array<git.WalkerEntry | null>) => {
+			if (!entry || filepath === '.') return undefined;
+			const type = await entry.type();
+			if (type !== 'blob') return undefined;
+			const oid = await entry.oid();
+			const normalizedPath = filepath.startsWith('/') ? filepath : '/' + filepath;
+			fileMap.set(normalizedPath, oid!);
+			return undefined; // don't need return values, we accumulate in fileMap
+		},
+	});
+
+	// Overlay dirty files
+	const matrix = await git.statusMatrix({ fs: nodeVfs.gitFs, dir: nodeVfs.gitDir });
+	for (const [filepath, head, workdir] of matrix) {
+		if (head === 1 && workdir === 1) continue;
+
+		const normalizedPath = filepath.startsWith('/') ? filepath : '/' + filepath;
+		if (workdir === 0) {
+			fileMap.delete(normalizedPath);
+		} else {
+			const content = await nodeVfs.gitFs.promises.readFile(
+				nodeVfs.gitDir === '/' ? '/' + filepath : nodeVfs.gitDir + '/' + filepath,
+			);
+			const blob = typeof content === 'string'
+				? new TextEncoder().encode(content)
+				: content instanceof Uint8Array ? content : new Uint8Array(content);
+			const { oid } = await git.hashBlob({ object: blob });
+			fileMap.set(normalizedPath, oid);
+		}
+	}
+
+	return Object.fromEntries(fileMap);
+}
+
+/** Slow path: full WORKDIR walk for unborn branches. */
+async function computeVfsFileHashesSlow(
+	nodeVfs: { gitFs: Parameters<typeof git.walk>[0]['fs']; gitDir: string },
+): Promise<Record<string, string>> {
 	const entries: [string, string][] = await git.walk({
 		fs: nodeVfs.gitFs,
 		dir: nodeVfs.gitDir,
 		trees: [WORKDIR()],
 		map: async (filepath: string, [entry]: Array<git.WalkerEntry | null>) => {
 			if (!entry || filepath === '.') return undefined;
-
 			const type = await entry.type();
 			if (type !== 'blob') return undefined;
-
 			const oid = await entry.oid();
-			// Prefix with '/' to match esbuild's absolute VFS paths (e.g. '/src/App.tsx')
 			const normalizedPath = filepath.startsWith('/') ? filepath : '/' + filepath;
 			return [normalizedPath, oid] as [string, string];
 		},
 	});
-
 	return Object.fromEntries(entries);
 }
 
@@ -83,17 +121,53 @@ export async function deriveFilesHash(fileHashes: Record<string, string>): Promi
 /**
  * Compute a lightweight content hash for a VFS node's working directory.
  *
- * Uses isomorphic-git's WORKDIR walker to enumerate all files and their
- * blob SHA-1 hashes, then aggregates into a single SHA-256 hash.
+ * Fast path: SHA-256(HEAD commit hash + sorted dirty file [path, oid] pairs).
+ * The commit hash encodes the entire committed tree, so only dirty files need hashing.
  *
- * @param projectId - The project ID
- * @param nodeId    - The VFS node ID
- * @returns SHA-256 hex string representing the content state
+ * Slow path (unborn branch): full WORKDIR walk via computeVfsFileHashes.
+ *
+ * This is the **single source of truth** for content hashing. All callers
+ * needing a content hash for build cache keys should use this function.
  */
 export async function computeVfsContentHash(
 	projectId: string,
 	nodeId: string,
 ): Promise<string> {
-	const fileHashes = await computeVfsFileHashes(projectId, nodeId);
-	return deriveFilesHash(fileHashes);
+	const nodeVfs = await getNodeVfs(projectId, nodeId);
+
+	// Try fast path: HEAD commit + dirty files
+	let headCommit: string;
+	try {
+		headCommit = await git.resolveRef({ fs: nodeVfs.gitFs, dir: nodeVfs.gitDir, ref: 'HEAD' });
+	} catch {
+		// No commits yet (unborn branch) — fall back to full walk
+		const fileHashes = await computeVfsFileHashes(projectId, nodeId);
+		return deriveFilesHash(fileHashes);
+	}
+
+	// statusMatrix returns [filepath, HEAD, WORKDIR, STAGE]
+	const matrix = await git.statusMatrix({ fs: nodeVfs.gitFs, dir: nodeVfs.gitDir });
+	const dirtyEntries: [string, string][] = [];
+
+	for (const [filepath, head, workdir] of matrix) {
+		if (head === 1 && workdir === 1) continue; // unchanged
+
+		const normalizedPath = filepath.startsWith('/') ? filepath : '/' + filepath;
+		if (workdir === 0) {
+			dirtyEntries.push([normalizedPath, 'deleted']);
+		} else {
+			const content = await nodeVfs.gitFs.promises.readFile(
+				nodeVfs.gitDir === '/' ? '/' + filepath : nodeVfs.gitDir + '/' + filepath,
+			);
+			const blob = typeof content === 'string'
+				? new TextEncoder().encode(content)
+				: content instanceof Uint8Array ? content : new Uint8Array(content);
+			const { oid } = await git.hashBlob({ object: blob });
+			dirtyEntries.push([normalizedPath, oid]);
+		}
+	}
+
+	dirtyEntries.sort(([a], [b]) => a.localeCompare(b));
+	const payload = JSON.stringify({ head: headCommit, dirty: dirtyEntries });
+	return computeSha256Hex(new TextEncoder().encode(payload).buffer as ArrayBuffer);
 }
