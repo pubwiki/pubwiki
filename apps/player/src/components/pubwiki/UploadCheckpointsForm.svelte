@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * UploadCheckpointsForm - Studio wrapper with paraglide i18n labels
+	 * UploadCheckpointsForm - Player wrapper with paraglide i18n labels
 	 */
 	import { UploadCheckpointsForm as SharedForm, type UploadCheckpointsFormLabels } from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
@@ -13,12 +13,12 @@
 	let { initialValues, onValuesChange }: Props = $props();
 
 	const labels: UploadCheckpointsFormLabels = {
-		count: (count: number) => m.studio_pubwiki_checkpoints_count({ count }),
-		defaultVisibility: m.studio_pubwiki_checkpoints_default_visibility(),
-		visibilityPublic: m.studio_pubwiki_visibility_public(),
-		visibilityPrivate: m.studio_pubwiki_visibility_private(),
-		visibilityUnlisted: m.studio_pubwiki_visibility_unlisted(),
-		visibilityHint: m.studio_pubwiki_checkpoints_visibility_hint(),
+		count: (count: number) => m.player_pubwiki_checkpoints_count({ count }),
+		defaultVisibility: m.player_pubwiki_checkpoints_default_visibility(),
+		visibilityPublic: m.player_pubwiki_visibility_public(),
+		visibilityPrivate: m.player_pubwiki_visibility_private(),
+		visibilityUnlisted: m.player_pubwiki_visibility_unlisted(),
+		visibilityHint: m.player_pubwiki_checkpoints_visibility_hint(),
 	};
 </script>
 

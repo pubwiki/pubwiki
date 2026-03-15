@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * UploadArticleForm - Studio wrapper with paraglide i18n labels + Lexical editor
+	 * UploadArticleForm - Player wrapper with paraglide i18n labels + Lexical editor
 	 */
 	import { UploadArticleForm as SharedForm, type UploadArticleFormLabels } from '@pubwiki/ui/components';
 	import { Editor } from '@pubwiki/reader';
@@ -14,13 +14,13 @@
 	let { initialValues, onValuesChange }: Props = $props();
 
 	const labels: UploadArticleFormLabels = {
-		title: m.studio_pubwiki_field_title(),
-		titlePlaceholder: m.studio_pubwiki_field_title_placeholder(),
-		visibility: m.studio_pubwiki_field_visibility(),
-		visibilityPublic: m.studio_pubwiki_visibility_public(),
-		visibilityPrivate: m.studio_pubwiki_visibility_private(),
-		visibilityUnlisted: m.studio_pubwiki_visibility_unlisted(),
-		content: m.studio_pubwiki_field_content(),
+		title: m.player_pubwiki_field_title(),
+		titlePlaceholder: m.player_pubwiki_field_title_placeholder(),
+		visibility: m.player_pubwiki_field_visibility(),
+		visibilityPublic: m.player_pubwiki_visibility_public(),
+		visibilityPrivate: m.player_pubwiki_visibility_private(),
+		visibilityUnlisted: m.player_pubwiki_visibility_unlisted(),
+		content: m.player_pubwiki_field_content(),
 	};
 </script>
 

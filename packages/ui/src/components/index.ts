@@ -7,3 +7,4 @@ export * from './Dropdown';
 export * from './VirtualizedDropdown';
 export * from './Toast';
 export * from './Toggle';
+export * from './PubWikiConfirm';

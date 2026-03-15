@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * PublishForm - Studio wrapper with paraglide i18n labels + thumbnail upload + author
+	 * PublishForm - Player wrapper with paraglide i18n labels + thumbnail upload + author
 	 */
 	import { PublishForm as SharedPublishForm, type PublishFormLabels } from '@pubwiki/ui/components';
 	import { useAuth } from '@pubwiki/ui/stores';
@@ -40,19 +40,19 @@
 	}
 
 	const labels: PublishFormLabels = {
-		name: m.studio_pubwiki_field_name(),
-		namePlaceholder: m.studio_pubwiki_field_name_placeholder(),
-		description: m.studio_pubwiki_field_description(),
-		descriptionPlaceholder: m.studio_pubwiki_field_description_placeholder(),
-		version: m.studio_pubwiki_field_version(),
-		visibility: m.studio_pubwiki_field_visibility(),
-		visibilityPublic: m.studio_pubwiki_visibility_public(),
-		visibilityPrivate: m.studio_pubwiki_visibility_private(),
-		visibilityUnlisted: m.studio_pubwiki_visibility_unlisted(),
-		homepage: m.studio_pubwiki_field_homepage(),
-		homepagePlaceholder: m.studio_pubwiki_field_homepage_placeholder(),
-		homepageHelp: m.studio_pubwiki_field_homepage_help(),
-		preview: m.studio_pubwiki_field_preview(),
+		name: m.player_pubwiki_field_name(),
+		namePlaceholder: m.player_pubwiki_field_name_placeholder(),
+		description: m.player_pubwiki_field_description(),
+		descriptionPlaceholder: m.player_pubwiki_field_description_placeholder(),
+		version: m.player_pubwiki_field_version(),
+		visibility: m.player_pubwiki_field_visibility(),
+		visibilityPublic: m.player_pubwiki_visibility_public(),
+		visibilityPrivate: m.player_pubwiki_visibility_private(),
+		visibilityUnlisted: m.player_pubwiki_visibility_unlisted(),
+		homepage: m.player_pubwiki_field_homepage(),
+		homepagePlaceholder: m.player_pubwiki_field_homepage_placeholder(),
+		homepageHelp: m.player_pubwiki_field_homepage_help(),
+		preview: m.player_pubwiki_field_preview(),
 	};
 </script>
 

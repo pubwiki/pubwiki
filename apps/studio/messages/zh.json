@@ -525,6 +525,7 @@
 	"studio_pubwiki_field_homepage": "首页内容（Markdown）",
 	"studio_pubwiki_field_homepage_placeholder": "# 欢迎\n\n在这里描述您的项目...",
 	"studio_pubwiki_field_homepage_help": "项目首页的 Markdown 内容",
+	"studio_pubwiki_field_preview": "预览",
 	"studio_pubwiki_field_title": "标题",
 	"studio_pubwiki_field_title_placeholder": "文章标题",
 	"studio_pubwiki_field_content": "文章内容",

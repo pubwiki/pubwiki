@@ -15,8 +15,7 @@
 	import type { Node, Edge } from '@xyflow/svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
 	import type { VFSNodeData } from '$lib/types';
-	import type { Checkpoint as LocalCheckpoint } from '@pubwiki/rdfstore';
-	import type { SaveDetail } from '@pubwiki/api';
+	import type { UnifiedSave, SyncStatus } from '$lib/gamesave';
 	import { nodeStore } from '$lib/persistence/node-store.svelte';
 	import { Dropdown } from '@pubwiki/ui/components';
 	import { HandleId } from '$lib/graph';
@@ -26,7 +25,7 @@
 	import { computeBuildCacheKey, computeConfigKey } from '@pubwiki/api';
 	import { computeVfsFileHashes, computeVfsContentHash } from '$lib/io/vfs-content-hash';
 	import { getNodeRDFStore } from '$lib/rdf';
-	import { fetchSaves, getArtifactContext } from '$lib/gamesave';
+	import { listUnifiedSaves } from '$lib/gamesave';
 
 	export type BuildStatus =
 		| { state: 'none' }
@@ -38,11 +37,10 @@
 
 	/** Represents a selected save for publish */
 	export interface SelectedSave {
-		source: 'local' | 'cloud';
-		/** Local checkpoint ID (for local saves) */
-		checkpointId?: string;
-		/** Cloud save commit (for cloud saves) */
-		saveCommit?: string;
+		/** Checkpoint ID (= saveId = nodeId) */
+		checkpointId: string;
+		/** Cloud commit hash if synced */
+		cloudCommit?: string;
 		/** STATE node ID this save belongs to */
 		stateNodeId: string;
 		/** Display title */
@@ -123,16 +121,15 @@
 	});
 
 	// ---- Save selector state ----
-	interface SaveItem {
+	interface SaveDropdownItem {
 		id: string;
 		label: string;
-		source: 'local' | 'cloud';
+		syncStatus?: SyncStatus;
 		checkpointId?: string;
-		saveCommit?: string;
-		timestamp: number;
+		cloudCommit?: string;
 	}
 
-	let saveItems = $state<SaveItem[]>([]);
+	let unifiedSaves = $state<UnifiedSave[]>([]);
 	let loadingSaves = $state(false);
 	let selectedSaveId = $state<string | null>(null);
 	let showCreateForm = $state(false);
@@ -145,15 +142,21 @@
 
 	// Build the save dropdown items: "No save" + saves + "Create New"
 	let saveDropdownItems = $derived.by(() => {
-		const items: SaveItem[] = [
-			{ id: NONE_ID, label: 'No save selected', source: 'local', timestamp: Infinity },
+		const items: SaveDropdownItem[] = [
+			{ id: NONE_ID, label: 'No save selected' },
 		];
-		items.push(...saveItems);
+		for (const s of unifiedSaves) {
+			items.push({
+				id: s.id,
+				label: s.title,
+				syncStatus: s.syncStatus,
+				checkpointId: s.id,
+				cloudCommit: s.cloudCommit,
+			});
+		}
 		items.push({
 			id: CREATE_NEW_ID,
 			label: '+ Create New Save',
-			source: 'local',
-			timestamp: -1,
 		});
 		return items;
 	});
@@ -166,7 +169,7 @@
 	$effect(() => {
 		const stateId = connectedStateNodeId;
 		if (!stateId) {
-			saveItems = [];
+			unifiedSaves = [];
 			selectedSaveId = null;
 			showCreateForm = false;
 			onSaveChange?.(null);
@@ -176,7 +179,7 @@
 		loadingSaves = true;
 		loadSaveItems(stateId).then(items => {
 			if (cancelled) return;
-			saveItems = items;
+			unifiedSaves = items;
 			loadingSaves = false;
 			// Auto-select the most recent save if available
 			if (items.length > 0 && !selectedSaveId) {
@@ -184,7 +187,7 @@
 			}
 		}).catch(() => {
 			if (cancelled) return;
-			saveItems = [];
+			unifiedSaves = [];
 			loadingSaves = false;
 		});
 		return () => { cancelled = true; };
@@ -197,61 +200,25 @@
 			onSaveChange?.(null);
 			return;
 		}
-		const item = saveItems.find(s => s.id === selectedSaveId);
-		if (!item) {
+		const item = saveDropdownItems.find(s => s.id === selectedSaveId);
+		if (!item || !item.checkpointId) {
 			onSaveChange?.(null);
 			return;
 		}
 		onSaveChange?.({
-			source: item.source,
 			checkpointId: item.checkpointId,
-			saveCommit: item.saveCommit,
+			cloudCommit: item.cloudCommit,
 			stateNodeId: stateId,
 			title: item.label,
 		});
 	});
 
-	async function loadSaveItems(stateNodeId: string): Promise<SaveItem[]> {
-		const items: SaveItem[] = [];
-
-		// Load local checkpoints
-		try {
-			const store = await getNodeRDFStore(stateNodeId);
-			const checkpoints = await store.listCheckpoints();
-			for (const cp of checkpoints) {
-				items.push({
-					id: `local:${cp.id}`,
-					label: cp.title,
-					source: 'local',
-					checkpointId: cp.id,
-					timestamp: cp.timestamp,
-				});
-			}
-		} catch { /* ignore */ }
-
-		// Load cloud saves (only if published)
-		try {
-			const ctx = await getArtifactContext(projectId);
-			if (ctx.isPublished) {
-				const saves = await fetchSaves(stateNodeId);
-				for (const s of saves) {
-					items.push({
-						id: `cloud:${s.commit}`,
-						label: s.title ?? `Save ${s.commit.slice(0, 8)}`,
-						source: 'cloud',
-						saveCommit: s.commit,
-						timestamp: new Date(s.createdAt).getTime(),
-					});
-				}
-			}
-		} catch { /* ignore */ }
-
-		// Sort by timestamp descending (most recent first)
-		items.sort((a, b) => b.timestamp - a.timestamp);
-		return items;
+	async function loadSaveItems(stateNodeId: string): Promise<UnifiedSave[]> {
+		const store = await getNodeRDFStore(stateNodeId);
+		return listUnifiedSaves(store, stateNodeId);
 	}
 
-	function handleSaveSelect(item: SaveItem) {
+	function handleSaveSelect(item: SaveDropdownItem) {
 		if (item.id === CREATE_NEW_ID) {
 			showCreateForm = true;
 			return;
@@ -270,7 +237,7 @@
 			await store.checkpoint({ title: newSaveTitle.trim(), description: newSaveDescription.trim() || undefined });
 			// Reload saves and select the newly created one
 			const items = await loadSaveItems(stateId);
-			saveItems = items;
+			unifiedSaves = items;
 			// The newest checkpoint should be first
 			if (items.length > 0) {
 				selectedSaveId = items[0].id;
@@ -537,7 +504,7 @@
 					size="sm"
 					getLabel={(item) => {
 						if (item.id === NONE_ID || item.id === CREATE_NEW_ID) return item.label;
-						const badge = item.source === 'cloud' ? '☁️' : '💾';
+						const badge = item.syncStatus === 'synced' ? '✅' : item.syncStatus === 'cloud-only' ? '☁️' : '💾';
 						return `${badge} ${item.label}`;
 					}}
 					getKey={(item) => item.id}

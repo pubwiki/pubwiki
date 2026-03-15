@@ -1,10 +1,14 @@
 <script lang="ts">
 	/**
-	 * PubWikiConfirmDialog - Studio wrapper with paraglide i18n labels
+	 * PubWikiConfirmDialog - Player wrapper with paraglide i18n labels
 	 */
 	import type { Component } from 'svelte';
-	import type { FormComponentProps, ConfirmationType } from '$lib/state/pubwiki-confirm.svelte';
-	import { PubWikiConfirmDialog as SharedDialog, type PubWikiConfirmDialogLabels } from '@pubwiki/ui/components';
+	import {
+		PubWikiConfirmDialog as SharedDialog,
+		type PubWikiConfirmDialogLabels,
+		type FormComponentProps,
+		type ConfirmationType,
+	} from '@pubwiki/ui/components';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -18,13 +22,13 @@
 	let { type, FormComponent, initialValues, onConfirm, onCancel }: Props = $props();
 
 	const labels: PubWikiConfirmDialogLabels = {
-		title: m.studio_pubwiki_confirm_title(),
-		description: m.studio_pubwiki_confirm_desc(),
-		warning: m.studio_pubwiki_confirm_warning(),
-		cancel: m.studio_pubwiki_cancel(),
-		confirm: m.studio_pubwiki_confirm(),
+		title: m.player_pubwiki_confirm_title(),
+		description: m.player_pubwiki_confirm_desc(),
+		warning: m.player_pubwiki_confirm_warning(),
+		cancel: m.player_pubwiki_cancel(),
+		confirm: m.player_pubwiki_confirm(),
 		actionLabel: (t: ConfirmationType) =>
-			t === 'publish' ? m.studio_pubwiki_action_publish() : m.studio_pubwiki_action_article(),
+			t === 'publish' ? m.player_pubwiki_action_publish() : m.player_pubwiki_action_article(),
 	};
 </script>
 

@@ -32,7 +32,7 @@
 		type ConfirmationHandler,
 		type PubWikiModuleConfig,
 	} from '@pubwiki/flow-core';
-	import { computeArtifactCommit, type GetArtifactGraphResponse } from '@pubwiki/api';
+	import { computeArtifactCommit, computeContentHash, type GetArtifactGraphResponse } from '@pubwiki/api';
 	import { getNodeVfs, disposeAllVfs } from '$lib/vfs/store';
 	import { detectStorageBackend } from '$lib/vfs/detect';
 	import { getNodeRDFStore, closeAllRDFStores, type RDFStore } from '$lib/rdf/store';
@@ -51,6 +51,12 @@
 	import type { Vfs } from '@pubwiki/vfs';
 	import { useAuth, getSettingsStore } from '@pubwiki/ui/stores';
 	import { SandboxContent } from '@pubwiki/flow-core';
+	import { getPendingConfirmation, requestConfirmation, respondConfirmation } from '@pubwiki/ui/components';
+	import PubWikiConfirmDialog from '$components/pubwiki/PubWikiConfirmDialog.svelte';
+	import PublishForm from '$components/pubwiki/PublishForm.svelte';
+	import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
+	import UploadCheckpointForm from '$components/pubwiki/UploadCheckpointForm.svelte';
+	import UploadCheckpointsForm from '$components/pubwiki/UploadCheckpointsForm.svelte';
 	import PlayLoader from '$components/PlayLoader.svelte';
 	import PlayError from '$components/PlayError.svelte';
 
@@ -61,6 +67,7 @@
 	const apiClient = createApiClient(API_BASE_URL);
 	const auth = useAuth();
 	const settings = getSettingsStore();
+	const pendingConfirmation = $derived(getPendingConfirmation());
 
 	// ============================================================================
 	// Page Data
@@ -111,6 +118,9 @@
 		userSaveCommit: null as string | null,
 	});
 
+	// Resolved state node ID, needed to create save at publish time
+	let resolvedStateNodeId: string | null = null;
+
 	// ============================================================================
 	// Publish Support
 	// ============================================================================
@@ -139,6 +149,46 @@
 				position: n.position,
 			}));
 
+		// Always create a fresh save from the current state node
+		let newSaveCommit: string | null = null;
+		if (resolvedStateNodeId && rdfStore) {
+			const artifactCommit = graphData.version?.commitHash;
+			const saveResult = await createSaveCheckpoint(
+				rdfStore,
+				{
+					stateNodeId: resolvedStateNodeId,
+					artifactId: data.artifactId,
+					artifactCommit: artifactCommit ?? '',
+				},
+				API_BASE_URL,
+				{ fromRdfQuad, toRdfQuad },
+			);
+			if (saveResult.success && saveResult.save) {
+				const sd = saveResult.save;
+				newSaveCommit = sd.commit;
+				const saveContent = {
+					type: 'SAVE' as const,
+					stateNodeId: sd.stateNodeId,
+					artifactId: sd.artifactId,
+					artifactCommit: sd.artifactCommit,
+					quadsHash: sd.quadsHash,
+					title: sd.title ?? null,
+					description: sd.description ?? null,
+				};
+				const contentHash = await computeContentHash(saveContent);
+				nodes.push({
+					nodeId: sd.saveId,
+					commit: sd.commit,
+					parent: sd.parent ?? null,
+					type: 'SAVE' as const,
+					name: undefined,
+					contentHash,
+					content: saveContent,
+					position: undefined,
+				});
+			}
+		}
+
 		const edges = graphData.edges.map((e) => ({
 			source: e.source,
 			target: e.target,
@@ -156,8 +206,8 @@
 		}));
 		const commit = await computeArtifactCommit(newArtifactId, null, commitNodes, commitEdges);
 
-		// Construct entrypoint from runtime state: use current save commit + discovered sandbox node
-		const saveCommit = userInfo.userSaveCommit ?? userInfo.sourceSaveCommit;
+		// Construct entrypoint: use the freshly created save commit, or fall back to source
+		const saveCommit = newSaveCommit ?? userInfo.sourceSaveCommit;
 		const entrypoint = saveCommit && resolvedSandboxNodeId
 			? { saveCommit, sandboxNodeId: resolvedSandboxNodeId }
 			: graphData.version?.entrypoint ?? undefined;
@@ -177,30 +227,36 @@
 		};
 
 		try {
-			const formData = new FormData();
-			formData.append('metadata', JSON.stringify(apiMetadata));
-			formData.append('nodes', JSON.stringify(nodes));
-			formData.append('edges', JSON.stringify(edges));
+			const { data: result, error, response } = await apiClient.POST('/artifacts', {
+				body: {
+					metadata: apiMetadata,
+					nodes,
+					edges,
+					_homepage: metadata.homepage,
+				},
+				bodySerializer: (body) => {
+					const formData = new FormData();
+					formData.append('metadata', JSON.stringify(body.metadata));
+					formData.append('nodes', JSON.stringify(body.nodes));
+					formData.append('edges', JSON.stringify(body.edges));
 
-			if (metadata.homepage && metadata.homepage.trim().length > 0) {
-				formData.append('homepage', new Blob([metadata.homepage], { type: 'text/markdown' }), 'homepage.md');
-			}
+					const homepage = body._homepage as string | undefined;
+					if (homepage && homepage.trim().length > 0) {
+						formData.append('homepage', new Blob([homepage], { type: 'text/markdown' }), 'homepage.md');
+					}
 
-			const response = await fetch(`${API_BASE_URL}/api/artifacts`, {
-				method: 'POST',
-				credentials: 'include',
-				body: formData,
+					return formData;
+				},
 			});
 
-			if (!response.ok) {
-				const errorData = await response.json().catch(() => ({}));
+			if (error) {
 				return {
 					success: false,
-					error: (errorData as { error?: string }).error || `HTTP ${response.status}`,
+					error: error.error || `HTTP ${response.status}`,
 				};
 			}
 
-			return { success: true, artifactId: newArtifactId };
+			return { success: true, artifactId: result?.artifact?.id ?? newArtifactId };
 		} catch (err) {
 			return {
 				success: false,
@@ -242,6 +298,7 @@
 			// Store resolved values for publish support
 			resolvedSandboxNodeId = sandboxNode.id;
 			resolvedBuildCacheKey = graph.buildCacheKey;
+			resolvedStateNodeId = stateNode?.id ?? null;
 
 			if (vfsNodes.length === 0) {
 				throw new Error('No VFS node found connected to sandbox');
@@ -352,9 +409,17 @@
 
 					// Build PubWiki module for this loader
 					const artifactCommit = (graphData as GetArtifactGraphResponse).version?.commitHash;
-					const autoConfirm: ConfirmationHandler = {
-						async confirm(_action, initialValues) {
-							return initialValues;
+					const formComponentMap: Record<string, typeof PublishForm> = {
+						publish: PublishForm,
+						uploadArticle: UploadArticleForm,
+						uploadCheckpoint: UploadCheckpointForm,
+						uploadCheckpoints: UploadCheckpointsForm,
+					};
+					const confirmationHandler: ConfirmationHandler = {
+						async confirm(action, initialValues) {
+							const FormComponent = formComponentMap[action];
+							if (!FormComponent) return initialValues;
+							return requestConfirmation(action as 'publish' | 'uploadArticle' | 'uploadCheckpoint' | 'uploadCheckpoints', FormComponent, initialValues as Record<string, unknown>) as Promise<typeof initialValues | null>;
 						}
 					};
 					const quadSerializers = { fromRdfQuad, toRdfQuad };
@@ -362,9 +427,9 @@
 						getGraph: () => graph,
 						projectId: data.artifactId,
 						loaderNodeId: loaderNode.id,
-						apiBaseUrl: API_BASE_URL,
+						apiClient,
 						getCurrentUserId: () => auth.user?.id ?? null,
-						confirmation: autoConfirm,
+						confirmation: confirmationHandler,
 						getArtifactContext: async () => ({
 							isPublished: true,
 							artifactId: data.artifactId,
@@ -378,7 +443,7 @@
 								API_BASE_URL,
 								quadSerializers,
 							);
-							if (result.success && result.save?.commit) {
+							if (result.success && result.save) {
 								userInfo.userSaveCommit = result.save.commit;
 							}
 							return result;
@@ -555,6 +620,16 @@
 		allow="fullscreen; clipboard-read; clipboard-write"
 		title="Game"
 	></iframe>
+
+	{#if pendingConfirmation}
+		<PubWikiConfirmDialog
+			type={pendingConfirmation.type}
+			FormComponent={pendingConfirmation.formComponent}
+			initialValues={pendingConfirmation.initialValues}
+			onConfirm={(editedValues) => respondConfirmation(editedValues)}
+			onCancel={() => respondConfirmation(null)}
+		/>
+	{/if}
 </div>
 
 <style>

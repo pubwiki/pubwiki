@@ -538,6 +538,7 @@
 	"studio_pubwiki_field_homepage": "Homepage (Markdown)",
 	"studio_pubwiki_field_homepage_placeholder": "# Welcome\n\nDescribe your project here...",
 	"studio_pubwiki_field_homepage_help": "Markdown content for the project homepage",
+	"studio_pubwiki_field_preview": "Preview",
 	"studio_pubwiki_field_title": "Title",
 	"studio_pubwiki_field_title_placeholder": "Article title",
 	"studio_pubwiki_field_content": "Content",
