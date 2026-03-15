@@ -242,7 +242,7 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     }
   }
 
-  // Validate: every VFS node must have its archive in the request
+  // Validate: every VFS/SAVE node must have its archive in the request or already in R2
   for (const node of nodes) {
     if (node.type === 'VFS') {
       const filesHash = (node.content as { filesHash?: string }).filesHash;
@@ -250,7 +250,23 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
         return badRequest(c, `VFS node ${node.nodeId} missing filesHash in content`);
       }
       if (!vfsArchives.has(filesHash)) {
-        return badRequest(c, `VFS node ${node.nodeId} references filesHash ${filesHash} but no matching archive was uploaded`);
+        const r2Key = `vfs/${filesHash}/files.tar.gz`;
+        const existing = await c.env.R2_BUCKET.head(r2Key);
+        if (!existing) {
+          return badRequest(c, `VFS node ${node.nodeId} references filesHash ${filesHash} but no matching archive was uploaded or found in storage`);
+        }
+      }
+    } else if (node.type === 'SAVE') {
+      const quadsHash = (node.content as { quadsHash?: string }).quadsHash;
+      if (!quadsHash) {
+        return badRequest(c, `SAVE node ${node.nodeId} missing quadsHash in content`);
+      }
+      if (!saveArchives.has(quadsHash)) {
+        const r2Key = `saves/${quadsHash}/quads.bin`;
+        const existing = await c.env.R2_BUCKET.head(r2Key);
+        if (!existing) {
+          return badRequest(c, `SAVE node ${node.nodeId} references quadsHash ${quadsHash} but no matching archive was uploaded or found in storage`);
+        }
       }
     }
   }
@@ -535,7 +551,7 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     }
   }
 
-  // Validate: every VFS addNode must have its archive in the request or already in R2
+  // Validate: every VFS/SAVE addNode must have its archive in the request or already in R2
   if (metadata.addNodes) {
     for (const node of metadata.addNodes) {
       if (node.type === 'VFS') {
@@ -544,11 +560,22 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
           return badRequest(c, `VFS node ${node.nodeId} missing filesHash in content`);
         }
         if (!vfsArchives.has(filesHash)) {
-          // Content-addressed dedup: archive may already exist from a prior version
           const r2Key = `vfs/${filesHash}/files.tar.gz`;
           const existing = await c.env.R2_BUCKET.head(r2Key);
           if (!existing) {
             return badRequest(c, `VFS node ${node.nodeId} references filesHash ${filesHash} but no matching archive was uploaded or found in storage`);
+          }
+        }
+      } else if (node.type === 'SAVE') {
+        const quadsHash = (node.content as { quadsHash?: string }).quadsHash;
+        if (!quadsHash) {
+          return badRequest(c, `SAVE node ${node.nodeId} missing quadsHash in content`);
+        }
+        if (!saveArchives.has(quadsHash)) {
+          const r2Key = `saves/${quadsHash}/quads.bin`;
+          const existing = await c.env.R2_BUCKET.head(r2Key);
+          if (!existing) {
+            return badRequest(c, `SAVE node ${node.nodeId} references quadsHash ${quadsHash} but no matching archive was uploaded or found in storage`);
           }
         }
       }
