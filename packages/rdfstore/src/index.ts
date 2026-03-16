@@ -1,84 +1,47 @@
 /**
- * @pubwiki/rdfstore
- * 
- * RDF store with checkpoint-based versioning
- * 
- * Storage architecture:
- * - Quadstore (RDF data): Uses abstract-level (browser-level/memory-level)
- * - Checkpoints (version snapshots): Uses Dexie.js (IndexedDB)
- * 
- * 重构后：移除了区块链式版本控制，简化为纯 Checkpoint 快照模式
+ * @pubwiki/rdfstore — New public API
+ *
+ * Factory function + backend exports.
  */
 
 // Types
 export type {
-  QuadPattern,
-  Checkpoint,
+  Value,
+  Triple,
+  MatchPattern,
+  CheckpointInfo,
   CheckpointOptions,
-  StoreEventType,
+  SerializedState,
+  SerializedCheckpointEntry,
+  Delta,
+  ChangeEvent,
   StoreEvents,
-  LevelInstance,
-} from './types.js'
+} from './types'
 
-// Re-export Quad type from @rdfjs/types for RDF operations
-export type { Quad, Quad_Subject, Quad_Predicate, Quad_Object, Quad_Graph } from '@rdfjs/types'
-
-// Re-export SerializedQuad for sync/serialization (N3 string format)
-export type { SerializedQuad } from './convert.js'
-
-// Main Store API
-export { RDFStore } from './store.js'
-export type { SparqlBinding, StorageConfig } from './store.js'
-
-// Backend
-export { StoreBackend, createBackend } from './backend/index.js'
-
-// Checkpoint Manager (Dexie-based)
-export { 
-  CheckpointManager, 
-  createCheckpointManager,
-  createCheckpointManagerWithStore,
-  createCheckpointManagerWithDatabase,
-  CheckpointStore,
-  CheckpointDatabase,
-} from './version/index.js'
-
+// Interfaces
 export type {
-  CheckpointRecord,
-  CheckpointDataRecord,
-} from './version/index.js'
+  TripleStoreInterface as TripleStore,
+  LiveQuery,
+  StorageBackend,
+} from './store/interfaces'
 
-// Serialization (Import/Export)
-export {
-  exportQuads,
-  importQuads,
-  detectFormat,
-  exportToJsonl,
-  importFromJsonl,
-  exportToNQuads,
-  importFromNQuads,
-  exportToCompactJson,
-  importFromCompactJson,
-  exportToJson,
-  importFromJson,
-  // Full state export/import
-  exportFullState,
-  importFullState,
-} from './serialization/index.js'
-export type {
-  SerializationFormat,
-  ExportOptions,
-  ImportOptions,
-  ExportMetadata,
-  FullStateExport,
-  FullStateExportOptions,
-} from './serialization/index.js'
+// Implementation
+import { TripleStoreImpl } from './store/triple-store'
+import type { StorageBackend } from './store/interfaces'
 
-// Utilities
-export {
-  generateId,
-  EventEmitter,
-} from './utils/index.js'
+export function createTripleStore(options?: {
+  backend?: StorageBackend
+}): TripleStoreImpl {
+  return new TripleStoreImpl(options?.backend)
+}
 
-// Quad conversion utilities
-export { fromRdfQuad, toRdfQuad } from './convert.js'
+// Backends
+export { MemoryBackend } from './backend/memory'
+export { IndexedDBBackend } from './backend/indexeddb'
+
+// Utilities (preserved from old API)
+export { EventEmitter } from './utils/events'
+export { generateId } from './utils/hash'
+
+// Delta utilities
+export { computeDelta, applyDelta } from './version/delta'

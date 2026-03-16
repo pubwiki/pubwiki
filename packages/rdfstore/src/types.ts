@@ -1,77 +1,74 @@
 /**
- * @pubwiki/rdfstore - Type Definitions
- * 
- * Core types for the RDF store with checkpoint-based versioning
- * 
- * 重构后：移除了 Ref、RefNode、Operation 等区块链式版本控制概念
- * 简化为纯 Checkpoint 快照模式
+ * Core types for the new TripleStore.
  */
 
-import { AbstractLevel } from 'abstract-level'
-import type { Quad } from '@rdfjs/types'
+/** Triple value: native types directly usable from Lua */
+export type Value = string | number | boolean | Record<string, unknown> | unknown[]
 
-// Re-export Quad type from @rdfjs/types
-export type { Quad } from '@rdfjs/types'
-
-/**
- * Quad query pattern - all fields are optional for flexible matching
- */
-export interface QuadPattern {
-  subject?: Quad['subject'] | null
-  predicate?: Quad['predicate'] | null
-  object?: Quad['object'] | null
-  graph?: Quad['graph'] | null
+/** A triple (subject, predicate, object, optional graph) */
+export interface Triple {
+  subject: string
+  predicate: string
+  object: Value
+  graph?: string
 }
 
-// ============ Checkpoint Types ============
+/** Query pattern – all fields optional; absent fields are wildcards */
+export interface MatchPattern {
+  subject?: string
+  predicate?: string
+  object?: Value
+  graph?: string
+}
 
-/**
- * Checkpoint - a saved snapshot of quad data
- * Used for version saves and cloud sync
- */
-export interface Checkpoint {
-  /** Unique checkpoint ID */
+/** Checkpoint metadata */
+export interface CheckpointInfo {
   id: string
-  /** User-provided title for the checkpoint */
   title: string
-  /** Optional description */
   description?: string
-  /** When the checkpoint was created */
   timestamp: number
-  /** Number of quads in this checkpoint */
-  quadCount: number
+  tripleCount: number
 }
 
-/**
- * Options for creating a checkpoint
- */
+/** Options for creating a checkpoint */
 export interface CheckpointOptions {
-  /** Optional custom ID (defaults to crypto.randomUUID()) */
   id?: string
-  /** User-provided title for the checkpoint */
   title: string
-  /** Optional description */
   description?: string
 }
 
-/**
- * Type for abstract-level instances compatible with the store.
- */
-export type LevelInstance = AbstractLevel<
-  any,
-  string,
-  string
->
+/** A delta between two versions — only the inserts and deletes */
+export interface Delta {
+  inserts: Triple[]
+  deletes: Triple[]
+}
 
-/**
- * Event types emitted by the store
- */
-export type StoreEventType = 'checkpointCreated' | 'checkpointLoaded'
+/** Serialized state for import/export — delta encoding with periodic keyframes. */
+export interface SerializedState {
+  version: 2
+  /** Current working state (full triple list) */
+  triples: Triple[]
+  /** Ordered checkpoint entries — either a keyframe or a delta */
+  checkpoints: Array<SerializedCheckpointEntry>
+  /** How often a keyframe is stored (e.g. 50 = every 50th checkpoint) */
+  keyframeInterval: number
+}
 
-/**
- * Event payloads
- */
-export interface StoreEvents {
-  checkpointCreated: { checkpointId: string }
-  checkpointLoaded: { checkpointId: string }
+export type SerializedCheckpointEntry =
+  | { info: CheckpointInfo; type: 'keyframe'; triples: Triple[] }
+  | { info: CheckpointInfo; type: 'delta'; parentId: string; delta: Delta }
+
+/** Change event emitted after mutations */
+export interface ChangeEvent {
+  type: 'insert' | 'delete'
+  triple: Triple
+}
+
+/** Events emitted by the TripleStore */
+export type StoreEvents = {
+  [K in 'change']: ChangeEvent[]
+} & {
+  [K in 'checkpointCreated']: CheckpointInfo
+} & {
+  [K in 'checkpointLoaded']: CheckpointInfo
 }

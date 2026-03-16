@@ -63,9 +63,6 @@ catalogs:
     '@xyflow/svelte':
       specifier: ^1.5.0
       version: 1.5.0
-    abstract-level:
-      specifier: ^3.1.1
-      version: 3.1.1
     browser-level:
       specifier: ^3.0.0
       version: 3.0.0
@@ -111,12 +108,6 @@ catalogs:
     prettier-plugin-tailwindcss:
       specifier: ^0.7.2
       version: 0.7.2
-    quadstore:
-      specifier: ^15.4.1
-      version: 15.4.1
-    quadstore-comunica:
-      specifier: ^6.3.1
-      version: 6.3.1
     svelte:
       specifier: ^5.46.1
       version: 5.46.1
@@ -478,9 +469,6 @@ importers:
       '@pubwiki/rdfstore':
         specifier: workspace:*
         version: link:../../packages/rdfstore
-      '@pubwiki/reader':
-        specifier: workspace:*
-        version: link:../../packages/reader
       '@pubwiki/sandbox-host':
         specifier: workspace:*
         version: link:../../packages/sandbox-host
@@ -494,9 +482,6 @@ importers:
         specifier: 'catalog:'
         version: 3.0.0
     devDependencies:
-      '@inlang/paraglide-js':
-        specifier: 'catalog:'
-        version: 2.9.0
       '@sveltejs/adapter-cloudflare':
         specifier: 'catalog:'
         version: 7.2.5(@sveltejs/kit@2.49.5(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.46.1)(vite@7.3.1(@types/node@22.19.5)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(typescript@5.9.3)(vite@7.3.1(@types/node@22.19.5)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)(yaml@2.8.2)))(wrangler@4.59.2(@cloudflare/workers-types@4.20260116.0))
@@ -627,9 +612,6 @@ importers:
       isomorphic-git:
         specifier: ^1.36.1
         version: 1.36.1
-      json-canonicalize:
-        specifier: ^2.0.0
-        version: 2.0.0
       jsonrepair:
         specifier: ^3.13.2
         version: 3.13.2
@@ -904,37 +886,13 @@ importers:
 
   packages/rdfstore:
     dependencies:
-      '@rdfjs/types':
-        specifier: ^2.0.1
-        version: 2.0.1
-      abstract-level:
-        specifier: 'catalog:'
-        version: 3.1.1
-      dexie:
-        specifier: 'catalog:'
-        version: 4.2.1
-      diff:
-        specifier: ^8.0.3
-        version: 8.0.3
-      n3:
-        specifier: 'catalog:'
-        version: 2.0.1
-      quadstore:
-        specifier: 'catalog:'
-        version: 15.4.1
-      quadstore-comunica:
-        specifier: 'catalog:'
-        version: 6.3.1(asynciterator@3.10.0)(quadstore@15.4.1)
+      '@pubwiki/api':
+        specifier: workspace:*
+        version: link:../api
     devDependencies:
-      '@types/n3':
-        specifier: 'catalog:'
-        version: 1.26.1
       fake-indexeddb:
         specifier: ^6.2.5
         version: 6.2.5
-      memory-level:
-        specifier: 'catalog:'
-        version: 3.1.0
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
@@ -3031,9 +2989,6 @@ packages:
   '@protobufjs/utf8@1.1.0':
     resolution: {integrity: sha512-Vvn3zZrhQZkkBE8LSuW3em98c0FwgO4nxzv6OdSxPKJIEKY2bGbHn+mhGIPerzI4twdxaP8/0+06HBpwf345Lw==}
 
-  '@rdfjs/types@1.1.2':
-    resolution: {integrity: sha512-wqpOJK1QCbmsGNtyzYnojPU8gRDPid2JO0Q0kMtb4j65xhCK880cnKAfEOwC+dX85VJcCByQx5zOwyyfCjDJsg==}
-
   '@rdfjs/types@2.0.1':
     resolution: {integrity: sha512-uyAzpugX7KekAXAHq26m3JlUIZJOC0uSBhpnefGV5i15bevDyyejoB7I+9MKeUrzXD8OOUI3+4FeV1wwQr5ihA==}
 
@@ -3966,9 +3921,6 @@ packages:
   '@types/resolve@1.20.2':
     resolution: {integrity: sha512-60BCwRFOZCQhDncwQdxxeOEEkbc5dIMccYLwbxsS4TUNeVECQ/pBJ0j09mrHOl/JJvpRPGwO9SvE4nR2Nb/a4Q==}
 
-  '@types/sparqljs@3.1.12':
-    resolution: {integrity: sha512-zg/sdKKtYI0845wKPSuSgunyU1o/+7tRzMw85lHsf4p/0UbA6+65MXAyEtv1nkaqSqrq/bXm7+bqXas+Xo5dpQ==}
-
   '@types/stylis@4.2.7':
     resolution: {integrity: sha512-VgDNokpBoKF+wrdvhAAfS55OMQpL6QRglwTwNC3kIgBrzZxA4WsFj+2eLfEA/uMUDzBcEhYmjSbwQakn/i3ajA==}
 
@@ -4269,9 +4221,6 @@ packages:
 
   async-lock@1.4.1:
     resolution: {integrity: sha512-Az2ZTpuytrtqENulXwO3GGv1Bztugx6TT37NIo7imr/Qo0gsYiGtSdBa2B6fsXhTpVZDNfu1Qn3pk531e3q+nQ==}
-
-  asynciterator@3.10.0:
-    resolution: {integrity: sha512-eDOBoUf2m+4ht0ETVn2SCfuBIZZ6UWyyQbP++LRPKoK7PmrCQq37pJ6vRvyef4o1Pn+CwWnzMlkXxGdh/krVIw==}
 
   autoprefixer@10.4.23:
     resolution: {integrity: sha512-YYTXSFulfwytnjAPlw8QHncHJmlvFKtczb8InXaAx9Q0LbfDnfEYDE55omerIJKihhmU61Ft+cAOSzQVaBUmeA==}
@@ -4795,10 +4744,6 @@ packages:
 
   diff3@0.0.3:
     resolution: {integrity: sha512-iSq8ngPOt0K53A6eVr4d5Kn6GNrM2nQZtC740pzIriHtn4pOQ2lyzEXQMBeVcWERN0ye7fhBsk9PbLLQOnUx/g==}
-
-  diff@8.0.3:
-    resolution: {integrity: sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ==}
-    engines: {node: '>=0.3.1'}
 
   dompurify@3.3.3:
     resolution: {integrity: sha512-Oj6pzI2+RqBfFG+qOaOLbFXLQ90ARpcGG6UePL82bJLtdsa6CYJD7nmiU8MW9nQNOtCHV3lZ/Bzq1X0QYbBZCA==}
@@ -5522,9 +5467,6 @@ packages:
 
   js-sha256@0.11.1:
     resolution: {integrity: sha512-o6WSo/LUvY2uC4j7mO50a2ms7E/EAdbP0swigLV+nzHKTTaYnaLIWJ02VdXrsJX0vGedDESQnLsOekr94ryfjg==}
-
-  js-sorted-set@0.7.0:
-    resolution: {integrity: sha512-NGTSMeoLNYR2BoTLhQ6w+u7Ox4PO34omb/0OBCy4gyedWeXolMGv948Ato0/Of6tfxsAjeySDymCkAj93/xkeA==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -6480,17 +6422,6 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
-  quadstore-comunica@6.3.1:
-    resolution: {integrity: sha512-Jvgq+g1hoSe6erneRY12T5TH9vQQUqMCmx1jGJwIC8eS3L5lk8mR0Gv3YoHEBOzx5fxZJgR2Eq9pMOCp9LwyGA==}
-    engines: {node: '>=16.0.0'}
-    peerDependencies:
-      asynciterator: ^3.9.0
-      quadstore: ^15.4.0
-
-  quadstore@15.4.1:
-    resolution: {integrity: sha512-Gqm50CqkEPzD1sZGh6IiDdBwANVnlRRWNjo6Znrn5FeCqUbsd9/z577PToHs92w9HvzWIc7ccRLuOAx1A7anqg==}
-    engines: {node: '>=18.0.0'}
-
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
 
@@ -6507,21 +6438,6 @@ packages:
   rc@1.2.8:
     resolution: {integrity: sha512-y3bGgqKj3QBdxLbLkomlohkvsA8gdAiUQlSBJnBhfn+BPxg4bc62d8TcBW15wavDfgexCgccckhcZvywyQYPOw==}
     hasBin: true
-
-  rdf-data-factory@1.1.3:
-    resolution: {integrity: sha512-ny6CI7m2bq4lfQQmDYvcb2l1F9KtGwz9chipX4oWu2aAtVoXjb7k3d8J1EsgAsEbMXnBipB/iuRen5H2fwRWWQ==}
-
-  rdf-data-factory@2.0.2:
-    resolution: {integrity: sha512-WzPoYHwQYWvIP9k+7IBLY1b4nIDitzAK4mA37WumAF/Cjvu/KOtYJH9IPZnUTWNSd5K2+pq4vrcE9WZC4sRHhg==}
-
-  rdf-isomorphic@2.0.1:
-    resolution: {integrity: sha512-8pfA3PeDs1sVrZ2R3dCR4KRM69m3pQGhzviNQq5Az/+Zch4I+fKstjGxCZ5ADAFPsm9zxHk8zMEQ/BFcqlnLKw==}
-
-  rdf-string@2.0.1:
-    resolution: {integrity: sha512-SMW4ponnKNrsP9kYpOLyICeM4UJmEXIeS3zri7kPK9gzLFsHD88oiza8LnokNYxd76zW4JoYWD+v4x0g8rJBjw==}
-
-  rdf-terms@2.0.0:
-    resolution: {integrity: sha512-9O+ifVcvY4ZktOr+uXKswoOV6airAsIKeqCr+C47kFZBB8X+NyPSqDRGgI6X+je8It6z2e9jZhWwjJiEZ8Yn5Q==}
 
   react-dom@19.2.4:
     resolution: {integrity: sha512-AXJdLo8kgMbimY95O2aKQqsz2iWi9jMgKJhRBAxECE4IFxfcazB2LmzloIoibJI3C12IlY20+KFaLv+71bUJeQ==}
@@ -6776,15 +6692,6 @@ packages:
   space-separated-tokens@2.0.2:
     resolution: {integrity: sha512-PEGlAwrG8yXGXRjW32fGbg66JAlOAwbObuqVoJpv/mRgoWDQfgH1wDPvtzWyUSNAXBGSk8h755YDbbcEy3SH2Q==}
 
-  sparqlalgebrajs@5.0.2:
-    resolution: {integrity: sha512-Xz7byRqWqCMkbM+3ogGmKO/wsezQKQQNleoggP03sCTTFfCh/ZlN5CGt+HkrOenDSktZ93jpKFbbaIRjLOYtWw==}
-    hasBin: true
-
-  sparqljs@3.7.3:
-    resolution: {integrity: sha512-FQfHUhfwn5PD9WH6xPU7DhFfXMgqK/XoDrYDVxz/grhw66Il0OjRg3JBgwuEvwHnQt7oSTiKWEiCZCPNaUbqgg==}
-    engines: {node: ^12.22.0 || ^14.17.0 || >=16.0.0}
-    hasBin: true
-
   sparse-bitfield@3.0.3:
     resolution: {integrity: sha512-kvzhi7vqKTfkh0PZU+2D2PIllw2ymqJKujUcyPMd9Y75Nv4nPbGJZXNhxsgdQab2BmlDct1YnfQCguEvHr7VsQ==}
 
@@ -6946,9 +6853,6 @@ packages:
 
   tiny-invariant@1.3.3:
     resolution: {integrity: sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==}
-
-  tiny-set-immediate@1.0.2:
-    resolution: {integrity: sha512-EVbaM4zXFWS4CIqVoPzY7XIioQ5LU1p49AHizwPO1KyFyp/gxy5SA8mDmfDVl/2WLQiHgUL+esO6Ig+KhpUxUw==}
 
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
@@ -9197,10 +9101,6 @@ snapshots:
 
   '@protobufjs/utf8@1.1.0': {}
 
-  '@rdfjs/types@1.1.2':
-    dependencies:
-      '@types/node': 25.0.3
-
   '@rdfjs/types@2.0.1':
     dependencies:
       '@types/node': 25.0.3
@@ -10178,10 +10078,6 @@ snapshots:
 
   '@types/resolve@1.20.2': {}
 
-  '@types/sparqljs@3.1.12':
-    dependencies:
-      '@rdfjs/types': 2.0.1
-
   '@types/stylis@4.2.7': {}
 
   '@types/tedious@4.0.14':
@@ -10631,10 +10527,6 @@ snapshots:
 
   async-lock@1.4.1: {}
 
-  asynciterator@3.10.0:
-    dependencies:
-      tiny-set-immediate: 1.0.2
-
   autoprefixer@10.4.23(postcss@8.5.6):
     dependencies:
       browserslist: 4.28.1
@@ -11056,8 +10948,6 @@ snapshots:
   dexie@4.2.1: {}
 
   diff3@0.0.3: {}
-
-  diff@8.0.3: {}
 
   dompurify@3.3.3:
     optionalDependencies:
@@ -11862,8 +11752,6 @@ snapshots:
   js-levenshtein@1.1.6: {}
 
   js-sha256@0.11.1: {}
-
-  js-sorted-set@0.7.0: {}
 
   js-tokens@4.0.0: {}
 
@@ -12713,21 +12601,6 @@ snapshots:
 
   punycode@2.3.1: {}
 
-  quadstore-comunica@6.3.1(asynciterator@3.10.0)(quadstore@15.4.1):
-    dependencies:
-      '@rdfjs/types': 2.0.1
-      asynciterator: 3.10.0
-      quadstore: 15.4.1
-      sparqlalgebrajs: 5.0.2
-      sparqljs: 3.7.3
-
-  quadstore@15.4.1:
-    dependencies:
-      '@rdfjs/types': 2.0.1
-      abstract-level: 3.1.1
-      asynciterator: 3.10.0
-      js-sorted-set: 0.7.0
-
   queue-microtask@1.2.3: {}
 
   quickjs-emscripten-core@0.31.0:
@@ -12753,29 +12626,6 @@ snapshots:
       minimist: 1.2.8
       strip-json-comments: 2.0.1
     optional: true
-
-  rdf-data-factory@1.1.3:
-    dependencies:
-      '@rdfjs/types': 1.1.2
-
-  rdf-data-factory@2.0.2:
-    dependencies:
-      '@rdfjs/types': 2.0.1
-
-  rdf-isomorphic@2.0.1:
-    dependencies:
-      imurmurhash: 0.1.4
-      rdf-string: 2.0.1
-      rdf-terms: 2.0.0
-
-  rdf-string@2.0.1:
-    dependencies:
-      rdf-data-factory: 2.0.2
-
-  rdf-terms@2.0.0:
-    dependencies:
-      rdf-data-factory: 2.0.2
-      rdf-string: 2.0.1
 
   react-dom@19.2.4(react@19.2.4):
     dependencies:
@@ -13151,21 +13001,6 @@ snapshots:
 
   space-separated-tokens@2.0.2: {}
 
-  sparqlalgebrajs@5.0.2:
-    dependencies:
-      '@types/sparqljs': 3.1.12
-      fast-deep-equal: 3.1.3
-      minimist: 1.2.8
-      rdf-data-factory: 2.0.2
-      rdf-isomorphic: 2.0.1
-      rdf-string: 2.0.1
-      rdf-terms: 2.0.0
-      sparqljs: 3.7.3
-
-  sparqljs@3.7.3:
-    dependencies:
-      rdf-data-factory: 1.1.3
-
   sparse-bitfield@3.0.3:
     dependencies:
       memory-pager: 1.5.0
@@ -13404,8 +13239,6 @@ snapshots:
       globrex: 0.1.2
 
   tiny-invariant@1.3.3: {}
-
-  tiny-set-immediate@1.0.2: {}
 
   tinybench@2.9.0: {}
 

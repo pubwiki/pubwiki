@@ -11,6 +11,7 @@ import {
   generateEmptySnapshotRef,
 } from '../src/utils/hash.js'
 import { EventEmitter } from '../src/utils/events.js'
+import { AsyncMutex } from '../src/utils/async-mutex.js'
 
 describe('generateId', () => {
   it('should generate unique IDs', () => {
@@ -225,5 +226,47 @@ describe('EventEmitter', () => {
     // Should not throw and should continue to next listener
     expect(() => emitter.emit('test', 'hello')).not.toThrow()
     expect(secondCalled).toBe(true)
+  })
+})
+
+describe('AsyncMutex', () => {
+  it('should execute a single operation', async () => {
+    const mutex = new AsyncMutex()
+    const result = await mutex.run(async () => 42)
+    expect(result).toBe(42)
+  })
+
+  it('should serialize concurrent operations', async () => {
+    const mutex = new AsyncMutex()
+    const log: string[] = []
+
+    const op = (name: string, ms: number) =>
+      mutex.run(async () => {
+        log.push(`${name}:start`)
+        await new Promise(r => setTimeout(r, ms))
+        log.push(`${name}:end`)
+      })
+
+    // Launch three operations concurrently
+    await Promise.all([op('a', 30), op('b', 10), op('c', 10)])
+
+    // They must have run sequentially: a fully completes before b starts, etc.
+    expect(log).toEqual(['a:start', 'a:end', 'b:start', 'b:end', 'c:start', 'c:end'])
+  })
+
+  it('should release lock even if operation throws', async () => {
+    const mutex = new AsyncMutex()
+
+    await expect(mutex.run(async () => { throw new Error('fail') })).rejects.toThrow('fail')
+
+    // Subsequent operation should still work
+    const result = await mutex.run(async () => 'ok')
+    expect(result).toBe('ok')
+  })
+
+  it('should return the value from the operation', async () => {
+    const mutex = new AsyncMutex()
+    const result = await mutex.run(async () => ({ x: 1, y: 'hello' }))
+    expect(result).toEqual({ x: 1, y: 'hello' })
   })
 })
