@@ -1,164 +1,114 @@
 /**
- * CheckpointManager - Checkpoint management API
- * 
- * Manages checkpoint creation, loading, and listing.
- * 
- * 重构后：移除了 VersionDAG 中的操作历史相关功能
- * 简化为纯 Checkpoint 管理
+ * VersionManager — O(1) checkpoint / checkout via HAMT root pointer saving.
+ *
+ * Each checkpoint stores references to the current TripleIndex HAMT roots.
+ * Because the HAMT is persistent (immutable), saving a reference is O(1).
+ *
+ * Also maintains an ordered list of checkpoint IDs for delta serialization.
  */
 
-import type { Quad } from '@rdfjs/types'
-import type { Checkpoint, CheckpointOptions } from '../types.js'
-import { fromRdfQuad, toRdfQuad } from '../convert.js'
-import { CheckpointStore, CheckpointDatabase } from './store.js'
+import type { TripleIndex } from '../index/triple-index'
+import type { CheckpointInfo, CheckpointOptions, Delta } from '../types'
+import { generateId } from '../utils/hash'
+import { computeDelta } from './delta'
 
-/**
- * Checkpoint Manager
- * 
- * Manages checkpoints using Dexie.js storage
- */
-export class CheckpointManager {
-  private store: CheckpointStore
-  private _isOpen = false
+interface Snapshot {
+  index: TripleIndex
+  info: CheckpointInfo
+  /** Delta from the previous checkpoint (undefined for the first checkpoint) */
+  deltaFromPrev?: Delta
+  /** ID of the previous checkpoint (undefined for the first checkpoint) */
+  prevId?: string
+}
 
-  constructor(store: CheckpointStore) {
-    this.store = store
-  }
+export class VersionManager {
+  private snapshots = new Map<string, Snapshot>()
+  /** Ordered list of checkpoint IDs (insertion order) */
+  private order: string[] = []
 
-  get isOpen(): boolean {
-    return this._isOpen
-  }
-
-  /**
-   * Get the underlying CheckpointStore
-   */
-  getStore(): CheckpointStore {
-    return this.store
-  }
-
-  /**
-   * Open the checkpoint manager
-   */
-  async open(): Promise<void> {
-    if (this._isOpen) return
-    this._isOpen = true
-  }
-
-  /**
-   * Close the checkpoint manager
-   */
-  async close(): Promise<void> {
-    if (!this._isOpen) return
-    await this.store.close()
-    this._isOpen = false
-  }
-
-  private ensureOpen(): void {
-    if (!this._isOpen) {
-      throw new Error('CheckpointManager not open')
-    }
-  }
-
-  // ============ Checkpoint Operations ============
-
-  /**
-   * Create a checkpoint with the given quads
-   * @param quads The current quad data to save
-   * @param options Checkpoint options including title and description
-   * @returns The checkpoint (including id)
-   */
-  async createCheckpoint(quads: Quad[], options: CheckpointOptions): Promise<Checkpoint> {
-    this.ensureOpen()
-    const id = options.id ?? crypto.randomUUID()
-    
-    // Save checkpoint metadata
-    const checkpoint: Checkpoint = {
+  /** Create a checkpoint by saving the current HAMT root references. O(1).
+   *  Accepts a pre-computed delta from the store for efficient serialization. */
+  checkpoint(index: TripleIndex, options: CheckpointOptions, accumulatedDelta?: Delta): CheckpointInfo {
+    const id = options.id ?? generateId()
+    const info: CheckpointInfo = {
       id,
       title: options.title,
       description: options.description,
       timestamp: Date.now(),
-      quadCount: quads.length,
+      tripleCount: index.count,
     }
-    await this.store.saveCheckpoint(checkpoint)
 
-    // Save checkpoint data (convert RDF.js Quads to simple Quads)
-    const data = quads.map(fromRdfQuad)
-    await this.store.saveCheckpointData(id, data)
+    let deltaFromPrev: Delta | undefined
+    let prevId: string | undefined
+    if (this.order.length > 0) {
+      prevId = this.order[this.order.length - 1]
+      // Use the accumulated delta from the store if available
+      if (accumulatedDelta && (accumulatedDelta.inserts.length > 0 || accumulatedDelta.deletes.length > 0)) {
+        deltaFromPrev = accumulatedDelta
+      } else {
+        // Fallback: compute from indexes (e.g. first checkpoint after import)
+        const prevSnapshot = this.snapshots.get(prevId)
+        if (prevSnapshot) {
+          deltaFromPrev = computeDelta(prevSnapshot.index, index)
+        }
+      }
+    }
 
-    return checkpoint
+    this.snapshots.set(id, { index, info, deltaFromPrev, prevId })
+    this.order.push(id)
+    return info
   }
 
-  /**
-   * Get checkpoint metadata by id
-   */
-  async getCheckpoint(id: string): Promise<Checkpoint | null> {
-    this.ensureOpen()
-    return this.store.getCheckpoint(id)
+  /** Switch to a checkpoint's state. O(1) pointer swap. */
+  checkout(checkpointId: string): { index: TripleIndex; info: CheckpointInfo } {
+    const snapshot = this.snapshots.get(checkpointId)
+    if (!snapshot) throw new Error(`Checkpoint not found: ${checkpointId}`)
+    return snapshot
   }
 
-  /**
-   * Load checkpoint data for a checkpoint id
-   */
-  async loadCheckpointData(id: string): Promise<Quad[] | null> {
-    this.ensureOpen()
-    const data = await this.store.getCheckpointData(id)
-    if (data === null) return null
-    return data.map(toRdfQuad)
+  listCheckpoints(): CheckpointInfo[] {
+    return Array.from(this.snapshots.values())
+      .map(s => s.info)
+      .sort((a, b) => a.timestamp - b.timestamp)
   }
 
-  /**
-   * List all checkpoints
-   */
-  async listCheckpoints(): Promise<Checkpoint[]> {
-    this.ensureOpen()
-    return this.store.listCheckpoints()
+  /** Return checkpoint IDs in insertion order */
+  getOrderedIds(): string[] {
+    return [...this.order]
   }
 
-  /**
-   * Delete a checkpoint by id
-   * @param id - The checkpoint id
-   */
-  async deleteCheckpoint(id: string): Promise<void> {
-    this.ensureOpen()
-    await this.store.deleteCheckpoint(id)
-    await this.store.deleteCheckpointData(id)
+  getCheckpoint(id: string): CheckpointInfo | undefined {
+    return this.snapshots.get(id)?.info
   }
 
-  /**
-   * Check if a checkpoint exists
-   */
-  async hasCheckpoint(id: string): Promise<boolean> {
-    this.ensureOpen()
-    return this.store.hasCheckpoint(id)
+  getSnapshot(id: string): Snapshot | undefined {
+    return this.snapshots.get(id)
   }
-}
 
-/**
- * Create and open a CheckpointManager with a new Dexie database
- * @param dbName The name for the IndexedDB database
- */
-export async function createCheckpointManager(dbName: string): Promise<CheckpointManager> {
-  const store = CheckpointStore.create(dbName)
-  const manager = new CheckpointManager(store)
-  await manager.open()
-  return manager
-}
+  /** Get the cached delta and previous checkpoint ID for a snapshot */
+  getDelta(id: string): { delta: Delta; prevId: string } | undefined {
+    const snap = this.snapshots.get(id)
+    if (!snap?.deltaFromPrev || !snap.prevId) return undefined
+    return { delta: snap.deltaFromPrev, prevId: snap.prevId }
+  }
 
-/**
- * Create and open a CheckpointManager with an existing CheckpointStore
- */
-export async function createCheckpointManagerWithStore(store: CheckpointStore): Promise<CheckpointManager> {
-  const manager = new CheckpointManager(store)
-  await manager.open()
-  return manager
-}
+  deleteCheckpoint(id: string): void {
+    this.snapshots.delete(id)
+    const idx = this.order.indexOf(id)
+    if (idx !== -1) this.order.splice(idx, 1)
+  }
 
-/**
- * Create and open a CheckpointManager with an existing CheckpointDatabase
- */
-export async function createCheckpointManagerWithDatabase(db: CheckpointDatabase): Promise<CheckpointManager> {
-  const store = new CheckpointStore(db)
-  const manager = new CheckpointManager(store)
-  await manager.open()
-  return manager
+  /** Restore a checkpoint from persisted data (used during restore/import). */
+  restoreCheckpoint(info: CheckpointInfo, index: TripleIndex): void {
+    this.snapshots.set(info.id, { index, info })
+    // Only push to order if not already present
+    if (!this.order.includes(info.id)) {
+      this.order.push(info.id)
+    }
+  }
+
+  clear(): void {
+    this.snapshots.clear()
+    this.order = []
+  }
 }

@@ -1,7 +1,7 @@
 {
   "name": "@pubwiki/rdfstore",
   "version": "1.0.1",
-  "description": "RDF store with immutable version DAG and SPARQL support. Uses quadstore (abstract-level) for RDF data and Dexie.js (IndexedDB) for version metadata.",
+  "description": "HAMT-based triple store with versioning, live queries, and pluggable persistence.",
   "type": "module",
   "main": "./src/index.ts",
   "module": "./src/index.ts",
@@ -27,27 +27,17 @@
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
-    "rdf",
-    "quadstore",
+    "triplestore",
+    "hamt",
     "versioning",
-    "dexie",
     "indexeddb"
   ],
   "license": "MIT",
   "dependencies": {
-    "@pubwiki/api": "workspace:*",
-    "@rdfjs/types": "^2.0.1",
-    "abstract-level": "catalog:",
-    "dexie": "catalog:",
-    "diff": "^8.0.3",
-    "n3": "catalog:",
-    "quadstore": "catalog:",
-    "quadstore-comunica": "catalog:"
+    "@pubwiki/api": "workspace:*"
   },
   "devDependencies": {
-    "@types/n3": "catalog:",
     "fake-indexeddb": "^6.2.5",
-    "memory-level": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }
