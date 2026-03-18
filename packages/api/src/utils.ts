@@ -28,6 +28,8 @@ export interface SaveContent {
   artifactId: string;
   artifactCommit: string;
   quadsHash: string;
+  saveEncoding: 'keyframe' | 'delta';
+  parentCommit: string | null | undefined;
   title: string | null | undefined;
   description: string | null | undefined;
 }

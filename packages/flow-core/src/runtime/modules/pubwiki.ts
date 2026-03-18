@@ -8,7 +8,8 @@
 
 import type { RuntimeGraph, ConfirmationHandler, ArtifactContext, JsModuleDefinition } from '../types';
 import { findConnectedStateNode } from '../graph/artifact-loader';
-import type { CreateSaveOptions, CreateSaveResult, SaveRDFStore, RdfQuad } from '../save/gamesave';
+import type { CreateSaveOptions, CreateSaveResult, CreateSaveBatchOptions, CreateSaveBatchResult, SaveRDFStore } from '../save/gamesave';
+import type { Triple, CheckpointInfo, SerializedCheckpointEntry } from '@pubwiki/rdfstore';
 import type { createApiClient } from '@pubwiki/api/client';
 import type { ReaderContentBlock } from '@pubwiki/api';
 
@@ -17,14 +18,22 @@ import type { ReaderContentBlock } from '@pubwiki/api';
 // ============================================================================
 
 /**
- * Minimal RDF store interface consumed by the pubwiki module.
+ * Minimal TripleStore interface consumed by the pubwiki module.
  * Extends SaveRDFStore so the same object can be passed to createSaveCheckpoint.
  */
 export interface PubWikiRDFStore extends SaveRDFStore {
-	getCheckpoint(id: string): Promise<{ id: string; title: string; description?: string } | null>;
-	getCheckpointQuads(id: string): Promise<RdfQuad[] | null>;
-	loadCheckpoint(id: string): Promise<void>;
-	checkpoint(opts: { title: string }): Promise<{ id: string; title: string }>;
+	getCheckpoint(id: string): CheckpointInfo | undefined;
+	exportCheckpoints(ids: string[], options?: { mode?: 'full' | 'delta' }): SerializedCheckpointEntry[];
+	checkpoint(opts: { title: string }): CheckpointInfo;
+}
+
+/** Extract triples from a checkpoint via exportCheckpoints (full mode). */
+function getCheckpointTriples(store: PubWikiRDFStore, id: string): Triple[] | null {
+	const entries = store.exportCheckpoints([id], { mode: 'full' });
+	if (entries.length === 0) return null;
+	const entry = entries[0];
+	if (entry.type !== 'keyframe') return null;
+	return entry.triples;
 }
 
 // ============================================================================
@@ -51,16 +60,21 @@ export interface PubWikiModuleConfig {
 	getArtifactContext: (projectId: string) => Promise<ArtifactContext>;
 	/** Get RDF store for a state node */
 	getRDFStore: (nodeId: string) => Promise<PubWikiRDFStore>;
-	/** Create a cloud save from the store's current active quads */
+	/** Create a cloud save from the store's current active triples */
 	createSaveCheckpoint: (
 		store: PubWikiRDFStore,
 		options: CreateSaveOptions,
 	) => Promise<CreateSaveResult>;
-	/** Create a cloud save from explicit quads (without touching active state) */
-	createSaveFromQuads: (
-		quads: RdfQuad[],
+	/** Create a cloud save from explicit triples (without touching active state) */
+	createSaveFromTriples: (
+		triples: Triple[],
 		options: CreateSaveOptions,
 	) => Promise<CreateSaveResult>;
+	/** Upload a batch of checkpoint entries (keyframe + deltas) via batch API */
+	createSaveBatch: (
+		entries: SerializedCheckpointEntry[],
+		options: CreateSaveBatchOptions,
+	) => Promise<CreateSaveBatchResult>;
 	/** Publish the current project (app-specific logic) */
 	publishArtifact?: (metadata: PublishInput) => Promise<PubWikiResult>;
 }
@@ -178,7 +192,7 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 
 			try {
 				const store = await config.getRDFStore(stateNodeId);
-				const checkpoint = await store.getCheckpoint(data.checkpointId);
+				const checkpoint = store.getCheckpoint(data.checkpointId);
 				if (!checkpoint) {
 					return { success: false, error: `Checkpoint "${data.checkpointId}" not found.` };
 				}
@@ -194,13 +208,13 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 					return { success: false, error: 'User cancelled the operation' };
 				}
 
-				// Read checkpoint quads directly without modifying active store state
-				const quads = await store.getCheckpointQuads(data.checkpointId);
-				if (!quads) {
+				// Read checkpoint triples directly without modifying active store state
+				const triples = getCheckpointTriples(store, data.checkpointId);
+				if (!triples) {
 					return { success: false, error: `Checkpoint data "${data.checkpointId}" not found.` };
 				}
 
-				const result = await config.createSaveFromQuads(quads, {
+				const result = await config.createSaveFromTriples(triples, {
 					stateNodeId,
 					artifactId: artifactCtx.artifactId,
 					artifactCommit: artifactCtx.artifactCommit,
@@ -254,7 +268,7 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 
 				const toUpload: { id: string; title: string; description?: string }[] = [];
 				for (const cpId of data.checkpointIds) {
-					const cp = await store.getCheckpoint(cpId);
+					const cp = store.getCheckpoint(cpId);
 					if (!cp) {
 						return { success: false, error: `Checkpoint "${cpId}" not found.` };
 					}
@@ -273,40 +287,25 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 				}
 
 				const isListed = (edited.isListed as boolean) ?? false;
-				const uploadedIds: string[] = [];
 
-				for (const cp of toUpload) {
-					// Read checkpoint quads directly without modifying active store state
-					const quads = await store.getCheckpointQuads(cp.id);
-					if (!quads) {
-						return {
-							success: false,
-							checkpointIds: uploadedIds,
-							error: `Checkpoint data "${cp.title}" not found.`,
-						};
-					}
+				// Use delta-mode export + batch API for efficient upload
+				const entries = store.exportCheckpoints(
+					toUpload.map(c => c.id),
+					{ mode: 'delta' },
+				);
 
-					const result = await config.createSaveFromQuads(quads, {
-						stateNodeId,
-						artifactId: artifactCtx.artifactId!,
-						artifactCommit: artifactCtx.artifactCommit!,
-						title: cp.title,
-						description: cp.description,
-						isListed,
-					});
+				const batchResult = await config.createSaveBatch(entries, {
+					stateNodeId,
+					artifactId: artifactCtx.artifactId!,
+					artifactCommit: artifactCtx.artifactCommit!,
+					isListed,
+				});
 
-					if (!result.success) {
-						return {
-							success: false,
-							checkpointIds: uploadedIds,
-							error: `Failed to upload checkpoint "${cp.title}": ${result.error}`,
-						};
-					}
-
-					uploadedIds.push(cp.id);
+				if (!batchResult.success) {
+					return { success: false, error: batchResult.error || 'Failed to upload checkpoints.' };
 				}
 
-				return { success: true, checkpointIds: uploadedIds };
+				return { success: true, checkpointIds: toUpload.map(c => c.id) };
 			} catch (err) {
 				return { success: false, error: err instanceof Error ? err.message : String(err) };
 			}
@@ -366,48 +365,63 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 			try {
 				const store = await config.getRDFStore(stateNodeId);
 				const editedContent = (edited.content as ReaderContentBlock[]) ?? previewContent;
-				const finalContent: ReaderContentBlock[] = [];
 
-				for (const block of editedContent) {
-					if (block.type === 'text') {
-						finalContent.push(block);
-						continue;
-					}
+				// Collect game_ref blocks and their checkpoint IDs
+				const gameRefBlocks: Array<{ index: number; textId: string; checkpointId: string }> = [];
+				for (let i = 0; i < editedContent.length; i++) {
+					const block = editedContent[i];
+					if (block.type !== 'game_ref') continue;
 
-					const textId = block.type === 'game_ref' ? block.textId : '';
+					const textId = block.textId;
 					const originalInput = gameRefMap.get(textId);
-					const checkpointId = originalInput?.checkpointId ?? null;
+					let checkpointId = originalInput?.checkpointId ?? null;
 
-					// Get quads: from specific checkpoint or from current active state
-					let saveQuads: RdfQuad[];
-					if (checkpointId) {
-						const cpQuads = await store.getCheckpointQuads(checkpointId);
-						if (cpQuads) {
-							saveQuads = cpQuads;
-						} else {
-							// Checkpoint not found, fall back to current active state
-							saveQuads = await store.getAllQuads();
-						}
+					if (!checkpointId) {
+						// No checkpoint specified — create one from current active state
+						const cp = store.checkpoint({ title: `Article save (${textId})` });
+						checkpointId = cp.id;
 					} else {
-						saveQuads = await store.getAllQuads();
+						// Verify checkpoint exists
+						const cp = store.getCheckpoint(checkpointId);
+						if (!cp) {
+							// Checkpoint not found, fall back to creating from current active state
+							const newCp = store.checkpoint({ title: `Article save (${textId})` });
+							checkpointId = newCp.id;
+						}
 					}
 
-					const saveResult = await config.createSaveFromQuads(saveQuads, {
+					gameRefBlocks.push({ index: i, textId, checkpointId });
+				}
+
+				// Build final content, uploading saves via batch API if there are game_refs
+				const finalContent: ReaderContentBlock[] = [...editedContent];
+
+				if (gameRefBlocks.length > 0) {
+					// Export all checkpoints with delta encoding
+					const checkpointIds = gameRefBlocks.map(b => b.checkpointId);
+					const entries = store.exportCheckpoints(checkpointIds, { mode: 'delta' });
+
+					// Upload batch
+					const batchResult = await config.createSaveBatch(entries, {
 						stateNodeId,
 						artifactId: artifactCtx.artifactId!,
 						artifactCommit: artifactCtx.artifactCommit!,
-						title: `Article save (${textId})`,
 					});
 
-					if (!saveResult.success || !saveResult.save) {
-						return { success: false, error: saveResult.error || 'Failed to upload checkpoint.' };
+					if (!batchResult.success || !batchResult.saves) {
+						return { success: false, error: batchResult.error || 'Failed to upload checkpoints.' };
 					}
 
-					finalContent.push({
-						type: 'game_ref',
-						textId,
-						saveCommit: saveResult.save.commit,
-					});
+					// Map returned saves back to content blocks
+					for (let i = 0; i < gameRefBlocks.length; i++) {
+						const { index, textId } = gameRefBlocks[i];
+						const save = batchResult.saves[i];
+						finalContent[index] = {
+							type: 'game_ref',
+							textId,
+							saveCommit: save.commit,
+						};
+					}
 				}
 
 				const articleId = data.articleId ?? crypto.randomUUID();

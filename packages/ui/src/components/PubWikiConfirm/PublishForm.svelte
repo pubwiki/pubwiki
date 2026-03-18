@@ -22,7 +22,7 @@
 
 	let { initialValues, onValuesChange, labels, authorName, onUploadThumbnail }: Props = $props();
 
-	const l = labels ?? {
+	const l = $derived(labels ?? {
 		name: 'Name',
 		namePlaceholder: 'Project name',
 		description: 'Description',
@@ -36,13 +36,13 @@
 		homepagePlaceholder: '# Welcome\n\nDescribe your project here...',
 		homepageHelp: 'Markdown content for the project homepage',
 		preview: 'Preview',
-	};
+	});
 
-	const visibilityOptions: VisibilityOption[] = [
+	const visibilityOptions: VisibilityOption[] = $derived([
 		{ value: 'PUBLIC', label: l.visibilityPublic },
 		{ value: 'PRIVATE', label: l.visibilityPrivate },
 		{ value: 'UNLISTED', label: l.visibilityUnlisted }
-	];
+	]);
 
 	const initName = untrack(() => (initialValues.name as string) ?? '');
 	const initDescription = untrack(() => (initialValues.description as string) ?? '');
@@ -55,7 +55,7 @@
 	let description = $state(initDescription);
 	let version = $state(initVersion);
 	let visibility = $state<VisibilityOption>(
-		visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0]
+		untrack(() => visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0])
 	);
 	let homepage = $state(initHomepage);
 	let thumbnailUrl = $state(initThumbnailUrl);

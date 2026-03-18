@@ -1,15 +1,12 @@
 /**
- * RDF-based Message Store
+ * TripleStore-based Message Store
  * 
- * Implements MessageStoreProvider using RDFStore for persistent chat history.
+ * Implements MessageStoreProvider using TripleStore for persistent chat history.
  * Stores messages in a named graph for isolation.
  */
 
 import type { MessageStoreProvider, MessageNode } from '@pubwiki/chat'
-import type { RDFStore, Quad } from '@pubwiki/rdfstore'
-import { DataFactory } from 'n3'
-
-const { namedNode, literal } = DataFactory
+import type { TripleStore } from '@pubwiki/rdfstore'
 
 // ============================================================================
 // Constants
@@ -21,60 +18,57 @@ const PUBWIKI_NS = 'https://pub.wiki/ontology#'
 const MSG_NS = 'https://pub.wiki/message#'
 
 const PREDICATES = {
-  TYPE: namedNode('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'),
-  MESSAGE_NODE_TYPE: namedNode(`${PUBWIKI_NS}MessageNode`),
-  PARENT_ID: namedNode(`${PUBWIKI_NS}parentId`),
-  ROLE: namedNode(`${PUBWIKI_NS}role`),
-  TIMESTAMP: namedNode(`${PUBWIKI_NS}timestamp`),
-  MODEL: namedNode(`${PUBWIKI_NS}model`),
-  BLOCKS: namedNode(`${PUBWIKI_NS}blocks`),
-  METADATA: namedNode(`${PUBWIKI_NS}metadata`),
+  TYPE: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+  MESSAGE_NODE_TYPE: `${PUBWIKI_NS}MessageNode`,
+  PARENT_ID: `${PUBWIKI_NS}parentId`,
+  ROLE: `${PUBWIKI_NS}role`,
+  TIMESTAMP: `${PUBWIKI_NS}timestamp`,
+  MODEL: `${PUBWIKI_NS}model`,
+  BLOCKS: `${PUBWIKI_NS}blocks`,
+  METADATA: `${PUBWIKI_NS}metadata`,
 }
 
 // ============================================================================
 // RDFMessageStore
 // ============================================================================
 
-/**
- * RDF-based message store implementation
- */
 export class RDFMessageStore implements MessageStoreProvider {
-  private rdfStore: RDFStore
-  private graph: ReturnType<typeof namedNode>
+  private store: TripleStore
+  private graph: string
   
   constructor(
-    rdfStore: RDFStore,
+    store: TripleStore,
     graphUri: string = CHAT_HISTORY_GRAPH_URI
   ) {
-    this.rdfStore = rdfStore
-    this.graph = namedNode(graphUri)
+    this.store = store
+    this.graph = graphUri
   }
   
   private msgUri(id: string) {
-    return namedNode(`${MSG_NS}${id}`)
+    return `${MSG_NS}${id}`
   }
   
   async save(node: MessageNode): Promise<void> {
     const subject = this.msgUri(node.id)
+    const g = this.graph
     
-    // Ensure parentId is a string - handle null, undefined, or object cases
     const parentIdStr = node.parentId == null || typeof node.parentId !== 'string' 
       ? 'null' 
       : node.parentId
     
-    await this.rdfStore.insert(subject, PREDICATES.TYPE, PREDICATES.MESSAGE_NODE_TYPE, this.graph)
-    await this.rdfStore.insert(subject, PREDICATES.PARENT_ID, literal(parentIdStr), this.graph)
-    await this.rdfStore.insert(subject, PREDICATES.ROLE, literal(node.role), this.graph)
-    await this.rdfStore.insert(subject, PREDICATES.TIMESTAMP, literal(String(node.timestamp)), this.graph)
+    this.store.insert(subject, PREDICATES.TYPE, PREDICATES.MESSAGE_NODE_TYPE, g)
+    this.store.insert(subject, PREDICATES.PARENT_ID, parentIdStr, g)
+    this.store.insert(subject, PREDICATES.ROLE, node.role, g)
+    this.store.insert(subject, PREDICATES.TIMESTAMP, String(node.timestamp), g)
     
     if (node.model) {
-      await this.rdfStore.insert(subject, PREDICATES.MODEL, literal(node.model), this.graph)
+      this.store.insert(subject, PREDICATES.MODEL, node.model, g)
     }
     
-    await this.rdfStore.insert(subject, PREDICATES.BLOCKS, literal(JSON.stringify(node.blocks)), this.graph)
+    this.store.insert(subject, PREDICATES.BLOCKS, JSON.stringify(node.blocks), g)
     
     if (node.metadata) {
-      await this.rdfStore.insert(subject, PREDICATES.METADATA, literal(JSON.stringify(node.metadata)), this.graph)
+      this.store.insert(subject, PREDICATES.METADATA, JSON.stringify(node.metadata), g)
     }
   }
   
@@ -86,21 +80,21 @@ export class RDFMessageStore implements MessageStoreProvider {
   
   async get(id: string): Promise<MessageNode | null> {
     const subject = this.msgUri(id)
-    const quads = await this.rdfStore.query({ subject, graph: this.graph })
+    const triples = this.store.match({ subject, graph: this.graph })
     
-    if (quads.length === 0) return null
+    if (triples.length === 0) return null
     
-    return this.quadsToMessageNode(id, quads)
+    return this.triplesToMessageNode(id, triples)
   }
   
   async getChildren(parentId: string): Promise<MessageNode[]> {
-    const quads = await this.rdfStore.query({
+    const triples = this.store.match({
       predicate: PREDICATES.PARENT_ID,
-      object: literal(parentId),
+      object: parentId,
       graph: this.graph
     })
     
-    const childIds = quads.map(q => q.subject.value.replace(MSG_NS, ''))
+    const childIds = triples.map(t => t.subject.replace(MSG_NS, ''))
     const children: MessageNode[] = []
     
     for (const childId of childIds) {
@@ -133,17 +127,21 @@ export class RDFMessageStore implements MessageStoreProvider {
     }
     
     const subject = this.msgUri(id)
-    await this.rdfStore.delete(subject, undefined as unknown as ReturnType<typeof namedNode>, undefined, this.graph)
+    // Delete all triples for this subject in the graph
+    const triples = this.store.match({ subject, graph: this.graph })
+    for (const t of triples) {
+      this.store.delete(t.subject, t.predicate, t.object, t.graph)
+    }
   }
   
   async listRoots(): Promise<MessageNode[]> {
-    const quads = await this.rdfStore.query({
+    const triples = this.store.match({
       predicate: PREDICATES.PARENT_ID,
-      object: literal('null'),
+      object: 'null',
       graph: this.graph
     })
     
-    const rootIds = quads.map(q => q.subject.value.replace(MSG_NS, ''))
+    const rootIds = triples.map(t => t.subject.replace(MSG_NS, ''))
     const roots: MessageNode[] = []
     
     for (const rootId of rootIds) {
@@ -155,25 +153,25 @@ export class RDFMessageStore implements MessageStoreProvider {
   }
   
   async clear(): Promise<void> {
-    const quads = await this.rdfStore.query({ graph: this.graph })
-    for (const quad of quads) {
-      await this.rdfStore.delete(quad.subject, quad.predicate, quad.object, this.graph)
+    const triples = this.store.match({ graph: this.graph })
+    for (const t of triples) {
+      this.store.delete(t.subject, t.predicate, t.object, this.graph)
     }
   }
   
-  private quadsToMessageNode(id: string, quads: Quad[]): MessageNode {
+  private triplesToMessageNode(id: string, triples: { predicate: string; object: unknown }[]): MessageNode {
     const props: Record<string, string> = {}
     
-    for (const quad of quads) {
-      const predValue = quad.predicate.value
-      const objValue = quad.object.value
+    for (const t of triples) {
+      const pred = t.predicate
+      const obj = String(t.object)
       
-      if (predValue === PREDICATES.PARENT_ID.value) props.parentId = objValue
-      else if (predValue === PREDICATES.ROLE.value) props.role = objValue
-      else if (predValue === PREDICATES.TIMESTAMP.value) props.timestamp = objValue
-      else if (predValue === PREDICATES.MODEL.value) props.model = objValue
-      else if (predValue === PREDICATES.BLOCKS.value) props.blocks = objValue
-      else if (predValue === PREDICATES.METADATA.value) props.metadata = objValue
+      if (pred === PREDICATES.PARENT_ID) props.parentId = obj
+      else if (pred === PREDICATES.ROLE) props.role = obj
+      else if (pred === PREDICATES.TIMESTAMP) props.timestamp = obj
+      else if (pred === PREDICATES.MODEL) props.model = obj
+      else if (pred === PREDICATES.BLOCKS) props.blocks = obj
+      else if (pred === PREDICATES.METADATA) props.metadata = obj
     }
     
     return {

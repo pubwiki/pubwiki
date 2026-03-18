@@ -23,6 +23,8 @@ export interface CreateRuntimeSaveParams {
   artifactCommit: string;
   contentHash: string;
   quadsHash: string;       // Required: SHA-256 of quads.bin, computed and verified by caller
+  saveEncoding: 'keyframe' | 'delta';
+  parentCommit?: string | null;  // Delta chain parent commit (required when saveEncoding='delta')
   title?: string;
   description?: string;
   isListed?: boolean;
@@ -73,6 +75,8 @@ export class SaveService {
       artifactCommit,
       contentHash,
       quadsHash,
+      saveEncoding,
+      parentCommit,
       title,
       description,
       isListed = false,
@@ -141,6 +145,8 @@ export class SaveService {
           artifactId,
           artifactCommit,
           quadsHash,
+          saveEncoding,
+          parentCommit: parentCommit ?? null,
           title: title ?? null,
           description: description ?? null,
         },
@@ -247,6 +253,8 @@ export class SaveService {
           artifactId: saveContents.artifactId,
           artifactCommit: saveContents.artifactCommit,
           quadsHash: saveContents.quadsHash,
+          saveEncoding: saveContents.saveEncoding,
+          parentCommit: saveContents.parentCommit,
           title: saveContents.title,
           description: saveContents.description,
           createdAt: saveContents.createdAt,
@@ -278,6 +286,8 @@ export class SaveService {
         artifactId: r.artifactId,
         artifactCommit: r.artifactCommit,
         quadsHash: r.quadsHash,
+        saveEncoding: r.saveEncoding as 'keyframe' | 'delta',
+        parentCommit: r.parentCommit,
         title: r.title,
         description: r.description,
         isListed: r.isListed ?? false,
@@ -320,6 +330,8 @@ export class SaveService {
           artifactId: saveContents.artifactId,
           artifactCommit: saveContents.artifactCommit,
           quadsHash: saveContents.quadsHash,
+          saveEncoding: saveContents.saveEncoding,
+          parentCommit: saveContents.parentCommit,
           title: saveContents.title,
           description: saveContents.description,
           createdAt: saveContents.createdAt,
@@ -363,6 +375,8 @@ export class SaveService {
           artifactId: row.artifactId,
           artifactCommit: row.artifactCommit,
           quadsHash: row.quadsHash,
+          saveEncoding: row.saveEncoding as 'keyframe' | 'delta',
+          parentCommit: row.parentCommit,
           title: row.title,
           description: row.description,
           isListed: row.isListed ?? false,

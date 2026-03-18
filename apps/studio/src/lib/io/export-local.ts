@@ -256,7 +256,7 @@ export async function exportProjectToZip(projectId: string): Promise<void> {
     if (node.type === 'STATE') {
       try {
         const store = await getNodeRDFStore(node.id);
-        const stateData = await store.exportFullState();
+        const stateData = JSON.stringify(store.exportState());
         nodeFolder.file('state.json', stateData);
         nodeData.hasStateExport = true;
       } catch (e) {

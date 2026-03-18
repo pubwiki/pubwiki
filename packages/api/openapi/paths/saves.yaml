@@ -116,6 +116,60 @@
             schema:
               $ref: '../schemas/common.yaml#/ApiError'
 
+/saves/batch:
+  post:
+    operationId: createSaveBatch
+    summary: 批量创建存档（delta chain）
+    description: |
+      批量上传一条 delta chain 的所有 save。使用 multipart/form-data 格式。
+      entries[0] 必须是 keyframe，后续条目为 delta。
+      服务端自动推导 parentCommit、生成 saveId/contentHash/commit。
+      每个条目的二进制数据通过 data_0, data_1, ... 字段传递。
+    tags: [Saves]
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required:
+              - metadata
+            properties:
+              metadata:
+                $ref: '../schemas/save.yaml#/BatchSaveMetadata'
+            additionalProperties: true
+          encoding:
+            metadata:
+              contentType: application/json
+    responses:
+      '201':
+        description: 批量创建成功
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - saves
+              properties:
+                saves:
+                  type: array
+                  items:
+                    $ref: '../schemas/save.yaml#/SaveDetail'
+      '400':
+        description: 请求参数错误
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '401':
+        description: 未认证
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
 /saves/{saveId}/{commit}:
   get:
     operationId: getSaveLegacy

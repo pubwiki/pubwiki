@@ -5,7 +5,7 @@
  * These provide standard APIs (JSON, State, partial-json) to user scripts.
  */
 
-import type { RDFStore } from '@pubwiki/rdfstore';
+import type { TripleStore } from '@pubwiki/rdfstore';
 import type { JsModuleDefinition, JsModuleRegistry } from '../types';
 import { createHashModule } from './hash';
 import { createJsonModule } from './json';
@@ -14,7 +14,7 @@ import { createStateModule } from './rdf';
 
 export { createJsonModule, JSON_NULL } from './json';
 export { createPartialJsonModule } from './partial-json';
-export { createStateModule, luaValueToRdf, rdfToLuaValue, XSD_STRING, XSD_INTEGER, XSD_DOUBLE, XSD_BOOLEAN, PUBWIKI_LUAVALUE } from './rdf';
+export { createStateModule } from './rdf';
 export {
 	createStringModule,
 	len, sub, reverse, upper, lower, char_at, chars, byte, char,
@@ -34,9 +34,9 @@ export { createHashModule } from './hash';
  * partial-json, and optionally a pubwiki module.
  */
 export async function buildJsModules(options: {
-	rdfStore?: RDFStore;
+	rdfStore?: TripleStore;
 	stateNodeId?: string;
-	getNodeRDFStore: (nodeId: string) => Promise<RDFStore>;
+	getNodeRDFStore: (nodeId: string) => Promise<TripleStore>;
 	pubwikiModule?: JsModuleDefinition;
 }): Promise<JsModuleRegistry> {
 	const modules: JsModuleRegistry = new Map();

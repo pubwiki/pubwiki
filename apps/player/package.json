@@ -36,7 +36,6 @@
 		"@pubwiki/sandbox-host": "workspace:*",
 		"@pubwiki/reader": "workspace:*",
 		"@pubwiki/ui": "workspace:*",
-		"@pubwiki/vfs": "workspace:*",
-		"browser-level": "catalog:"
+		"@pubwiki/vfs": "workspace:*"
 	}
 }

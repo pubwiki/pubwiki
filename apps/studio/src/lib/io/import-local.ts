@@ -220,7 +220,7 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
         try {
           const stateData = await stateFile.async('text');
           const store = await getNodeRDFStore(preservedNodeId);
-          await store.importFullState(stateData);
+          store.importState(JSON.parse(stateData));
         } catch (e) {
           console.warn(`[Import] Failed to import state for node ${preservedNodeId}:`, e);
         }

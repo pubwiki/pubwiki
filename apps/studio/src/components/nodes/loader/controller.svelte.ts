@@ -21,7 +21,7 @@ import { getNodeVfs } from '$lib/vfs';
 import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import type { LLMConfig, PubChat } from '@pubwiki/chat';
 import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
-import type { RDFStore } from '@pubwiki/rdfstore';
+import type { TripleStore } from '@pubwiki/rdfstore';
 import { getNodeRDFStore } from '$lib/rdf';
 
 // Import loader backend abstraction
@@ -149,7 +149,7 @@ export async function initializeLoader(
 	nodeId: string,
 	backendVfs: Vfs<VfsProvider>,
 	assetMounts: Map<string, Vfs<VfsProvider>>,
-	rdfStore: RDFStore | undefined,
+	rdfStore: TripleStore | undefined,
 	llmConfig: LLMConfig | undefined,
 	pubwikiConfig?: PubWikiModuleConfig,
 	stateNodeId?: string

@@ -811,7 +811,8 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
           // 手动加载和实例化 WASM
           // 如果用户提供了自定义 WASM 路径（或使用默认值），优先使用；否则从 basePath 推导
           const finalWasmPath = wasmPath || resolveResourcePath(basePath, 'lua_runner_wasm.wasm')
-          let result: WebAssembly.WebAssemblyInstantiatedSource
+          let wasmInstance: WebAssembly.Instance
+          let wasmModule: WebAssembly.Module
           
           if (isNode) {
             // Node.js：使用 fs 读取 WASM 文件
@@ -823,36 +824,47 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               : finalWasmPath
             
             const wasmBuffer = await fs.readFile(wasmFilePath)
-            result = await WebAssembly.instantiate(wasmBuffer, imports)
+            // Use compile + instantiate(module) to avoid WebAssembly.instantiate(BufferSource)
+            // overload conflict between DOM and Workers types
+            wasmModule = await WebAssembly.compile(wasmBuffer)
+            wasmInstance = await WebAssembly.instantiate(wasmModule, imports)
           } else {
             // 浏览器：使用 fetch
-            const fetchWasm = () => fetch(finalWasmPath, { credentials: 'same-origin' })
+            const fetchWasm = () => fetch(finalWasmPath)
             
-            const instantiateFromResponse = async (responsePromise: Promise<Response>) => {
+            const compileAndInstantiate = async (responsePromise: Promise<Response>) => {
               const wasmResponse = await responsePromise
               if (!wasmResponse.ok) {
                 throw new Error(`Failed to fetch WASM: ${wasmResponse.status}`)
               }
               const bytes = await wasmResponse.arrayBuffer()
-              return WebAssembly.instantiate(bytes, imports)
+              const mod = await WebAssembly.compile(bytes)
+              const inst = await WebAssembly.instantiate(mod, imports)
+              return { instance: inst, module: mod }
             }
             
             if (WebAssembly.instantiateStreaming) {
               try {
-                result = await WebAssembly.instantiateStreaming(fetchWasm(), imports)
+                const result = await WebAssembly.instantiateStreaming(fetchWasm(), imports)
+                wasmInstance = result.instance
+                wasmModule = result.module
               } catch (_error) {
-                result = await instantiateFromResponse(fetchWasm())
+                const result = await compileAndInstantiate(fetchWasm())
+                wasmInstance = result.instance
+                wasmModule = result.module
               }
             } else {
-              result = await instantiateFromResponse(fetchWasm())
+              const result = await compileAndInstantiate(fetchWasm())
+              wasmInstance = result.instance
+              wasmModule = result.module
             }
           }
           
-          const wasmExports = result.instance.exports
+          const wasmExports = wasmInstance.exports
           
           // 调用 successCallback 完成实例化
           if (successCallback) {
-            return successCallback(result.instance, result.module)
+            return successCallback(wasmInstance, wasmModule)
           }
           return wasmExports
         }

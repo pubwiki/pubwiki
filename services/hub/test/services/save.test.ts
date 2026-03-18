@@ -179,6 +179,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title: 'Test Save',
         description: null,
       });
@@ -198,6 +200,7 @@ describe('SaveService', () => {
         artifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title: 'Test Save',
         description: 'This should fail',
         isListed: false,
@@ -229,6 +232,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title: 'Test Save',
         description: null,
       });
@@ -248,6 +253,7 @@ describe('SaveService', () => {
         artifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title: 'Test Save',
         description: 'This should succeed',
         isListed: false,
@@ -265,7 +271,7 @@ describe('SaveService', () => {
       const fakeArtifactCommit = 'fake-artifact-commit';
 
       // Create a real STATE node
-      const stateNodeCommit = await createStateNode(stateNodeId, 'Game State');
+      await createStateNode(stateNodeId, 'Game State');
 
       // Do NOT create artifact version
 
@@ -277,6 +283,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit: fakeArtifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title: 'Test Save',
         description: null,
       });
@@ -296,6 +304,7 @@ describe('SaveService', () => {
         artifactCommit: fakeArtifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title: 'Test Save',
         description: 'This should fail',
         isListed: false,
@@ -327,6 +336,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title: 'Test Save',
         description: null,
       });
@@ -344,6 +355,7 @@ describe('SaveService', () => {
         artifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title: 'Test Save',
         isListed: false,
       });
@@ -377,6 +389,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title: 'Test Save',
         description: null,
       });
@@ -393,6 +407,7 @@ describe('SaveService', () => {
         artifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title: 'Test Save',
         isListed: true,
       });
@@ -436,6 +451,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title: 'Test Save',
         description: null,
       });
@@ -455,6 +472,7 @@ describe('SaveService', () => {
         artifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title: 'Test Save',
         isListed: saveIsListed,
       });
@@ -543,6 +561,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title,
         description: null,
       });
@@ -562,6 +582,7 @@ describe('SaveService', () => {
         artifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title,
         isListed: saveIsListed,
       });
@@ -722,6 +743,8 @@ describe('SaveService', () => {
         artifactId,
         artifactCommit,
         quadsHash,
+        saveEncoding: 'keyframe',
+        parentCommit: null,
         title: 'Test Save',
         description: null,
       });
@@ -738,6 +761,7 @@ describe('SaveService', () => {
         artifactCommit,
         contentHash: saveContentHash,
         quadsHash,
+        saveEncoding: 'keyframe',
         title: 'Test Save',
         isListed: true,
       });

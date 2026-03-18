@@ -14,7 +14,8 @@
     "build": "vite build && tsc --emitDeclarationOnly",
     "dev": "vite build --watch",
     "test": "vitest",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@pubwiki/api": "workspace:*",
@@ -23,11 +24,9 @@
     "@pubwiki/rdfstore": "workspace:*",
     "@pubwiki/vfs": "workspace:*",
     "jsonrepair": "^3.13.2",
-    "n3": "catalog:",
     "xxhash-wasm": "^1.1.0"
   },
   "devDependencies": {
-    "@types/n3": "catalog:",
     "typescript": "^5.7.2",
     "vite": "catalog:",
     "vitest": "^3.0.4"

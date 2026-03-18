@@ -155,6 +155,10 @@ export const saveContents = sqliteTable('save_contents', {
   // R2 存储索引（用户上传时计算并验证）
   quadsHash: text('quads_hash').notNull(),                     // quads.bin 的 SHA-256，用于 R2 路径: saves/{quadsHash}/quads.bin
 
+  // Delta encoding support
+  saveEncoding: text('save_encoding').notNull(),               // 'keyframe' | 'delta'
+  parentCommit: text('parent_commit'),                         // delta chain parent commit (required when saveEncoding='delta', null for keyframe)
+
   title: text('title'),                                        // 存档标题
   description: text('description'),                            // 存档描述
 

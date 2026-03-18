@@ -17,13 +17,6 @@ export {
   createJsonModule,
   JSON_NULL,
   createStateModule,
-  luaValueToRdf,
-  rdfToLuaValue,
-  XSD_STRING,
-  XSD_INTEGER,
-  XSD_DOUBLE,
-  XSD_BOOLEAN,
-  PUBWIKI_LUAVALUE,
   createStringModule,
 } from '@pubwiki/flow-core';
 

@@ -16,7 +16,7 @@
 	import type { StateNodeData, FlowNodeData } from '$lib/types';
 	import { nodeStore } from '$lib/persistence';
 	import { validateNodeName } from '$lib/validation';
-	import { getNodeRDFStore, closeNodeRDFStore, type RDFStore } from '$lib/rdf';
+	import { getNodeRDFStore, closeNodeRDFStore, type TripleStore } from '$lib/rdf';
 	import BaseNode from '../BaseNode.svelte';
 	import * as m from '$lib/paraglide/messages';
 
@@ -36,7 +36,7 @@
 	// Runtime State (local, not persisted)
 	// ============================================================================
 
-	let store = $state<RDFStore | null>(null);
+	let store = $state<TripleStore | null>(null);
 	let isInitializing = $state(false);
 	let isReady = $state(false);
 	let error = $state<string | null>(null);
@@ -82,9 +82,8 @@
 		if (!store) return;
 		
 		try {
-			// Query all quads to get count
-			const quads = await store.getAllQuads();
-			tripleCount = quads.length;
+			const triples = store.getAll();
+			tripleCount = triples.length;
 		} catch (e) {
 			console.error('[StateNode] Failed to get triple count:', e);
 		}
@@ -94,14 +93,7 @@
 		if (!store) return;
 		
 		try {
-			// Get all quads and delete them via batch delete
-			const quads = await store.getAllQuads();
-			if (quads.length > 0) {
-				// Delete each quad
-				for (const quad of quads) {
-					await store.delete(quad.subject, quad.predicate, quad.object, quad.graph);
-				}
-			}
+			store.clear();
 			tripleCount = 0;
 		} catch (e) {
 			console.error('[StateNode] Failed to clear store:', e);

@@ -130,7 +130,7 @@ export class OpfsProvider implements VfsProvider {
 	async readdir(path: string): Promise<string[]> {
 		const dir = await this.resolveDir(path);
 		const entries: string[] = [];
-		for await (const key of (dir as any).keys()) {
+		for await (const key of dir.keys()) {
 			entries.push(key);
 		}
 		return entries.sort();

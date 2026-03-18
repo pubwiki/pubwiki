@@ -5,7 +5,7 @@
  */
 
 import { PubChat, MemoryMessageStore, type LLMConfig, type MessageStoreProvider, type MessageNode } from '@pubwiki/chat'
-import type { RDFStore } from '@pubwiki/rdfstore'
+import type { TripleStore } from '@pubwiki/rdfstore'
 import type { JsModuleDefinition } from '../types'
 import { RDFMessageStore, CHAT_HISTORY_GRAPH_URI } from './llm-rdf-store'
 
@@ -17,7 +17,7 @@ export { RDFMessageStore, CHAT_HISTORY_GRAPH_URI }
 
 export interface LLMModuleConfig {
   llmConfig: LLMConfig
-  rdfStore?: RDFStore
+  rdfStore?: TripleStore
 }
 
 // ============================================================================

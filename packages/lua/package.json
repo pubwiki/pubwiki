@@ -47,7 +47,6 @@
     "@types/node": "catalog:",
     "@vitest/ui": "catalog:",
     "fake-indexeddb": "^6.2.5",
-    "memory-level": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   },

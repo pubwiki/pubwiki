@@ -472,6 +472,8 @@ export const CreateArtifactBody = zod.object({
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型（keyframe=全量快照, delta=增量）'),
+  "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时必填，keyframe 时为 null）'),
   "title": zod.string().nullish().describe('存档标题'),
   "description": zod.string().nullish().describe('存档描述')
 })]).describe('节点内容（结构取决于 type）'),
@@ -618,6 +620,8 @@ export const PatchArtifactBody = zod.object({
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型（keyframe=全量快照, delta=增量）'),
+  "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时必填，keyframe 时为 null）'),
   "title": zod.string().nullish().describe('存档标题'),
   "description": zod.string().nullish().describe('存档描述')
 })]).describe('节点内容（结构取决于 type）'),
@@ -965,6 +969,8 @@ export const GetArtifactGraphResponse = zod.object({
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型（keyframe=全量快照, delta=增量）'),
+  "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时必填，keyframe 时为 null）'),
   "title": zod.string().nullish().describe('存档标题'),
   "description": zod.string().nullish().describe('存档描述')
 })]).optional().describe('节点内容（结构化数据）')
@@ -2244,6 +2250,8 @@ export const CreateSaveBody = zod.object({
   "artifactCommit": zod.string().describe('关联的 artifact 版本 commit hash'),
   "contentHash": zod.string().describe('内容指纹'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256（客户端计算）'),
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型（keyframe=全量快照, delta=增量）'),
+  "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时必填）'),
   "title": zod.string().optional().describe('存档标题'),
   "description": zod.string().optional().describe('存档描述'),
   "isListed": zod.boolean().default(createSaveBodyMetadataIsListedDefault).describe('是否在公开列表中可见（可发现性）')
@@ -2292,6 +2300,8 @@ export const ListSavesResponse = zod.object({
   "artifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型（keyframe=全量快照, delta=增量）'),
+  "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时有值，keyframe 时为 null）'),
   "title": zod.string().nullish(),
   "description": zod.string().nullish(),
   "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
@@ -2302,6 +2312,33 @@ export const ListSavesResponse = zod.object({
   "limit": zod.number().min(1).max(listSavesResponsePaginationLimitMax),
   "total": zod.number(),
   "totalPages": zod.number()
+})
+})
+
+
+/**
+ * 批量上传一条 delta chain 的所有 save。使用 multipart/form-data 格式。
+entries[0] 必须是 keyframe，后续条目为 delta。
+服务端自动推导 parentCommit、生成 saveId/contentHash/commit。
+每个条目的二进制数据通过 data_0, data_1, ... 字段传递。
+
+ * @summary 批量创建存档（delta chain）
+ */
+export const createSaveBatchBodyMetadataIsListedDefault = false;
+
+
+export const CreateSaveBatchBody = zod.object({
+  "metadata": zod.object({
+  "stateNodeId": zod.uuid().describe('关联的 STATE 节点 ID'),
+  "artifactId": zod.uuid().describe('关联的 artifact ID'),
+  "artifactCommit": zod.string().describe('关联的 artifact 版本 commit hash'),
+  "isListed": zod.boolean().default(createSaveBatchBodyMetadataIsListedDefault).describe('是否在公开列表中可见'),
+  "entries": zod.array(zod.object({
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型'),
+  "quadsHash": zod.string().describe('数据文件的 SHA-256'),
+  "title": zod.string().optional().describe('存档标题'),
+  "description": zod.string().optional().describe('存档描述')
+})).min(1).describe('Save 条目数组。entries[0] 必须是 keyframe，后续为 delta。\n服务端自动将 entries[i] 的 parentCommit 设为 entries[i-1] 的 commit。\n')
 })
 })
 
@@ -2325,6 +2362,8 @@ export const GetSaveResponse = zod.object({
   "artifactId": zod.uuid().describe('创建此 Save 的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此 Save 的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型（keyframe=全量快照, delta=增量）'),
+  "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时有值，keyframe 时为 null）'),
   "title": zod.string().nullish(),
   "description": zod.string().nullish(),
   "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
@@ -2509,6 +2548,8 @@ export const GetNodeVersionResponse = zod.object({
   "artifactId": zod.uuid().describe('创建此存档的 artifact ID'),
   "artifactCommit": zod.string().describe('创建此存档的 artifact 版本 commit hash'),
   "quadsHash": zod.string().describe('quads.bin 的 SHA-256，用于 R2 路径 saves\/{quadsHash}\/quads.bin'),
+  "saveEncoding": zod.enum(['keyframe', 'delta']).describe('存储编码类型（keyframe=全量快照, delta=增量）'),
+  "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时必填，keyframe 时为 null）'),
   "title": zod.string().nullish().describe('存档标题'),
   "description": zod.string().nullish().describe('存档描述')
 })]).optional().describe('Full content from the typed content table'),

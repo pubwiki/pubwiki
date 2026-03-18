@@ -21,7 +21,7 @@ beforeAll(async () => {
     } catch (error) {
       // 忽略 "table already exists" 错误
       const errorMessage = String(error);
-      if (!errorMessage.includes('already exists')) {
+      if (!errorMessage.includes('already exists') && !errorMessage.includes('duplicate column name')) {
         console.error(`Migration error in ${migration.name}:`, error);
       }
     }

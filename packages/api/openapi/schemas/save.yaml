@@ -11,6 +11,7 @@ SaveDetail:
     - artifactId
     - artifactCommit
     - quadsHash
+    - saveEncoding
     - isListed
     - createdAt
   properties:
@@ -44,6 +45,14 @@ SaveDetail:
     quadsHash:
       type: string
       description: quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin
+    saveEncoding:
+      type: string
+      enum: [keyframe, delta]
+      description: 存储编码类型（keyframe=全量快照, delta=增量）
+    parentCommit:
+      type: string
+      nullable: true
+      description: Delta chain 父 save 的 commit（saveEncoding=delta 时有值，keyframe 时为 null）
     title:
       type: string
       nullable: true
@@ -69,6 +78,7 @@ CreateSaveRequest:
     - artifactCommit
     - contentHash
     - quadsHash
+    - saveEncoding
   properties:
     saveId:
       type: string
@@ -98,6 +108,14 @@ CreateSaveRequest:
     quadsHash:
       type: string
       description: quads.bin 的 SHA-256（客户端计算）
+    saveEncoding:
+      type: string
+      enum: [keyframe, delta]
+      description: 存储编码类型（keyframe=全量快照, delta=增量）
+    parentCommit:
+      type: string
+      nullable: true
+      description: Delta chain 父 save 的 commit（saveEncoding=delta 时必填）
     title:
       type: string
       description: 存档标题
@@ -108,3 +126,57 @@ CreateSaveRequest:
       type: boolean
       default: false
       description: 是否在公开列表中可见（可发现性）
+
+# Batch save creation entry (for POST /saves/batch)
+BatchSaveEntry:
+  type: object
+  required:
+    - saveEncoding
+    - quadsHash
+  properties:
+    saveEncoding:
+      type: string
+      enum: [keyframe, delta]
+      description: 存储编码类型
+    quadsHash:
+      type: string
+      description: 数据文件的 SHA-256
+    title:
+      type: string
+      description: 存档标题
+    description:
+      type: string
+      description: 存档描述
+
+# Batch save creation request metadata (POST /saves/batch)
+BatchSaveMetadata:
+  type: object
+  required:
+    - stateNodeId
+    - artifactId
+    - artifactCommit
+    - entries
+  properties:
+    stateNodeId:
+      type: string
+      format: uuid
+      description: 关联的 STATE 节点 ID
+    artifactId:
+      type: string
+      format: uuid
+      description: 关联的 artifact ID
+    artifactCommit:
+      type: string
+      description: 关联的 artifact 版本 commit hash
+    isListed:
+      type: boolean
+      default: false
+      description: 是否在公开列表中可见
+    entries:
+      type: array
+      items:
+        $ref: '#/BatchSaveEntry'
+      minItems: 1
+      description: |
+        Save 条目数组。entries[0] 必须是 keyframe，后续为 delta。
+        服务端自动将 entries[i] 的 parentCommit 设为 entries[i-1] 的 commit。

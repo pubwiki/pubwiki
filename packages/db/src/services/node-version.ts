@@ -918,6 +918,8 @@ export class NodeVersionService {
             artifactId: content.artifactId,
             artifactCommit: content.artifactCommit,
             quadsHash: content.quadsHash,
+            saveEncoding: content.saveEncoding,
+            parentCommit: content.parentCommit ?? null,
             title: content.title,
             description: content.description,
           })

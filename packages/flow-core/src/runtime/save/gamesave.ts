@@ -2,41 +2,29 @@
  * Game Save — Cloud Checkpoint Management
  * 
  * Pure functions for creating, restoring, listing, and deleting cloud saves.
- * Extracted from Studio's checkpoint.ts — API_BASE_URL is injected, not hardcoded.
+ * Uses Triple[] directly — no serialization adapters needed.
  * 
  * Save commit is globally unique: computeNodeCommit(saveId, parent, contentHash, 'SAVE').
  */
 
 import { computeContentHash, computeNodeCommit } from '@pubwiki/api';
 import type { SaveDetail } from '@pubwiki/api';
+import type { Triple, SerializedCheckpointEntry } from '@pubwiki/rdfstore';
 
 // Re-export for consumers
-export type { SaveDetail };
+export type { SaveDetail, SerializedCheckpointEntry };
 
 // ============================================================================
 // Types
 // ============================================================================
 
 /**
- * Minimal RDF store interface needed for save/restore.
+ * Minimal TripleStore interface needed for save/restore.
  */
 export interface SaveRDFStore {
-	getAllQuads(): Promise<RdfQuad[]>;
-	clear(): Promise<void>;
-	batchInsert(quads: RdfQuad[]): Promise<void>;
-}
-
-/**
- * Opaque RDF quad type. Concrete shape is defined by @pubwiki/rdfstore.
- */
-export type RdfQuad = unknown;
-
-/**
- * Serialization helpers — injected by app layer from @pubwiki/rdfstore.
- */
-export interface QuadSerializers {
-	fromRdfQuad(quad: RdfQuad): unknown;
-	toRdfQuad(serialized: unknown): RdfQuad;
+	getAll(): Triple[];
+	clear(): void;
+	batchInsert(triples: Triple[]): void;
 }
 
 /**
@@ -67,25 +55,22 @@ export interface CreateSaveResult {
 // ============================================================================
 
 /**
- * Create a save checkpoint from explicit quads (without reading from a store).
- * Use this when you already have the quads (e.g. from a checkpoint snapshot)
- * and don't want to modify the active store state.
+ * Create a save checkpoint from explicit triples (without reading from a store).
  */
 export async function createSaveFromQuads(
-	quads: RdfQuad[],
+	triples: Triple[],
 	options: CreateSaveOptions,
 	apiBaseUrl: string,
-	serializers: QuadSerializers,
 ): Promise<CreateSaveResult> {
 	try {
 		const saveId = options.saveId ?? crypto.randomUUID();
 
 		// 1. Serialize to binary
-		const quadsJson = JSON.stringify(quads.map(q => serializers.fromRdfQuad(q)));
-		const quadsData = new TextEncoder().encode(quadsJson);
+		const triplesJson = JSON.stringify(triples);
+		const triplesData = new TextEncoder().encode(triplesJson);
 
 		// 2. Compute quadsHash
-		const hashBuffer = await crypto.subtle.digest('SHA-256', quadsData);
+		const hashBuffer = await crypto.subtle.digest('SHA-256', triplesData);
 		const quadsHash = Array.from(new Uint8Array(hashBuffer))
 			.map(b => b.toString(16).padStart(2, '0'))
 			.join('');
@@ -97,6 +82,8 @@ export async function createSaveFromQuads(
 			artifactId: options.artifactId,
 			artifactCommit: options.artifactCommit,
 			quadsHash,
+			saveEncoding: 'keyframe' as const,
+			parentCommit: null,
 			title: options.title ?? null,
 			description: options.description ?? null,
 		};
@@ -123,6 +110,8 @@ export async function createSaveFromQuads(
 				artifactCommit: options.artifactCommit,
 				contentHash,
 				quadsHash,
+				saveEncoding: 'keyframe',
+				parentCommit: null,
 				title: options.title,
 				description: options.description,
 				isListed: options.isListed ?? false,
@@ -130,7 +119,7 @@ export async function createSaveFromQuads(
 		);
 		formData.append(
 			'data',
-			new Blob([quadsData], { type: 'application/octet-stream' }),
+			new Blob([triplesData], { type: 'application/octet-stream' }),
 		);
 
 		const response = await fetch(`${apiBaseUrl}/saves`, {
@@ -158,22 +147,134 @@ export async function createSaveFromQuads(
 }
 
 /**
- * Create a save checkpoint by uploading RDF quads to the backend.
- * Reads the current active quads from the store via getAllQuads().
- * 
- * @param store - Local RDF store
- * @param options - Save metadata
- * @param apiBaseUrl - Backend API base URL (injected)
- * @param serializers - Quad serialisation helpers (injected from @pubwiki/rdfstore)
+ * Create a save checkpoint by uploading triples to the backend.
+ * Reads the current active triples from the store.
  */
 export async function createSaveCheckpoint(
 	store: SaveRDFStore,
 	options: CreateSaveOptions,
 	apiBaseUrl: string,
-	serializers: QuadSerializers,
 ): Promise<CreateSaveResult> {
-	const rdfQuads = await store.getAllQuads();
-	return createSaveFromQuads(rdfQuads, options, apiBaseUrl, serializers);
+	const triples = store.getAll();
+	return createSaveFromQuads(triples, options, apiBaseUrl);
+}
+
+// ============================================================================
+// Batch Save (Delta Chain)
+// ============================================================================
+
+/**
+ * Options for creating a batch of saves from exported checkpoint entries.
+ */
+export interface CreateSaveBatchOptions {
+	stateNodeId: string;
+	artifactId: string;
+	artifactCommit: string;
+	isListed?: boolean;
+}
+
+/**
+ * Result of a batch save operation.
+ */
+export interface CreateSaveBatchResult {
+	success: boolean;
+	saves?: SaveDetail[];
+	error?: string;
+}
+
+/**
+ * Upload a batch of checkpoint entries (keyframe + deltas) in a single request.
+ * Entries must come from `store.exportCheckpoints(ids, { mode: 'delta' })`:
+ * - entries[0] is always a keyframe
+ * - entries[1..n] are deltas relative to the previous entry
+ *
+ * The server derives parentCommit from array order, generates saveId/commit/contentHash.
+ */
+export async function createSaveBatch(
+	entries: SerializedCheckpointEntry[],
+	options: CreateSaveBatchOptions,
+	apiBaseUrl: string,
+): Promise<CreateSaveBatchResult> {
+	try {
+		if (entries.length === 0) {
+			return { success: false, error: 'No entries to upload' };
+		}
+		if (entries[0].type !== 'keyframe') {
+			return { success: false, error: 'First entry must be a keyframe' };
+		}
+
+		const formData = new FormData();
+
+		// Build metadata entries and binary data parts
+		const metadataEntries: Array<{
+			saveEncoding: 'keyframe' | 'delta';
+			quadsHash: string;
+			title?: string;
+			description?: string;
+		}> = [];
+
+		for (let i = 0; i < entries.length; i++) {
+			const entry = entries[i];
+
+			// Serialize entry data
+			let dataJson: string;
+			if (entry.type === 'keyframe') {
+				dataJson = JSON.stringify(entry.triples);
+			} else {
+				dataJson = JSON.stringify({ delta: entry.delta });
+			}
+			const dataBytes = new TextEncoder().encode(dataJson);
+
+			// Compute quadsHash
+			const hashBuffer = await crypto.subtle.digest('SHA-256', dataBytes);
+			const quadsHash = Array.from(new Uint8Array(hashBuffer))
+				.map(b => b.toString(16).padStart(2, '0'))
+				.join('');
+
+			metadataEntries.push({
+				saveEncoding: entry.type,
+				quadsHash,
+			});
+
+			formData.append(
+				`data_${i}`,
+				new Blob([dataBytes], { type: 'application/octet-stream' }),
+			);
+		}
+
+		formData.append(
+			'metadata',
+			JSON.stringify({
+				stateNodeId: options.stateNodeId,
+				artifactId: options.artifactId,
+				artifactCommit: options.artifactCommit,
+				isListed: options.isListed ?? false,
+				entries: metadataEntries,
+			}),
+		);
+
+		const response = await fetch(`${apiBaseUrl}/saves/batch`, {
+			method: 'POST',
+			body: formData,
+			credentials: 'include',
+		});
+
+		if (!response.ok) {
+			const errorData = await response.json().catch(() => ({}));
+			return {
+				success: false,
+				error: (errorData as { error?: string }).error || `Batch save failed: ${response.status}`,
+			};
+		}
+
+		const data: { saves: SaveDetail[] } = await response.json();
+		return { success: true, saves: data.saves };
+	} catch (e) {
+		return {
+			success: false,
+			error: e instanceof Error ? e.message : 'Batch save failed',
+		};
+	}
 }
 
 // ============================================================================
@@ -181,13 +282,12 @@ export async function createSaveCheckpoint(
 // ============================================================================
 
 /**
- * Restore save data from the backend into a local RDF store.
+ * Restore save data from the backend into a local store.
  */
 export async function restoreFromSave(
 	store: SaveRDFStore,
 	commit: string,
 	apiBaseUrl: string,
-	serializers: QuadSerializers,
 ): Promise<boolean> {
 	try {
 		const response = await fetch(`${apiBaseUrl}/saves/${encodeURIComponent(commit)}/data`, {
@@ -195,12 +295,11 @@ export async function restoreFromSave(
 		});
 		if (!response.ok) return false;
 
-		const quadsJson = await response.text();
-		const apiQuads: unknown[] = JSON.parse(quadsJson);
-		const rdfQuads = apiQuads.map(q => serializers.toRdfQuad(q));
+		const triplesJson = await response.text();
+		const triples: Triple[] = JSON.parse(triplesJson);
 
-		await store.clear();
-		await store.batchInsert(rdfQuads);
+		store.clear();
+		store.batchInsert(triples);
 		return true;
 	} catch {
 		return false;

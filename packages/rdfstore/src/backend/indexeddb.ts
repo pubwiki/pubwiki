@@ -1,5 +1,6 @@
 /**
  * IndexedDB StorageBackend using the raw IndexedDB API (no Dexie).
+ * Browser-only module.
  */
 
 import type { CheckpointInfo } from '../types'

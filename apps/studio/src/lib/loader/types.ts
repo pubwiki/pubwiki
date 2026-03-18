@@ -9,10 +9,10 @@ import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 import type { RpcStub, ServiceDefinition } from '@pubwiki/sandbox-host';
 import type { LLMConfig } from '@pubwiki/chat';
 import type { JsModuleDefinition } from '@pubwiki/lua';
-import type { RDFStore } from '@pubwiki/rdfstore';
+import type { TripleStore } from '@pubwiki/rdfstore';
 
 // Re-export for convenience
-export type { ServiceDefinition, LLMConfig, RDFStore, JsModuleDefinition };
+export type { ServiceDefinition, LLMConfig, TripleStore, JsModuleDefinition };
 
 // ============================================================================
 // JS Module Registration (shared across all backends)
@@ -50,7 +50,7 @@ export interface BackendConfig {
 	/** Asset mountpoints: path -> VFS */
 	assetMounts: Map<string, Vfs<VfsProvider>>;
 	/** RDF store for state management (optional) */
-	rdfStore?: RDFStore;
+	rdfStore?: TripleStore;
 	/** LLM configuration (optional) */
 	llmConfig?: LLMConfig;
 	/** JS modules to register with the backend */

@@ -763,6 +763,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/saves/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 批量创建存档（delta chain）
+         * @description 批量上传一条 delta chain 的所有 save。使用 multipart/form-data 格式。
+         *     entries[0] 必须是 keyframe，后续条目为 delta。
+         *     服务端自动推导 parentCommit、生成 saveId/contentHash/commit。
+         *     每个条目的二进制数据通过 data_0, data_1, ... 字段传递。
+         */
+        post: operations["createSaveBatch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/saves/{commit}": {
         parameters: {
             query?: never;
@@ -1709,6 +1732,13 @@ export interface components {
             artifactCommit: string;
             /** @description quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin */
             quadsHash: string;
+            /**
+             * @description 存储编码类型（keyframe=全量快照, delta=增量）
+             * @enum {string}
+             */
+            saveEncoding: "keyframe" | "delta";
+            /** @description Delta chain 父 save 的 commit（saveEncoding=delta 时有值，keyframe 时为 null） */
+            parentCommit?: string | null;
             title?: string | null;
             description?: string | null;
             /** @description 是否在公开列表中可见（可发现性） */
@@ -1742,6 +1772,13 @@ export interface components {
             contentHash: string;
             /** @description quads.bin 的 SHA-256（客户端计算） */
             quadsHash: string;
+            /**
+             * @description 存储编码类型（keyframe=全量快照, delta=增量）
+             * @enum {string}
+             */
+            saveEncoding: "keyframe" | "delta";
+            /** @description Delta chain 父 save 的 commit（saveEncoding=delta 时必填） */
+            parentCommit?: string | null;
             /** @description 存档标题 */
             title?: string;
             /** @description 存档描述 */
@@ -1962,6 +1999,13 @@ export interface components {
             artifactCommit: string;
             /** @description quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin */
             quadsHash: string;
+            /**
+             * @description 存储编码类型（keyframe=全量快照, delta=增量）
+             * @enum {string}
+             */
+            saveEncoding: "keyframe" | "delta";
+            /** @description Delta chain 父 save 的 commit（saveEncoding=delta 时必填，keyframe 时为 null） */
+            parentCommit?: string | null;
             /** @description 存档标题 */
             title?: string | null;
             /** @description 存档描述 */
@@ -2075,6 +2119,43 @@ export interface components {
          * @enum {string}
          */
         DiscussionSortBy: "createdAt" | "updatedAt" | "replyCount";
+        BatchSaveEntry: {
+            /**
+             * @description 存储编码类型
+             * @enum {string}
+             */
+            saveEncoding: "keyframe" | "delta";
+            /** @description 数据文件的 SHA-256 */
+            quadsHash: string;
+            /** @description 存档标题 */
+            title?: string;
+            /** @description 存档描述 */
+            description?: string;
+        };
+        BatchSaveMetadata: {
+            /**
+             * Format: uuid
+             * @description 关联的 STATE 节点 ID
+             */
+            stateNodeId: string;
+            /**
+             * Format: uuid
+             * @description 关联的 artifact ID
+             */
+            artifactId: string;
+            /** @description 关联的 artifact 版本 commit hash */
+            artifactCommit: string;
+            /**
+             * @description 是否在公开列表中可见
+             * @default false
+             */
+            isListed: boolean;
+            /**
+             * @description Save 条目数组。entries[0] 必须是 keyframe，后续为 delta。
+             *     服务端自动将 entries[i] 的 parentCommit 设为 entries[i-1] 的 commit。
+             */
+            entries: components["schemas"]["BatchSaveEntry"][];
+        };
     };
     responses: never;
     parameters: never;
@@ -4472,6 +4553,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SaveDetail"];
+                };
+            };
+            /** @description 请求参数错误 */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description 未认证 */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    createSaveBatch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    metadata: components["schemas"]["BatchSaveMetadata"];
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description 批量创建成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        saves: components["schemas"]["SaveDetail"][];
+                    };
                 };
             };
             /** @description 请求参数错误 */

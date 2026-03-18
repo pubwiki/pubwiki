@@ -17,7 +17,7 @@
 
 	let { initialValues, onValuesChange, labels }: Props = $props();
 
-	const l = labels ?? {
+	const l = $derived(labels ?? {
 		name: 'Checkpoint Name',
 		namePlaceholder: 'Enter checkpoint name',
 		description: 'Description',
@@ -26,13 +26,13 @@
 		visibilityPublic: 'Public',
 		visibilityPrivate: 'Private',
 		visibilityUnlisted: 'Unlisted',
-	};
+	});
 
-	const visibilityOptions: VisibilityOption[] = [
+	const visibilityOptions: VisibilityOption[] = $derived([
 		{ value: 'PRIVATE', label: l.visibilityPrivate },
 		{ value: 'UNLISTED', label: l.visibilityUnlisted },
 		{ value: 'PUBLIC', label: l.visibilityPublic }
-	];
+	]);
 
 	const initName = untrack(() => (initialValues.name as string) ?? '');
 	const initDescription = untrack(() => (initialValues.description as string) ?? '');
@@ -41,7 +41,7 @@
 	let name = $state(initName);
 	let description = $state(initDescription);
 	let visibility = $state<VisibilityOption>(
-		visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0]
+		untrack(() => visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0])
 	);
 
 	$effect(() => {

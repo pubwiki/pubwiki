@@ -68,6 +68,7 @@ export type {
 export {
 	createSaveCheckpoint,
 	createSaveFromQuads,
+	createSaveBatch,
 	restoreFromSave,
 	fetchSaves,
 	getSave,
@@ -76,8 +77,9 @@ export {
 export type {
 	CreateSaveOptions,
 	CreateSaveResult,
+	CreateSaveBatchOptions,
+	CreateSaveBatchResult,
 	SaveRDFStore,
-	QuadSerializers,
 } from './save/gamesave';
 
 // ─── Lua Backend ────────────────────────────────────────────────────
@@ -91,13 +93,6 @@ export {
 	createPartialJsonModule,
 	createStateModule,
 	buildJsModules,
-	luaValueToRdf,
-	rdfToLuaValue,
-	XSD_STRING,
-	XSD_INTEGER,
-	XSD_DOUBLE,
-	XSD_BOOLEAN,
-	PUBWIKI_LUAVALUE,
 	createStringModule,
 	createLLMModule,
 	createPubChat,

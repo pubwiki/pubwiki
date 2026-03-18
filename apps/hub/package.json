@@ -29,7 +29,6 @@
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/typography": "catalog:",
 		"@tailwindcss/vite": "catalog:",
-		"@types/n3": "catalog:",
 		"@types/node": "catalog:",
 		"@vitest/browser-playwright": "catalog:",
 		"globals": "catalog:",
@@ -56,7 +55,6 @@
 		"@xyflow/svelte": "catalog:",
 		"@zenfs/core": "^2.4.4",
 		"@zenfs/dom": "^1.2.6",
-		"browser-level": "catalog:",
 		"buffer": "^6.0.3",
 		"dexie": "catalog:",
 		"flowbite-svelte": "catalog:"

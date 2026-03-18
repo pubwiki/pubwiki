@@ -7,48 +7,36 @@
 
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest'
 import { loadRunner, createLuaInstance, type LuaInstance } from '@pubwiki/lua'
-import { RDFStore } from '@pubwiki/rdfstore'
-import { MemoryLevel } from 'memory-level'
-import { DataFactory } from 'n3'
+import { createTripleStore, MemoryBackend, type TripleStore } from '@pubwiki/rdfstore'
 import { createStateModule } from '$lib/loader/modules'
 import { createJsonModule } from '$lib/loader/modules'
 
-const { namedNode, literal } = DataFactory
-
-// Counter for generating unique database names
-let dbCounter = 0
-
-// Helper function: create a new in-memory RDFStore
-async function createMemoryStore(): Promise<RDFStore> {
-  const level = new MemoryLevel()
-  const checkpointDbName = `test-checkpoint-db-${Date.now()}-${dbCounter++}`
-  return RDFStore.create({
-    quadstoreLevel: level,
-    checkpointDbName
-  })
+// Helper function: create a new in-memory TripleStore
+function createMemoryStore(): TripleStore {
+  return createTripleStore({ backend: new MemoryBackend() })
 }
 
 // Helper function: query by strings (for test assertions)
-async function queryByStrings(
-  store: RDFStore, 
+function queryByStrings(
+  store: TripleStore, 
   pattern: { subject?: string; predicate?: string; object?: string; graph?: string }
-): Promise<{ subject: string; predicate: string; object: string; graph: string }[]> {
-  const quads = await store.query({
-    subject: pattern.subject ? namedNode(pattern.subject) : undefined,
-    predicate: pattern.predicate ? namedNode(pattern.predicate) : undefined,
-    object: pattern.object ? literal(pattern.object) : undefined,
-    graph: pattern.graph ? namedNode(pattern.graph) : undefined,
+): { subject: string; predicate: string; object: string; graph: string }[] {
+  const triples = store.match({
+    subject: pattern.subject,
+    predicate: pattern.predicate,
+    object: pattern.object,
+    graph: pattern.graph,
   })
-  return quads.map(q => ({
-    subject: q.subject.value,
-    predicate: q.predicate.value,
-    object: q.object.value,
-    graph: q.graph.value,
+  return triples.map(t => ({
+    subject: t.subject,
+    predicate: t.predicate,
+    object: String(t.object),
+    graph: t.graph ?? '',
   }))
 }
 
 describe('State Module (RDF)', () => {
-  let store: RDFStore
+  let store: TripleStore
   let instance: LuaInstance
 
   beforeAll(async () => {
@@ -58,7 +46,7 @@ describe('State Module (RDF)', () => {
   })
 
   beforeEach(async () => {
-    store = await createMemoryStore()
+    store = createMemoryStore()
     instance = createLuaInstance()
     
     // Register the State module
@@ -71,7 +59,7 @@ describe('State Module (RDF)', () => {
   afterEach(async () => {
     instance.destroy()
     if (store.isOpen) {
-      await store.close()
+      store.close()
     }
   })
 
@@ -81,7 +69,7 @@ describe('State Module (RDF)', () => {
         State:insert('book:1984', 'title', '1984')
       `)
       
-      const results = await queryByStrings(store, { predicate: 'title' })
+      const results = queryByStrings(store, { predicate: 'title' })
       expect(results).toHaveLength(1)
       expect(results[0].subject).toBe('book:1984')
       expect(results[0].object).toBe('1984')
@@ -94,7 +82,7 @@ describe('State Module (RDF)', () => {
         State:insert('book:1984', 'year', 1949)
       `)
 
-      const results = await queryByStrings(store, { subject: 'book:1984' })
+      const results = queryByStrings(store, { subject: 'book:1984' })
       expect(results).toHaveLength(3)
     })
 
@@ -103,7 +91,7 @@ describe('State Module (RDF)', () => {
         State:insert('book:1984', 'title', '1984', 'graph:books')
       `)
       
-      const results = await queryByStrings(store, { graph: 'graph:books' })
+      const results = queryByStrings(store, { graph: 'graph:books' })
       expect(results).toHaveLength(1)
     })
   })
@@ -161,7 +149,7 @@ describe('State Module (RDF)', () => {
         State:delete('user:alice', 'age', 25)
       `)
 
-      const results = await queryByStrings(store, { subject: 'user:alice' })
+      const results = queryByStrings(store, { subject: 'user:alice' })
       expect(results).toHaveLength(0)
     })
 
@@ -172,7 +160,7 @@ describe('State Module (RDF)', () => {
         State:delete('user:alice', 'hobby')
       `)
 
-      const results = await queryByStrings(store, { subject: 'user:alice' })
+      const results = queryByStrings(store, { subject: 'user:alice' })
       expect(results).toHaveLength(0)
     })
   })
@@ -188,7 +176,7 @@ describe('State Module (RDF)', () => {
         State:batchInsert(books)
       `)
 
-      const results = await queryByStrings(store, { predicate: 'title' })
+      const results = queryByStrings(store, { predicate: 'title' })
       expect(results).toHaveLength(3)
     })
 
@@ -201,7 +189,7 @@ describe('State Module (RDF)', () => {
         State:batchInsert(books)
       `)
 
-      const results = await queryByStrings(store, { graph: 'graph:test' })
+      const results = queryByStrings(store, { graph: 'graph:test' })
       expect(results).toHaveLength(2)
     })
   })
@@ -213,7 +201,7 @@ describe('State Module (RDF)', () => {
         State:set('user:alice', 'age', 30)
       `)
 
-      const results = await queryByStrings(store, { subject: 'user:alice', predicate: 'age' })
+      const results = queryByStrings(store, { subject: 'user:alice', predicate: 'age' })
       expect(results).toHaveLength(1)
       expect(results[0].object).toBe('30')
     })
@@ -223,7 +211,7 @@ describe('State Module (RDF)', () => {
         State:set('user:alice', 'city', 'Tokyo')
       `)
 
-      const results = await queryByStrings(store, { subject: 'user:alice', predicate: 'city' })
+      const results = queryByStrings(store, { subject: 'user:alice', predicate: 'city' })
       expect(results).toHaveLength(1)
       expect(results[0].object).toBe('Tokyo')
     })
@@ -255,14 +243,14 @@ describe('State Module (RDF)', () => {
         State:insert('user:bob', 'email', 'bob@example.com')
       `)
 
-      const beforeResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
+      const beforeResults = queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
       expect(beforeResults).toHaveLength(1)
 
       await instance.run(`
         State:set('user:bob', 'email', nil)
       `)
 
-      const afterResults = await queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
+      const afterResults = queryByStrings(store, { subject: 'user:bob', predicate: 'email' })
       expect(afterResults).toHaveLength(0)
     })
 
@@ -273,14 +261,14 @@ describe('State Module (RDF)', () => {
         State:insert('user:carol', 'tag', 'manager')
       `)
 
-      const beforeResults = await queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
+      const beforeResults = queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
       expect(beforeResults).toHaveLength(3)
 
       await instance.run(`
         State:set('user:carol', 'tag', nil)
       `)
 
-      const afterResults = await queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
+      const afterResults = queryByStrings(store, { subject: 'user:carol', predicate: 'tag' })
       expect(afterResults).toHaveLength(0)
     })
 
@@ -437,7 +425,7 @@ describe('State Module (RDF)', () => {
 })
 
 describe('RDF state persistence', () => {
-  let store: RDFStore
+  let store: TripleStore
   let instance: LuaInstance
 
   beforeAll(async () => {
@@ -445,7 +433,7 @@ describe('RDF state persistence', () => {
   })
 
   beforeEach(async () => {
-    store = await createMemoryStore()
+    store = createMemoryStore()
     instance = createLuaInstance()
     instance.registerJsModule('State', createStateModule(async () => store), { mode: 'global' })
   })
@@ -453,7 +441,7 @@ describe('RDF state persistence', () => {
   afterEach(async () => {
     instance.destroy()
     if (store.isOpen) {
-      await store.close()
+      store.close()
     }
   })
 

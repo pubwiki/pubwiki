@@ -54,7 +54,7 @@ export function createPublishState() {
 
 	// Graph change tracking: compare nodeStore.modificationCount against baseline
 	let graphBaseline = $state<number | null>(null);
-	let hasGraphChanges = $derived(
+	const hasGraphChanges = $derived(
 		graphBaseline !== null
 			? nodeStore.modificationCount > graphBaseline
 			: true // Before first publish baseline is set, assume dirty
@@ -63,7 +63,7 @@ export function createPublishState() {
 	// Metadata change tracking: snapshot comparison
 	let publishedMeta = $state<MetadataSnapshot | null>(null);
 	let currentMeta = $state<MetadataSnapshot | null>(null);
-	let hasMetadataChanges = $derived.by(() => {
+	const hasMetadataChanges = $derived.by(() => {
 		if (!publishedMeta || !currentMeta) return false;
 		return (Object.keys(publishedMeta) as (keyof MetadataSnapshot)[])
 			.some(k => currentMeta![k] !== publishedMeta![k]);
@@ -71,9 +71,9 @@ export function createPublishState() {
 
 	// VFS file change tracking: supplied by external getter (DraftSyncService)
 	let vfsChangesGetter = $state<(() => boolean) | null>(null);
-	let hasVfsChanges = $derived(vfsChangesGetter ? vfsChangesGetter() : false);
+	const hasVfsChanges = $derived(vfsChangesGetter ? vfsChangesGetter() : false);
 
-	let hasPublishableChanges = $derived.by(() => {
+	const hasPublishableChanges = $derived.by(() => {
 		const result = isDraft || hasGraphChanges || hasMetadataChanges || hasVfsChanges;
 		console.log('[PublishState] hasPublishableChanges:', result, '{ isDraft:', isDraft, ', hasGraphChanges:', hasGraphChanges, ', hasMetadataChanges:', hasMetadataChanges, ', hasVfsChanges:', hasVfsChanges, '}');
 		return result;

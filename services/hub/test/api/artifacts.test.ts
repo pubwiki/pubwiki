@@ -1150,11 +1150,15 @@ describe('Artifacts API', () => {
 
         // 计算 save 的 ID 和 commit
         const saveId = crypto.randomUUID();
+        const quadsHash = 'abcd1234'.repeat(8);
         const saveContentHash = await computeContentHash({
           type: 'SAVE',
           stateNodeId,
-          stateNodeCommit: stateCommit,
-          sourceArtifactCommit: artifactCommit,
+          artifactId,
+          artifactCommit,
+          quadsHash,
+          saveEncoding: 'keyframe',
+          parentCommit: null,
           title: 'Test Save',
           description: null,
         });

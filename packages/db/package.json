@@ -15,7 +15,8 @@
     "migrate": "drizzle-kit migrate",
     "push": "drizzle-kit push",
     "pull": "drizzle-kit pull",
-    "studio": "drizzle-kit studio"
+    "studio": "drizzle-kit studio",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@pubwiki/api": "workspace:*",

@@ -14,7 +14,7 @@ export type {
 	JsModuleDefinition,
 	JsModuleEntry,
 	JsModuleRegistry,
-	RDFStore,
+	TripleStore,
 	BackendType,
 	BackendFactory,
 	ServiceDefinition,

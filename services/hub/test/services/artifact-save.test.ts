@@ -98,7 +98,7 @@ describe('ArtifactService - SAVE node validation', () => {
     artifactId: string,
     artifactCommit: string,
     title = 'Test Save',
-  ): Promise<{ nodeId: string; commit: string; contentHash: string; content: { type: 'SAVE'; stateNodeId: string; artifactId: string; artifactCommit: string; quadsHash: string; title: string; description: null } }> {
+  ): Promise<{ nodeId: string; commit: string; contentHash: string; content: { type: 'SAVE'; stateNodeId: string; artifactId: string; artifactCommit: string; quadsHash: string; saveEncoding: 'keyframe'; parentCommit: null; title: string; description: null } }> {
     const quadsHash = 'abcd1234'.repeat(8); // 64 char hex hash placeholder
     const content = {
       type: 'SAVE' as const,
@@ -106,6 +106,8 @@ describe('ArtifactService - SAVE node validation', () => {
       artifactId,
       artifactCommit,
       quadsHash,
+      saveEncoding: 'keyframe' as const,
+      parentCommit: null,
       title,
       description: null,
     };
@@ -368,6 +370,8 @@ describe('ArtifactService - SAVE node validation', () => {
       artifactId,
       artifactCommit: baseCommit,
       quadsHash,
+      saveEncoding: 'keyframe' as const,
+      parentCommit: null,
       title: 'Test Save',
       description: null,
     };
@@ -464,6 +468,8 @@ describe('ArtifactService - SAVE node validation', () => {
       artifactId,
       artifactCommit: baseCommit,
       quadsHash: 'abcd1234'.repeat(8),
+      saveEncoding: 'keyframe',
+      parentCommit: null,
       title: 'Test Save',
       description: null,
     };

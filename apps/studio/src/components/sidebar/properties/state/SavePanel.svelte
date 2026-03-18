@@ -150,7 +150,7 @@
 				if (!success) throw new Error('恢复云存档失败');
 			} else {
 				// Load from local checkpoint
-				await s.loadCheckpoint(save.id);
+				s.checkout(save.id);
 			}
 
 			successMessage = `已应用存档: ${save.title}`;
@@ -462,8 +462,8 @@
 								</div>
 								<div class="text-xs text-gray-500 mt-0.5">
 									{formatDate(save.timestamp)}
-									{#if save.quadCount > 0}
-										 · {save.quadCount} 条数据
+									{#if save.tripleCount > 0}
+									 · {save.tripleCount} 条数据
 									{/if}
 								</div>
 								{#if save.description}

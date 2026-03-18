@@ -26,7 +26,7 @@
 		createLLMModule,
 		createPubWikiModule,
 		createSaveCheckpoint,
-		createSaveFromQuads,
+		createSaveFromQuads as createSaveFromTriples,
 		type RuntimeGraph,
 		type RuntimeNode,
 		type LoaderBackend,
@@ -36,8 +36,7 @@
 	import { computeArtifactCommit, computeContentHash, type GetArtifactGraphResponse } from '@pubwiki/api';
 	import { getNodeVfs, disposeAllVfs } from '$lib/vfs/store';
 	import { detectStorageBackend } from '$lib/vfs/detect';
-	import { getNodeRDFStore, closeAllRDFStores, type RDFStore } from '$lib/rdf/store';
-	import { fromRdfQuad, toRdfQuad } from '@pubwiki/rdfstore';
+	import { getNodeRDFStore, closeAllRDFStores, type TripleStore } from '$lib/rdf/store';
 	import { detectProject, createBuildAwareVfs, getOpfsBuildCacheStorage, getIdbBuildCacheStorage, type BuildCacheStorage } from '@pubwiki/bundler';
 	import type { ProjectConfig } from '@pubwiki/bundler';
 	import { createRemoteBuildFetcher } from '$lib/io/remote-build-fetcher';
@@ -101,7 +100,7 @@
 	let sandboxConnection = $state<SandboxConnection | null>(null);
 	let buildAwareVfs: (Vfs & { warmup(): Promise<void> }) | null = null;
 	let backends = new Map<string, LoaderBackend>();
-	let rdfStore: RDFStore | null = null;
+	let rdfStore: TripleStore | null = null;
 	let storedGraphData: GetArtifactGraphResponse | null = null;
 	let iframeSrc = $state<string>('');
 	let consoleLogs = $state<ConsoleLogEntry[]>([]);
@@ -162,7 +161,6 @@
 					artifactCommit: artifactCommit ?? '',
 				},
 				API_BASE_URL,
-				{ fromRdfQuad, toRdfQuad },
 			);
 			if (saveResult.success && saveResult.save) {
 				const sd = saveResult.save;
@@ -173,6 +171,8 @@
 					artifactId: sd.artifactId,
 					artifactCommit: sd.artifactCommit,
 					quadsHash: sd.quadsHash,
+					saveEncoding: sd.saveEncoding,
+					parentCommit: sd.parentCommit ?? null,
 					title: sd.title ?? null,
 					description: sd.description ?? null,
 				};
@@ -423,7 +423,6 @@
 							return requestConfirmation(action as 'publish' | 'uploadArticle' | 'uploadCheckpoint' | 'uploadCheckpoints', FormComponent, initialValues as Record<string, unknown>) as Promise<typeof initialValues | null>;
 						}
 					};
-					const quadSerializers = { fromRdfQuad, toRdfQuad };
 					const pubwikiConfig: PubWikiModuleConfig = {
 						getGraph: () => graph,
 						projectId: data.artifactId,
@@ -442,19 +441,17 @@
 								store,
 								options,
 								API_BASE_URL,
-								quadSerializers,
 							);
 							if (result.success && result.save) {
 								userInfo.userSaveCommit = result.save.commit;
 							}
 							return result;
 						},
-						createSaveFromQuads: async (quads, options) => {
-							return createSaveFromQuads(
-								quads,
+						createSaveFromTriples: async (triples, options) => {
+							return createSaveFromTriples(
+								triples,
 								options,
 								API_BASE_URL,
-								quadSerializers,
 							);
 						},
 						publishArtifact: async (metadata) => {
@@ -551,21 +548,20 @@
 		if (!rdfStore) return;
 
 		try {
-			const response = await fetch(`${API_BASE_URL}/saves/${encodeURIComponent(saveCommit)}/data`, {
-				credentials: 'include'
+			const { data: triplesText, error: fetchError } = await apiClient.GET('/saves/{commit}/data', {
+				params: { path: { commit: saveCommit } },
+				parseAs: 'text',
 			});
-			if (!response.ok) {
-				console.warn('[Play] Failed to download save data:', response.status);
+
+			if (fetchError || !triplesText) {
+				console.warn('[Play] Failed to download save data:', fetchError);
 				return;
 			}
 
-			const quadsJson = await response.text();
-			const apiQuads = JSON.parse(quadsJson);
-			const { toRdfQuad } = await import('@pubwiki/rdfstore');
-			const rdfQuads = apiQuads.map(toRdfQuad);
+			const triples = JSON.parse(triplesText as string);
 
-			await rdfStore.clear();
-			await rdfStore.batchInsert(rdfQuads);
+			rdfStore.clear();
+			rdfStore.batchInsert(triples);
 		} catch (error) {
 			console.error('[Play] Failed to load save:', error);
 		}

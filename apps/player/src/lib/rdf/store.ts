@@ -1,51 +1,47 @@
 /**
- * RDF Store for Player
+ * TripleStore for Player
  *
- * Per-node RDFStore instances backed by IndexedDB (via BrowserLevel + Dexie).
+ * Per-node TripleStore instances backed by IndexedDB.
  * Same pattern as Studio but isolated to Player's origin.
  */
 
-import { RDFStore } from '@pubwiki/rdfstore';
-import { BrowserLevel } from 'browser-level';
+import { createTripleStore, IndexedDBBackend, type TripleStore } from '@pubwiki/rdfstore';
 
-const storeRegistry = new Map<string, RDFStore>();
+const storeRegistry = new Map<string, TripleStore>();
 
 /**
- * Get or create an RDFStore for a given State node.
+ * Get or create a TripleStore for a given State node.
  */
-export async function getNodeRDFStore(nodeId: string): Promise<RDFStore> {
+export async function getNodeRDFStore(nodeId: string): Promise<TripleStore> {
 	let store = storeRegistry.get(nodeId);
 	if (!store || !store.isOpen) {
 		const dbName = `player-state-${nodeId}`;
-		const quadstoreLevel = new BrowserLevel<string, string>(`${dbName}-quads`);
-		store = await RDFStore.create({
-			quadstoreLevel,
-			checkpointDbName: `${dbName}-checkpoints`,
-		});
+		store = createTripleStore({ backend: new IndexedDBBackend(dbName) });
 		storeRegistry.set(nodeId, store);
 	}
 	return store;
 }
 
 /**
- * Close and remove an RDFStore for a given State node.
+ * Close and remove a TripleStore for a given State node.
  */
 export async function closeNodeRDFStore(nodeId: string): Promise<void> {
 	const store = storeRegistry.get(nodeId);
 	if (store) {
-		await store.close();
+		store.close();
 		storeRegistry.delete(nodeId);
 	}
 }
 
 /**
- * Close all open RDF stores.
+ * Close all open stores.
  */
 export async function closeAllRDFStores(): Promise<void> {
 	for (const [nodeId, store] of storeRegistry) {
-		await store.close();
+		store.close();
 		storeRegistry.delete(nodeId);
 	}
 }
 
-export { RDFStore };
+export type { TripleStore };
+export type { TripleStore as RDFStore } from '@pubwiki/rdfstore';

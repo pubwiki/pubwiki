@@ -376,6 +376,7 @@ SaveNodeContent:
     - artifactId
     - artifactCommit
     - quadsHash
+    - saveEncoding
   properties:
     type:
       type: string
@@ -394,6 +395,14 @@ SaveNodeContent:
     quadsHash:
       type: string
       description: quads.bin 的 SHA-256，用于 R2 路径 saves/{quadsHash}/quads.bin
+    saveEncoding:
+      type: string
+      enum: [keyframe, delta]
+      description: 存储编码类型（keyframe=全量快照, delta=增量）
+    parentCommit:
+      type: string
+      nullable: true
+      description: Delta chain 父 save 的 commit（saveEncoding=delta 时必填，keyframe 时为 null）
     title:
       type: string
       nullable: true

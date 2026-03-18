@@ -12,7 +12,8 @@
     "./validate": "./src/validate/schemas.ts"
   },
   "scripts": {
-    "generate": "openapi-typescript openapi.yaml -o src/generated/openapi.ts && redocly bundle openapi.yaml -o openapi.bundled.yaml && orval"
+    "generate": "openapi-typescript openapi.yaml -o src/generated/openapi.ts && redocly bundle openapi.yaml -o openapi.bundled.yaml && orval",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "better-auth": "^1.5.5",

@@ -294,6 +294,8 @@ paths:
   # Saves (存档)
   /saves:
     $ref: './openapi/paths/saves.yaml#/~1saves'
+  /saves/batch:
+    $ref: './openapi/paths/saves.yaml#/~1saves~1batch'
   /saves/{commit}:
     $ref: './openapi/paths/saves.yaml#/~1saves~1{commit}'
   /saves/{commit}/data:

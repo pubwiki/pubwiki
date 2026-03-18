@@ -19,7 +19,7 @@
 
 	let { initialValues, onValuesChange, labels, EditorComponent }: Props = $props();
 
-	const l = labels ?? {
+	const l = $derived(labels ?? {
 		title: 'Title',
 		titlePlaceholder: 'Article title',
 		visibility: 'Visibility',
@@ -27,13 +27,13 @@
 		visibilityPrivate: 'Private',
 		visibilityUnlisted: 'Unlisted',
 		content: 'Content',
-	};
+	});
 
-	const visibilityOptions: VisibilityOption[] = [
+	const visibilityOptions: VisibilityOption[] = $derived([
 		{ value: 'PUBLIC', label: l.visibilityPublic },
 		{ value: 'PRIVATE', label: l.visibilityPrivate },
 		{ value: 'UNLISTED', label: l.visibilityUnlisted }
-	];
+	]);
 
 	const initTitle = untrack(() => (initialValues.title as string) ?? '');
 	const initVisibility = untrack(() => (initialValues.visibility as string) ?? 'PUBLIC');
@@ -41,7 +41,7 @@
 
 	let title = $state(initTitle);
 	let visibility = $state<VisibilityOption>(
-		visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0]
+		untrack(() => visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0])
 	);
 	let content = $state<unknown[]>(initContent);
 

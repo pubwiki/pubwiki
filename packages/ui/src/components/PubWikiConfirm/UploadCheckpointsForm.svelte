@@ -17,27 +17,27 @@
 
 	let { initialValues, onValuesChange, labels }: Props = $props();
 
-	const l = labels ?? {
+	const l = $derived(labels ?? {
 		count: (count: number) => `Uploading ${count} checkpoints`,
 		defaultVisibility: 'Default Visibility',
 		visibilityPublic: 'Public',
 		visibilityPrivate: 'Private',
 		visibilityUnlisted: 'Unlisted',
 		visibilityHint: 'Individual checkpoint visibility can override this default',
-	};
+	});
 
-	const visibilityOptions: VisibilityOption[] = [
+	const visibilityOptions: VisibilityOption[] = $derived([
 		{ value: 'PRIVATE', label: l.visibilityPrivate },
 		{ value: 'UNLISTED', label: l.visibilityUnlisted },
 		{ value: 'PUBLIC', label: l.visibilityPublic }
-	];
+	]);
 
 	const initCount = untrack(() => (initialValues.count as number) ?? 0);
 	const initNames = untrack(() => (initialValues.names as string) ?? '');
 	const initVisibility = untrack(() => (initialValues.visibility as string) ?? 'PRIVATE');
 
 	let visibility = $state<VisibilityOption>(
-		visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0]
+		untrack(() => visibilityOptions.find(o => o.value === initVisibility) ?? visibilityOptions[0])
 	);
 
 	$effect(() => {
