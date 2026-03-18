@@ -557,5 +557,9 @@
 	"studio_import_downloading_vfs": "正在下载文件档案...",
 	"studio_import_writing_vfs": "正在写入文件到存储...",
 	"studio_import_processing_nodes": "正在处理节点数据...",
-	"studio_import_saving": "正在保存到本地存储..."
+	"studio_import_saving": "正在保存到本地存储...",
+	"studio_settings_privacy": "隐私",
+	"studio_settings_privacy_desc": "管理隐私和数据收集偏好。",
+	"studio_settings_error_reporting": "错误信息收集",
+	"studio_settings_error_reporting_desc": "启用后，错误信息将自动发送以帮助我们改进产品。除错误上下文外不会收集任何个人数据。"
 }

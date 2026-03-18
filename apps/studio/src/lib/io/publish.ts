@@ -21,6 +21,7 @@ import { loadBuildDataForPublish } from './build-output-serializer';
 import { API_BASE_URL } from '$lib/config';
 import { nodeStore } from '../persistence';
 import { packageVfsAsTarGz } from './vfs-archive';
+import { reportError } from '$lib/sentry';
 
 // Create a singleton API client
 const apiClient = createApiClient(API_BASE_URL);
@@ -358,9 +359,11 @@ export async function publishArtifact(
 		});
 
 		if (error) {
+			const errorMsg = error.error || `HTTP ${response.status}: ${response.statusText}`;
+			reportError(new Error(errorMsg), { operation: 'publish', artifactId: metadata.artifactId });
 			return {
 				success: false,
-				error: error.error || `HTTP ${response.status}: ${response.statusText}`
+				error: errorMsg
 			};
 		}
 
@@ -370,6 +373,7 @@ export async function publishArtifact(
 			latestCommit: data?.commitHash
 		};
 	} catch (err) {
+		reportError(err, { operation: 'publish', artifactId: metadata.artifactId });
 		return {
 			success: false,
 			error: err instanceof Error ? err.message : 'Network error'
@@ -739,9 +743,11 @@ export async function patchArtifact(
 		});
 
 		if (error) {
+			const errorMsg = error.error || `HTTP ${response.status}: ${response.statusText}`;
+			reportError(new Error(errorMsg), { operation: 'patch', artifactId: metadata.artifactId });
 			return {
 				success: false,
-				error: error.error || `HTTP ${response.status}: ${response.statusText}`
+				error: errorMsg
 			};
 		}
 
@@ -751,6 +757,7 @@ export async function patchArtifact(
 			hasGraphChanges: true
 		};
 	} catch (err) {
+		reportError(err, { operation: 'patch', artifactId: metadata.artifactId });
 		return {
 			success: false,
 			error: err instanceof Error ? err.message : 'Network error'

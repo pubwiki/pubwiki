@@ -21,6 +21,7 @@
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { createApiClient } from '@pubwiki/api/client';
 	import { API_BASE_URL } from '$lib/config';
+	import { reportError } from '$lib/sentry';
 	import * as m from '$lib/paraglide/messages';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import EntrypointSection, { type SelectedSave } from './EntrypointSection.svelte';
@@ -285,7 +286,7 @@
 				throw new Error('Cannot upload save: artifact not yet published. Please publish first without an entrypoint, then update with one.');
 			}
 			const store = await getNodeRDFStore(selectedSave.stateNodeId);
-			await store.loadCheckpoint(selectedSave.checkpointId);
+			store.checkout(selectedSave.checkpointId);
 			const prepared = await prepareSaveForPublish(store, {
 				stateNodeId: selectedSave.stateNodeId,
 				artifactId: ctx.artifactId,
@@ -387,6 +388,10 @@
 			}
 		} catch (err) {
 			errorMessage = err instanceof Error ? err.message : m.studio_publish_failed();
+			reportError(err, {
+				operation: publishState.state.isDraft ? 'publish' : 'update',
+				artifactId: projectId,
+			});
 		} finally {
 			isSubmitting = false;
 		}

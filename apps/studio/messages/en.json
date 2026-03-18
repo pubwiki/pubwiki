@@ -570,5 +570,9 @@
 	"studio_import_downloading_vfs": "Downloading file archives...",
 	"studio_import_writing_vfs": "Writing files to storage...",
 	"studio_import_processing_nodes": "Processing node data...",
-	"studio_import_saving": "Saving to local storage..."
+	"studio_import_saving": "Saving to local storage...",
+	"studio_settings_privacy": "Privacy",
+	"studio_settings_privacy_desc": "Manage privacy and data collection preferences.",
+	"studio_settings_error_reporting": "Error Reporting",
+	"studio_settings_error_reporting_desc": "When enabled, error information will be automatically sent to help us improve the product. No personal data is collected beyond error context."
 }

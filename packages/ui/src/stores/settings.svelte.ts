@@ -36,9 +36,13 @@ export interface ApiSettings {
 	selectedModel: string;
 }
 
+export interface PrivacySettings {
+	errorReporting: boolean;
+}
+
 export interface UserSettings {
 	api: ApiSettings;
-	// Future settings can be added here
+	privacy: PrivacySettings;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -47,6 +51,9 @@ const DEFAULT_SETTINGS: UserSettings = {
 		customBaseUrl: '',
 		apiKey: '',
 		selectedModel: ''
+	},
+	privacy: {
+		errorReporting: false
 	}
 };
 
@@ -55,6 +62,10 @@ export class SettingsStore {
 
 	get api() {
 		return this.settings.value.api;
+	}
+
+	get privacy(): PrivacySettings {
+		return this.settings.value.privacy ?? DEFAULT_SETTINGS.privacy;
 	}
 
 	get effectiveBaseUrl() {
@@ -89,6 +100,16 @@ export class SettingsStore {
 
 	setSelectedModel(selectedModel: string) {
 		this.updateApi({ selectedModel });
+	}
+
+	setErrorReporting(enabled: boolean) {
+		this.settings.value = {
+			...this.settings.value,
+			privacy: {
+				...this.privacy,
+				errorReporting: enabled
+			}
+		};
 	}
 
 	// Fetch available models from the API
