@@ -102,6 +102,10 @@ export {
 } from './modules';
 export type { LLMModuleConfig } from './modules';
 
+// ─── Store Manager (TripleStore Lifecycle) ──────────────────────────
+export { StoreManager } from './store-manager';
+export type { StorageBackendFactory } from './store-manager';
+
 // ─── I/O Utilities ──────────────────────────────────────────────────
 export { extractTar, extractTarGz, createTar, gzipCompress, gzipDecompress } from './io/tar';
 export type { TarEntry } from './io/tar';

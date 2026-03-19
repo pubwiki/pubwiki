@@ -11,25 +11,25 @@ import type {
   
   // Results
   BuildError,
-  BuildWarning,
+  BuildWarning as _BuildWarning,
   FileBuildResult,
   ProjectBuildResult,
-  BuildResult,
+  BuildResult as _BuildResult,
   
   // Cache
   DependencyEntry,
   
   // Worker API
-  BundlerWorkerAPI,
+  BundlerWorkerAPI as _BundlerWorkerAPI,
   WorkerBuildRequest,
   
   // Service
   BundleRequest,
   DirectBuildRequest,
   BuildProgressEvent,
-  BuildProgressCallback,
+  BuildProgressCallback as _BuildProgressCallback,
   WatchOptions,
-  BundlerOptions
+  BundlerOptions as _BundlerOptions
 } from '../src/types'
 
 describe('types exports', () => {

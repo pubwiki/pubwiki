@@ -8,17 +8,31 @@
 import type { TripleStore, Value } from '@pubwiki/rdfstore';
 import { LuaTable } from '@pubwiki/lua';
 
-/** Convert a stored Value back to a Lua-compatible form (objects/arrays → LuaTable). */
+/**
+ * Convert a stored Value to a Lua-compatible form.
+ * Only the top level is wrapped in LuaTable so Rust detects LUA_VALUE_SYMBOL
+ * and calls val_to_lua_deep, which recursively handles inner JS arrays/objects
+ * correctly (preserving the array vs object distinction).
+ */
 function valueToLua(v: unknown): unknown {
-	if (Array.isArray(v)) return new LuaTable(v.map(valueToLua));
-	if (v !== null && typeof v === 'object') {
-		const converted: Record<string, unknown> = {};
-		for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-			converted[k] = valueToLua(val);
-		}
-		return new LuaTable(converted);
+	if (Array.isArray(v) || (v !== null && typeof v === 'object')) {
+		return new LuaTable(v);
 	}
 	return v;
+}
+
+/** Recursively unwrap LuaTable wrappers to get plain JS values for storage. */
+function luaToValue(v: unknown): Value {
+	if (v instanceof LuaTable) return luaToValue(v.value);
+	if (Array.isArray(v)) return v.map(luaToValue) as Value;
+	if (v !== null && typeof v === 'object') {
+		const result: Record<string, unknown> = {};
+		for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+			result[k] = luaToValue(val);
+		}
+		return result;
+	}
+	return v as Value;
 }
 
 export function createStateModule(getStore: () => Promise<TripleStore>) {
@@ -35,11 +49,11 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 			if (object === undefined || object === null) {
 				throw new Error('Cannot insert nil/null value into store');
 			}
-			(await resolveStore()).insert(subject, predicate, object as Value, graph);
+			(await resolveStore()).insert(subject, predicate, luaToValue(object), graph);
 		},
 
 		async delete(_self: unknown, subject: string, predicate: string, object?: unknown, graph?: string): Promise<void> {
-			(await resolveStore()).delete(subject, predicate, object as Value | undefined, graph);
+			(await resolveStore()).delete(subject, predicate, object != null ? luaToValue(object) : undefined, graph);
 		},
 
 		async match(_self: unknown, pattern: {
@@ -48,13 +62,13 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 			const triples = (await resolveStore()).match({
 				subject: pattern.subject,
 				predicate: pattern.predicate,
-				object: pattern.object as Value | undefined,
+				object: pattern.object != null ? luaToValue(pattern.object) : undefined,
 				graph: pattern.graph,
 			});
 			return new LuaTable(triples.map(t => ({
 				subject: t.subject,
 				predicate: t.predicate,
-				object: valueToLua(t.object),
+				object: t.object,
 				...(t.graph ? { graph: t.graph } : {}),
 			})));
 		},
@@ -68,7 +82,7 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 			const store = await resolveStore();
 			store.delete(subject, predicate, undefined, graph);
 			if (object === undefined || object === null) return;
-			store.insert(subject, predicate, object as Value, graph);
+			store.insert(subject, predicate, luaToValue(object), graph);
 		},
 
 		async batchInsert(_self: unknown, triples: Array<{ subject: string; predicate: string; object: unknown; graph?: string }>): Promise<void> {
@@ -76,7 +90,7 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 			(await resolveStore()).batchInsert(triples.map(t => ({
 				subject: t.subject,
 				predicate: t.predicate,
-				object: t.object as Value,
+				object: luaToValue(t.object),
 				graph: t.graph,
 			})));
 		},

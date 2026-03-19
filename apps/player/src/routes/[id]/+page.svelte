@@ -27,6 +27,7 @@
 		createPubWikiModule,
 		createSaveCheckpoint,
 		createSaveFromQuads as createSaveFromTriples,
+		createSaveBatch,
 		type RuntimeGraph,
 		type RuntimeNode,
 		type LoaderBackend,
@@ -450,6 +451,13 @@
 						createSaveFromTriples: async (triples, options) => {
 							return createSaveFromTriples(
 								triples,
+								options,
+								API_BASE_URL,
+							);
+						},
+						createSaveBatch: async (entries, options) => {
+							return createSaveBatch(
+								entries,
 								options,
 								API_BASE_URL,
 							);

@@ -1,46 +1,27 @@
 /**
  * TripleStore for Player
  *
- * Per-node TripleStore instances backed by IndexedDB.
- * Same pattern as Studio but isolated to Player's origin.
+ * Uses flow-core StoreManager with IndexedDBBackend.
  */
 
-import { createTripleStore, IndexedDBBackend, type TripleStore } from '@pubwiki/rdfstore';
+import { StoreManager } from '@pubwiki/flow-core';
+import { IndexedDBBackend } from '@pubwiki/rdfstore';
+import type { TripleStore } from '@pubwiki/rdfstore';
 
-const storeRegistry = new Map<string, TripleStore>();
+const manager = new StoreManager(
+	(nodeId) => new IndexedDBBackend(`player-state-${nodeId}`)
+);
 
-/**
- * Get or create a TripleStore for a given State node.
- */
-export async function getNodeRDFStore(nodeId: string): Promise<TripleStore> {
-	let store = storeRegistry.get(nodeId);
-	if (!store || !store.isOpen) {
-		const dbName = `player-state-${nodeId}`;
-		store = createTripleStore({ backend: new IndexedDBBackend(dbName) });
-		storeRegistry.set(nodeId, store);
-	}
-	return store;
+export function getNodeRDFStore(nodeId: string): Promise<TripleStore> {
+	return manager.get(nodeId);
 }
 
-/**
- * Close and remove a TripleStore for a given State node.
- */
-export async function closeNodeRDFStore(nodeId: string): Promise<void> {
-	const store = storeRegistry.get(nodeId);
-	if (store) {
-		store.close();
-		storeRegistry.delete(nodeId);
-	}
+export function closeNodeRDFStore(nodeId: string): Promise<void> {
+	return manager.close(nodeId);
 }
 
-/**
- * Close all open stores.
- */
-export async function closeAllRDFStores(): Promise<void> {
-	for (const [nodeId, store] of storeRegistry) {
-		store.close();
-		storeRegistry.delete(nodeId);
-	}
+export function closeAllRDFStores(): Promise<void> {
+	return manager.closeAll();
 }
 
 export type { TripleStore };

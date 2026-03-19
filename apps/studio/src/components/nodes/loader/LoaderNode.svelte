@@ -41,6 +41,7 @@
 	import {
 		createSaveCheckpoint as flowCoreSaveCheckpoint,
 		createSaveFromQuads as flowCoreSaveFromTriples,
+		createSaveBatch as flowCoreSaveBatch,
 		type PubWikiModuleConfig,
 		type RuntimeGraph,
 		type RuntimeNode,
@@ -383,6 +384,8 @@
 					flowCoreSaveCheckpoint(store, options, API_BASE_URL),
 				createSaveFromTriples: (triples, options) =>
 					flowCoreSaveFromTriples(triples, options, API_BASE_URL),
+				createSaveBatch: (entries, options) =>
+					flowCoreSaveBatch(entries, options, API_BASE_URL),
 				publishArtifact: async (metadata) => {
 					const finalMetadata: PublishMetadata = {
 						artifactId: crypto.randomUUID(),

@@ -1,51 +1,28 @@
 /**
  * TripleStore Wrapper for Studio
  *
- * Uses @pubwiki/rdfstore with IndexedDBBackend for persistence.
+ * Uses flow-core StoreManager with IndexedDBBackend.
  */
 
-import { createTripleStore, IndexedDBBackend, type TripleStore } from '@pubwiki/rdfstore';
+import { StoreManager } from '@pubwiki/flow-core';
+import { IndexedDBBackend } from '@pubwiki/rdfstore';
+import type { TripleStore } from '@pubwiki/rdfstore';
 
-// ============================================================================
-// Store Registry (for managing multiple State nodes)
-// ============================================================================
+const manager = new StoreManager(
+  (nodeId) => new IndexedDBBackend(`pubwiki-state-${nodeId}`)
+);
 
-const storeRegistry = new Map<string, TripleStore>();
-
-/**
- * Get or create a TripleStore for a given State node
- */
-export async function getNodeRDFStore(nodeId: string): Promise<TripleStore> {
-  let store = storeRegistry.get(nodeId);
-  if (!store || !store.isOpen) {
-    const dbName = `pubwiki-state-${nodeId}`;
-    store = createTripleStore({ backend: new IndexedDBBackend(dbName) });
-    storeRegistry.set(nodeId, store);
-  }
-  return store;
+export function getNodeRDFStore(nodeId: string): Promise<TripleStore> {
+  return manager.get(nodeId);
 }
 
-/**
- * Close and remove a TripleStore for a given State node
- */
-export async function closeNodeRDFStore(nodeId: string): Promise<void> {
-  const store = storeRegistry.get(nodeId);
-  if (store) {
-    store.close();
-    storeRegistry.delete(nodeId);
-  }
+export function closeNodeRDFStore(nodeId: string): Promise<void> {
+  return manager.close(nodeId);
 }
 
-/**
- * Close all open stores (cleanup on page unload)
- */
-export async function closeAllRDFStores(): Promise<void> {
-  for (const [nodeId, store] of storeRegistry) {
-    store.close();
-    storeRegistry.delete(nodeId);
-  }
+export function closeAllRDFStores(): Promise<void> {
+  return manager.closeAll();
 }
 
-// Re-export TripleStore type for convenience
 export type { TripleStore };
 export { type TripleStore as RDFStore } from '@pubwiki/rdfstore';
