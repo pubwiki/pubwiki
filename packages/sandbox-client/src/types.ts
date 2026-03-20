@@ -120,7 +120,7 @@ type _AssertTypedServiceExtendsCustomService = ITypedService<
   Record<string, unknown>,
   Record<string, unknown>
 > extends ICustomService ? true : never;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 const _typeCheck: _AssertTypedServiceExtendsCustomService = true;
 
 /**

@@ -13,7 +13,7 @@
 		onFocusNode: (node: Node<FlowNodeData>) => void;
 	}
 
-	let { nodes, edges, onFocusNode }: Props = $props();
+	let { nodes, edges: _edges, onFocusNode }: Props = $props();
 
 	// Group nodes by type
 	let nodesByType = $derived.by(() => {
@@ -106,7 +106,7 @@
 	{:else}
 		<!-- Stats Summary -->
 		<div class="flex flex-wrap gap-2">
-			{#each nonEmptyTypes as [type, typeNodes]}
+			{#each nonEmptyTypes as [type, typeNodes] (type)}
 				{@const info = getTypeInfo(type)}
 				{@const colors = getColorClasses(info.color)}
 				<div class="flex items-center gap-1.5 px-2 py-1 {colors.light} rounded-full">
@@ -118,7 +118,7 @@
 		</div>
 
 		<!-- Node Groups -->
-		{#each nonEmptyTypes as [type, typeNodes]}
+		{#each nonEmptyTypes as [type, typeNodes] (type)}
 			{@const info = getTypeInfo(type)}
 			{@const colors = getColorClasses(info.color)}
 			<div class="space-y-2">

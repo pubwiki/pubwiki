@@ -14,7 +14,7 @@
 	 */
 	import { Handle, Position, type NodeProps, type Node, useEdges, useSvelteFlow } from '@xyflow/svelte';
 	import { untrack } from 'svelte';
-	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, StudioNodeData, FlowNodeData } from '$lib/types';
+	import type { SandboxNodeData, VFSNodeData, LoaderNodeData, FlowNodeData } from '$lib/types';
 	import { getNodeVfs, type NodeVfs } from '$lib/vfs';
 	import { getStudioContext } from '$lib/state';
 	import { nodeStore } from '$lib/persistence';
@@ -32,7 +32,7 @@
 	// ============================================================================
 
 	let { isConnectable, selected, id }: NodeProps<Node<FlowNodeData, 'sandbox'>> = $props();
-	const ctx = getStudioContext();
+	const _ctx = getStudioContext();
 	const allEdges = useEdges();
 	const { fitView } = useSvelteFlow();
 
@@ -239,7 +239,6 @@
 		{/if}
 	{/snippet}
 
-	{#snippet children()}
 		<div class="p-3 bg-gray-50 space-y-3">
 			<!-- Connection Status -->
 			{#if !connectedVfsNodeId}
@@ -305,7 +304,7 @@
 				<div class="border-t border-gray-200 pt-2">
 					<p class="text-xs font-medium text-gray-500 mb-1.5">{m.studio_sandbox_connected_services()}</p>
 					<div class="flex flex-wrap gap-1">
-						{#each connectedLoaderNodes as loader}
+						{#each connectedLoaderNodes as loader (loader.id)}
 							<button 
 								type="button"
 								class="nodrag px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded-full flex items-center gap-1 hover:bg-purple-200 transition-colors cursor-pointer"
@@ -322,7 +321,6 @@
 				</div>
 			{/if}
 		</div>
-	{/snippet}
 </BaseNode>
 
 <!-- Preview Panel -->

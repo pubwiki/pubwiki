@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useAuth } from '@pubwiki/ui/stores';
 	import * as m from '$lib/paraglide/messages';
 
@@ -18,7 +19,7 @@
 		const result = await auth.login(usernameOrEmail, password);
 
 		if (result.success) {
-			goto('/');
+			goto(resolve('/'));
 		} else {
 			errorMessage = result.error || m.login_failed();
 		}
@@ -35,7 +36,7 @@
 			</h2>
 			<p class="mt-2 text-center text-sm text-gray-600">
 				{m.login_or()}
-				<a href="/register" class="font-medium text-[#0969da] hover:text-[#0969da]/80">
+				<a href={resolve('/register')} class="font-medium text-[#0969da] hover:text-[#0969da]/80">
 					{m.login_create_account()}
 				</a>
 			</p>

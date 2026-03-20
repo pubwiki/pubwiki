@@ -112,7 +112,7 @@
 				</div>
 			{:else}
 				<div class="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-			{#each versions as version}
+			{#each versions as version (version.commit)}
 				<div 
 					class="p-2 rounded border text-xs {version.commit === currentCommit 
 						? 'border-blue-300 bg-blue-50' 

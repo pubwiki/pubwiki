@@ -54,7 +54,7 @@
 			} else {
 				models = fetchedModels;
 			}
-		} catch (error) {
+		} catch (_error) {
 			modelsError = m.studio_api_fetch_failed();
 		} finally {
 			isLoadingModels = false;

@@ -8,7 +8,6 @@
  */
 
 import { ICustomService, RpcStub, SandboxMainService, UserInfo } from '@pubwiki/sandbox-service'
-import { RpcTarget } from '@pubwiki/sandbox-service'
 import type { ISandboxClient } from '@pubwiki/sandbox-client'
 
 /**

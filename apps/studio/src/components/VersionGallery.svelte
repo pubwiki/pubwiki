@@ -18,7 +18,7 @@
 		onClose?: () => void;
 	}
 
-	let { nodeId, currentContent, currentCommit, snapshotRefs, onRestore, onClose }: Props = $props();
+	let { nodeId: _nodeId, currentContent: _currentContent, currentCommit, snapshotRefs, onRestore, onClose }: Props = $props();
 
 	let containerRef: HTMLDivElement | null = $state(null);
 
@@ -35,10 +35,8 @@
 
 	// Load versions asynchronously
 	let versions = $state<VersionItem[]>([]);
-	let isLoading = $state(true);
 
 	async function loadVersions() {
-		isLoading = true;
 		const items: VersionItem[] = [];
 		
 		// Add historical versions from snapshots (not including current)
@@ -57,7 +55,6 @@
 		
 		// Sort by commit (since we don't have timestamp in StudioNodeData)
 		versions = items;
-		isLoading = false;
 	}
 
 	// Load versions on mount and when snapshotRefs change
@@ -168,7 +165,7 @@
 
 	<!-- Version list -->
 	<div class="max-h-80 overflow-y-auto">
-		{#each versions as version, i}
+		{#each versions as version, i (version.commit)}
 			<!-- svelte-ignore a11y_click_events_have_key_events -->
 			<div
 				class="px-3 py-2 border-b border-gray-100 cursor-pointer transition-colors {selectedIndex === i ? 'bg-blue-50' : 'hover:bg-gray-50'}"

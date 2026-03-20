@@ -21,7 +21,6 @@
 	<ArtifactCard 
 		lineageItem={data.lineageItem} 
 		artifact={data.artifact} 
-		size="sm"
 	/>
 	{#if data.hasChildren}
 		<Handle type="source" position={Position.Bottom} />

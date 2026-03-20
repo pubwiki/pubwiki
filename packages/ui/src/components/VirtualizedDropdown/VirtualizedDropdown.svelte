@@ -176,7 +176,7 @@
 			<div class="max-h-60">
 				{#if filteredItems.length > 0}
 					<VirtualList items={filteredItems} {minItemHeight} height={listHeight}>
-						{#snippet children(item: T, index: number)}
+						{#snippet children(item: T, _index: number)}
 							{@const isSelected = value !== undefined && getKey(item) === getKey(value)}
 							<button
 								type="button"

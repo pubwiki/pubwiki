@@ -99,7 +99,7 @@
 
 	// Padding calculations
 	const topPadding = $derived(visibleRange.startRow * rowHeight);
-	const bottomPadding = $derived(Math.max(0, (totalRows - visibleRange.endRow) * rowHeight));
+	const _bottomPadding = $derived(Math.max(0, (totalRows - visibleRange.endRow) * rowHeight));
 
 	// Setup window scroll and resize listeners
 	$effect(() => {

@@ -241,20 +241,20 @@ export class PackageVersionResolver {
       switch (state) {
         case 'scanning':
           // Look for the root importer "  .:" or "  '.:'""
-          if (/^  ['"]?\.['"]?:/.test(trimmed)) {
+          if (/^ {2}['"]?\.['"]?:/.test(trimmed)) {
             state = 'in-root-importer'
           }
           break
 
         case 'in-root-importer':
           // Inside root importer block — look for dependencies/devDependencies
-          if (/^    (dependencies|devDependencies):/.test(trimmed)) {
+          if (/^ {4}(dependencies|devDependencies):/.test(trimmed)) {
             state = 'in-deps'
             currentPkg = null
             break
           }
           // If we hit a line at ≤2-space indent, we've left the root importer
-          if (/^\S/.test(trimmed) || /^  \S/.test(trimmed)) {
+          if (/^\S/.test(trimmed) || /^ {2}\S/.test(trimmed)) {
             state = 'done'
           }
           break
@@ -262,12 +262,12 @@ export class PackageVersionResolver {
         case 'in-deps': {
           // Exit deps section if we're back at importer-level indent (4 spaces or less)
           // A new "dependencies:" or "devDependencies:" at 4-space indent stays in root importer
-          if (/^    (dependencies|devDependencies):/.test(trimmed)) {
+          if (/^ {4}(dependencies|devDependencies):/.test(trimmed)) {
             currentPkg = null
             break
           }
           // Left root importer section entirely (new importer or top-level key)
-          if (/^\S/.test(trimmed) || (/^  \S/.test(trimmed) && !/^    /.test(trimmed))) {
+          if (/^\S/.test(trimmed) || (/^ {2}\S/.test(trimmed) && !/^ {4}/.test(trimmed))) {
             state = 'done'
             break
           }

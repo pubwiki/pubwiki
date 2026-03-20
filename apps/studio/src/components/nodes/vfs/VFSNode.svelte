@@ -41,7 +41,6 @@
 
 	const nodeData = $derived(nodeStore.get(id) as VFSNodeData | undefined);
 	const vfsContent = $derived(nodeData?.content as VFSContent | undefined);
-	const projectId = $derived(vfsContent?.projectId ?? '');
 	// VFS name is now the node name, not displayName
 	const vfsName = $derived(nodeData?.name ?? '');
 
@@ -112,6 +111,7 @@
 		nodeName: string;
 	};
 	const commitLinks = $derived.by(() => {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable in $derived computation
 		const map = new Map<string, CommitLink[]>(); // commit hash -> links
 		for (const data of nodeStore.getAll()) {
 			if (data.type === 'GENERATED') {
@@ -199,8 +199,8 @@
 	// Update node internals when mounts change or generator connection changes
 	$effect(() => {
 		// Trigger on mounts change or generator connection change
-		vfsContent?.mounts;
-		hasGeneratorConnection;
+		void vfsContent?.mounts;
+		void hasGeneratorConnection;
 		updateNodeInternals(id);
 	});
 
@@ -276,6 +276,7 @@
 	// ============================================================================
 
 	function handleFolderToggle(path: string, expanded: boolean) {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable for immutable state update
 		const newExpanded = new Set(expandedFolders);
 		if (expanded) {
 			newExpanded.add(path);
@@ -404,11 +405,6 @@
 		fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.3 });
 	}
 	
-	function getNodeName(nodeId: string): string {
-		const data = nodeStore.get(nodeId);
-		return data?.name || 'Generated';
-	}
-	
 	function formatDate(timestamp: number): string {
 		const date = new Date(timestamp);
 		const now = new Date();
@@ -528,10 +524,8 @@
 		</svg>
 	{/snippet}
 
-	{#snippet children()}
 		<!-- Compact File Tree -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
 		<div 
 			class="max-h-48 overflow-y-auto bg-gray-50 text-sm nodrag nowheel relative vfs-drop-target transition-colors" 
 			class:min-h-32={uploadState?.isUploading} 
@@ -616,7 +610,7 @@
 				style="top: {popupPosition.top}px; left: {popupPosition.left}px;"
 				role="dialog"
 			>
-				{#each commits as commit}
+				{#each commits as commit (commit.hash)}
 					<div class="px-3 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50">
 						<div class="flex items-center gap-2 flex-wrap">
 							<span class="font-mono text-sm text-gray-700">{commit.hash.slice(0, 7)}</span>
@@ -627,7 +621,7 @@
 						<!-- Linked nodes -->
 						{#if commitLinks.has(commit.hash)}
 							<div class="mt-2 flex flex-col gap-1">
-								{#each commitLinks.get(commit.hash)! as link}
+								{#each commitLinks.get(commit.hash)! as link (link.nodeId)}
 									<button 
 										class="text-sm px-2 py-1 rounded flex items-center gap-2 transition-colors w-full text-left {link.type === 'pre-generate' ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : 'bg-green-50 text-green-700 hover:bg-green-100'}"
 										onclick={(e) => { e.stopPropagation(); focusNode(link.nodeId); showVersionPopup = false; }}
@@ -645,7 +639,6 @@
 				{/each}
 			</div>
 		{/if}
-	{/snippet}
 
 	{#snippet leftHandles()}
 		<!-- Mount handles panel (similar to reftag panel) -->

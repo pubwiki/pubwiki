@@ -28,8 +28,6 @@
 		createSaveCheckpoint,
 		createSaveFromQuads as createSaveFromTriples,
 		createSaveBatch,
-		type RuntimeGraph,
-		type RuntimeNode,
 		type LoaderBackend,
 		type ConfirmationHandler,
 		type PubWikiModuleConfig,
@@ -39,7 +37,6 @@
 	import { detectStorageBackend } from '$lib/vfs/detect';
 	import { getNodeRDFStore, closeAllRDFStores, type TripleStore } from '$lib/rdf/store';
 	import { detectProject, createBuildAwareVfs, getOpfsBuildCacheStorage, getIdbBuildCacheStorage, type BuildCacheStorage } from '@pubwiki/bundler';
-	import type { ProjectConfig } from '@pubwiki/bundler';
 	import { createRemoteBuildFetcher } from '$lib/io/remote-build-fetcher';
 	import { fetchAndPopulateVfs } from '@pubwiki/flow-core';
 	import { createPlayerRegistry, buildJsModules, initializePlayerLoader } from '$lib/loader';
@@ -100,6 +97,7 @@
 	let iframeRef = $state<HTMLIFrameElement | null>(null);
 	let sandboxConnection = $state<SandboxConnection | null>(null);
 	let buildAwareVfs: (Vfs & { warmup(): Promise<void> }) | null = null;
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- imperative, not used in template
 	let backends = new Map<string, LoaderBackend>();
 	let rdfStore: TripleStore | null = null;
 	let storedGraphData: GetArtifactGraphResponse | null = null;
@@ -392,6 +390,7 @@
 
 					// Find asset VFS mounts
 					const assetVfsNodeIds = findAssetVfsNodes(graph, loaderNode.id);
+					// eslint-disable-next-line svelte/prefer-svelte-reactivity -- imperative, not used in template
 					const assetMounts = new Map<string, Vfs>();
 					for (const assetNodeId of assetVfsNodeIds) {
 						const assetNode = graph.nodes.get(assetNodeId);

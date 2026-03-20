@@ -10,7 +10,6 @@
 	 */
 	import { onMount, onDestroy } from 'svelte';
 	import { Composer, ContentEditable, RichTextPlugin } from 'svelte-lexical';
-	import type { LexicalEditor } from 'lexical';
 	import {
 		GameRefParagraphNode,
 		setEditorMode,

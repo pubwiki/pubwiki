@@ -21,12 +21,7 @@
     class: className = '' 
   }: Props = $props()
 
-  let collapsed = $state(true)
-  
-  // Sync collapsed state with initialCollapsed prop
-  $effect(() => {
-    collapsed = initialCollapsed
-  })
+  let collapsed = $derived(initialCollapsed)
 </script>
 
 <div class="mb-4 overflow-hidden rounded-lg border-2 border-blue-200 bg-blue-50/30 dark:border-blue-800 dark:bg-blue-950/20 {className}">

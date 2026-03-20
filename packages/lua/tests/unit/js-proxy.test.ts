@@ -429,7 +429,7 @@ describe('JsProxy - 参数传递', () => {
       // 验证原 JS 对象也被修改
       expect(obj.name).toBe('modified')
       expect(obj.count).toBe(42)
-      expect((obj as any).newField).toBe('added')
+      expect((obj as Record<string, unknown>).newField).toBe('added')
     })
 
     it('应该能修改 JsProxy 数组元素', async () => {
@@ -452,7 +452,7 @@ describe('JsProxy - 参数传递', () => {
         return process(data)
       `, { 
         data: { value: 42 },
-        process: (obj: any) => obj.value * 2
+        process: (obj: Record<string, unknown>) => (obj.value as number) * 2
       })
       expect(result.error).toBeNull()
       expect(result.result).toBe(84)

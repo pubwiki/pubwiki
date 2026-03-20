@@ -226,7 +226,7 @@ describe('RPC Host E2E', () => {
     })
 
     it('should allow registering services on channel host', () => {
-      const { host: rpcHost, clientPort } = createMainRpcChannel({
+      const { host: rpcHost } = createMainRpcChannel({
         basePath: '/public/demo'
       })
 

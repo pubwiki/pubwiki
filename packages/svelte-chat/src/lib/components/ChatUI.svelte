@@ -7,7 +7,7 @@
   - Integration with @pubwiki/chat core
 -->
 <script lang="ts" module>
-  import type { PubChat, MessageNode } from '@pubwiki/chat'
+  import type { PubChat } from '@pubwiki/chat'
   import type { UIMessageBlock, PreprocessParams, PreprocessFn } from '../types'
   import type { ActiveChatStore, ChatInputStore, MessagesStore, DisplayMessage } from '../stores'
 
@@ -97,7 +97,7 @@
   })
 
   // Handle send message
-  async function handleSend(content: string, images?: string[], files?: string[]) {
+  async function handleSend(content: string, images?: string[], _files?: string[]) {
     if (!content.trim()) return
 
     try {

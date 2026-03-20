@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
+	import { PUBLIC_STUDIO_URL } from '$env/static/public';
 	import type { ArtifactListItem } from '@pubwiki/api';
 	import { apiClient } from '$lib/api';
 
@@ -37,7 +39,7 @@
 	// Redirect if not authenticated (wait for session to load first)
 	$effect(() => {
 		if (browser && auth.isSessionLoaded && !auth.isAuthenticated) {
-			goto('/login');
+			goto(resolve('/login'));
 		}
 	});
 
@@ -53,7 +55,7 @@
 
 		artifactsLoading = true;
 		try {
-			const { data, error } = await apiClient.GET('/users/{userId}/artifacts', {
+			const { data } = await apiClient.GET('/users/{userId}/artifacts', {
 				params: {
 					path: { userId: auth.currentUser.id },
 					query: { limit: 100, sortBy: 'createdAt', sortOrder: 'desc' }
@@ -131,7 +133,7 @@
 			});
 
 			if (data && !apiError) {
-				goto(`/project/${data.project.id}`);
+				goto(resolve(`/community/${data.project.id}`));
 			} else {
 				error = apiError?.error || 'Failed to create project';
 			}
@@ -147,7 +149,7 @@
 	<div class="mx-auto max-w-4xl px-4 py-8">
 		<!-- Header -->
 		<div class="mb-8">
-			<a href="/me" class="text-sm text-gray-500 hover:text-[#0969da] mb-2 inline-flex items-center gap-1">
+			<a href={resolve('/me')} class="text-sm text-gray-500 hover:text-[#0969da] mb-2 inline-flex items-center gap-1">
 				<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
 				</svg>
@@ -278,13 +280,13 @@
 					{:else if userArtifacts.length === 0}
 						<div class="text-center py-8 text-gray-500">
 							<p>You don't have any artifacts yet.</p>
-							<a href="/studio" class="text-[#0969da] hover:underline text-sm mt-2 inline-block">Create your first artifact</a>
+							<a href={PUBLIC_STUDIO_URL || 'http://localhost:5174'} class="text-[#0969da] hover:underline text-sm mt-2 inline-block">Create your first artifact</a>
 						</div>
 					{:else if filteredArtifacts.length === 0}
 						<div class="text-center py-8 text-gray-500">No artifacts match your search.</div>
 					{:else}
 						<div class="space-y-2 max-h-80 overflow-y-auto">
-							{#each filteredArtifacts as artifact}
+							{#each filteredArtifacts as artifact (artifact.id)}
 								<label 
 									class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition
 										{selectedArtifactIds.includes(artifact.id) 
@@ -350,7 +352,7 @@ Describe your project here using Markdown...
 
 			<!-- Submit -->
 			<div class="flex items-center justify-end gap-4">
-				<a href="/me" class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
+				<a href={resolve('/me')} class="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition">
 					Cancel
 				</a>
 				<button

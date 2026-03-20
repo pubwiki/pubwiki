@@ -1,4 +1,5 @@
 import { setContext, getContext } from 'svelte';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { ArtifactListItem, Pagination } from '@pubwiki/api';
 import { apiClient } from '$lib/api';
 
@@ -6,8 +7,8 @@ const SEARCH_KEY = Symbol('search');
 
 export class SearchStore {
 	// Sparse page cache for virtual list (not deeply reactive)
-	private pageCache = new Map<number, ArtifactListItem[]>();
-	private loadingPages = new Set<number>();
+	private pageCache = new SvelteMap<number, ArtifactListItem[]>();
+	private loadingPages = new SvelteSet<number>();
 	// Trigger for cache updates
 	private cacheVersion = $state(0);
 	

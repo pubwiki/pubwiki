@@ -293,7 +293,7 @@
 						style={expanded ? '' : `height: ${COLLAPSED_HEIGHT - 8}px;`}
 					>
 						<span class="flex-shrink-0 mt-0.5 select-none"
-							>{@html getLogLevelIcon(entry.level)}</span
+							><!-- eslint-disable svelte/no-at-html-tags -->{@html getLogLevelIcon(entry.level)}<!-- eslint-enable svelte/no-at-html-tags --></span
 						>
 						{#if expandable && !expanded}
 							<span class="flex-shrink-0 text-gray-500 mt-0.5 select-none">▶</span>

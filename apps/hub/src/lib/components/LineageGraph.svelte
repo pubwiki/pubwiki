@@ -19,6 +19,7 @@
 
 	// Build tree structure from flat array using parentId
 	function buildTree(items: LineageItemWithParent[]): Map<string | null, LineageItemWithParent[]> {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable in imperative function, not reactive state
 		const tree = new Map<string | null, LineageItemWithParent[]>();
 		for (const item of items) {
 			const key = item.parentId ?? null;
@@ -28,13 +29,13 @@
 		return tree;
 	}
 
-	// Calculate tree depth
-	function getTreeDepth(tree: Map<string | null, LineageItemWithParent[]>, rootKey: string | null): number {
+	// Calculate tree depth (used internally by getSubtreeWidth's callers)
+	function _getTreeDepth(tree: Map<string | null, LineageItemWithParent[]>, rootKey: string | null): number {
 		const children = tree.get(rootKey);
 		if (!children || children.length === 0) return 0;
 		let maxDepth = 0;
 		for (const child of children) {
-			const depth = getTreeDepth(tree, child.artifactId);
+			const depth = _getTreeDepth(tree, child.artifactId);
 			maxDepth = Math.max(maxDepth, depth);
 		}
 		return maxDepth + 1;

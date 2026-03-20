@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import type { DocItem } from '$lib/utils/docs';
 	import Sidebar from './Sidebar.svelte';
@@ -31,13 +32,13 @@
 </script>
 
 <ul class="space-y-1 {depth > 0 ? 'ml-4 border-l border-gray-200 pl-3' : ''}">
-	{#each items as item}
+	{#each items as item (item.slug)}
 		{@const active = isActive(item.slug)}
 		{@const parentActive = isParentActive(item)}
 
 		<li>
 			<a
-				href={item.slug === 'index' ? '/' : `/${item.slug}`}
+				href={resolve(item.slug === 'index' ? '/' : `/${item.slug}`)}
 				class="block py-1.5 px-3 text-sm rounded-md transition-colors
 					{active
 					? 'bg-blue-50 text-[#0969da] font-medium'

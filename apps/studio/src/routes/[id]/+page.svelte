@@ -5,6 +5,7 @@
 	import { untrack, onMount, onDestroy } from 'svelte';
 	import type { PageData } from './$types';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { 
 		PromptNode,
 		InputNode,
@@ -23,9 +24,6 @@
 	import { StudioSidebar } from '$components/sidebar';
 	import { CopilotPanel } from '$components/copilot';
 	import { 
-		type StudioNodeData, 
-		type GeneratedNodeData,
-		type VFSNodeData,
 		type FlowNodeData,
 		type NodeType,
 		createPromptNodeData, 
@@ -38,11 +36,10 @@
 	} from '$lib/types';
 	import {
 		createPreviewController,
-		type NodeRef,
-		type Versionable
+		type NodeRef
 	} from '$lib/version';
 	import { validateConnection, HandleId, createVfsMountHandleId } from '$lib/graph';
-	import { positionNewNodesFromSources, getNodeDimensions, DEFAULT_NODE_WIDTH, DEFAULT_NODE_HEIGHT, HORIZONTAL_GAP, VERTICAL_GAP } from '$lib/graph';
+	import { getNodeDimensions } from '$lib/graph';
 	import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata, exportProjectToZip, selectZipFile, importFromZipFile, addArtifactToProject, type ImportProgressCallback } from '$lib/io';
 	import type { UpdateMetadata } from '$components/sidebar/ProjectTab.svelte';
 	import { createDraftSyncService, type DraftSyncService, type DraftSyncState } from '$lib/sync';
@@ -58,7 +55,6 @@
 		saveProject, 
 		saveEdges,
 		getEdges,
-		deleteProject, 
 		setCurrentProject, 
 		getProject,
 		reportSaveState
@@ -273,7 +269,7 @@
 	// Watch for edge changes and auto-save
 	$effect(() => {
 		// Access edges to track them
-		edges;
+		void edges;
 		// Schedule save on any change
 		untrack(() => scheduleEdgeSave());
 	});
@@ -282,6 +278,7 @@
 	// Textarea Registry (for external focus control from badges)
 	// ============================================================================
 	
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- imperative registry, not reactive state
 	const textareaRegistry = new Map<string, HTMLTextAreaElement>();
 	
 	function registerTextarea(id: string, el: HTMLTextAreaElement) {
@@ -529,7 +526,7 @@
 	 * Handle before delete - shows confirmation for VFS nodes.
 	 * Returns false to cancel deletion, true to proceed.
 	 */
-	async function handleBeforeDelete({ nodes: deletedNodes, edges: deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }): Promise<boolean> {
+	async function handleBeforeDelete({ nodes: deletedNodes, edges: _deletedEdges }: { nodes: Node<FlowNodeData>[]; edges: Edge[] }): Promise<boolean> {
 		// Separate VFS nodes from other nodes (all VFS nodes require confirmation)
 		const vfsNodes = deletedNodes.filter(n => n.data.type === 'VFS');
 		const otherNodes = deletedNodes.filter(n => n.data.type !== 'VFS');
@@ -612,7 +609,7 @@
 	 * Handle selection drag stop - save positions to layoutStore
 	 * Note: SvelteFlow passes the event inside a wrapper object
 	 */
-	function handleSelectionDragStop(event: MouseEvent) {
+	function handleSelectionDragStop(_event: MouseEvent) {
 		// Selection drag stop just receives the MouseEvent
 		// We need to save all selected node positions, excluding phantom nodes
 		const selected = nodes.filter(n => n.selected && !n.data.isPhantom);
@@ -794,7 +791,7 @@
 		closeContextMenu();
 	}
 
-	function deleteNodes(nodeIds: string[]) {
+	function _deleteNodes(nodeIds: string[]) {
 		// Delete from stores
 		for (const nodeId of nodeIds) {
 			nodeStore.delete(nodeId);
@@ -960,7 +957,7 @@
 			// when the nodes array is updated
 			
 			// Clear import parameter from URL to prevent re-import on refresh
-			await goto(`/${currentProjectId}`, { replaceState: true });
+			await goto(resolve(`/${currentProjectId}`), { replaceState: true });
 		} catch (err) {
 			console.error('[Studio] Failed to import artifact:', err);
 		} finally {

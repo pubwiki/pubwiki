@@ -65,6 +65,7 @@
 
 	// Build a map of artifactId -> local project for quick lookup
 	function getLocalArtifactMap(): Map<string, StoredProject> {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable in function
 		const map = new Map<string, StoredProject>();
 		for (const p of localProjects) {
 			if (p.artifactId) {
@@ -299,7 +300,7 @@
 			<!-- Left sidebar tabs -->
 			<div class="w-48 bg-gray-50 border-r border-gray-200 py-4">
 				<nav class="space-y-1 px-2">
-					{#each tabs as tab}
+					{#each tabs as tab (tab.id)}
 						<button
 							class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
 								{activeTab === tab.id
@@ -339,7 +340,7 @@
 						</div>
 					{:else}
 						<div class="space-y-2">
-							{#each localProjects as project}
+							{#each localProjects as project (project.id)}
 								<div
 									class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors
 										{project.id === currentProjectId ? 'ring-2 ring-blue-500' : ''}"
@@ -429,7 +430,7 @@
 						</div>
 					{:else}
 						<div class="space-y-2">
-							{#each onlineProjects as project}
+							{#each onlineProjects as project (project.id)}
 								{@const visCfg = getListedConfig(project.isListed)}
 								<div
 									class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"

@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { HmrServiceImpl } from '../../src/services/hmr-service'
-import type { HmrUpdate, HmrSubscription, RpcStub } from '@pubwiki/sandbox-service'
+import type { HmrUpdate, RpcStub } from '@pubwiki/sandbox-service'
 
 // Helper to create a mock RpcStub callback
 function createMockCallback(): { 
@@ -20,7 +20,7 @@ function createMockCallback(): {
   }) as unknown as RpcStub<(update: HmrUpdate) => Promise<void>>
   
   // Mock the dup() method that RpcStub has
-  ;(callback as any).dup = () => callback
+  ;(callback as unknown as Record<string, unknown>).dup = () => callback
   
   return { callback, calls }
 }

@@ -52,8 +52,10 @@ export interface FileOperations {
  * @param paths - Array of file paths like ['src/index.ts', 'src/lib/utils.ts']
  * @returns FileItem[] tree structure
  */
+type TreeNode = Map<string, TreeNode> | null;
+
 export function buildTreeFromPaths(paths: string[]): FileItem[] {
-	const root: Map<string, any> = new Map();
+	const root: Map<string, TreeNode> = new Map();
 
 	for (const path of paths) {
 		const parts = path.split('/');
@@ -68,12 +70,12 @@ export function buildTreeFromPaths(paths: string[]): FileItem[] {
 			}
 
 			if (!isFile) {
-				current = current.get(part);
+				current = current.get(part) as Map<string, TreeNode>;
 			}
 		}
 	}
 
-	function mapToItems(map: Map<string, any>, parentPath: string = ''): FileItem[] {
+	function mapToItems(map: Map<string, TreeNode>, parentPath: string = ''): FileItem[] {
 		const items: FileItem[] = [];
 
 		// Sort: folders first, then files, alphabetically within each group

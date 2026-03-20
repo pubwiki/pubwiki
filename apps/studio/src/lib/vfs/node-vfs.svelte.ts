@@ -1,3 +1,4 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- class uses Map for imperative event tracking, not reactive state */
 /**
  * NodeVfs - Unified VFS interface for VFS nodes in Studio
  * 

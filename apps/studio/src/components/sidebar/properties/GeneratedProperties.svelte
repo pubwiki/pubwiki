@@ -13,7 +13,7 @@
 		onRegenerate: () => void;
 	}
 
-	let { nodeId, data, onRegenerate }: Props = $props();
+	let { nodeId: _nodeId, data, onRegenerate }: Props = $props();
 
 	// Get display content
 	let displayContent = $derived(data.content.getText());
@@ -36,6 +36,7 @@
 <div class="rounded-lg border border-gray-200 min-h-48">
 	<div class="p-3 bg-green-50/30">
 		<div class="prose prose-sm max-w-none text-left select-text">
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 			{@html marked.parse(displayContent || '')}
 		</div>
 	</div>

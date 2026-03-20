@@ -6,7 +6,7 @@
   - Multiple block types
 -->
 <script lang="ts">
-  import type { UIMessageBlock, RenderGroup, ToolCallRenderer } from '../types'
+  import type { UIMessageBlock, ToolCallRenderer } from '../types'
   import { groupBlocksForRender } from '../types'
   
   import MarkdownBlock from './MarkdownBlock.svelte'

@@ -1,3 +1,4 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- class fields use Map/Set as internal data structures, not reactive state */
 /**
  * Version Service
  * 

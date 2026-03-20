@@ -2,6 +2,7 @@
 	import type { ArtifactLineageItem, ArtifactListItem } from '@pubwiki/api';
 	import { ArtifactCard as BaseArtifactCard } from '@pubwiki/ui/components';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	type Props = {
 		/** Pass either a lineageItem or artifact directly */
@@ -36,6 +37,6 @@
 	{tags}
 	{variant}
 	stats={stats ? { viewCount: stats.viewCount, favCount: stats.favCount } : undefined}
-	onclick={() => { if (artifactId) goto(`/artifact/${artifactId}`); }}
-	onclickAuthor={() => { if (author?.id) goto(`/user/${author.id}`); }}
+	onclick={() => { if (artifactId) goto(resolve(`/artifact/${artifactId}`)); }}
+	onclickAuthor={() => { if (author?.id) goto(resolve(`/user/${author.id}`)); }}
 />

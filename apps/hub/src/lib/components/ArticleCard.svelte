@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ArticleDetail } from '@pubwiki/api';
-	import * as m from '$lib/paraglide/messages';
+	import { resolve } from '$app/paths';
 
 	type Props = {
 		article: ArticleDetail;
@@ -14,7 +14,7 @@
 </script>
 
 <a 
-	href="/read/{article.id}"
+	href={resolve(`/read/${article.id}`)}
 	class="block rounded-lg border border-gray-200 bg-white p-4 transition-all hover:border-[#0969da] hover:shadow-sm group"
 >
 	<div class="flex items-start gap-3">

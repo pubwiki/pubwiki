@@ -7,8 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createSandboxConnection } from '../../src/connection'
-import { createTestVfs, addFile, createRealIframe, removeIframe, waitFor } from './helpers'
-import { RpcTarget } from 'capnweb'
+import { createTestVfs, addFile, createRealIframe, removeIframe } from './helpers'
 import type { Vfs } from '@pubwiki/vfs'
 import type { ProjectConfig } from '@pubwiki/bundler'
 import type { SandboxConnection, ICustomService } from '../../src/types'
@@ -144,7 +143,7 @@ describe('SandboxConnection E2E', () => {
     // Helper to create a mock ICustomService
     function createMockService(): ICustomService {
       return {
-        async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+        async call(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
           return { result: 'mock' }
         },
         async getDefinition(): Promise<ServiceDefinition> {

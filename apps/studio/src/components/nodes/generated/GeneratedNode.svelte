@@ -73,9 +73,6 @@
 			: blocksToContent(blocks)
 	);
 	
-	// VFS Output state - check if this generated node has an associated output VFS
-	const hasOutputVfs = $derived(!!nodeData?.content?.outputVfsId);
-	
 	// VFS reference data for footbar
 	const inputVfsRef = $derived(nodeData?.content?.inputVfsRef);
 	const outputVfsId = $derived(nodeData?.content?.outputVfsId);
@@ -191,7 +188,6 @@
 		{/if}
 	{/snippet}
 
-	{#snippet children()}
 		<div 
 			class="nodrag nowheel generated-content w-full min-h-20 max-h-64 p-3 text-sm text-gray-700 overflow-y-auto transition-colors duration-300 {isStreaming ? 'bg-yellow-50/50' : 'bg-green-50/30'}"
 			onwheel={handleWheel}
@@ -199,6 +195,7 @@
 			{#if isPreviewing}
 				<!-- Preview mode: show content as before -->
 				<div class="prose prose-sm max-w-none text-left select-text">
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 					{@html marked.parse(displayContent || '')}
 				</div>
 			{:else}
@@ -206,6 +203,7 @@
 				{#each blocks as block (block.id)}
 					{#if block.type === 'markdown' || block.type === 'text'}
 						<div class="prose prose-sm max-w-none text-left select-text">
+							<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 							{@html marked.parse(block.content || '')}
 						</div>
 					{:else if block.type === 'tool_call'}
@@ -262,7 +260,6 @@
 				</div>
 			</div>
 		{/if}
-	{/snippet}
 </BaseNode>
 
 <style>

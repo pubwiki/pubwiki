@@ -82,7 +82,6 @@
 	});
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <section
 	aria-label="Hero section"
 	class="relative min-h-screen overflow-hidden pt-24"
@@ -101,7 +100,7 @@
 		<!-- Role Selector - fixed position relative to page -->
 		<p class="text-lg text-slate-500 mb-8 flex flex-wrap items-center gap-x-2 justify-center lg:justify-start">
 			<span>I'm a</span>
-			{#each roles as role, i}
+			{#each roles as role, i (role.id)}
 				<button
 					onclick={() => selectRole(role.id)}
 					class="relative font-semibold transition-all duration-200 {activeRole === role.id
@@ -236,7 +235,7 @@
 									</div>
 									<div class="p-2 text-center">
 										<div class="flex justify-center gap-1">
-											{#each ['💜', '⚔️', '🌙'] as emoji}
+											{#each ['💜', '⚔️', '🌙'] as emoji (emoji)}
 												<span class="text-xs">{emoji}</span>
 											{/each}
 										</div>
@@ -310,7 +309,7 @@
 									{ x: 60, y: 260, label: 'Lorebook', type: 'VFS', color: '#f59e0b' },
 									{ x: 240, y: 280, label: 'Memory', type: 'LOADER', color: '#06b6d4' },
 									{ x: 400, y: 220, label: 'Sandbox', type: 'SANDBOX', color: '#ec4899' }
-								] as node, i}
+									] as node, i (node.label)}
 									<g class="animate-fade-in-up" style="animation-delay: {i * 0.08}s">
 										<rect x={node.x} y={node.y} width="100" height="40" rx="8" fill="white" filter="url(#nodeShadow)" stroke={node.color} stroke-opacity="0.3" stroke-width="1" />
 										<rect x={node.x} y={node.y} width="100" height="12" rx="8" fill={node.color} />

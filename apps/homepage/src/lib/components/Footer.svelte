@@ -1,5 +1,6 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
+	import { base } from '$app/paths';
 
 	const footerLinks = {
 		product: [
@@ -53,7 +54,7 @@
 		<div class="grid grid-cols-2 md:grid-cols-5 gap-8">
 			<!-- Logo & Description -->
 			<div class="col-span-2 md:col-span-1">
-				<a href="/" class="flex items-center gap-2 font-bold text-lg mb-4">
+				<a href="{base}/" class="flex items-center gap-2 font-bold text-lg mb-4">
 					<img src={favicon} alt="Pub.Wiki" class="h-8 w-8" />
 					<span class="text-[#24292f]">Pub.Wiki</span>
 				</a>
@@ -62,7 +63,7 @@
 				</p>
 				<!-- Social Links -->
 				<div class="flex gap-3">
-					{#each socialLinks as social}
+					{#each socialLinks as social (social.name)}
 						<a
 							href={social.href}
 							target="_blank"
@@ -82,7 +83,7 @@
 			<div>
 				<h3 class="font-semibold text-[#24292f] mb-4">Product</h3>
 				<ul class="space-y-2">
-					{#each footerLinks.product as link}
+					{#each footerLinks.product as link (link.label)}
 						<li>
 							<a href={link.href} class="text-sm text-[#57606a] hover:text-[#0969da] transition-colors">
 								{link.label}
@@ -96,7 +97,7 @@
 			<div>
 				<h3 class="font-semibold text-[#24292f] mb-4">Resources</h3>
 				<ul class="space-y-2">
-					{#each footerLinks.resources as link}
+					{#each footerLinks.resources as link (link.label)}
 						<li>
 							<a href={link.href} class="text-sm text-[#57606a] hover:text-[#0969da] transition-colors">
 								{link.label}
@@ -110,7 +111,7 @@
 			<div>
 				<h3 class="font-semibold text-[#24292f] mb-4">Community</h3>
 				<ul class="space-y-2">
-					{#each footerLinks.community as link}
+					{#each footerLinks.community as link (link.label)}
 						<li>
 							<a href={link.href} class="text-sm text-[#57606a] hover:text-[#0969da] transition-colors">
 								{link.label}
@@ -124,7 +125,7 @@
 			<div>
 				<h3 class="font-semibold text-[#24292f] mb-4">Company</h3>
 				<ul class="space-y-2">
-					{#each footerLinks.company as link}
+					{#each footerLinks.company as link (link.label)}
 						<li>
 							<a href={link.href} class="text-sm text-[#57606a] hover:text-[#0969da] transition-colors">
 								{link.label}
@@ -141,11 +142,11 @@
 				© {new Date().getFullYear()} Pub.Wiki. Open source under MIT License.
 			</p>
 			<div class="flex items-center gap-4 text-sm text-[#57606a]">
-				<a href="/privacy" class="hover:text-[#0969da] transition-colors">Privacy</a>
+				<a href="{base}/privacy" class="hover:text-[#0969da] transition-colors">Privacy</a>
 				<span>·</span>
-				<a href="/terms" class="hover:text-[#0969da] transition-colors">Terms</a>
+				<a href="{base}/terms" class="hover:text-[#0969da] transition-colors">Terms</a>
 				<span>·</span>
-				<a href="/cookies" class="hover:text-[#0969da] transition-colors">Cookies</a>
+				<a href="{base}/cookies" class="hover:text-[#0969da] transition-colors">Cookies</a>
 			</div>
 		</div>
 	</div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	/* eslint-disable svelte/prefer-svelte-reactivity -- Set used in imperative DOM/event operations, not reactive state */
 	/**
 	 * FileTree - A full-featured file tree component
 	 * 
@@ -438,7 +439,7 @@
 				{/if}
 			</div>
 		{:else}
-			{#each items as item}
+			{#each items as item (item.path)}
 				{@render fileTreeItem(item, 0)}
 			{/each}
 		{/if}
@@ -659,7 +660,7 @@
 				{@render inlineNewItemInput(depth + 1)}
 			{/if}
 			{#if item.files}
-				{#each item.files as child}
+				{#each item.files as child (child.path)}
 					{@render fileTreeItem(child, depth + 1)}
 				{/each}
 			{/if}

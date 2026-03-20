@@ -91,7 +91,7 @@
 		</defs>
 
 		<!-- Connection Lines with Animation -->
-		{#each connections as conn, i}
+		{#each connections as conn, i (i)}
 			<path
 				d="M {conn.fromX} {conn.fromY} C {(conn.fromX + conn.toX) / 2} {conn.fromY}, {(conn.fromX + conn.toX) / 2} {conn.toY}, {conn.toX} {conn.toY}"
 				fill="none"
@@ -121,7 +121,7 @@
 		{/each}
 
 		<!-- Nodes -->
-		{#each nodes as node}
+		{#each nodes as node (node.label)}
 			<g
 				class="animate-fade-in-up cursor-pointer hover:scale-105 transition-transform"
 				style="animation-delay: {node.delay}s; transform-origin: {node.x + 50}px {node.y + 20}px"
@@ -187,7 +187,7 @@
 		{/each}
 
 		<!-- Floating particles -->
-		{#each Array(8) as _, i}
+		{#each Array(8) as _, i (i)}
 			<circle
 				cx={80 + i * 50}
 				cy={50 + (i % 3) * 100}

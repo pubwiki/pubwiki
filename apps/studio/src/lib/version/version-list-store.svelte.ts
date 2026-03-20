@@ -1,3 +1,4 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- Date/Set used in imperative converters and $derived computations */
 /**
  * Version List Store
  * 

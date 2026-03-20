@@ -1,4 +1,5 @@
 import { setContext, getContext } from 'svelte';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type {
 	ArtifactListItem,
 	ArtifactLineageItem,
@@ -47,8 +48,8 @@ export interface ArtifactDetails {
 
 export class ArtifactStore {
 	// Sparse page cache for virtual list (not deeply reactive)
-	private pageCache = new Map<number, ArtifactListItem[]>();
-	private loadingPages = new Set<number>();
+	private pageCache = new SvelteMap<number, ArtifactListItem[]>();
+	private loadingPages = new SvelteSet<number>();
 	// Trigger for cache updates
 	private cacheVersion = $state(0);
 	
@@ -67,9 +68,9 @@ export class ArtifactStore {
 	} = {};
 	
 	// Cache for artifact details
-	private detailsCache = new Map<string, ArtifactDetails>();
+	private detailsCache = new SvelteMap<string, ArtifactDetails>();
 	// Cache for node details (key: `${artifactId}:${nodeId}`)
-	private nodeDetailCache = new Map<string, ArtifactNodeDetail>();
+	private nodeDetailCache = new SvelteMap<string, ArtifactNodeDetail>();
 
 	get totalPages(): number {
 		return Math.ceil(this.totalItems / this.pageSize);
@@ -143,7 +144,7 @@ export class ArtifactStore {
 					query: {
 						page: pageNum,
 						limit: this.pageSize,
-						'type.include': this.currentOptions.typeInclude as any,
+						'type.include': this.currentOptions.typeInclude as string[] | undefined,
 						'tag.include': this.currentOptions.tagInclude,
 						sortBy: this.currentOptions.sortBy ?? 'createdAt',
 						sortOrder: this.currentOptions.sortOrder ?? 'desc'

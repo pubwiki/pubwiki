@@ -11,11 +11,11 @@
 	import { onMount } from 'svelte';
 
 	let { children } = $props();
-	const auth = createAuth(API_BASE_URL);
-	const artifactStore = createArtifactStore();
-	const articleStore = createArticleStore();
-	const projectStore = createProjectStore();
-	const settings = createSettingsStore();
+	const _auth = createAuth(API_BASE_URL);
+	const _artifactStore = createArtifactStore();
+	const _articleStore = createArticleStore();
+	const _projectStore = createProjectStore();
+	const _settings = createSettingsStore();
 
 	// Initialize locale on client and update HTML lang attribute
 	onMount(() => {
@@ -24,7 +24,7 @@
 	});
 
 	// Function to change locale
-	function changeLocale(newLocale: 'en' | 'zh') {
+	function _changeLocale(newLocale: 'en' | 'zh') {
 		setLocale(newLocale, { reload: false });
 		document.documentElement.lang = newLocale;
 	}
@@ -38,7 +38,7 @@
 
 {@render children()}
 <div style="display:none">
-	{#each locales as locale}
+	{#each locales as locale (locale)}
 		<a href={localizeHref(page.url.pathname, { locale })}>
 			{locale}
 		</a>

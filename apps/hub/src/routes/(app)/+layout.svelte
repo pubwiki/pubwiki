@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import LanguageSwitcher from '$lib/components/LanguageSwitcher.svelte';
 	import { PUBLIC_STUDIO_URL } from '$env/static/public';
@@ -14,7 +15,7 @@
 
 	async function handleLogout() {
 		await auth.logout();
-		goto('/');
+		goto(resolve('/'));
 	}
 </script>
 
@@ -23,17 +24,15 @@
 	<header class="bg-white border-b border-gray-200 py-3">
 		<div class="mx-auto max-w-[1200px] px-4 flex items-center gap-6">
 			<!-- Logo -->
-			<a href="/" class="flex items-center gap-2 font-bold text-lg text-[#24292f] hover:text-[#0969da] transition">
+			<a href={resolve('/')} class="flex items-center gap-2 font-bold text-lg text-[#24292f] hover:text-[#0969da] transition">
 				<img src={favicon} alt="Pub.Wiki" class="h-8 w-8" />
 				<span>Pub.Wiki</span>
 			</a>
 
 			<!-- Navigation Links (Left Aligned) -->
 			<nav class="flex items-center gap-6 text-sm font-semibold text-[#24292f]">
-				<a href="/" class="hover:text-[#0969da] transition">{m.nav_hub()}</a>
-				<a href="/community" class="hover:text-[#0969da] transition">{m.nav_community()}</a>
-				<a href="/about" class="hover:text-[#0969da] transition">{m.nav_about()}</a>
-				<a href="/support" class="hover:text-[#0969da] transition">{m.nav_support()}</a>
+				<a href={resolve('/')} class="hover:text-[#0969da] transition">{m.nav_hub()}</a>
+				<a href={resolve('/community')} class="hover:text-[#0969da] transition">{m.nav_community()}</a>
 			</nav>
 
 			<!-- Spacer -->
@@ -41,11 +40,12 @@
 
 			<!-- User Actions -->
 			<div class="flex items-center gap-3 text-sm text-[#24292f]">
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external URL -->
 				<a href={studioUrl} target="_blank" class="bg-[#000000] hover:bg-[#2c974b] px-3 py-1 rounded text-xs font-bold text-white border border-transparent">
 					{m.nav_launch_app()}
 				</a>
 				{#if auth.isAuthenticated}
-					<a href="/me" class="flex items-center gap-2 hover:text-[#0969da] transition">
+					<a href={resolve('/me')} class="flex items-center gap-2 hover:text-[#0969da] transition">
 						<img 
 							src={auth.currentUser?.avatarUrl || `https://ui-avatars.com/api/?name=${auth.currentUser?.username}&background=random`}
 							alt={auth.currentUser?.username}
@@ -55,9 +55,9 @@
 					</a>
 					<button onclick={handleLogout} class="hover:text-[#0969da]">{m.nav_logout()}</button>
 				{:else}
-					<a href="/login" class="hover:text-[#0969da]">{m.nav_login()}</a>
+					<a href={resolve('/login')} class="hover:text-[#0969da]">{m.nav_login()}</a>
 					<span>|</span>
-					<a href="/register" class="hover:text-[#0969da]">{m.nav_register()}</a>
+					<a href={resolve('/register')} class="hover:text-[#0969da]">{m.nav_register()}</a>
 				{/if}
 			</div>
 		</div>
@@ -80,15 +80,15 @@
 				<div>
 					<h3 class="text-gray-900 font-bold mb-2">{m.footer_resources()}</h3>
 					<ul class="space-y-1 text-xs">
-						<li><a href="/" class="hover:text-[#0969da]">{m.footer_documentation()}</a></li>
-						<li><a href="/" class="hover:text-[#0969da]">{m.footer_api()}</a></li>
+						<li><a href={resolve('/')} class="hover:text-[#0969da]">{m.footer_documentation()}</a></li>
+						<li><a href={resolve('/')} class="hover:text-[#0969da]">{m.footer_api()}</a></li>
 					</ul>
 				</div>
 				<div>
 					<h3 class="text-gray-900 font-bold mb-2">{m.footer_company()}</h3>
 					<ul class="space-y-1 text-xs">
-						<li><a href="/" class="hover:text-[#0969da]">{m.footer_about()}</a></li>
-						<li><a href="/" class="hover:text-[#0969da]">{m.footer_jobs()}</a></li>
+						<li><a href={resolve('/')} class="hover:text-[#0969da]">{m.footer_about()}</a></li>
+						<li><a href={resolve('/')} class="hover:text-[#0969da]">{m.footer_jobs()}</a></li>
 					</ul>
 				</div>
 			</div>

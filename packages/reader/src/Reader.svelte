@@ -11,7 +11,6 @@
 	 */
 	import { onMount } from 'svelte';
 	import { Composer, ContentEditable, RichTextPlugin } from 'svelte-lexical';
-	import { type LexicalEditor } from 'lexical';
 	import {
 		GameRefParagraphNode,
 		setReaderContext,
@@ -34,7 +33,6 @@
 	let { content = [], buildPlaybackUrl, class: className = '' }: Props = $props();
 
 	let composer: Composer | undefined = $state();
-	let editorRef: LexicalEditor | null = null;
 
 	// Editor theme for typography
 	const theme = {
@@ -65,7 +63,6 @@
 	onMount(() => {
 		if (composer) {
 			const editor = composer.getEditor();
-			editorRef = editor;
 
 			// Ensure editor is read-only
 			editor.setEditable(false);

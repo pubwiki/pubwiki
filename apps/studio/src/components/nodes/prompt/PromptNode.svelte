@@ -111,7 +111,7 @@
 
 	$effect(() => {
 		// Trigger update when reftags change so handles are registered
-		refTagNames;
+		void refTagNames;
 		updateNodeInternals(id);
 	});
 
@@ -179,7 +179,6 @@
 		<div class="w-2 h-2 rounded-full {isEditing ? 'bg-green-300 shadow-[0_0_8px_rgba(134,239,172,0.8)]' : 'bg-gray-50'} transition-colors duration-300"></div>
 	{/snippet}
 
-	{#snippet children()}
 		<RefTagEditor
 			value={displayBlocks}
 			readonly={isPreviewing}
@@ -190,7 +189,6 @@
 			onfocus={handleFocus}
 			onblur={handleBlur}
 		/>
-	{/snippet}
 
 	{#snippet leftHandles()}
 		<!-- No default left handle - we use reftag handles instead -->

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import type { ProjectDetail, ProjectArtifact, ProjectRole, ProjectPage, ProjectPageDetail, PostListItem, PostDetail, DiscussionReplyItem } from '@pubwiki/api';
+	import type { ProjectDetail, ProjectArtifact, ProjectRole, PostListItem, PostDetail, DiscussionReplyItem } from '@pubwiki/api';
 	import { ItemTree, buildTree, type TreeNode } from '$lib/components/ItemTree';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { apiClient } from '$lib/api';
-	import { fade, fly, scale } from 'svelte/transition';
-	import { cubicOut, backOut } from 'svelte/easing';
+	import { fade, fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
 	import * as m from '$lib/paraglide/messages';
 
 	let { data } = $props<{ data: PageData }>();
@@ -43,6 +44,7 @@
 		if (!project) return [];
 		
 		// Create a map of roleId to artifacts
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- imperative, not used in template
 		const roleArtifactsMap = new Map<string, ProjectArtifact[]>();
 		for (const pa of project.artifacts) {
 			if (pa.role) {
@@ -83,8 +85,8 @@
 		project = null;
 		homepage = null;
 		postsPromise = null;
-		customPagePromises = new Map();
-		activeTab = 'homepage';
+			customPagePromises = new Map();
+			activeTab = 'homepage';
 
 		apiClient.GET('/projects/{projectId}', {
 			params: { path: { projectId } }
@@ -114,6 +116,7 @@
 			// Custom page - load if not cached
 			if (!customPagePromises.has(tab)) {
 				const promise = fetchCustomPage(project.id, tab);
+				// eslint-disable-next-line svelte/prefer-svelte-reactivity -- creating new Map to trigger reactivity
 				customPagePromises = new Map(customPagePromises).set(tab, promise);
 			}
 		}
@@ -223,7 +226,7 @@
 		<div class="text-center">
 			<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.project_not_found()}</h1>
 			<p class="text-gray-600 mb-4">{error || m.project_not_found_message()}</p>
-			<button onclick={() => goto('/community')} class="text-[#0969da] hover:underline">
+			<button onclick={() => goto(resolve('/community'))} class="text-[#0969da] hover:underline">
 				{m.project_back_to_community()}
 			</button>
 		</div>
@@ -235,7 +238,7 @@
 			<div class="relative bg-gray-800 overflow-hidden rounded-xl shadow-lg" style="height: 224px;">
 				<!-- Background Image Grid -->
 				<div class="absolute inset-0 grid grid-cols-4 gap-px" style="z-index: 1;">
-					{#each getCoverImages(project) as imageUrl}
+					{#each getCoverImages(project) as imageUrl, i (i)}
 						<img 
 							src={imageUrl} 
 							alt="" 
@@ -362,6 +365,7 @@
 							</div>
 						{:else if homepage}
 							<div class="prose max-w-none project-homepage">
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -- intentional HTML rendering -->
 								{@html homepage}
 							</div>
 						{:else}
@@ -450,7 +454,7 @@
 										{#each nodeData.artifacts as pa (pa.artifact.id)}
 											{@const artifact = pa.artifact}
 											<a 
-												href="/artifact/{artifact.id}" 
+												href={resolve(`/artifact/${artifact.id}`)} 
 												class="block bg-white rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-md transition group relative"
 											>
 												<!-- Official Badge at top-right -->
@@ -558,7 +562,8 @@
 													{post.title}
 												</h3>
 												<div class="mt-2 text-sm text-gray-600 line-clamp-3 prose-content">
-													{@html post.content}
+											<!-- eslint-disable-next-line svelte/no-at-html-tags -- intentional HTML rendering -->
+											{@html post.content}
 												</div>
 												<div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
 													<div class="flex items-center gap-2 text-sm text-gray-500">
@@ -610,7 +615,8 @@
 						{:then content}
 							{#if content}
 								<div class="prose max-w-none project-homepage">
-									{@html content}
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -- intentional HTML rendering -->
+								{@html content}
 								</div>
 							{:else}
 								<div class="text-center py-12 text-gray-500">
@@ -710,6 +716,7 @@
 							
 							<!-- Post body -->
 							<div class="prose max-w-none project-homepage">
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -- intentional HTML rendering -->
 								{@html selectedPost.content}
 							</div>
 							
@@ -749,7 +756,8 @@
 														</span>
 													</div>
 													<div class="text-sm text-gray-700 prose-content">
-														{@html reply.content}
+												<!-- eslint-disable-next-line svelte/no-at-html-tags -- intentional HTML rendering -->
+												{@html reply.content}
 													</div>
 												</div>
 											</div>

@@ -24,7 +24,6 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
   ChatCompletionChunk,
-  ChatCompletion
 } from 'openai/resources/chat/completions'
 import type {
   ChatMessage,
@@ -143,9 +142,8 @@ interface FunctionCallInputItem {
 /**
  * Extended function call output item
  */
-interface FunctionCallOutputItemExtended extends ResponseFunctionToolCallItem {
-  // Inherits from ResponseFunctionToolCallItem
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+interface FunctionCallOutputItemExtended extends ResponseFunctionToolCallItem {}
 
 /**
  * Extended reasoning item supporting multiple formats
@@ -507,9 +505,9 @@ export class LLMClient {
       throw error
     }
 
-    let currentToolCalls: Map<number, ToolCall> = new Map()
+    const currentToolCalls: Map<number, ToolCall> = new Map()
     let currentReasoningId = ''
-    let reasoningDetails: ReasoningDetail[] = []
+    const reasoningDetails: ReasoningDetail[] = []
 
     for await (const event of stream as AsyncIterable<ResponseStreamEvent>) {
       if (event.type === 'response.output_text.delta') {
@@ -834,8 +832,8 @@ export class LLMClient {
     })
 
     let content = ''
-    let toolCalls: ToolCall[] = []
-    let reasoningDetails: ReasoningDetail[] = []
+    const toolCalls: ToolCall[] = []
+    const reasoningDetails: ReasoningDetail[] = []
 
     for (const outputItem of response.output) {
       if (outputItem.type === 'message') {

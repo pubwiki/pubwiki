@@ -8,7 +8,7 @@
   - Shows node creation/connection activities
 -->
 <script lang="ts">
-  import { onMount, onDestroy, setContext } from 'svelte';
+  import { setContext } from 'svelte';
   import { 
     ChatMessages, 
     ChatInput, 
@@ -30,7 +30,6 @@
   import { getSettingsStore } from '@pubwiki/ui/stores';
   import { getStudioContext } from '$lib/state';
   import { persist } from '@pubwiki/ui/utils';
-  import * as m from '$lib/paraglide/messages';
   import CopilotToolCallBlock from './CopilotToolCallBlock.svelte';
 
   interface Props {
@@ -166,13 +165,13 @@
       onNodeCreated: (nodeId, nodeType, nodeName) => {
         addActivity('node_created', `Created ${nodeType} node "${nodeName || nodeId}"`);
       },
-      onNodesConnected: (sourceId, targetId) => {
+      onNodesConnected: (_sourceId, _targetId) => {
         addActivity('nodes_connected', `Connected nodes`);
       },
-      onGenerationStarted: (inputNodeId, generatedNodeId) => {
+      onGenerationStarted: (_inputNodeId, _generatedNodeId) => {
         addActivity('generation_started', `Started generation...`);
       },
-      onGenerationCompleted: (generatedNodeId) => {
+      onGenerationCompleted: (_generatedNodeId) => {
         addActivity('generation_completed', `Generation completed`);
       },
     };
@@ -368,7 +367,6 @@
 
 <!-- Expanded Panel -->
 {#if !collapsed}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div 
     bind:this={panelEl}
     class="absolute top-4 right-4 bottom-4 z-20 bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col overflow-hidden {className}"

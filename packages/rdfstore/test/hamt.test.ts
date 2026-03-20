@@ -122,7 +122,7 @@ describe('HAMT', () => {
   })
 
   it('set with same value returns same trie', () => {
-    const h = HAMT.empty<number>().set('a', 1)
+    const _h = HAMT.empty<number>().set('a', 1)
     // Note: this only works if the value is exactly the same reference for objects
     // For primitives, set always creates a new leaf so this won't hold.
     // The optimization is for structural sharing at the internal node level.

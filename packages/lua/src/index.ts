@@ -7,7 +7,6 @@
 import type { Vfs, VfsProvider } from '@pubwiki/vfs'
 import { isVfsFile } from '@pubwiki/vfs'
 import {
-  createVfsContext,
   createVfsContextWithId,
   clearVfsContext,
   getVfs
@@ -22,7 +21,7 @@ import {
  */
 export interface LuaExecutionResult {
   /** Lua 返回值（已解析为 JavaScript 值） */
-  result: any
+  result: unknown
   /** print() 和 io.write() 的输出 */
   output: string
   /** 错误信息（如果有） */
@@ -37,10 +36,9 @@ const isNode = typeof process !== 'undefined' && process.versions != null && pro
 // ============= WASM 模块管理 =============
 
 const textEncoder = new TextEncoder()
-const textDecoder = new TextDecoder('utf-8')
 
 // JS 模块类型定义
-type JsModuleFunction = (...args: any[]) => any | Promise<any>
+type JsModuleFunction = (...args: unknown[]) => unknown | Promise<unknown>
 type JsModuleValue = JsModuleFunction | object | string | number | boolean | null
 export interface JsModuleDefinition {
   [key: string]: JsModuleValue
@@ -57,7 +55,7 @@ function isAsyncIterator(value: unknown): value is AsyncIterator<unknown> {
   return (
     value !== null &&
     typeof value === 'object' &&
-    typeof (value as any).next === 'function'
+    typeof (value as Record<string, unknown>).next === 'function'
   )
 }
 
@@ -68,7 +66,7 @@ function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   return (
     value !== null &&
     typeof value === 'object' &&
-    typeof (value as any)[Symbol.asyncIterator] === 'function'
+    typeof (value as Record<symbol, unknown>)[Symbol.asyncIterator] === 'function'
   )
 }
 
@@ -100,11 +98,20 @@ let modulePromise: Promise<void> | null = null
  * Lua WASM 模块接口
  * 用于类型检查和外部模块注入
  */
+/** Emscripten Emval bindings for passing JS values through WASM */
+interface EmvalModule {
+  toHandle(value: unknown): number
+  toValue(handle: number): unknown
+}
+
 export interface LuaModule {
   HEAPU8: Uint8Array
   UTF8ToString(ptr: number): string
   _malloc(size: number): number
   _free(ptr: number): void
+  
+  /** Emscripten embind value system */
+  Emval: EmvalModule
   
   // 异步执行接口
   _lua_run_async(codePtr: number, contextId: number, workingDirPtr: number): number
@@ -170,7 +177,7 @@ export function isModuleLoaded(): boolean {
 }
 
 // 辅助函数：分配字节到 WASM 内存
-function allocateImportBytes(bytes: Uint8Array, module: LuaModule) {
+function _allocateImportBytes(bytes: Uint8Array, module: LuaModule) {
   const length = bytes.length
   const ptr = module._malloc(length > 0 ? length : 1)
   if (length > 0) {
@@ -216,7 +223,7 @@ function deriveBasePath(resource: string): string {
 
 // 存储 Lua 执行回调
 const luaExecutionCallbacks = new Map<number, {
-  resolve: (result: any) => void
+  resolve: (result: LuaExecutionResult) => void
   reject: (error: Error) => void
 }>()
 
@@ -244,7 +251,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
   }
   
   // 保存自定义 WASM 路径，如果没有提供则使用默认值
-  let wasmPath = customWasmPath || DEFAULT_WASM_PATH
+  const wasmPath = customWasmPath || DEFAULT_WASM_PATH
 
   if (modulePromise) {
     return modulePromise
@@ -255,7 +262,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
       const glueHref = gluePath
       
       let basePath: string
-      let factoryModule: any
+      let factoryModule: { default?: LuaModuleFactory } & Record<string, unknown>
       
       if (isNode) {
         // Node.js 环境：直接导入文件（避免 data URL 导致的环境检测问题）
@@ -291,7 +298,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
       let localModule: LuaModule | null = null
 
       // Emscripten 模块配置
-      const moduleConfig: any = {
+      const moduleConfig: Record<string, unknown> = {
         // 资源定位函数
         locateFile: (path: string, _scriptDirectory: string) => {
           // 如果用户显式提供了 WASM 路径，使用它
@@ -304,11 +311,11 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
         },        // instantiateWasm 回调，用于注入自定义导入函数
         instantiateWasm: async (imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance, module: WebAssembly.Module) => void) => {
           // 添加 RDF bridge 函数到 env
-          const env = (imports.env as Record<string, any>) || {}
+          const env = (imports.env as Record<string, unknown>) || {}
           
           // 辅助函数：通过 callback 返回 EM_VAL handle（直接作为立即数）
-          const resolveWithHandle = (callbackId: number, value: any, module: LuaModule) => {
-            const Emval = (module as any).Emval
+          const resolveWithHandle = (callbackId: number, value: unknown, module: LuaModule) => {
+            const Emval = module.Emval
             if (!Emval) {
               const errorMsg = 'Emval not available'
               const errorPtr = allocateUTF8(errorMsg, module)
@@ -614,7 +621,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             if (!module) return
             
             // 从 Emval 获取函数和参数
-            const Emval = (module as any).Emval
+            const Emval = module.Emval
             if (!Emval) {
               const errorMsg = 'Emval not available'
               const errorPtr = allocateUTF8(errorMsg, module)
@@ -624,9 +631,9 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               return
             }
             
-            let func: Function
+            let func: (...args: unknown[]) => unknown
             try {
-              func = Emval.toValue(funcHandle)
+              func = Emval.toValue(funcHandle) as (...args: unknown[]) => unknown
             } catch (error) {
               const errorMsg = `Invalid function handle: ${error}`
               const errorPtr = allocateUTF8(errorMsg, module)
@@ -646,7 +653,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             }
             
             // 从内存读取参数 handles 并转换为 JS 值
-            const args: any[] = []
+            const args: unknown[] = []
             const heapU32 = new Uint32Array(module.HEAPU8.buffer)
             for (let i = 0; i < argsCount; i++) {
               // EM_VAL 是指针类型，在 32 位 WASM 中是 4 字节
@@ -667,12 +674,12 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             
             // 调用函数（可能是同步或异步）
             // 使用 try-catch 包装以捕获同步异常
-            let resultPromise: Promise<any>
+            let resultPromise: Promise<unknown>
             try {
               resultPromise = Promise.resolve(func(...args))
-            } catch (error: any) {
+            } catch (error: unknown) {
               // 同步异常
-              const errorMsg = error?.message || String(error)
+              const errorMsg = error instanceof Error ? error.message : String(error)
               const errorPtr = allocateUTF8(errorMsg, module)
               module._lua_callback_reject(callbackId, errorPtr)
               module._free(errorPtr)
@@ -685,7 +692,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
                 // 检查是否是 AsyncIterable 或 AsyncIterator，需要特殊处理
                 // 使用 Symbol.for('pubwiki.lua.asyncIterator') 标记，与 pubwiki.lua.value 保持一致
                 const ASYNC_ITERATOR_SYMBOL = Symbol.for('pubwiki.lua.asyncIterator')
-                let actualResult: any
+                let actualResult: unknown
                 if (isAsyncIterable(result)) {
                   // 获取迭代器并注册
                   const iterator = result[Symbol.asyncIterator]()
@@ -721,7 +728,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             const module = localModule
             if (!module) return
             
-            const Emval = (module as any).Emval
+            const Emval = module.Emval
             if (!Emval) {
               const errorMsg = 'Emval not available'
               const errorPtr = allocateUTF8(errorMsg, module)
@@ -788,7 +795,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
               const errorStr = module.UTF8ToString(errorPtr)
               
               // 从 EM_VAL handle 获取实际的 JS 值
-              const Emval = (module as any).Emval
+              const Emval = module.Emval
               const result = Emval ? Emval.toValue(resultHandle) : null
               
               // 始终返回完整的 LuaExecutionResult 对象，包括 error 情况
@@ -806,7 +813,7 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             }
           }
           
-          imports.env = env
+          imports.env = env as WebAssembly.ModuleImports
           
           // 手动加载和实例化 WASM
           // 如果用户提供了自定义 WASM 路径（或使用默认值），优先使用；否则从 basePath 推导
@@ -1073,7 +1080,6 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
       let argsHandle = 0
       if (args && Object.keys(args).length > 0) {
         // 使用 Emval API 将 JS 对象转换为 handle
-        // @ts-ignore - Emval is available on the module
         argsHandle = module.Emval.toHandle(args)
       }
       
@@ -1100,7 +1106,7 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
       }
       
       // 获取 Emval
-      const Emval = (module as any).Emval
+      const Emval = module.Emval
       if (!Emval) {
         throw new Error('Emval not available')
       }

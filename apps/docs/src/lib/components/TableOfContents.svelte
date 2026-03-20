@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { page } from '$app/state';
 
 	interface TOCItem {
 		id: string;
@@ -55,7 +54,7 @@
 	<nav class="w-full">
 		<h4 class="text-sm font-semibold text-[#24292f] mb-3">On this page</h4>
 		<ul class="space-y-2 text-sm">
-			{#each tocItems as item}
+			{#each tocItems as item (item.id)}
 				<li class="{item.level === 3 ? 'ml-3' : ''}">
 					<a
 						href="#{item.id}"

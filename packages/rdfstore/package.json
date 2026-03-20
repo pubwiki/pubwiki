@@ -23,8 +23,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "pnpm run build",
-    "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "check": "tsc --noEmit"
   },
   "keywords": [
     "triplestore",

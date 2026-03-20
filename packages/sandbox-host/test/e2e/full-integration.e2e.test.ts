@@ -5,11 +5,11 @@
  * including VFS, RPC hosts, connection management, and custom services.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { createSandboxConnection } from '../../src/connection'
 import { createMainRpcChannel, createVfsRpcChannel } from '../../src/rpc-host'
 import { HmrServiceImpl } from '../../src/services/hmr-service'
-import { createTestVfs, addFile, createRealIframe, removeIframe, waitFor } from './helpers'
+import { createTestVfs, addFile, createRealIframe, removeIframe } from './helpers'
 import type { Vfs } from '@pubwiki/vfs'
 import type { ProjectConfig } from '@pubwiki/bundler'
 import type { HmrUpdate } from '@pubwiki/sandbox-service'
@@ -377,7 +377,7 @@ export function Header({ onToggleTheme }: HeaderProps) {
         async: mockCallback
       })
 
-      const subscription = await hmrService.subscribe(callbackObj as any)
+      const subscription = await hmrService.subscribe(callbackObj as unknown as Parameters<typeof hmrService.subscribe>[0])
       expect(subscription.id).toMatch(/^hmr-/)
 
       // Notify update

@@ -663,7 +663,7 @@ describe('Real MessagePort RPC Communication', () => {
     it('should not allow direct registration via client RPC', async () => {
       // capnweb RPC Proxy returns a function for any property access
       // But calling internal methods should fail or have no effect
-      const internalMethod = (client as any)._registerCustomService
+      const internalMethod = (client as Record<string, unknown>)._registerCustomService
 
       if (internalMethod) {
         try {
@@ -685,7 +685,7 @@ describe('Real MessagePort RPC Communication', () => {
 
       // Internal maps exist as RPC proxies but calling them should fail
       // because they're instance properties, not prototype methods
-      const customServicesMap = (client as any).customServicesMap
+      const customServicesMap = (client as Record<string, unknown>).customServicesMap as Record<string, (...args: unknown[]) => unknown> | undefined
       if (customServicesMap) {
         try {
           // Trying to use it should fail
@@ -717,8 +717,8 @@ describe('Real MessagePort RPC Communication', () => {
 
       // Try various ways to register - these should all fail
       const registerAttempts = [
-        async () => await (client as any)._registerCustomService?.('evil', maliciousService),
-        async () => await (client as any).registerCustomService?.('evil', maliciousService),
+        async () => await (client as Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined>)._registerCustomService?.('evil', maliciousService),
+        async () => await (client as Record<string, ((...args: unknown[]) => Promise<unknown>) | undefined>).registerCustomService?.('evil', maliciousService),
       ]
 
       for (const attempt of registerAttempts) {

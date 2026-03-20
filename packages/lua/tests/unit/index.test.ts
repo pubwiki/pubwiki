@@ -380,7 +380,7 @@ describe('JS Module Registration', () => {
 
   describe('Lua iterator via callback', () => {
     it('should iterate ipairs via callback', async () => {
-      const items: any[] = []
+      const items: { index: number; value: number }[] = []
       await instance.run(`
         for index, value in ipairs({10, 20, 30, 40, 50}) do
           callback(index, value)
@@ -392,12 +392,12 @@ describe('JS Module Registration', () => {
     })
 
     it('should iterate pairs via callback', async () => {
-      const items: any[] = []
+      const items: { key: string; value: unknown }[] = []
       await instance.run(`
         for key, value in pairs({ name = "Alice", age = 25, city = "Beijing" }) do
           callback(key, value)
         end
-      `, { callback: (key: string, value: any) => items.push({ key, value }) })
+      `, { callback: (key: string, value: unknown) => items.push({ key, value }) })
       expect(items).toHaveLength(3)
     })
 

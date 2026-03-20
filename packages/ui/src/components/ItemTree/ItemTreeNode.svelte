@@ -3,7 +3,7 @@
 	import type { TreeNode } from './types';
 	import ItemTreeNode from './ItemTreeNode.svelte';
 
-	interface Props {
+	export interface ItemTreeNodeProps<T> {
 		/** The tree node to render */
 		node: TreeNode<T>;
 		/** Current depth level */
@@ -28,7 +28,7 @@
 		leafIcon,
 		branchIcon,
 		badge
-	}: Props = $props();
+	}: ItemTreeNodeProps<T> = $props();
 
 	let expanded = $state(true);
 

@@ -346,7 +346,7 @@ export class ChatStreamPipeline {
     let iterationCount = 0
     let blockCount = 0
     let toolCallCount = 0
-    let currentMessages = [...messages]
+    const currentMessages = [...messages]
     let accumulatedReasoning = ''
     let accumulatedReasoningDetails: ReasoningDetail[] = []
     let maxIterations = this.config.maxIterations ?? 10
@@ -360,7 +360,7 @@ export class ChatStreamPipeline {
       let segmentContent = ''
       let segmentReasoning = ''
       let toolCalls: ToolCall[] = []
-      let segmentReasoningDetails: ReasoningDetail[] = []
+      const segmentReasoningDetails: ReasoningDetail[] = []
       
       // Process tokens
       for await (const chunk of llmStream) {
@@ -494,7 +494,7 @@ export class ChatStreamPipeline {
     let iterationCount = 0
     let blockCount = 0
     let toolCallCount = 0
-    let currentMessages = [...messages]
+    const currentMessages = [...messages]
     let accumulatedReasoning = ''
     let accumulatedReasoningDetails: ReasoningDetail[] = []
     const allBlocks: MessageBlock[] = []

@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { ProjectListItem } from '@pubwiki/api';
 	import { useProjectStore } from '$lib/stores/projects.svelte';
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 
 	const projectStore = useProjectStore();
@@ -64,7 +64,7 @@
 				onchange={handleSortChange}
 				class="text-xs bg-gray-100 border-none rounded px-2 py-1 focus:ring-1 focus:ring-blue-500"
 			>
-				{#each sortOptions as option, i}
+				{#each sortOptions as option, i (i)}
 					<option value={i}>{option.labelKey()}</option>
 				{/each}
 			</select>
@@ -90,8 +90,8 @@
 		</div>
 	{:else}
 		<div class="flex flex-col gap-6">
-			{#each projectStore.projects as project}
-				<a href="/community/{project.id}" class="group relative block h-48 rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-all bg-gray-900">
+			{#each projectStore.projects as project (project.id)}
+				<a href={resolve(`/community/${project.id}`)} class="group relative block h-48 rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-all bg-gray-900">
 					<!-- Background "Images" Grid -->
 					<div class="absolute inset-0 grid grid-cols-4 gap-0.5">
 						<img src="https://picsum.photos/seed/{project.id}-0/400/300" alt="" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />

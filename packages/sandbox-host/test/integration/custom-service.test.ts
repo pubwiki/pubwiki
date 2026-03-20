@@ -501,7 +501,7 @@ describe('Custom Service Registration', () => {
     })
 
     it('should allow registering services on channel host', () => {
-      const { host: channelHost, clientPort } = createMainRpcChannel({
+      const { host: channelHost } = createMainRpcChannel({
         basePath: '/public/demo'
       })
 

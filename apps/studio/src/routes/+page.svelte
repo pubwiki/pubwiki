@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { getCurrentProject, setCurrentProject } from '$lib/persistence';
@@ -18,7 +19,7 @@
 					const newProjectId = crypto.randomUUID();
 					console.log('[Studio Root] Creating new project for import:', newProjectId);
 					setCurrentProject(newProjectId);
-					goto(`/${newProjectId}?import=${importArtifactId}`, { replaceState: true });
+					goto(resolve(`/${newProjectId}?import=${importArtifactId}`), { replaceState: true });
 					return;
 				}
 				
@@ -28,13 +29,13 @@
 				if (currentProjectId) {
 					// Redirect to the existing current project
 					console.log('[Studio Root] Redirecting to existing project');
-					goto(`/${currentProjectId}`, { replaceState: true });
+					goto(resolve(`/${currentProjectId}`), { replaceState: true });
 				} else {
 					// Generate a new temporary UUID and redirect
 					const tempId = crypto.randomUUID();
 					setCurrentProject(tempId);
 					console.log('[Studio Root] Redirecting to new project');
-					goto(`/${tempId}`, { replaceState: true });
+					goto(resolve(`/${tempId}`), { replaceState: true });
 				}
 			})();
 		}

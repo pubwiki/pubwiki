@@ -18,10 +18,8 @@
 		KEY_ESCAPE_COMMAND,
 		KEY_ARROW_DOWN_COMMAND,
 		KEY_ARROW_UP_COMMAND,
-		KEY_BACKSPACE_COMMAND,
 		KEY_TAB_COMMAND,
 		TextNode,
-		type LexicalEditor,
 	} from 'lexical';
 	import { $createRefTagNode as createRefTagNode, RefTagNode } from './RefTagNode';
 	import { getEditor } from 'svelte-lexical';
@@ -338,7 +336,7 @@
 	>
 		{#if filteredSuggestions.length > 0}
 			<ul>
-				{#each filteredSuggestions as suggestion, i}
+				{#each filteredSuggestions as suggestion, i (suggestion)}
 					<li
 						class:selected={i === selectedIndex}
 						onclick={() => handleMenuItemClick(suggestion)}

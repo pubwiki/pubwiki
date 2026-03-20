@@ -5,7 +5,7 @@
 	 * A minimal Monaco wrapper for displaying text content (logs, JSON, etc.)
 	 * without VFS, TypeScript LSP, or import map overhead.
 	 */
-	import { onMount, onDestroy, tick } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { init } from 'modern-monaco';
 
 	// ============================================================================

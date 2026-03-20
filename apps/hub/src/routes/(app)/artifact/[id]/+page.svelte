@@ -3,6 +3,7 @@
 	import type { ArticleDetail } from '@pubwiki/api';
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
 	import { useArtifactStore, type ArtifactDetails, type ArtifactGraphData } from '$lib/stores/artifacts.svelte';
 	import { useArticleStore } from '$lib/stores/articles.svelte';
@@ -39,16 +40,6 @@
 	 * Open artifact in Studio (new project)
 	 */
 	function handleUseArtifact() {
-		if (!artifact) return;
-		// Open Studio with artifact import parameter
-		window.open(`${studioUrl}?import=${artifact.id}`, '_blank');
-	}
-
-	/**
-	 * Open artifact in Studio (add to current project would require studio state)
-	 * For now, just redirect to studio with the artifact
-	 */
-	function handleAddToProject() {
 		if (!artifact) return;
 		// Open Studio with artifact import parameter
 		window.open(`${studioUrl}?import=${artifact.id}`, '_blank');
@@ -165,7 +156,7 @@
 		<div class="text-center">
 			<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
 			<p class="text-gray-600 mb-4">{error || m.artifact_not_found_message()}</p>
-			<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
+			<button onclick={() => goto(resolve('/'))} class="text-[#0969da] hover:underline">
 				{m.artifact_go_back()}
 			</button>
 		</div>
@@ -221,7 +212,7 @@
 												<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" /></svg>
 											{/if}
 										</button>
-										{#each commitTags as tag}
+										{#each commitTags as tag (tag)}
 											<button
 												onclick={() => switchVersion(tag)}
 												class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between {currentVersion === tag ? 'bg-blue-50 text-blue-700' : ''}"
@@ -278,6 +269,7 @@
 				<div class="lg:col-span-2 space-y-6">
 					
 					<!-- Preview Area (clickable → Play) -->
+					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external URL -->
 					<a href="{playUrl}/{artifact.id}" target="_blank" rel="noopener" class="block bg-black rounded-lg overflow-hidden shadow-sm border border-gray-200 aspect-video relative group">
 						<img 
 							src={artifact.thumbnailUrl || 'https://placehold.co/800x400/222/fff?text=No+Image'} 
@@ -295,7 +287,7 @@
 					<!-- Tabs Navigation -->
 					<div class="border-b border-gray-200">
 						<nav class="-mb-px flex space-x-8" aria-label="Tabs">
-							{#each tabsConfig as tab}
+							{#each tabsConfig as tab (tab.key)}
 								<button
 								onclick={() => handleTabChange(tab.key)}
 									class="{activeTab === tab.key
@@ -314,6 +306,7 @@
 						{#if activeTab === 'Overview'}
 							{#if homepage}
 								<div class="prose max-w-none artifact-homepage">
+									<!-- eslint-disable-next-line svelte/no-at-html-tags -- intentional HTML rendering -->
 									{@html homepage}
 								</div>
 							{:else}
@@ -330,7 +323,7 @@
 								
 								{#if nodes.length > 0}
 									<div class="flex flex-col gap-4">
-										{#each nodes as node}
+										{#each nodes as node (node.id)}
 											<NodeCard {node} artifactId={artifact.id} />
 										{/each}
 									</div>
@@ -356,7 +349,7 @@
 										</div>
 										{#if articles.length > 0}
 											<div class="flex flex-col gap-3">
-												{#each articles as article}
+										{#each articles as article (article.id)}
 													<ArticleCard {article} />
 												{/each}
 											</div>
@@ -419,7 +412,7 @@
 						<p class="text-sm text-gray-700 mb-4 leading-relaxed">{artifact.description || m.common_no_description()}</p>
 
 						<div class="flex flex-wrap gap-2 mb-4">
-							{#each artifact.tags as tag}
+							{#each artifact.tags as tag (tag.name)}
 								<span class="bg-[#ddf4ff] text-[#0969da] text-xs px-2 py-1 rounded-full font-medium hover:bg-[#b6e3ff] cursor-pointer transition">
 									{tag.name}
 								</span>
@@ -448,8 +441,8 @@
 					<!-- 2. Action Buttons -->
 					<div class="space-y-2">
 						<!-- Play button -->
-						<a 
-							href="{playUrl}/{artifact.id}"
+						<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external URL to player app -->
+						<a href="{playUrl}/{artifact.id}"
 							target="_blank"
 							rel="noopener"
 							class="w-full bg-[#2da44e] hover:bg-[#218838] text-white py-2.5 px-4 rounded-md font-semibold text-sm shadow-sm transition-colors flex items-center justify-center gap-2"
@@ -475,12 +468,12 @@
 								<span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{parents.length}</span>
 							</h3>
 							<div class="space-y-3">
-								{#each parents as item}
-									<ArtifactCard lineageItem={item} />
-								{/each}
-							</div>
+						{#each parents as item (item.artifactId)}
+							<ArtifactCard lineageItem={item} />
+						{/each}
 						</div>
-					{/if}
+					</div>
+				{/if}
 
 					<!-- 4. Children (Dependents / Forks) -->
 					{#if children.length > 0}
@@ -490,7 +483,7 @@
 								<span class="bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{children.length}</span>
 							</h3>
 							<div class="space-y-3">
-								{#each children as item}
+								{#each children as item (item.artifactId)}
 									<ArtifactCard lineageItem={item} />
 								{/each}
 							</div>

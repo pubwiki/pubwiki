@@ -9,8 +9,8 @@
 		"preview": "vite preview",
 		"deploy": "vite build && wrangler deploy",
 		"prepare": "svelte-kit sync || echo ''",
-		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --watch",
 		"i18n": "pnpm exec paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide"
 	},
 	"devDependencies": {

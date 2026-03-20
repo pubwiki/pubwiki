@@ -581,8 +581,6 @@
 <!-- Floating Preview Panel -->
 <svelte:window onkeydown={handleKeydown} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
 	use:portal
 	class="fixed z-9999"
@@ -595,14 +593,11 @@
 		: `left: ${windowX}px; top: ${windowY}px; width: ${windowWidth}px; height: ${windowHeight}px;`}
 	transition:fade={{ duration: 150 }}
 >
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<div
 		class="bg-white shadow-2xl flex flex-col overflow-hidden h-full w-full"
 		class:rounded-xl={!isFullscreen && !isMinimized}
 	>
 		<!-- Header (always visible) -->
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div 
 			class="flex items-center justify-between bg-orange-500 text-white select-none touch-none"
 			class:px-2={isMinimized}
@@ -880,22 +875,14 @@
 		<!-- Resize Handles (hidden in fullscreen and minimized) -->
 		{#if !isFullscreen && !isMinimized}
 			<!-- Edge handles -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute top-0 left-2 right-2 h-1 cursor-ns-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 'n')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute bottom-0 left-2 right-2 h-1 cursor-ns-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 's')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute left-0 top-2 bottom-2 w-1 cursor-ew-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 'w')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute right-0 top-2 bottom-2 w-1 cursor-ew-resize hover:bg-orange-500/20 touch-none" onpointerdown={(e) => startResize(e, 'e')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
 			<!-- Corner handles -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute top-0 left-0 w-3 h-3 cursor-nwse-resize touch-none" onpointerdown={(e) => startResize(e, 'nw')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute top-0 right-0 w-3 h-3 cursor-nesw-resize touch-none" onpointerdown={(e) => startResize(e, 'ne')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute bottom-0 left-0 w-3 h-3 cursor-nesw-resize touch-none" onpointerdown={(e) => startResize(e, 'sw')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="absolute bottom-0 right-0 w-3 h-3 cursor-nwse-resize touch-none" onpointerdown={(e) => startResize(e, 'se')} onpointermove={handleResize} onpointerup={stopResize} onpointercancel={stopResize}></div>
 		{/if}
 	</div>

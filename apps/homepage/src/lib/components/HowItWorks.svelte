@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 
 	let container: HTMLElement;
-	let activeView = $state<'reader' | 'player'>('reader');
+	let _activeView = $state<'reader' | 'player'>('reader');
 
 	onMount(() => {
 		const observer = new IntersectionObserver(
@@ -61,13 +61,13 @@
 						<!-- Chapter navigation -->
 						<div class="flex items-center justify-between mb-4 pb-4 border-b border-slate-100">
 							<div class="flex items-center gap-2">
-								<button class="p-1.5 rounded hover:bg-slate-100 text-slate-400">
+								<button class="p-1.5 rounded hover:bg-slate-100 text-slate-400" aria-label="Previous chapter">
 									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
 									</svg>
 								</button>
 								<span class="text-sm font-medium text-slate-700">Chapter 12: The Betrayal</span>
-								<button class="p-1.5 rounded hover:bg-slate-100 text-slate-400">
+								<button class="p-1.5 rounded hover:bg-slate-100 text-slate-400" aria-label="Next chapter">
 									<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
 									</svg>

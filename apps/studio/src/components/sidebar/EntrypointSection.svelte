@@ -22,7 +22,7 @@
 	import { runBuild } from '$lib/io/build-runner';
 	import { getNodeVfs } from '$lib/vfs';
 	import { getOpfsBuildCacheStorage, detectProject } from '@pubwiki/bundler';
-	import { computeBuildCacheKey, computeConfigKey } from '@pubwiki/api';
+	import { computeBuildCacheKey } from '@pubwiki/api';
 	import { computeVfsFileHashes, computeVfsContentHash } from '$lib/io/vfs-content-hash';
 	import { getNodeRDFStore } from '$lib/rdf';
 	import { listUnifiedSaves } from '$lib/gamesave';

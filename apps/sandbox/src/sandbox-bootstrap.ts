@@ -33,7 +33,7 @@ const allowedOrigins: string[] = _rawOrigins.split(',')
 /**
  * Show/hide UI elements
  */
-function showLoading(): void {
+function _showLoading(): void {
   const loading = document.getElementById('loading')
   const error = document.getElementById('error')
   const iframe = document.getElementById('user-iframe')
@@ -522,7 +522,9 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
         hideBuildError()
         
         if (update.path === '__manual_reload__') {
+          // No special handling needed for manual reload
         } else {
+          // No special handling needed for path-based update
         }
         reloadUserIframe()
       }

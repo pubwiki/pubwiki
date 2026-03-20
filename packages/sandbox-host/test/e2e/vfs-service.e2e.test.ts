@@ -11,6 +11,7 @@ import { HmrServiceImpl } from '../../src/services/hmr-service'
 import { createTestVfs, addFile } from './helpers'
 import type { Vfs } from '@pubwiki/vfs'
 import type { ProjectConfig } from '@pubwiki/bundler'
+import type { HmrUpdate } from '@pubwiki/sandbox-service'
 
 describe('VfsServiceImpl E2E', () => {
   let vfs: Vfs
@@ -375,16 +376,16 @@ export default App
       await new Promise(resolve => setTimeout(resolve, 100))
 
       // Track HMR notifications
-      const notifications: any[] = []
+      const notifications: HmrUpdate[] = []
       const mockCallback = {
         dup: () => mockCallback,
-        async: async (update: any) => {
+        async: async (update: HmrUpdate) => {
           notifications.push(update)
           return Promise.resolve()
         }
       }
 
-      await hmrService.subscribe(mockCallback as any)
+      await hmrService.subscribe(mockCallback as unknown as Parameters<typeof hmrService.subscribe>[0])
 
       // Update the file
       await vfs.createFile('/public/demo/test.js', 'console.log("updated")')

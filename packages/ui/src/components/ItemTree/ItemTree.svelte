@@ -2,7 +2,7 @@
 	import ItemTreeNode from './ItemTreeNode.svelte';
 	import type { TreeNode } from './types';
 
-	interface Props {
+	export interface ItemTreeProps<T> {
 		/** Tree structure to render */
 		tree: TreeNode<T>[];
 		/** Currently selected node id */
@@ -27,7 +27,7 @@
 		branchIcon,
 		badge,
 		emptyMessage = 'No items'
-	}: Props = $props();
+	}: ItemTreeProps<T> = $props();
 </script>
 
 <div class="item-tree">

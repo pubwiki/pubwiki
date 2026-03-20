@@ -25,7 +25,7 @@
 
 	let { nodeId, data, onOpenFile }: Props = $props();
 
-	const ctx = getStudioContext();
+	const _ctx = getStudioContext();
 
 	// ============================================================================
 	// State
@@ -85,6 +85,7 @@
 			if (!vfs) return;
 			await vfs.createFolder(path);
 			// Auto-expand newly created folder
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable for immutable state update
 			const newExpanded = new Set(expandedFolders);
 			newExpanded.add(path);
 			expandedFolders = newExpanded;
@@ -108,6 +109,7 @@
 			ctrl.setUploading(true, { current: 0, total: totalFiles });
 			
 			// Track created directories to avoid redundant createFolder calls
+			// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable in function
 			const createdDirs = new Set<string>();
 			let filesProcessed = 0;
 			
@@ -116,7 +118,7 @@
 					const file = files[fileIndex];
 					
 					// Use webkitRelativePath for folder uploads, otherwise just the file name
-					const relativePath = (file as any).webkitRelativePath || file.name;
+					const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
 					const targetPath = relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
 					
 					// Create parent directory if needed (only once per unique directory)

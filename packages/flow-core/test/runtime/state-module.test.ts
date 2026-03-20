@@ -172,7 +172,7 @@ describe('State module value round-trip', () => {
 	})
 
 	it('valueToLua should preserve array vs object distinction for Rust val_to_lua_deep', async () => {
-		const { stateModule, store } = setup()
+		const { stateModule } = setup()
 
 		const data = {
 			items: [

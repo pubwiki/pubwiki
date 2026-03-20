@@ -24,4 +24,4 @@
 	};
 </script>
 
-<SharedForm {initialValues} {onValuesChange} {labels} EditorComponent={Editor as any} />
+<SharedForm {initialValues} {onValuesChange} {labels} EditorComponent={Editor as import('svelte').Component<{ content: unknown[]; onContentChange: (content: unknown[]) => void }>} />

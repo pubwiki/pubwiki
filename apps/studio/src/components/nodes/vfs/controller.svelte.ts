@@ -1,3 +1,4 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- module-level Map/Set used as imperative caches, not reactive state */
 /**
  * VFSNode Controller
  * 

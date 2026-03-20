@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { useAuth } from '@pubwiki/ui/stores';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
+	import { PUBLIC_STUDIO_URL } from '$env/static/public';
 	import type { ArtifactListItem, UserProjectListItem, Pagination } from '@pubwiki/api';
 	import { apiClient } from '$lib/api';
 	import * as m from '$lib/paraglide/messages';
@@ -44,7 +46,7 @@
 	// Redirect if not authenticated (wait for session to load first)
 	$effect(() => {
 		if (browser && auth.isSessionLoaded && !auth.isAuthenticated) {
-			goto('/login');
+			goto(resolve('/login'));
 		}
 	});
 
@@ -76,7 +78,7 @@
 		
 		artifactsLoading = true;
 		try {
-			const { data, error } = await apiClient.GET('/users/{userId}/artifacts', {
+			const { data, error: _fetchError } = await apiClient.GET('/users/{userId}/artifacts', {
 				params: {
 					path: { userId: auth.currentUser.id },
 					query: { page, limit: 20, sortBy: 'createdAt', sortOrder: 'desc' }
@@ -189,7 +191,7 @@
 			<!-- Left Sidebar - Tab Navigation -->
 			<nav class="w-56 shrink-0">
 				<ul class="space-y-1">
-					{#each tabsConfig as tab}
+					{#each tabsConfig as tab (tab.id)}
 						<li>
 							<button
 								onclick={() => activeTab = tab.id}
@@ -225,15 +227,15 @@
 									<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
 								</svg>
 								<p>{m.me_no_artifacts()}</p>
-								<a href="/studio" class="inline-block mt-4 px-4 py-2 bg-[#2da44e] text-white text-sm font-medium rounded-lg hover:bg-[#2c974b] transition">
+								<a href={PUBLIC_STUDIO_URL || 'http://localhost:5174'} class="inline-block mt-4 px-4 py-2 bg-[#2da44e] text-white text-sm font-medium rounded-lg hover:bg-[#2c974b] transition">
 									{m.me_create_first_artifact()}
 								</a>
 							</div>
 						{:else}
 							<ul class="divide-y divide-gray-100">
-								{#each artifacts as artifact}
+								{#each artifacts as artifact (artifact.id)}
 									<li class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition">
-										<a href="/artifact/{artifact.id}" class="flex items-center gap-4 flex-1 min-w-0">
+										<a href={resolve(`/artifact/${artifact.id}`)} class="flex items-center gap-4 flex-1 min-w-0">
 											<img 
 												src={artifact.thumbnailUrl || 'https://placehold.co/48x48/222/fff?text=?'}
 												alt={artifact.name}
@@ -305,7 +307,7 @@
 						<div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
 							<h2 class="text-lg font-semibold text-gray-900">{m.me_your_projects()}</h2>
 							<a 
-								href="/me/create-project" 
+							href={resolve('/me/create-project')} 
 								class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-[#2da44e] hover:bg-[#2c974b] rounded-lg transition"
 							>
 								<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -323,15 +325,15 @@
 									<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
 								</svg>
 								<p>{m.me_no_projects()}</p>
-								<a href="/me/create-project" class="inline-block mt-4 px-4 py-2 bg-[#2da44e] text-white text-sm font-medium rounded-lg hover:bg-[#2c974b] transition">
+								<a href={resolve('/me/create-project')} class="inline-block mt-4 px-4 py-2 bg-[#2da44e] text-white text-sm font-medium rounded-lg hover:bg-[#2c974b] transition">
 									{m.me_create_first_project()}
 								</a>
 							</div>
 						{:else}
 							<ul class="divide-y divide-gray-100">
-								{#each projects as project}
+								{#each projects as project (project.id)}
 									<li>
-										<a href="/project/{project.id}" class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition">
+										<a href={resolve(`/community/${project.id}`)} class="flex items-center gap-4 px-4 py-3 hover:bg-gray-50 transition">
 											<div class="w-12 h-12 rounded bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
 												{project.name.charAt(0).toUpperCase()}
 											</div>

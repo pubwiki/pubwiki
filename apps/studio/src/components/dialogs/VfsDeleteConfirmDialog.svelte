@@ -55,7 +55,7 @@
 						<div
 							class="bg-gray-50 rounded-lg p-3 max-h-32 overflow-y-auto border border-gray-200"
 						>
-							{#each pending.vfsNodes as node}
+							{#each pending.vfsNodes as node (node.id)}
 								<div class="flex items-center gap-2 text-sm text-gray-700 py-1">
 									<svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 										<path

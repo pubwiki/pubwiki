@@ -1,5 +1,6 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
+	import { base } from '$app/paths';
 
 	let scrolled = $state(false);
 	let mobileMenuOpen = $state(false);
@@ -28,14 +29,14 @@
 	<div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 		<div class="flex h-16 items-center justify-between">
 			<!-- Logo -->
-			<a href="/" class="flex items-center gap-2 font-bold text-xl">
+			<a href="{base}/" class="flex items-center gap-2 font-bold text-xl">
 				<img src={favicon} alt="Pub.Wiki" class="h-8 w-8" />
 				<span class="text-[#24292f]">Pub.Wiki</span>
 			</a>
 
 			<!-- Desktop Navigation -->
 			<nav class="hidden md:flex items-center gap-8">
-				{#each navLinks as link}
+				{#each navLinks as link (link.href)}
 					<a
 						href={link.href}
 						class="text-sm font-medium text-[#57606a] hover:text-[var(--color-primary)] transition-colors"
@@ -90,7 +91,7 @@
 		{#if mobileMenuOpen}
 			<div class="md:hidden py-4 border-t border-gray-200">
 				<nav class="flex flex-col gap-4">
-					{#each navLinks as link}
+					{#each navLinks as link (link.href)}
 						<a
 							href={link.href}
 							class="text-sm font-medium text-slate-600 hover:text-slate-900"

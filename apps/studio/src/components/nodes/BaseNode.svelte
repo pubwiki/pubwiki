@@ -12,11 +12,10 @@
 	 * 
 	 * Layer Separation: Business data comes from nodeStore, not props.
 	 */
-	import { Handle, Position, useUpdateNodeInternals } from '@xyflow/svelte';
+	import { Handle, Position } from '@xyflow/svelte';
 	import type { Snippet } from 'svelte';
 	import type { FlowNodeData } from '$lib/types/flow';
 	import { nodeStore } from '$lib/persistence';
-	import type { StudioNodeData } from '$lib/types';
 	import type { NodeRef, Versionable } from '$lib/version';
 	import { getStudioContext } from '$lib/state';
 
@@ -65,7 +64,7 @@
 
 	let {
 		id,
-		data,
+		data: _data,
 		selected,
 		isConnectable,
 		nodeType,
@@ -252,26 +251,12 @@
 	function handleNameDoubleClick() {
 		ctx.setEditingNameNodeId(id);
 	}
-
-	function handleWheel(e: WheelEvent) {
-		const target = e.currentTarget as HTMLElement;
-		const { scrollTop, scrollHeight, clientHeight } = target;
-		const isScrollable = scrollHeight > clientHeight;
-		
-		if (isScrollable) {
-			const isAtTop = scrollTop === 0 && e.deltaY < 0;
-			const isAtBottom = scrollTop + clientHeight >= scrollHeight && e.deltaY > 0;
-			if (!isAtTop && !isAtBottom) {
-				e.stopPropagation();
-			}
-		}
-	}
 </script>
 
 <div class="relative {isPhantom ? 'opacity-60' : ''}" style="overflow: visible;">
 	<!-- Version history stack effect (poker card style) -->
 	{#if hasHistory && !isPhantom}
-		{#each {length: Math.min(versionCount - 1, 3)} as _, i}
+		{#each {length: Math.min(versionCount - 1, 3)} as _, i (i)}
 			<div 
 				class="absolute w-80 h-full rounded-lg border bg-white shadow-sm {computedBorderClass}"
 				style="

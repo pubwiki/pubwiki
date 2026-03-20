@@ -219,15 +219,12 @@ export class TripleIndex {
     pMap: SPOLevel2, oMap: SPOLevel3,
   ): TripleIndex {
     // Collect all object keys being removed
-    let current: TripleIndex = this
-    for (const [ok, val] of oMap) {
-      current = current.deleteSingle(s, p, val, g, 
+    // Use reduce to accumulate deletions without aliasing `this`
+    return [...oMap].reduce<TripleIndex>((current, [, val]) => {
+      return current.deleteSingle(s, p, val, g, 
         current.spo.get(s) ?? pMap,
         current.spo.get(s)?.get(p) ?? oMap)
-      // Re-fetch if structure changed (rare edge case if called in a loop)
-      void ok
-    }
-    return current
+    }, this)
   }
 
   /** Match triples against a pattern (all absent fields are wildcards). */

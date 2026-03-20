@@ -30,7 +30,8 @@
     "clean": "rm -rf dist",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "pnpm run build"
+    "prepublishOnly": "pnpm run build",
+    "check": "tsc --noEmit"
   },
   "dependencies": {
     "@pubwiki/vfs": "workspace:*",

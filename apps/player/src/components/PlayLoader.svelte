@@ -70,7 +70,7 @@
 		</p>
 		
 		<div class="flex justify-center gap-1.5 mt-6">
-			{#each ['fetching-graph', 'loading-vfs', 'loading-state', 'loading-loaders', 'starting-sandbox'] as stage, i}
+			{#each ['fetching-graph', 'loading-vfs', 'loading-state', 'loading-loaders', 'starting-sandbox'] as _stage, i (_stage)}
 				{@const stageProgress = ['fetching-graph', 'loading-vfs', 'loading-state', 'loading-loaders', 'starting-sandbox'].indexOf(loadingState.stage)}
 				<div 
 					class="w-2 h-2 rounded-full transition-colors duration-300"

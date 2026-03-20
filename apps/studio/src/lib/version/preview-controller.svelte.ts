@@ -1,8 +1,6 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- Map/Set used extensively for both local computation and state reset patterns */
 /**
  * Preview Controller
- * 
- * Svelte 5 runes-based controller for version preview state management.
- * Handles phantom nodes, historical edges, and preview state for UI display.
  */
 
 import type { Node, Edge } from '@xyflow/svelte'

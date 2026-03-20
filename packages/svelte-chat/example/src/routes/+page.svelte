@@ -6,8 +6,9 @@
 -->
 <script lang="ts">
   import { PubChat, MemoryMessageStore, createVfs, type VfsProvider, type VfsStat } from '@pubwiki/chat'
-  import { ChatUI } from '@pubwiki/svelte-chat'
+  import { ChatUI, type DisplayMessage } from '@pubwiki/svelte-chat'
   import { browser } from '$app/environment'
+  import { resolve } from '$app/paths'
 
   // Theme state
   let isDark = $state(false)
@@ -101,6 +102,7 @@
         console.log(this.files)
       const normalized = this.normalizePath(path)
       const prefix = normalized === '/' ? '/' : normalized + '/'
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity -- not reactive state
       const entries = new Set<string>()
       for (const filePath of this.files.keys()) {
         if (filePath.startsWith(prefix)) {
@@ -212,11 +214,11 @@
   }
 
   // Event handlers
-  function handleMessageSent(message: any) {
+  function handleMessageSent(message: DisplayMessage) {
     console.log('Message sent:', message)
   }
 
-  function handleResponseReceived(message: any) {
+  function handleResponseReceived(message: DisplayMessage) {
     console.log('Response received:', message)
   }
 
@@ -264,7 +266,7 @@
       
       <!-- Mock Demo Link -->
       <a 
-        href="/mock"
+        href={resolve('/mock')}
         class="mb-6 block rounded-lg border border-blue-200 bg-blue-50 p-4 text-center transition-colors hover:bg-blue-100 dark:border-blue-900/30 dark:bg-blue-900/20"
       >
         <span class="font-medium text-blue-700 dark:text-blue-400">🎭 查看 Mock 数据演示</span>

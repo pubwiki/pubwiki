@@ -39,7 +39,7 @@
     blocks, 
     reasoning,
     model,
-    timestamp,
+    timestamp: _timestamp,
     isStreaming = false,
     showAvatar = true,
     showActions = true,
@@ -65,7 +65,7 @@
   // Role-based styling
   let isUser = $derived(role === 'user')
   let isAssistant = $derived(role === 'assistant')
-  let isSystem = $derived(role === 'system')
+  let _isSystem = $derived(role === 'system')
 
   function handleCopy() {
     onCopy?.(textContent)

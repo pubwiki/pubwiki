@@ -12,7 +12,7 @@
 	 * - Current version highlight
 	 * - Relative time display
 	 */
-	import { createVersionListStore, type VersionEntry } from '$lib/version';
+	import { createVersionListStore } from '$lib/version';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -99,7 +99,7 @@
 		</div>
 	{:else}
 		<div class="space-y-2 max-h-[250px] overflow-y-auto pr-1">
-			{#each versions as version}
+			{#each versions as version (version.commit)}
 				{@const sourceStyle = getSourceStyle(version.source)}
 				<div 
 					class="p-2 rounded border text-xs transition-colors {version.commit === currentCommit 

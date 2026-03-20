@@ -11,7 +11,7 @@
 	 * Runtime state (isReady, error, tripleCount) is managed locally,
 	 * not persisted to nodeStore.
 	 */
-	import { Position, type NodeProps, type Node } from '@xyflow/svelte';
+	import { type NodeProps, type Node } from '@xyflow/svelte';
 	import { onMount, onDestroy } from 'svelte';
 	import type { StateNodeData, FlowNodeData } from '$lib/types';
 	import { nodeStore } from '$lib/persistence';
@@ -30,7 +30,7 @@
 	// Node Data (persistent)
 	// ============================================================================
 
-	const nodeData = $derived(nodeStore.get(id) as StateNodeData | undefined);
+	const _nodeData = $derived(nodeStore.get(id) as StateNodeData | undefined);
 
 	// ============================================================================
 	// Runtime State (local, not persisted)
@@ -148,7 +148,6 @@
 		</button>
 	{/snippet}
 
-	{#snippet children()}
 		<div class="p-3 bg-gray-50 space-y-3">
 			<!-- Status Display -->
 			<div class="flex items-center justify-between">
@@ -199,5 +198,4 @@
 				</button>
 			</div>
 		</div>
-	{/snippet}
 </BaseNode>

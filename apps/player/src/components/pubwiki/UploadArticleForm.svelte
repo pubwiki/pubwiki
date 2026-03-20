@@ -4,6 +4,7 @@
 	 */
 	import { UploadArticleForm as SharedForm, type UploadArticleFormLabels } from '@pubwiki/ui/components';
 	import { Editor } from '@pubwiki/reader';
+	import type { Component } from 'svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -24,4 +25,4 @@
 	};
 </script>
 
-<SharedForm {initialValues} {onValuesChange} {labels} EditorComponent={Editor as any} />
+<SharedForm {initialValues} {onValuesChange} {labels} EditorComponent={Editor as unknown as Component<{ content: unknown[]; onContentChange: (content: unknown[]) => void }>} />

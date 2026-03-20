@@ -38,7 +38,7 @@
     <table class="min-w-full divide-y divide-gray-200 rounded-lg border border-gray-200 dark:divide-gray-700 dark:border-gray-700">
       <thead class="bg-gray-50 dark:bg-gray-800">
         <tr>
-          {#each tableData.headers as header, idx}
+          {#each tableData.headers as header (header)}
             <th
               class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-600 dark:text-gray-400"
             >
@@ -48,9 +48,9 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-900">
-        {#each tableData.rows as row, rowIdx}
+        {#each tableData.rows as row (row)}
           <tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/50">
-            {#each row as cell, cellIdx}
+            {#each row as cell (cell)}
               <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
                 {cell}
               </td>

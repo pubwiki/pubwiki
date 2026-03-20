@@ -1,4 +1,5 @@
 import { setContext, getContext } from 'svelte';
+import { SvelteMap } from 'svelte/reactivity';
 import type { ArticleDetail, Pagination } from '@pubwiki/api';
 import { apiClient } from '$lib/api';
 
@@ -6,9 +7,9 @@ const ARTICLES_KEY = Symbol('articles');
 
 export class ArticleStore {
 	// Cache for articles by artifact ID
-	private articlesByArtifactCache = new Map<string, { articles: ArticleDetail[]; pagination: Pagination }>();
+	private articlesByArtifactCache = new SvelteMap<string, { articles: ArticleDetail[]; pagination: Pagination }>();
 	// Cache for single article by ID
-	private articleCache = new Map<string, ArticleDetail>();
+	private articleCache = new SvelteMap<string, ArticleDetail>();
 
 	/**
 	 * Fetch articles by artifact ID

@@ -99,7 +99,7 @@
 
 	// Re-initialize when nodeId changes
 	$effect(() => {
-		const currentNodeId = nodeId;
+		void nodeId;
 		initializeVfs();
 	});
 
@@ -253,6 +253,7 @@
 	}
 
 	function toggleCommitExpand(hash: string) {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable for immutable state update
 		const newSet = new Set(expandedCommits);
 		if (newSet.has(hash)) {
 			newSet.delete(hash);
@@ -355,7 +356,7 @@
 
 				<div class="rounded-lg border border-gray-200 bg-gray-50 max-h-40 overflow-y-auto">
 					<ul class="divide-y divide-gray-100">
-						{#each changedFiles as file}
+						{#each changedFiles as file (file.path)}
 							<li class="flex items-center gap-2 px-2 py-1.5 text-xs">
 								<span class="px-1.5 py-0.5 rounded text-[10px] font-medium {getStatusColor(file.status)}">
 									<svg class="w-3 h-3 inline-block mr-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -414,7 +415,7 @@
 			<div class="rounded-lg border border-gray-200 bg-gray-50">
 				{#if commits.length > 0}
 					<ul class="divide-y divide-gray-100">
-						{#each commits as commit, index}
+						{#each commits as commit, index (commit.hash)}
 							{@const isExpanded = expandedCommits.has(commit.hash)}
 							{@const isConfirmingReset = resetConfirmHash === commit.hash}
 							<li class="transition-colors">
@@ -507,7 +508,7 @@
 										<div class="ml-7 pl-2 border-l-2 border-gray-200">
 											<p class="text-[10px] font-medium text-gray-500 mb-1">{m.studio_vfs_git_affected_files()}</p>
 											<ul class="space-y-0.5">
-												{#each commit.changes as change}
+												{#each commit.changes as change (change.path)}
 													<li class="flex items-center gap-1.5 text-[10px]">
 														<span class="w-1.5 h-1.5 rounded-full shrink-0 {change.type === 'added' ? 'bg-green-400' : change.type === 'deleted' ? 'bg-red-400' : 'bg-yellow-400'}"></span>
 														<span class="font-mono text-gray-600 truncate" title={change.path}>{change.path}</span>

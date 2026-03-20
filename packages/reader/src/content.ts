@@ -9,7 +9,6 @@ import {
 	$createParagraphNode as createParagraphNode,
 	$createTextNode as createTextNode,
 	$isParagraphNode as isParagraphNode,
-	type LexicalEditor,
 } from 'lexical';
 import {
 	HeadingNode,

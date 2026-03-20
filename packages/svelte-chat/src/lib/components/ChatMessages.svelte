@@ -128,8 +128,8 @@
   // Auto-scroll when messages change (only if user hasn't scrolled away)
   $effect(() => {
     // Access messages and streamingMessage to trigger effect
-    messages
-    streamingMessage
+    void messages
+    void streamingMessage
     
     // Only auto-scroll if user hasn't manually scrolled away
     if (!userScrolledAway && container) {

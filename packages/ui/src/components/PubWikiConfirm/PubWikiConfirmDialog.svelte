@@ -56,7 +56,6 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<!-- svelte-ignore state_referenced_locally -->
 <div
 	use:portal
 	class="fixed inset-0 z-99999 flex items-center justify-center bg-black/80"

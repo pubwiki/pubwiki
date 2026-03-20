@@ -15,7 +15,6 @@ import type {
 import { ParagraphNode, $applyNodeReplacement } from 'lexical';
 import type { GameRef } from '@pubwiki/api';
 import type { ReaderContext } from '../context.js';
-import { READER_CONTEXT_KEY } from '../context.js';
 
 // Module-level context for building URLs
 // This is set by the Reader component via setReaderContext

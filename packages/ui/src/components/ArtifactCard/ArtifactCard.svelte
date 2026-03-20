@@ -70,7 +70,6 @@
 		<div class="flex h-full">
 			<!-- Cover Image (Playing Card Style) - absolute positioned to overlap left edge -->
 			<div class="relative" style="width: 38%;">
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 				<div
 					class="playing-card group/cover absolute z-10 {onclick || onCoverClick ? 'cursor-pointer' : ''}"
@@ -97,7 +96,6 @@
 
 			<!-- Content -->
 			<div class="flex-1 p-4 flex flex-col min-w-0 overflow-hidden bg-gradient-to-br from-white to-gray-50/50">
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 				<div
 					class="block {onclick ? 'cursor-pointer' : ''}"
@@ -112,7 +110,6 @@
 				</div>
 
 				{#if authorName}
-					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 					<div
 						class="text-xs text-gray-500 mt-1 truncate transition-colors {onclickAuthor ? 'hover:text-gray-700 hover:underline cursor-pointer' : ''}"
@@ -132,7 +129,7 @@
 				{#if tags && tags.length > 0}
 					<div class="relative mb-3 h-5 overflow-hidden">
 						<div class="flex gap-1 absolute top-0 left-0 right-0">
-							{#each tags as tag}
+					{#each tags as tag (tag)}
 								<span class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full whitespace-nowrap">
 									{tag}
 								</span>
@@ -164,7 +161,6 @@
 {:else}
 	<!-- Compact card — small horizontal layout for sidebar/lineage -->
 	<div class="flex gap-3 group">
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 		<div
 			class="w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-gray-100 shadow-sm {onclick ? 'cursor-pointer' : ''}"
@@ -180,7 +176,6 @@
 			/>
 		</div>
 		<div class="flex-1 min-w-0">
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div
 				class="text-sm font-bold text-gray-800 truncate transition-colors {onclick ? 'group-hover:text-gray-600 cursor-pointer' : ''}"
@@ -192,7 +187,6 @@
 				{name || 'Untitled'}
 			</div>
 			{#if authorName}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 				<div
 					class="text-xs text-gray-500 truncate block transition-colors {onclickAuthor ? 'hover:text-gray-700 hover:underline cursor-pointer' : ''}"
@@ -209,7 +203,7 @@
 			{/if}
 			{#if tags && tags.length > 0}
 				<div class="flex flex-wrap gap-1 mt-1">
-					{#each tags.slice(0, 3) as tag}
+				{#each tags.slice(0, 3) as tag (tag)}
 						<span class="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-500 rounded">{tag}</span>
 					{/each}
 					{#if tags.length > 3}

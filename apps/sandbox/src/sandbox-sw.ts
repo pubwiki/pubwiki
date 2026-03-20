@@ -416,7 +416,7 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
 function cleanupClient(clientId: string): void {
   // If it's a bootstrap, clean up everything
   if (bootstrapClients.has(clientId)) {
-    const bootstrap = bootstrapClients.get(clientId)!
+    const _bootstrap = bootstrapClients.get(clientId)!
     
     // Clean up all associated user iframes
     for (const [userIframeId, bootstrapId] of userIframeToBootstrap.entries()) {

@@ -802,7 +802,7 @@ export class NodeVersionService {
     // DB content 表不含 type 判别字段（type 存储在 node_versions 上），
     // 但 API 的 ArtifactNodeContent 是以 type 为 discriminator 的联合类型，
     // 需要在此注入 type 使结构匹配。
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { contentHash: _contentHash, createdAt: _createdAt, ...contentFields } = result[0];
 
     return { type, ...contentFields } as ArtifactNodeContent;

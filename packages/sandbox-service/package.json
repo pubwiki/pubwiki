@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "typecheck": "tsc --noEmit",
+    "check": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {

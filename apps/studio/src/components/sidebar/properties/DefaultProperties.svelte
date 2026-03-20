@@ -12,7 +12,7 @@
 		data: FlowNodeData;
 	}
 
-	let { nodeId, data }: Props = $props();
+	let { nodeId: _nodeId, data }: Props = $props();
 
 	// Get display content - content has getText() method
 	let displayContent = $derived((data.content as NodeContent).getText());

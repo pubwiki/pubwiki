@@ -30,7 +30,7 @@
 		projectId: string;
 	}
 
-	let { nodeId, data, projectId }: Props = $props();
+	let { nodeId, data: _data, projectId }: Props = $props();
 
 	const auth = useAuth();
 

@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "pubwiki-docs",
+  "compatibility_date": "2026-01-04",
+  "assets": {
+    "directory": "build"
+  },
+  "routes": [
+    {
+      "pattern": "docs.pub.wiki",
+      "custom_domain": true
+    }
+  ]
+}

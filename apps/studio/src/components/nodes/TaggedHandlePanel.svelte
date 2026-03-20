@@ -104,7 +104,7 @@
 		handles,
 		isConnectable = true,
 		handleType = 'target',
-		position = 'left',
+		position: _position = 'left',
 		nodeOverlap = 8,
 		defaultConnectedColor = DEFAULT_CONNECTED_COLOR,
 		defaultDisconnectedColor = DEFAULT_DISCONNECTED_COLOR,

@@ -9,7 +9,7 @@
  */
 
 import { ChatStreamPipeline, type CompletionSummary } from './pipeline'
-import { messagesToChatMessages, createUserMessage, createSystemMessage, createAssistantMessage } from './converter'
+import { messagesToChatMessages, createUserMessage } from './converter'
 import { ToolRegistry } from '../llm/tools'
 import type { ChatProvider, ChatResult, ToolRegistrationParams } from './chat-provider'
 import type { MessageStoreProvider } from '../providers/types'
@@ -342,13 +342,14 @@ export class PubChat implements ChatProvider {
             assistantBlocks.push(event.block)
             break
             
-          case 'block_update':
+          case 'block_update': {
             // Update existing block
             const blockToUpdate = assistantBlocks.find(b => b.id === event.blockId)
             if (blockToUpdate && event.updates) {
               Object.assign(blockToUpdate, event.updates)
             }
             break
+          }
             
           case 'tool_call_start':
             assistantBlocks.push(event.block)
@@ -360,7 +361,7 @@ export class PubChat implements ChatProvider {
             }
             break
             
-          case 'tool_call_complete':
+          case 'tool_call_complete': {
             // Update tool_call block status
             const toolCallBlock = assistantBlocks.find(
               b => b.type === 'tool_call' && b.id === event.toolCallId
@@ -378,6 +379,7 @@ export class PubChat implements ChatProvider {
               result: event.resultBlock.content
             }
             break
+          }
             
           case 'iteration_limit_reached':
             yield {

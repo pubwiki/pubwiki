@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
 	import { untrack, tick } from 'svelte';
 	import { useArtifactStore } from '$lib/stores/artifacts.svelte';
@@ -284,7 +285,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 			url.searchParams.set('tags', currentTags.join(','));
 		}
 		url.searchParams.set('page', '1'); // Reset to page 1
-		goto(url.toString(), { replaceState: true, noScroll: true });
+		goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
 	}
 
 	// Clear all tag selections
@@ -294,7 +295,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 		const url = new URL(window.location.href);
 		url.searchParams.delete('tags');
 		url.searchParams.set('page', '1');
-		goto(url.toString(), { replaceState: true, noScroll: true });
+		goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
 	}
 
 	// Handle sort change
@@ -307,7 +308,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 		url.searchParams.set('sort', mapping.sortBy);
 		url.searchParams.set('order', mapping.sortOrder);
 		url.searchParams.set('page', '1'); // Reset to page 1
-		goto(url.toString(), { replaceState: true, noScroll: true });
+		goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
 	}
 
 	// Clear search and return to normal mode
@@ -423,12 +424,12 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 			<div class="flex-1 min-w-0 flex items-center gap-1.5 overflow-hidden">
 				{#if tagsLoading}
 					<div class="flex items-center gap-1.5">
-						{#each Array(5) as _}
+						{#each Array(5) as _, i (i)}
 							<div class="w-16 h-8 bg-gray-100 rounded-full animate-pulse shrink-0"></div>
 						{/each}
 					</div>
 				{:else}
-					{#each tags.slice(0, 6) as tag}
+					{#each tags.slice(0, 6) as tag (tag.slug)}
 						<button
 							onclick={() => toggleTag(tag.slug)}
 							class="px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-200 whitespace-nowrap shrink-0 {activeTags.includes(tag.slug)
@@ -494,7 +495,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 						Clear
 					</button>
 				{/if}
-				{#each tags as tag}
+				{#each tags as tag (tag.slug)}
 					<button
 						onclick={() => toggleTag(tag.slug)}
 						class="px-3 py-1 text-sm rounded-full transition-all duration-150 {activeTags.includes(tag.slug)
@@ -548,11 +549,11 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 					onCurrentPageChange={handleCurrentPageChange}
 					initialPage={urlParams.page}
 				>
-					{#snippet children(game: ArtifactListItem, index: number)}
+					{#snippet children(game: ArtifactListItem)}
 						<ArtifactCard artifact={game} variant="marketplace" />
 					{/snippet}
 					
-					{#snippet placeholder(index: number)}
+					{#snippet placeholder()}
 						<div class="bg-gray-100 rounded-xl animate-pulse" style="height: {ITEM_HEIGHT}px;"></div>
 					{/snippet}
 				</VirtualGrid>
@@ -585,11 +586,11 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 				onCurrentPageChange={handleCurrentPageChange}
 				initialPage={urlParams.page}
 			>
-				{#snippet children(game: ArtifactListItem, index: number)}
+				{#snippet children(game: ArtifactListItem)}
 					<ArtifactCard artifact={game} variant="marketplace" />
 				{/snippet}
 				
-				{#snippet placeholder(index: number)}
+				{#snippet placeholder()}
 					<div class="bg-gray-100 rounded-xl animate-pulse" style="height: {ITEM_HEIGHT}px;"></div>
 				{/snippet}
 			</VirtualGrid>

@@ -232,10 +232,12 @@ describe('State Module (RDF)', () => {
       `)
 
       expect(result.error).toBeNull()
-      expect(result.result.typeBefore).toBe('table')
-      expect(result.result.typeAfter).toBe('table')
-      expect(result.result.retrievedValue.test).toBe(123)
-      expect(result.result.retrievedValue.v).toBe('456')
+      const res = result.result as Record<string, unknown>
+      expect(res.typeBefore).toBe('table')
+      expect(res.typeAfter).toBe('table')
+      const retrieved = res.retrievedValue as Record<string, unknown>
+      expect(retrieved.test).toBe(123)
+      expect(retrieved.v).toBe('456')
     })
 
     it('should delete value when object is nil', async () => {
@@ -341,7 +343,7 @@ describe('State Module (RDF)', () => {
       `)
 
       expect(typeof result.result).toBe('string')
-      expect(result.result.length).toBeGreaterThan(0)
+      expect((result.result as string).length).toBeGreaterThan(0)
     })
 
     it('should checkout a checkpoint and restore state', async () => {
@@ -369,8 +371,9 @@ describe('State Module (RDF)', () => {
       `)
 
       expect(result.error).toBeNull()
-      expect(result.result.nameAfterSet).toBe('Bob')
-      expect(result.result.nameAfterCheckout).toBe('Alice')
+      const res = result.result as Record<string, unknown>
+      expect(res.nameAfterSet).toBe('Bob')
+      expect(res.nameAfterCheckout).toBe('Alice')
     })
 
     it('should list checkpoints via colon syntax', async () => {

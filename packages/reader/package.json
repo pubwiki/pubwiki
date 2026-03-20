@@ -27,5 +27,8 @@
 		"svelte": "catalog:",
 		"svelte-check": "catalog:",
 		"typescript": "catalog:"
+	},
+	"scripts": {
+		"check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings"
 	}
 }

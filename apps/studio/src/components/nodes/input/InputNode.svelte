@@ -10,7 +10,6 @@
 	 * - Conditional VFS footbar when connected to a VFS node
 	 */
 	import { useEdges, useUpdateNodeInternals, useSvelteFlow } from '@xyflow/svelte';
-	import { onMount, onDestroy } from 'svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { InputNodeData, FlowNodeData, VFSNodeData } from '$lib/types';
 	import { getStudioContext } from '$lib/state';
@@ -223,7 +222,7 @@
 	});
 
 	$effect(() => {
-		contentTags;
+		void contentTags;
 		updateNodeInternals(id);
 	});
 
@@ -341,7 +340,6 @@
 		{/if}
 	{/snippet}
 
-	{#snippet children()}
 		<RefTagEditor
 			value={displayBlocks}
 			readonly={isPreviewing}
@@ -379,5 +377,4 @@
 				</div>
 			</div>
 		{/if}
-	{/snippet}
 </BaseNode>

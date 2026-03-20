@@ -8,12 +8,7 @@
 
 	let { settings }: Props = $props();
 
-	let errorReporting = $state(false);
-
-	// Sync from store on init (persist may load async via onMount in persist utility)
-	$effect(() => {
-		errorReporting = settings.privacy.errorReporting;
-	});
+	let errorReporting = $derived(settings.privacy.errorReporting);
 
 	function handleToggle(enabled: boolean) {
 		errorReporting = enabled;

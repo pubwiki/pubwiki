@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { browser } from '$app/environment'
+  import { resolve } from '$app/paths'
   import { ChatMessages, type DisplayMessage, type UIMessageBlock } from '@pubwiki/svelte-chat'
 
   // Theme state
@@ -574,13 +575,13 @@ const [user, setUser] = useLocalStorage('user', null);
         {/if}
       </button>
       <a 
-        href="/mock"
+        href={resolve('/mock')}
         class="rounded-md border border-gray-200 bg-white px-4 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-zinc-600 dark:bg-zinc-700 dark:text-gray-300 dark:hover:bg-zinc-600"
       >
         静态演示
       </a>
       <a 
-        href="/"
+        href={resolve('/')}
         class="rounded-md bg-blue-500 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-600"
       >
         返回首页
@@ -592,7 +593,7 @@ const [user, setUser] = useLocalStorage('user', null);
   <div class="border-b border-gray-200 bg-gray-50 px-6 py-3 dark:border-zinc-700 dark:bg-zinc-800/50">
     <div class="flex flex-wrap items-center gap-2">
       <span class="mr-2 text-sm font-medium text-gray-600 dark:text-gray-400">选择场景：</span>
-      {#each scenarios as scenario, i}
+      {#each scenarios as scenario, i (scenario.name)}
         <button
           type="button"
           onclick={() => runScenario(i)}

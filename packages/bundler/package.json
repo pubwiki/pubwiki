@@ -28,8 +28,7 @@
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.browser.config.ts",
     "prepublishOnly": "pnpm run build",
-    "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "check": "tsc --noEmit"
   },
   "keywords": [
     "bundler",

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { ArtifactListItem } from '@pubwiki/api';
+	import { resolve } from '$app/paths';
 
 	let { artifact } = $props<{ artifact: ArtifactListItem }>();
 </script>
 
 <div class="flex gap-3 group">
-	<a href="/artifact/{artifact.id}" class="w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-gray-100 shadow-sm">
+	<a href={resolve(`/artifact/${artifact.id}`)} class="w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-gray-100 shadow-sm">
 		<img 
 			src={artifact.thumbnailUrl || 'https://placehold.co/64x64/e5e7eb/9ca3af?text=?'} 
 			alt={artifact.name} 
@@ -13,11 +14,11 @@
 		/>
 	</a>
 	<div class="flex-1 min-w-0">
-		<a href="/artifact/{artifact.id}">
+		<a href={resolve(`/artifact/${artifact.id}`)}>
 			<h4 class="text-sm font-bold text-gray-800 group-hover:text-gray-600 truncate transition-colors">{artifact.name}</h4>
 		</a>
 		<a 
-			href="/user/{artifact.author.id}" 
+			href={resolve(`/user/${artifact.author.id}`)} 
 			class="text-xs text-gray-500 hover:text-gray-700 hover:underline truncate block transition-colors"
 		>
 			by {artifact.author.displayName || artifact.author.username}

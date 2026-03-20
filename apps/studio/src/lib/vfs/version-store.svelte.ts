@@ -1,3 +1,4 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- Map copying pattern used for immutable state updates */
 /**
  * VFS Version Store
  * 

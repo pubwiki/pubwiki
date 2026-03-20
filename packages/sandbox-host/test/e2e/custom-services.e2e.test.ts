@@ -18,7 +18,7 @@ import type { ICustomService, ServiceDefinition } from '../../src/types'
 /**
  * Create a basic mock ICustomService with configurable behavior
  */
-function createMockService(
+function _createMockService(
   name: string,
   namespace: string,
   handler: (inputs: Record<string, unknown>) => Promise<Record<string, unknown>> | Record<string, unknown>,
@@ -849,7 +849,7 @@ describe('Custom Services E2E', () => {
       }
 
       const storageService: ICustomService = {
-        async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+        async call(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
           // Simple mock implementation
           return { stored: true }
         },
@@ -1170,7 +1170,7 @@ describe('Custom Services E2E', () => {
   describe('Service Definition Schema', () => {
     it('should return proper JSON Schema in getDefinition()', async () => {
       const userService: ICustomService = {
-        async call(inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
+        async call(_inputs: Record<string, unknown>): Promise<Record<string, unknown>> {
           return { success: true }
         },
         async getDefinition(): Promise<ServiceDefinition> {

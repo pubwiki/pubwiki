@@ -104,7 +104,7 @@
 		<div class="grid lg:grid-cols-2 gap-12 items-stretch">
 			<!-- Left: Feature List -->
 			<div class="space-y-1 reveal flex flex-col justify-between">
-				{#each playerFeatures as feature, i}
+				{#each playerFeatures as feature, i (feature.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						class="w-full text-left px-5 py-5 rounded-xl transition-all duration-300 border-2 cursor-pointer {activeFeature === i
@@ -197,7 +197,7 @@
 										{ time: '2 days ago', event: 'Aria revealed her past as a corp agent', type: 'secret' },
 										{ time: 'Yesterday', event: 'Trust level increased to "Ally"', type: 'relationship' },
 										{ time: 'Today', event: 'Started the Sector 7 mission together', type: 'event' }
-									] as memory, i}
+									] as memory, i (i)}
 										<div 
 											class="flex gap-3 items-start animate-fade-in-up"
 											style="animation-delay: {i * 0.1}s"
@@ -257,7 +257,7 @@
 											{ label: 'Day', value: '7', icon: '☀️' },
 											{ label: 'Credits', value: '2,450', icon: '💰' },
 											{ label: 'Reputation', value: 'Neutral', icon: '⭐' }
-										] as stat}
+										] as stat (stat.label)}
 											<div class="p-4 text-center border-r border-slate-100 last:border-r-0">
 												<div class="text-lg mb-1">{stat.icon}</div>
 												<div class="text-lg font-bold text-slate-900">{stat.value}</div>
@@ -270,7 +270,7 @@
 									<div class="p-4 border-b border-slate-100">
 										<div class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Inventory</div>
 										<div class="flex flex-wrap gap-2">
-											{#each ['🔫 Plasma Pistol', '💊 Medkit x3', '🔑 Access Card', '📱 Hacked Datapad'] as item}
+											{#each ['🔫 Plasma Pistol', '💊 Medkit x3', '🔑 Access Card', '📱 Hacked Datapad'] as item (item)}
 												<span class="px-2 py-1 bg-slate-100 rounded text-xs text-slate-600">{item}</span>
 											{/each}
 										</div>
@@ -284,7 +284,7 @@
 												{ name: 'Aria', relation: 'Ally', level: 78, color: 'bg-pink-400' },
 												{ name: 'Corp Security', relation: 'Hostile', level: 15, color: 'bg-red-400' },
 												{ name: 'Underground', relation: 'Friendly', level: 62, color: 'bg-green-400' }
-											] as rel}
+											] as rel (rel.name)}
 												<div class="flex items-center gap-3">
 													<div class="w-20 text-xs text-slate-600">{rel.name}</div>
 													<div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -336,7 +336,7 @@
 										{ name: 'Before the Final Battle', time: '2 hours ago', chapter: 'Chapter 12', synced: true },
 										{ name: 'Aria\'s Betrayal', time: 'Yesterday', chapter: 'Chapter 8', synced: true },
 										{ name: 'First Meeting', time: '3 days ago', chapter: 'Chapter 1', synced: true }
-									] as save, i}
+									] as save, i (save.name)}
 										<div 
 											class="bg-white rounded-xl p-4 shadow-md border border-slate-100 animate-fade-in-up"
 											style="animation-delay: {i * 0.1}s"
@@ -433,7 +433,7 @@
 									<div class="p-4 bg-slate-50 border-t border-slate-100">
 										<div class="text-xs font-medium text-slate-500 mb-3">Export Format</div>
 										<div class="flex gap-2">
-											{#each ['EPUB', 'PDF', 'Markdown', 'HTML'] as format}
+											{#each ['EPUB', 'PDF', 'Markdown', 'HTML'] as format (format)}
 												<button class="px-3 py-1.5 {format === 'EPUB' ? 'bg-amber-500 text-white' : 'bg-white text-slate-600 border border-slate-200'} rounded-lg text-xs font-medium hover:shadow transition-all">
 													{format}
 												</button>

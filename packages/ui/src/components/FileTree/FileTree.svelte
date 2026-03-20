@@ -1,4 +1,5 @@
 <script lang="ts">
+	/* eslint-disable svelte/prefer-svelte-reactivity -- Set/Map usages are temporary copies in imperative functions, not reactive state */
 	/**
 	 * FileTree - A full-featured file tree component
 	 * 
@@ -99,7 +100,6 @@
 	});
 
 	// Drag and drop
-	let draggedItem = $state<FileItem | null>(null);
 	let draggedItems = $state<FileItem[]>([]);
 	let dragOverItem = $state<FileItem | null>(null);
 	let dragOverRoot = $state(false);
@@ -246,19 +246,6 @@
 	}
 
 	/**
-	 * Get all items (including children) for a folder
-	 */
-	function getAllItemsIncludingChildren(item: FileItem): FileItem[] {
-		const result: FileItem[] = [item];
-		if (item.type === 'folder' && item.files) {
-			for (const child of item.files) {
-				result.push(...getAllItemsIncludingChildren(child));
-			}
-		}
-		return result;
-	}
-
-	/**
 	 * Get items between two paths in the visible tree (inclusive)
 	 */
 	function getItemsBetween(path1: string, path2: string): FileItem[] {
@@ -381,7 +368,6 @@
 			lastClickedPath = item.path;
 		}
 		
-		draggedItem = item;
 		if (e.dataTransfer) {
 			e.dataTransfer.effectAllowed = 'move';
 			e.dataTransfer.setData('text/plain', draggedItems.map(i => i.path).join('\n'));
@@ -422,7 +408,6 @@
 	}
 
 	function handleDragEnd() {
-		draggedItem = null;
 		draggedItems = [];
 		dragOverItem = null;
 		dragOverRoot = false;
@@ -705,7 +690,7 @@
 				{/if}
 			</div>
 		{:else}
-			{#each items as item}
+		{#each items as item (item.path)}
 				{@render fileTreeItem(item, 0)}
 			{/each}
 		{/if}
@@ -946,7 +931,7 @@
 				{@render inlineNewItemInput(depth + 1)}
 			{/if}
 			{#if item.files}
-				{#each item.files as child}
+				{#each item.files as child (child.path)}
 					{@render fileTreeItem(child, depth + 1)}
 				{/each}
 			{/if}

@@ -158,7 +158,7 @@
 	{#if isOpen && items.length > 0}
 		<div class="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
 			<div class="max-h-60 overflow-y-auto">
-				{#each items as item, index}
+				{#each items as item, index (getKey(item))}
 					{@const isSelected = value !== undefined && getKey(item) === getKey(value)}
 					{@const isHighlighted = index === highlightedIndex}
 					<button

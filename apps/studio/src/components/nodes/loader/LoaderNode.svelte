@@ -14,7 +14,7 @@
 	 */
 	import { Handle, Position, useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
 	import type { NodeProps, Node } from '@xyflow/svelte';
-	import type { LoaderNodeData, VFSNodeData, StateNodeData, FlowNodeData, VFSContent } from '$lib/types';
+	import type { LoaderNodeData, FlowNodeData, VFSContent } from '$lib/types';
 	import { getStudioContext } from '$lib/state';
 	import { getSettingsStore, useAuth } from '@pubwiki/ui/stores';
 	import { getNodeVfs } from '$lib/vfs';
@@ -22,8 +22,8 @@
 	import { nodeStore } from '$lib/persistence';
 	import { validateNodeName } from '$lib/validation';
 	import BaseNode from '../BaseNode.svelte';
-	import TaggedHandlePanel, { type TaggedHandle, type HandleColorScheme } from '../TaggedHandlePanel.svelte';
-	import * as m from '$lib/paraglide/messages';
+	import TaggedHandlePanel from '../TaggedHandlePanel.svelte';
+	import type { HandleColorScheme, TaggedHandle } from '../TaggedHandlePanel.svelte';
 	import { HandleId } from '$lib/graph';
 	import { 
 		initializeLoader,
@@ -54,7 +54,6 @@
 	import UploadCheckpointForm from '$components/pubwiki/UploadCheckpointForm.svelte';
 	import UploadCheckpointsForm from '$components/pubwiki/UploadCheckpointsForm.svelte';
 	import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
-	import type { Vfs, VfsProvider } from '@pubwiki/vfs';
 
 	// ============================================================================
 	// Props & Context
@@ -71,7 +70,7 @@
 	// Node Data (persistent)
 	// ============================================================================
 
-	const nodeData = $derived(nodeStore.get(id) as LoaderNodeData | undefined);
+	const _nodeData = $derived(nodeStore.get(id) as LoaderNodeData | undefined);
 
 	// ============================================================================
 	// Runtime State (local, not persisted)
@@ -314,7 +313,7 @@
 			
 			// Find mounted asset VFS nodes
 			const mountedVfsNodeIds = findMountedVfsNodes(id, ctx.nodes, ctx.edges);
-			const assetMounts = new Map<string, Vfs<VfsProvider>>();
+			const assetMounts = new Map<string, Awaited<ReturnType<typeof getNodeVfs>>>();
 			
 			for (const [path, vfsNodeId] of mountedVfsNodeIds) {
 				const vfsData = nodeStore.get(vfsNodeId);
@@ -344,6 +343,7 @@
 			};
 			const pubwikiConfig: PubWikiModuleConfig = {
 				getGraph: (): RuntimeGraph => {
+					// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local variable in callback
 					const runtimeNodes = new Map<string, RuntimeNode>();
 					for (const n of ctx.nodes) {
 						runtimeNodes.set(n.id, {
@@ -519,7 +519,6 @@
 		{/if}
 	{/snippet}
 
-	{#snippet children()}
 		<div class="p-3 bg-gray-50 space-y-3 min-w-50 min-h-24 flex flex-col {!backendConnected && !isLoading ? 'justify-center items-center' : ''}">
 			<!-- Loading State -->
 			{#if isLoading && !isReloading}
@@ -586,7 +585,7 @@
 							{/if}
 						</div>
 						<div class="space-y-1 max-h-32 overflow-y-auto">
-							{#each registeredServices as service}
+							{#each registeredServices as service (service)}
 								<div class="flex items-center gap-1.5 text-xs">
 									<span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>
 									<span class="font-mono text-gray-700">{service}</span>
@@ -616,7 +615,6 @@
 				</div>
 			{/if}
 		</div>
-	{/snippet}
 
 	{#snippet rightHandles()}
 		<!-- Main Output Handle -->

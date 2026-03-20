@@ -1,3 +1,4 @@
+/* eslint-disable svelte/prefer-svelte-reactivity -- Set/Date used in imperative functions, not reactive state */
 /**
  * Draft Cloud Sync Service
  * 

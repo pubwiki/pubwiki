@@ -250,7 +250,7 @@ function nodeGet<V>(
   key: string,
   depth: number,
 ): V | undefined {
-  // eslint-disable-next-line no-constant-condition
+   
   while (true) {
     switch (node.type) {
       case NodeType.Leaf:

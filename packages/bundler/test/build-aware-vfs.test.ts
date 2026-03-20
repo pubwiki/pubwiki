@@ -10,7 +10,7 @@ import { createBuildAwareVfs, type RemoteBuildFetcher, type BuildAwareVfsConfig 
 import type { BuildCacheStorage, BuildCacheFile, BuildCacheEntry, BuildCacheMetadata } from '../src/cache'
 import type { BuildManifest } from '../src/types/result'
 import type { ProjectConfig } from '../src/service/project-detector'
-import { createTestVfs, addFile, readFileContent } from './helpers'
+import { createTestVfs, addFile } from './helpers'
 import type { Vfs } from '@pubwiki/vfs'
 
 // ============================================================================

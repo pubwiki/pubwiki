@@ -133,7 +133,7 @@
 
 		<!-- Filter Tabs -->
 		<div class="flex justify-center gap-2 mb-12 reveal">
-			{#each filters as f}
+			{#each filters as f (f)}
 				<button
 					class="px-4 py-2 text-sm font-medium rounded-lg transition-all {filter === f
 						? 'bg-[#24292f] text-white'
@@ -195,7 +195,7 @@
 
 						<!-- Tags -->
 						<div class="flex flex-wrap gap-1 mb-4">
-							{#each item.tags.slice(0, 3) as tag}
+							{#each item.tags.slice(0, 3) as tag (tag)}
 								<span class="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-full">
 									{tag}
 								</span>

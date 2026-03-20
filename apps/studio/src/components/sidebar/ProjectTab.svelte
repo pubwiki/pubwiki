@@ -10,7 +10,7 @@
 	import type { GeneratedNodeData } from '$lib/types';
 	import type { StudioNodeData } from '$lib/types';
 	import type { NodeRef } from '$lib/version';
-	import { type PublishMetadata, type PatchMetadata } from '$lib/io';
+	import { type PublishMetadata } from '$lib/io';
 	import type { DraftSyncState } from '$lib/sync';
 	import type { PublishStateService } from '$lib/state/publish-state.svelte';
 	import { formatRelativeSyncTime } from '$lib/sync';
@@ -411,12 +411,14 @@
 				<div>
 					<p class="text-sm font-medium text-green-800">{m.studio_published_banner()}</p>
 					<p class="text-xs text-green-600 mt-0.5">{m.studio_published_desc()}</p>
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- external Hub URL -->
 					<a
 						href="{hubUrl}/artifact/{projectId}"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex items-center gap-1 text-xs text-green-700 hover:text-green-800 mt-2 font-medium"
 					>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 						{m.studio_view_artifact()}
 						<svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
@@ -478,7 +480,7 @@
 			layout="vertical"
 			cardVariant="marketplace"
 			previewLabel={m.studio_form_preview()}
-			onNameChange={(v) => onNameChange?.(v)}
+			onNameChange={(v: string) => onNameChange?.(v)}
 			onUploadThumbnail={handleUploadThumbnail}
 			labels={{
 				name: m.studio_form_name(),

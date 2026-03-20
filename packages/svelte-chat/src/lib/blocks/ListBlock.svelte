@@ -38,7 +38,7 @@
   <div class="my-4 {className}">
     {#if listData.ordered}
       <ol class="list-decimal space-y-2 pl-6">
-        {#each listData.items as item, idx}
+        {#each listData.items as item (item)}
           <li class="text-sm text-gray-700 dark:text-gray-300">
             <MarkdownBlock content={item} />
           </li>
@@ -46,7 +46,7 @@
       </ol>
     {:else}
       <ul class="list-disc space-y-2 pl-6">
-        {#each listData.items as item, idx}
+        {#each listData.items as item (item)}
           <li class="text-sm text-gray-700 dark:text-gray-300">
             <MarkdownBlock content={item} />
           </li>

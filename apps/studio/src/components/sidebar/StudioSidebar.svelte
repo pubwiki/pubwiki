@@ -79,8 +79,8 @@
 		syncState,
 		onSync,
 		onEnableSync,
-		onAcceptCloud,
-		onForcePushLocal,
+		onAcceptCloud: _onAcceptCloud,
+		onForcePushLocal: _onForcePushLocal,
 		selectedEntrypoint = null,
 		onEntrypointChange,
 		copilotOpen = false,
@@ -200,7 +200,6 @@
 
 <!-- Expanded Sidebar Panel -->
 {#if !collapsed}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div 
 		bind:this={sidebarEl}
 		class="absolute top-4 left-4 bottom-4 z-20 bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col overflow-hidden"
@@ -288,7 +287,7 @@
 
 		<!-- Tab Navigation -->
 		<div class="flex border-b border-gray-200 bg-white">
-			{#each tabs as tab}
+			{#each tabs as tab (tab.id)}
 				<button
 					class="flex-1 px-3 py-2.5 text-sm font-medium transition-colors relative
 						{activeTab === tab.id 

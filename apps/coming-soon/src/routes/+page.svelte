@@ -1,5 +1,6 @@
 <script>
 	// Coming Soon page - light theme with header
+	import { resolve } from '$app/paths';
 </script>
 
 <svelte:head>
@@ -12,7 +13,7 @@
 	<div style="padding-left: 2rem; padding-right: 2rem;">
 		<div class="flex h-16 items-center">
 			<!-- Logo -->
-			<a href="/" class="flex items-center gap-2 font-bold text-xl">
+			<a href={resolve('/')} class="flex items-center gap-2 font-bold text-xl">
 				<svg class="h-8 w-8" viewBox="0 0 163.9 185.36" xmlns="http://www.w3.org/2000/svg">
 					<path
 						fill="#1e293b"
@@ -61,6 +62,7 @@
 		</h1>
 		<p class="mt-6 text-lg sm:text-xl md:text-2xl text-slate-600 font-medium max-w-3xl mx-auto">
 			The official site is under construction, but you can have a try
+			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- external URL -->
 			<a
 				href="https://try.pub.wiki"
 				class="text-violet-600 hover:text-violet-800 underline underline-offset-4 transition-colors"

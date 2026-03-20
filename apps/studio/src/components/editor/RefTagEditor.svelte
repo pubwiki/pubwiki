@@ -64,10 +64,10 @@
 	}: Props = $props();
 
 	let composer: Composer | undefined = $state();
-	let editorRef: LexicalEditor | null = null;
 	let containerRef: HTMLDivElement | undefined = $state();
+	let editorRef: LexicalEditor | undefined = $state();
+	let isInitialized = $state(false);
 	let isInternalChange = false;
-	let isInitialized = false;
 	let isFocused = false;
 
 	// Initial editor configuration - use a getter to always get current readonly value
@@ -130,7 +130,6 @@
 
 			// Build paragraphs from blocks, splitting on newlines
 			let currentParagraph = createParagraphNode();
-			let hasContent = false;
 
 			for (const block of blocks) {
 				if (block.type === 'TextBlock') {
@@ -138,18 +137,15 @@
 					lines.forEach((line: string, index: number) => {
 						if (line) {
 							currentParagraph.append(createTextNode(line));
-							hasContent = true;
 						}
 						if (index < lines.length - 1) {
 							// Newline - finish current paragraph and start new one
 							root.append(currentParagraph);
 							currentParagraph = createParagraphNode();
-							hasContent = false;
 						}
 					});
 				} else if (block.type === 'RefTagBlock') {
 					currentParagraph.append(createRefTagNode(block.name));
-					hasContent = true;
 				}
 			}
 

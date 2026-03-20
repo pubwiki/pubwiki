@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 	import type { ArticleDetail, GameRef } from '@pubwiki/api';
 	import { Reader, type ReaderContent, extractToc } from '@pubwiki/reader';
 	import { useArticleStore } from '$lib/stores/articles.svelte';
-	import { PUBLIC_STUDIO_URL, PUBLIC_PLAY_URL } from '$env/static/public';
+	import { PUBLIC_PLAY_URL } from '$env/static/public';
 	import * as m from '$lib/paraglide/messages';
 
-	const studioUrl = PUBLIC_STUDIO_URL || 'http://localhost:5174';
 	const playUrl = PUBLIC_PLAY_URL || 'http://localhost:5175';
 
 	const articleStore = useArticleStore();
@@ -121,7 +121,7 @@
 					<div class="text-center">
 						<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
 						<p class="text-gray-600 mb-4">{articleError || m.artifact_not_found_message()}</p>
-						<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
+						<button onclick={() => goto(resolve('/'))} class="text-[#0969da] hover:underline">
 							{m.artifact_go_back()}
 						</button>
 					</div>
@@ -130,7 +130,7 @@
 		{:else}
 			<div class="reader-page theme-{theme}">
 		<header class="reader-header">
-			<a href="/" class="back-button">
+			<a href={resolve('/')} class="back-button">
 				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M19 12H5M12 19l-7-7 7-7"/>
 				</svg>
@@ -149,11 +149,10 @@
 					</svg>
 				</button>
 				{#if tocOpen}
-					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 					<div class="dropdown toc-dropdown" onclick={(e) => e.stopPropagation()} role="presentation">
 						<div class="dropdown-header">目录</div>
 						<nav class="toc-list">
-							{#each tocItems as item}
+							{#each tocItems as item (item.id)}
 								<button 
 									class="toc-item level-{item.level}" 
 									onclick={() => scrollToHeading(item.id)}
@@ -174,7 +173,6 @@
 					</svg>
 				</button>
 				{#if settingsOpen}
-					<!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
 					<div class="dropdown settings-dropdown" onclick={(e) => e.stopPropagation()} role="presentation">
 						<div class="dropdown-header">阅读设置</div>
 						<div class="settings-content">
@@ -182,7 +180,7 @@
 							<div class="setting-group">
 								<span class="setting-label">主题模式</span>
 								<div class="theme-options" role="group" aria-label="主题模式">
-									{#each themeOptions as opt}
+									{#each themeOptions as opt (opt.value)}
 										<button 
 											class="theme-btn theme-btn-{opt.value}" 
 											class:active={theme === opt.value}
@@ -198,7 +196,7 @@
 							<div class="setting-group">
 								<span class="setting-label">字体</span>
 								<div class="font-options" role="group" aria-label="字体">
-									{#each fontFamilyOptions as opt}
+									{#each fontFamilyOptions as opt (opt.value)}
 										<button 
 											class="font-btn font-btn-{opt.value}" 
 											class:active={fontFamily === opt.value}
@@ -283,7 +281,7 @@
 				<div class="text-center">
 					<h1 class="text-2xl font-bold text-gray-900 mb-2">{m.artifact_not_found()}</h1>
 					<p class="text-gray-600 mb-4">{m.artifact_not_found_message()}</p>
-					<button onclick={() => goto('/')} class="text-[#0969da] hover:underline">
+					<button onclick={() => goto(resolve('/'))} class="text-[#0969da] hover:underline">
 						{m.artifact_go_back()}
 					</button>
 				</div>

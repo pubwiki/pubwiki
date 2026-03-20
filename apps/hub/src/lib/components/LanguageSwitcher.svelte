@@ -20,7 +20,7 @@
 <div class="flex items-center gap-2">
 	<span class="text-xs text-gray-500">{m.footer_language()}:</span>
 	<div class="flex gap-1">
-		{#each locales as locale}
+		{#each locales as locale (locale)}
 			<button
 				onclick={() => handleChange(locale)}
 				class="px-2 py-1 text-xs rounded transition {currentLocale === locale

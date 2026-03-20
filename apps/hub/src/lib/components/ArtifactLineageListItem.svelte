@@ -5,4 +5,4 @@
 	let { lineageItem } = $props<{ lineageItem: ArtifactLineageItem }>();
 </script>
 
-<ArtifactCard {lineageItem} size="md" />
+<ArtifactCard {lineageItem} />
