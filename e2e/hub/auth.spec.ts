@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/test.js';
-import { HUB_URL, TEST_PASSWORD } from '../fixtures/constants.js';
+import { getHubUrl, TEST_PASSWORD } from '../fixtures/constants.js';
 
 test.describe('Hub — Authentication', () => {
   // Auth tests need a fresh context (no pre-existing session)
@@ -8,7 +8,7 @@ test.describe('Hub — Authentication', () => {
   test('register a new account and land on home page', async ({ page }) => {
     const username = `e2e_auth_${Date.now()}`;
 
-    await page.goto(`${HUB_URL}/register`);
+    await page.goto(`${getHubUrl()}/register`);
 
     await page.locator('#username').fill(username);
     await page.locator('#email').fill(`${username}@e2e-test.local`);
@@ -22,7 +22,7 @@ test.describe('Hub — Authentication', () => {
 
   test('login with existing credentials', async ({ page }) => {
     // Relies on the default user created by auth.setup.ts
-    await page.goto(`${HUB_URL}/login`);
+    await page.goto(`${getHubUrl()}/login`);
 
     await page.locator('#usernameOrEmail').fill('e2e_default@e2e-test.local');
     await page.locator('#password').fill(TEST_PASSWORD);
@@ -32,7 +32,7 @@ test.describe('Hub — Authentication', () => {
   });
 
   test('login with wrong password shows error', async ({ page }) => {
-    await page.goto(`${HUB_URL}/login`);
+    await page.goto(`${getHubUrl()}/login`);
 
     await page.locator('#usernameOrEmail').fill('e2e_default@e2e-test.local');
     await page.locator('#password').fill('wrong-password');

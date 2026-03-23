@@ -1,0 +1,20 @@
+{
+  "name": "avg-template",
+  "publisher": "pubwiki",
+  "version": "1.0.0",
+  "description": "回合制游戏模板，提供通用的游戏组件（回合、行动点、背包、位置等）和系统（移动、战斗、物品管理等原子操作）",
+  
+  "type": "app",
+  "entry": "init.lua",
+  
+  "dependencies": {
+    "ecs@pubwiki": "^1.0.0"
+  },
+  
+  "documentation": {
+    "readme": "README.md",
+    "api": "COMPONENTS.md"
+  },
+  
+  "tags": ["template", "turn-based", "game", "rpg"]
+}

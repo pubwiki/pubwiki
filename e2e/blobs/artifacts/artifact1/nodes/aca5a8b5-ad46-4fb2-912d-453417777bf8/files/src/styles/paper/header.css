@@ -1,0 +1,360 @@
+/* ============================================================================
+   Dopamine Header - Top toolbar
+   ============================================================================ */
+
+.paper-header {
+    height: var(--paper-header-height);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--paper-space-4);
+    background: var(--paper-bg-glass-strong);
+    border-bottom: 2.5px solid var(--paper-text-primary);
+    position: relative;
+    z-index: var(--paper-z-sticky);
+    gap: var(--paper-space-3);
+    flex-shrink: 0;
+}
+
+/* Aurora gradient decoration line at top */
+.paper-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--paper-gradient-aurora);
+}
+
+/* Left section: logo and title */
+.paper-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--paper-space-3);
+}
+
+.paper-header-left .paper-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--paper-radius-md);
+    background: var(--paper-gradient-aurora);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    box-shadow: var(--paper-shadow-hard-sm);
+    border: 2px solid var(--paper-text-primary);
+}
+
+.paper-header-left h1 {
+    font-family: var(--paper-font-display);
+    font-size: var(--paper-font-size-lg);
+    font-weight: var(--paper-font-weight-extrabold);
+    color: var(--paper-text-primary);
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.mobile-menu-toggle {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--paper-text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 2px;
+}
+
+.paper-header-left .paper-dirty-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--paper-font-size-xs);
+    font-weight: var(--paper-font-weight-bold);
+    color: var(--paper-vivid-orange);
+    padding: 2px 8px;
+    border-radius: var(--paper-radius-pill);
+    background: rgba(255, 133, 52, 0.12);
+    border: 1.5px solid var(--paper-vivid-orange);
+    animation: paper-glow-pulse 2s ease-in-out infinite;
+}
+
+/* Toolbar area */
+.paper-header .toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--paper-space-2);
+    margin-left: auto;
+}
+
+/* Toolbar buttons */
+.paper-editor .btn-toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--paper-space-2);
+    padding: 7px 14px;
+    border-radius: var(--paper-radius-pill);
+    border: 2px solid var(--paper-border-color);
+    background: var(--paper-bg-secondary);
+    color: var(--paper-text-primary);
+    font-size: var(--paper-font-size-sm);
+    font-weight: var(--paper-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--paper-transition-bounce);
+    white-space: nowrap;
+}
+
+.paper-editor .btn-toolbar:hover:not(:disabled) {
+    transform: scale(1.05);
+    border-color: var(--paper-electric-blue);
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+.paper-editor .btn-toolbar:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.paper-editor .btn-toolbar:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Primary action buttons */
+.paper-editor .btn-toolbar.btn-primary {
+    background: var(--paper-electric-blue);
+    color: white;
+    border-color: var(--paper-text-primary);
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+.paper-editor .btn-toolbar.btn-primary:hover:not(:disabled) {
+    background: #5a9bff;
+    box-shadow: var(--paper-shadow-hard-blue);
+    transform: scale(1.05);
+}
+
+/* Launch button - warm coral */
+.paper-editor .btn-toolbar.btn-launch {
+    background: var(--paper-coral);
+    color: white;
+    border-color: var(--paper-text-primary);
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+.paper-editor .btn-toolbar.btn-launch:hover:not(:disabled) {
+    filter: brightness(1.15);
+    transform: scale(1.05);
+}
+
+/* Save button - warm accent */
+.paper-editor .btn-toolbar.btn-save {
+    background: var(--paper-sunny-yellow);
+    color: var(--paper-text-primary);
+    border-color: var(--paper-text-primary);
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+.paper-editor .btn-toolbar.btn-save:hover:not(:disabled) {
+    box-shadow: var(--paper-shadow-hard);
+    transform: scale(1.05);
+}
+
+/* AI button */
+.paper-editor .btn-toolbar.btn-ai.active {
+    background: var(--paper-gradient-aurora);
+    border-color: var(--paper-text-primary);
+}
+
+/* Settings button */
+.paper-editor .btn-toolbar.btn-settings {
+    background: var(--paper-bg-secondary);
+    border-color: var(--paper-border-color);
+}
+
+.paper-editor .btn-toolbar.btn-settings:hover:not(:disabled) {
+    border-color: var(--paper-candy-purple);
+    /* removed glow */
+}
+
+/* Danger buttons */
+.paper-editor .btn-toolbar.btn-danger {
+    background: var(--paper-coral);
+    color: white;
+    border-color: var(--paper-text-primary);
+}
+
+/* ========== Dropdown Menus ========== */
+
+.paper-editor .dropdown-menu {
+    position: relative;
+    display: inline-block;
+}
+
+.paper-editor .dropdown-content {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: var(--paper-bg-secondary);
+    border: var(--paper-border-thick);
+    border-radius: var(--paper-radius-lg);
+    box-shadow: var(--paper-shadow-hard);
+    min-width: 180px;
+    padding: 6px;
+    z-index: var(--paper-z-dropdown);
+    animation: paper-bounce-in 0.2s ease-out;
+}
+
+.paper-editor .dropdown-content button,
+.paper-editor .dropdown-content a {
+    display: flex;
+    align-items: center;
+    gap: var(--paper-space-2);
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--paper-text-primary);
+    font-size: var(--paper-font-size-sm);
+    border-radius: var(--paper-radius-md);
+    cursor: pointer;
+    text-align: left;
+    text-decoration: none;
+    transition: all var(--paper-transition-fast);
+}
+
+.paper-editor .dropdown-content button:hover,
+.paper-editor .dropdown-content a:hover {
+    background: var(--paper-electric-blue);
+    color: white;
+}
+
+.paper-editor .dropdown-content .dropdown-info {
+    color: var(--paper-text-tertiary);
+    font-size: var(--paper-font-size-sm);
+    padding: 0px 0px 0px 12px;
+}
+
+.paper-editor .dropdown-content .dropdown-hint {
+    color: var(--paper-text-tertiary);
+    background: rgba(0, 0, 0, 0.03);
+    border-left-color: var(--paper-border-color);
+    font-size: var(--paper-font-size-xs);
+    padding: 4px 12px;
+}
+
+.paper-editor .dropdown-content .dropdown-divider {
+    height: 2px;
+    background: var(--paper-border-color);
+    margin: 4px 0;
+}
+
+/* World Builder button */
+.paper-editor .btn-toolbar.btn-world-builder.active {
+    background: var(--paper-gradient-aurora);
+    border-color: var(--paper-text-primary);
+}
+
+/* Mode indicator */
+/* Split button group (Launch + dropdown) */
+.paper-editor .btn-split-group {
+    display: inline-flex;
+    align-items: stretch;
+}
+
+.paper-editor .btn-split-group .btn-split-main {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right: none;
+}
+
+.paper-editor .btn-split-group .btn-split-more {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    padding: 7px 8px;
+    min-width: unset;
+    border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.paper-editor .btn-split-group .btn-split-more:hover:not(:disabled) {
+    transform: none;
+}
+
+.paper-editor .btn-split-group:hover .btn-split-main:not(:disabled),
+.paper-editor .btn-split-group:hover .btn-split-more:not(:disabled) {
+    transform: scale(1.05);
+}
+
+/* ========== Overflow menu (mobile "more" button) ========== */
+
+/* Hidden on desktop by default */
+.paper-editor .toolbar-overflow-menu {
+    display: none;
+}
+
+.paper-editor .btn-overflow {
+    font-size: 1.2rem;
+    letter-spacing: 2px;
+    padding: 5px 10px;
+    min-width: unset;
+}
+
+/* Overflow dropdown items show full labels */
+.paper-editor .toolbar-overflow-menu .dropdown-content {
+    min-width: 200px;
+}
+
+.paper-editor .toolbar-overflow-menu .dropdown-content button {
+    display: flex;
+    align-items: center;
+    gap: var(--paper-space-2);
+}
+
+.paper-editor .toolbar-overflow-menu .dropdown-content .check-mark {
+    margin-left: auto;
+    color: var(--paper-lime-green);
+    font-weight: var(--paper-font-weight-bold);
+}
+
+/* Language selector inside overflow menu */
+.paper-editor .overflow-language-item {
+    padding: 0 !important;
+    background: transparent !important;
+}
+
+.paper-editor .overflow-language-item:hover {
+    background: transparent !important;
+}
+
+.paper-editor .overflow-language-item .language-selector {
+    width: 100%;
+}
+
+.paper-editor .overflow-language-item .language-selector-trigger {
+    width: 100%;
+    justify-content: flex-start;
+    border: none;
+    border-radius: var(--paper-radius-md);
+    padding: 8px 12px;
+    font-size: var(--paper-font-size-sm);
+}
+
+.paper-editor .overflow-language-item .language-selector-trigger:hover {
+    background: var(--paper-electric-blue);
+    color: white;
+}
+
+.paper-editor .mode-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--paper-font-size-xs);
+    font-weight: var(--paper-font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 10px;
+    border-radius: var(--paper-radius-pill);
+    background: var(--paper-lime-green-alpha);
+    color: var(--paper-lime-green);
+    border: 1.5px solid var(--paper-lime-green);
+}

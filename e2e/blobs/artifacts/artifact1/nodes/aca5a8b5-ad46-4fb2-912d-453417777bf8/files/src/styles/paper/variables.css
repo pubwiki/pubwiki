@@ -1,0 +1,204 @@
+/* ============================================================================
+   Paper Design System - Variables & Tokens
+   ============================================================================ */
+
+:root {
+    /* ========== Colors - Ink and Accent ========== */
+    --paper-electric-blue: #b05c5c;
+    /* Ink Red uses this primary slot */
+    --paper-hot-pink: #a04030;
+    --paper-lime-green: #5c6256;
+    /* Faded green */
+    --paper-vivid-orange: #d18a4a;
+    /* Ochre */
+    --paper-candy-purple: #6a586d;
+    /* Faded purple */
+    --paper-sunny-yellow: #e8c678;
+    --paper-cyan: #3b5a6c;
+    --paper-coral: #b05c5c;
+
+    /* Alpha variants */
+    --paper-electric-blue-alpha: rgba(139, 43, 26, 0.15);
+    --paper-hot-pink-alpha: rgba(160, 64, 48, 0.15);
+    --paper-lime-green-alpha: rgba(92, 98, 86, 0.15);
+    --paper-candy-purple-alpha: rgba(106, 88, 109, 0.15);
+    --paper-sunny-yellow-alpha: rgba(232, 198, 120, 0.15);
+
+    /* ========== Background System - Paper ========== */
+    --paper-bg-primary: #f4f1ea;
+    /* Base paper */
+    --paper-bg-secondary: #fbf9f4;
+    /* Cards */
+    --paper-bg-tertiary: #ece7de;
+    /* Secondary paper */
+    --paper-bg-elevated: #fbf9f4;
+    /* Elevated cards */
+    --paper-bg-content: #fdfaf3;
+    /* Content area */
+    --paper-bg-glass: rgba(244, 241, 234, 0.85);
+    /* Frost paper */
+    --paper-bg-glass-strong: #fbf9f4;
+
+    /* ========== Gradients ========== */
+    --paper-gradient-aurora: linear-gradient(135deg, #f4f1ea, #ece7de);
+    --paper-gradient-sunset: linear-gradient(135deg, #fbf9f4, #f4f1ea);
+    --paper-gradient-candy: linear-gradient(135deg, #ece7de, #e1dcd1);
+    --paper-gradient-ocean: linear-gradient(135deg, #fdfaf3, #f4f1ea);
+    --paper-gradient-warm: linear-gradient(135deg, #fbf9f4, #f4f1ea);
+    --paper-gradient-mesh: none;
+
+    /* ========== Text Colors ========== */
+    --paper-text-primary: #2c2825;
+    /* Dark ink */
+    --paper-text-secondary: #6a645e;
+    /* Medium ink */
+    --paper-text-tertiary: #8b857a;
+    /* Light ink */
+    --paper-text-inverse: #f4f1ea;
+    /* Inverse for buttons */
+    --paper-text-accent: var(--paper-electric-blue);
+    --paper-dialogue-text: #395e8f; /* Muted dark blue for light mode */
+
+    /* ========== Border System ========== */
+    --paper-border-color: rgba(44, 40, 37, 0.15);
+    --paper-border-color-hover: rgba(44, 40, 37, 0.3);
+    --paper-border-color-focus: var(--paper-electric-blue);
+
+    /* Alpha Overlays for Hover/Active states */
+    --paper-hover-bg: rgba(44, 40, 37, 0.05);
+    --paper-active-bg: rgba(44, 40, 37, 0.08);
+    --paper-shadow-color: rgba(44, 40, 37, 0.1);
+
+    /* Neubrutalism borders replaced by thin ink lines */
+    --paper-border-thick: 1px solid #2c2825;
+    --paper-shadow-hard: none;
+    --paper-shadow-hard-sm: none;
+    --paper-shadow-hard-blue: none;
+    --paper-shadow-hard-pink: none;
+    --paper-shadow-hard-purple: none;
+
+    /* ========== Soft Shadows ========== */
+    --paper-shadow-sm: 0 1px 2px rgba(44, 40, 37, 0.05);
+    --paper-shadow-md: 0 4px 8px rgba(44, 40, 37, 0.06);
+    --paper-shadow-lg: 0 8px 16px rgba(44, 40, 37, 0.08);
+    --paper-shadow-xl: 0 16px 32px rgba(44, 40, 37, 0.1);
+
+    /* Glow effects removed */
+    --paper-glow-blue: none;
+    --paper-glow-pink: none;
+    --paper-glow-purple: none;
+    --paper-glow-green: none;
+
+    /* ========== Typography ========== */
+    --paper-font-display: 'Noto Serif SC', 'Georgia', serif;
+    --paper-font-body: 'Noto Serif SC', 'Georgia', serif;
+    --paper-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+    --paper-font-size-xs: 0.75rem;
+    --paper-font-size-sm: 0.9rem;
+    --paper-font-size-base: 1.05rem;
+    --paper-font-size-lg: 1.15rem;
+    --paper-font-size-xl: 1.35rem;
+    --paper-font-size-2xl: 1.6rem;
+    --paper-font-size-3xl: 2rem;
+
+    --paper-font-weight-normal: 400;
+    --paper-font-weight-medium: 500;
+    --paper-font-weight-semibold: 600;
+    --paper-font-weight-bold: 700;
+    --paper-font-weight-extrabold: 700;
+
+    --paper-line-height-tight: 1.3;
+    --paper-line-height-normal: 1.6;
+    --paper-line-height-relaxed: 1.8;
+
+    /* ========== Spacing ========== */
+    --paper-space-1: 0.25rem;
+    --paper-space-2: 0.5rem;
+    --paper-space-3: 0.75rem;
+    --paper-space-4: 1rem;
+    --paper-space-5: 1.25rem;
+    --paper-space-6: 1.5rem;
+    --paper-space-8: 2rem;
+    --paper-space-10: 2.5rem;
+    --paper-space-12: 3rem;
+
+    /* ========== Border Radius ========== */
+    --paper-radius-sm: 2px;
+    --paper-radius-md: 4px;
+    --paper-radius-lg: 4px;
+    --paper-radius-xl: 6px;
+    --paper-radius-2xl: 8px;
+    --paper-radius-pill: 4px;
+    /* Paper style utilizes square features */
+
+    /* ========== Transitions ========== */
+    --paper-transition-fast: 0.15s ease;
+    --paper-transition-normal: 0.2s ease;
+    --paper-transition-slow: 0.3s ease;
+    --paper-transition-bounce: 0.3s ease;
+    /* Removing bounce for serious paper style */
+
+    /* ========== Layout ========== */
+    --paper-header-height: 64px;
+    /* Adjusted */
+    --paper-tabs-height: 48px;
+    --paper-copilot-width: 360px;
+    --paper-copilot-width-collapsed: 48px;
+    --paper-entity-grid-max-height: 280px;
+
+    /* ========== Z-Index ========== */
+    --paper-z-dropdown: 100;
+    --paper-z-sticky: 200;
+    --paper-z-float-outline: 500;
+    --paper-z-modal-backdrop: 900;
+    --paper-z-modal: 1000;
+    --paper-z-tooltip: 1100;
+}
+
+/* ========== Base Reset for .paper-editor ========== */
+.paper-editor {
+    font-family: var(--paper-font-body);
+    font-size: var(--paper-font-size-base);
+    line-height: var(--paper-line-height-normal);
+    color: var(--paper-text-primary);
+    background: var(--paper-bg-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.paper-editor *,
+.paper-editor *::before,
+.paper-editor *::after {
+    box-sizing: border-box;
+}
+
+.paper-editor button {
+    font-family: inherit;
+}
+
+.paper-editor input,
+.paper-editor textarea,
+.paper-editor select {
+    font-family: inherit;
+    font-size: inherit;
+}
+
+/* Custom scrollbar - paper styled */
+.paper-editor ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.paper-editor ::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.paper-editor ::-webkit-scrollbar-thumb {
+    background: rgba(44, 40, 37, 0.2);
+    border-radius: 0;
+}
+
+.paper-editor ::-webkit-scrollbar-thumb:hover {
+    background: rgba(44, 40, 37, 0.4);
+}

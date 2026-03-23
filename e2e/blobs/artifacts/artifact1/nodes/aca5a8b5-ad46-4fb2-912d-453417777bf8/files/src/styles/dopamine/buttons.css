@@ -1,0 +1,216 @@
+/* ============================================================================
+   Dopamine Buttons - All button variants
+   ============================================================================ */
+
+/* ========== Base Button ========== */
+
+.dp-editor .dp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: var(--dp-radius-pill);
+    border: 2px solid var(--dp-text-primary);
+    background: var(--dp-bg-secondary);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    font-weight: var(--dp-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--dp-transition-bounce);
+    white-space: nowrap;
+    box-shadow: var(--dp-shadow-hard-sm);
+}
+
+.dp-editor .dp-btn:hover:not(:disabled) {
+    transform: scale(1.05) translateY(-1px);
+    box-shadow: var(--dp-shadow-hard);
+}
+
+.dp-editor .dp-btn:active:not(:disabled) {
+    transform: scale(0.97);
+    box-shadow: 1px 1px 0px var(--dp-text-primary);
+}
+
+.dp-editor .dp-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* ========== Button Variants ========== */
+
+.dp-editor .dp-btn-primary {
+    background: var(--dp-electric-blue);
+    color: white;
+}
+
+.dp-editor .dp-btn-primary:hover:not(:disabled) {
+    background: #5a9bff;
+    box-shadow: var(--dp-shadow-hard-blue);
+}
+
+.dp-editor .dp-btn-success {
+    background: var(--dp-lime-green);
+    color: var(--dp-text-primary);
+}
+
+.dp-editor .dp-btn-success:hover:not(:disabled) {
+    box-shadow: 4px 4px 0px #1a8a42;
+}
+
+.dp-editor .dp-btn-danger {
+    background: var(--dp-coral);
+    color: white;
+}
+
+.dp-editor .dp-btn-danger:hover:not(:disabled) {
+    box-shadow: 4px 4px 0px #cc4444;
+}
+
+.dp-editor .dp-btn-warning {
+    background: var(--dp-sunny-yellow);
+    color: var(--dp-text-primary);
+}
+
+.dp-editor .dp-btn-purple {
+    background: var(--dp-candy-purple);
+    color: white;
+}
+
+.dp-editor .dp-btn-purple:hover:not(:disabled) {
+    box-shadow: var(--dp-shadow-hard-purple);
+}
+
+.dp-editor .dp-btn-gradient {
+    background: var(--dp-gradient-aurora);
+    color: white;
+}
+
+/* ========== Ghost Button (no background) ========== */
+
+.dp-editor .dp-btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: var(--dp-text-secondary);
+}
+
+.dp-editor .dp-btn-ghost:hover:not(:disabled) {
+    background: var(--dp-bg-tertiary);
+    color: var(--dp-text-primary);
+    box-shadow: none;
+    transform: scale(1.03);
+}
+
+/* ========== Small Button ========== */
+
+.dp-editor .dp-btn-sm {
+    padding: 5px 12px;
+    font-size: var(--dp-font-size-xs);
+    border-width: 1.5px;
+    box-shadow: 2px 2px 0px var(--dp-text-primary);
+}
+
+.dp-editor .dp-btn-sm:hover:not(:disabled) {
+    box-shadow: 3px 3px 0px var(--dp-text-primary);
+}
+
+/* ========== Icon Button ========== */
+
+.dp-editor .dp-btn-icon {
+    padding: 6px;
+    border-radius: var(--dp-radius-md);
+    min-width: 32px;
+    min-height: 32px;
+}
+
+/* Mini icon button (for inline actions) */
+.dp-editor .icon-btn-mini {
+    background: transparent;
+    border: none;
+    padding: 3px 5px;
+    border-radius: var(--dp-radius-sm);
+    cursor: pointer;
+    color: var(--dp-text-tertiary);
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .icon-btn-mini:hover {
+    background: var(--dp-bg-tertiary);
+    color: var(--dp-text-primary);
+}
+
+/* ========== Button Group ========== */
+
+.dp-editor .dp-btn-group {
+    display: inline-flex;
+    gap: var(--dp-space-2);
+    align-items: center;
+}
+
+/* ========== Add Button (prominent) ========== */
+
+.dp-editor .dp-btn-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    border-radius: var(--dp-radius-pill);
+    border: 2px solid var(--dp-text-primary);
+    background: var(--dp-lime-green);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    font-weight: var(--dp-font-weight-bold);
+    cursor: pointer;
+    transition: all var(--dp-transition-bounce);
+    box-shadow: var(--dp-shadow-hard-sm);
+}
+
+.dp-editor .dp-btn-add:hover {
+    transform: scale(1.06);
+    box-shadow: var(--dp-shadow-hard);
+}
+
+/* ========== Legacy button compatibility ========== */
+
+/* Existing .btn-inline-* buttons */
+.dp-editor .btn-inline-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: var(--dp-lime-green-alpha);
+    border: 1.5px solid var(--dp-lime-green);
+    border-radius: var(--dp-radius-pill);
+    color: #1a8a42;
+    font-size: var(--dp-font-size-xs);
+    font-weight: var(--dp-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .btn-inline-add:hover {
+    background: var(--dp-lime-green);
+    color: var(--dp-text-primary);
+}
+
+.dp-editor .btn-inline-remove {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1.5px solid var(--dp-coral);
+    border-radius: var(--dp-radius-pill);
+    color: var(--dp-coral);
+    font-size: var(--dp-font-size-xs);
+    font-weight: var(--dp-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .btn-inline-remove:hover {
+    background: var(--dp-coral);
+    color: white;
+}

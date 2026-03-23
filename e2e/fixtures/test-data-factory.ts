@@ -6,7 +6,7 @@
  * names / emails so that tests running in parallel never collide.
  */
 
-import { API_BASE_URL, TEST_PASSWORD } from './constants.js';
+import { getApiBaseUrl } from './constants.js';
 import { registerUser, authedFetch } from './api-client.js';
 import { computeArtifactCommit } from '@pubwiki/api';
 
@@ -46,7 +46,7 @@ export async function createArtifact(opts: CreateArtifactOptions) {
   formData.append('nodes', JSON.stringify([]));
   formData.append('edges', JSON.stringify([]));
 
-  const res = await fetchFn(`${API_BASE_URL}/artifacts`, {
+  const res = await fetchFn(`${getApiBaseUrl()}/artifacts`, {
     method: 'POST',
     body: formData,
   });
@@ -69,7 +69,7 @@ export interface CreateProjectOptions {
 
 export async function createProject(opts: CreateProjectOptions) {
   const fetch = authedFetch(opts.sessionCookie);
-  const res = await fetch(`${API_BASE_URL}/projects`, {
+  const res = await fetch(`${getApiBaseUrl()}/projects`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

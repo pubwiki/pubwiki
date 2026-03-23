@@ -1,0 +1,12 @@
+{
+  "id": "fa7cd77a-ea55-4640-930c-bd879e56287f",
+  "type": "SANDBOX",
+  "name": "Preview",
+  "commit": "bb348506f03dc66de2280133fb1f8afbab744d001a9bd8d5205b0e2e75dc8906",
+  "contentHash": "839c79708e69b000942f6663d425483966e9b19db2d8b429f838b344a5fa4848",
+  "parent": null,
+  "content": {
+    "type": "SANDBOX",
+    "entryFile": "index.html"
+  }
+}

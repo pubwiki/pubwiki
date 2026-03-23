@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "exportedAt": "2026-03-21T08:24:27.803Z",
+  "project": {
+    "id": "c1f2afec-9335-4250-8751-8098b406ab0a",
+    "name": "Project c1f2afec",
+    "createdAt": 1774081456805,
+    "updatedAt": 1774081456805,
+    "isDraft": true
+  },
+  "layouts": [
+    {
+      "nodeId": "99d87070-c111-4603-bf72-190993881619",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "nodeId": "01d047f7-0aa0-4231-867f-9ef65c221ad9",
+      "x": 646.3107915801816,
+      "y": -16.35750980709514
+    },
+    {
+      "nodeId": "aca5a8b5-ad46-4fb2-912d-453417777bf8",
+      "x": 204.99903388029836,
+      "y": -310.65800389788444
+    },
+    {
+      "nodeId": "fa7cd77a-ea55-4640-930c-bd879e56287f",
+      "x": 659.7521155046925,
+      "y": -206.60592418989725
+    },
+    {
+      "nodeId": "a40da804-81c7-4967-a117-5688ca5956b1",
+      "x": 205.42070268021305,
+      "y": -47.51609939151055
+    },
+    {
+      "nodeId": "4feac849-bebc-409e-bd03-ffe47ba47c34",
+      "x": 199.4019671407145,
+      "y": 213.00210397697685
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-01d047f7-0aa0-4231-867f-9ef65c221ad9-fa7cd77a-ea55-4640-930c-bd879e56287f",
+      "source": "01d047f7-0aa0-4231-867f-9ef65c221ad9",
+      "target": "fa7cd77a-ea55-4640-930c-bd879e56287f",
+      "sourceHandle": "loader-output",
+      "targetHandle": "service-input"
+    },
+    {
+      "id": "e-4feac849-bebc-409e-bd03-ffe47ba47c34-01d047f7-0aa0-4231-867f-9ef65c221ad9",
+      "source": "4feac849-bebc-409e-bd03-ffe47ba47c34",
+      "target": "01d047f7-0aa0-4231-867f-9ef65c221ad9",
+      "sourceHandle": "default",
+      "targetHandle": "loader-state"
+    },
+    {
+      "id": "e-a40da804-81c7-4967-a117-5688ca5956b1-01d047f7-0aa0-4231-867f-9ef65c221ad9",
+      "source": "a40da804-81c7-4967-a117-5688ca5956b1",
+      "target": "01d047f7-0aa0-4231-867f-9ef65c221ad9",
+      "sourceHandle": "default",
+      "targetHandle": "loader-backend"
+    },
+    {
+      "id": "e-aca5a8b5-ad46-4fb2-912d-453417777bf8-fa7cd77a-ea55-4640-930c-bd879e56287f",
+      "source": "aca5a8b5-ad46-4fb2-912d-453417777bf8",
+      "target": "fa7cd77a-ea55-4640-930c-bd879e56287f",
+      "sourceHandle": "default",
+      "targetHandle": "vfs-input"
+    }
+  ]
+}

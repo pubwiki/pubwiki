@@ -1,0 +1,510 @@
+{
+    "title": "游戏",
+    "ink": {
+        "title": "Ink 互动小说",
+        "loading": "加载中...",
+        "continue": "继续",
+        "restart": "重新开始",
+        "save": "保存进度",
+        "load": "读取进度",
+        "backToEditor": "返回编辑器",
+        "intro": "Ink 互动小说",
+        "introDesc": "在这里，你将通过选择来决定故事的走向。每一个决定都会影响剧情的发展。",
+        "backgroundStory": "背景故事",
+        "startAdventure": "开始冒险",
+        "noBackgroundStory": "无背景故事",
+        "prologue": "序章",
+        "continueOpening": "继续开场剧情",
+        "continueWithChoices": "继续剧情并给出选项",
+        "unnamedChapter": "未命名章节",
+        "chapterJump": "章节跳转",
+        "generating": "生成中...",
+        "preparing": "正在准备...",
+        "action": {
+            "yourAction": "你的行动",
+            "custom": "自定义",
+            "special": "特殊"
+        },
+        "dice": {
+            "title": "掷骰判定",
+            "difficulty": "难度",
+            "roll": "掷骰子",
+            "rolling": "掷骰中...",
+            "success": "成功!",
+            "fail": "失败",
+            "first": "首次",
+            "retry": "再试一次",
+            "retried": "重试",
+            "continueAdventure": "继续冒险",
+            "acceptFate": "接受命运",
+            "backToChoices": "返回选择",
+            "resultBadge": "{{roll}}/{{difficulty}} {{result}}",
+            "difficultyTag": "难度 {{level}}"
+        },
+        "choices": {
+            "title": "你的选择",
+            "customAction": "自定义行动...",
+            "inputPlaceholder": "输入你想做的事情...",
+            "cancel": "取消",
+            "confirm": "确认",
+            "noChoicesHint": "AI 未生成选项，请输入自定义行动继续"
+        },
+        "director": {
+            "button": "导演指令...",
+            "label": "导演指令",
+            "hint": "（影响叙事方向，不是角色行动）",
+            "placeholder": "例如：这一段请侧重描写角色之间的感情张力，节奏放慢一些...",
+            "clear": "清除"
+        },
+        "settings": {
+            "secondPerson": "第二人称",
+            "thirdPerson": "第三人称",
+            "secondPersonTitle": "当前：第二人称（你）",
+            "thirdPersonTitle": "当前：第三人称（他/她）",
+            "diceOff": "关",
+            "diceVisible": "明骰",
+            "diceHidden": "暗骰",
+            "diceOffTitle": "骰子系统：关闭",
+            "diceVisibleTitle": "骰子系统：明骰（难度选项需掷骰）",
+            "diceHiddenTitle": "骰子系统：暗骰（所有行动隐藏掷骰）",
+            "paragraphs": "{{count}}段",
+            "paragraphsTitle": "每次生成的总段落数",
+            "typewriterSpeed": "{{speed}}字/秒",
+            "typewriterInstant": "瞬间显示",
+            "typewriterSpeedTitle": "打字机显示速度（字符/秒）",
+            "autoFollow": "自动跟随",
+            "autoFollowTitle": "自动滚动到最新生成的文字",
+            "gameSettings": "游戏设置",
+            "apiConfig": "API 配置"
+        },
+        "sidebar": {
+            "backToWorkspace": "返回工作区",
+            "worldOverview": "世界概览",
+            "timeline": "故事时间线",
+            "events": "剧情事件",
+            "publishArticle": "发布文章",
+            "collapsePanel": "收起侧栏",
+            "expandPanel": "展开侧栏"
+        },
+        "timeline": {
+            "title": "故事时间线",
+            "empty": "暂无故事存档",
+            "current": "当前",
+            "loadConfirm": "是否加载此存档？当前未保存的进度将会丢失。",
+            "loading": "加载中...",
+            "nodes": "个节点",
+            "branches": "条分支",
+            "unknownTime": "未知时间"
+        },
+        "events": {
+            "title": "剧情事件",
+            "empty": "暂无剧情事件",
+            "relatedEntities": "相关实体",
+            "updatedAt": "最后更新"
+        },
+        "phase": {
+            "generatingStory": "正在生成故事...",
+            "updatingState": "正在更新游戏状态..."
+        },
+        "refresh": {
+            "button": "刷新游戏数据",
+            "loading": "正在刷新..."
+        },
+        "sections": {
+            "ragCollection": "RAG 收集",
+            "ragBadge": "{{selectedCount}} 实体, {{totalDocs}} 文档",
+            "ragEvents": "事件",
+            "selectedEvents": "选中的事件",
+            "reasoning": "模型推理过程",
+            "thinking": "AI 思考过程",
+            "changeSuggestions": "状态与设定变更建议",
+            "directorNotes": "导演笔记",
+            "changeCount": "{{count}}条",
+            "phaseThinking": "思考指令",
+            "phaseWriting": "写作指令",
+            "phaseUpdating": "状态更新指令"
+        },
+        "update": {
+            "updating": "正在更新游戏状态...",
+            "failed": "游戏状态更新失败",
+            "success": "游戏状态已更新",
+            "callSuccess": "{{success}}/{{total}} 调用成功",
+            "audit": "审计日志：",
+            "executionPlan": "执行计划：",
+            "serviceCalls": "服务调用：",
+            "executionResults": "执行结果：",
+            "unknownError": "未知错误"
+        },
+        "rewind": {
+            "confirmTitle": "确定要回到这个时间点吗？\n当前进度将会丢失。",
+            "loadFailed": "读取存档失败：",
+            "buttonTitle": "回到这个时间点",
+            "buttonText": "干涉过去"
+        },
+        "rewrite": {
+            "buttonTitle": "回到此存档点，将之后的回合压缩重写为一段高密度历史",
+            "buttonText": "重写史书",
+            "modalTitle": "重写岁月史书",
+            "rewindTo": "回档至：",
+            "roundsToCompress": "将压缩 {{count}} 个回合为一章历史记录：",
+            "maxRoundsWarning": "（共 {{total}} 个回合，仅取前 9 个）",
+            "opinionLabel": "干涉意见",
+            "opinionHint": "告诉编年史官你希望如何改写这段历史。留空则按原有脉络压缩。",
+            "opinionPlaceholder": "例如：让主角在第三回合选择另一条路线...\n或者：加快节奏，跳过日常对话...\n或者：改变创作风格为更黑暗的基调...",
+            "confirm": "开始重写",
+            "loadFailed": "读取存档失败：",
+            "actionLabel": "重写岁月史书",
+            "defaultOpinion": "按照原有脉络压缩历史"
+        },
+        "publishCheckpoint": {
+            "buttonTitle": "发布此存档点，让其他玩家可以从这里开始游戏",
+            "buttonText": "发布存档",
+            "modalTitle": "发布存档点",
+            "isListed": "公开存档",
+            "listedHint": "其他玩家可以在存档列表中看到并使用此存档",
+            "unlistedHint": "存档不会出现在公开列表中，仅通过链接可访问",
+            "confirm": "发布",
+            "success": "存档发布成功！",
+            "failed": "发布失败：{{error}}",
+            "publishing": "发布中..."
+        },
+        "regenerate": {
+            "confirmTitle": "确定要重新生成这段故事吗？\n当前内容将被替换。",
+            "loadFailed": "回滚存档失败：",
+            "buttonTitle": "重新生成这段故事",
+            "buttonText": "重新生成"
+        },
+        "rewrite": {
+            "buttonTitle": "干涉过去并重写岁月史书：将后续回合压缩重写为一段高密度历史",
+            "buttonText": "重写史书",
+            "modalTitle": "干涉过去 · 重写岁月史书",
+            "rewindTo": "回溯到：",
+            "roundsToCompress": "将压缩重写 {{count}} 个回合",
+            "maxRoundsWarning": "（共 {{total}} 个回合，最多处理 9 个）",
+            "opinionLabel": "你的干涉意见",
+            "opinionHint": "告诉编年史官你希望如何改写这段历史。可以涉及剧情走向、创作风格、角色发展等",
+            "opinionPlaceholder": "例如：我希望这段历史中主角与反派达成了短暂的合作，而不是直接冲突...",
+            "confirm": "重写历史",
+            "loadFailed": "回档失败：",
+            "actionLabel": "重写岁月史书",
+            "defaultOpinion": "按照原有脉络压缩历史"
+        },
+        "time": {
+            "format": "{{year}}年 {{month}}月 {{day}}日 {{hour}}:{{minute}}"
+        },
+        "confirm": {
+            "clearHistory": "确定要清空所有剧情历史吗？此操作不可撤销！",
+            "clearFailed": "清空失败: {{error}}"
+        },
+        "error": {
+            "generateFailed": "生成失败：{{error}}",
+            "noContent": "未返回内容",
+            "unknownError": "未知错误",
+            "getStateFailed": "获取游戏状态失败",
+            "retry": "重试",
+            "dismiss": "关闭"
+        },
+        "highlight": {
+            "viewCreature": "点击查看 {{name}} 的信息",
+            "viewOrganization": "点击查看组织 {{name}} 的信息",
+            "viewLocation": "点击查看地点 {{name}} 的信息",
+            "viewEntry": "词条: {{name}}",
+            "viewEntryDetail": "查看词条详情"
+        },
+        "gm": {
+            "title": "GM 模式",
+            "emptyHint": "在这里输入 GM 指令来修改游戏世界状态。\n例如：「给主角增加 500 金币」或「将主角传送到王城」",
+            "inputPlaceholder": "输入 GM 指令...",
+            "clearChat": "清空聊天记录",
+            "phaseCollecting": "收集相关信息...",
+            "phaseReasoning": "推理分析中...",
+            "phaseThinking": "深度思考中...",
+            "phaseAnalyzing": "生成变更建议...",
+            "proposedChanges": "建议变更",
+            "stateChanges": "状态变更：",
+            "settingChanges": "设定变更：",
+            "eventChanges": "事件变更：",
+            "approve": "批准执行",
+            "reject": "拒绝",
+            "applying": "正在执行变更...",
+            "applied": "变更已成功执行",
+            "applyFailed": "执行失败",
+            "rejected": "已拒绝",
+            "executionDetails": "执行详情",
+            "gameBusy": "游戏正在生成中，请等待完成后再执行",
+            "error": "生成失败"
+        }
+    },
+    "custom": {
+        "back": "\u2190 返回",
+        "title": "🎮 自定义游戏",
+        "contentArea": "游戏内容区域",
+        "emptyTemplate": "这是一个空白的游戏模板，你可以在这里开始构建你的游戏界面。"
+    },
+    "world": {
+        "title": "🌍 世界概览",
+        "creatures": "🎭 人物",
+        "regions": "🗺️ 地域",
+        "organizations": "🏛️ 组织",
+        "noCreatures": "暂无人物数据",
+        "noRegions": "暂无地域数据",
+        "noOrganizations": "暂无组织数据",
+        "locationCount": "{{count}} 个地点",
+        "director": "🎬 导演笔记",
+        "directorNotes": "笔记",
+        "directorFlags": "标记",
+        "stageGoal": "阶段目标",
+        "noDirectorNotes": "暂无导演笔记"
+    },
+    "publish": {
+        "title": "📤 发布文章",
+        "articleTitle": "文章标题",
+        "titlePlaceholder": "留空将使用游戏名称",
+        "visibility": "可见性",
+        "public": "公开",
+        "unlisted": "不公开（仅链接可访问）",
+        "private": "私密",
+        "selectRange": "选择章节范围",
+        "from": "从第",
+        "to": "到第",
+        "chapter": "章",
+        "chapterDefault": "第{{num}}章",
+        "chapterCount": "将发布 {{count}} 章内容",
+        "previewList": "预览章节列表：",
+        "hasCheckpoint": "有存档点",
+        "noChaptersSelected": "没有选择任何章节",
+        "success": "文章发布成功！\n文章ID: {{articleId}}",
+        "failed": "发布失败：{{error}}",
+        "publishing": "发布中...",
+        "confirm": "确认发布",
+        "next": "下一步"
+    },
+    "modals": {
+        "creatureDetails": "角色详情",
+        "locationDetails": "地点详情",
+        "organizationDetails": "组织详情",
+        "itemDetails": "物品详情",
+        "close": "关闭",
+        "thinking": "💭 AI思考过程",
+        "storyPreview": "📖 故事预览",
+        "confirm": "⚠️ 确认"
+    },
+    "collapsible": {
+        "expand": "展开",
+        "collapse": "收起"
+    },
+    "worldOverview": {
+        "title": "世界概览",
+        "currentLocation": "当前位置",
+        "characters": "角色",
+        "inventory": "背包",
+        "statuses": "状态"
+    },
+    "creatureList": {
+        "title": "登场人物",
+        "empty": "暂无人物",
+        "clickToView": "点击查看 {{name}} 的详情"
+    },
+    "player": "玩家",
+    "npc": "NPC",
+    "panel": {
+        "characterInfo": "角色信息",
+        "loading": "加载中...",
+        "noCharacterSelected": "未选择角色",
+        "unknown": "未知",
+        "playerBadge": "玩家",
+        "basicInfo": "基本信息",
+        "appearance": "外貌",
+        "clothing": "服饰",
+        "gender": "性别",
+        "race": "种族",
+        "emotion": "情绪状态",
+        "goal": "当前目标",
+        "knownInfos": "已知信息",
+        "organization": "组织",
+        "attributes": "属性",
+        "inventory": "背包",
+        "itemTitle": "物品：{{name}}",
+        "statusEffects": "状态效果",
+        "statusEffectTitle": "状态效果：{{name}}",
+        "addedAt": "添加于：{{time}}",
+        "lastUpdatedAt": "最后更新：{{time}}",
+        "statusData": "数据：{{data}}",
+        "customComponents": "自定义组件",
+        "currentValue": "当前值",
+        "fieldName": "字段名",
+        "noData": "无数据",
+        "itemCount": "{{count}} 项",
+        "fieldCount": "{{count}} 个字段",
+        "value": "值",
+        "listComponent": "列表组件 · {{count}} 项",
+        "relationships": "关系",
+        "location": "位置",
+        "regionLabel": "地域:",
+        "locationLabel": "地点:",
+        "log": "日志",
+        "settingDocs": "设定文档",
+        "disabled": "已禁用",
+        "references": "引用: {{refs}}"
+    },
+    "locationModal": {
+        "description": "地点描述",
+        "belongsToRegion": "所属地域：{{name}}",
+        "otherLocations": "地域内其他地点",
+        "locationTitle": "地点：{{name}}",
+        "settingDocs": "设定文档"
+    },
+    "orgModal": {
+        "basicInfo": "基本信息",
+        "orgId": "组织ID:",
+        "description": "描述:",
+        "territories": "领地",
+        "orgLog": "组织日志",
+        "settingDocs": "设定文档"
+    },
+    "galgame": {
+        "expressions": {
+            "normal": "平静",
+            "happy": "开心",
+            "angry": "愤怒",
+            "sad": "悲伤",
+            "surprised": "惊讶",
+            "shy": "害羞",
+            "confused": "困惑",
+            "thinking": "沉思",
+            "smirk": "得意"
+        },
+        "choices": {
+            "customAction": "自定义行动...",
+            "inputPlaceholder": "描述你想做的事情...",
+            "cancel": "取消",
+            "confirm": "确认"
+        },
+        "log": {
+            "title": "对话记录",
+            "yourAction": "你的行动"
+        },
+        "settings": {
+            "title": "设置",
+            "typewriterSpeed": "打字速度",
+            "typewriterSpeedUnit": "{{speed}}字/秒",
+            "autoPlayDelay": "自动推进延迟",
+            "autoPlayDelayUnit": "{{delay}}秒",
+            "dialogueLines": "对话行数",
+            "dialogueLinesUnit": "{{count}}行",
+            "clearHistory": "清空剧情历史"
+        },
+        "controls": {
+            "autoPlay": "自动推进",
+            "skip": "快进",
+            "log": "对话记录",
+            "settings": "设置"
+        },
+        "time": {
+            "format": "{{year}}年 {{month}}月 {{day}}日 {{hour}}:{{minute}}"
+        },
+        "status": {
+            "updatingState": "更新游戏状态中...",
+            "generating": "正在创作中...",
+            "waitingForChoice": "等待你的选择",
+            "turnCount": "第{{count}}轮"
+        },
+        "player": "玩家",
+        "actNav": {
+            "prev": "上一幕",
+            "next": "查看下一幕",
+            "viewingHistory": "第 {{current}} / {{total}} 幕"
+        },
+        "cg": {
+            "placeholder": "CG 插画（待生成）"
+        },
+        "error": {
+            "retry": "重试",
+            "ragEmpty": "生成失败：RAG 未收集到任何相关文档，请重试",
+            "noContent": "生成失败：未返回内容",
+            "unknownError": "未知错误",
+            "generateFailed": "生成失败: {{error}}",
+            "clearFailed": "清空失败: {{error}}",
+            "getStateFailed": "获取游戏状态失败"
+        },
+        "confirm": {
+            "clearHistory": "确定要清空所有剧情历史吗？此操作不可撤销！"
+        },
+        "startGame": {
+            "back": "返回",
+            "prologue": "序幕",
+            "continueStory": "继续剧情",
+            "continueStoryDesc": "继续剧情发展并给出选项"
+        },
+        "nav": {
+            "back": "返回",
+            "characterInfo": "角色信息",
+            "worldOverview": "世界概览",
+            "spriteManager": "角色立绘",
+            "publishArticle": "发布文章",
+            "imageApiConfig": "图像 API",
+            "resourceManager": "资源管理"
+        },
+        "thinking": {
+            "title": "思考过程"
+        },
+        "noBackgroundStory": "无背景故事",
+        "unnamedChapter": "未命名章节",
+        "spriteManager": {
+            "title": "角色图像配置",
+            "characters": "角色列表",
+            "noCharacters": "暂无角色数据",
+            "selectCharacter": "选择一个角色进行配置",
+            "clearAll": "清空全部",
+            "standing": "立绘",
+            "avatar": "表情头像",
+            "export": "导出",
+            "import": "导入"
+        },
+        "imageApi": {
+            "title": "图像 API 配置",
+            "save": "保存",
+            "saved": "已保存",
+            "standing": "立绘",
+            "avatar": "表情",
+            "cg": "CG",
+            "endpoint": "接口端点",
+            "apiKey": "API Key",
+            "model": "模型",
+            "extraParams": "额外参数 (JSON)",
+            "standingHint": "用于根据文字描述生成角色全身立绘的模型。",
+            "avatarHint": "用于基于立绘生成各表情头像的模型（图生图）。",
+            "cgHint": "用于生成 CG 插画的模型（即将推出）。",
+            "enhancer": "Prompt 增强",
+            "enhancerHint": "可选。OpenAI 兼容的聊天 API，用于将文学性的角色描述（含比喻、夸张等修辞）转写为图像生成模型能准确理解的具体视觉描述。例如极度丰腴→体型圆润丰满。"
+        },
+        "resourceManager": {
+            "title": "资源管理器",
+            "selectAll": "全选缺失",
+            "selectedInfo": "已选 {{count}} 个角色，共 {{calls}} 次 API 调用",
+            "generate": "开始生成",
+            "generating": "生成中...",
+            "noCharacters": "暂无角色数据",
+            "missing": "缺少 {{count}} 项",
+            "standing": "立绘",
+            "avatars": "表情",
+            "generatingStanding": "生成立绘中...",
+            "generatingAvatars": "表情 {{done}}/{{total}}",
+            "done": "全部生成完成！",
+            "regenerate": "重新生成全套"
+        },
+        "actGallery": {
+            "title": "幕回顾",
+            "empty": "还没有可回顾的幕",
+            "segments": "{{count}} 段",
+            "dialogues": "{{count}} 句对话"
+        },
+        "highlight": {
+            "viewCreature": "点击查看 {{name}} 的信息",
+            "viewOrganization": "点击查看组织 {{name}} 的信息",
+            "viewLocation": "点击查看地点 {{name}} 的信息",
+            "viewEntry": "词条: {{name}}",
+            "viewEntryDetail": "查看词条详情"
+        }
+    }
+}

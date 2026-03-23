@@ -1,0 +1,562 @@
+-- components.lua
+-- 组件定义（供 LLM 直接阅读作为提示）。组件只存状态，逻辑交给系统。
+--
+-- 设计理念（Zod 风格自描述类型）：
+--   - 类型携带描述：Type.Int:desc("当前生命值")
+--   - 使用 ECS.RegisterComponent 服务动态注册组件
+
+Loader.loadModule("ecs@pubwiki")
+
+ComponentTypes = {}
+
+-- ============ 可复用的子类型 ============
+-- 这些类型可以在 systems.lua 中直接引用，避免重复定义
+
+-- 属性类型（灵活的键值对，键为属性名，值为属性值）
+-- 原类型: ComponentTypes.Attrs = Type.Record(Type.Int):desc("属性表，键为属性名，值为属性值")
+ComponentTypes.Attrs = Type.Record(Type.Or(Type.Int, Type.String)):desc("属性表，键为属性名，值为属性值(可以为数字、字符串)")
+
+-- 状态效果实例类型
+ComponentTypes.StatusEffectInstance = Type.Object({
+	instance_id = Type.String:desc("状态效果实例唯一标识符"),
+	display_name = Type.Optional(Type.String):desc("状态效果显示名称，用于在UI中展示"),
+	remark = Type.Optional(Type.String):desc("状态备注，用于描述状态的来源、效果或持续条件等"),
+	data = Type.Object({}):desc("状态效果数据，任意对象"),
+	add_at = Type.Optional(Type.String):desc("添加时间，格式：YYYY年MM月DD日 HH:MM"),
+	last_update_at = Type.Optional(Type.String):desc("最后更新时间，格式：YYYY年MM月DD日 HH:MM"),
+})
+
+ComponentTypes.ForeShadowing = Type.Object({
+	events = Type.Array(Type.Object({
+		name = Type.String:desc("事件名称"),
+
+	}))
+})
+
+-- 路径类型
+ComponentTypes.Path = Type.Object({
+	discovered = Type.Bool:desc("已发现"),
+	to_region = Type.String:desc("目标地域ID"),
+	to_location = Type.String:desc("目标地点ID"),
+	description = Type.String:desc("路径描述"),
+})
+
+-- 地块引用类型
+ComponentTypes.TerritoryRef = Type.Object({
+	region_id = Type.String:desc("地域ID"),
+	location_id = Type.String:desc("地点ID"),
+})
+
+
+-- ============ 通用输出类型 ============
+
+-- 基础输出（带entity_id）
+ComponentTypes.BasicOutput = Type.Object({
+	success = Type.Bool,
+	entity_id = Type.Optional(Type.Int),
+	error = Type.Optional(Type.String),
+})
+
+-- 查询存在性输出
+ComponentTypes.ExistsOutput = Type.Object({
+	success = Type.Bool,
+	exists = Type.Bool,
+	data = Type.Optional(Type.Any),
+	error = Type.Optional(Type.String),
+})
+
+-- 简单成功输出
+ComponentTypes.SuccessOutput = Type.Object({
+	success = Type.Bool,
+	error = Type.Optional(Type.String),
+})
+
+-- 物品查询输出
+ComponentTypes.ItemQueryOutput = Type.Object({
+	success = Type.Bool,
+	has_item = Type.Bool,
+	count = Type.Int,
+	error = Type.Optional(Type.String),
+})
+
+
+-- 属性值查询输出
+ComponentTypes.AttrValueOutput = Type.Object({
+	success = Type.Bool,
+	value = Type.Optional(Type.Or(Type.Int, Type.String)),
+	error = Type.Optional(Type.String),
+})
+
+-- 关系查询输出
+ComponentTypes.RelationshipQueryOutput = Type.Object({
+	success = Type.Bool,
+	has_relationship = Type.Bool,
+	name = Type.Optional(Type.String),
+	value = Type.Optional(Type.Int),
+	error = Type.Optional(Type.String),
+})
+
+-- 位置查询输出
+ComponentTypes.LocationQueryOutput = Type.Object({
+	success = Type.Bool,
+	region_id = Type.Optional(Type.String),
+	location_id = Type.Optional(Type.String),
+	error = Type.Optional(Type.String),
+})
+
+-- ============ 实体快照与输出类型占位（组件定义后填充） ============
+-- 这些类型依赖组件类型，将在文件末尾定义
+ComponentTypes.CreatureSnapshot = nil
+ComponentTypes.WorldSnapshot = nil
+ComponentTypes.RegionSnapshot = nil
+ComponentTypes.OrganizationSnapshot = nil
+ComponentTypes.PlayerEntityOutput = nil
+ComponentTypes.NPCEntitiesOutput = nil
+ComponentTypes.WorldEntityOutput = nil
+ComponentTypes.RegionEntitiesOutput = nil
+ComponentTypes.OrganizationEntitiesOutput = nil
+ComponentTypes.StateDataType = nil
+
+-- 辅助函数：注册组件
+local function registerComponent(spec)
+	local result = Service.call("ecs:RegisterComponent", {
+		key = spec.key,
+		name = spec.name,
+		description = spec.description,
+		properties_typedef = Type.serialize(spec.properties),
+		expose_to_blueprint = spec.expose_to_blueprint,
+		priority = spec.priority,
+		trace_info = spec.trace_info or nil,
+	})
+	
+	if not result.success then
+		error("Failed to register component " .. spec.key .. ": " .. (result.error or result._error or "unknown error"))
+	end
+	
+	return result.success
+end
+
+ComponentTypes.Metadata = Type.Object({
+	name = Type.String:desc("实体名称"),
+	desc = Type.String:desc("实体描述"),
+})
+
+-- ============ 通用组件 ============
+ComponentTypes.LogEntry = Type.Object({
+	content = Type.String:desc("日志内容"),
+	add_at = Type.String:desc("添加时间，格式：YYYY年MM月DD日 HH:MM"),
+})
+
+ComponentTypes.Log = Type.Object({
+	entries = Type.Array(ComponentTypes.LogEntry):desc("日志条目列表"),
+})
+
+-- ============ 世界 & 时间 ============
+ComponentTypes.GameTime = Type.Object({
+	year = Type.Int:desc("年"),
+	month = Type.Int:desc("月"),
+	day = Type.Int:desc("日"),
+	hour = Type.Int:desc("小时"),
+	minute = Type.Int:desc("分钟"),
+})
+
+ComponentTypes.DirectorNotes = Type.Object({
+	notes = Type.Array(Type.String):desc("导演笔记列表，用于记录每次生成剧情后的简短总结和今后剧情走向的建议"),
+	flags = Type.Record(Type.Object({
+		id = Type.String:desc("标记ID"),
+		value = Type.Bool:desc("标记状态"),
+		remark = Type.Optional(Type.String):desc("标记备注"),
+	})):desc("导演标记映射表，键为标记ID，值为标记对象，用于记录一些关键的开关，比如是否已经发生过某个重要事件，或者主角已经达成了某个重要的转变等"),
+	stage_goal = Type.Optional(Type.String):desc("当前游戏阶段的叙事目标和节奏控制，供剧情生成参考"),
+})
+
+ComponentTypes.EventEntry = Type.Object({
+	event_id = Type.String:desc("事件唯一标识，命名约定：YYYY_MM_DD_ShortDesc"),
+	title = Type.String:desc("事件标题"),
+	summary = Type.String:desc("事件摘要，简要描述事件的关键内容"),
+	content = Type.String:desc("事件详细内容"),
+	related_entities = Type.Optional(Type.Array(Type.String)):desc("相关实体ID列表，如 creature_id, region_id 等"),
+	created_at = Type.Optional(Type.String):desc("创建时间"),
+	updated_at = Type.Optional(Type.String):desc("最后更新时间"),
+})
+
+ComponentTypes.Events = Type.Object({
+	events = Type.Array(ComponentTypes.EventEntry):desc("剧情事件列表"),
+})
+
+registerComponent({
+	key = "Metadata",
+	name = "元数据",
+	description = "存储实体的基本元数据信息（名称和描述）",
+	properties = ComponentTypes.Metadata
+})
+
+registerComponent({
+	key = "Log",
+	name = "日志",
+	description = "为实体记录发生的事件，供叙事与判定引用。",
+	properties = ComponentTypes.Log
+})
+
+registerComponent({
+	key = "GameTime",
+	name = "游戏时间",
+	description = "虚拟世界当前的日期与时间。",
+	properties = ComponentTypes.GameTime
+})
+
+registerComponent({
+	key = "DirectorNotes",
+	name = "导演笔记",
+	description = "导演笔记与标记，用于记录剧情总结、走向建议和关键事件开关。",
+	properties = ComponentTypes.DirectorNotes
+})
+
+registerComponent({
+	key = "Events",
+	name = "剧情事件",
+	description = "世界级剧情事件列表，记录所有已发生的重要情节事件。与设定文档不同，事件不绑定单个实体。",
+	properties = ComponentTypes.Events
+})
+
+-- ============ 组织系统 ============
+ComponentTypes.Organization = Type.Object({
+	organization_id = Type.String:desc("组织唯一标识符"),
+	name = Type.String:desc("组织名称"),
+	territories = Type.Array(ComponentTypes.TerritoryRef):desc("组织拥有的地块列表"),
+	description = Type.String:desc("组织描述"),	
+})
+
+-- ============ 位置与路径 ============
+ComponentTypes.LocationRef = Type.Object({
+	region_id = Type.String:desc("所在地域ID"),
+	location_id = Type.String:desc("所在地点ID"),
+})
+
+ComponentTypes.Location = Type.Object({
+	id = Type.String:desc("地点ID"),
+	name = Type.String:desc("地点名称"),
+	description = Type.String:desc("地点描述"),
+})	
+
+ComponentTypes.Region = Type.Object({
+	region_id = Type.String:desc("地域ID"),
+	region_name = Type.String:desc("地域名称"),
+	description = Type.String:desc("地域描述"),
+	locations = Type.Array(ComponentTypes.Location):desc("地点列表"),
+	paths = Type.Array(ComponentTypes.Path):desc("可用路径"),
+})
+
+registerComponent({
+	key = "Organization",
+	name = "组织",
+	description = "表示一个组织实体（如门派、势力、政府等）的基本信息",
+	properties = ComponentTypes.Organization
+})
+
+registerComponent({
+	key = "LocationRef",
+	name = "所在位置",
+	description = "实体当前所处地域与地点。",
+	properties = ComponentTypes.LocationRef
+})
+
+registerComponent({
+	key = "Region",
+	name = "地域",
+	description = "一个地域实体，包含地域信息、地点列表与可用路径。",
+	properties = ComponentTypes.Region
+})
+
+-- ============ 属性与状态 ============
+local GenderMap = { male = "男", female = "女", other = "其他" }
+
+ComponentTypes.Creature = Type.Object({
+	creature_id = Type.String:desc("生物唯一标识符"),
+	name = Type.String:desc("生物名称"),
+	appearance = Type.Object({
+		body = Type.String:desc("身体，脸部等外貌描述"),
+		clothing = Type.String:desc("服装描述"),
+	}),
+	gender = Type.Optional(Type.String):desc("性别描述，如男、女、其他"),
+	race = Type.Optional(Type.String):desc("种族描述，如 智人-大和民族，精灵-森林族，兽人-山地部落"),
+	emotion = Type.Optional(Type.String):desc("当前情绪状态的描述"),
+	organization_id = Type.Optional(Type.String):desc("所属组织ID"),
+	titles = Type.Array(Type.String):desc("称号列表"),
+	attrs = ComponentTypes.Attrs,
+	known_infos = Type.Array(Type.String):desc("角色已知信息列表，记录该角色知道的重要情报和事实"),
+	goal = Type.Optional(Type.String):desc("角色当前的目标或意图"),
+})
+
+ComponentTypes.SettingDoc = Type.Object({
+	name = Type.String:desc("文档名称"),
+	content = Type.String:desc("文档内容"),
+	condition = Type.Optional(Type.String):desc("召回条件，满足条件才会被使用"),
+	static_priority = Type.Optional(Type.Int):desc("静态优先级，数值越高越优先，提供此值则必定召回"),
+	disable = Type.Optional(Type.Bool):desc("是否禁用此文档，禁用后永远不会被召回"),
+})
+
+ComponentTypes.BindSetting = Type.Object({
+	documents = Type.Array(ComponentTypes.SettingDoc):desc("该实体的设定文档列表"),
+})
+
+ComponentTypes.StatusEffects = Type.Object({
+	status_effects = Type.Array(ComponentTypes.StatusEffectInstance):desc("状态效果列表"),
+})
+
+ComponentTypes.CustomComponentRegistry = Type.Object({
+	custom_components = Type.Array(Type.Object({
+		component_key = Type.String:desc("组件的key"),
+		component_name = Type.String:desc("组件和名字"),
+		is_array = Type.Bool:desc("数据实例是否是数组"),
+		data_registry = Type.Optional(Type.Array(Type.Object({
+			item_id = Type.String:desc("注册项ID"),
+			data = Type.Object({}):desc("注册项数据模板"),
+		}))):desc("可选的数据实例可能值列表"),
+		type_schema = Type.Optional(Type.Object({})):desc("组件数据类型的JSON Schema")
+	})):desc("自定义组件定义列表"),
+})
+
+ComponentTypes.CustomComponents = Type.Object({
+	custom_components = Type.Array(Type.Object({
+		component_key = Type.String:desc("组件的key"),
+		data = Type.Any:desc("组件数据实例，任意类型"),
+	})):desc("自定义组件数据列表"),
+})
+
+
+registerComponent({
+	key = "Creature",
+	name = "生物属性",
+	description = "表明一个生物拥有的基础属性",
+	properties = ComponentTypes.Creature
+})
+
+registerComponent({
+	key = "StatusEffects",
+	name = "状态效果",
+	description = "实体当前的状态效果列表。",
+	properties = ComponentTypes.StatusEffects
+})
+
+registerComponent({
+	key = "CustomComponentRegistry",
+	name = "自定义组件注册表",
+	description = "在世界实体中定义的自定义组件注册信息，描述可用的自定义组件及其数据模板。",
+	properties = ComponentTypes.CustomComponentRegistry
+})
+
+registerComponent({
+	key = "CustomComponents",
+	name = "自定义组件",
+	description = "角色实体持有的自定义组件数据实例列表。",
+	properties = ComponentTypes.CustomComponents
+})
+
+
+-- ============ 物品 ============
+ComponentTypes.Inventory = Type.Object({
+	items = Type.Array(Type.Object({
+		id = Type.String:desc("物品ID"),
+		count = Type.Int:desc("物品数量"),
+		name = Type.String:desc("物品名称"),
+		description = Type.String:desc("物品描述"),
+		details = Type.Array(Type.String):desc("物品详细说明列表"),
+		equipped = Type.Optional(Type.Bool):desc("是否已装备"),
+	})):desc("物品列表"),
+})
+
+ComponentTypes.Relationship = Type.Object({
+	relationships = Type.Array(Type.Object({
+		target_creature_id = Type.String:desc("目标生物ID"),
+		name = Type.String:desc("关系名称"),
+		value = Type.Int:desc("关系值/好感度，10代表该关系非常浅薄，50代表该关系尚可，100代表该关系非常强烈"),
+	})):desc("关系列表"),
+})
+
+registerComponent({
+	key = "Inventory",
+	name = "背包",
+	description = "携带的物品列表（物品本身不作为独立实体）。",
+	properties = ComponentTypes.Inventory
+})
+
+registerComponent({
+	key = "Relationship",
+	name = "生物和生物之间的关系",
+	description = "任何生物都会持有的组件，表明ta的视角下，和其他目标生物的关系。",
+	properties = ComponentTypes.Relationship
+})
+
+-- ============ 玩家状态 ============
+ComponentTypes.IsPlayer = Type.Object({}):desc("玩家状态数据，永远为空")
+
+-- ============ 世界知识 ============
+ComponentTypes.Registry = Type.Object({
+	creature_attr_fields = Type.Array(Type.Object({
+		field_name = Type.String:desc("属性字段名(英文ID)"),
+		hint = Type.String:desc("属性注解/显示名"),
+		field_display_name = Type.Optional(Type.String):desc("属性在UI中的显示名称，使用用户语言"),
+	})):desc("生物属性字段定义列表，描述生物可拥有的属性及其含义"),
+})
+
+registerComponent({
+	key = "IsPlayer",
+	name = "玩家角色",
+	description = "只是一个标志，标志这个实体是玩家角色，具体的玩家状态数据存储在其他组件中。",
+	properties = ComponentTypes.IsPlayer
+})
+
+registerComponent({
+	key = "Registry",
+	name = "属性字段注册表",
+	description = "定义生物可拥有的属性字段及其含义",
+	properties = ComponentTypes.Registry
+})
+
+-- ============ 填充快照类型（组件定义完成后） ============
+
+-- 角色实体快照
+ComponentTypes.CreatureSnapshot = Type.Object({
+	entity_id = Type.Int,
+	Creature = Type.Optional(ComponentTypes.Creature),
+	LocationRef = Type.Optional(ComponentTypes.LocationRef),
+	Inventory = Type.Optional(ComponentTypes.Inventory),
+	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
+	Relationship = Type.Optional(ComponentTypes.Relationship),
+	Log = Type.Optional(ComponentTypes.Log),
+	IsPlayer = Type.Optional(ComponentTypes.IsPlayer),
+	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	CustomComponents = Type.Optional(ComponentTypes.CustomComponents),
+})
+
+-- 世界实体快照
+ComponentTypes.WorldSnapshot = Type.Object({
+	entity_id = Type.Int,
+	GameTime = Type.Optional(ComponentTypes.GameTime),
+	Registry = Type.Optional(ComponentTypes.Registry),
+	DirectorNotes = Type.Optional(ComponentTypes.DirectorNotes),
+	CustomComponentRegistry = Type.Optional(ComponentTypes.CustomComponentRegistry),
+	Log = Type.Optional(ComponentTypes.Log),
+	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	Events = Type.Optional(ComponentTypes.Events),
+})
+
+-- 地域实体快照
+ComponentTypes.RegionSnapshot = Type.Object({
+	entity_id = Type.Int,
+	Region = Type.Optional(ComponentTypes.Region),
+	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
+	Log = Type.Optional(ComponentTypes.Log),
+	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+})
+
+-- 组织实体快照
+ComponentTypes.OrganizationSnapshot = Type.Object({
+	entity_id = Type.Int,
+	Organization = Type.Optional(ComponentTypes.Organization),
+	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
+	Log = Type.Optional(ComponentTypes.Log),
+	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+})
+
+-- ============ 实体查询输出类型 ============
+
+-- 玩家实体查询输出
+ComponentTypes.PlayerEntityOutput = Type.Object({
+	success = Type.Bool,
+	found = Type.Bool,
+	entity_id = Type.Optional(Type.Int),
+	Creature = Type.Optional(ComponentTypes.Creature),
+	LocationRef = Type.Optional(ComponentTypes.LocationRef),
+	Inventory = Type.Optional(ComponentTypes.Inventory),
+	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
+	Relationship = Type.Optional(ComponentTypes.Relationship),
+	Log = Type.Optional(ComponentTypes.Log),
+	IsPlayer = Type.Optional(ComponentTypes.IsPlayer),
+	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	CustomComponents = Type.Optional(ComponentTypes.CustomComponents),
+	error = Type.Optional(Type.String),
+})
+
+-- NPC实体列表查询输出
+ComponentTypes.NPCEntitiesOutput = Type.Object({
+	success = Type.Bool,
+	entities = Type.Array(ComponentTypes.CreatureSnapshot),
+	count = Type.Int,
+	error = Type.Optional(Type.String),
+})
+
+-- 世界实体查询输出
+ComponentTypes.WorldEntityOutput = Type.Object({
+	success = Type.Bool,
+	found = Type.Bool,
+	entity_id = Type.Optional(Type.Int),
+	GameTime = Type.Optional(ComponentTypes.GameTime),
+	Registry = Type.Optional(ComponentTypes.Registry),
+	DirectorNotes = Type.Optional(ComponentTypes.DirectorNotes),
+	CustomComponentRegistry = Type.Optional(ComponentTypes.CustomComponentRegistry),
+	Log = Type.Optional(ComponentTypes.Log),
+	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	Events = Type.Optional(ComponentTypes.Events),
+	error = Type.Optional(Type.String),
+})
+
+-- 地域实体列表输出
+ComponentTypes.RegionEntitiesOutput = Type.Object({
+	success = Type.Bool,
+	regions = Type.Array(ComponentTypes.RegionSnapshot),
+	count = Type.Int,
+	error = Type.Optional(Type.String),
+})
+-- 组织实体列表输出
+ComponentTypes.OrganizationEntitiesOutput = Type.Object({
+	success = Type.Bool,
+	organizations = Type.Array(ComponentTypes.OrganizationSnapshot),
+	count = Type.Int,
+	error = Type.Optional(Type.String),
+})
+
+registerComponent({
+	key = "BindSetting",
+	name = "设定文档",
+	description = "实体的设定文档列表，直接存储该实体相关的所有设定内容。",
+	properties = ComponentTypes.BindSetting
+})
+
+ComponentTypes.AppInfo = Type.Object({
+	publish_type = Type.Optional(Type.String):desc("发布类型，EDITOR|INK|TEST|CUSTOM, 不填则为EDITOR"),
+})
+
+-- ============ 存档数据类型 ============
+
+-- 完整游戏状态数据（用于存档/读档）
+ComponentTypes.StateDataType = Type.Object({
+	World = ComponentTypes.WorldSnapshot:desc("世界实体快照"),
+	Creatures = Type.Array(ComponentTypes.CreatureSnapshot):desc("所有角色实体（玩家和NPC）"),
+	Regions = Type.Array(ComponentTypes.RegionSnapshot):desc("所有地域实体"),
+	Organizations = Type.Array(ComponentTypes.OrganizationSnapshot):desc("所有组织实体"),
+
+	StoryHistory = Type.Optional(Type.Array(Type.Object({
+		turn_id = Type.String:desc("回合ID"),
+		checkpoint_id = Type.String:desc("存档ID"),
+		story = Type.Any:desc("剧情历史内容"),
+	}))):desc("剧情历史记录列表"),
+	GameInitialStory = Type.Optional(Type.Object(
+		{
+			background = Type.String:desc("玩家视角，看到的背景故事介绍"),
+			start_story = Type.String:desc("游戏开始时的故事片段"),
+		}
+	)):desc("游戏初始故事背景"),
+	SystemPrompts = Type.Optional(Type.Array(Type.Object({
+		id = Type.String:desc("提示词ID"),
+		content = Type.String:desc("提示词内容"),
+	}))):desc("系统提示词"),
+	GameWikiEntry = Type.Optional(Type.Array(Type.Object({
+		title = Type.String:desc("词条标题"),
+		content = Type.String:desc("词条内容"),
+	}))):desc("游戏内置维基词条列表"),
+	AppInfo = Type.Optional(ComponentTypes.AppInfo):desc("独立应用信息"),
+})
+
+return ComponentTypes

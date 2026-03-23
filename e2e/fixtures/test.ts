@@ -7,22 +7,27 @@
  * our test-setup API calls that go directly to localhost.
  *
  * This fixture intercepts browser requests and rewrites non-localhost API
- * URLs to https://localhost:8787, ensuring cookies and auth state are
+ * URLs to the test API origin, ensuring cookies and auth state are
  * consistent across setup + browser tests.
  */
 
 import { test as base } from '@playwright/test';
-import { API_BASE_URL } from './constants.js';
-
-const API_ORIGIN = new URL(API_BASE_URL).origin; // e.g. "https://localhost:8787"
+import { getApiBaseUrl } from './constants.js';
 
 export const test = base.extend({
   page: async ({ page }, use) => {
+    const apiBaseUrl = getApiBaseUrl();
+    const apiOrigin = new URL(apiBaseUrl).origin;
+    const apiPort = new URL(apiBaseUrl).port;
     // Rewrite any non-localhost API request to the test API origin.
-    // Pattern matches any host on port 8787 (the backend port).
-    await page.route(/https?:\/\/(?!localhost)[^/]*:8787\//, (route) => {
+    // Pattern matches any host on the backend port.
+    const pattern = new RegExp(`https?://(?!localhost)[^/]*:${apiPort}/`);
+    await page.route(pattern, (route) => {
       const original = route.request().url();
-      const rewritten = original.replace(/https?:\/\/[^/]+:8787/, API_ORIGIN);
+      const rewritten = original.replace(
+        new RegExp(`https?://[^/]+:${apiPort}`),
+        apiOrigin,
+      );
       route.continue({ url: rewritten });
     });
     await use(page);

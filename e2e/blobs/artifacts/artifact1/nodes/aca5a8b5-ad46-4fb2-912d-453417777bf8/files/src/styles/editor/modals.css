@@ -1,0 +1,126 @@
+/* ============================================================================
+   Modals - 模态框样式
+   ============================================================================ */
+
+/* AI/游戏 弹窗样式 */
+.ai-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1500;
+    backdrop-filter: blur(6px);
+}
+
+.ai-modal {
+    background: linear-gradient(145deg, #1e2a3a 0%, #2d3748 100%);
+    border-radius: 16px;
+    min-width: 400px;
+    max-width: 90vw;
+    max-height: 85vh;
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.ai-modal .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.ai-modal .modal-header h3 {
+    margin: 0;
+    color: #f8d56b;
+    font-size: 1.2rem;
+}
+
+.ai-modal .btn-close {
+    background: transparent;
+    border: none;
+    color: #a0aec0;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.ai-modal .btn-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.ai-modal .modal-content {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+    min-width: 0;
+}
+
+/* 游戏选择网格 */
+.game-select-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+}
+
+.game-card {
+    background: rgba(45, 55, 72, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 20px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    color: #e0e0e0;
+}
+
+.game-card:hover {
+    background: rgba(74, 85, 104, 0.9);
+    border-color: rgba(248, 213, 107, 0.4);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.game-card .game-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+}
+
+.game-card h4 {
+    margin: 0 0 8px 0;
+    color: #f8d56b;
+    font-size: 1.1rem;
+}
+
+.game-card p {
+    margin: 0;
+    color: #a0aec0;
+    font-size: 0.9rem;
+}
+
+/* 通用模态框覆盖层 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+}

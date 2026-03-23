@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Playground</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      window._errors = [];
+      window._rootMutations = 0;
+      window.addEventListener('error', function(e) { window._errors.push('ERR: ' + e.message + ' at ' + (e.filename||'') + ':' + e.lineno); });
+      window.addEventListener('unhandledrejection', function(e) { window._errors.push('PROMISE: ' + (e.reason && e.reason.message ? e.reason.message : String(e.reason))); });
+      window.addEventListener('DOMContentLoaded', function() {
+        var root = document.getElementById('root');
+        if (root) new MutationObserver(function() { window._rootMutations++; }).observe(root, { childList: true, subtree: true });
+      });
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

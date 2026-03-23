@@ -1,0 +1,162 @@
+/* ============================================================================
+   AppInfo Page - 应用信息页面布局
+   ============================================================================ */
+
+.appinfo-page {
+    display: flex;
+    justify-content: center;
+    padding: var(--spacing-8) var(--spacing-6);
+}
+
+.appinfo-container {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
+}
+
+/* 页面标题 */
+.appinfo-header {
+    text-align: center;
+    margin-bottom: var(--spacing-4);
+}
+
+.appinfo-header h2 {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    margin: 0 0 var(--spacing-2);
+    letter-spacing: var(--letter-spacing-tight);
+}
+
+.appinfo-header p {
+    font-size: var(--font-size-sm);
+    color: var(--text-tertiary);
+    margin: 0;
+}
+
+/* 表单卡片 */
+.appinfo-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    padding: var(--spacing-5) var(--spacing-6);
+    transition: border-color var(--transition-fast);
+}
+
+.appinfo-card:hover {
+    border-color: var(--border-color-hover);
+}
+
+.appinfo-card-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--accent-primary);
+    margin-bottom: var(--spacing-4);
+    padding-bottom: var(--spacing-2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* 表单提示文字 */
+.appinfo-card .form-hint {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    margin-top: var(--spacing-1);
+}
+
+/* 必填标记 */
+.appinfo-card .required-mark {
+    color: var(--accent-red);
+}
+
+/* 发布区域 */
+.appinfo-publish-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+    padding-top: var(--spacing-4);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* 状态横幅 */
+.appinfo-status-banner {
+    padding: var(--spacing-4);
+    border-radius: var(--radius-lg);
+    border: 1px solid;
+}
+
+.appinfo-status-banner.ready {
+    background: var(--accent-green-alpha);
+    border-color: var(--accent-green);
+}
+
+.appinfo-status-banner.incomplete {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: var(--accent-primary);
+}
+
+.appinfo-status-title {
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--spacing-1);
+}
+
+.appinfo-status-banner.ready .appinfo-status-title {
+    color: var(--accent-green);
+}
+
+.appinfo-status-banner.incomplete .appinfo-status-title {
+    color: var(--accent-primary);
+}
+
+.appinfo-status-desc {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+}
+
+/* 发布按钮 */
+.appinfo-publish-btn {
+    width: 100%;
+    padding: var(--spacing-4);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-inverse);
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-primary-hover));
+    border: none;
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.appinfo-publish-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-glow-primary);
+}
+
+.appinfo-publish-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* 发布说明 */
+.appinfo-publish-note {
+    font-size: var(--font-size-xs);
+    color: var(--text-tertiary);
+    text-align: center;
+}
+
+/* 响应式 */
+@media (max-width: 640px) {
+    .appinfo-page {
+        padding: var(--spacing-4) var(--spacing-3);
+    }
+
+    .appinfo-card {
+        padding: var(--spacing-4);
+    }
+
+    .appinfo-card .form-grid {
+        grid-template-columns: 1fr;
+    }
+}

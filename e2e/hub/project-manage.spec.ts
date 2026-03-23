@@ -1,14 +1,14 @@
 import { test, expect } from '../fixtures/test.js';
-import { HUB_URL } from '../fixtures/constants.js';
+import { getHubUrl } from '../fixtures/constants.js';
 
 test.describe('Hub — Project management', () => {
   test('navigate to create-project page', async ({ page }) => {
-    await page.goto(`${HUB_URL}/me/create-project`);
+    await page.goto(`${getHubUrl()}/me/create-project`);
     await expect(page.locator('#name')).toBeVisible({ timeout: 10_000 });
   });
 
   test('create a new project', async ({ page }) => {
-    await page.goto(`${HUB_URL}/me/create-project`);
+    await page.goto(`${getHubUrl()}/me/create-project`);
     await expect(page.locator('#name')).toBeVisible({ timeout: 10_000 });
 
     const projectName = `E2E Project ${Date.now()}`;

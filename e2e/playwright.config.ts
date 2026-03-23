@@ -1,20 +1,6 @@
 import { defineConfig } from '@playwright/test';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
 const CI = !!process.env.CI;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WORKSPACE_ROOT = path.resolve(__dirname, '..');
-
-// Local dev servers use HTTPS with self-signed certs.
-// CI starts fresh HTTP servers (no certs available).
-const protocol = CI ? 'http' : 'https';
-
-// Override API URL to always point to localhost (the .env files may use a LAN IP
-// that causes certificate hostname mismatch in the browser).
-const TEST_ENV = {
-  PUBLIC_API_BASE_URL: `${protocol}://localhost:8787/api`,
-};
 
 export default defineConfig({
   testDir: '.',
@@ -26,11 +12,25 @@ export default defineConfig({
   reporter: CI ? 'html' : 'list',
   outputDir: './test-results',
 
+  // globalSetup spawns backend + frontend servers on dynamic ports,
+  // seeds the DB, and returns a teardown function that cleans everything up.
+  globalSetup: './fixtures/global-setup.ts',
+
   use: {
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     // Accept self-signed certs from local dev servers
     ignoreHTTPSErrors: true,
+    // Use system Chrome for proper GPU acceleration (avoids canvas tearing in headed mode)
+    channel: 'chrome',
+    launchOptions: {
+      args: [
+        '--enable-gpu',
+        '--enable-unsafe-webgpu',
+        '--ignore-gpu-blocklist',
+        '--enable-features=Vulkan',
+      ],
+    },
   },
 
   projects: [
@@ -44,7 +44,6 @@ export default defineConfig({
       testDir: './hub',
       dependencies: ['setup'],
       use: {
-        baseURL: `${protocol}://localhost:5173`,
         storageState: '.auth/user.json',
       },
     },
@@ -53,7 +52,6 @@ export default defineConfig({
       testDir: './studio',
       dependencies: ['setup'],
       use: {
-        baseURL: `${protocol}://localhost:5174`,
         storageState: '.auth/user.json',
       },
     },
@@ -67,34 +65,5 @@ export default defineConfig({
     },
   ],
 
-  webServer: [
-    {
-      // CI: start fresh HTTP wrangler dev (no certs)
-      // Local: reuseExistingServer picks up the already-running HTTPS server
-      command: 'cd services/hub && npx wrangler dev',
-      url: `${protocol}://localhost:8787/api`,
-      reuseExistingServer: !CI,
-      timeout: 60_000,
-      cwd: WORKSPACE_ROOT,
-      ignoreHTTPSErrors: true,
-    },
-    {
-      command: 'pnpm --filter pubwiki dev -- --port 5173',
-      url: `${protocol}://localhost:5173`,
-      reuseExistingServer: !CI,
-      timeout: 30_000,
-      cwd: WORKSPACE_ROOT,
-      env: TEST_ENV,
-      ignoreHTTPSErrors: true,
-    },
-    {
-      command: 'pnpm --filter @pubwiki/studio dev -- --port 5174',
-      url: `${protocol}://localhost:5174`,
-      reuseExistingServer: !CI,
-      timeout: 30_000,
-      cwd: WORKSPACE_ROOT,
-      env: TEST_ENV,
-      ignoreHTTPSErrors: true,
-    },
-  ],
+  // Servers are managed by globalSetup — no webServer config needed.
 });

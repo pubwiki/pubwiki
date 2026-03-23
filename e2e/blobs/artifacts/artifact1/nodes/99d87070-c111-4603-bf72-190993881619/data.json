@@ -1,0 +1,12 @@
+{
+  "id": "99d87070-c111-4603-bf72-190993881619",
+  "type": "PROMPT",
+  "name": "",
+  "commit": "a410428b89fdb3ffdc7cc3da57efd4de420e21c4cc194fa425c2629ee1fbc9ca",
+  "contentHash": "9bd06f95d84a7b1d366848b452780831ccac555b2a0363691ceb2fc889ba4f50",
+  "parent": null,
+  "content": {
+    "type": "PROMPT",
+    "blocks": []
+  }
+}
