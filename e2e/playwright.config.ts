@@ -41,9 +41,6 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     // Accept self-signed certs from local dev servers
     ignoreHTTPSErrors: true,
-    // Use system Chrome for proper GPU acceleration (avoids canvas tearing in headed mode)
-    channel: 'chrome',
-    launchOptions: { args: chromeArgs },
   },
 
   projects: [
@@ -51,24 +48,38 @@ export default defineConfig({
     {
       name: 'setup',
       testMatch: 'fixtures/auth.setup.ts',
+      use: { channel: 'chrome', launchOptions: { args: chromeArgs } },
     },
     {
       name: 'hub',
       testDir: './hub',
       dependencies: ['setup'],
-      use: authUse,
+      use: { ...authUse, channel: 'chrome', launchOptions: { args: chromeArgs } },
     },
     {
       name: 'studio',
       testDir: './studio',
       dependencies: ['setup'],
-      use: authUse,
+      use: { ...authUse, channel: 'chrome', launchOptions: { args: chromeArgs } },
     },
     {
       name: 'integration',
       testDir: './integration',
       dependencies: ['setup'],
-      use: authUse,
+      use: { ...authUse, channel: 'chrome', launchOptions: { args: chromeArgs } },
+    },
+
+    // ── Firefox ───────────────────────────────────────────────
+    {
+      name: 'firefox-setup',
+      testMatch: 'fixtures/auth.setup.ts',
+      use: { browserName: 'firefox' },
+    },
+    {
+      name: 'firefox-integration',
+      testDir: './integration',
+      dependencies: ['firefox-setup'],
+      use: { ...authUse, browserName: 'firefox' },
     },
 
     // ── Compatibility: Chrome 130 ──────────────────────────────
