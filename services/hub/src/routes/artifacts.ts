@@ -315,6 +315,30 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
     });
   }
 
+  // Upload build archives to R2 and register in build_cache table BEFORE
+  // committing, so the build data is available when DB records become visible.
+  // Content-addressed keys make this idempotent — orphans from a later
+  // failed commit are harmless.
+  const buildCacheService = new BuildCacheService(createDb(c.env.DB));
+  for (const [buildCacheKey, archiveBuffer] of buildArchives.entries()) {
+    const releaseHash = await computeSha256Hex(archiveBuffer);
+    const fileHashes = buildFileHashes.get(buildCacheKey) ?? {};
+    console.log(`[artifacts/create] Uploading build: cacheKey=${buildCacheKey}, releaseHash=${releaseHash}, archiveSize=${archiveBuffer.byteLength}, fileHashes keys=${Object.keys(fileHashes).length}`);
+    // First-write-wins: register cacheKey -> releaseHash mapping.
+    // If the returned releaseHash differs from ours, another writer already
+    // registered this cacheKey — the archive is already in R2, skip upload.
+    const committed = await buildCacheService.put({ cacheKey: buildCacheKey, releaseHash, fileHashes });
+    if (committed.releaseHash === releaseHash) {
+      const r2Key = `builds/${releaseHash}`;
+      console.log(`[artifacts/create] Uploading R2: ${r2Key} (${archiveBuffer.byteLength} bytes)`);
+      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+        httpMetadata: { contentType: 'application/gzip' },
+      });
+    } else {
+      console.log(`[artifacts/create] Build already exists: committed=${committed.releaseHash} vs ours=${releaseHash}`);
+    }
+  }
+
   // Commit database operations
   // UNIQUE constraint violation is thrown here if artifact or version already exists,
   // causing the entire batch to rollback (no orphan records)
@@ -325,24 +349,6 @@ artifactsRoute.post('/', authMiddleware, async (c) => {
       return conflict(c, `Artifact ${metadata.artifactId} already exists. Use PATCH for graph changes or PUT /metadata for metadata changes.`);
     }
     throw error;
-  }
-
-  // Upload build archives to R2 (releaseHash as key, output-content-addressable)
-  // and register in build_cache table
-  const buildCacheService = new BuildCacheService(createDb(c.env.DB));
-  for (const [buildCacheKey, archiveBuffer] of buildArchives.entries()) {
-    const releaseHash = await computeSha256Hex(archiveBuffer);
-    const fileHashes = buildFileHashes.get(buildCacheKey) ?? {};
-    // First-write-wins: register cacheKey -> releaseHash mapping.
-    // If the returned releaseHash differs from ours, another writer already
-    // registered this cacheKey — the archive is already in R2, skip upload.
-    const committed = await buildCacheService.put({ cacheKey: buildCacheKey, releaseHash, fileHashes });
-    if (committed.releaseHash === releaseHash) {
-      const r2Key = `builds/${releaseHash}`;
-      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
-        httpMetadata: { contentType: 'application/gzip' },
-      });
-    }
   }
 
   // Audit log
@@ -622,6 +628,30 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
     });
   }
 
+  // Upload build archives to R2 and register in build_cache table BEFORE
+  // committing, so the build data is available when DB records become visible.
+  // Content-addressed keys make this idempotent — orphans from a later
+  // failed commit are harmless.
+  const buildCacheService = new BuildCacheService(createDb(c.env.DB));
+  for (const [buildCacheKey, archiveBuffer] of buildArchives.entries()) {
+    const releaseHash = await computeSha256Hex(archiveBuffer);
+    const fileHashes = buildFileHashes.get(buildCacheKey) ?? {};
+    console.log(`[artifacts/patch] Uploading build: cacheKey=${buildCacheKey}, releaseHash=${releaseHash}, archiveSize=${archiveBuffer.byteLength}, fileHashes keys=${Object.keys(fileHashes).length}`);
+    // First-write-wins: register cacheKey -> releaseHash mapping.
+    // If the returned releaseHash differs from ours, another writer already
+    // registered this cacheKey — the archive is already in R2, skip upload.
+    const committed = await buildCacheService.put({ cacheKey: buildCacheKey, releaseHash, fileHashes });
+    if (committed.releaseHash === releaseHash) {
+      const r2Key = `builds/${releaseHash}`;
+      console.log(`[artifacts/patch] Uploading R2: ${r2Key} (${archiveBuffer.byteLength} bytes)`);
+      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
+        httpMetadata: { contentType: 'application/gzip' },
+      });
+    } else {
+      console.log(`[artifacts/patch] Build already exists: committed=${committed.releaseHash} vs ours=${releaseHash}`);
+    }
+  }
+
   // Commit database operations
   // UNIQUE constraint violation is thrown here if version with same commit already exists,
   // causing the entire batch to rollback (no orphan records)
@@ -632,24 +662,6 @@ artifactsRoute.patch('/', authMiddleware, async (c) => {
       return conflict(c, `Version with commit ${metadata.commit} already exists for artifact ${metadata.artifactId}. This indicates a duplicate patch request.`);
     }
     throw error;
-  }
-
-  // Upload build archives to R2 (releaseHash as key, output-content-addressable)
-  // and register in build_cache table
-  const buildCacheService = new BuildCacheService(createDb(c.env.DB));
-  for (const [buildCacheKey, archiveBuffer] of buildArchives.entries()) {
-    const releaseHash = await computeSha256Hex(archiveBuffer);
-    const fileHashes = buildFileHashes.get(buildCacheKey) ?? {};
-    // First-write-wins: register cacheKey -> releaseHash mapping.
-    // If the returned releaseHash differs from ours, another writer already
-    // registered this cacheKey — the archive is already in R2, skip upload.
-    const committed = await buildCacheService.put({ cacheKey: buildCacheKey, releaseHash, fileHashes });
-    if (committed.releaseHash === releaseHash) {
-      const r2Key = `builds/${releaseHash}`;
-      await c.env.R2_BUCKET.put(r2Key, archiveBuffer, {
-        httpMetadata: { contentType: 'application/gzip' },
-      });
-    }
   }
 
   // Audit log
