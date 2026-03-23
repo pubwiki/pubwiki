@@ -148,11 +148,28 @@ export async function runBuild(params: {
 				await importMapManager.mergeResolvedPackages(resolvedVersions);
 
 				// Recompute hashes since importmap.json was modified.
-				finalContentHash = await computeVfsContentHash(projectId, vfsNodeId);
+				const [newContentHash, newFileHashes] = await Promise.all([
+					computeVfsContentHash(projectId, vfsNodeId),
+					computeVfsFileHashes(projectId, vfsNodeId),
+				]);
+				finalContentHash = newContentHash;
 				finalBuildCacheKey = await computeBuildCacheKey({
 					filesHash: finalContentHash,
 					entryFiles: projectConfig.entryFiles,
 				});
+
+				// The build output was stored under the original buildCacheKey.
+				// Create an alias so finalBuildCacheKey also resolves to the same
+				// compiled output. alias() directly links the two keys without
+				// dep-matching, which handles the chicken-and-egg situation where
+				// importmap.json (a build dep) was updated after the build ran,
+				// making its hash — and therefore the cache key — differ.
+				const aliasOk = await buildCacheStorage.alias(buildCacheKey, finalBuildCacheKey, newFileHashes);
+				if (!aliasOk) {
+					// Source key not in cache (shouldn't happen) — fall back to original key.
+					finalBuildCacheKey = buildCacheKey;
+					finalContentHash = contentHash;
+				}
 			} catch (err) {
 				console.warn('[buildRunner] Failed to write back import map:', err);
 			}

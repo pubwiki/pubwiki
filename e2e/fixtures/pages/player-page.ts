@@ -69,8 +69,30 @@ export class PlayerPage {
     return this.page.locator('text=error').isVisible();
   }
 
-  /** Assert that the remote build cache (L2) was used and no local compilation (L3) occurred */
+  /** Assert that a pre-built cache (L1 OPFS or L2 remote) was used and no local compilation (L3) occurred */
   assertBuildCacheUsed() {
+    const l1Hits = this.consoleLogs.filter(l => l.includes('[BuildAwareVfs] L1 (OPFS) hit'));
+    const l2Hits = this.consoleLogs.filter(l => l.includes('[BuildAwareVfs] L2 (remote) hit'));
+    const l3Fallbacks = this.consoleLogs.filter(l => l.includes('[BuildAwareVfs] L3 (compile) fallback'));
+
+    if (l1Hits.length === 0 && l2Hits.length === 0) {
+      throw new Error(
+        'Expected at least one L1 (OPFS) or L2 (remote) build cache hit, but found none.\n' +
+        `Relevant logs:\n${this.consoleLogs.filter(l => l.includes('[BuildAwareVfs]')).join('\n')}`
+      );
+    }
+
+    if (l3Fallbacks.length > 0) {
+      throw new Error(
+        `Expected no L3 (compile) fallbacks, but found ${l3Fallbacks.length}:\n` +
+        l3Fallbacks.join('\n')
+      );
+    }
+  }
+
+  /** Assert that the remote build cache (L2) was used — not L1 (OPFS) or L3 (compile).
+   *  Use this after explicitly clearing sandbox OPFS to verify R2 delivery end-to-end. */
+  assertRemoteBuildCacheUsed() {
     const l2Hits = this.consoleLogs.filter(l => l.includes('[BuildAwareVfs] L2 (remote) hit'));
     const l3Fallbacks = this.consoleLogs.filter(l => l.includes('[BuildAwareVfs] L3 (compile) fallback'));
 

@@ -44,6 +44,7 @@ export const EditorTabs: React.FC<EditorTabsProps> = ({ activeTab, onTabChange, 
       label: t('sidebar.storyFlow'),
       items: [
         { key: 'initial-story', label: t('sidebar.initialStory'), icon: '🎬' },
+        { key: 'init-choice', label: t('sidebar.initChoice'), icon: '🎭' },
         { key: 'story-history', label: t('sidebar.storyHistory'), icon: '📜' },
       ]
     },

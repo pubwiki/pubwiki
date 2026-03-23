@@ -85,9 +85,11 @@ export function loadAPIConfigFromStorage(): SetAPIConfigInput {
 }
 
 // 保存配置到 localStorage
+export const API_CONFIG_CHANGED_EVENT = 'api-config-changed'
 export function saveAPIConfigToStorage(config: SetAPIConfigInput): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(config))
+    window.dispatchEvent(new CustomEvent(API_CONFIG_CHANGED_EVENT))
   } catch (e) {
     console.error('Failed to save API config to storage:', e)
   }

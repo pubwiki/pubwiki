@@ -46,6 +46,7 @@ export { WorldEditor } from './WorldEditor'
 // 其他编辑器
 export {
   GameInitialStoryEditor,
+  GameInitChoiceEditor,
   GameWikiEntryEditor,
   StoryHistoryEditor,
   SaveManager

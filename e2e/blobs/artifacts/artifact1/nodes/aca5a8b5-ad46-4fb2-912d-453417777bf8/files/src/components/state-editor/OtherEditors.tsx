@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { 
+import type {
   SettingDocument,
   StateData,
   BindSetting,
@@ -8,7 +8,9 @@ import type {
   StoryHistoryEntry,
   CreatureSnapshot,
   RegionSnapshot,
-  OrganizationSnapshot
+  OrganizationSnapshot,
+  GameInitChoice,
+  GameInitChoiceItem
 } from '../../api/types'
 import type { GameInitialStory } from '../../api/types'
 import { showAlert, showConfirm, showPrompt } from '../AlertDialog'
@@ -898,6 +900,243 @@ export const GameInitialStoryEditor: React.FC<{
           t('others.openingPlaceholder')
         )}
       </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// 开局选择编辑器
+// ============================================================================
+
+/** 多选 chip 组件：点击候选项 toggle 选中状态 */
+const ChipMultiSelect: React.FC<{
+  label: string
+  hint?: string
+  options: { id: string; name: string }[]
+  selected: string[]
+  onChange: (ids: string[]) => void
+}> = ({ label, hint, options, selected, onChange }) => {
+  const toggle = (id: string) => {
+    onChange(selected.includes(id) ? selected.filter(v => v !== id) : [...selected, id])
+  }
+  return (
+    <div className="form-group">
+      <label>{label}</label>
+      {hint && <span style={{ fontSize: '0.75rem', color: 'var(--paper-text-tertiary)', marginTop: -4 }}>{hint}</span>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minHeight: 32 }}>
+        {options.length === 0 ? (
+          <span style={{ fontSize: '0.8rem', color: 'var(--paper-text-tertiary)', fontStyle: 'italic' }}>--</span>
+        ) : options.map(opt => {
+          const active = selected.includes(opt.id)
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => toggle(opt.id)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '4px 12px', borderRadius: 'var(--paper-radius-pill)',
+                border: `2px solid ${active ? 'var(--paper-coral)' : 'var(--paper-border-color)'}`,
+                background: active ? 'rgba(255,107,107,0.1)' : 'var(--paper-bg-content)',
+                color: active ? 'var(--paper-coral)' : 'var(--paper-text-secondary)',
+                fontWeight: active ? 600 : 400,
+                fontSize: '0.8rem', cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {active && <span style={{ fontSize: '0.7rem' }}>✕</span>}
+              {opt.name}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+export const GameInitChoiceEditor: React.FC<{
+  choice: GameInitChoice | undefined
+  creatures?: CreatureSnapshot[]
+  regions?: RegionSnapshot[]
+  organizations?: OrganizationSnapshot[]
+  onChange: (choice: GameInitChoice) => void
+}> = ({ choice, creatures, regions, organizations, onChange }) => {
+  const { t } = useTranslation('editor')
+  const current: GameInitChoice = choice || { enable: false, choices: [] }
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null)
+
+  const updateChoice = (index: number, updates: Partial<GameInitChoiceItem>) => {
+    const newChoices = [...current.choices]
+    newChoices[index] = { ...newChoices[index], ...updates }
+    onChange({ ...current, choices: newChoices })
+  }
+
+  const addChoice = () => {
+    const id = `choice_${Date.now().toString(36)}`
+    const newItem: GameInitChoiceItem = { id, name: '', description: '', player_creature_id: '' }
+    onChange({ ...current, choices: [...current.choices, newItem] })
+    setExpandedIndex(current.choices.length)
+  }
+
+  const removeChoice = async (index: number) => {
+    const name = current.choices[index]?.name || current.choices[index]?.id
+    if (!await showConfirm(t('others.confirmDeleteChoice', { name }))) return
+    onChange({ ...current, choices: current.choices.filter((_, i) => i !== index) })
+    if (expandedIndex === index) setExpandedIndex(null)
+    else if (expandedIndex !== null && expandedIndex > index) setExpandedIndex(expandedIndex - 1)
+  }
+
+  const creatureOptions = useMemo(() =>
+    (creatures || []).filter(c => c.Creature?.creature_id)
+      .map(c => ({ id: c.Creature!.creature_id, name: c.Creature!.name || c.Creature!.creature_id })),
+    [creatures])
+
+  const regionOptions = useMemo(() =>
+    (regions || []).filter(r => r.Region?.region_id)
+      .map(r => ({ id: r.Region!.region_id, name: r.Region!.region_name || r.Region!.region_id })),
+    [regions])
+
+  const orgOptions = useMemo(() =>
+    (organizations || []).filter(o => o.Organization?.organization_id)
+      .map(o => ({ id: o.Organization!.organization_id, name: o.Organization!.name || o.Organization!.organization_id })),
+    [organizations])
+
+  return (
+    <div className="editor-section" style={{ maxWidth: 720, margin: '0 auto' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+        <div>
+          <h3 className="section-title" style={{ margin: 0 }}>{t('others.initChoiceTitle', { count: current.choices.length })}</h3>
+          <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: 'var(--paper-text-tertiary)' }}>{t('others.initChoiceHint')}</p>
+        </div>
+        <button className="paper-btn paper-btn-primary" onClick={addChoice} style={{ flexShrink: 0 }}>
+          <FilePlus size={14} /> {t('others.addChoice')}
+        </button>
+      </div>
+
+      {/* Enable toggle */}
+      <label className="form-checkbox" style={{ marginBottom: 20 }}>
+        <input
+          type="checkbox"
+          checked={current.enable}
+          onChange={e => onChange({ ...current, enable: e.target.checked })}
+        />
+        <span style={{ fontWeight: 600 }}>{t('others.initChoiceEnable')}</span>
+        <span style={{ fontSize: '0.75rem', color: 'var(--paper-text-tertiary)' }}>{t('others.initChoiceEnableHint')}</span>
+      </label>
+
+      {/* Choice cards */}
+      {current.choices.length === 0 ? (
+        <div className="paper-grid-empty" style={{ padding: 40 }}>
+          <p style={{ margin: '0 0 4px', fontWeight: 600 }}>{t('others.noChoices')}</p>
+          <p style={{ margin: 0, fontSize: '0.8rem' }}>{t('others.clickToAddChoice')}</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {current.choices.map((item, index) => {
+            const isExpanded = expandedIndex === index
+            return (
+              <div key={item.id} className="collapsible-section">
+                {/* Collapsed header */}
+                <div className="section-header"
+                  onClick={() => setExpandedIndex(isExpanded ? null : index)}>
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {item.name || item.id}
+                    {item.player_creature_id && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--paper-text-tertiary)', fontWeight: 400 }}>
+                        → {creatureOptions.find(c => c.id === item.player_creature_id)?.name || item.player_creature_id}
+                      </span>
+                    )}
+                  </span>
+                  <button
+                    className="paper-card-actions"
+                    onClick={e => { e.stopPropagation(); removeChoice(index) }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--paper-text-tertiary)', padding: 4 }}
+                    title="Delete"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+
+                {/* Expanded detail */}
+                {isExpanded && (
+                  <div className="section-content" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {/* Basic fields - 2 col grid */}
+                    <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                      <div className="form-group">
+                        <label>{t('others.choiceId')}</label>
+                        <input type="text" value={item.id} onChange={e => updateChoice(index, { id: e.target.value })} />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('others.choiceName')}</label>
+                        <input type="text" value={item.name} onChange={e => updateChoice(index, { name: e.target.value })} />
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label>{t('others.choiceDescription')}</label>
+                      <textarea rows={2} value={item.description} onChange={e => updateChoice(index, { description: e.target.value })} />
+                    </div>
+
+                    {/* Player creature selection */}
+                    <div className="form-group">
+                      <label>{t('others.playerCreatureId')}</label>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--paper-text-tertiary)', marginTop: -4 }}>{t('others.playerCreatureIdHint')}</span>
+                      <select value={item.player_creature_id}
+                        onChange={e => updateChoice(index, { player_creature_id: e.target.value })}>
+                        <option value="">--</option>
+                        {creatureOptions.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.id})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Exclude multi-selects */}
+                    <ChipMultiSelect
+                      label={t('others.excludeCreatureIds')}
+                      hint={t('others.excludeCreatureIdsHint')}
+                      options={creatureOptions}
+                      selected={item.exclude_creature_ids || []}
+                      onChange={ids => updateChoice(index, { exclude_creature_ids: ids.length ? ids : undefined })}
+                    />
+                    <ChipMultiSelect
+                      label={t('others.excludeRegionIds')}
+                      hint={t('others.excludeRegionIdsHint')}
+                      options={regionOptions}
+                      selected={item.exclude_region_ids || []}
+                      onChange={ids => updateChoice(index, { exclude_region_ids: ids.length ? ids : undefined })}
+                    />
+                    <ChipMultiSelect
+                      label={t('others.excludeOrgIds')}
+                      hint={t('others.excludeOrgIdsHint')}
+                      options={orgOptions}
+                      selected={item.exclude_organization_ids || []}
+                      onChange={ids => updateChoice(index, { exclude_organization_ids: ids.length ? ids : undefined })}
+                    />
+
+                    {/* Override stories */}
+                    <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+                      <div className="form-group">
+                        <label>{t('others.overrideBackgroundStory')}</label>
+                        <textarea rows={3} value={item.background_story || ''}
+                          placeholder={t('others.overrideStoryHint')}
+                          onChange={e => updateChoice(index, { background_story: e.target.value || undefined })} />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('others.overrideStartStory')}</label>
+                        <textarea rows={3} value={item.start_story || ''}
+                          placeholder={t('others.overrideStoryHint')}
+                          onChange={e => updateChoice(index, { start_story: e.target.value || undefined })} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

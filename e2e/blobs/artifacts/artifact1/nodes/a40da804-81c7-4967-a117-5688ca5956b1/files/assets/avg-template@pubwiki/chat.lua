@@ -116,22 +116,16 @@ local function buildConfigAndHistory(use_model_type, config, premessages, wrap_s
     --]
     local extraBody = {
         safety_setting = {
-            {category = "HARM_CATEGORY_HARASSMENT", threshold = "OFF"},
-            {category = "HARM_CATEGORY_HATE_SPEECH", threshold = "OFF"},
-            {category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold = "OFF"},
-            {category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "OFF"},
+            {category = "HARM_CATEGORY_HARASSMENT", threshold = "BLOCK_NONE"},
+            {category = "HARM_CATEGORY_HATE_SPEECH", threshold = "BLOCK_NONE"},
+            {category = "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold = "BLOCK_NONE"},
+            {category = "HARM_CATEGORY_DANGEROUS_CONTENT", threshold = "BLOCK_NONE"},
             {category = "HARM_CATEGORY_CIVIC_INTEGRITY", threshold = "BLOCK_NONE"},
         }
     }
     -- OpenRouter + Claude/Gemini 模型：锁定 provider 为 google-vertex2，提升 KV cache 命中率
     local baseUrl = final_config.baseUrl or ""
     local model = final_config.model or ""
-    if baseUrl:find("openrouter") and (model:find("claude") or model:find("gemini")) then
-        extraBody.provider = {
-            order = {"google-vertex"}
-        }
-        print("[Chat] OpenRouter + Claude/Gemini detected, pinning provider to google-vertex2")
-    end
     final_config["extraBody"] = extraBody
     local history = LLM.addMessage(SystemPrompt .. (wrap_system_prompt or ""), "system")
     if premessages and type(premessages) == "table" then

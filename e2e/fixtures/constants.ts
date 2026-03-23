@@ -59,6 +59,10 @@ export function getPlayerUrl(): string {
   return requireUrl('E2E_PLAYER_URL', (p) => `${getProtocol()}://localhost:${p.playerPort}`);
 }
 
+export function getSandboxUrl(): string {
+  return requireUrl('E2E_SANDBOX_URL', (p) => `${getProtocol()}://localhost:${p.sandboxPort}`);
+}
+
 /** Default password for all test users */
 export const TEST_PASSWORD = 'TestPassword123!';
 

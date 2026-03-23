@@ -135,6 +135,9 @@ Service:definePure():namespace("state"):name("GetStateFromGame")
         local appInfoResults = State:get(STATE_SUBJECT,"game://state/app_info")
         result.AppInfo = appInfoResults or nil
 
+        local gameInitChoiceResults = State:get(STATE_SUBJECT,"game://state/game_init_choice")
+        result.GameInitChoice = gameInitChoiceResults or nil
+
         return {
             success = true,
             data = result,
@@ -243,7 +246,13 @@ Service:define():namespace("state"):name("LoadStateToGame")
         if stateData.GameWikiEntry then
             State:set(STATE_SUBJECT, "game://state/game_wiki_entry", stateData.GameWikiEntry)
         end
-        
+
+        State:delete(STATE_SUBJECT, "game://state/game_init_choice")
+
+        if stateData.GameInitChoice then
+            State:set(STATE_SUBJECT, "game://state/game_init_choice", stateData.GameInitChoice)
+        end
+
         -- 4. 创建世界实体
         if stateData.World then
             local world = stateData.World
@@ -733,6 +742,124 @@ Service:define():namespace("state"):name("ClearStoryHistory")
         return { success = true }
     end)
 
+-- ============ 开局选择服务：InitialGameFromChoice ============
+
+Service:define():namespace("state"):name("InitialGameFromChoice")
+    :desc("根据开局选项ID初始化游戏：设置玩家角色、删除排除实体、覆盖开场故事、禁用选择。")
+    :usage("传入 choice_id，服务会：1) 给指定角色添加 IsPlayer 组件，其余角色移除 IsPlayer；2) 删除排除的角色/地域/组织实体；3) 覆盖 GameInitialStory（如有）；4) 将 enable 置为 false。")
+    :inputs(Type.Object({
+        choice_id = Type.String:desc("选中的开局选项ID"),
+    }))
+    :outputs(Type.Object({
+        success = Type.Bool,
+        error = Type.Optional(Type.String),
+    }))
+    :impl(function(inputs)
+        local choiceId = inputs.choice_id
+
+        -- 1. 读取 GameInitChoice
+        local choiceData = State:get(STATE_SUBJECT, "game://state/game_init_choice")
+        if not choiceData or not choiceData.enable then
+            return { success = false, error = "GameInitChoice is not enabled or not found" }
+        end
+
+        -- 2. 查找选项
+        local selectedChoice = nil
+        for _, choice in ipairs(choiceData.choices or {}) do
+            if choice.id == choiceId then
+                selectedChoice = choice
+                break
+            end
+        end
+
+        if not selectedChoice then
+            return { success = false, error = "Choice not found: " .. choiceId }
+        end
+
+        local playerCreatureId = selectedChoice.player_creature_id
+
+        -- 3. 遍历所有 Creature 实体，设置/移除 IsPlayer
+        local creatureEntities = Service.call("ecs:GetEntitiesByComponent", { component_keys = {"Creature"} })
+        for _, eid in ipairs(creatureEntities.entity_ids or {}) do
+            local creatureComp = Service.call("ecs:GetComponentData", { entity_id = eid, component_key = "Creature" })
+            if creatureComp.found then
+                local cid = creatureComp.data.creature_id
+                local hasPlayer = Service.call("ecs:GetComponentData", { entity_id = eid, component_key = "IsPlayer" })
+
+                if cid == playerCreatureId then
+                    -- 需要成为玩家
+                    if not hasPlayer.found then
+                        Service.call("ecs:AddComponent", { entity_id = eid, component_key = "IsPlayer", data = {} })
+                    end
+                else
+                    -- 需要移除玩家标记
+                    if hasPlayer.found then
+                        Service.call("ecs:RemoveComponent", { entity_id = eid, component_key = "IsPlayer" })
+                    end
+                end
+            end
+        end
+
+        -- 4. 删除排除的角色
+        local excludeCreatures = selectedChoice.exclude_creature_ids or {}
+        for _, excludeCid in ipairs(excludeCreatures) do
+            for _, eid in ipairs(creatureEntities.entity_ids or {}) do
+                local comp = Service.call("ecs:GetComponentData", { entity_id = eid, component_key = "Creature" })
+                if comp.found and comp.data.creature_id == excludeCid then
+                    Service.call("ecs:DespawnEntity", { entity_id = eid })
+                    break
+                end
+            end
+        end
+
+        -- 5. 删除排除的地域
+        local excludeRegions = selectedChoice.exclude_region_ids or {}
+        if #excludeRegions > 0 then
+            local regionEntities = Service.call("ecs:GetEntitiesByComponent", { component_keys = {"Region"} })
+            for _, excludeRid in ipairs(excludeRegions) do
+                for _, eid in ipairs(regionEntities.entity_ids or {}) do
+                    local comp = Service.call("ecs:GetComponentData", { entity_id = eid, component_key = "Region" })
+                    if comp.found and comp.data.region_id == excludeRid then
+                        Service.call("ecs:DespawnEntity", { entity_id = eid })
+                        break
+                    end
+                end
+            end
+        end
+
+        -- 6. 删除排除的组织
+        local excludeOrgs = selectedChoice.exclude_organization_ids or {}
+        if #excludeOrgs > 0 then
+            local orgEntities = Service.call("ecs:GetEntitiesByComponent", { component_keys = {"Organization"} })
+            for _, excludeOid in ipairs(excludeOrgs) do
+                for _, eid in ipairs(orgEntities.entity_ids or {}) do
+                    local comp = Service.call("ecs:GetComponentData", { entity_id = eid, component_key = "Organization" })
+                    if comp.found and comp.data.organization_id == excludeOid then
+                        Service.call("ecs:DespawnEntity", { entity_id = eid })
+                        break
+                    end
+                end
+            end
+        end
+
+        -- 7. 覆盖 GameInitialStory（如选项指定了）
+        if selectedChoice.background_story or selectedChoice.start_story then
+            local currentStory = State:get(STATE_SUBJECT, "game://state/game_initial_story") or {}
+            if selectedChoice.background_story then
+                currentStory.background = selectedChoice.background_story
+            end
+            if selectedChoice.start_story then
+                currentStory.start_story = selectedChoice.start_story
+            end
+            State:set(STATE_SUBJECT, "game://state/game_initial_story", currentStory)
+        end
+
+        -- 8. 将 enable 置为 false
+        choiceData.enable = false
+        State:set(STATE_SUBJECT, "game://state/game_init_choice", choiceData)
+
+        return { success = true }
+    end)
 
 return {
     StateDataType = StateDataType,

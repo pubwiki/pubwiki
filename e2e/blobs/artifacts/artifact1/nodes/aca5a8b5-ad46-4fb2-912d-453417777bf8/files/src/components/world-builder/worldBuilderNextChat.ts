@@ -734,10 +734,180 @@ async function* runDataPhase(
             wbLogger.log({ category: 'system', message: `Phase ${phaseId}: ${validationResult.warnings.length} warning(s)`, data: validationResult.warnings })
         }
 
+        // Auto-fix: world_data custom components with empty fields
+        if (phaseId === 'world_data') {
+            output = yield* autoFixCustomComponentFields(config, session, output, contextMessages)
+        }
+
         yield { type: 'phase_output', phaseId, output }
         yield { type: 'done' }
         return
     }
+}
+
+/**
+ * Detect custom components with empty/missing fields and auto-generate their schemas.
+ * Makes a targeted LLM call for only the incomplete components.
+ */
+async function* autoFixCustomComponentFields(
+    config: CopilotConfig,
+    _session: WBNSession,
+    output: Record<string, unknown>,
+    contextMessages: Array<{ role: string; content: string }>,
+): AsyncGenerator<WBNStreamEvent, Record<string, unknown>> {
+    const registry = output.CustomComponentRegistry as any
+    if (!registry?.custom_components?.length) return output
+
+    const incomplete = (registry.custom_components as any[]).filter(
+        (c: any) => !c.fields || c.fields.length === 0
+    )
+    if (incomplete.length === 0) return output
+
+    const componentNames = incomplete.map((c: any) => c.component_key).join(', ')
+    wbLogger.log({ category: 'system', message: `Auto-fix: ${incomplete.length} custom component(s) missing fields: ${componentNames}` })
+
+    yield { type: 'extraction_progress', message: `Refining component details: ${componentNames}...` }
+
+    // Build a focused prompt asking only for the missing schemas
+    const componentList = incomplete.map((c: any) =>
+        `- **${c.component_key}** (${c.component_name})`
+    ).join('\n')
+
+    // Gather relevant documents that might describe these components
+    const docs = (output.documents as any[]) || []
+    const relevantDocs = docs.filter((d: any) => {
+        const nameL = (d.name || '').toLowerCase()
+        const contentL = (d.content || '').toLowerCase()
+        return incomplete.some((c: any) => {
+            const key = c.component_key.toLowerCase()
+            const name = (c.component_name || '').toLowerCase()
+            return nameL.includes(key) || nameL.includes(name)
+                || contentL.includes(key) || contentL.includes(name)
+        })
+    })
+
+    const docContext = relevantDocs.length > 0
+        ? `\n\n## Related Setting Documents\n\n${relevantDocs.map((d: any) => `### ${d.name}\n${d.content}`).join('\n\n')}`
+        : ''
+
+    const fixPrompt = `The following custom components were registered but are missing their field definitions (empty fields array). Please generate the complete fields array for each component.
+
+## Components Needing Fields
+
+${componentList}
+
+## Already Generated Data Context
+
+**creature_attr_fields**: ${JSON.stringify((output.creature_attr_fields as any[])?.map((f: any) => f.field_name) || [])}
+${docContext}
+
+## field_type Rules
+
+- Primitives: "string", "number", "boolean"
+- Arrays of primitives: "array<string>", "array<number>"
+- Nested object: "object<{key1:string,key2:number}>"
+- Array of objects: "array<object<{key1:string,key2:number}>>"
+
+## Requirements
+
+- Each field needs: field_name (snake_case), field_type (see rules above), field_description (in user's language, must describe what the field tracks, valid values/range, and narrative meaning)
+- Design fields that form a coherent subsystem (2+ interrelated fields)
+- Do NOT duplicate creature_attr_fields or built-in components (Inventory, Relationship, StatusEffects)`
+
+    const fixSchema: Record<string, unknown> = {
+        type: 'object',
+        properties: {
+            components: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        component_key: { type: 'string' },
+                        fields: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    field_name: { type: 'string' },
+                                    field_type: { type: 'string' },
+                                    field_description: { type: 'string' },
+                                },
+                                required: ['field_name', 'field_type', 'field_description'],
+                                additionalProperties: false,
+                            },
+                        },
+                    },
+                    required: ['component_key', 'fields'],
+                    additionalProperties: false,
+                },
+            },
+        },
+        required: ['components'],
+        additionalProperties: false,
+    }
+
+    try {
+        const client = new OpenAI({
+            apiKey: config.primaryModel.apiKey,
+            baseURL: config.primaryModel.baseUrl,
+            dangerouslyAllowBrowser: true,
+        })
+
+        // Include prior context (draft etc.) for consistency, plus the fix prompt
+        const fixMessages = [
+            ...contextMessages.slice(0, 4), // initial prompt + draft context (lightweight)
+            { role: 'user' as const, content: fixPrompt },
+        ]
+
+        const response = await client.chat.completions.create({
+            model: config.primaryModel.model,
+            messages: [
+                { role: 'system', content: getPhaseSystemPrompt() },
+                ...fixMessages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+            ],
+            response_format: {
+                type: 'json_schema',
+                json_schema: {
+                    name: 'component_fields_fix',
+                    strict: true,
+                    schema: fixSchema,
+                },
+            } as any,
+            temperature: config.primaryModel.temperature || 0.7,
+            max_tokens: 8192,
+            ...getReasoningParams(config.primaryModel),
+        })
+
+        const content = response.choices[0]?.message?.content
+        if (content) {
+            const fixResult = JSON.parse(content)
+            const fixMap = new Map<string, any[]>()
+            for (const comp of fixResult.components || []) {
+                if (comp.fields?.length > 0) {
+                    fixMap.set(comp.component_key, comp.fields)
+                }
+            }
+
+            // Merge back into output
+            const updatedComponents = registry.custom_components.map((c: any) => {
+                if ((!c.fields || c.fields.length === 0) && fixMap.has(c.component_key)) {
+                    wbLogger.log({ category: 'system', message: `Auto-fix: filled ${fixMap.get(c.component_key)!.length} fields for component "${c.component_key}"` })
+                    return { ...c, fields: fixMap.get(c.component_key) }
+                }
+                return c
+            })
+
+            output = {
+                ...output,
+                CustomComponentRegistry: { custom_components: updatedComponents },
+            }
+        }
+    } catch (e) {
+        wbLogger.log({ category: 'error', message: `Auto-fix custom components failed: ${(e as Error).message}` })
+        // Non-fatal — continue with original output
+    }
+
+    return output
 }
 
 // ============================================================================
@@ -839,6 +1009,68 @@ const REVISION_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     {
         type: 'function',
         function: {
+            name: 'patch_location',
+            description: 'Modify a single location within a region, or add a new location. Finds by region_id + location_id; merges if exists, creates if not.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    region_id: { type: 'string', description: 'Region ID the location belongs to' },
+                    location_id: { type: 'string', description: 'Location ID' },
+                    location_data: { type: 'object', description: 'Location data to merge (e.g. location_name, description, etc.)' },
+                },
+                required: ['region_id', 'location_id', 'location_data'],
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'remove_location',
+            description: 'Remove a single location from a region. Also removes any paths referencing this location.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    region_id: { type: 'string', description: 'Region ID' },
+                    location_id: { type: 'string', description: 'Location ID to remove' },
+                },
+                required: ['region_id', 'location_id'],
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'patch_path',
+            description: 'Add or update a path between locations. Matched by src_location + to_location pair; merges if exists, creates if not.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    region_id: { type: 'string', description: 'Region ID that owns this path (use src_region)' },
+                    path_data: { type: 'object', description: 'Path data object with src_location, src_region, to_location, to_region, discovered, description' },
+                },
+                required: ['region_id', 'path_data'],
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'remove_path',
+            description: 'Remove a specific path by its src_location + to_location pair.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    region_id: { type: 'string', description: 'Region ID that owns this path' },
+                    src_location: { type: 'string', description: 'Source location ID' },
+                    to_location: { type: 'string', description: 'Destination location ID' },
+                },
+                required: ['region_id', 'src_location', 'to_location'],
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'patch_organization',
             description: 'Merge or add organization data.',
             parameters: {
@@ -863,6 +1095,37 @@ const REVISION_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
                     organization_data: { type: 'object', description: 'Complete organization data' },
                 },
                 required: ['organization_id', 'organization_data'],
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'patch_territory',
+            description: 'Add or update a single territory entry in an organization. Matched by region_id + location_id; merges if exists, creates if not.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    organization_id: { type: 'string', description: 'Organization ID' },
+                    territory_data: { type: 'object', description: 'Territory data (region_id, location_id, and any other fields)' },
+                },
+                required: ['organization_id', 'territory_data'],
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
+            name: 'remove_territory',
+            description: 'Remove a territory entry from an organization by region_id + location_id.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    organization_id: { type: 'string', description: 'Organization ID' },
+                    region_id: { type: 'string', description: 'Region ID of the territory to remove' },
+                    location_id: { type: 'string', description: 'Location ID of the territory to remove' },
+                },
+                required: ['organization_id', 'region_id', 'location_id'],
             }
         }
     },
@@ -961,13 +1224,15 @@ const REVISION_TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
         type: 'function',
         function: {
             name: 'patch_world_data',
-            description: 'Incrementally modify world data (attribute fields, time system, custom components).',
+            description: 'Incrementally modify world data (attribute fields, time system, custom components). Supports add/update via merge and deletion via remove arrays.',
             parameters: {
                 type: 'object',
                 properties: {
                     creature_attr_fields: { type: 'array', items: { type: 'object' }, description: 'Attribute fields to add/update (merged by field_name)' },
+                    remove_attr_fields: { type: 'array', items: { type: 'string' }, description: 'field_name list of attribute fields to remove' },
                     GameTime: { type: 'object', description: 'Fields to merge into existing GameTime' },
                     CustomComponentRegistry: { type: 'object', description: 'Custom component registry to merge (by component_key)' },
+                    remove_custom_components: { type: 'array', items: { type: 'string' }, description: 'component_key list of custom components to remove' },
                 },
             }
         }
@@ -1126,12 +1391,16 @@ const SUBAGENT_TOOL_NAMES = {
 } as const
 
 /** Map phaseId → which revision tool names are available */
+// Synopsis planning tools — available in all post-synopsis phases so users can
+// add/remove planned regions, organizations, or characters during any revision.
+const SYNOPSIS_PLANNING_TOOLS = ['patch_synopsis_region', 'patch_synopsis_organization', 'patch_synopsis_creature', 'remove_synopsis_entry']
+
 const REVISION_TOOLS_BY_PHASE: Record<WBNPhaseId, string[]> = {
-    synopsis: ['patch_draft', 'patch_synopsis_region', 'patch_synopsis_organization', 'patch_synopsis_creature', 'remove_synopsis_entry', 'finish_revision'],
-    world_data: ['patch_world_data', 'patch_document', 'replace_document', 'remove_entry', 'finish_revision'],
-    regions: ['patch_region', 'replace_region', 'patch_entity_document', 'replace_entity_document', 'remove_entry', 'finish_revision'],
-    organizations: ['patch_organization', 'replace_organization', 'patch_entity_document', 'replace_entity_document', 'remove_entry', 'finish_revision'],
-    creatures: ['patch_creature', 'replace_creature', 'patch_entity_document', 'replace_entity_document', 'remove_entry', 'finish_revision'],
+    synopsis: ['patch_draft', ...SYNOPSIS_PLANNING_TOOLS, 'finish_revision'],
+    world_data: ['patch_world_data', 'patch_document', 'replace_document', 'remove_entry', ...SYNOPSIS_PLANNING_TOOLS, 'finish_revision'],
+    regions: ['patch_region', 'replace_region', 'patch_location', 'remove_location', 'patch_path', 'remove_path', 'patch_entity_document', 'replace_entity_document', 'remove_entry', ...SYNOPSIS_PLANNING_TOOLS, 'finish_revision'],
+    organizations: ['patch_organization', 'replace_organization', 'patch_territory', 'remove_territory', 'patch_entity_document', 'replace_entity_document', 'remove_entry', ...SYNOPSIS_PLANNING_TOOLS, 'finish_revision'],
+    creatures: ['patch_creature', 'replace_creature', 'patch_entity_document', 'replace_entity_document', 'remove_entry', ...SYNOPSIS_PLANNING_TOOLS, 'finish_revision'],
     initial_story: ['patch_story', 'finish_revision'],
 }
 
@@ -1153,15 +1422,20 @@ const PHASE_RULES: Partial<Record<WBNPhaseId, string>> = {
     world_data: `
 ### World Data Format Rules
 - creature_attr_fields: field_name (snake_case), hint, field_display_name (optional)
+- To **delete** attribute fields or custom components, use patch_world_data with remove_attr_fields / remove_custom_components arrays
+- To **rename** an attribute field, remove the old one and add a new one in the same patch_world_data call
 - GameTime: all 5 fields (year, month, day, hour, minute) required
 - CustomComponentRegistry: do not duplicate built-in components (Inventory, Relationship, StatusEffects, Creature, LocationRef)
 - documents: each at least 500 words; important ones 800+`,
     regions: `
 ### Region Format Rules
-- paths must use: { src_location, src_region, discovered, to_region, to_location, description } — all 6 fields required`,
+- paths must use: { src_location, src_region, discovered, to_region, to_location, description } — all 6 fields required
+- Use patch_location / remove_location for single-location edits instead of rewriting the entire locations array
+- Use patch_path / remove_path for single-path edits instead of rewriting the entire paths array`,
     organizations: `
 ### Organization Format Rules
-- territories: region_id and location_id must reference valid IDs from the regions phase`,
+- territories: region_id and location_id must reference valid IDs from the regions phase
+- Use patch_territory / remove_territory for single-territory edits instead of rewriting the entire territories array`,
     creatures: `
 ### Character Format Rules
 - IsPlayer: only ONE player character gets \`IsPlayer: {}\`. New NPCs must NOT have it
@@ -1178,6 +1452,10 @@ function getRevisionSystemPrompt(phaseId: WBNPhaseId): string {
     const label = PHASE_LABELS[phaseId]
     const rules = PHASE_RULES[phaseId] || ''
 
+    // For non-synopsis phases, remind LLM it can modify the draft plan
+    const planningHint = phaseId !== 'synopsis' && phaseId !== 'initial_story' ? `
+7. **Planning tools**: You also have access to patch_synopsis_region, patch_synopsis_organization, patch_synopsis_creature, and remove_synopsis_entry tools. Use these when the user wants to add, rename, or remove a region/organization/character that belongs to a **future** phase (not yet generated). Changes to the draft plan will take effect when that phase is generated.` : ''
+
     return `You are a game world-building assistant, currently **revising** the "${label}" phase output.
 
 ## Revision Rules
@@ -1187,6 +1465,7 @@ function getRevisionSystemPrompt(phaseId: WBNPhaseId): string {
 4. Use remove_entry for deletions
 5. Call finish_revision when all changes are done
 6. Explain your understanding and changes in natural language before/after modifying
+${planningHint}
 
 Important: Prefer patch_* for partial changes. Only use replace_* when completely rewriting an entity.
 ${rules}`
@@ -1314,6 +1593,7 @@ export async function* streamWBNRevision(
     messages.push({ role: 'user', content: userMessage })
 
     const MAX_ROUNDS = 20
+    let textOnlyNudges = 0
     for (let round = 0; round < MAX_ROUNDS; round++) {
         wbLogger.log({ category: 'system', message: `Revision ${phaseId}: round ${round + 1}/${MAX_ROUNDS}` })
 
@@ -1420,16 +1700,27 @@ export async function* streamWBNRevision(
                 messages.push({ role: 'assistant', content: assistantText })
             }
 
-            // No tool calls → done
+            // No tool calls → nudge the model to use tools or finish
             if (toolCalls.length === 0) {
-                session.phases[phaseId].revisionHistory = messages.map(m => ({
-                    role: m.role,
-                    content: m.content || '',
-                    toolCalls: m.tool_calls,
-                    tool_call_id: m.tool_call_id,
-                }))
-                yield { type: 'done' }
-                return
+                textOnlyNudges++
+                if (textOnlyNudges >= 2) {
+                    // Gave the model enough chances — treat as done
+                    session.phases[phaseId].revisionHistory = messages.map(m => ({
+                        role: m.role,
+                        content: m.content || '',
+                        toolCalls: m.tool_calls,
+                        tool_call_id: m.tool_call_id,
+                    }))
+                    yield { type: 'done' }
+                    return
+                }
+                // Give the model one more chance: append a nudge and continue the loop
+                messages.push({
+                    role: 'user',
+                    content: 'Please use the available tools to apply the changes now, or call finish_revision if no changes are needed.',
+                })
+                wbLogger.log({ category: 'system', message: `Revision ${phaseId}: text-only response, nudging for tool calls` })
+                continue
             }
 
             // Process tool calls
@@ -1465,6 +1756,20 @@ export async function* streamWBNRevision(
                         tc.function.name, instruction, config, session
                     )
                     messages.push({ role: 'tool', content: subagentResult, tool_call_id: tc.id })
+                } else if (SYNOPSIS_PLANNING_TOOLS.includes(tc.function.name)) {
+                    // Cross-phase tool — modify synopsis output, not the current phase
+                    const { updatedOutput, summary } = await applyRevisionToState(
+                        'synopsis',
+                        session.phases['synopsis'].output,
+                        tc.function.name,
+                        parsedArgs,
+                        context.state
+                    )
+                    session.phases['synopsis'].output = updatedOutput
+
+                    wbLogger.log({ category: 'system', message: `Revision ${phaseId}: synopsis patch — ${summary}` })
+                    messages.push({ role: 'tool', content: `${summary} (已更新设计稿规划，将在后续阶段生成时生效)\n\nIf you have completed all changes, please call finish_revision now.`, tool_call_id: tc.id })
+                    yield { type: 'revision_patch', toolName: tc.function.name, summary }
                 } else {
                     // Patch tool — apply immediately
                     const { updatedOutput, updatedState, summary } = await applyRevisionToState(

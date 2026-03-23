@@ -196,9 +196,6 @@ export default function CustomTemplateGame({ onBack }: CustomTemplateProps) {
                     : JSON.stringify(data.content).slice(0, 200)
                 )
               }
-              if (data.state_changes?.service_calls?.length) {
-                setStateChangesText(data.state_changes.service_calls.map((c: any) => `${c.name}: ${c.suggestion}`).join('\n'))
-              }
               if (data.setting_changes?.length) {
                 setSettingChangesRaw(data.setting_changes)
                 setSettingChangesText(data.setting_changes.map(formatSettingChange).join('\n'))

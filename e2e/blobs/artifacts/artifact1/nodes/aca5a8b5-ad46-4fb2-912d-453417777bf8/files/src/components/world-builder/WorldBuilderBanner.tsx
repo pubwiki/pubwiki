@@ -32,6 +32,7 @@ import {
 } from '../../api/worldBuilderNextService'
 import type { WBNReferenceFile, LorebookData } from '../../api/worldBuilderNextTypes'
 import { parseSillyTavernLorebook } from '../../api/lorebookParser'
+import { loadCopilotConfigFromAPIConfig } from '../../api/copilotService'
 import { streamWBNPhase, streamWBNRevision } from './worldBuilderNextChat'
 import type { WBNToolContext } from './worldBuilderNextChat'
 import type { TabType } from '../state-editor/types'
@@ -273,6 +274,7 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
     const [skipOrgs, setSkipOrgs] = useState(true)
     const [clearBeforeGenerate, setClearBeforeGenerate] = useState(true)
     const [skipExtraction, setSkipExtraction] = useState(false)
+    const [fastMode, setFastMode] = useState(false)
     const abortRef = useRef(false)
     const stateRef = useRef(state)
     const sessionRef = useRef(session)
@@ -348,6 +350,25 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }, [logEvents])
+
+    // Mark session as paused on page unload (refresh / close) so it can be recovered
+    useEffect(() => {
+        const handleBeforeUnload = () => {
+            const s = sessionRef.current
+            if (s && s.status !== 'completed' && s.status !== 'paused') {
+                s.status = 'paused'
+                s.updatedAt = Date.now()
+                // Reset mid-generation phase so it can be re-run on resume
+                const phaseStatus = s.phases[s.currentPhase]?.status
+                if (phaseStatus === 'generating') {
+                    s.phases[s.currentPhase] = { ...s.phases[s.currentPhase], status: 'active' }
+                }
+                saveWBNSession(s)
+            }
+        }
+        window.addEventListener('beforeunload', handleBeforeUnload)
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    }, [])
 
     // Local file/lorebook state (multiple files + multiple lorebooks, merged on session start)
     const [setupFiles, setSetupFiles] = useState<WBNReferenceFile[]>([])
@@ -489,15 +510,22 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
         onSessionChange(s)
         sessionRef.current = s
 
+        // 实时读取最新配置（用户可能在使用途中修改了模型配置）
+        const liveConfig = loadCopilotConfigFromAPIConfig()
+        // 快速模式：用 updateModel 替换 primaryModel 进行生成
+        const effectiveConfig = (fastMode && liveConfig.updateModel)
+            ? { ...liveConfig, primaryModel: liveConfig.updateModel }
+            : liveConfig
+
         const context: WBNToolContext = {
             state: stateRef.current,
             session: sessionRef.current!,
-            config,
+            config: effectiveConfig,
             queryUser,
         }
 
         try {
-            const gen = streamWBNPhase(config, sessionRef.current, phaseId, context)
+            const gen = streamWBNPhase(effectiveConfig, sessionRef.current, phaseId, context)
 
             for await (const event of gen) {
                 if (abortRef.current) break
@@ -578,7 +606,7 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
             isRunningRef.current = false
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [config, queryUser])
+    }, [fastMode, queryUser])
 
     // ========================================================================
     // Phase Output Handling
@@ -735,14 +763,17 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
         setStatusText(t('worldBuilder.revisingPhase', { label: getPhaseLabel(phaseId) }))
         onLogEvent(t('worldBuilder.logRevision', { msg: userMsg }))
 
+        // 修订始终使用主模型（实时读取最新配置）
+        const liveConfig = loadCopilotConfigFromAPIConfig()
+
         const context: WBNToolContext = {
             state: stateRef.current,
             session: sessionRef.current,
-            config,
+            config: liveConfig,
         }
 
         try {
-            const gen = streamWBNRevision(config, sessionRef.current, phaseId, userMsg, context)
+            const gen = streamWBNRevision(liveConfig, sessionRef.current, phaseId, userMsg, context)
 
             for await (const event of gen) {
                 if (abortRef.current) break
@@ -782,10 +813,8 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
                         break
 
                     case 'done':
-                        if (mode !== 'waiting') {
-                            setMode('waiting')
-                            setStatusText(t('worldBuilder.revisionComplete'))
-                        }
+                        setMode('waiting')
+                        setStatusText(t('worldBuilder.revisionComplete'))
                         saveWBNSession(sessionRef.current)
                         break
 
@@ -805,7 +834,7 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
             isRunningRef.current = false
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [feedbackText, config])
+    }, [feedbackText])
 
     // ========================================================================
     // Cancel / Retry
@@ -1014,6 +1043,16 @@ const WorldBuilderBanner: React.FC<WorldBuilderBannerProps> = ({
                                         onChange={e => setSkipExtraction(e.target.checked)}
                                     />
                                     {t('worldBuilder.skipExtraction')}
+                                </label>
+                            )}
+                            {config.updateModel && (
+                                <label className="wbn-banner-checkbox" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={fastMode}
+                                        onChange={e => setFastMode(e.target.checked)}
+                                    />
+                                    {t('worldBuilder.fastMode')}
                                 </label>
                             )}
                             <button

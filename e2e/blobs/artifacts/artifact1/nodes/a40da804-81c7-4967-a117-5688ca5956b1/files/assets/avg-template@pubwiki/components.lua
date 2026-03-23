@@ -528,6 +528,25 @@ ComponentTypes.AppInfo = Type.Object({
 	publish_type = Type.Optional(Type.String):desc("发布类型，EDITOR|INK|TEST|CUSTOM, 不填则为EDITOR"),
 })
 
+-- ============ 开局选择类型 ============
+
+ComponentTypes.GameInitChoiceItem = Type.Object({
+	id = Type.String:desc("选项唯一标识符"),
+	name = Type.String:desc("选项显示名称"),
+	description = Type.String:desc("选项描述"),
+	player_creature_id = Type.String:desc("选择后作为玩家角色的 creature_id"),
+	exclude_creature_ids = Type.Optional(Type.Array(Type.String)):desc("选择后需要删除的角色 creature_id 列表"),
+	exclude_region_ids = Type.Optional(Type.Array(Type.String)):desc("选择后需要删除的地域 region_id 列表"),
+	exclude_organization_ids = Type.Optional(Type.Array(Type.String)):desc("选择后需要删除的组织 organization_id 列表"),
+	background_story = Type.Optional(Type.String):desc("选择后覆盖的背景故事（不填则使用 GameInitialStory.background）"),
+	start_story = Type.Optional(Type.String):desc("选择后覆盖的开场故事（不填则使用 GameInitialStory.start_story）"),
+})
+
+ComponentTypes.GameInitChoice = Type.Object({
+	enable = Type.Bool:desc("是否启用开局选择，选择完成后自动置为 false"),
+	choices = Type.Array(ComponentTypes.GameInitChoiceItem):desc("可选的开局角色/路线列表"),
+})
+
 -- ============ 存档数据类型 ============
 
 -- 完整游戏状态数据（用于存档/读档）
@@ -548,6 +567,7 @@ ComponentTypes.StateDataType = Type.Object({
 			start_story = Type.String:desc("游戏开始时的故事片段"),
 		}
 	)):desc("游戏初始故事背景"),
+	GameInitChoice = Type.Optional(ComponentTypes.GameInitChoice):desc("开局角色/路线选择配置"),
 	SystemPrompts = Type.Optional(Type.Array(Type.Object({
 		id = Type.String:desc("提示词ID"),
 		content = Type.String:desc("提示词内容"),

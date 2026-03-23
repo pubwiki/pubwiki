@@ -19,7 +19,7 @@ import i18next from 'i18next'
 // 编辑器专用类型定义
 // ============================================================================
 
-export type TabType = 'world' | 'creatures' | 'regions' | 'organizations' | 'initial-story' | 'story-history' | 'wiki'
+export type TabType = 'world' | 'creatures' | 'regions' | 'organizations' | 'initial-story' | 'init-choice' | 'story-history' | 'wiki'
 
 export interface EditorProps {
   onSaveState: (data: StateData) => Promise<void>

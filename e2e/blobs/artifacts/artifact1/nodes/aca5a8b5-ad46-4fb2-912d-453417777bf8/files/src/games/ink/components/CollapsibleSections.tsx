@@ -167,18 +167,30 @@ export function ThinkingSection({ turn }: { turn: StoryTurn }) {
   )
 }
 
-// 渲染可折叠的状态/设定/事件变更建议
+// 格式化新实体定义
+function formatNewEntity(entity: any): string {
+  const type = entity.type
+  if (type === 'creature') {
+    return `[${entity.creature_id}] ${entity.name || '?'}${entity.description ? ' — ' + entity.description.slice(0, 80) : ''}`
+  } else if (type === 'region') {
+    return `[${entity.region_id}] ${entity.region_name || '?'}${entity.description ? ' — ' + entity.description.slice(0, 80) : ''}`
+  } else if (type === 'organization') {
+    return `[${entity.organization_id}] ${entity.name || '?'}${entity.description ? ' — ' + entity.description.slice(0, 80) : ''}`
+  }
+  return JSON.stringify(entity).slice(0, 100)
+}
+
+// 渲染可折叠的状态/设定/事件/新实体变更建议
 export function ChangeSuggestionsSection({ turn }: { turn: StoryTurn }) {
   const { t } = useTranslation('game')
   const serviceCalls = turn.stateChanges?.service_calls
   const hasStateChanges = serviceCalls && serviceCalls.length > 0
   const hasSettingChanges = turn.settingChanges && turn.settingChanges.length > 0
   const hasEventChanges = turn.eventChanges && turn.eventChanges.length > 0
-
-  if (!hasStateChanges && !hasSettingChanges && !hasEventChanges) return null
+  const hasNewEntities = turn.newEntities && turn.newEntities.length > 0
 
   const sectionId = `changes-${turn.id}`
-  const totalChanges = (serviceCalls?.length || 0) + (turn.settingChanges?.length || 0) + (turn.eventChanges?.length || 0)
+  const totalChanges = (serviceCalls?.length || 0) + (turn.settingChanges?.length || 0) + (turn.eventChanges?.length || 0) + (turn.newEntities?.length || 0)
 
   return (
     <CollapsibleSection
@@ -186,27 +198,54 @@ export function ChangeSuggestionsSection({ turn }: { turn: StoryTurn }) {
       title={t('ink.sections.changeSuggestions')}
       autoCollapsed={false}
       icon="📝"
-      badge={t('ink.sections.changeCount', { count: totalChanges })}
+      badge={totalChanges > 0 ? t('ink.sections.changeCount', { count: totalChanges }) : '(empty)'}
       className="changes-section"
     >
-      {serviceCalls && serviceCalls.map((call, idx: number) => (
-        <div key={idx} className="change-item">
-          <span className="change-bullet">•</span>
-          <span className="change-text">{call.name}: {call.suggestion}</span>
+      {/* STEP3a: Setting Changes */}
+      <div className="change-group">
+        <div className="change-group-label" style={{ fontSize: '0.85em', opacity: 0.7, marginBottom: '2px' }}>3a. Setting Changes</div>
+        {hasSettingChanges ? turn.settingChanges!.map((change: any, idx: number) => (
+          <div key={`s-${idx}`} className="change-item">
+            <span className="change-bullet">•</span>
+            <span className="change-text">{formatSettingChange(change)}</span>
+          </div>
+        )) : <div className="change-item" style={{ opacity: 0.4 }}><span className="change-text">(none)</span></div>}
+      </div>
+
+      {/* STEP3b: Event Changes */}
+      <div className="change-group">
+        <div className="change-group-label" style={{ fontSize: '0.85em', opacity: 0.7, marginBottom: '2px' }}>3b. Event Changes</div>
+        {hasEventChanges ? turn.eventChanges!.map((change: any, idx: number) => (
+          <div key={`e-${idx}`} className="change-item">
+            <span className="change-bullet">•</span>
+            <span className="change-text">{formatEventChange(change)}</span>
+          </div>
+        )) : <div className="change-item" style={{ opacity: 0.4 }}><span className="change-text">(none)</span></div>}
+      </div>
+
+      {/* STEP3c: New Entities */}
+      <div className="change-group">
+        <div className="change-group-label" style={{ fontSize: '0.85em', opacity: 0.7, marginBottom: '2px' }}>3c. New Entities</div>
+        {hasNewEntities ? turn.newEntities!.map((entity: any, idx: number) => (
+          <div key={`n-${idx}`} className="change-item">
+            <span className="change-bullet">•</span>
+            <span className="change-text">{formatNewEntity(entity)}</span>
+          </div>
+        )) : <div className="change-item" style={{ opacity: 0.4 }}><span className="change-text">(none)</span></div>}
+      </div>
+
+      {/* Analyzer Results (state changes from updater) */}
+      {hasStateChanges && (
+        <div className="change-group">
+          <div className="change-group-label" style={{ fontSize: '0.85em', opacity: 0.7, marginBottom: '2px' }}>Analyzer State Changes</div>
+          {serviceCalls!.map((call, idx: number) => (
+            <div key={idx} className="change-item">
+              <span className="change-bullet">•</span>
+              <span className="change-text">{call.name}: {call.suggestion}</span>
+            </div>
+          ))}
         </div>
-      ))}
-      {turn.settingChanges && turn.settingChanges.map((change: any, idx: number) => (
-        <div key={`s-${idx}`} className="change-item">
-          <span className="change-bullet">•</span>
-          <span className="change-text">{formatSettingChange(change)}</span>
-        </div>
-      ))}
-      {turn.eventChanges && turn.eventChanges.map((change: any, idx: number) => (
-        <div key={`e-${idx}`} className="change-item">
-          <span className="change-bullet">•</span>
-          <span className="change-text">🎬 {formatEventChange(change)}</span>
-        </div>
-      ))}
+      )}
     </CollapsibleSection>
   )
 }
@@ -322,6 +361,9 @@ export function UpdateGameStateSection({ turn }: { turn: StoryTurn }) {
         <span className="section-title">✅ {t('ink.update.success')}</span>
         {totalCount > 0 && <span className="update-badge">({t('ink.update.callSuccess', { success: successCount, total: totalCount })})</span>}
       </div>
+      {result.summary && (
+        <div className="update-summary">{result.summary}</div>
+      )}
       {!collapsed && (
         <div className="collapsible-content">
           {result.audit && (

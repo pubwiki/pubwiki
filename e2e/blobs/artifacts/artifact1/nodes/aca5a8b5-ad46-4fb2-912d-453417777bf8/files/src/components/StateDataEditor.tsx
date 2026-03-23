@@ -49,6 +49,7 @@ import {
   OrganizationsEditor,
   WorldEditor,
   GameInitialStoryEditor,
+  GameInitChoiceEditor,
   GameWikiEntryEditor,
   StoryHistoryEditor,
   SaveManager
@@ -59,6 +60,7 @@ import AICopilotPanel from './AICopilotPanel'
 import WorldBuilderBanner from './world-builder/WorldBuilderBanner'
 import type { WBNSession } from '../api/worldBuilderNextTypes'
 import { loadWBNSession, getCurrentSessionId, startNewSession, endSession as endWBNSession, mergeReferenceFiles, mergeLorebooks, uploadedFilesToReferenceFiles, findPausedSession, deleteWBNSession } from '../api/worldBuilderNextService'
+import { initSessionStorage } from '../api/worldBuilderStorage'
 import { loadCopilotConfigFromAPIConfig } from '../api/copilotService'
 import WelcomePage, { type WelcomeResult } from './welcome/WelcomePage'
 import { getFilesSnapshot } from '../stores/fileStore'
@@ -124,6 +126,25 @@ export const StateDataEditor: React.FC<EditorProps> = ({
 
   const [showWbnBanner, setShowWbnBanner] = useState(() => !!wbnSession)
   const [pausedWbnSession, setPausedWbnSession] = useState<WBNSession | null>(() => findPausedSession())
+
+  // Hydrate IndexedDB cache on mount — the synchronous initializers above may
+  // have read an empty cache if this is a fresh page load. After IndexedDB loads,
+  // re-check for recoverable sessions.
+  useEffect(() => {
+    initSessionStorage().then(() => {
+      // Re-check: the current session might now be loadable from IndexedDB
+      const id = getCurrentSessionId()
+      if (id && !wbnSession) {
+        const s = loadWBNSession(id)
+        if (s && s.status === 'active') {
+          setWbnSession(s)
+          setShowWbnBanner(true)
+        }
+      }
+      // Re-check for paused/orphaned sessions
+      setPausedWbnSession(prev => prev ?? findPausedSession())
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCloseWorldBuilder = useCallback(() => {
     setWbnSession(null)
@@ -278,13 +299,15 @@ export const StateDataEditor: React.FC<EditorProps> = ({
         savedDataRef.current = loadedState
         return true
       }
+      showToast(t('editor.loadStateFailed', 'Failed to load game state'), 'error', 4000)
     } catch (e) {
       console.debug('Load game state failed:', e)
+      showToast(t('editor.loadStateFailed', 'Failed to load game state'), 'error', 4000)
     } finally {
       setIsSyncingState(false)
     }
     return false
-  }, [onLoadState])
+  }, [onLoadState, t])
 
   // 初始化时自动加载游戏状态
   const hasInitializedRef = useRef(false)
@@ -1143,6 +1166,15 @@ export const StateDataEditor: React.FC<EditorProps> = ({
               <GameInitialStoryEditor
                 story={data.GameInitialStory}
                 onChange={story => updateDataWithHistory({ ...data, GameInitialStory: story })}
+              />
+            )}
+            {activeTab === 'init-choice' && (
+              <GameInitChoiceEditor
+                choice={data.GameInitChoice}
+                creatures={luaList(data.Creatures)}
+                regions={luaList(data.Regions)}
+                organizations={luaList(data.Organizations)}
+                onChange={choice => updateDataWithHistory({ ...data, GameInitChoice: choice })}
               />
             )}
             {activeTab === 'story-history' && (

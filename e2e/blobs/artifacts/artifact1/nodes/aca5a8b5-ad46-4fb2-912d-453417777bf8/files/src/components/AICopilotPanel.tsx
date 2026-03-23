@@ -61,7 +61,7 @@ import { readImageFile, IMAGE_ACCEPT } from '../api/imageUtils'
 import { showAlert, showConfirm } from './AlertDialog'
 import ReactMarkdown from 'react-markdown'
 import './AICopilotPanel.css'
-import { APIConfigModal } from './APIConfigModal'
+import { APIConfigModal, API_CONFIG_CHANGED_EVENT } from './APIConfigModal'
 
 // ============================================================================
 // 类型定义
@@ -1426,6 +1426,17 @@ export const AICopilotPanel: React.FC<AICopilotPanelProps> = ({
   useEffect(() => {
     uploadedFilesRef.current = uploadedFiles
   }, [uploadedFiles])
+
+  // 监听外部 API 配置变更（从其他组件的 APIConfigModal 保存时触发）
+  useEffect(() => {
+    const handler = () => {
+      const newConfig = loadCopilotConfigFromAPIConfig()
+      setConfig(newConfig)
+      configRef.current = newConfig
+    }
+    window.addEventListener(API_CONFIG_CHANGED_EVENT, handler)
+    return () => window.removeEventListener(API_CONFIG_CHANGED_EVENT, handler)
+  }, [])
 
   // Expose config to window for external use
   useEffect(() => {

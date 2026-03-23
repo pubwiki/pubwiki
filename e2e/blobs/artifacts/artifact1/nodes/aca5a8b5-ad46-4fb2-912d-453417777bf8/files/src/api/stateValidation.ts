@@ -33,7 +33,7 @@ const GameTimeSchema = z.object({
 })
 
 const CreatureAttrFieldSchema = z.object({
-  field_name: z.string().min(1),
+  field_name: z.string(),
   hint: z.string(),
   field_display_name: z.string().optional(),
 })
@@ -110,7 +110,7 @@ const CreatureSchema = z.looseObject({
 })
 
 const ItemSchema = z.object({
-  id: z.string().min(1),
+  id: z.string(),
   count: z.number(),
   name: z.string().optional().default(''),
   description: z.string().optional().default(''),
@@ -137,13 +137,13 @@ const StatusEffectsSchema = z.object({
 
 const CustomComponentsSchema = z.object({
   custom_components: z.array(z.object({
-    component_key: z.string().min(1),
+    component_key: z.string(),
     data: z.any(),
   })),
 }).optional()
 
 const RelationshipSchema = z.object({
-  target_creature_id: z.string().min(1),
+  target_creature_id: z.string(),
   name: z.string(),
   value: z.number(),
 })

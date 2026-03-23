@@ -158,7 +158,18 @@ export function loadCopilotConfigFromAPIConfig(): CopilotConfig {
     reasoning: ret?.reasoning ?? primaryModel.reasoning,
   }
 
-  return { primaryModel, secondaryModel }
+  // updateModel — 仅当用户配置了更新模型时才映射
+  const upd = apiConfig.updateModel
+  const updateModel: CopilotModelConfig | undefined = upd?.model ? {
+    model: upd.model,
+    apiKey: upd.apiKey || primaryModel.apiKey,
+    baseUrl: upd.baseUrl || primaryModel.baseUrl,
+    temperature: upd.temperature ?? primaryModel.temperature,
+    maxTokens: upd.maxTokens ?? primaryModel.maxTokens,
+    reasoning: upd.reasoning ?? primaryModel.reasoning,
+  } : undefined
+
+  return { primaryModel, secondaryModel, updateModel }
 }
 
 // ============================================================================

@@ -21,6 +21,7 @@ export interface UpdateGameStateAndDocsOutput {
   success: boolean;
   audit?: string;
   outline?: string;
+  summary?: string; // 面向用户的状态变更摘要，用剧情语言描述
   calls?: ServiceCallRecord[];
   results?: ServiceCallRecord[];
   error?: string;
@@ -74,6 +75,13 @@ export function formatSettingChange(c: unknown): string {
   return String(c)
 }
 
+// Writer 输出的新实体定义（STEP3c）
+export interface NewEntityDefinition {
+  type: 'creature' | 'region' | 'organization';
+  name: string;
+  description: string;
+}
+
 // 结构化事件变更建议
 export interface EventUpdateRecommendation {
   option: 'create' | 'append' | 'update';
@@ -107,16 +115,19 @@ export function formatEventChange(c: unknown): string {
 
 export interface UpdateGameStateAndDocsInput {
   new_event: string;
-  state_changes: GameStateChanges; // 结构化状态变化对象
-  setting_changes: any[]; // 设定变化列表（SettingUpdateRecommendation[]）
+  state_changes?: GameStateChanges; // 可选的状态变化提示（Analyzer 会独立从剧情提取）
+  setting_changes?: any[]; // 设定变化列表（SettingUpdateRecommendation[]）
   event_changes?: any[]; // 事件变化列表（EventUpdateRecommendation[]）
-  director_notes?: DirectorNotesOutput; // 导演笔记与标记，由创意写作 STEP5 输出
+  new_entities?: NewEntityDefinition[]; // Writer 提供的新实体定义
+  director_notes?: DirectorNotesOutput; // 导演笔记与标记
+  collector_built_messages?: Array<{ role: string; content: string }>; // Collector 构建的设定文档 premessages
 }
 
 export interface CreativeWritingInput {
   model?: string;
   create_request: string; // 创意写作请求
   thinking_instruction: string; // 思考指令
+  thinking_example?: string; // 可选，step_1_thinking_result 的示例文本
   previous_content_overview: string; // 之前内容概览
   output_content_schema: string; // 输出内容的 TypeScript 接口定义，非常不严格，比如 "string"(只有一段文本) "{hint:string // 章节标题, content:string //正文}" (章节标题和正文) 等等
 }
@@ -143,10 +154,11 @@ export interface CreativeWritingOutput {
   collector_outline?: string; // Collector 的全局分析摘要（替代分散的 per-entity/per-doc thinking）
   selected_events?: string[]; // Collector 选中的事件 ID 列表
   reasoning?: string;
-  state_changes?: GameStateChanges; // 结构化状态变化对象
   setting_changes?: any[]; // 设定变化列表（SettingUpdateRecommendation[]）
   event_changes?: any[]; // 事件变化列表（EventUpdateRecommendation[]）
-  director_notes?: DirectorNotesOutput; // 导演笔记与标记（STEP5）
+  new_entities?: NewEntityDefinition[]; // 新实体定义（STEP3c）
+  director_notes?: DirectorNotesOutput; // 导演笔记与标记（STEP4）
+  updater_messages?: Array<{ role: string; content: string }>; // 仅包含 flag_is_updating_instruction 的文档，供 Analyzer 使用
 }
 
 export interface CreativeWritingStreamInput {
@@ -154,6 +166,7 @@ export interface CreativeWritingStreamInput {
   callback: CreativeWritingStreamCallback;
   create_request: string; // 创意写作请求
   thinking_instruction: string; // 思考指令
+  thinking_example?: string; // 可选，step_1_thinking_result 的示例文本
   previous_content_overview: string; // 之前内容概览
   output_content_schema: string; // 输出内容的 TypeScript 接口定义，非常不严格，比如 "string"(只有一段文本) "{hint:string // 章节标题, content:string //正文}" (章节标题和正文) 等等,
   output_content_schema_definition?: object; // 可选的输出内容的接口定义说明，如果提供，则会按照schema严格约束
@@ -598,6 +611,25 @@ export type AppInfo = {
   publish_type?: "EDITOR" | "INK" | "TEST" | "CUSTOM_TEMPLATE" | "CUSTOM"; // 默认为 EDITOR
 };
 
+// 开局选择项
+export interface GameInitChoiceItem {
+  id: string;
+  name: string;
+  description: string;
+  player_creature_id: string;
+  exclude_creature_ids?: string[];
+  exclude_region_ids?: string[];
+  exclude_organization_ids?: string[];
+  background_story?: string;
+  start_story?: string;
+}
+
+// 开局选择配置
+export interface GameInitChoice {
+  enable: boolean;
+  choices: GameInitChoiceItem[];
+}
+
 // 完整游戏状态数据（用于存档/读档）
 export interface StateData {
   World: WorldSnapshot;
@@ -607,6 +639,7 @@ export interface StateData {
   // SettingDocuments 已移除，设定文档现在存储在各实体的 BindSetting.documents 中
   StoryHistory?: StoryHistoryEntry[];
   GameInitialStory?: GameInitialStory;
+  GameInitChoice?: GameInitChoice; // 开局角色/路线选择配置
   GameWikiEntry?: GameWikiEntry; // 新字段 游戏百科的词条数据
   AppInfo?: AppInfo; // 新字段 应用信息数据
   _save_version?: 'v2'; // 存档版本标记，v2 格式存档才可加载
@@ -1054,6 +1087,7 @@ export interface CopilotModelConfig {
 export interface CopilotConfig {
   primaryModel: CopilotModelConfig; // 主模型（用于主对话），映射自 APIConfig 的生成模型
   secondaryModel: CopilotModelConfig; // 次级模型（用于 fileAgent），映射自 APIConfig 的召回模型
+  updateModel?: CopilotModelConfig; // 更新模型（用于快速模式），映射自 APIConfig 的更新模型
 }
 
 // Copilot 工具定义

@@ -6,6 +6,7 @@ local ServiceRegistry = require("core/service")
 
 local PromptTemplateWithSettingDocs = require("./prompt_update_gamestate_and_setting")
 local PartialJson = require("partial-json")
+local Chat = require("./chat")
 local STATE_SUBJECT = "game:state"
 
 -- 获取世界实体ID（假设只有一个世界实体，拥有 Registry 组件）
@@ -330,6 +331,7 @@ Service:define()
     :outputs(Type.Object({
         overviews = Type.Record(Type.String):desc("游戏实体ID到其概览文本的映射表"),
         schema = Type.String:desc("一次性 schema 头部文本，描述各字段含义"),
+        entity_logs = Type.Record(Type.String):desc("游戏实体ID到其Log文本的映射表（仅非updater模式时有值）"),
     }))
     :impl(function(inputs)
         local is_updater = inputs.mode == "updater"
@@ -338,6 +340,7 @@ Service:define()
         })
 
         local overviews = {}
+        local entity_logs = {}
         local schema = buildSchemaHeader(is_updater)
 
         -- 缓存 CustomComponentRegistry 定义，按 component_key 索引
@@ -625,20 +628,23 @@ Service:define()
                 end
             end
 
+            -- Log 数据单独存储到 entity_logs，不再嵌入 overview 文本
             if comps["Log"] and not is_updater then
                 local log = comps["Log"]
                 if log.entries and #log.entries > 0 then
-                    table.insert(parts, "[Log]")
+                    local log_parts = {}
+                    table.insert(log_parts, string.format("[Log] === %s \"%s\" ===", entity_type, entity_name))
                     for idx, entry in ipairs(log.entries) do
-                        table.insert(parts, string.format("  - [IDX=%d] %s @%s", idx, entry.content, entry.add_at))
+                        table.insert(log_parts, string.format("  - [IDX=%d] %s @%s", idx, entry.content, entry.add_at))
                     end
+                    entity_logs[tostring(entity.entity_id)] = table.concat(log_parts, "\n")
                 end
             end
 
             overviews[tostring(entity.entity_id)] = table.concat(parts, "\n")
         end
 
-        return {overviews = overviews, schema = schema}
+        return {overviews = overviews, schema = schema, entity_logs = entity_logs}
     end)
 
 Service:define()
@@ -883,17 +889,20 @@ Service:define()
     :usage("根据新剧情内容和状态/设定变化列表，使用 LLM 生成 ServiceRegistry.call() Lua 代码并在沙箱中执行来更新游戏状态。通常与 CreativeWritingStream 配合使用，在生成剧情后自动更新。")
     :inputs(Type.Object({
         new_event = Type.String:desc("新剧情内容"),
-        state_changes = Type.Object({
+        state_changes = Type.Optional(Type.Object({
             related_creature_ids = Type.Optional(Type.Array(Type.String)):desc("相关角色ID列表"),
             related_region_ids = Type.Optional(Type.Array(Type.String)):desc("相关地域ID列表"),
             related_organization_ids = Type.Optional(Type.Array(Type.String)):desc("相关组织ID列表"),
             service_calls = Type.Optional(Type.Array(Type.Object({
                 name = Type.String:desc("服务简称"),
                 suggestion = Type.String:desc("变更描述"),
-            }))):desc("结构化服务调用描述列表"),
-        }):desc("结构化状态变化对象，包含相关实体ID和服务调用描述"),
-        setting_changes = Type.Array(Type.Any):desc("设定变化列表，结构化对象数组（{option, creature_id?, organization_id?, region_id?, doc_name, suggestion}）"),
-        event_changes = Type.Optional(Type.Array(Type.Any)):desc("事件变化列表，结构化对象数组（{option, event_id, title?, summary, suggestion, related_entities?}）"),
+            }))):desc("结构化服务调用描述列表（可选，Analyzer 会独立从剧情提取）"),
+        })):desc("可选的状态变化提示，如不提供则 Analyzer 完全独立从剧情提取"),
+        setting_changes = Type.Optional(Type.Array(Type.Any)):desc("设定变化列表"),
+        event_changes = Type.Optional(Type.Array(Type.Any)):desc("事件变化列表"),
+        new_entities = Type.Optional(Type.Array(Type.Object({
+            type = Type.String:desc("实体类型: creature/region/organization"),
+        }))):desc("Writer 提供的新实体定义，包含丰富的描述信息供 Analyzer 创建实体"),
         director_notes = Type.Optional(Type.Object({
             notes = Type.Optional(Type.Array(Type.String)):desc("导演笔记列表"),
             flags = Type.Optional(Type.Array(Type.Object({
@@ -901,13 +910,18 @@ Service:define()
                 value = Type.Bool:desc("标记状态"),
                 remark = Type.Optional(Type.String):desc("标记备注"),
             }))):desc("导演标记列表"),
-            stage_goal = Type.Optional(Type.String):desc("阶段叙事目标，设置后指导后续创作的整体方向和节奏"),
-        })):desc("导演笔记与标记，由创意写作 STEP5 输出，直接执行无需 LLM 转换"),
+            stage_goal = Type.Optional(Type.String):desc("阶段叙事目标"),
+        })):desc("导演笔记与标记，直接执行无需 LLM 转换"),
+        collector_built_messages = Type.Optional(Type.Array(Type.Object({
+            role = Type.String:desc("消息角色"),
+            content = Type.String:desc("消息内容"),
+        }))):desc("Collector 阶段构建的设定文档 premessages，包含游戏规则和设定文档，注入到 Analyzer LLM 上下文中"),
     }))
     :outputs(Type.Object({
         success = Type.Bool:desc("是否成功"),
         audit = Type.Optional(Type.String):desc("LLM的审计文本（检查过期状态、遗漏变更、物品消耗等）"),
         outline = Type.Optional(Type.String):desc("LLM的简短概要（1-2句）"),
+        summary = Type.Optional(Type.String):desc("面向用户的状态变更摘要，用剧情语言描述"),
         calls = Type.Optional(Type.Array(Type.Object({}))):desc("原始调用数组"),
         results = Type.Optional(Type.Array(Type.Object({}))):desc("每条调用的执行结果"),
         error = Type.Optional(Type.String):desc("错误信息"),
@@ -924,21 +938,23 @@ Service:define()
             }
         end
 
-        -- === 从结构化 state_changes 中提取信息 ===
-        local service_calls = state_changes.service_calls or {}
+        -- === 从结构化 state_changes 中提取信息（可选，可能为 nil） ===
+        local service_calls = (state_changes and state_changes.service_calls) or {}
         local related_creature_ids = {}
         local related_region_ids = {}
         local related_org_ids = {}
 
-        -- 收集 step3 的实体ID
-        for _, id in ipairs(state_changes.related_creature_ids or {}) do
-            related_creature_ids[id] = true
-        end
-        for _, id in ipairs(state_changes.related_region_ids or {}) do
-            related_region_ids[id] = true
-        end
-        for _, id in ipairs(state_changes.related_organization_ids or {}) do
-            related_org_ids[id] = true
+        -- 收集 state_changes 提供的实体ID（如果有的话）
+        if state_changes then
+            for _, id in ipairs(state_changes.related_creature_ids or {}) do
+                related_creature_ids[id] = true
+            end
+            for _, id in ipairs(state_changes.related_region_ids or {}) do
+                related_region_ids[id] = true
+            end
+            for _, id in ipairs(state_changes.related_organization_ids or {}) do
+                related_org_ids[id] = true
+            end
         end
 
         -- 格式化状态变化列表（从结构化 service_calls）
@@ -1066,6 +1082,9 @@ Service:define()
         local included_entity_count = 0
         local total_entity_count = 0
 
+        -- 当没有 state_changes 提供实体ID时，包含所有实体（Analyzer 需要完整上下文独立分析）
+        local has_entity_hints = next(related_creature_ids) or next(related_region_ids) or next(related_org_ids)
+
         for _, entity in ipairs(snapshot.entities) do
             total_entity_count = total_entity_count + 1
             local comps = entity.components
@@ -1076,6 +1095,10 @@ Service:define()
                 -- 世界实体：始终包含
                 include = true
                 entity_label = "World (always included)"
+            elseif not has_entity_hints then
+                -- 无实体ID提示 → 包含所有实体（Analyzer 独立分析模式）
+                include = true
+                entity_label = "All (no hints, full context)"
             elseif comps["Creature"] then
                 local cid = comps["Creature"].creature_id
                 if related_creature_ids[cid] then
@@ -1158,55 +1181,80 @@ Service:define()
 
         -- === 构建消息结构（分层优化 KV Cache） ===
         -- 层级1: system prompt = SYSTEM_PROMPT 核心指令（完全不变 → 最高 KV cache 命中率）
-        -- 层级2: premessage 1 = API 参考 A-G（完全不变 → 高 KV cache）
+        -- 层级2: premessage 1 = API 参考 A-H（完全不变 → 高 KV cache）
         -- 层级3: premessage 2 = 实体索引 + 属性定义 + 文档概览（每回合可能变化）
-        -- 层级4: user prompt = 过滤后的 ECS 数据 + 动态内容（每回合都变）
+        -- 层级4: collector_built_messages = 设定文档（来自 Collector，包含游戏规则）
+        -- 层级5: user prompt = 过滤后的 ECS 数据 + 动态内容（每回合都变）
 
-        local updater_system_prompt = PromptTemplateWithSettingDocs.SYSTEM_PROMPT
+        local analyzer_system_prompt = PromptTemplateWithSettingDocs.SYSTEM_PROMPT
 
-        local updater_premessages = {
+        local analyzer_premessages = {
             -- Premessage 1: API 参考（完全不变）
-            { role = "user", content = "# Service API Reference (A-G)\n" .. PromptTemplateWithSettingDocs.API_REFERENCE },
-            { role = "assistant", content = "I have read the complete Service API Reference (sections A through G). I will use the exact service names and parameter schemas documented above." },
+            { role = "user", content = "# Service API Reference (A-H)\n" .. PromptTemplateWithSettingDocs.API_REFERENCE },
+            { role = "assistant", content = "I have read the complete Service API Reference (sections A through H). I will use the exact service names and parameter schemas documented above." },
             -- Premessage 2: 游戏上下文概览（每回合可能变化：文档增删、实体变动等）
             { role = "user", content = stable_context },
             { role = "assistant", content = "I have read the game context: entity index, attribute definitions, and document overview." },
         }
 
+        -- 层级4: 注入 Collector 构建的设定文档 premessages（包含游戏规则、状态更新指令等）
+        -- 注意：JS 传递的数组/对象在 Lua 中是 userdata，需用 type() 检查
+        if inputs.collector_built_messages and type(inputs.collector_built_messages) ~= "nil" then
+            local count = 0
+            for _, msg in ipairs(inputs.collector_built_messages) do
+                if msg.role and msg.content then
+                    table.insert(analyzer_premessages, { role = tostring(msg.role), content = tostring(msg.content) })
+                    count = count + 1
+                end
+            end
+            print("[UpdateGameStateAndDocs] 注入 collector_built_messages: " .. count .. " 条消息")
+        end
+
         -- === 构建 dynamic prompt（每回合都变的数据） ===
-        -- 将过滤后的 ECS 数据注入到 prompt 中（不再依赖 GenerateContent 自动注入全量数据）
         local final_prompt = "<THE_ECS_DATA>\n" .. filtered_ecs_text .. "\n</THE_ECS_DATA>\n\n===============================\n\n"
             .. PromptTemplateWithSettingDocs.GENERATION_PROMPT
 
         final_prompt = Regex.replaceLiteral(final_prompt, "<THE_STATUS_EFFECTS_OVERVIEW>", filtered_status_text)
         final_prompt = Regex.replaceLiteral(final_prompt, "<THE_NEW_EVENT>", new_event)
-        final_prompt = Regex.replaceLiteral(final_prompt, "<THE_STATE_CHANGES>", state_changes_text)
+        final_prompt = Regex.replaceLiteral(final_prompt, "<THE_STATE_CHANGES>", state_changes_text ~= "" and state_changes_text or "(No hints from writer — you must independently extract ALL state changes from the story)")
         final_prompt = Regex.replaceLiteral(final_prompt, "<THE_SETTING_CHANGES>", setting_changes_text)
         final_prompt = Regex.replaceLiteral(final_prompt, "<THE_UPDATE_DOCS_CONTEXT>", update_docs_context ~= "" and update_docs_context or "(No documents targeted for update)")
         final_prompt = Regex.replaceLiteral(final_prompt, "<THE_EVENT_CHANGES>",
             event_changes_text ~= "" and (event_changes_text .. (event_update_context ~= "" and ("\n" .. event_update_context) or "")) or "(No event changes)")
 
-        -- 调用 GenerateContent（JSON 结构化输出模式，skip_overview=true 因为 ECS 已自行构建）
-        print("[UpdateGameStateAndDocs] 调用 GenerateContent (JSON 模式, 过滤ECS)...")
-        local gen_result = Service.call("GameTemplate:GenerateContent", {
-            prompt = final_prompt,
-            with_setting_docs = false,
-            with_system_docs = false,
-            skip_overview = true,
-            model_preset = "updateModel",
-            output_json = true,
-            additional_system_prompt = updater_system_prompt,
-            premessages = updater_premessages,
-        })
+        -- 注入 Writer 提供的新实体定义
+        local new_entities_text = ""
+        if inputs.new_entities and #inputs.new_entities > 0 then
+            new_entities_text = "# [Writer] New Entity Definitions (use these to create entities via Spawn services)\n"
+            new_entities_text = new_entities_text .. json.encode(inputs.new_entities)
+            print("[UpdateGameStateAndDocs] Writer 提供了 " .. #inputs.new_entities .. " 个新实体定义")
+        end
+        final_prompt = Regex.replaceLiteral(final_prompt, "<THE_NEW_ENTITIES>",
+            new_entities_text ~= "" and new_entities_text or "(No new entities from writer)")
 
-        if not gen_result.success then
+        -- === 直接调用 Chat.Chat（绕过 GenerateContent，自行控制 premessages） ===
+        print("[UpdateGameStateAndDocs] 直接调用 Chat.Chat (Analyzer 模式)...")
+        local llm_success, llm_ret = pcall(function()
+            return Chat.Chat("updateModel", final_prompt, {
+                responseFormat = { type = "json_object" },
+            }, analyzer_premessages, analyzer_system_prompt)
+        end)
+
+        if not llm_success then
             return {
                 success = false,
-                error = "GenerateContent call failed: " .. (gen_result.error or (gen_result._error or "unknown error"))
+                error = "Analyzer LLM call failed: " .. tostring(llm_ret)
             }
         end
 
-        local llm_output = gen_result.text
+        if llm_ret.error then
+            return {
+                success = false,
+                error = "Analyzer LLM call failed: " .. tostring(llm_ret.error)
+            }
+        end
+
+        local llm_output = llm_ret.content
         print("[UpdateGameStateAndDocs] LLM 输出长度: " .. #llm_output .. " 字符")
 
         -- 解析 JSON 输出
@@ -1229,7 +1277,13 @@ Service:define()
 
         local audit = parsed.audit
         local outline = parsed.outline or ""
+        local summary = parsed.summary or ""
         local calls = parsed.calls
+
+        -- 如果 LLM 没输出 summary，从 outline 回退
+        if summary == "" and outline ~= "" then
+            summary = outline
+        end
 
         -- 打印审计文本
         if audit and audit ~= "" then
@@ -1384,26 +1438,22 @@ Service:define()
                 .. "- 'Overlapping edits at line X' → Two UpdateSettingDoc calls edit the same line. Merge overlapping edits into one call.\n\n"
                 .. "Please regenerate the COMPLETE JSON with all issues fixed. Do NOT omit the successful calls — include everything.\n"
 
-            local retry_gen_result = Service.call("GameTemplate:GenerateContent", {
-                prompt = retry_prompt,
-                with_setting_docs = false,
-                with_system_docs = false,
-                skip_overview = true,
-                model_preset = "updateModel",
-                output_json = true,
-                additional_system_prompt = updater_system_prompt,
-                premessages = updater_premessages,
-            })
+            local retry_success, retry_ret = pcall(function()
+                return Chat.Chat("updateModel", retry_prompt, {
+                    responseFormat = { type = "json_object" },
+                }, analyzer_premessages, analyzer_system_prompt)
+            end)
 
-            if retry_gen_result.success then
-                local retry_parse_ok, retry_parsed = pcall(function() return PartialJson.parse(retry_gen_result.text) end)
+            if retry_success and retry_ret and not retry_ret.error then
+                local retry_parse_ok, retry_parsed = pcall(function() return PartialJson.parse(retry_ret.content) end)
 
                 if retry_parse_ok and retry_parsed and retry_parsed.calls then
                     print("[UpdateGameStateAndDocs] 重试 JSON 解析成功，共 " .. #retry_parsed.calls .. " 条调用")
 
                     -- 重置并重新执行
                     outline = retry_parsed.outline or outline
-                    llm_output = retry_gen_result.text
+                    summary = retry_parsed.summary or summary
+                    llm_output = retry_ret.content
 
                     state_ckpt_id = State:checkpoint("Update-State-Retry-" .. os.time(), "")
                     tracked_calls, tracked_results, failCount, failDetails = executeCalls(retry_parsed.calls)
@@ -1420,7 +1470,7 @@ Service:define()
                     print("[UpdateGameStateAndDocs] 重试 JSON 解析失败")
                 end
             else
-                print("[UpdateGameStateAndDocs] 重试 GenerateContent 调用失败")
+                print("[UpdateGameStateAndDocs] 重试 Analyzer LLM 调用失败")
             end
         end
 
@@ -1464,6 +1514,7 @@ Service:define()
         return {
             success = failCount == 0,
             outline = outline,
+            summary = summary,
             audit = audit,
             calls = tracked_calls,
             results = tracked_results,

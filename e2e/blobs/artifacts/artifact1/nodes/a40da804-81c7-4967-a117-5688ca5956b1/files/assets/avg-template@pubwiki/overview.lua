@@ -133,6 +133,7 @@ Service:define()
         local overview_result = ServiceRegistry.call("GameTemplate:GetGameEntityOverview", {})
         local world_overview_dict = overview_result.overviews
         local world_overview_schema = overview_result.schema or ""
+        local world_entity_logs = overview_result.entity_logs or {}
         local entities = {}
         local prefixs = {
             ["org"] = "OrganizationSetting",
@@ -271,6 +272,7 @@ Service:define()
                              rag_filtered_setting_resources[#rag_filtered_setting_resources + 1] = {
                                  path = pathParts,
                                  content = doc_decision.content or "",
+                                 flag_is_updating_instruction = doc_decision.flag_is_updating_instruction or false,
                              }
                              print("[GetGameOverviewRAG] RAG选中文档: " .. doc_decision.path)
                          end
@@ -344,15 +346,25 @@ Service:define()
 
          -- 构建 built_messages：每 3 条设定文档构造一组 user/assistant 消息对
          -- 排在前面的稳定文档次序不变 → 对应的 premessage 可命中 KV cache
+         -- 同时构建 updater_messages：仅包含 flag_is_updating_instruction 的文档，供 Analyzer 使用
          local built_messages = {}
+         local updater_messages = {}
          local batch = {}
          local batch_refs = {}
+         local updater_batch = {}
+         local updater_batch_refs = {}
          for i, item in ipairs(final_overview_resources) do
              local path_str = table.concat(item.resource.path, "/")
              local doc_name, meta_str = formatDocMeta(path_str)
              local doc_text = "## " .. doc_name .. "\n> Source: " .. meta_str .. "\n" .. item.resource.content
              table.insert(batch, doc_text)
              table.insert(batch_refs, meta_str)
+
+             -- 仅 flag_is_updating_instruction 的文档进入 updater_messages
+             if item.resource.flag_is_updating_instruction then
+                 table.insert(updater_batch, doc_text)
+                 table.insert(updater_batch_refs, meta_str)
+             end
 
              if #batch >= 3 or i == #final_overview_resources then
                  table.insert(built_messages, {
@@ -365,6 +377,20 @@ Service:define()
                  })
                  batch = {}
                  batch_refs = {}
+             end
+
+             -- updater_batch 也按每 3 条一组
+             if #updater_batch >= 3 or (i == #final_overview_resources and #updater_batch > 0) then
+                 table.insert(updater_messages, {
+                     role = "user",
+                     content = table.concat(updater_batch, "\n\n")
+                 })
+                 table.insert(updater_messages, {
+                     role = "assistant",
+                     content = "I have read the updating instruction documents: " .. table.concat(updater_batch_refs, ", ")
+                 })
+                 updater_batch = {}
+                 updater_batch_refs = {}
              end
          end
 
@@ -387,6 +413,22 @@ Service:define()
                  role = "assistant",
                  content = "I have read the selected plot events: " .. table.concat(selected_event_ids, ", ")
              })
+         end
+
+         -- 将选中实体的 Log 数据作为独立 premessage 注入（每个实体一条消息）
+         for _, selected_entity in pairs(rag_filtered_entity_ids) do
+             local log_text = world_entity_logs[selected_entity.id]
+             if log_text and log_text ~= "" then
+                 table.insert(built_messages, {
+                     role = "user",
+                     content = "Entity Log (entity_id: " .. selected_entity.id .. "):\n" .. log_text
+                 })
+                 table.insert(built_messages, {
+                     role = "assistant",
+                     content = "I have read the entity log for " .. selected_entity.id .. "."
+                 })
+                 print("[GetGameOverviewRAG] 实体Log独立消息: entity_id=" .. selected_entity.id)
+             end
          end
 --
          -- 生成最终的ECS概览文本
@@ -432,10 +474,12 @@ Service:define()
          --     }
          -- ))
          
+         print("[GetGameOverviewRAG] built_messages: " .. #built_messages .. " 条, updater_messages: " .. #updater_messages .. " 条")
          return {
              overview_text = overview_text,
              overview_ecs = overview_ecs,
              built_messages = built_messages,
+             updater_messages = updater_messages,
              collector_results = collector_result.decisions or {},
              collector_outline = collector_result.thinking or "",
              static_results = static_results,
@@ -514,10 +558,17 @@ Service:define()
             mode = inputs.overview_mode,
         })
         local world_overview_dict = overview_result2.overviews
+        local entity_logs2 = overview_result2.entity_logs or {}
 
         overview_ecs = overview_ecs .. (overview_result2.schema or "") .. "\n"
         for _, entity in pairs(ecs_snapshot) do
-            overview_ecs = overview_ecs .. world_overview_dict[tostring(entity.entity_id)] .. "\n\n"
+            local eid = tostring(entity.entity_id)
+            overview_ecs = overview_ecs .. world_overview_dict[eid] .. "\n"
+            -- 将 Log 数据重新拼入（GetGameOverviewNEXT 不走 premessages）
+            if entity_logs2[eid] then
+                overview_ecs = overview_ecs .. entity_logs2[eid] .. "\n"
+            end
+            overview_ecs = overview_ecs .. "\n"
         end
 
         -- 添加事件概览

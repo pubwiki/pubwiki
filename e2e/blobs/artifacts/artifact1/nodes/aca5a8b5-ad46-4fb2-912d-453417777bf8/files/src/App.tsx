@@ -5,6 +5,7 @@ import type { StateData, SetAPIConfigInput } from './api/types'
 import { initSandboxClient } from '@pubwiki/sandbox-client'
 import './App.css'
 import { validateAndLoadState } from './api/stateValidation'
+import { showToast } from './components/Toast'
 import APIConfigModal, { syncAPIConfigToBackend } from './components/APIConfigModal'
 import { Settings, ArrowLeft } from 'lucide-react'
 
@@ -206,6 +207,7 @@ function App() {
         const validation = validateAndLoadState(result.data)
         if (!validation.accepted) {
           console.error('State data validation failed:', validation.errors)
+          showToast(`State validation failed: ${validation.errors[0] || 'Unknown error'}`, 'error', 5000)
           return null
         }
         return validation.state

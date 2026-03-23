@@ -369,6 +369,45 @@ export class IdbBuildCacheStorage implements BuildCacheStorage {
     return null
   }
 
+  // ---- alias() — Direct key alias without dep-matching ----
+
+  async alias(existingKey: string, newKey: string, fileHashes: Record<string, string>): Promise<boolean> {
+    await this.ensureInitialized()
+
+    const existingMeta = this.index.get(existingKey)
+    if (!existingMeta) return false
+
+    const db = this.db!
+    try {
+      const tx = db.transaction(FILE_STORE, 'readonly')
+      const store = tx.objectStore(FILE_STORE)
+      const distKey = await idbReq<string | undefined>(store.get(this.distPtrKey(existingKey)))
+      if (!distKey) return false
+
+      // Create new pointer for newKey pointing to the same distKey
+      const writeTx = db.transaction(FILE_STORE, 'readwrite')
+      const writeStore = writeTx.objectStore(FILE_STORE)
+      writeStore.put(distKey, this.distPtrKey(newKey))
+      await new Promise<void>((resolve, reject) => {
+        writeTx.oncomplete = () => resolve()
+        writeTx.onerror = () => reject(writeTx.error)
+      })
+
+      const newMetadata: BuildCacheMetadata = {
+        ...existingMeta,
+        buildCacheKey: newKey,
+        fileHashes,
+        lastAccessedAt: Date.now(),
+      }
+      this.index.set(newKey, newMetadata)
+      await this.flushMetadata(newMetadata)
+
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // ---- HTTP content cache ----
 
   async getHttp(url: string): Promise<{ content: string; contentType: string } | null> {

@@ -79,13 +79,22 @@ export function endSession(): void {
     setCurrentSessionId(null)
 }
 
-/** Find the most recent paused WBN session (if any) */
+/**
+ * Find the most recent recoverable WBN session (if any).
+ * Matches both explicitly paused sessions AND orphaned active sessions
+ * (e.g. interrupted by page refresh before completing).
+ */
 export function findPausedSession(): WBNSession | null {
+    const currentId = getCurrentSessionId()
     const all = loadSessions() as any as WBNSession[]
-    const paused = all
-        .filter(s => s.id?.startsWith('wbn_') && s.status === 'paused')
+    const recoverable = all
+        .filter(s =>
+            s.id?.startsWith('wbn_') &&
+            s.id !== currentId &&
+            (s.status === 'paused' || s.status === 'active')
+        )
         .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-    return paused[0] || null
+    return recoverable[0] || null
 }
 
 /** Delete a specific WBN session from storage */
@@ -899,8 +908,14 @@ export async function applyRevisionToState(
         case 'replace_creature':
         case 'patch_region':
         case 'replace_region':
+        case 'patch_location':
+        case 'remove_location':
+        case 'patch_path':
+        case 'remove_path':
         case 'patch_organization':
         case 'replace_organization':
+        case 'patch_territory':
+        case 'remove_territory':
         case 'patch_document':
         case 'replace_document':
         case 'patch_entity_document':
@@ -1058,6 +1073,108 @@ export function applyRevisionPatch(
             return { updatedOutput: output, summary: `地域 "${regionId}" 未找到，无法替换` }
         }
 
+        case 'patch_location': {
+            const regionId = toolArgs.region_id as string
+            const locationId = toolArgs.location_id as string
+            const locationData = toolArgs.location_data as any
+            if (!regionId || !locationId || !locationData) return { updatedOutput: output, summary: '错误: region_id, location_id, location_data 必填' }
+            const regions = (output as any).regions as any[] || []
+            const region = regions.find((r: any) => r.region_id === regionId)
+            if (!region) return { updatedOutput: output, summary: `地域 "${regionId}" 未找到` }
+            if (!region.locations) region.locations = []
+            const locIdx = region.locations.findIndex((l: any) => l.location_id === locationId)
+            if (locIdx >= 0) {
+                Object.assign(region.locations[locIdx], locationData)
+                return { updatedOutput: output, summary: `已更新地点 "${regionId}/${locationId}"` }
+            } else {
+                region.locations.push({ location_id: locationId, ...locationData })
+                return { updatedOutput: output, summary: `已新增地点 "${regionId}/${locationId}"` }
+            }
+        }
+
+        case 'remove_location': {
+            const regionId = toolArgs.region_id as string
+            const locationId = toolArgs.location_id as string
+            if (!regionId || !locationId) return { updatedOutput: output, summary: '错误: region_id 和 location_id 必填' }
+            const regions = (output as any).regions as any[] || []
+            const region = regions.find((r: any) => r.region_id === regionId)
+            if (!region) return { updatedOutput: output, summary: `地域 "${regionId}" 未找到` }
+            if (region.locations) {
+                const before = region.locations.length
+                region.locations = region.locations.filter((l: any) => l.location_id !== locationId)
+                if (region.locations.length === before) return { updatedOutput: output, summary: `地点 "${locationId}" 未找到` }
+            }
+            // Also remove paths referencing this location
+            if (region.paths) {
+                region.paths = region.paths.filter((p: any) => p.src_location !== locationId && p.to_location !== locationId)
+            }
+            return { updatedOutput: output, summary: `已删除地点 "${regionId}/${locationId}" 及相关路径` }
+        }
+
+        case 'patch_path': {
+            const regionId = toolArgs.region_id as string
+            const pathData = toolArgs.path_data as any
+            if (!regionId || !pathData) return { updatedOutput: output, summary: '错误: region_id 和 path_data 必填' }
+            const regions = (output as any).regions as any[] || []
+            const region = regions.find((r: any) => r.region_id === regionId)
+            if (!region) return { updatedOutput: output, summary: `地域 "${regionId}" 未找到` }
+            if (!region.paths) region.paths = []
+            const pathIdx = region.paths.findIndex((p: any) => p.src_location === pathData.src_location && p.to_location === pathData.to_location)
+            if (pathIdx >= 0) {
+                Object.assign(region.paths[pathIdx], pathData)
+                return { updatedOutput: output, summary: `已更新路径 "${pathData.src_location}" → "${pathData.to_location}"` }
+            } else {
+                region.paths.push(pathData)
+                return { updatedOutput: output, summary: `已新增路径 "${pathData.src_location}" → "${pathData.to_location}"` }
+            }
+        }
+
+        case 'remove_path': {
+            const regionId = toolArgs.region_id as string
+            const srcLoc = toolArgs.src_location as string
+            const toLoc = toolArgs.to_location as string
+            if (!regionId || !srcLoc || !toLoc) return { updatedOutput: output, summary: '错误: region_id, src_location, to_location 必填' }
+            const regions = (output as any).regions as any[] || []
+            const region = regions.find((r: any) => r.region_id === regionId)
+            if (!region?.paths) return { updatedOutput: output, summary: `地域 "${regionId}" 未找到或无路径` }
+            const before = region.paths.length
+            region.paths = region.paths.filter((p: any) => !(p.src_location === srcLoc && p.to_location === toLoc))
+            if (region.paths.length === before) return { updatedOutput: output, summary: `路径 "${srcLoc}" → "${toLoc}" 未找到` }
+            return { updatedOutput: output, summary: `已删除路径 "${srcLoc}" → "${toLoc}"` }
+        }
+
+        case 'patch_territory': {
+            const orgId = toolArgs.organization_id as string
+            const terrData = toolArgs.territory_data as any
+            if (!orgId || !terrData) return { updatedOutput: output, summary: '错误: organization_id 和 territory_data 必填' }
+            const orgs = (output as any).organizations as any[] || []
+            const org = orgs.find((o: any) => o.organization_id === orgId)
+            if (!org) return { updatedOutput: output, summary: `组织 "${orgId}" 未找到` }
+            if (!org.territories) org.territories = []
+            const tIdx = org.territories.findIndex((t: any) => t.region_id === terrData.region_id && t.location_id === terrData.location_id)
+            if (tIdx >= 0) {
+                Object.assign(org.territories[tIdx], terrData)
+                return { updatedOutput: output, summary: `已更新组织 "${orgId}" 的领地 "${terrData.region_id}/${terrData.location_id}"` }
+            } else {
+                org.territories.push(terrData)
+                return { updatedOutput: output, summary: `已新增组织 "${orgId}" 的领地 "${terrData.region_id}/${terrData.location_id}"` }
+            }
+        }
+
+        case 'remove_territory': {
+            const orgId = toolArgs.organization_id as string
+            const regionId = toolArgs.region_id as string
+            const locationId = toolArgs.location_id as string
+            if (!orgId || !regionId || !locationId) return { updatedOutput: output, summary: '错误: organization_id, region_id, location_id 必填' }
+            const orgs = (output as any).organizations as any[] || []
+            const org = orgs.find((o: any) => o.organization_id === orgId)
+            if (!org?.territories) return { updatedOutput: output, summary: `组织 "${orgId}" 未找到或无领地` }
+            const before = org.territories.length
+            org.territories = org.territories.filter((t: any) => !(t.region_id === regionId && t.location_id === locationId))
+            if (org.territories.length === before) return { updatedOutput: output, summary: `领地 "${regionId}/${locationId}" 未找到` }
+            return { updatedOutput: output, summary: `已删除组织 "${orgId}" 的领地 "${regionId}/${locationId}"` }
+        }
+
         case 'patch_organization': {
             const orgId = toolArgs.organization_id as string
             const orgData = toolArgs.organization_data as any
@@ -1171,6 +1288,13 @@ export function applyRevisionPatch(
 
         case 'patch_world_data': {
             const parts: string[] = []
+            // remove_attr_fields: delete by field_name (process before merge so add-back is possible)
+            if (toolArgs.remove_attr_fields !== undefined) {
+                const toRemove = toolArgs.remove_attr_fields as string[]
+                const existing: any[] = (output as any).creature_attr_fields || []
+                ;(output as any).creature_attr_fields = existing.filter((e: any) => !toRemove.includes(e.field_name))
+                parts.push(`删除属性字段 (${toRemove.join(', ')})`)
+            }
             // creature_attr_fields: merge by field_name
             if (toolArgs.creature_attr_fields !== undefined) {
                 const existing: any[] = (output as any).creature_attr_fields || []
@@ -1190,6 +1314,14 @@ export function applyRevisionPatch(
             if (toolArgs.GameTime !== undefined) {
                 (output as any).GameTime = Object.assign({}, (output as any).GameTime || {}, toolArgs.GameTime)
                 parts.push('时间系统')
+            }
+            // remove_custom_components: delete by component_key (process before merge)
+            if (toolArgs.remove_custom_components !== undefined) {
+                const toRemove = toolArgs.remove_custom_components as string[]
+                const reg = (output as any).CustomComponentRegistry || { custom_components: [] }
+                reg.custom_components = (reg.custom_components || []).filter((c: any) => !toRemove.includes(c.component_key))
+                ;(output as any).CustomComponentRegistry = reg
+                parts.push(`删除自定义组件 (${toRemove.join(', ')})`)
             }
             // CustomComponentRegistry: merge custom_components by component_key
             if (toolArgs.CustomComponentRegistry !== undefined) {

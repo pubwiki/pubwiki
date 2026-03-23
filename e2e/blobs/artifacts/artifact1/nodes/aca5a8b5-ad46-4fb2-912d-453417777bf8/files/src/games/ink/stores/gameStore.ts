@@ -53,6 +53,7 @@ function normalizeStoryHistory(data: StoryHistoryData): StoryHistoryData {
     s.selectedEvents = ensureArray(s.selectedEvents)
     s.settingChanges = ensureArray(s.settingChanges)
     s.eventChanges = ensureArray(s.eventChanges)
+    s.newEntities = ensureArray(s.newEntities)
     s.playerChoices = ensureArray(s.playerChoices)
 
     // collectorResults 内部的 documents 数组
@@ -92,6 +93,7 @@ interface GameState {
   gameStarted: boolean
   backgroundStory: string
   startStory: string
+  gameInitChoice: import('../../../api/types').GameInitChoice | null
   inkTurns: InkTurn[]
   turnCounter: number
   currentPhase: 'idle' | 'generating-story' | 'updating-state' | 'waiting-choice' | 'dice-rolling'
@@ -145,7 +147,7 @@ interface GameState {
   saveToState: (storyTurn: StoryTurn, actionTurn: PlayerActionTurn | undefined, checkpointId?: string) => Promise<void>
   handleChoiceSelect: (choice: PlayerChoice, storyTurnId: number, scrollToBottom: (force: boolean) => void) => void
   handleCustomInput: (input: string, storyTurnId: number, scrollToBottom: (force: boolean) => void) => void
-  generateStory: (action: string, actionTurnId: number, scrollToBottom: (force: boolean) => void, diceResult?: DiceResult, reuseLastCollect?: boolean, overrides?: { createRequest?: string; thinkingInstruction?: string }) => Promise<void>
+  generateStory: (action: string, actionTurnId: number, scrollToBottom: (force: boolean) => void, diceResult?: DiceResult, reuseLastCollect?: boolean, overrides?: { createRequest?: string; thinkingInstruction?: string; thinkingExample?: string }) => Promise<void>
   rewriteHistory: (targetTurnId: number, userOpinion: string, scrollToBottom: (force: boolean) => void) => Promise<void>
   retryUpdateGameState: (storyTurnId: number) => Promise<void>
   regenerateStory: (storyTurnId: number, scrollToBottom: (force: boolean) => void) => Promise<void>
@@ -162,6 +164,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   gameStarted: false,
   backgroundStory: '',
   startStory: '',
+  gameInitChoice: null,
   inkTurns: [],
   turnCounter: 0,
   currentPhase: 'idle',
@@ -180,6 +183,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     gameStarted: false,
     backgroundStory: '',
     startStory: '',
+    gameInitChoice: null,
     inkTurns: [],
     turnCounter: 0,
     currentPhase: 'idle',
@@ -371,9 +375,11 @@ export const useGameStore = create<GameState>((set, get) => ({
           selectedEvents: storyTurn.selectedEvents,
           settingChanges: storyTurn.settingChanges,
           eventChanges: storyTurn.eventChanges,
+          newEntities: storyTurn.newEntities,
           stateChanges: storyTurn.stateChanges,
           playerChoices: storyTurn.playerChoices,
           allowCustomInput: storyTurn.allowCustomInput,
+          formUI: storyTurn.formUI,
           directorNotes: storyTurn.directorNotes,
           checkpointId: checkpointId,
           updateGameStateResult: storyTurn.updateGameStateResult
@@ -590,6 +596,7 @@ export const useGameStore = create<GameState>((set, get) => ({
               chapter_hint?: string
               player_choices?: PlayerChoice[]
               allow_player_custom_input?: boolean
+              form_ui?: string
             }
           }
           if (!partialResult) return
@@ -647,8 +654,10 @@ export const useGameStore = create<GameState>((set, get) => ({
                   selectedEvents: partialResult.selected_events || turn.selectedEvents,
                   settingChanges: partialResult.setting_changes || turn.settingChanges,
                   eventChanges: partialResult.event_changes || turn.eventChanges,
-                  stateChanges: partialResult.state_changes || turn.stateChanges,
+                  newEntities: partialResult.new_entities || turn.newEntities,
+                  stateChanges: turn.stateChanges,
                   playerChoices: data.player_choices || turn.playerChoices,
+                  formUI: data.form_ui || turn.formUI,
                   directorNotes: partialResult.director_notes || turn.directorNotes,
                   allowCustomInput: true,
                   generationPhase: phase
@@ -667,6 +676,7 @@ export const useGameStore = create<GameState>((set, get) => ({
               chapter_hint?: string
               player_choices?: PlayerChoice[]
               allow_player_custom_input?: boolean
+              form_ui?: string
             }
           }
 
@@ -704,8 +714,10 @@ export const useGameStore = create<GameState>((set, get) => ({
                   selectedEvents: result.selected_events,
                   settingChanges: result.setting_changes,
                   eventChanges: result.event_changes,
-                  stateChanges: result.state_changes,
+                  newEntities: result.new_entities,
+                  stateChanges: undefined,
                   playerChoices: data.player_choices || [],
+                  formUI: data.form_ui || undefined,
                   directorNotes: result.director_notes || undefined,
                   allowCustomInput: true,
                   generationPhase: 'done'
@@ -715,21 +727,27 @@ export const useGameStore = create<GameState>((set, get) => ({
             })
           }))
 
+          // updaterMessages 仅包含 flag_is_updating_instruction 的文档，临时使用不存入 StoryTurn
+          // Lua 空表 {} 到 JS 变成空对象 {}（非 undefined），需检查是否是有效数组
+          const collectorBuiltMessages = Array.isArray(result.updater_messages) && result.updater_messages.length > 0
+            ? result.updater_messages : undefined
+
           // 更新游戏状态
           set({ currentPhase: 'updating-state' })
-          
+
           const updateGameStateAsync = async () => {
             try {
-              const fullContent = `玩家(${playerEntity?.Creature?.name})行动: ${action}` + (data.novel_content_part2 
+              const fullContent = `玩家(${playerEntity?.Creature?.name})行动: ${action}` + (data.novel_content_part2
                 ? `${data.novel_content_part1 || ''}\n\n${data.novel_content_part2}`
                 : data.novel_content_part1 || '')
-              
+
               const updateResult = await updateGameStateAndDocs({
                   new_event: fullContent,
-                  state_changes: result.state_changes || { related_creature_ids: [], related_region_ids: [], related_organization_ids: [], service_calls: [] },
                   setting_changes: result.setting_changes || [],
                   event_changes: result.event_changes || [],
-                  director_notes: result.director_notes || undefined
+                  new_entities: result.new_entities || undefined,
+                  director_notes: result.director_notes || undefined,
+                  collector_built_messages: collectorBuiltMessages || undefined,
                 })
               
               set((s) => ({
@@ -764,8 +782,10 @@ export const useGameStore = create<GameState>((set, get) => ({
                   selectedEvents: result.selected_events,
                   settingChanges: result.setting_changes,
                   eventChanges: result.event_changes,
-                  stateChanges: result.state_changes,
+                  newEntities: result.new_entities,
+                  stateChanges: undefined,
                   playerChoices: data.player_choices || [],
+                  formUI: data.form_ui || undefined,
                   directorNotes: result.director_notes || undefined,
                   allowCustomInput: true,
                   generationPhase: 'done',
@@ -955,7 +975,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         **novel_content_part1**: Exactly ${part1Paragraphs} paragraphs (【A1】through【A${part1Paragraphs}】), each 150–200 words, diving straight into the narrative
         **novel_content_part2**: Exactly ${part2Paragraphs} paragraphs (【B1】through【B${part2Paragraphs}】), each 150–200 words, with the latter half returning perspective to the player
 
-        **player_choices**: 2–4 options, naturally derived from the narrative
+        **player_choices vs form_ui — Mutually Exclusive (output ONE or the OTHER, never both):**
+
+        **Option A: player_choices** (default) — 2–4 narrative-driven options for story branching
         - name: 2–6 words | description: 10–30 words | is_special: true when specific conditions are required
         - Choices should be differentiated and compelling — avoid generic “fight / talk / explore” templates
         ${diceMode === 'visible' ? `
@@ -963,6 +985,36 @@ export const useGameStore = create<GameState>((set, get) => ({
         - At most 1–2 choices per turn may include a dice roll; the rest should be normal options. Only assign rolls to actions with a clear chance of failure (climbing, lockpicking, persuading a hostile NPC, etc.) — never for routine actions
         - 10–30 = easy, 40–60 = moderate, 70–85 = hard, 86–100 = extreme; calculate based on ECS state and scene context
         - difficulty_reason: One sentence explaining the calculation basis` : ''}
+
+        **Option B: form_ui** — ONLY for structured mechanical interactions. Use this INSTEAD OF player_choices when the scene involves:
+        - Shopping / trading (buying items from a merchant)
+        - Crafting / forging (spending materials to create equipment)
+        - Skill/spell selection or equipment loadout
+        - Action point / resource allocation (planning phase, combat turn)
+        - Combat: spending action points, mana, or items to use skills/abilities
+        Do NOT generate form_ui for: dialogue, exploration, story branching, or any purely narrative-driven decision. When in doubt, use player_choices.
+        When form_ui is present: the paragraph count restriction is lifted — write as many or as few paragraphs as the scene naturally requires (but still use 【A】【B】 markers). Output form_ui as a string and leave player_choices as an empty array [].
+
+        **⚠️ CRITICAL: form_ui is a PURE PRESENTATION LAYER — it does NOT connect to the ECS or game state.**
+        The form only constructs the next player action text; it cannot read or modify game data.
+        Therefore: #res values MUST be concrete numbers looked up from the current ECS state (character attributes, inventory counts, etc.), NOT template variables like {{gold}}.
+        If you cannot determine the exact current value of a resource from the ECS data provided, do NOT generate form_ui — fall back to player_choices instead.
+
+        form_ui uses GameUI DSL — a flat, line-based markup:
+        \`\`\`
+        ::ui resource-select        ← mode: resource-select or slot-assign
+        @title 旅人杂货铺            ← panel metadata
+        @desc 老板热情地展示货架上的商品
+        @submit 购买
+        #res gold|金币|500           ← resource: id|display_name|current_value (MUST be a concrete number from ECS, NOT a template variable)
+        #item potion|回复药水|gold:50|max:5|恢复 30% 生命值  ← item: id|name|costs|constraints|desc
+        ::end
+        \`\`\`
+
+        resource-select: #res {id}|{name}|{value (concrete number!)}  #item {id}|{name}|{cost res:n,...}|{max:n,...}|{desc}
+        slot-assign:     #slot {id}|{label}|{required,filter:tag,default:id}  #opt {id}|{name}|{unique/reusable,tag:x}|{desc}
+
+        Rules: one declaration per line, fields separated by |, no <>”{}. Item/opt ids should match game data where possible.
     `,
         thinking_instruction: overrides?.thinkingInstruction || `
         Think deeply before writing:
@@ -970,7 +1022,15 @@ export const useGameStore = create<GameState>((set, get) => ({
         2. **ECS & World Consistency**: Cross-check character personalities, stats, relationships, and knowledge boundaries — ensure the narrative stays in sync with game data and setting documents. No omniscience for the player character
         3. **Innovation Check**: Does this passage introduce new elements (new characters / scenes / discoveries)? If it's all existing content, consider adding a surprise
         4. **State Change & Event Audit**: Walk through the narrative — every world-changing action (movement, combat, items, time, emotions, statuses) must appear in step_3. Every meaningful narrative must produce at least one event in step_4b. If new entities are introduced, include spawn calls before referencing them. Setting doc changes (step_4a) should be rare — only for permanent mechanisms, not plot events
+        5. **form_ui vs player_choices Decision**: Does this scene involve a structured mechanical interaction where the player spends resources or assigns items to slots (shopping, crafting, equipment loadout, resource allocation, combat skill/ability selection with AP/MP costs)? If YES → output form_ui DSL and set player_choices to []. If NO (narrative branching, dialogue, exploration, reaction-based choices) → output player_choices as usual and omit form_ui. Most turns should use player_choices; form_ui is for specific mechanical moments
            `,
+        thinking_example: overrides?.thinkingExample || `Following [Creative Request] and [Deep Thinking Instruction]:
+    1. **Director Notes & Pacing**: stage_goal says "...", so this turn should focus on ... Recent turns were [tense/calm/...], so I'll adjust the rhythm to ...
+    2. **ECS & World Consistency**: Player is at [location], has [relevant stats/items]. NPC [name] is [state]. I need to ensure ...
+    3. **Innovation Check**: This scene [does/doesn't] need new elements. [If yes: I'll introduce ... because ...]
+    4. **New Element Planning**: [No new entities needed / I'll create (creature/region/org) "..." because the narrative requires ...]
+    5. **form_ui vs player_choices**: This scene is [narrative branching / a mechanical interaction], so I'll use [player_choices / form_ui]
+    6. **Outline**: The narrative will flow as: [brief scene outline in 2-3 sentences]`,
         previous_content_overview: historyText,
         callback: callback,
         output_content_schema: `
@@ -984,7 +1044,8 @@ export const useGameStore = create<GameState>((set, get) => ({
             is_special: boolean; // Whether this is a special choice (requires specific items/skills/relationships)${diceMode === 'visible' ? `
             difficulty_level?: number; // Optional, 0–100 dice difficulty. Only for actions requiring ability/luck checks — never for routine actions
             difficulty_reason?: string; // Optional, one sentence explaining how the difficulty level was calculated` : ''}
-          }>; // 2–4 options, naturally derived from the narrative
+          }>; // 2–4 options, naturally derived from the narrative. Empty [] when form_ui is used
+          form_ui?: string; // Optional GameUI DSL string. Mutually exclusive with player_choices — only output when the scene is a structured mechanical interaction (shop/craft/equip/allocate). Most turns should NOT have this field
         }`,
         output_content_schema_definition: {
           type: 'object',
@@ -1007,6 +1068,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                 }
               }
             },
+            form_ui: { type: 'string' },
           }
         }
       })
@@ -1060,10 +1122,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       
       const updateResult = await updateGameStateAndDocs({
           new_event: fullContent,
-          state_changes: storyTurn.stateChanges || { related_creature_ids: [], related_region_ids: [], related_organization_ids: [], service_calls: [] },
           setting_changes: storyTurn.settingChanges || [],
           event_changes: storyTurn.eventChanges || [],
-          director_notes: storyTurn.directorNotes || undefined
+          director_notes: storyTurn.directorNotes || undefined,
+          // retry 时 collector_built_messages 不可用（临时数据，未存入 StoryTurn），Analyzer 仍可独立工作
         })
 
       set((s) => ({
@@ -1397,7 +1459,7 @@ ${futureDataText}
   // 开始游戏
   startGame: async () => {
     const { startStory } = get()
-    
+
     set({ gameStarted: true, timelineChain: [] })
 
     if (startStory) {
@@ -1413,14 +1475,35 @@ ${futureDataText}
         generationPhase: 'done',
         updateGameStateResult: { success: true, isHistorical: true } as UpdateGameStateAndDocsOutput
       }
-      
+
+      // 为序章创建 ECS 快照，使第一章可以重新生成
+      let checkpointId: string | undefined
+      try {
+        const saveResult = await createSave({
+          title: `[turn-0] ${i18next.t('game:ink.prologue')}`,
+          description: encodeTimelineDesc([]),
+        })
+        if (saveResult.success && saveResult.checkpointId) {
+          checkpointId = saveResult.checkpointId
+          initialTurn.checkpointId = checkpointId
+        }
+      } catch (e) {
+        console.error('Failed to create prologue checkpoint:', e)
+      }
+
       set({
         inkTurns: [initialTurn],
         pendingChoiceTurnId: 0,
         currentPhase: 'waiting-choice',
         turnIdRef: 1,
-        turnCounter: 1
+        turnCounter: 1,
+        timelineChain: checkpointId ? [{ id: checkpointId, t: i18next.t('game:ink.prologue') }] : [],
       })
+
+      // 保存序章到剧情历史
+      if (checkpointId) {
+        await get().saveToState(initialTurn, undefined, checkpointId)
+      }
     }
   },
 
@@ -1457,7 +1540,8 @@ ${futureDataText}
     if (stateData) {
       set({
         backgroundStory: stateData.GameInitialStory?.background || i18next.t('game:ink.noBackgroundStory'),
-        startStory: stateData.GameInitialStory?.start_story || ""
+        startStory: stateData.GameInitialStory?.start_story || "",
+        gameInitChoice: stateData.GameInitChoice?.enable ? stateData.GameInitChoice : null,
       })
     }
   },
@@ -1505,6 +1589,7 @@ ${futureDataText}
               selectedEvents: historyData.story.selectedEvents,
               settingChanges: historyData.story.settingChanges,
               eventChanges: historyData.story.eventChanges,
+              newEntities: historyData.story.newEntities,
               stateChanges: historyData.story.stateChanges,
               playerChoices: historyData.story.playerChoices,
               allowCustomInput: historyData.story.allowCustomInput,

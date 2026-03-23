@@ -95,6 +95,11 @@ export async function clearStoryHistory(): Promise<ClearStoryHistoryOutput> {
   return window.callService<ClearStoryHistoryOutput>('state:ClearStoryHistory', {})
 }
 
+/** Apply initial game choice (set player, remove excluded entities, disable choice) */
+export async function initialGameFromChoice(choiceId: string): Promise<{ success: boolean; error?: string }> {
+  return window.callService<{ success: boolean; error?: string }>('state:InitialGameFromChoice', { choice_id: choiceId })
+}
+
 // ============================================================================
 // Events
 // ============================================================================

@@ -419,7 +419,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                   collectorResults: partialResult.collector_results || turn.collectorResults,
                   collectorOutline: partialResult.collector_outline || turn.collectorOutline,
                   settingChanges: partialResult.setting_changes || turn.settingChanges,
-                  stateChanges: partialResult.state_changes || turn.stateChanges,
+                  stateChanges: turn.stateChanges,
                   generationPhase: phase
                 } as GalStoryTurn
               }
@@ -458,7 +458,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
           const data = result.content
           console.log('[VN] done event data:', JSON.stringify(data, null, 2))
-          console.log('[VN] full result:', { thinking: result.thinking, state_changes: result.state_changes, setting_changes: result.setting_changes })
+          console.log('[VN] full result:', { thinking: result.thinking, setting_changes: result.setting_changes })
 
           const segments: StorySegment[] = (data.story || []).map((seg: Partial<StorySegment>, i: number) => ({
             idx: seg.idx ?? i,
@@ -481,7 +481,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                   collectorResults: result.collector_results,
                   collectorOutline: result.collector_outline,
                   settingChanges: result.setting_changes,
-                  stateChanges: result.state_changes,
+                  stateChanges: undefined,
                   playerChoices: data.choice || [],
                   nextDirection: data.next_direction || '',
                   allowCustomInput: true,
@@ -618,8 +618,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
               const updateResult = await updateGameStateAndDocs({
                   new_event: fullContent,
-                  state_changes: result.state_changes || { related_creature_ids: [], related_region_ids: [], related_organization_ids: [], service_calls: [] },
-                  setting_changes: result.setting_changes || []
+                  setting_changes: result.setting_changes || [],
+                  collector_built_messages: Array.isArray(result.updater_messages) && result.updater_messages.length > 0
+                    ? result.updater_messages : undefined,
                 })
 
               set((s) => ({
@@ -682,7 +683,7 @@ export const useGameStore = create<GameState>((set, get) => ({
                   collectorResults: result.collector_results,
                   collectorOutline: result.collector_outline,
                   settingChanges: result.setting_changes,
-                  stateChanges: result.state_changes,
+                  stateChanges: undefined,
                   playerChoices: data.choice || [],
                   nextDirection: data.next_direction || '',
                   allowCustomInput: true,
@@ -920,8 +921,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       const updateResult = await updateGameStateAndDocs({
           new_event: fullContent,
-          state_changes: storyTurn.stateChanges || { related_creature_ids: [], related_region_ids: [], related_organization_ids: [], service_calls: [] },
-          setting_changes: storyTurn.settingChanges || []
+          setting_changes: storyTurn.settingChanges || [],
         })
 
       set((s) => ({

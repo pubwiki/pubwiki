@@ -585,6 +585,98 @@ Service:define():namespace("ecs"):name("RegisterSystem")
 
     
 -- ============================================================================
+-- 动态组件增删服务
+-- ============================================================================
+
+Service:define():namespace("ecs"):name("AddComponent")
+    :desc("为已有实体动态添加一个组件。如果实体已拥有该组件，返回错误。")
+    :inputs(Type.Object({
+        entity_id = Type.Int,
+        component_key = Type.String,
+        data = Type.Optional(Type.Any),
+    }))
+    :outputs(Type.Object({
+        success = Type.Bool,
+        error = Type.Optional(Type.String),
+    }))
+    :impl(function(inputs)
+        local entityId = inputs.entity_id
+        local componentKey = inputs.component_key
+        local data = inputs.data or {}
+
+        if not World:entityExists(entityId) then
+            return { success = false, error = "Entity not found: " .. entityId }
+        end
+
+        -- 检查组件类型是否已注册
+        local ok, compType = pcall(function()
+            return World:getComponentTypeByKey(componentKey)
+        end)
+        if not ok or not compType then
+            return { success = false, error = "Unknown component type: " .. componentKey }
+        end
+
+        -- 检查实体是否已有该组件
+        local entityKey = "ecs://entity/" .. entityId
+        local componentTypeKey = "ecs://component/type/" .. componentKey
+        local existing = State:match({
+            subject = entityKey,
+            predicate = "ecs://component/hasComponent",
+            object = componentTypeKey,
+        })
+        if existing and #existing > 0 then
+            return { success = false, error = "Entity already has component: " .. componentKey }
+        end
+
+        -- 创建组件实例并写入 RDF Store
+        local instance = compType:new(data)
+        local componentInstanceKey = "ecs://component/instance/" .. componentKey .. "/" .. entityId
+        local propsToSave = instance.properties()
+        State:set(componentInstanceKey, "ecs://component/hasProperties", propsToSave)
+        State:insert(entityKey, "ecs://component/hasComponent", componentTypeKey)
+
+        return { success = true }
+    end)
+
+Service:define():namespace("ecs"):name("RemoveComponent")
+    :desc("从已有实体移除一个组件。如果实体不拥有该组件，返回错误。")
+    :inputs(Type.Object({
+        entity_id = Type.Int,
+        component_key = Type.String,
+    }))
+    :outputs(Type.Object({
+        success = Type.Bool,
+        error = Type.Optional(Type.String),
+    }))
+    :impl(function(inputs)
+        local entityId = inputs.entity_id
+        local componentKey = inputs.component_key
+
+        if not World:entityExists(entityId) then
+            return { success = false, error = "Entity not found: " .. entityId }
+        end
+
+        -- 检查实体是否拥有该组件
+        local entityKey = "ecs://entity/" .. entityId
+        local componentTypeKey = "ecs://component/type/" .. componentKey
+        local existing = State:match({
+            subject = entityKey,
+            predicate = "ecs://component/hasComponent",
+            object = componentTypeKey,
+        })
+        if not existing or #existing == 0 then
+            return { success = false, error = "Entity does not have component: " .. componentKey }
+        end
+
+        -- 从 RDF Store 删除组件数据和归属关系
+        local componentInstanceKey = "ecs://component/instance/" .. componentKey .. "/" .. entityId
+        State:delete(componentInstanceKey, "ecs://component/hasProperties")
+        State:delete(entityKey, "ecs://component/hasComponent", componentTypeKey)
+
+        return { success = true }
+    end)
+
+-- ============================================================================
 -- 模块导出
 -- ============================================================================
 

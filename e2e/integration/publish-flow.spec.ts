@@ -4,7 +4,7 @@ import { HubPage } from '../fixtures/pages/hub-page.js';
 import { StudioPage } from '../fixtures/pages/studio-page.js';
 import { PlayerPage } from '../fixtures/pages/player-page.js';
 import { packArtifact } from '../fixtures/pack-artifact.js';
-import { getStudioUrl } from '../fixtures/constants.js';
+import { getStudioUrl, getApiBaseUrl, getPlayerUrl } from '../fixtures/constants.js';
 import path from 'node:path';
 
 const BLOBS = path.resolve(import.meta.dirname, '../blobs');
@@ -362,22 +362,57 @@ test.describe('Integration — Publish flow (Studio → Hub)', () => {
     });
 
     // ── Step 20: Verify the published artifact on Hub ──
-    await test.step('Verify published artifact exists on Hub', async () => {
+    await test.step('Verify published artifact exists on Hub and has inherited build cache key', async () => {
       const hub = new HubPage(page);
       await hub.openArtifact(publishedArtifactId);
 
       await expect(page.getByRole('heading', { name: publishedArtifactName })).toBeVisible({ timeout: 15_000 });
+
+      // Verify via API that the player-published artifact inherited the parent's buildCacheKey.
+      // Without this, the player would fall back to slow L3 local compilation.
+      const graphResp = await page.request.get(
+        `${getApiBaseUrl()}/artifacts/${publishedArtifactId}/graph?version=latest`
+      );
+      expect(graphResp.ok()).toBeTruthy();
+      const graphData = await graphResp.json();
+      expect(graphData.version?.buildCacheKey,
+        'Player-published artifact must have buildCacheKey inherited from parent'
+      ).toBeTruthy();
     });
 
     // ── Step 21: Play the published artifact and verify the creature exists ──
     await test.step('Play published artifact and verify creature in world state', async () => {
       const hub = new HubPage(page);
+
+      // Clear the player-origin OPFS to eliminate cached L1 build data from Steps
+      // 14–19. BuildAwareVfs runs in the player page (playerPort origin), not in the
+      // sandbox SW, so we must wipe the player's OPFS (not the sandbox's).
+      // This forces Step 21's player to fetch the build from R2 (L2), verifying
+      // that the player-published artifact's inherited buildCacheKey is in R2.
+      const clearPage = await page.context().newPage();
+      try {
+        await clearPage.goto(`${getPlayerUrl()}/`, { waitUntil: 'commit' });
+        await clearPage.evaluate(async () => {
+          try {
+            const root = await navigator.storage.getDirectory();
+            await root.removeEntry('__build_cache__', { recursive: true });
+          } catch { /* directory may not exist */ }
+        });
+      } finally {
+        await clearPage.close();
+      }
+
       const newPlayerPage = await hub.clickPlay();
 
       const player = new PlayerPage(newPlayerPage);
       await player.waitForReady();
       await player.waitForAppLog();
       expect(await player.hasError()).toBeFalsy();
+
+      // Verify the remote build cache (L2) is used — not local recompilation (L3).
+      // This confirms the player-published artifact's inherited buildCacheKey is valid.
+      // OPFS was cleared above, so only R2 (L2) can produce a cache hit.
+      player.assertRemoteBuildCacheUsed();
 
       const sandboxApp = newPlayerPage.frameLocator('iframe').frameLocator('iframe');
 

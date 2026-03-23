@@ -59,10 +59,12 @@ export interface StoryTurn extends BaseTurn {
   selectedEvents?: string[] // Collector 选中的事件 ID 列表
   settingChanges?: any[]
   eventChanges?: any[]
+  newEntities?: any[]
   stateChanges?: GameStateChanges
   updateGameStateResult?: UpdateGameStateAndDocsOutput
   playerChoices?: PlayerChoice[]
   allowCustomInput?: boolean
+  formUI?: string // GameUI DSL 标记语言，LLM 生成的表单 UI（商店/技能消耗等）
   directorNotes?: { notes: string[]; flags: Array<{ id: string; value: boolean; remark?: string }>; stage_goal?: string | null }
   generationPhase?: 'collecting' | 'reasoning' | 'thinking' | 'writing' | 'done'
   typewriterEnabled?: boolean // 运行时标记，仅新生成的回合为 true
@@ -138,9 +140,11 @@ export interface StoryHistoryData {
     selectedEvents?: string[]
     settingChanges?: any[]
     eventChanges?: any[]
+    newEntities?: any[]
     stateChanges?: GameStateChanges
     playerChoices?: PlayerChoice[]
     allowCustomInput?: boolean
+    formUI?: string // GameUI DSL 标记语言
     directorNotes?: { notes: string[]; flags: Array<{ id: string; value: boolean; remark?: string }>; stage_goal?: string | null }
     checkpointId?: string
     // 游戏状态更新结果（用于恢复时显示）

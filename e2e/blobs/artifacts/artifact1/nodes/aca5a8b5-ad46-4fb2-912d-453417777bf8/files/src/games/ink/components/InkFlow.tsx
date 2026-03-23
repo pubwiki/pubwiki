@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect, useState } from 'react'
+import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { showConfirm } from '../../../components/AlertDialog'
 import { useGameStore } from '../stores/gameStore'
@@ -17,6 +17,9 @@ import {
   ChangeSuggestionsSection,
   UpdateGameStateSection
 } from './CollapsibleSections'
+import { FormUI } from './FormUI'
+import { parseFormUI, formatFormUIResult } from '../utils/formUIDSL'
+import type { FormUIResult } from '../utils/formUIDSL'
 
 interface InkFlowProps {
   scrollToBottom: (force: boolean) => void
@@ -165,6 +168,21 @@ export function StoryBlock({ turn, scrollToBottom }: { turn: StoryTurn; scrollTo
 
   // Are there actual choices to render?
   const hasChoices = !!(turn.playerChoices && turn.playerChoices.length > 0)
+
+  // Parse FormUI DSL (if present)
+  const parsedFormUI = useMemo(
+    () => turn.formUI ? parseFormUI(turn.formUI) : null,
+    [turn.formUI]
+  )
+
+  const [formUISubmitted, setFormUISubmitted] = useState(false)
+
+  const handleFormUISubmit = useCallback((result: FormUIResult) => {
+    if (!parsedFormUI) return
+    setFormUISubmitted(true)
+    const actionText = formatFormUIResult(parsedFormUI, result)
+    handleCustomInput(actionText, turn.id, scrollToBottom)
+  }, [parsedFormUI, handleCustomInput, turn.id, scrollToBottom])
 
   return (
     <div className={`story-block ${turn.generationPhase === 'done' ? 'complete' : 'generating'}`}>
@@ -402,11 +420,20 @@ export function StoryBlock({ turn, scrollToBottom }: { turn: StoryTurn; scrollTo
       )}
 
 
-      {/* 玩家交互区域（选项 + 自定义输入） */}
+      {/* 玩家交互区域（FormUI + 选项 + 自定义输入） */}
       {showInteraction && currentPhase !== 'dice-rolling' && (
         <div className="player-choices-container">
-          {/* 选项列表（仅当 AI 返回了选项时显示） */}
-          {hasChoices && (
+          {/* FormUI 表单（商店/技能消耗等，由 LLM 生成的 DSL） */}
+          {parsedFormUI && !formUISubmitted && (
+            <FormUI
+              parsed={parsedFormUI}
+              disabled={currentPhase !== 'waiting-choice'}
+              onSubmit={handleFormUISubmit}
+            />
+          )}
+
+          {/* 选项列表（仅当 AI 返回了选项时显示；与 FormUI 互斥） */}
+          {hasChoices && !parsedFormUI && (
             <>
               <div className="choices-header">
                 <span className="choices-icon"></span>
@@ -438,8 +465,8 @@ export function StoryBlock({ turn, scrollToBottom }: { turn: StoryTurn; scrollTo
             </>
           )}
 
-          {/* 无选项时的提示 */}
-          {!hasChoices && (
+          {/* 无选项时的提示（FormUI 存在时不显示） */}
+          {!hasChoices && !parsedFormUI && (
             <div className="no-choices-hint">
               <span>{t('ink.choices.noChoicesHint')}</span>
             </div>

@@ -133,14 +133,7 @@ local prompt = [==[
 
 ---
 
-# 5. Entity-Document Mapping (⚠️ Check CONDITION Fields!)
-<EntityDocumentMapping>
-<THE_ENTITY_DOCUMENT_MAPPING>
-</EntityDocumentMapping>
-
----
-
-# 6. World Events (Plot Event History)
+# 5. World Events (Plot Event History) — ⚠️ Select Events FIRST
 <WorldEvents>
 <THE_WORLD_EVENTS>
 </WorldEvents>
@@ -151,13 +144,31 @@ local prompt = [==[
 
 ---
 
+# 6. Entity-Document Mapping (⚠️ Check CONDITION Fields!)
+<EntityDocumentMapping>
+<THE_ENTITY_DOCUMENT_MAPPING>
+</EntityDocumentMapping>
+
+---
+
 # Recall Strategy
 
-## Entity Selection Rules
+## ⚠️ Step 1: Event Selection (Do This FIRST!)
+**Select events BEFORE entity/document selection.** Events establish narrative context that informs which entities are relevant.
+
+| Criterion | Action |
+|-----------|--------|
+| Most recent 1-2 events | **Always select** (maintains narrative continuity) |
+| Events referenced in DirectorNotes | **Select** (hidden plot threads) |
+| Events involving entities in current scene | **Select** (context for character interactions) |
+| Events referenced in instruction | **Select** |
+| Ancient events with no current relevance | **Skip** |
+
+## Step 2: Entity Selection Rules
 | Entity Type | Select When |
 |-------------|-------------|
 | World | **Always** |
-| Creature | Mentioned in instruction / present at scene / strongly associated / **referenced in hidden plot threads** |
+| Creature | Mentioned in instruction / present at scene / strongly associated / **referenced in hidden plot threads** / **involved in selected events** |
 | Region | Mentioned in instruction / is current scene / **referenced in hidden plot threads** |
 | Organization | Mentioned in instruction / **referenced in hidden plot threads** |
 | Other | **Do not select** if no association |
@@ -179,7 +190,7 @@ The stage_goal describes the macro narrative direction for the current phase (e.
 
 **Example**: stage_goal says "the character arrived at a new city; focus on exploration and introduce the merchant guild" → select the merchant guild organization entity + its docs + the city region entity, even if the instruction doesn't mention them explicitly.
 
-## Document Selection Rules (Only for Selected Entities)
+## Step 3: Document Selection Rules (Only for Selected Entities)
 
 **Condition types — identify then verify:**
 | Condition Type | Example | Check Against |
@@ -193,15 +204,6 @@ The stage_goal describes the macro narrative direction for the current phase (e.
 **Document types are independent** — stage settings and plot events cannot substitute for each other. Never skip a condition-met doc because another seems "more fitting".
 
 **Plot Events**: Select most recent 1-2 + key prerequisite events. Skip ancient trivia.
-
-## Event Selection Rules
-| Criterion | Action |
-|-----------|--------|
-| Most recent 1-2 events | **Always select** (maintains narrative continuity) |
-| Events referenced in DirectorNotes | **Select** (hidden plot threads) |
-| Events involving entities in current scene | **Select** (context for character interactions) |
-| Events referenced in instruction | **Select** |
-| Ancient events with no current relevance | **Skip** |
 
 ## Document Purpose Flags (for selected docs only)
 | Flag | Meaning |
@@ -217,13 +219,15 @@ Only tag T/W/U when the document explicitly contains directives like "rules", "m
 
 # Output Format
 
-Your output is a JSON object with three fields:
+Your output is a JSON object with three fields, **in this order**:
 
 1. **`outline`** (string): A brief analysis paragraph covering:
    - What the instruction needs (core action, characters, locations)
    - Key condition checks (state/task conditions met or not)
 
-2. **`decision`** (object): Keys are entity keys (`entity_1`, `entity_2`, ...). **Only include selected entities** — omitted entities are excluded.
+2. **`selected_events`** (array of strings): Event IDs selected for context. **Output this BEFORE decision.** Include the most recent 1-2 events + any events relevant to the instruction or referenced in DirectorNotes.
+
+3. **`decision`** (object): Keys are entity keys (`entity_1`, `entity_2`, ...). **Only include selected entities** — omitted entities are excluded.
    Each value is an object with:
    - `"thinking"` (string): **1-2 sentence reason** for selecting this entity AND its documents (e.g., "player character in scene, need basic setting + recent plot event for context")
    - `"docs"` (array of strings): Selected document IDs (using the `doc_X_Y` IDs from Entity-Document Mapping), with optional flag suffix (`T`/`W`/`U`)
@@ -231,16 +235,14 @@ Your output is a JSON object with three fields:
      - **⚠️ When you select an entity, you MUST also select its relevant docs. An entity with no selected docs is useless — carefully check each doc's condition and relevance before leaving `docs` empty.**
      - Entity with no documents at all → `[]` is fine
 
-3. **`selected_events`** (array of strings): Event IDs selected for context. Include the most recent 1-2 events + any events relevant to the instruction or referenced in DirectorNotes.
-
 ### Example
 
-**Scene**: 8 entities. Detective A (entity_1), Killer B (entity_2), Witness C (entity_3), entities 4-7 irrelevant, entity_8 is World.
+**Scene**: 8 entities. Detective A (entity_1), Killer B (entity_2), Witness C (entity_3), entities 4-7 irrelevant, entity_8 is World. 3 events available.
 
 Entity_1 has 2 docs. Entity_2 has 3 docs (doc_2_3 has condition[phase_2] but current=phase_1). Entity_3 has 1 doc. Entity_8 has 2 docs (doc_8_2 = GM guide).
 
 ```json
-{"outline":"Investigation scene. doc_2_3 condition[phase_2] not met, exclude. doc_8_2 contains GM rules, tag T.","decision":{"entity_1":{"thinking":"detective, core character, need profile and case notes","docs":["doc_1_1","doc_1_2"]},"entity_2":{"thinking":"killer, key suspect, need profile and motive but not phase_2 doc","docs":["doc_2_1","doc_2_2"]},"entity_3":{"thinking":"witness with testimony","docs":["doc_3_1"]},"entity_8":{"thinking":"world, always select","docs":["doc_8_1","doc_8_2T"]}},"selected_events":["Year22_Jul5_Desperate_Struggle","Year22_Jul4_Mountain_Ambush"]}
+{"outline":"Investigation scene. doc_2_3 condition[phase_2] not met, exclude. doc_8_2 contains GM rules, tag T.","selected_events":["Year22_Jul5_Desperate_Struggle","Year22_Jul4_Mountain_Ambush"],"decision":{"entity_1":{"thinking":"detective, core character, need profile and case notes","docs":["doc_1_1","doc_1_2"]},"entity_2":{"thinking":"killer, key suspect, need profile and motive but not phase_2 doc","docs":["doc_2_1","doc_2_2"]},"entity_3":{"thinking":"witness with testimony","docs":["doc_3_1"]},"entity_8":{"thinking":"world, always select","docs":["doc_8_1","doc_8_2T"]}}}
 ```
 
 4-7 omitted (excluded). doc_2_3 excluded (condition unmet).
@@ -382,6 +384,26 @@ ServiceRegistry:define()
             local lines = {}
             table.insert(lines, '{')
             table.insert(lines, '  "outline": "__TODO: brief analysis + key condition checks__",')
+
+            -- 事件选择放在前面（先选事件，再选实体/文档）
+            local events = inputs.events or {}
+            if #events > 0 then
+                table.insert(lines, string.format('  // ⚠️ Select events FIRST! Available events: %s',
+                    table.concat(
+                        (function()
+                            local hints = {}
+                            for _, evt in ipairs(events) do
+                                table.insert(hints, string.format('%s("%s")', evt.event_id, evt.title))
+                            end
+                            return hints
+                        end)(), ", "
+                    )
+                ))
+                table.insert(lines, '  "selected_events": ["__recent 1-2 + relevant event IDs from above__"],')
+            else
+                table.insert(lines, '  "selected_events": [],')
+            end
+
             table.insert(lines, '  "decision": {')
             table.insert(lines, '    // Only include SELECTED entities. Omitted = excluded.')
 
@@ -402,30 +424,7 @@ ServiceRegistry:define()
             end
 
             table.insert(lines, '    "entity_X": { "thinking": "reason for selecting + doc selection rationale", "docs": ["doc_X_Y", "doc_X_ZT"] }')
-            table.insert(lines, '  },')
-
-            -- 列出可用事件 ID + 标题
-            local events = inputs.events or {}
-            if #events > 0 then
-                local evtHints = {}
-                for _, evt in ipairs(events) do
-                    table.insert(evtHints, string.format('"%s"', evt.event_id))
-                end
-                table.insert(lines, string.format('  // Available events: %s',
-                    table.concat(
-                        (function()
-                            local hints = {}
-                            for _, evt in ipairs(events) do
-                                table.insert(hints, string.format('%s("%s")', evt.event_id, evt.title))
-                            end
-                            return hints
-                        end)(), ", "
-                    )
-                ))
-                table.insert(lines, '  "selected_events": ["__recent 1-2 + relevant event IDs from above__"]')
-            else
-                table.insert(lines, '  "selected_events": []')
-            end
+            table.insert(lines, '  }')
 
             table.insert(lines, '}')
             return table.concat(lines, "\n")
@@ -437,6 +436,7 @@ ServiceRegistry:define()
                 type = "object",
                 properties = {
                     outline = { type = "string" },
+                    selected_events = { type = "array", items = { type = "string" } },
                     decision = {
                         type = "object",
                         additionalProperties = {
@@ -446,8 +446,7 @@ ServiceRegistry:define()
                                 docs = { type = "array", items = { type = "string" } }
                             }
                         }
-                    },
-                    selected_events = { type = "array", items = { type = "string" } }
+                    }
                 }
             }
         end

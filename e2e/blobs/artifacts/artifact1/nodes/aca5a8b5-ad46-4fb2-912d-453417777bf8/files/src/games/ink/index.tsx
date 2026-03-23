@@ -27,7 +27,7 @@ import { PublishModal, PublishCheckpointModal, RewriteHistoryModal, WorldOvervie
 import { GMChat } from './components/GMChat'
 import { useGMStore } from './stores/gmStore'
 import { TimelinePanel } from './components/TimelinePanel'
-import { loadSave, listSaves, getStoryHistory, setNewStoryHistory } from '../utils'
+import { loadSave, listSaves, getStoryHistory, setNewStoryHistory, initialGameFromChoice } from '../utils'
 import { parseTimelineDesc, cleanSaveTitle } from './utils/timelineUtils'
 import { CompactLanguageSelector } from '../../i18n/CompactLanguageSelector'
 import { supportedLanguages, changeLanguage } from '../../i18n'
@@ -44,6 +44,7 @@ export default function InkGame({ onBack }: InkGameProps) {
   // Game Store
   const gameStarted = useGameStore(s => s.gameStarted)
   const backgroundStory = useGameStore(s => s.backgroundStory)
+  const gameInitChoice = useGameStore(s => s.gameInitChoice)
   const inkTurns = useGameStore(s => s.inkTurns)
   const currentPhase = useGameStore(s => s.currentPhase)
   const startGame = useGameStore(s => s.startGame)
@@ -129,6 +130,26 @@ export default function InkGame({ onBack }: InkGameProps) {
   const resetRegistryStore = useRegistryStore(s => s.reset)
   
   const { t, i18n } = useTranslation('game')
+
+  const [choosingInit, setChoosingInit] = useState(false)
+
+  const handleInitChoice = useCallback(async (choiceId: string) => {
+    setChoosingInit(true)
+    try {
+      const result = await initialGameFromChoice(choiceId)
+      if (result.success) {
+        // 重新加载数据（choice 服务会修改 IsPlayer、删除实体、覆盖故事、禁用 enable）
+        await loadInitialData()
+        await startGame()
+      } else {
+        console.error('InitialGameFromChoice failed:', result.error)
+      }
+    } catch (e) {
+      console.error('InitialGameFromChoice error:', e)
+    } finally {
+      setChoosingInit(false)
+    }
+  }, [loadInitialData, startGame])
 
   // ==================== Refs ====================
   const inkFlowRef = useRef<HTMLDivElement>(null)
@@ -355,22 +376,31 @@ export default function InkGame({ onBack }: InkGameProps) {
   const [activeTab, setActiveTab] = useState<'gameplay' | 'gm'>('gameplay')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [chapterMenuOpen, setChapterMenuOpen] = useState(false)
-  const chapterMenuRef = useRef<HTMLDivElement>(null)
+  const mobileChapterMenuRef = useRef<HTMLDivElement>(null)
+  const desktopChapterMenuRef = useRef<HTMLDivElement>(null)
   const mobileMenuRef = useRef<HTMLDivElement>(null)
 
-  // 点击外部关闭弹出菜单
+  // 点击/触摸外部关闭弹出菜单
   useEffect(() => {
     if (!mobileMenuOpen && !chapterMenuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (mobileMenuOpen && mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
+    const handler = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node
+      if (mobileMenuOpen && mobileMenuRef.current && !mobileMenuRef.current.contains(target)) {
         setMobileMenuOpen(false)
       }
-      if (chapterMenuOpen && chapterMenuRef.current && !chapterMenuRef.current.contains(e.target as Node)) {
+      if (chapterMenuOpen
+        && (!mobileChapterMenuRef.current || !mobileChapterMenuRef.current.contains(target))
+        && (!desktopChapterMenuRef.current || !desktopChapterMenuRef.current.contains(target))
+      ) {
         setChapterMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
   }, [mobileMenuOpen, chapterMenuOpen])
 
   // 设置控件（统一放在模态框中）
@@ -505,9 +535,28 @@ export default function InkGame({ onBack }: InkGameProps) {
                   </div>
                 )}
               </div>
-              <button className="start-btn paper-btn" onClick={startGame}>
-                {t('ink.startAdventure')}
-              </button>
+              {gameInitChoice && gameInitChoice.choices.length > 0 ? (
+                <div className="init-choice-section">
+                  <h3 className="section-title" style={{ textAlign: 'center', marginBottom: '12px' }}>{t('ink.chooseCharacter')}</h3>
+                  <div className="init-choice-list">
+                    {gameInitChoice.choices.map(choice => (
+                      <button
+                        key={choice.id}
+                        className="init-choice-card paper-btn"
+                        disabled={choosingInit}
+                        onClick={() => handleInitChoice(choice.id)}
+                      >
+                        <div className="init-choice-name">{choice.name}</div>
+                        <div className="init-choice-desc">{choice.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <button className="start-btn paper-btn" onClick={startGame}>
+                  {t('ink.startAdventure')}
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -535,7 +584,7 @@ export default function InkGame({ onBack }: InkGameProps) {
                 </button>
               </div>
               {chapters.length > 1 && activeTab === 'gameplay' && (
-                <div className="chapter-jump-wrapper" ref={chapterMenuRef}>
+                <div className="chapter-jump-wrapper" ref={mobileChapterMenuRef}>
                   <button className="icon-btn chapter-jump-btn" onClick={() => setChapterMenuOpen(v => !v)} title={t('ink.chapterJump')}>
                     📑
                   </button>
@@ -649,7 +698,7 @@ export default function InkGame({ onBack }: InkGameProps) {
                     Game Master
                   </span>
                   {chapters.length > 1 && activeTab === 'gameplay' && (
-                    <div className="chapter-jump-wrapper desktop-chapter-jump" ref={chapterMenuRef}>
+                    <div className="chapter-jump-wrapper desktop-chapter-jump" ref={desktopChapterMenuRef}>
                       <button
                         className="chapter-jump-trigger"
                         onClick={() => setChapterMenuOpen(v => !v)}
