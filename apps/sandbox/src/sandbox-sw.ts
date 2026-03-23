@@ -144,17 +144,23 @@ async function restoreStateIfNeeded(): Promise<void> {
     return
   }
   
-  // Restore bootstrap clients (without VFS stubs)
+  // Restore bootstrap clients (without VFS stubs).
+  // Skip entries that already exist in memory — they have valid state
+  // from the current SW lifecycle that must not be overwritten.
   for (const bootstrapId of state.bootstrapClientIds) {
-    bootstrapClients.set(bootstrapId, {
-      id: bootstrapId,
-      vfsRpcStub: null // Will be restored on-demand
-    })
+    if (!bootstrapClients.has(bootstrapId)) {
+      bootstrapClients.set(bootstrapId, {
+        id: bootstrapId,
+        vfsRpcStub: null // Will be restored on-demand
+      })
+    }
   }
   
-  // Restore user iframe mappings
+  // Restore user iframe mappings (preserve existing)
   for (const [userIframeId, bootstrapId] of Object.entries(state.userIframeToBootstrap)) {
-    userIframeToBootstrap.set(userIframeId, bootstrapId)
+    if (!userIframeToBootstrap.has(userIframeId)) {
+      userIframeToBootstrap.set(userIframeId, bootstrapId)
+    }
   }
   
   needsStateRestoration = false
@@ -165,9 +171,18 @@ async function restoreStateIfNeeded(): Promise<void> {
  * Requests new port if stub is null (after wake from sleep)
  */
 async function ensureVfsStub(bootstrapId: string): Promise<RpcStub<IVfsService> | null> {
-  const bootstrap = bootstrapClients.get(bootstrapId)
+  let bootstrap = bootstrapClients.get(bootstrapId)
+  
   if (!bootstrap) {
-    return null
+    // Bootstrap not yet in our map — request VFS port from it
+    try {
+      await requestBootstrapClient(bootstrapId)
+      bootstrap = bootstrapClients.get(bootstrapId)
+    } catch (error) {
+      console.error('[SandboxSW] Failed to request bootstrap client:', error)
+      return null
+    }
+    if (!bootstrap) return null
   }
   
   // If stub exists, return it
@@ -448,14 +463,19 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   
   const clientId = event.clientId
   
-  // iOS Safari workaround: handle navigation without clientId
-  // When nested iframe navigates, iOS Safari doesn't provide clientId,
-  // but we pass bootstrap ID via URL parameter
-  if (!clientId && event.request.mode === 'navigate') {
+  // Handle _bid parameter for browsers that don't pre-register srcdoc iframes.
+  // This covers both iOS Safari (no clientId) and older Chrome (clientId present
+  // but no mapping because srcdoc iframe couldn't send REGISTER_USER_IFRAME).
+  if (event.request.mode === 'navigate') {
     const bid = url.searchParams.get('_bid')
-    if (bid && event.resultingClientId) {
-      // iOS Safari workaround: register new client from URL param
-      userIframeToBootstrap.set(event.resultingClientId, bid)
+    if (bid) {
+      // Map both the old (srcdoc) and new (navigated) client IDs to this bootstrap
+      if (event.resultingClientId) {
+        userIframeToBootstrap.set(event.resultingClientId, bid)
+      }
+      if (clientId) {
+        userIframeToBootstrap.set(clientId, bid)
+      }
       saveState()
       event.respondWith(handleNavigationRequest(event, bid))
       return

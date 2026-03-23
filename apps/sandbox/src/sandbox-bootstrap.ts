@@ -381,10 +381,20 @@ async function loadUserIframe(entryFile: string, initialPath?: string): Promise<
           iframeWindow.navigator.serviceWorker.addEventListener('controllerchange', () => {
             resolve()
           }, { once: true })
-          // Timeout protection
+          // Timeout protection — in some browsers (Chrome <131) srcdoc iframes
+          // never get a SW controller, so don't block forever
           setTimeout(resolve, 1000)
         })
       }
+    }
+    
+    // Check if we can actually send the registration message
+    const controller = iframeWindow.navigator.serviceWorker?.controller
+    if (!controller) {
+      // No SW controller on this iframe (e.g. about:srcdoc in older Chrome).
+      // Skip registration — the SW will establish the mapping when the iframe
+      // navigates to a real URL via the _bid query parameter.
+      return false
     }
     
     // Wait for SW to complete registration
@@ -398,18 +408,16 @@ async function loadUserIframe(entryFile: string, initialPath?: string): Promise<
       navigator.serviceWorker.addEventListener('message', handler)
     })
     
-    // Register user iframe with SW using iframe's serviceWorker
-    if (iframeWindow.navigator.serviceWorker?.controller) {
-      iframeWindow.navigator.serviceWorker.controller.postMessage({
-        type: 'REGISTER_USER_IFRAME',
-        bootstrapClientId: bootstrapClientId
-      })
-    }
+    // Register user iframe with SW
+    controller.postMessage({
+      type: 'REGISTER_USER_IFRAME',
+      bootstrapClientId: bootstrapClientId
+    })
     
     // Wait for confirmation
     await registrationPromise
     
-    hideLoading()
+    return true
   }
   
   userIframe.onerror = () => {
@@ -417,13 +425,11 @@ async function loadUserIframe(entryFile: string, initialPath?: string): Promise<
   }
   
   
-  // Manually call register before loading entryFile to ensure SW is ready
-  await registerUserIframe()
+  // Try to pre-register the user iframe with SW before navigation.
+  // This may fail on about:srcdoc in older Chrome versions that don't
+  // assign a SW controller to srcdoc iframes.
+  const preRegistered = await registerUserIframe()
   
-  
-  // Include bootstrap ID in URL for iOS Safari workaround
-  // iOS Safari doesn't provide clientId on nested iframe navigation,
-  // so we pass it via URL parameter for SW to establish the mapping
   // Include bootstrap ID in URL for iOS Safari workaround
   // iOS Safari doesn't provide clientId on nested iframe navigation,
   // so we pass it via URL parameter for SW to establish the mapping
@@ -438,6 +444,14 @@ async function loadUserIframe(entryFile: string, initialPath?: string): Promise<
     }
     userIframe!.addEventListener('load', handler)
   })
+  
+  // If pre-registration failed (srcdoc had no SW controller), register now
+  // that the iframe has navigated to a real URL
+  if (!preRegistered) {
+    await registerUserIframe()
+  }
+  
+  hideLoading()
   
   
   // Inject console interceptor into user iframe
@@ -641,9 +655,7 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
 navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
   const message = event.data
   
-  
   if (message?.type === 'REQUEST_VFS_PORT') {
-    
     if (vfsRpcPort) {
       sendVfsPortToServiceWorker()
     } else {
@@ -678,6 +690,7 @@ window.addEventListener('message', (event: MessageEvent) => {
   
   // Handle sandbox initialization
   if (message?.type === 'sandbox-init') {
+    
     
     const urlParams = new URLSearchParams(window.location.search)
     const entryFromUrl = urlParams.get('entry')
