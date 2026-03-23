@@ -8,7 +8,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import type { SandboxConnection, ProjectConfig, ConsoleLogEntry } from '@pubwiki/sandbox-host';
-	import { createSandboxConnection } from '@pubwiki/sandbox-host';
+	import { createSandboxConnection, computeSandboxId, getSandboxOrigin } from '@pubwiki/sandbox-host';
 	import { createBuildAwareVfs, getOpfsBuildCacheStorage } from '@pubwiki/bundler';
 	import { computeBuildCacheKey } from '@pubwiki/api';
 	import type { Vfs } from '@pubwiki/vfs';
@@ -18,6 +18,7 @@
 	import { createLoaderServices } from '$lib/sandbox';
 	import { ConsoleLogStore, createLogSession, formatLogFile, downloadLogFile } from '$lib/sandbox/console-log-db';
 	import { page } from '$app/state';
+	import { PUBLIC_SANDBOX_SITE_URL } from '$env/static/public';
 	import VirtualConsoleList from './VirtualConsoleList.svelte';
 	import * as Sentry from '@sentry/sveltekit';
 	import * as m from '$lib/paraglide/messages';
@@ -39,7 +40,6 @@
 	interface Props {
 		vfs: NodeVfs;
 		projectConfig: ProjectConfig;
-		sandboxOrigin: string;
 		entryFile: string;
 		name: string;
 		loaderNodes?: LoaderNodeInfo[];
@@ -53,7 +53,6 @@
 	let {
 		vfs,
 		projectConfig,
-		sandboxOrigin,
 		entryFile,
 		name,
 		loaderNodes = [],
@@ -149,6 +148,12 @@
 
 	// Deferred: set AFTER createSandboxConnection to avoid missing SANDBOX_READY
 	let iframeSrc = $state<string | undefined>(undefined);
+
+	// Track current sandbox path for restart recovery
+	let currentSandboxPath = $state<string | undefined>(undefined);
+
+	// Resolved sandbox origin (computed at start time)
+	let resolvedSandboxOrigin = $state<string>('');
 
 	// ============================================================================
 	// Portal action
@@ -362,20 +367,28 @@
 				},
 			});
 
+			// Compute per-instance sandbox origin for storage isolation
+			const sandboxId = await computeSandboxId(projectId ?? 'dev', entryFile);
+			resolvedSandboxOrigin = getSandboxOrigin(sandboxId, PUBLIC_SANDBOX_SITE_URL || undefined);
+
 			// Create sandbox connection with BuildAwareVfs (transparent build output)
 			sandboxConnection = createSandboxConnection({
 				iframe: iframeRef,
 				basePath: '/',
 				projectConfig,
-				targetOrigin: sandboxOrigin,
+				targetOrigin: resolvedSandboxOrigin,
 				entryFile,
+				initialPath: currentSandboxPath,
 				vfs: buildAwareVfs,
 				customServices,
-				onLog: handleLog
+				onLog: handleLog,
+				onUrlChange: (path) => {
+					currentSandboxPath = path;
+				}
 			});
 
 			// Set iframe src AFTER createSandboxConnection to avoid missing SANDBOX_READY message
-			iframeSrc = `${sandboxOrigin}/__sandbox.html`;
+			iframeSrc = `${resolvedSandboxOrigin}/__sandbox.html`;
 
 			// Wait for sandbox to be ready and initialized
 			const success = await sandboxConnection.waitForReady();
@@ -868,7 +881,7 @@
 		{#if !isFullscreen && !isMinimized}
 		<div class="px-4 py-2 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex items-center justify-between">
 			<span>{m.studio_node_entry({ entryFile })}</span>
-			<span>{m.studio_node_origin({ origin: sandboxOrigin })}</span>
+			<span>{m.studio_node_origin({ origin: resolvedSandboxOrigin })}</span>
 		</div>
 		{/if}
 		

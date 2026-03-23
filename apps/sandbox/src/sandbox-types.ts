@@ -16,6 +16,7 @@ export interface SandboxContext {
   workspaceId: string
   basePath: string
   entryFile: string
+  initialPath?: string
 }
 
 /**
@@ -35,6 +36,7 @@ export interface SandboxInitMessage {
   workspaceId: string
   basePath: string
   entryFile?: string
+  initialPath?: string
 }
 
 /**

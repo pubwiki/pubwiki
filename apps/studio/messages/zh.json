@@ -241,6 +241,7 @@
 	"studio_publish_node_plural": "个节点",
 	"studio_publish_no_nodes_hint": "外部节点和引用历史版本的节点将被排除",
 	"studio_publish_build_required": "发布前需要先构建入口点。",
+	"studio_graph_incomplete": "缺少必要的节点连接。请确保入口点的所有依赖（VFS、State）已连接。",
 	"studio_publish_failed": "发布失败",
 	
 	"studio_overview_tab": "概览",

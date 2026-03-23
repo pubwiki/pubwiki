@@ -104,10 +104,14 @@ export interface SandboxConnectionConfig {
   targetOrigin: string
   /** Entry file to load (e.g., 'index.html') */
   entryFile: string
+  /** Initial path to navigate to instead of entryFile default (e.g., '/game/level-3') */
+  initialPath?: string
   /** Custom services to register (optional) */
   customServices?: Map<string, CustomServiceFactory<MainRpcHostConfig>>
   /** Callback for console log events from sandbox (optional) */
   onLog?: OnLogCallback
+  /** Callback for URL change events from sandbox (optional) */
+  onUrlChange?: (path: string) => void
 }
 
 /**

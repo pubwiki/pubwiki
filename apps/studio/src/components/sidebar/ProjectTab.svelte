@@ -119,6 +119,8 @@
 	let resolvedBuildCacheKey = $state<string | null>(null);
 	// Selected save from EntrypointSection
 	let selectedSave = $state<SelectedSave | null>(null);
+	// Graph completeness from EntrypointSection (missing VFS or STATE connections)
+	let graphIncomplete = $state(false);
 	// Publishing requires a valid build when an entrypoint is selected
 	let needsBuild = $derived(selectedEntrypoint != null && resolvedBuildCacheKey == null);	let isSubmitting = $state(false);
 	let errorMessage = $state('');
@@ -564,12 +566,18 @@
 				{onEntrypointChange}
 				onBuildCacheKeyChange={(key) => { resolvedBuildCacheKey = key; }}
 				onSaveChange={(save) => { selectedSave = save; }}
+				onGraphIncompleteChange={(v) => { graphIncomplete = v; }}
 			/>
 		{/if}
 
 		<!-- Build required hint -->
 		{#if needsBuild}
 			<p class="text-xs text-amber-600">{m.studio_publish_build_required()}</p>
+		{/if}
+
+		<!-- Graph incomplete hint -->
+		{#if graphIncomplete}
+			<p class="text-xs text-amber-600">{m.studio_graph_incomplete()}</p>
 		{/if}
 
 		<!-- Publish Button -->
@@ -580,7 +588,7 @@
 
 		<button
 			type="submit"
-			disabled={isSubmitting || nodesToPublish.length === 0 || !isAuthenticated || needsBuild || !publishState.state.hasPublishableChanges}
+			disabled={isSubmitting || nodesToPublish.length === 0 || !isAuthenticated || needsBuild || graphIncomplete || !publishState.state.hasPublishableChanges}
 			class="w-full py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 		>
 			{#if isSubmitting}

@@ -57,9 +57,11 @@ export function createSandboxConnection(
     projectConfig,
     targetOrigin,
     entryFile,
+    initialPath,
     customServices,
     vfs,
-    onLog
+    onLog,
+    onUrlChange
   } = config
 
   const id = `sandbox-conn-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
@@ -73,6 +75,9 @@ export function createSandboxConnection(
 
   // Pending onLog callback (set before mainRpcHost is ready)
   let pendingOnLogCallback = onLog ?? null
+
+  // Pending onUrlChange callback (set before mainRpcHost is ready)
+  const pendingOnUrlChangeCallback = onUrlChange ?? null
 
   // File watching cleanup
   let stopFileWatching: (() => void) | null = null
@@ -132,6 +137,11 @@ export function createSandboxConnection(
         hmrService.setOnLogCallback(pendingOnLogCallback)
       }
 
+      // Set up onUrlChange callback if provided
+      if (pendingOnUrlChangeCallback) {
+        hmrService.setOnUrlChangeCallback(pendingOnUrlChangeCallback)
+      }
+
       // 2. Create VFS RPC channel with HMR service
       const vfsConfig: VfsRpcHostConfigExt = {
         basePath,
@@ -148,7 +158,8 @@ export function createSandboxConnection(
         {
           type: 'sandbox-init',
           basePath,
-          entryFile
+          entryFile,
+          initialPath
         },
         targetOrigin,
         [mainChannel.clientPort, vfsChannel.clientPort]

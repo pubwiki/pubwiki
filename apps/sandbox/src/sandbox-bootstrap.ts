@@ -334,7 +334,7 @@ function injectConsoleInterceptor(): void {
 /**
  * Load user iframe
  */
-async function loadUserIframe(entryFile: string): Promise<void> {
+async function loadUserIframe(entryFile: string, initialPath?: string): Promise<void> {
   userIframe = document.getElementById('user-iframe') as HTMLIFrameElement
   
   if (!userIframe) {
@@ -424,7 +424,11 @@ async function loadUserIframe(entryFile: string): Promise<void> {
   // Include bootstrap ID in URL for iOS Safari workaround
   // iOS Safari doesn't provide clientId on nested iframe navigation,
   // so we pass it via URL parameter for SW to establish the mapping
-  iframeWindow.location.replace(`/${entryFile}?_bid=${bootstrapClientId}`)
+  // Include bootstrap ID in URL for iOS Safari workaround
+  // iOS Safari doesn't provide clientId on nested iframe navigation,
+  // so we pass it via URL parameter for SW to establish the mapping
+  const targetPath = initialPath || `/${entryFile}`
+  iframeWindow.location.replace(`${targetPath}${targetPath.includes('?') ? '&' : '?'}_bid=${bootstrapClientId}`)
   
   // Wait for content to load
   await new Promise<void>(resolve => {
@@ -439,7 +443,63 @@ async function loadUserIframe(entryFile: string): Promise<void> {
   // Inject console interceptor into user iframe
   injectConsoleInterceptor()
   
+  // Setup URL tracking to notify host of navigation changes
+  setupUrlTracking()
+  
+  // Re-setup URL tracking on user iframe reload (contentWindow changes)
+  userIframe.addEventListener('load', () => {
+    injectConsoleInterceptor()
+    setupUrlTracking()
+  })
+  
   // Context will be provided on-demand when user iframe calls initSandboxClient()
+}
+
+/**
+ * Setup URL tracking on user iframe
+ * Hooks into the user iframe's navigation events to notify the host of URL changes.
+ * Uses Navigation API (Chrome 102+) when available, falls back to history monkey-patch.
+ */
+function setupUrlTracking(): void {
+  if (!userIframe?.contentWindow || !mainRpcClient) return
+
+  const win = userIframe.contentWindow as Window & typeof globalThis
+
+  const notify = () => {
+    if (!userIframe?.contentWindow) return
+    try {
+      const w = userIframe.contentWindow
+      const path = w.location.pathname + w.location.search + w.location.hash
+      mainRpcClient?.hmr.notifyUrlChange(path).catch(() => {
+        // Silently ignore RPC errors
+      })
+    } catch {
+      // Silently ignore cross-origin errors during navigation
+    }
+  }
+
+  // Prefer Navigation API (Chrome 102+) — one event covers all navigation types
+  if ('navigation' in win) {
+    ;(win as unknown as { navigation: EventTarget }).navigation.addEventListener('navigatesuccess', notify)
+    return
+  }
+
+  // Fallback: monkey-patch history methods on the user iframe's window
+  const childHistory = win.history
+  const origPush = childHistory.pushState.bind(childHistory)
+  const origReplace = childHistory.replaceState.bind(childHistory)
+
+  childHistory.pushState = (...args: Parameters<typeof childHistory.pushState>) => {
+    origPush(...args)
+    notify()
+  }
+  childHistory.replaceState = (...args: Parameters<typeof childHistory.replaceState>) => {
+    origReplace(...args)
+    notify()
+  }
+
+  win.addEventListener('popstate', notify)
+  win.addEventListener('hashchange', notify)
 }
 
 /**
@@ -566,7 +626,7 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
     }
     
     // Load user iframe (now async)
-    await loadUserIframe(context.entryFile)
+    await loadUserIframe(context.entryFile, context.initialPath)
     
     
   } catch (error) {
@@ -625,7 +685,8 @@ window.addEventListener('message', (event: MessageEvent) => {
     sandboxContext = {
       workspaceId: message.workspaceId,
       basePath: message.basePath,
-      entryFile: message.entryFile || entryFromUrl || 'index.html'
+      entryFile: message.entryFile || entryFromUrl || 'index.html',
+      initialPath: message.initialPath
     }
     
     const mainPort = event.ports?.[0]
