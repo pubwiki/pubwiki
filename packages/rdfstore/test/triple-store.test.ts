@@ -343,6 +343,62 @@ describe('TripleStore version control', () => {
     store.checkout(cp2.id)
     expect(store.getAll()).toHaveLength(2)
   })
+
+  it('get with checkpoint queries snapshot without checkout', () => {
+    const store = createTripleStore()
+    store.insert('a', 'name', 'v1')
+    const cp = store.checkpoint({ title: 'v1' })
+
+    store.delete('a', 'name')
+    store.insert('a', 'name', 'v2')
+
+    // Current state
+    expect(store.get('a', 'name')).toBe('v2')
+    // Checkpoint state (no side-effect on current)
+    expect(store.get('a', 'name', undefined, cp.id)).toBe('v1')
+    // Current still unchanged
+    expect(store.get('a', 'name')).toBe('v2')
+  })
+
+  it('match with checkpoint queries snapshot without checkout', () => {
+    const store = createTripleStore()
+    store.insert('a', 'x', '1')
+    store.insert('b', 'x', '2')
+    const cp = store.checkpoint({ title: 'two items' })
+
+    store.insert('c', 'x', '3')
+
+    // Current: 3 triples
+    expect(store.match({ predicate: 'x' })).toHaveLength(3)
+    // Checkpoint: 2 triples
+    expect(store.match({ predicate: 'x' }, cp.id)).toHaveLength(2)
+    // Current unchanged
+    expect(store.match({ predicate: 'x' })).toHaveLength(3)
+  })
+
+  it('get/match with invalid checkpoint throws', () => {
+    const store = createTripleStore()
+    store.insert('a', 'b', 'c')
+    expect(() => store.get('a', 'b', undefined, 'bad-id')).toThrow('Checkpoint not found')
+    expect(() => store.match({ subject: 'a' }, 'bad-id')).toThrow('Checkpoint not found')
+  })
+
+  it('match with checkpoint and graph filter', () => {
+    const store = createTripleStore()
+    store.insert('a', 'p', 'v1', 'g1')
+    store.insert('a', 'p', 'v2', 'g2')
+    const cp = store.checkpoint({ title: 'with graphs' })
+
+    store.insert('a', 'p', 'v3', 'g1')
+
+    // Checkpoint: only g1 triples
+    const g1 = store.match({ subject: 'a', graph: 'g1' }, cp.id)
+    expect(g1).toHaveLength(1)
+    expect(g1[0].object).toBe('v1')
+
+    // Current: g1 has 2 triples
+    expect(store.match({ subject: 'a', graph: 'g1' })).toHaveLength(2)
+  })
 })
 
 // ── Live Query ──

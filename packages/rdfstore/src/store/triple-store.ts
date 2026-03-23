@@ -83,14 +83,21 @@ export class TripleStoreImpl implements TripleStoreInterface {
 
   // ──── Query (synchronous) ────
 
-  match(pattern: MatchPattern): Triple[] {
-    this.assertOpen()
-    return this.index.match(pattern)
+  private resolveIndex(checkpoint?: string): TripleIndex {
+    if (checkpoint === undefined) return this.index
+    const snapshot = this.versionManager.getSnapshot(checkpoint)
+    if (!snapshot) throw new Error(`Checkpoint not found: ${checkpoint}`)
+    return snapshot.index
   }
 
-  get(s: string, p: string, g?: string): Value | undefined {
+  match(pattern: MatchPattern, checkpoint?: string): Triple[] {
     this.assertOpen()
-    return this.index.get(s, p, g)
+    return this.resolveIndex(checkpoint).match(pattern)
+  }
+
+  get(s: string, p: string, g?: string, checkpoint?: string): Value | undefined {
+    this.assertOpen()
+    return this.resolveIndex(checkpoint).get(s, p, g)
   }
 
   getAll(): Triple[] {
