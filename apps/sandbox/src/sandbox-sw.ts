@@ -548,14 +548,13 @@ async function handleFetchRequest(event: FetchEvent) {
   if (userIframeToBootstrap.has(clientId)) {
     const bootstrapId = userIframeToBootstrap.get(clientId)!
     const vfsStub = await ensureVfsStub(bootstrapId)
-    
     if (vfsStub) {
       return handleFileRequest(vfsStub, url.pathname)
     }
   }
   
   // 3. Unknown client
-  console.warn('[SandboxSW] Unknown client:', clientId, 'for:', url.pathname)
+  console.warn('[SandboxSW] Unknown client:', clientId, 'for:', url.pathname, 'bootstrapClients:', [...bootstrapClients.keys()], 'userIframeMap:', [...userIframeToBootstrap.entries()])
   return new Response('Service Worker not ready', { status: 503 })
 }
 

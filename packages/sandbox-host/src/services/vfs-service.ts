@@ -110,8 +110,6 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
     // 1. Resolve path: sandbox's / corresponds to actual basePath
     const actualPath = this.resolveToActualPath(path)
 
-    console.log(`[VfsServiceImpl] readFile: ${path} -> ${actualPath}`)
-
     try {
       // 2. Check if bundling is needed
       if (this.shouldBundle(actualPath)) {
@@ -196,9 +194,15 @@ export class VfsServiceImpl extends RpcTarget implements IVfsService {
       buffer = file.content as Uint8Array
     }
 
+    // Return as string to avoid capnweb's Uint8Array→base64 serialization.
+    // capnweb uses btoa(String.fromCharCode.apply(...)) which strips base64 padding,
+    // and Chrome 130's atob() is strict about padding — causing deserialization to fail
+    // for large payloads (17MB), silently preventing module script execution.
+    // Returning as string uses JSON string encoding instead (no base64 issue).
+    const contentAsString = new TextDecoder().decode(buffer)
     return {
       path: actualPath,
-      content: buffer,
+      content: contentAsString,
       mimeType: 'application/javascript',
       size: buffer.byteLength
     }

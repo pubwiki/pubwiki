@@ -113,7 +113,7 @@
 	let isCompiling = $derived(compilingMessage !== null);
 	
 	// BuildAwareVfs instance (manages build cache + compilation)
-	let buildAwareVfs: Vfs | null = null;
+	let buildAwareVfs: (Vfs & { warmup(): Promise<void> }) | null = null;
 	
 	// Window state
 	let isMinimized = $state(false);
@@ -386,6 +386,12 @@
 					currentSandboxPath = path;
 				}
 			});
+
+			// Warm up the build cache before opening the iframe so the SW can serve
+			// compiled files instantly. Without this, the first module fetch would
+			// block for the full esbuild compile duration (~25s), which causes
+			// Chrome 130 to silently abort the module script request.
+			await buildAwareVfs.warmup();
 
 			// Set iframe src AFTER createSandboxConnection to avoid missing SANDBOX_READY message
 			iframeSrc = `${resolvedSandboxOrigin}/__sandbox.html`;
