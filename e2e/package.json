@@ -4,9 +4,12 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:e2e": "playwright test",
     "test:hub": "playwright test --project=hub",
     "test:studio": "playwright test --project=studio",
     "test:integration": "playwright test --project=integration",
+    "test:compat": "E2E_COMPAT=1 playwright test",
+    "test:chrome130": "E2E_COMPAT=1 playwright test --project=chrome130-setup --project=chrome130-hub --project=chrome130-studio --project=chrome130-integration",
     "report": "playwright show-report"
   },
   "devDependencies": {

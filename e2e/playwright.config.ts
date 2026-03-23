@@ -1,6 +1,26 @@
 import { defineConfig } from '@playwright/test';
+import path from 'node:path';
 
 const CI = !!process.env.CI;
+
+const chromeArgs = [
+  '--enable-gpu',
+  '--enable-unsafe-webgpu',
+  '--ignore-gpu-blocklist',
+  '--enable-features=Vulkan',
+];
+
+// Chrome for Testing binaries (downloaded via @puppeteer/browsers)
+const CHROME_130 = path.resolve(
+  process.env.HOME ?? '~',
+  '.cache/chrome-for-testing/chrome/linux-130.0.6723.116/chrome-linux64/chrome',
+);
+
+// Which browser set to run: 'current' (default) or 'compat' (includes old versions)
+const COMPAT = !!process.env.E2E_COMPAT;
+
+// Shared authenticated project config
+const authUse = { storageState: '.auth/user.json' };
 
 export default defineConfig({
   testDir: '.',
@@ -23,14 +43,7 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
     // Use system Chrome for proper GPU acceleration (avoids canvas tearing in headed mode)
     channel: 'chrome',
-    launchOptions: {
-      args: [
-        '--enable-gpu',
-        '--enable-unsafe-webgpu',
-        '--ignore-gpu-blocklist',
-        '--enable-features=Vulkan',
-      ],
-    },
+    launchOptions: { args: chromeArgs },
   },
 
   projects: [
@@ -43,26 +56,77 @@ export default defineConfig({
       name: 'hub',
       testDir: './hub',
       dependencies: ['setup'],
-      use: {
-        storageState: '.auth/user.json',
-      },
+      use: authUse,
     },
     {
       name: 'studio',
       testDir: './studio',
       dependencies: ['setup'],
-      use: {
-        storageState: '.auth/user.json',
-      },
+      use: authUse,
     },
     {
       name: 'integration',
       testDir: './integration',
       dependencies: ['setup'],
-      use: {
-        storageState: '.auth/user.json',
-      },
+      use: authUse,
     },
+
+    // ── Compatibility: Chrome 130 ──────────────────────────────
+    // Activated with E2E_COMPAT=1 or --project=chrome130-*
+    ...(COMPAT
+      ? [
+          {
+            name: 'chrome130-setup',
+            testMatch: 'fixtures/auth.setup.ts',
+            use: {
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+          {
+            name: 'chrome130-hub',
+            testDir: './hub',
+            dependencies: ['chrome130-setup'],
+            use: {
+              ...authUse,
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+          {
+            name: 'chrome130-studio',
+            testDir: './studio',
+            dependencies: ['chrome130-setup'],
+            use: {
+              ...authUse,
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+          {
+            name: 'chrome130-integration',
+            testDir: './integration',
+            dependencies: ['chrome130-setup'],
+            use: {
+              ...authUse,
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+        ]
+      : []),
   ],
 
   // Servers are managed by globalSetup — no webServer config needed.

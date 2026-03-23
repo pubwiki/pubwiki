@@ -39,3 +39,6 @@ packages/api/openapi.bundled.yaml
 
 target/
 dist/
+
+# Local auth state
+.auth/
