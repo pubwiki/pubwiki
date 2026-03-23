@@ -35,11 +35,6 @@ export class ESBuildEngine {
   private resolver: DependencyResolver
   private cache: BuildCacheStorage
 
-  // Build context for incremental compilation (keyed by projectRoot)
-  private buildContexts = new Map<string, esbuild.BuildContext>()
-  // Track build options hash per project to detect option changes
-  private buildOptionsHash = new Map<string, string>()
-
   // Dependency graph (all files across projects)
   private dependencyGraph = new Map<string, Set<string>>()
   private dependentGraph = new Map<string, Set<string>>()
@@ -49,6 +44,14 @@ export class ESBuildEngine {
 
   // Progress callback for reporting fetch activity
   private progressCallback?: (message: string) => void
+
+  // Incremental build context (reused across consecutive builds with same options)
+  private buildContext: esbuild.BuildContext | null = null
+  private buildContextHash: string | null = null
+
+  // State shared with plugin callbacks (instance-level for context reuse)
+  private currentBuildEntryFiles: string[] = []
+  private currentBuildEntry: string | null = null
 
   // HTTP loader with caching - returns content and content-type
   private async httpLoader(url: string): Promise<{ content: string; contentType: string }> {
@@ -126,11 +129,11 @@ export class ESBuildEngine {
         // Use CDN URL for esbuild-wasm binary
         // The version should match the package.json dependency
         await esbuild.initialize({
-          wasmURL: 'https://unpkg.com/esbuild-wasm@0.27.2/esbuild.wasm',
+          wasmURL: 'https://unpkg.com/esbuild-wasm@0.27.4/esbuild.wasm',
           worker: true // Let esbuild use its own worker for parallel compilation
         })
         this.initialized = true
-        console.log('[ESBuildEngine] esbuild-wasm initialized')
+        console.log(`[ESBuildEngine] esbuild-wasm initialized, version=${esbuild.version}`)
       } catch (error) {
         // Handle "already initialized" error - this is not a real error
         if (error instanceof Error && error.message.includes('Cannot call "initialize" more than once')) {
@@ -157,20 +160,6 @@ export class ESBuildEngine {
   /**
    * Compute a hash of build options to detect changes
    */
-  private computeOptionsHash(options: BundleOptions, entryFiles: string[]): string {
-    const relevant = {
-      target: options.target || 'es2020',
-      jsx: options.jsx || 'automatic',
-      jsxImportSource: options.jsxImportSource || 'react',
-      sourcemap: options.sourcemap,
-      minify: options.minify || false,
-      treeShaking: options.treeShaking ?? true,
-      define: options.define,
-      entryFiles: entryFiles.sort()
-    }
-    return JSON.stringify(relevant)
-  }
-
   /**
    * Get loader type for a file
    */
@@ -242,11 +231,191 @@ export class ESBuildEngine {
     }
 
     // Default to JS for text/* and unknown types
-    return 'binary'
+    return 'js'
   }
 
   /**
-   * Build a project with multiple entry files
+   * Extract the inner module URL from an esm.sh outer shim.
+   *
+   * esm.sh returns small wrapper modules like:
+   *   /* esm.sh - react@18.3.1 *\/
+   *   export * from "/react@18.3.1/X-.../es2022/react.mjs"
+   *
+   * Returns the resolved full URL of the inner module, or null if not a shim.
+   */
+  private extractEsmShInnerUrl(content: string, outerUrl: string): string | null {
+    // Must consist solely of `export * from "..."` and/or `export { default } from "..."`
+    // after stripping comments and whitespace.
+    const stripped = content.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').trim()
+    if (!stripped) return null
+
+    // Collect all `from "..."` targets
+    const urls = new Set<string>()
+    const reExportPattern = /export\s+(?:\*|\{[^}]*\})\s+from\s+["']([^"']+)["']/g
+    let remaining = stripped
+    let m: RegExpExecArray | null
+    while ((m = reExportPattern.exec(stripped)) !== null) {
+      urls.add(m[1])
+      remaining = remaining.replace(m[0], '')
+    }
+
+    // After removing all matched exports, only whitespace/semicolons should remain
+    if (remaining.replace(/[\s;]/g, '').length > 0) return null
+    if (urls.size !== 1) return null // Only follow if there's exactly one target
+
+    const innerPath = [...urls][0]
+    try {
+      return new URL(innerPath, new URL(outerUrl).origin).href
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Create the resolver plugin for esbuild.
+   * References instance state so it works correctly with context reuse.
+   */
+  private createResolverPlugin(): esbuild.Plugin {
+    return {
+      name: 'bundler-resolver',
+      setup: (build) => {
+        // Resolve imports
+        build.onResolve({ filter: /.*/ }, async (args) => {
+          try {
+            // Track which entry we're processing
+            if (this.currentBuildEntryFiles.includes(args.importer) || !args.importer) {
+              this.currentBuildEntry = args.importer || args.path
+            }
+
+            // For CSS url() tokens referencing external URLs, mark as external
+            // This keeps the original URL in the CSS output
+            if (args.kind === 'url-token' && 
+                (args.path.startsWith('http://') || args.path.startsWith('https://'))) {
+              return { path: args.path, external: true }
+            }
+
+            const resolved = await this.resolver.resolve(
+              args.path,
+              args.importer || this.currentBuildEntry || this.currentBuildEntryFiles[0]
+            )
+
+            // For HTTP resources that are binary (images, fonts, etc.), mark as external
+            // This applies to both CSS url() and JS imports of remote assets
+            if (resolved.namespace === 'http') {
+              const contentType = await this.getHttpContentType(resolved.path)
+              const loader = this.getLoaderFromContentType(contentType)
+              if (loader === 'binary') {
+                return { path: resolved.path, external: true }
+              }
+            }
+
+            // Track VFS dependencies directly in dependencyGraph
+            if (resolved.namespace === 'vfs' && this.currentBuildEntry) {
+              this.addDependency(this.currentBuildEntry, resolved.path)
+            }
+
+            // External namespace — pass through without bundling
+            if (resolved.namespace === 'external') {
+              return { path: resolved.path, external: true }
+            }
+
+            return {
+              path: resolved.path,
+              namespace: resolved.namespace,
+            }
+          } catch (error) {
+            console.error(`[ESBuildEngine] Resolve failed for ${args.path}:`, error)
+            return { path: args.path, external: true }
+          }
+        })
+
+        // Load VFS files
+        build.onLoad({ filter: /.*/, namespace: 'vfs' }, async (args) => {
+          try {
+            const contents = await this.fileLoader!(args.path)
+            const loader = this.getLoader(args.path)
+
+            return { contents, loader }
+          } catch (error) {
+            console.error(`[ESBuildEngine] Load failed for ${args.path}:`, error)
+            throw error
+          }
+        })
+
+        // Load HTTP resources (binary resources are already marked external in onResolve)
+        build.onLoad({ filter: /.*/, namespace: 'http' }, async (args) => {
+          try {
+            let { content, contentType } = await this.httpLoader(args.path)
+            let loader = this.getLoaderFromContentType(contentType)
+
+            // Follow esm.sh outer → inner shims so esbuild sees the real module
+            // content directly, avoiding an extra resolve+load cycle and keeping
+            // the dependency graph accurate.
+            if (loader === 'js') {
+              const inner = this.extractEsmShInnerUrl(content, args.path)
+              if (inner) {
+                const innerResult = await this.httpLoader(inner)
+                content = innerResult.content
+                contentType = innerResult.contentType
+                loader = this.getLoaderFromContentType(contentType)
+              }
+            }
+
+            return { contents: content, loader }
+          } catch (error) {
+            console.error(`[ESBuildEngine] HTTP load failed for ${args.path}:`, error)
+            throw error
+          }
+        })
+      }
+    }
+  }
+
+  /**
+   * Compute a hash of build configuration for context reuse.
+   * If config changes, a new context is needed.
+   */
+  private hashBuildConfig(entryFiles: string[], options: esbuild.BuildOptions): string {
+    return JSON.stringify({
+      entries: [...entryFiles].sort(),
+      format: options.format,
+      target: options.target,
+      jsx: options.jsx,
+      jsxImportSource: options.jsxImportSource,
+      sourcemap: options.sourcemap,
+      minify: options.minify,
+      treeShaking: options.treeShaking,
+      splitting: options.splitting,
+      define: options.define,
+    })
+  }
+
+  /**
+   * Dispose the build context (but keep worker alive for potential reuse).
+   */
+  private async disposeBuildContext(): Promise<void> {
+    if (this.buildContext) {
+      try { await this.buildContext.dispose() } catch { /* ignore */ }
+      this.buildContext = null
+      this.buildContextHash = null
+    }
+  }
+
+  /**
+   * Full reset: dispose context + stop worker.
+   * Used after build failures to prevent esbuild-wasm worker corruption.
+   */
+  private async fullReset(): Promise<void> {
+    await this.disposeBuildContext()
+    try { await esbuild.stop() } catch { /* ignore */ }
+    this.initialized = false
+    this.initPromise = null
+  }
+
+  /**
+   * Build a project with multiple entry files.
+   * Uses incremental compilation via esbuild context reuse — consecutive builds
+   * with the same configuration reuse the context for faster rebuilds.
    */
   async build(request: ProjectBuildRequest): Promise<ProjectBuildResult> {
     if (!this.initialized) {
@@ -261,10 +430,14 @@ export class ESBuildEngine {
       }
     }
 
-    const { projectRoot, entryFiles, options = {} } = request
+    const { entryFiles, options = {} } = request
     const startTime = performance.now()
     console.log("[ESBuildEngine] building project", request.projectRoot)
     
+    // Update instance state for plugin callbacks
+    this.currentBuildEntryFiles = entryFiles
+    this.currentBuildEntry = null
+
     // Clear dependency graph for entry files before rebuild to get fresh data
     // This ensures new imports are tracked correctly during incremental builds
     for (const entry of entryFiles) {
@@ -273,94 +446,9 @@ export class ESBuildEngine {
     
     // Collect all VFS dependencies encountered during this build
     const allProjectDeps = new Set<string>()
-    
-    // Current entry being processed (for dependency tracking)
-    let currentEntry: string | null = null
 
     try {
-      // Create esbuild plugin for resolution and loading
-      const resolverPlugin: esbuild.Plugin = {
-        name: 'bundler-resolver',
-        setup: (build) => {
-          // Resolve imports
-          build.onResolve({ filter: /.*/ }, async (args) => {
-            try {
-              // Track which entry we're processing
-              if (entryFiles.includes(args.importer) || !args.importer) {
-                currentEntry = args.importer || args.path
-              }
-
-              // For CSS url() tokens referencing external URLs, mark as external
-              // This keeps the original URL in the CSS output
-              if (args.kind === 'url-token' && 
-                  (args.path.startsWith('http://') || args.path.startsWith('https://'))) {
-                return { path: args.path, external: true }
-              }
-
-              const resolved = await this.resolver.resolve(
-                args.path,
-                args.importer || currentEntry || entryFiles[0]
-              )
-
-              // For HTTP resources that are binary (images, fonts, etc.), mark as external
-              // This applies to both CSS url() and JS imports of remote assets
-              if (resolved.namespace === 'http') {
-                const contentType = await this.getHttpContentType(resolved.path)
-                const loader = this.getLoaderFromContentType(contentType)
-                if (loader === 'binary') {
-                  return { path: resolved.path, external: true }
-                }
-              }
-
-              // Track VFS dependencies directly in dependencyGraph
-              if (resolved.namespace === 'vfs' && currentEntry) {
-                this.addDependency(currentEntry, resolved.path)
-              }
-
-              // External namespace — pass through without bundling
-              if (resolved.namespace === 'external') {
-                return { path: resolved.path, external: true }
-              }
-
-              return {
-                path: resolved.path,
-                namespace: resolved.namespace,
-              }
-            } catch (error) {
-              console.error(`[ESBuildEngine] Resolve failed for ${args.path}:`, error)
-              return { path: args.path, external: true }
-            }
-          })
-
-          // Load VFS files
-          build.onLoad({ filter: /.*/, namespace: 'vfs' }, async (args) => {
-            try {
-              const contents = await this.fileLoader!(args.path)
-              const loader = this.getLoader(args.path)
-
-              return { contents, loader }
-            } catch (error) {
-              console.error(`[ESBuildEngine] Load failed for ${args.path}:`, error)
-              throw error
-            }
-          })
-
-          // Load HTTP resources (binary resources are already marked external in onResolve)
-          build.onLoad({ filter: /.*/, namespace: 'http' }, async (args) => {
-            try {
-              const { content, contentType } = await this.httpLoader(args.path)
-              const loader = this.getLoaderFromContentType(contentType)
-              
-              return { contents: content, loader }
-            } catch (error) {
-              console.error(`[ESBuildEngine] HTTP load failed for ${args.path}:`, error)
-              throw error
-            }
-          })
-        }
-      }
-
-      // Build options with multiple entry points
+      // Build options (without plugins — added when creating context)
       const buildOptions: esbuild.BuildOptions = {
         entryPoints: entryFiles.map(f => ({ in: f, out: this.getOutputName(f) })),
         bundle: true,
@@ -377,32 +465,27 @@ export class ESBuildEngine {
         splitting: entryFiles.length > 1, // Enable code splitting for multi-entry
         chunkNames: 'chunks/[name]-[hash]',
         outdir: 'out', // Required for splitting
-        plugins: [resolverPlugin],
+        plugins: [this.createResolverPlugin()],
         logLevel: 'warning',
         define: options.define
       }
 
-      // Use context for incremental builds, but recreate if options changed
+      const configHash = this.hashBuildConfig(entryFiles, buildOptions)
       let result: esbuild.BuildResult
-      let context = this.buildContexts.get(projectRoot)
-      const currentOptionsHash = this.computeOptionsHash(options, entryFiles)
-      const previousOptionsHash = this.buildOptionsHash.get(projectRoot)
 
-      // If options changed, dispose old context and create new one
-      if (context && previousOptionsHash !== currentOptionsHash) {
-        await context.dispose()
-        context = undefined
-        this.buildContexts.delete(projectRoot)
-      }
-
-      if (context) {
-        console.log("Trigger incremental rebuild")
-        result = await context.rebuild()
+      if (this.buildContext && this.buildContextHash === configHash) {
+        // Incremental rebuild — reuse existing context
+        console.log('[ESBuildEngine] Incremental rebuild using cached context')
+        result = await this.buildContext.rebuild()
       } else {
-        context = await esbuild.context(buildOptions)
-        this.buildContexts.set(projectRoot, context)
-        this.buildOptionsHash.set(projectRoot, currentOptionsHash)
-        result = await context.rebuild()
+        // New or changed config — create fresh context
+        await this.disposeBuildContext()
+        console.log('[ESBuildEngine] Creating new build context')
+        const ctx = await esbuild.context(buildOptions)
+        result = await ctx.rebuild()
+        // Store context for future incremental rebuilds
+        this.buildContext = ctx
+        this.buildContextHash = configHash
       }
 
       // Collect all dependencies for entries from the dependency graph
@@ -500,6 +583,11 @@ export class ESBuildEngine {
 
     } catch (error) {
       console.error('[ESBuildEngine] Build failed:', error)
+
+      // Full reset after failure to prevent esbuild-wasm worker corruption.
+      // esbuild-wasm's worker can produce corrupted output when reused after
+      // a failed build, so we stop the worker entirely and re-initialize next time.
+      await this.fullReset()
 
       // Create error result for all entries
       const outputs = new Map<string, FileBuildResult>()
@@ -642,24 +730,18 @@ export class ESBuildEngine {
   }
 
   /**
-   * Invalidate build context for a project
+   * Invalidate build context for a project.
+   * Disposes the cached context so the next build creates a fresh one.
    */
-  async invalidateContext(projectRoot: string): Promise<void> {
-    const context = this.buildContexts.get(projectRoot)
-    if (context) {
-      await context.dispose()
-      this.buildContexts.delete(projectRoot)
-    }
+  async invalidateContext(_projectRoot: string): Promise<void> {
+    await this.disposeBuildContext()
   }
 
   /**
-   * Invalidate all build contexts
+   * Invalidate all build contexts and dependency graphs.
    */
   async invalidateAllContexts(): Promise<void> {
-    for (const context of this.buildContexts.values()) {
-      await context.dispose()
-    }
-    this.buildContexts.clear()
+    await this.disposeBuildContext()
     this.dependencyGraph.clear()
     this.dependentGraph.clear()
   }
@@ -686,6 +768,7 @@ export class ESBuildEngine {
    */
   async dispose(): Promise<void> {
     await this.invalidateAllContexts()
+    try { await esbuild.stop() } catch { /* ignore */ }
     this.initialized = false
     this.initPromise = null
   }
