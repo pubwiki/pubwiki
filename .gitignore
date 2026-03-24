@@ -40,5 +40,11 @@ packages/api/openapi.bundled.yaml
 target/
 dist/
 
+# Build artifacts
+*.tsbuildinfo
+
+# Test results
+test-results/
+
 # Local auth state
 .auth/
