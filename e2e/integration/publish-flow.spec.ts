@@ -322,12 +322,12 @@ test.describe('Integration — Publish flow (Studio → Hub)', () => {
       const rpcResult = await sandboxApp.locator('body').evaluate(async () => {
         const timeout = new Promise<never>((_, rej) =>
           setTimeout(() => rej(new Error('SAVE_RPC_TIMEOUT_10s')), 10_000));
-        const result = await Promise.race([window.LoadStateToGame({
+        const result = await Promise.race([(window as any).LoadStateToGame({
           worldEntity: { name: 'Test World', description: '' },
           creatures: [{ id: 'test', name: 'Test', type: 'NPC' }],
           regions: [],
           organizations: [],
-        } as any), timeout]);
+        }), timeout]);
         return result;
       });
       expect((rpcResult as any).success).toBeTruthy();
