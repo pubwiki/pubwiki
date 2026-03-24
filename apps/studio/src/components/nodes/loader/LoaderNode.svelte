@@ -13,6 +13,7 @@
 	 * not persisted to nodeStore.
 	 */
 	import { Handle, Position, useEdges, useUpdateNodeInternals } from '@xyflow/svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { NodeProps, Node } from '@xyflow/svelte';
 	import type { LoaderNodeData, FlowNodeData, VFSContent } from '$lib/types';
 	import { getStudioContext } from '$lib/state';
@@ -313,7 +314,7 @@
 			
 			// Find mounted asset VFS nodes
 			const mountedVfsNodeIds = findMountedVfsNodes(id, ctx.nodes, ctx.edges);
-			const assetMounts = new Map<string, Awaited<ReturnType<typeof getNodeVfs>>>();
+			const assetMounts = new SvelteMap<string, Awaited<ReturnType<typeof getNodeVfs>>>();
 			
 			for (const [path, vfsNodeId] of mountedVfsNodeIds) {
 				const vfsData = nodeStore.get(vfsNodeId);

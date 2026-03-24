@@ -7,6 +7,7 @@
 	 * the DOM so the spacer calculations stay accurate while scrolling.
 	 */
 	import { onMount, tick } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import type { ConsoleLogEntry } from '@pubwiki/sandbox-host';
 
 	interface Props {
@@ -44,6 +45,7 @@
 	let heightVersion = $state(0);
 
 	/** Actual measured pixel heights for expanded items (non-reactive Map) */
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
 	const measuredHeights = new Map<number, number>();
 
 	// ============================================================================
@@ -172,7 +174,7 @@
 	// ============================================================================
 
 	function toggleExpand(logIndex: number) {
-		const next = new Set(expandedSet);
+		const next = new SvelteSet(expandedSet);
 		if (next.has(logIndex)) {
 			next.delete(logIndex);
 			measuredHeights.delete(logIndex);

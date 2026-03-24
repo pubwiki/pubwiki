@@ -31,12 +31,12 @@ test.describe('Integration — Sandbox Preview (local build)', () => {
     });
 
     // ── Step 2: Import project ──
-    let projectId: string;
+    let _projectId: string;
     await test.step('Import project from ZIP in Studio', async () => {
       const studio = new StudioPage(page);
       await studio.goto();
       await studio.importFromFile(artifactZip);
-      projectId = studio.getProjectId();
+      _projectId = studio.getProjectId();
     });
 
     // ── Step 3: Click sandbox node's "Open" button ──
@@ -102,7 +102,7 @@ test.describe('Integration — Sandbox Preview (local build)', () => {
           try {
             userIframeDiag = await userFrame.evaluate(async () => {
               const root = document.getElementById('root');
-              const perf = performance.getEntriesByType('resource').map((e: any) =>
+              const perf = (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).map((e: PerformanceResourceTiming) =>
                 `${e.initiatorType} ${e.name.slice(0, 120)} ${e.duration.toFixed(0)}ms status=${e.responseStatus} size=${e.decodedBodySize}`
               );
               return JSON.stringify({

@@ -43,6 +43,8 @@ export default defineConfig(
       // Docs / non-code
       'llm-docs/**',
       '.github/**',
+      // E2E test blobs (binary/data files, not linted)
+      'e2e/blobs/**',
       // Sandbox build script
       'apps/sandbox/build-sw.js',
       // Mock data in services

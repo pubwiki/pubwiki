@@ -23,6 +23,7 @@
 	import TaggedHandlePanel from '../TaggedHandlePanel.svelte';
 	import type { TaggedHandle } from '../TaggedHandlePanel.svelte';
 	import * as m from '$lib/paraglide/messages';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	// ============================================================================
 	// Props (Minimal - just for SvelteFlow)
@@ -64,7 +65,7 @@
 	
 	// Collect all existing reftag names for autocomplete suggestions
 	const allRefTagSuggestions = $derived.by(() => {
-		const names = new Set<string>();
+		const names = new SvelteSet<string>();
 		for (const node of nodeStore.getAll()) {
 			if (node.type === 'PROMPT' && node.content instanceof PromptContent) {
 				for (const block of node.content.blocks) {

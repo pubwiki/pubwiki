@@ -1370,13 +1370,26 @@
 		edgesToPublish: Edge[],
 		buildCacheKey?: string
 	) {
-		if (!publishState.state.lastCloudCommit) {
-			throw new Error('No base commit for update. Please try a full publish instead.');
+		let baseCommit = publishState.state.lastCloudCommit;
+
+		// Recover from missing local commit (e.g. IndexedDB write lost due to navigation race)
+		if (!baseCommit) {
+			console.warn('[Studio] lastCloudCommit missing locally, fetching latest from server...');
+			const { data } = await apiClient.GET('/artifacts/{artifactId}/graph', {
+				params: { path: { artifactId: currentProjectId }, query: { version: 'latest' } },
+			});
+			baseCommit = data?.version?.commitHash;
+			if (baseCommit) {
+				console.log('[Studio] Recovered baseCommit from server:', baseCommit);
+				publishState.markPublished(baseCommit);
+			} else {
+				throw new Error('No base commit for update. Please try a full publish instead.');
+			}
 		}
 
 		const patchMeta: PatchMetadata = {
 			artifactId: currentProjectId,
-			baseCommit: publishState.state.lastCloudCommit,
+			baseCommit,
 			version: metadata.version,
 			commitTags: ['draft-latest'],
 			entrypoint: metadata.entrypoint,

@@ -24,6 +24,17 @@ let vfsRpcPort: MessagePort | null = null
 let bootstrapClientId: string | null = null
 let userIframe: HTMLIFrameElement | null = null
 let pendingVfsPortRequest = false
+let swRegistration: ServiceWorkerRegistration | null = null
+
+/**
+ * Get the active Service Worker instance.
+ * Prefers navigator.serviceWorker.controller, but falls back to
+ * registration.active for browsers (Firefox) where controller stays
+ * null inside cross-origin iframes even after clients.claim().
+ */
+function getActiveWorker(): ServiceWorker | null {
+  return navigator.serviceWorker?.controller ?? swRegistration?.active ?? null
+}
 
 // Parse allowed origins at module scope so Vite inlining + minification
 // cannot fold the .split() away into a single-string comparison.
@@ -192,12 +203,13 @@ function sendVfsPortToServiceWorker(): boolean {
     return false
   }
   
-  if (!navigator.serviceWorker.controller) {
-    console.warn('[SandboxBootstrap] No active Service Worker controller')
+  const worker = getActiveWorker()
+  if (!worker) {
+    console.warn('[SandboxBootstrap] No active Service Worker')
     return false
   }
   
-  navigator.serviceWorker.controller.postMessage(
+  worker.postMessage(
     { type: 'SETUP_VFS_RPC_PORT' },
     [vfsRpcPort]
   )
@@ -608,22 +620,12 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
     exposeSandboxClient()
     
     // Register Service Worker
-    await registerServiceWorker()
+    swRegistration = await registerServiceWorker()
     
-    // Wait for SW to control the page
-    if (!navigator.serviceWorker.controller) {
-      await new Promise<void>((resolve) => {
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          resolve()
-        }, { once: true })
-      })
-    }
-    
-    // Get bootstrap client ID
-    // We'll get this from the Service Worker via a message
-    // Send a request to SW to get our client ID
-    if (navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({ type: 'GET_CLIENT_ID' })
+    // Get bootstrap client ID from SW
+    const worker = getActiveWorker()
+    if (worker) {
+      worker.postMessage({ type: 'GET_CLIENT_ID' })
       
       // Wait for response
       const clientIdPromise = new Promise<string>((resolve) => {
@@ -746,8 +748,9 @@ if (window.parent !== window) {
 
 // Cleanup on unload
 window.addEventListener('beforeunload', () => {
-  if (bootstrapClientId && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
+  const worker = getActiveWorker()
+  if (bootstrapClientId && worker) {
+    worker.postMessage({
       type: 'CLIENT_DISCONNECTED',
       clientId: bootstrapClientId
     })

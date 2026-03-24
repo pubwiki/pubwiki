@@ -279,8 +279,24 @@ export class StudioPage {
 
     const node = this.page.locator(`.svelte-flow__node[data-id="${nodeId}"]`);
     await expect(node).toBeVisible({ timeout: 10_000 });
-    // Click the node to select it — must be a real click so SvelteFlow registers selection
-    await node.click();
+
+    // In Firefox, overlapping nodes (e.g. VFS file tree) intercept pointer events on the canvas.
+    // Dispatch pointer/mouse events directly on the DOM element so SvelteFlow registers the selection
+    // regardless of what's visually on top.
+    await node.evaluate(el => {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const init = { bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, clientX: cx, clientY: cy };
+      el.dispatchEvent(new PointerEvent('pointerover', init));
+      el.dispatchEvent(new PointerEvent('pointerenter', { ...init, bubbles: false }));
+      el.dispatchEvent(new PointerEvent('pointerdown', init));
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+      el.dispatchEvent(new PointerEvent('pointerup', init));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+    });
+
     // Verify node got the "selected" class before pressing Delete
     await expect(node).toHaveClass(/selected/, { timeout: 5_000 });
     await this.page.keyboard.press('Delete');
@@ -463,7 +479,9 @@ export class StudioPage {
     const editorPanel = this.page.locator('.fixed.top-4.right-4.bottom-4.z-30');
     await expect(editorPanel).toBeVisible({ timeout: 5_000 });
 
-    // Click the Monaco editor area to focus it
+    // Monaco is loaded dynamically (modern-monaco init + LSP + import maps).
+    // Wait for the loading spinner to disappear first, then for the editor element.
+    await expect(editorPanel.locator('.animate-spin')).not.toBeVisible({ timeout: 60_000 });
     const monacoEditor = editorPanel.locator('.monaco-editor').first();
     await expect(monacoEditor).toBeVisible({ timeout: 10_000 });
     await monacoEditor.click();

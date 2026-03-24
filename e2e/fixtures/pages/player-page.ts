@@ -64,6 +64,11 @@ export class PlayerPage {
     );
   }
 
+  /** Get all captured console logs */
+  getLogs(): string[] {
+    return [...this.consoleLogs];
+  }
+
   /** Check if an error occurred during loading */
   async hasError(): Promise<boolean> {
     return this.page.locator('text=error').isVisible();

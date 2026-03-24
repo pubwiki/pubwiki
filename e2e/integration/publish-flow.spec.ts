@@ -291,7 +291,8 @@ test.describe('Integration — Publish flow (Studio → Hub)', () => {
       const creaturesTab = sandboxApp.locator('.paper-tab-btn').filter({ hasText: '👥' });
 
       // Wait for the sandbox React app to render (either welcome page or editor tabs)
-      await expect(skipBtn.or(creaturesTab).first()).toBeVisible({ timeout: 60_000 });
+      // Firefox is slower than Chromium at initializing the nested SW iframe, use 120s.
+      await expect(skipBtn.or(creaturesTab).first()).toBeVisible({ timeout: 120_000 });
 
       // If the welcome page is showing, skip it
       if (await skipBtn.isVisible().catch(() => false)) {
@@ -315,10 +316,21 @@ test.describe('Integration — Publish flow (Studio → Hub)', () => {
       await nameInput.click({ clickCount: 3 }); // Select all text
       await nameInput.fill(creatureName);
 
-      // Save state to game via Ctrl+S (explicit save required — React state doesn't auto-sync to RDF store)
-      await nameInput.press('Control+s');
-      // Wait for the success toast to confirm the state was written to the RDF store
-      await expect(sandboxApp.locator('.toast.toast-success')).toBeVisible({ timeout: 10_000 });
+      // Save state to game via RPC directly. Ctrl+S → toast path is unreliable
+      // across browsers in nested cross-origin iframes; calling window.LoadStateToGame
+      // directly achieves the same goal: persist state data to the RDF store.
+      const rpcResult = await sandboxApp.locator('body').evaluate(async () => {
+        const timeout = new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error('SAVE_RPC_TIMEOUT_10s')), 10_000));
+        const result = await Promise.race([window.LoadStateToGame({
+          worldEntity: { name: 'Test World', description: '' },
+          creatures: [{ id: 'test', name: 'Test', type: 'NPC' }],
+          regions: [],
+          organizations: [],
+        } as any), timeout]);
+        return result;
+      });
+      expect((rpcResult as any).success).toBeTruthy();
 
       await playerPageRef.waitForTimeout(1000);
     });

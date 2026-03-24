@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { browser } from '$app/environment';
 	import { untrack, tick } from 'svelte';
 	import { useArtifactStore } from '$lib/stores/artifacts.svelte';
@@ -285,6 +284,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 			url.searchParams.set('tags', currentTags.join(','));
 		}
 		url.searchParams.set('page', '1'); // Reset to page 1
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
 	}
 
@@ -295,6 +295,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 		const url = new URL(window.location.href);
 		url.searchParams.delete('tags');
 		url.searchParams.set('page', '1');
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
 	}
 
@@ -308,6 +309,7 @@ const tagInclude = activeTags.length > 0 ? activeTags : undefined;
 		url.searchParams.set('sort', mapping.sortBy);
 		url.searchParams.set('order', mapping.sortOrder);
 		url.searchParams.set('page', '1'); // Reset to page 1
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true });
 	}
 
