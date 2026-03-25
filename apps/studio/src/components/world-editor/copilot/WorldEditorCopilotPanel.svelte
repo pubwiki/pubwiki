@@ -68,12 +68,15 @@
     collapsed?: boolean;
     hideCollapsedButton?: boolean;
     class?: string;
+    /** Panel width in px (bindable for parent to read) */
+    copilotWidth?: number;
   }
 
   let {
     collapsed = $bindable(true),
     hideCollapsedButton = false,
     class: className = '',
+    copilotWidth: _copilotWidth = $bindable(420),
   }: Props = $props();
 
   // ============================================================================
@@ -152,6 +155,9 @@
   const persistedWidth = persist<number>('world-editor-copilot-width', 420);
   let panelWidth = $derived(persistedWidth.value);
   let isResizing = $state(false);
+
+  // Sync panelWidth to bindable prop so parent can read it
+  $effect(() => { _copilotWidth = panelWidth; });
 
   // ============================================================================
   // LLM Configuration from Settings

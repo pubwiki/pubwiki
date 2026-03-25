@@ -67,6 +67,10 @@
 		editorMode?: EditorMode;
 		/** Called when user toggles editor mode */
 		onModeChange?: (mode: EditorMode) => void;
+		/** Sidebar collapsed state (bindable for parent to read) */
+		sidebarCollapsed?: boolean;
+		/** Sidebar panel width in px (bindable for parent to read) */
+		sidebarWidth?: number;
 	}
 
 	let { 
@@ -96,6 +100,8 @@
 		onNameChange,
 		editorMode = 'expert',
 		onModeChange,
+		sidebarCollapsed = $bindable(false),
+		sidebarWidth: _sidebarWidth = $bindable(360),
 	}: Props = $props();
 
 	// Default sync state if not provided
@@ -130,6 +136,10 @@
 	let sidebarEl: HTMLDivElement | undefined = $state();
 	let showSettings = $state(false);
 	let showProjectList = $state(false);
+
+	// Sync collapsed/width to bindable props so parent can read them
+	$effect(() => { sidebarCollapsed = collapsed; });
+	$effect(() => { _sidebarWidth = sidebarWidth; });
 
 	// Resize state
 	const MIN_WIDTH = 320;

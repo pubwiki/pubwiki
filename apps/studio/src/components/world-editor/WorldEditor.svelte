@@ -28,9 +28,31 @@
 		projectId: string;
 		store: TripleStore;
 		copilotCollapsed?: boolean;
+		/** Whether the sidebar is collapsed */
+		sidebarCollapsed?: boolean;
+		/** Sidebar panel width in px (when expanded) */
+		sidebarWidth?: number;
+		/** Copilot panel width in px (when expanded) */
+		copilotWidth?: number;
 	}
 
-	let { projectId: _projectId, store: tripleStore, copilotCollapsed = $bindable(true) }: Props = $props();
+	let {
+		projectId: _projectId,
+		store: tripleStore,
+		copilotCollapsed = $bindable(true),
+		sidebarCollapsed = true,
+		sidebarWidth = 360,
+		copilotWidth = 420,
+	}: Props = $props();
+
+	// Sidebar collapsed ear is ~36px wide; add 16px breathing room
+	const SIDEBAR_EAR_PAD = 52;
+	// Gap between panels and content (matches the 16px inset of floating panels)
+	const PANEL_GAP = 24;
+
+	// Dynamic padding based on sidebar/copilot state
+	let leftPad = $derived(sidebarCollapsed ? SIDEBAR_EAR_PAD : sidebarWidth + PANEL_GAP);
+	let rightPad = $derived(copilotCollapsed ? 16 : copilotWidth + PANEL_GAP);
 
 	// Capture the store reference once — it does not change over the component lifetime
 	const store = untrack(() => tripleStore);
@@ -93,9 +115,9 @@
 </script>
 
 <div class="world-editor flex-1 h-full flex flex-col overflow-hidden relative">
-	<EditorTabs {activeTab} onTabChange={navigateTab} />
+	<EditorTabs {activeTab} onTabChange={navigateTab} {leftPad} {rightPad} />
 
-	<div class="flex-1 overflow-hidden flex flex-col pl-14 pr-14">
+	<div class="flex-1 overflow-hidden flex flex-col transition-[padding] duration-200 ease-out" style="padding-left: {leftPad}px; padding-right: {rightPad}px;">
 		{#if activeTab === 'dashboard'}
 			<DashboardPanel />
 		{:else if activeTab === 'world'}
@@ -113,5 +135,5 @@
 		{/if}
 	</div>
 
-	<WorldEditorCopilotPanel bind:collapsed={copilotCollapsed} hideCollapsedButton={true} />
+	<WorldEditorCopilotPanel bind:collapsed={copilotCollapsed} bind:copilotWidth={copilotWidth} hideCollapsedButton={true} />
 </div>

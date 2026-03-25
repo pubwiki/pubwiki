@@ -10,9 +10,13 @@
 	interface Props {
 		activeTab: string;
 		onTabChange: (tab: string) => void;
+		/** Dynamic left padding in px */
+		leftPad?: number;
+		/** Dynamic right padding in px */
+		rightPad?: number;
 	}
 
-	let { activeTab, onTabChange }: Props = $props();
+	let { activeTab, onTabChange, leftPad = 56, rightPad = 56 }: Props = $props();
 
 	const worldBuildingTabs: TabDef[] = [
 		{ id: 'dashboard', label: 'we_tab_dashboard', icon: 'layout-dashboard' },
@@ -40,8 +44,8 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-	class="flex items-center gap-1 px-14 py-2 bg-[var(--we-bg-secondary)] border-b overflow-x-auto scrollbar-none"
-	style="border-color: var(--we-border);"
+	class="flex items-center gap-1 py-2 bg-[var(--we-bg-secondary)] border-b overflow-x-auto scrollbar-none transition-[padding] duration-200 ease-out"
+	style="border-color: var(--we-border); padding-left: {leftPad}px; padding-right: {rightPad}px;"
 >
 	{#each worldBuildingTabs as tab}
 		<button

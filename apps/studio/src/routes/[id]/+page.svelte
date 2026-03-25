@@ -150,6 +150,10 @@
 	// Copilot panel state (controlled from sidebar button)
 	let copilotCollapsed = $state(true);
 
+	// Sidebar state (for dynamic layout padding)
+	let sidebarCollapsed = $state(false);
+	let sidebarWidthValue = $state(360);
+
 	// Editor mode state (persisted to localStorage)
 	const persistedEditorMode = persist<EditorMode>('studio-editor-mode', 'expert');
 	let editorMode = $derived(persistedEditorMode.value);
@@ -1636,7 +1640,7 @@
 				<span class="text-sm text-muted-foreground">Initializing world editor…</span>
 			</div>
 		{:then tripleStore}
-			<WorldEditor projectId={currentProjectId} store={tripleStore} bind:copilotCollapsed={copilotCollapsed} />
+			<WorldEditor projectId={currentProjectId} store={tripleStore} bind:copilotCollapsed={copilotCollapsed} {sidebarCollapsed} sidebarWidth={sidebarWidthValue} />
 		{:catch err}
 			<div class="flex-1 h-full flex items-center justify-center text-destructive">
 				<span class="text-sm">Failed to initialize: {err?.message ?? err}</span>
@@ -1666,6 +1670,8 @@
 		onAcceptCloud={handleAcceptCloud}
 		onForcePushLocal={handleForcePushLocal}
 		{selectedEntrypoint}
+		bind:sidebarCollapsed={sidebarCollapsed}
+		bind:sidebarWidth={sidebarWidthValue}
 		onEntrypointChange={async (id) => {
 			selectedEntrypoint = id;
 			const project = await getProject(currentProjectId);

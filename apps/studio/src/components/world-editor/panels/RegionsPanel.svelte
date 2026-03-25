@@ -275,9 +275,10 @@
 						<div class="mini-card-grid">
 							{#each docs as doc, i (i)}
 								<button class="mini-card" onclick={() => (editModal = { section: 'document', index: i })}>
-									<span class="mini-card-title">{doc.name || '(untitled)'}</span>
-									<span class="mini-card-desc">{doc.content.slice(0, 60)}{doc.content.length > 60 ? '…' : ''}</span>
-									{#if doc.static_priority}<span class="mini-card-meta">Priority: {doc.static_priority}</span>{/if}
+						<span class="mini-card-title">{doc.name || '(untitled)'}{#if doc.disable} <span class="text-xs opacity-50">({m.we_document_disabled()})</span>{/if}</span>
+						<span class="mini-card-desc">{doc.content.slice(0, 60)}{doc.content.length > 60 ? '…' : ''}</span>
+						{#if doc.static_priority}<span class="mini-card-meta">Priority: {doc.static_priority}</span>{/if}
+						{#if doc.condition}<span class="mini-card-meta">{m.we_document_condition()}: {doc.condition.slice(0, 40)}{doc.condition.length > 40 ? '…' : ''}</span>{/if}
 								</button>
 							{/each}
 						</div>
@@ -496,6 +497,23 @@
 						updateRegion(selected!.region_id, { bind_setting: { documents: updated } });
 					}} />
 			</FormGroup>
+			<FormGroup label={m.we_document_condition()}>
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={doc.condition ?? ''}
+					placeholder="e.g. When the player enters the forest"
+					oninput={(e) => {
+						const updated = [...docs]; updated[editModal!.index] = { ...doc, condition: e.currentTarget.value || undefined };
+						updateRegion(selected!.region_id, { bind_setting: { documents: updated } });
+					}} />
+			</FormGroup>
+			<div class="flex items-center gap-2">
+				<input type="checkbox" checked={doc.disable ?? false}
+					onchange={(e) => {
+						const updated = [...docs]; updated[editModal!.index] = { ...doc, disable: e.currentTarget.checked || undefined };
+						updateRegion(selected!.region_id, { bind_setting: { documents: updated } });
+					}} />
+				<span class="text-sm" style="color: var(--we-text-primary);">{m.we_document_disabled()}</span>
+			</div>
 			<FormGroup label={m.we_document_content()}>
 				<textarea class="{INPUT_CLS} min-h-[200px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
 					value={doc.content}
