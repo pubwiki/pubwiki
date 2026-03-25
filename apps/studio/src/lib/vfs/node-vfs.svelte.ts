@@ -454,6 +454,7 @@ export class NodeVfs extends Vfs<MountedVfsProvider> {
     // Helper to prefix path with mount path
     const prefixPath = (path: string): string => {
       if (path === '/') return mountPath;
+      if (mountPath === '/') return path;
       return mountPath + path;
     };
     

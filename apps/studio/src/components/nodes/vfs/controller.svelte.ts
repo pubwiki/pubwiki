@@ -354,19 +354,6 @@ async function checkMountPathConflict(
 		return `Mount path "${mountPath}" is already used by another mounted VFS`;
 	}
 	
-	// Check if the path exists in the target VFS (file or folder)
-	const controller = controllerCache.get(targetNodeId);
-	if (controller) {
-		try {
-			const exists = await controller.vfs.exists(mountPath);
-			if (exists) {
-				return `Path "${mountPath}" already exists in the VFS`;
-			}
-		} catch {
-			// Path doesn't exist, no conflict
-		}
-	}
-	
 	return null;
 }
 
@@ -496,25 +483,47 @@ export async function createMountToFolder(
 		return existingMount;
 	}
 
-	// Use source VFS node name as the mount folder name
-	const mountName = sourceData.name || 'mounted';
-	
-	// Calculate the mount path - if dropping on root, use /{name}, otherwise {folderPath}/{name}
-	const basePath = targetFolderPath === '/' ? '' : targetFolderPath;
-	let mountPath = `${basePath}/${mountName}`;
+	// Mount at the target folder path directly — the source VFS contents appear
+	// inside the dropped-on folder. Dropping on root ('/') makes the target a
+	// mirror of the source.
+	const mountPath = targetFolderPath;
 
-	// Check for mount path conflicts
+	// Reject mounting to root directory
+	if (mountPath === '/') {
+		console.warn('[VFS:Mount] Cannot mount at root directory');
+		return null;
+	}
+
+	// Reject nested mounts: if the target folder path falls under an existing mount,
+	// the path is non-native and cannot be used as a mount target.
+	for (const existingMount of targetContent.mounts) {
+		const mp = existingMount.mountPath;
+		if (mp === '/' || mountPath === mp || mountPath.startsWith(mp + '/')) {
+			console.warn(`[VFS:Mount] Cannot mount at "${mountPath}" — path is under existing mount "${mp}" (nested mounts not allowed)`);
+			return null;
+		}
+	}
+
+	// Check for mount path conflicts (another mount already at the same path)
 	const conflict = await checkMountPathConflict(targetNodeId, mountPath, targetContent);
 	if (conflict) {
-		// Generate unique path by appending a number
-		let counter = 1;
-		let uniquePath = `${mountPath}_${counter}`;
-		while (await checkMountPathConflict(targetNodeId, uniquePath, targetContent)) {
-			counter++;
-			uniquePath = `${mountPath}_${counter}`;
+		console.warn(`[VFS:Mount] ${conflict}`);
+		return null;
+	}
+
+	// Reject mounting into non-empty folders: target folder must be empty
+	const targetController = controllerCache.get(targetNodeId);
+	if (targetController) {
+		try {
+			const entries = await targetController.vfs.listFolder(mountPath);
+			if (entries.length > 0) {
+				console.warn(`[VFS:Mount] Cannot mount at "${mountPath}" — folder is not empty (${entries.map(e => e.name).join(', ')})`);
+				return null;
+			}
+		} catch {
+			console.warn(`[VFS:Mount] Cannot mount at "${mountPath}" — folder does not exist`);
+			return null;
 		}
-		mountPath = uniquePath;
-		console.warn(`[VFS:Mount] Original path had conflict, using "${mountPath}": ${conflict}`);
 	}
 
 	// Create mount configuration
@@ -534,10 +543,9 @@ export async function createMountToFolder(
 		};
 	});
 
-	console.log(`[VFS:Mount] Mounted ${sourceNodeId} (${mountName}) to ${targetNodeId} at ${mountPath}`);
+	console.log(`[VFS:Mount] Mounted ${sourceNodeId} to ${targetNodeId} at ${mountPath}`);
 
 	// Refresh the target controller's mounts
-	const targetController = controllerCache.get(targetNodeId);
 	if (targetController) {
 		await targetController.reloadMounts();
 	}

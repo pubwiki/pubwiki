@@ -65,6 +65,9 @@
 	// Current hovered folder path for tooltip
 	let hoveredFolderPath = $state<string | null>(null);
 	
+	// Reason why mounting is blocked at the current hover target, or null if allowed
+	let mountBlockReason = $state<string | null>(null);
+	
 	// Version history popup state
 	let showVersionPopup = $state(false);
 	let footbarEl = $state<HTMLElement | null>(null);
@@ -292,6 +295,47 @@
 	}
 
 	/**
+	 * Check if a folder path is under an existing mount (non-native path).
+	 * Paths from mounted VFS nodes cannot be used as mount targets to prevent nested mounts.
+	 */
+	function isPathUnderMount(folderPath: string): boolean {
+		const mounts = vfsContent?.mounts ?? [];
+		for (const mount of mounts) {
+			const mp = mount.mountPath;
+			// Root mount: all paths are non-native
+			if (mp === '/') return true;
+			// Path equals mount path or is a descendant
+			if (folderPath === mp || folderPath.startsWith(mp + '/')) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Check if a folder has content (non-mounted items).
+	 * For root '/': check if fileTree has any non-mounted items.
+	 * For sub-folders: check if the FileItem has any children.
+	 */
+	function isFolderNonEmpty(folderPath: string, item: FileItem | null): boolean {
+		if (folderPath === '/') {
+			return fileTree.some(f => !f.isMounted);
+		}
+		if (item?.type === 'folder') {
+			return (item.files ?? []).length > 0;
+		}
+		return false;
+	}
+
+	/**
+	 * Validate a potential mount target. Returns a block reason string or null if allowed.
+	 */
+	function getMountBlockReason(folderPath: string, item: FileItem | null): string | null {
+		if (folderPath === '/') return 'cannot mount to root';
+		if (isPathUnderMount(folderPath)) return 'nested mount not allowed';
+		if (isFolderNonEmpty(folderPath, item)) return 'folder is not empty';
+		return null;
+	}
+
+	/**
 	 * Handle hover over file tree items.
 	 * Updates global drop target state when receiving VFS drag.
 	 */
@@ -300,45 +344,65 @@
 			// Not receiving a VFS drag, clear any existing target for this node
 			clearVfsDropTarget(id);
 			hoveredFolderPath = null;
+			mountBlockReason = null;
 			return;
 		}
 
 		if (item === null) {
 			// Mouse left an item, fall back to root
-			setVfsDropTarget({
-				nodeId: id,
-				folder: null,
-				folderPath: '/'
-			});
 			hoveredFolderPath = '/';
+			const reason = getMountBlockReason('/', null);
+			if (reason) {
+				mountBlockReason = reason;
+				clearVfsDropTarget(id);
+			} else {
+				mountBlockReason = null;
+				setVfsDropTarget({ nodeId: id, folder: null, folderPath: '/' });
+			}
 			return;
 		}
 
 		// Only folders can be drop targets
 		if (item.type !== 'folder') {
 			// Not a folder, fall back to root
-			setVfsDropTarget({
-				nodeId: id,
-				folder: null,
-				folderPath: '/'
-			});
 			hoveredFolderPath = '/';
+			const reason = getMountBlockReason('/', null);
+			if (reason) {
+				mountBlockReason = reason;
+				clearVfsDropTarget(id);
+			} else {
+				mountBlockReason = null;
+				setVfsDropTarget({ nodeId: id, folder: null, folderPath: '/' });
+			}
 			return;
 		}
 
 		// Can't drop on already mounted folders
 		if (item.isMounted) {
 			// Mounted folder, fall back to root
-			setVfsDropTarget({
-				nodeId: id,
-				folder: null,
-				folderPath: '/'
-			});
 			hoveredFolderPath = '/';
+			const reason = getMountBlockReason('/', null);
+			if (reason) {
+				mountBlockReason = reason;
+				clearVfsDropTarget(id);
+			} else {
+				mountBlockReason = null;
+				setVfsDropTarget({ nodeId: id, folder: null, folderPath: '/' });
+			}
+			return;
+		}
+
+		// Check if folder is blocked (non-native or non-empty)
+		const reason = getMountBlockReason(item.path, item);
+		if (reason) {
+			hoveredFolderPath = item.path;
+			mountBlockReason = reason;
+			clearVfsDropTarget(id);
 			return;
 		}
 
 		// Set this folder as the drop target
+		mountBlockReason = null;
 		setVfsDropTarget({
 			nodeId: id,
 			folder: item,
@@ -352,12 +416,15 @@
 	 */
 	function handleRootMouseEnter() {
 		if (isReceivingVfsDrag) {
-			setVfsDropTarget({
-				nodeId: id,
-				folder: null,
-				folderPath: '/'
-			});
 			hoveredFolderPath = '/';
+			const reason = getMountBlockReason('/', null);
+			if (reason) {
+				mountBlockReason = reason;
+				clearVfsDropTarget(id);
+			} else {
+				mountBlockReason = null;
+				setVfsDropTarget({ nodeId: id, folder: null, folderPath: '/' });
+			}
 		}
 	}
 
@@ -367,6 +434,7 @@
 	function handleRootMouseLeave() {
 		clearVfsDropTarget(id);
 		hoveredFolderPath = null;
+		mountBlockReason = null;
 		mousePos = null;
 	}
 	
@@ -672,9 +740,13 @@
 {#if isReceivingVfsDrag && hoveredFolderPath && mousePos}
 	<div 
 		use:portalToBody
-		class="fixed z-10000 px-2 py-1 bg-gray-800 text-white text-xs rounded shadow-lg pointer-events-none whitespace-nowrap"
+		class="fixed z-10000 px-2 py-1 text-white text-xs rounded shadow-lg pointer-events-none whitespace-nowrap {mountBlockReason ? 'bg-red-700' : 'bg-gray-800'}"
 		style="left: {mousePos.x + 12}px; top: {mousePos.y + 12}px;"
 	>
-		mount to <span class="font-mono text-indigo-300">{hoveredFolderPath}</span>
+		{#if mountBlockReason}
+			{mountBlockReason}
+		{:else}
+			mount to <span class="font-mono text-indigo-300">{hoveredFolderPath}</span>
+		{/if}
 	</div>
 {/if}
