@@ -7,6 +7,9 @@
     "dev": "vite",
     "dev:sw": "node build-sw.js --watch",
     "build": "vite build && npm run build:sw",
+    "build:dev": "vite build --mode preview && npm run build:sw",
+    "deploy": "wrangler deploy",
+    "deploy:dev": "wrangler deploy --env dev",
     "build:sw": "node build-sw.js",
     "preview": "vite preview",
     "check": "tsc --noEmit"

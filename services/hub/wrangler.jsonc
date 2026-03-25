@@ -38,7 +38,36 @@
 			"binding": "R2_BUCKET",
 			"bucket_name": "pubwiki-storage"
 		}
-	]
+	],
+	"env": {
+		"dev": {
+			"name": "pubwiki-backend-dev",
+			"vars": {
+				"BETTER_AUTH_URL": "https://dev-api.pub.wiki",
+				"BETTER_AUTH_TRUSTED_ORIGINS": "https://dev.pub.wiki,https://dev-api.pub.wiki,https://dev-studio.pub.wiki,https://dev-hub.pub.wiki,https://dev-play.pub.wiki"
+			},
+			"routes": [
+				{
+					"pattern": "dev-api.pub.wiki",
+					"custom_domain": true
+				}
+			],
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "pubwiki-db-dev",
+					"database_id": "b0d221f8-2806-4265-8d2c-261e916c19c5",
+					"migrations_dir": "../../packages/db/drizzle"
+				}
+			],
+			"r2_buckets": [
+				{
+					"binding": "R2_BUCKET",
+					"bucket_name": "pubwiki-storage-dev"
+				}
+			]
+		}
+	}
 	// "kv_namespaces": [
 	//   {
 	//     "binding": "MY_KV_NAMESPACE",

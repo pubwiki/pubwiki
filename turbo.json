@@ -32,6 +32,19 @@
     "test:e2e": {
       "dependsOn": ["build"]
     },
+    "deploy": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "deploy:dev": {
+      "dependsOn": ["build:dev"],
+      "cache": false
+    },
+    "build:dev": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".svelte-kit/**"],
+      "inputs": ["src/**", "tsconfig.json", "vite.config.*", "svelte.config.*", ".env.preview"]
+    },
     "lint": {}
   }
 }

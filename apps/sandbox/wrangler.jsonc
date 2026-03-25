@@ -6,8 +6,19 @@
   },
   "routes": [
     {
-      "pattern": "sandbox.pub.wiki",
-      "custom_domain": true
+      "pattern": "*.soyo.mu/*",
+      "zone_name": "soyo.mu"
     }
-  ]
+  ],
+  "env": {
+    "dev": {
+      "name": "pubwiki-sandbox-dev",
+      "routes": [
+        {
+          "pattern": "*.fus.al/*",
+          "zone_name": "fus.al"
+        }
+      ]
+    }
+  }
 }
