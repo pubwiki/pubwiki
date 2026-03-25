@@ -477,6 +477,7 @@ export const CreateArtifactBody = zod.object({
   "title": zod.string().nullish().describe('存档标题'),
   "description": zod.string().nullish().describe('存档描述')
 })]).describe('节点内容（结构取决于 type）'),
+  "metadata": zod.record(zod.string(), zod.string()).nullish().describe('User-defined key-value annotations. Participates in commit hash calculation.'),
   "message": zod.string().optional().describe('Commit 消息'),
   "tag": zod.string().optional().describe('Semver 标签'),
   "isListed": zod.boolean().optional().describe('是否在公开列表中可见（可发现性）'),
@@ -625,6 +626,7 @@ export const PatchArtifactBody = zod.object({
   "title": zod.string().nullish().describe('存档标题'),
   "description": zod.string().nullish().describe('存档描述')
 })]).describe('节点内容（结构取决于 type）'),
+  "metadata": zod.record(zod.string(), zod.string()).nullish().describe('User-defined key-value annotations. Participates in commit hash calculation.'),
   "message": zod.string().optional().describe('Commit 消息'),
   "tag": zod.string().optional().describe('Semver 标签'),
   "isListed": zod.boolean().optional().describe('是否在公开列表中可见（可发现性）'),
@@ -973,7 +975,8 @@ export const GetArtifactGraphResponse = zod.object({
   "parentCommit": zod.string().nullish().describe('Delta chain 父 save 的 commit（saveEncoding=delta 时必填，keyframe 时为 null）'),
   "title": zod.string().nullish().describe('存档标题'),
   "description": zod.string().nullish().describe('存档描述')
-})]).optional().describe('节点内容（结构化数据）')
+})]).optional().describe('节点内容（结构化数据）'),
+  "metadata": zod.record(zod.string(), zod.string()).nullish().describe('User-defined key-value annotations.')
 })),
   "edges": zod.array(zod.object({
   "source": zod.uuid(),
@@ -2422,7 +2425,8 @@ export const GetNodeVersionsResponse = zod.object({
   "contentHash": zod.string().describe('Content fingerprint (determines which content table to query)'),
   "message": zod.string().nullish().describe('Commit message'),
   "tag": zod.string().nullish().describe('Semver tag (e.g. v1.0.0)'),
-  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）')
+  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
+  "metadata": zod.record(zod.string(), zod.string()).nullish().describe('User-defined key-value annotations. Participates in commit hash calculation.')
 })),
   "nextCursor": zod.string().nullish().describe('Cursor for the next page, null if no more data')
 })
@@ -2454,7 +2458,8 @@ export const GetNodeVersionResponse = zod.object({
   "contentHash": zod.string().describe('Content fingerprint (determines which content table to query)'),
   "message": zod.string().nullish().describe('Commit message'),
   "tag": zod.string().nullish().describe('Semver tag (e.g. v1.0.0)'),
-  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）')
+  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
+  "metadata": zod.record(zod.string(), zod.string()).nullish().describe('User-defined key-value annotations. Participates in commit hash calculation.')
 }).and(zod.object({
   "content": zod.union([zod.object({
   "type": zod.enum(['INPUT']),
@@ -2583,7 +2588,8 @@ export const GetNodeVersionChildrenResponse = zod.object({
   "contentHash": zod.string().describe('Content fingerprint (determines which content table to query)'),
   "message": zod.string().nullish().describe('Commit message'),
   "tag": zod.string().nullish().describe('Semver tag (e.g. v1.0.0)'),
-  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）')
+  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
+  "metadata": zod.record(zod.string(), zod.string()).nullish().describe('User-defined key-value annotations. Participates in commit hash calculation.')
 }))
 })
 

@@ -150,6 +150,7 @@ export class NodeGraphFactory {
           name: v.name ?? undefined,
           contentHash: v.contentHash,
           content: v.content!,
+          metadata: v.metadata,
           position: bn.positionX != null && bn.positionY != null
             ? { x: bn.positionX, y: bn.positionY }
             : undefined,

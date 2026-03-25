@@ -1,0 +1,392 @@
+{
+    "title": "ゲーム",
+    "ink": {
+        "title": "Ink インタラクティブノベル",
+        "loading": "読み込み中...",
+        "continue": "続ける",
+        "restart": "最初から",
+        "save": "セーブ",
+        "load": "ロード",
+        "backToEditor": "エディタに戻る",
+        "intro": "Ink インタラクティブノベル",
+        "introDesc": "ここでは、あなたの選択がストーリーの展開を決めます。すべての決断が物語に影響を与えます。",
+        "backgroundStory": "背景ストーリー",
+        "startAdventure": "冒険を始める",
+        "noBackgroundStory": "背景ストーリーなし",
+        "prologue": "プロローグ",
+        "continueOpening": "オープニングを続ける",
+        "continueWithChoices": "ストーリーを進めて選択肢を表示",
+        "unnamedChapter": "無題の章",
+        "generating": "生成中...",
+        "preparing": "準備中...",
+        "action": {
+            "yourAction": "あなたの行動",
+            "custom": "カスタム",
+            "special": "特殊"
+        },
+        "dice": {
+            "title": "ダイス判定",
+            "difficulty": "難易度",
+            "roll": "ダイスを振る",
+            "rolling": "ダイスを振っています...",
+            "success": "成功！",
+            "fail": "失敗",
+            "first": "1回目",
+            "retry": "もう一度",
+            "retried": "リトライ",
+            "continueAdventure": "冒険を続ける",
+            "acceptFate": "運命を受け入れる",
+            "backToChoices": "選択に戻る",
+            "resultBadge": "{{roll}}/{{difficulty}} {{result}}",
+            "difficultyTag": "難易度 {{level}}"
+        },
+        "choices": {
+            "title": "あなたの選択",
+            "customAction": "カスタムアクション...",
+            "inputPlaceholder": "やりたいことを入力...",
+            "cancel": "キャンセル",
+            "confirm": "確認",
+            "noChoicesHint": "AIが選択肢を生成しませんでした。カスタムアクションで続行してください。"
+        },
+        "director": {
+            "button": "ディレクター指示...",
+            "label": "ディレクター指示",
+            "hint": "（物語の方向性に影響、キャラクターの行動ではありません）",
+            "placeholder": "例：キャラクター間の感情的な緊張感を重点的に描写し、ペースを落としてください...",
+            "clear": "クリア"
+        },
+        "settings": {
+            "secondPerson": "二人称",
+            "thirdPerson": "三人称",
+            "secondPersonTitle": "現在：二人称（あなた）",
+            "thirdPersonTitle": "現在：三人称（彼/彼女）",
+            "diceOff": "オフ",
+            "diceVisible": "オープン",
+            "diceHidden": "シークレット",
+            "diceOffTitle": "ダイスシステム：オフ",
+            "diceVisibleTitle": "ダイスシステム：オープン（難易度オプションでダイスロール）",
+            "diceHiddenTitle": "ダイスシステム：シークレット（全アクションで隠しダイスロール）",
+            "paragraphs": "{{count}}段落",
+            "paragraphsTitle": "1回の生成あたりの総段落数",
+            "typewriterSpeed": "{{speed}}文字/秒",
+            "typewriterInstant": "即時表示",
+            "typewriterSpeedTitle": "タイプライター表示速度（文字/秒）",
+            "autoFollow": "自動追従",
+            "autoFollowTitle": "最新の生成テキストに自動スクロール",
+            "gameSettings": "ゲーム設定"
+        },
+        "sidebar": {
+            "backToWorkspace": "ワークスペースに戻る",
+            "worldOverview": "世界概要",
+            "timeline": "ストーリータイムライン",
+            "publishArticle": "記事を公開",
+            "collapsePanel": "パネルを閉じる",
+            "expandPanel": "パネルを開く"
+        },
+        "timeline": {
+            "title": "ストーリータイムライン",
+            "empty": "ストーリーのチェックポイントがありません",
+            "current": "現在",
+            "loadConfirm": "このチェックポイントを読み込みますか？未保存の進行状況は失われます。",
+            "loading": "読み込み中...",
+            "nodes": "ノード",
+            "branches": "ブランチ"
+        },
+        "phase": {
+            "generatingStory": "ストーリーを生成中...",
+            "updatingState": "ゲーム状態を更新中..."
+        },
+        "refresh": {
+            "button": "ゲームデータを更新",
+            "loading": "更新中..."
+        },
+        "sections": {
+            "ragCollection": "RAG 収集",
+            "ragBadge": "{{selectedCount}} エンティティ, {{totalDocs}} ドキュメント",
+            "reasoning": "モデル推論プロセス",
+            "thinking": "AI 思考プロセス",
+            "changeSuggestions": "状態・設定変更の提案",
+            "changeCount": "{{count}}件",
+            "phaseThinking": "思考指示",
+            "phaseWriting": "執筆指示",
+            "phaseUpdating": "状態更新指示"
+        },
+        "update": {
+            "updating": "ゲーム状態を更新中...",
+            "failed": "ゲーム状態の更新に失敗",
+            "success": "ゲーム状態を更新しました",
+            "callSuccess": "{{success}}/{{total}} 呼び出し成功",
+            "audit": "監査ログ：",
+            "executionPlan": "実行プラン：",
+            "serviceCalls": "サービス呼び出し：",
+            "executionResults": "実行結果：",
+            "unknownError": "不明なエラー"
+        },
+        "rewind": {
+            "confirmTitle": "この時点に戻りますか？\n現在の進行状況は失われます。",
+            "loadFailed": "チェックポイントの読み込みに失敗：",
+            "buttonTitle": "この時点に戻る",
+            "buttonText": "過去に介入"
+        },
+        "publishCheckpoint": {
+            "buttonTitle": "このチェックポイントを公開して、他のプレイヤーがここからゲームを開始できるようにする",
+            "buttonText": "セーブを公開",
+            "modalTitle": "チェックポイントを公開",
+            "isListed": "公開チェックポイント",
+            "listedHint": "他のプレイヤーが公開リストでこのチェックポイントを見て使用できます",
+            "unlistedHint": "チェックポイントは公開リストに表示されず、リンクからのみアクセス可能",
+            "confirm": "公開",
+            "success": "チェックポイントが正常に公開されました！",
+            "failed": "公開に失敗しました：{{error}}",
+            "publishing": "公開中..."
+        },
+        "regenerate": {
+            "confirmTitle": "このストーリーを再生成しますか？\n現在の内容は置き換えられます。",
+            "loadFailed": "チェックポイントのロールバックに失敗：",
+            "buttonTitle": "このストーリーを再生成",
+            "buttonText": "再生成"
+        },
+        "time": {
+            "format": "{{year}}年{{month}}月{{day}}日 {{hour}}:{{minute}}"
+        },
+        "confirm": {
+            "clearHistory": "すべてのストーリー履歴を削除してもよろしいですか？この操作は取り消せません！",
+            "clearFailed": "削除に失敗しました: {{error}}"
+        },
+        "error": {
+            "generateFailed": "生成に失敗しました：{{error}}",
+            "noContent": "コンテンツが返されませんでした",
+            "unknownError": "不明なエラー",
+            "getStateFailed": "ゲーム状態の取得に失敗しました",
+            "retry": "リトライ",
+            "dismiss": "閉じる"
+        },
+        "highlight": {
+            "viewCreature": "クリックして{{name}}の情報を表示",
+            "viewOrganization": "クリックして組織{{name}}の情報を表示",
+            "viewLocation": "クリックして場所{{name}}の情報を表示",
+            "viewEntry": "エントリ: {{name}}",
+            "viewEntryDetail": "エントリ詳細を表示"
+        }
+    },
+    "custom": {
+        "back": "\u2190 戻る",
+        "title": "カスタムゲーム",
+        "contentArea": "ゲームコンテンツエリア",
+        "emptyTemplate": "これは空のゲームテンプレートです。ここからゲームインターフェースの構築を始められます。"
+    },
+    "world": {
+        "title": "🌍 世界概要",
+        "creatures": "🎭 キャラクター",
+        "regions": "🗺️ 地域",
+        "organizations": "🏛️ 組織",
+        "noCreatures": "キャラクターデータがありません",
+        "noRegions": "地域データがありません",
+        "noOrganizations": "組織データがありません",
+        "locationCount": "{{count}} 箇所",
+        "director": "🎬 演出ノート",
+        "directorNotes": "ノート",
+        "directorFlags": "フラグ",
+        "stageGoal": "ステージ目標",
+        "noDirectorNotes": "演出ノートがありません"
+    },
+    "publish": {
+        "title": "📤 記事を公開",
+        "articleTitle": "記事タイトル",
+        "titlePlaceholder": "空欄の場合はゲーム名を使用",
+        "visibility": "公開設定",
+        "public": "公開",
+        "unlisted": "限定公開（リンクからのみアクセス可）",
+        "private": "非公開",
+        "selectRange": "章範囲を選択",
+        "from": "第",
+        "to": "〜第",
+        "chapter": "章",
+        "chapterDefault": "第{{num}}章",
+        "chapterCount": "{{count}} 章を公開します",
+        "previewList": "章リストのプレビュー：",
+        "hasCheckpoint": "チェックポイントあり",
+        "noChaptersSelected": "章が選択されていません",
+        "success": "記事の公開に成功しました！\n記事ID: {{articleId}}",
+        "failed": "公開に失敗しました：{{error}}",
+        "publishing": "公開中...",
+        "confirm": "公開を確認",
+        "next": "次へ"
+    },
+    "modals": {
+        "creatureDetails": "キャラクター詳細",
+        "locationDetails": "場所詳細",
+        "organizationDetails": "組織詳細",
+        "itemDetails": "アイテム詳細",
+        "close": "閉じる",
+        "thinking": "💭 AI思考プロセス",
+        "storyPreview": "📖 ストーリープレビュー",
+        "confirm": "⚠️ 確認"
+    },
+    "collapsible": {
+        "expand": "展開",
+        "collapse": "折りたたむ"
+    },
+    "worldOverview": {
+        "title": "世界概要",
+        "currentLocation": "現在地",
+        "characters": "キャラクター",
+        "inventory": "インベントリ",
+        "statuses": "ステータス"
+    },
+    "creatureList": {
+        "title": "登場人物",
+        "empty": "キャラクターなし",
+        "clickToView": "クリックして{{name}}の詳細を表示"
+    },
+    "player": "プレイヤー",
+    "npc": "NPC",
+    "panel": {
+        "characterInfo": "キャラクター情報",
+        "loading": "読み込み中...",
+        "noCharacterSelected": "キャラクター未選択",
+        "unknown": "不明",
+        "playerBadge": "プレイヤー",
+        "basicInfo": "基本情報",
+        "appearance": "外見",
+        "clothing": "服装",
+        "gender": "性別",
+        "race": "種族",
+        "emotion": "感情状態",
+        "organization": "所属組織",
+        "attributes": "属性",
+        "inventory": "インベントリ",
+        "itemTitle": "アイテム：{{name}}",
+        "statusEffects": "ステータス効果",
+        "statusEffectTitle": "ステータス効果：{{name}}",
+        "addedAt": "追加日時：{{time}}",
+        "lastUpdatedAt": "最終更新：{{time}}",
+        "statusData": "データ：{{data}}",
+        "customComponents": "カスタムコンポーネント",
+        "noData": "データなし",
+        "itemCount": "{{count}} 件",
+        "fieldCount": "{{count}} フィールド",
+        "value": "値",
+        "listComponent": "リストコンポーネント · {{count}} 件",
+        "relationships": "関係",
+        "location": "位置",
+        "regionLabel": "地域:",
+        "locationLabel": "場所:",
+        "log": "ログ",
+        "settingDocs": "設定ドキュメント",
+        "disabled": "無効",
+        "references": "参照: {{refs}}"
+    },
+    "locationModal": {
+        "description": "場所の説明",
+        "belongsToRegion": "地域：{{name}}",
+        "otherLocations": "地域内の他の場所",
+        "locationTitle": "場所：{{name}}",
+        "settingDocs": "設定ドキュメント"
+    },
+    "orgModal": {
+        "basicInfo": "基本情報",
+        "orgId": "組織ID:",
+        "description": "説明:",
+        "territories": "領地",
+        "orgLog": "組織ログ",
+        "settingDocs": "設定ドキュメント"
+    },
+    "galgame": {
+        "expressions": {
+            "normal": "穏やか",
+            "happy": "嬉しい",
+            "angry": "怒り",
+            "sad": "悲しい",
+            "surprised": "驚き",
+            "shy": "恥ずかしい",
+            "disgusted": "嫌悪",
+            "dazed": "呆然"
+        },
+        "choices": {
+            "customAction": "カスタムアクション...",
+            "inputPlaceholder": "やりたいことを入力...",
+            "cancel": "キャンセル",
+            "confirm": "確認"
+        },
+        "log": {
+            "title": "会話ログ",
+            "yourAction": "あなたの行動"
+        },
+        "settings": {
+            "title": "設定",
+            "typewriterSpeed": "タイプ速度",
+            "typewriterSpeedUnit": "{{speed}}文字/秒",
+            "autoPlayDelay": "自動送り遅延",
+            "autoPlayDelayUnit": "{{delay}}秒",
+            "dialogueLines": "会話行数",
+            "dialogueLinesUnit": "{{count}}行",
+            "clearHistory": "ストーリー履歴を削除"
+        },
+        "controls": {
+            "autoPlay": "自動送り",
+            "skip": "スキップ",
+            "log": "会話ログ",
+            "settings": "設定"
+        },
+        "time": {
+            "format": "{{year}}年{{month}}月{{day}}日 {{hour}}:{{minute}}"
+        },
+        "status": {
+            "updatingState": "ゲーム状態を更新中...",
+            "turnCount": "第{{count}}ターン"
+        },
+        "error": {
+            "retry": "リトライ",
+            "ragEmpty": "生成に失敗しました：RAGが関連ドキュメントを収集できませんでした。再試行してください",
+            "noContent": "生成に失敗しました：コンテンツが返されませんでした",
+            "unknownError": "不明なエラー",
+            "generateFailed": "生成に失敗しました: {{error}}",
+            "clearFailed": "削除に失敗しました: {{error}}",
+            "getStateFailed": "ゲーム状態の取得に失敗しました"
+        },
+        "confirm": {
+            "clearHistory": "すべてのストーリー履歴を削除してもよろしいですか？この操作は取り消せません！"
+        },
+        "startGame": {
+            "back": "戻る",
+            "prologue": "プロローグ",
+            "continueStory": "ストーリーを続ける",
+            "continueStoryDesc": "ストーリーを進めて選択肢を表示"
+        },
+        "nav": {
+            "back": "戻る",
+            "characterInfo": "キャラクター情報",
+            "worldOverview": "世界概要",
+            "spriteManager": "キャラクター立ち絵",
+            "publishArticle": "記事を公開"
+        },
+        "thinking": {
+            "title": "思考プロセス"
+        },
+        "noBackgroundStory": "背景ストーリーなし",
+        "unnamedChapter": "無題の章",
+        "sprite": {
+            "title": "キャラクター立ち絵管理",
+            "noData": "キャラクターデータがありません。まずゲームを開始してください。",
+            "character": "キャラクター",
+            "clickToUpload": "{{name}} - {{expression}}（クリックしてアップロード）",
+            "delete": "削除",
+            "exportSprites": "立ち絵をエクスポート",
+            "importSprites": "立ち絵をインポート",
+            "clearAll": "すべてクリア",
+            "confirmClear": "すべての立ち絵をクリアしてもよろしいですか？この操作は取り消せません。",
+            "uploadFailed": "アップロードに失敗しました: {{error}}",
+            "noSpritesToExport": "エクスポートする立ち絵がありません",
+            "importSuccess": "{{count}} 枚の立ち絵をインポートしました",
+            "importFailed": "インポートに失敗しました: {{error}}"
+        },
+        "highlight": {
+            "viewCreature": "クリックして{{name}}の情報を表示",
+            "viewOrganization": "クリックして組織{{name}}の情報を表示",
+            "viewLocation": "クリックして場所{{name}}の情報を表示",
+            "viewEntry": "エントリ: {{name}}",
+            "viewEntryDetail": "エントリ詳細を表示"
+        }
+    }
+}

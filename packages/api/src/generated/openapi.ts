@@ -1115,6 +1115,10 @@ export interface components {
             contentHash: string;
             /** @description 节点内容（结构取决于 type） */
             content: components["schemas"]["ArtifactNodeContent"];
+            /** @description User-defined key-value annotations. Participates in commit hash calculation. */
+            metadata?: {
+                [key: string]: string;
+            } | null;
             /** @description Commit 消息 */
             message?: string;
             /** @description Semver 标签 */
@@ -1143,6 +1147,10 @@ export interface components {
             };
             /** @description 节点内容（结构化数据） */
             content?: components["schemas"]["ArtifactNodeContent"];
+            /** @description User-defined key-value annotations. */
+            metadata?: {
+                [key: string]: string;
+            } | null;
         };
         ArtifactEdge: {
             /** Format: uuid */
@@ -1827,6 +1835,10 @@ export interface components {
             tag?: string | null;
             /** @description 是否在公开列表中可见（可发现性） */
             isListed: boolean;
+            /** @description User-defined key-value annotations. Participates in commit hash calculation. */
+            metadata?: {
+                [key: string]: string;
+            } | null;
         };
         NodeVersionDetail: components["schemas"]["NodeVersionSummary"] & {
             /** @description Full content from the typed content table */

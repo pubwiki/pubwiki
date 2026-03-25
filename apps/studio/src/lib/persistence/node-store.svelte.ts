@@ -169,6 +169,9 @@ class NodeStore {
     // Load from IndexedDB
     const storedData = await db.nodeData.where('projectId').equals(projectId).toArray();
     console.log('[NodeStore] Loaded', storedData.length, 'nodes from IndexedDB');
+    for (const stored of storedData) {
+      console.log('[NodeStore]   raw DB row:', stored.nodeId, stored.type, 'metadata=', JSON.stringify(stored.metadata));
+    }
     
     for (const stored of storedData) {
       const nodeData = this.deserialize(stored);
@@ -211,6 +214,17 @@ class NodeStore {
     // Read version to establish reactive dependency on this specific node
     this.versions.get(nodeId);
     return this.data.get(nodeId);
+  }
+
+  /**
+   * Find the first node whose metadata contains the given key-value pair.
+   * Scans current in-memory nodes (not snapshots).
+   */
+  findByMetadata(key: string, value: string): StudioNodeData | undefined {
+    for (const node of this.data.values()) {
+      if ((node.metadata as Record<string, string> | undefined)?.[key] === value) return node;
+    }
+    return undefined;
   }
   
   /**
@@ -514,7 +528,7 @@ class NodeStore {
       return;
     }
     
-    console.log('[NodeStore] Creating node:', data.id, data.type);
+    console.log('[NodeStore] Creating node:', data.id, data.type, 'metadata=', JSON.stringify((data as any).metadata), 'projectId=', this.projectId);
     
     // Add to name index
     if (data.name) {
@@ -567,8 +581,13 @@ class NodeStore {
     reportSaveState('nodes', 'dirty');
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
+      console.log('[NodeStore] scheduleSave: reset existing timer');
     }
-    this.saveTimer = setTimeout(() => this.flush(), 500);
+    console.log('[NodeStore] scheduleSave: setting 500ms timer, dirty count:', this.dirty.size);
+    this.saveTimer = setTimeout(() => {
+      console.log('[NodeStore] scheduleSave: timer fired, calling flush');
+      this.flush();
+    }, 500);
   }
   
   /**
@@ -581,13 +600,21 @@ class NodeStore {
     }
     
     reportSaveState('nodes', 'saving');
-    console.log('[NodeStore] Flushing', this.dirty.size, 'dirty nodes to IndexedDB');
+    
+    // Snapshot the dirty set BEFORE the await — entries added during
+    // the IndexedDB write must not be cleared.
+    const flushing = new Set(this.dirty);
+    console.log('[NodeStore] Flushing', flushing.size, 'dirty nodes to IndexedDB for project:', this.projectId);
     
     const toSave: StoredNodeData[] = [];
-    for (const nodeId of this.dirty) {
+    for (const nodeId of flushing) {
       const data = this.data.get(nodeId);
       if (data) {
-        toSave.push(this.serialize(data));
+        const serialized = this.serialize(data);
+        console.log('[NodeStore]   serializing:', serialized.nodeId, serialized.type, 'metadata=', JSON.stringify(serialized.metadata));
+        toSave.push(serialized);
+      } else {
+        console.warn('[NodeStore]   dirty node not in data:', nodeId);
       }
     }
     
@@ -597,11 +624,17 @@ class NodeStore {
         console.log('[NodeStore] Saved', toSave.length, 'nodes successfully');
       } catch (err) {
         console.error('[NodeStore] Failed to save nodes:', err);
+        // Don't clear dirty entries on error — they need to be retried
+        reportSaveState('nodes', 'idle');
+        return;
       }
     }
     
-    this.dirty.clear();
-    reportSaveState('nodes', 'idle');
+    // Only remove entries that were actually saved
+    for (const nodeId of flushing) {
+      this.dirty.delete(nodeId);
+    }
+    reportSaveState('nodes', this.dirty.size > 0 ? 'dirty' : 'idle');
   }
   
   /**
@@ -623,7 +656,8 @@ class NodeStore {
       contentHash: data.contentHash,
       parent: data.parent,
       content: data.content.toJSON(),
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      metadata: data.metadata as Record<string, string> | undefined
     };
   }
   
@@ -644,7 +678,8 @@ class NodeStore {
       contentHash: stored.contentHash,
       snapshotRefs: [],  // snapshotRefs managed separately, not persisted
       parent: stored.parent,
-      content: restoreContent(nodeType, stored.content)
+      content: restoreContent(nodeType, stored.content),
+      metadata: stored.metadata
     } as unknown as StudioNodeData;
   }
   

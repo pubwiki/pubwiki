@@ -366,6 +366,7 @@ export class ArtifactService {
       name: n.name,
       contentHash: n.contentHash,
       content: n.content,
+      metadata: n.metadata,
       message: n.message,
       tag: n.tag,
       isListed: n.isListed,
@@ -2195,6 +2196,7 @@ export class ArtifactService {
             commit: v.commit,
             contentHash: v.contentHash,
             name: v.name,
+            metadata: v.metadata,
             position: vn.positionX != null && vn.positionY != null
               ? { x: vn.positionX, y: vn.positionY }
               : undefined,

@@ -30,6 +30,8 @@ const PERSIST_DEBOUNCE_MS = 500;
 
 export class StoreManager {
   private readonly entries = new Map<string, Promise<StoreEntry>>();
+  /** Track pending cleanups so get() can wait for them. */
+  private readonly pendingCleanups = new Map<string, Promise<void>>();
   private readonly createBackend: StorageBackendFactory;
 
   constructor(createBackend: StorageBackendFactory) {
@@ -40,7 +42,13 @@ export class StoreManager {
   get(nodeId: string): Promise<TripleStore> {
     let promise = this.entries.get(nodeId);
     if (!promise) {
-      promise = this.initialize(nodeId);
+      // Wait for any in-flight cleanup to finish before initialising a new store,
+      // otherwise restoreLatest() may read stale data from IndexedDB.
+      const pending = this.pendingCleanups.get(nodeId);
+      const init = pending
+        ? pending.then(() => this.initialize(nodeId))
+        : this.initialize(nodeId);
+      promise = init;
       this.entries.set(nodeId, promise);
       // Allow retry on initialization failure
       promise.catch(() => this.entries.delete(nodeId));
@@ -50,19 +58,26 @@ export class StoreManager {
 
   /** Close and persist a single store. */
   async close(nodeId: string): Promise<void> {
-    const promise = this.entries.get(nodeId);
+    const entryPromise = this.entries.get(nodeId);
     this.entries.delete(nodeId);
 
-    if (!promise) return;
+    if (!entryPromise) return;
 
-    let entry: StoreEntry;
-    try {
-      entry = await promise;
-    } catch {
-      return;
-    }
+    // Build the full cleanup chain as a single promise and register it
+    // SYNCHRONOUSLY so that a concurrent get() always sees it — even
+    // before the first microtask tick.
+    const cleanupPromise = entryPromise
+      .then(entry => this.cleanup(entry, nodeId))
+      .catch(() => {});
 
-    this.cleanup(entry, nodeId);
+    this.pendingCleanups.set(nodeId, cleanupPromise);
+    cleanupPromise.finally(() => {
+      // Only delete if this is still the tracked cleanup
+      if (this.pendingCleanups.get(nodeId) === cleanupPromise) {
+        this.pendingCleanups.delete(nodeId);
+      }
+    });
+    await cleanupPromise;
   }
 
   /** Close all managed stores (e.g. on page unload). */
@@ -86,9 +101,12 @@ export class StoreManager {
       entry.persistTimer = setTimeout(() => {
         entry.persistTimer = undefined;
         if (store.isOpen) {
-          store.persist().catch(err =>
-            console.error(`[StoreManager] persist failed for ${nodeId}:`, err)
-          );
+          store.persist()
+            .catch(err =>
+              console.error(`[StoreManager] persist failed for ${nodeId}:`, err)
+            );
+        } else {
+          console.warn(`[StoreManager] skip persist for ${nodeId}: store closed`);
         }
       }, PERSIST_DEBOUNCE_MS);
     });

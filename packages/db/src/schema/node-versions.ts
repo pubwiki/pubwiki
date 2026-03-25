@@ -50,6 +50,7 @@ export const nodeVersions = sqliteTable(
     // 元数据
     message: text('message'),
     tag: text('tag'),                                        // Semver tag (可选)
+    metadata: text('metadata', { mode: 'json' }).$type<Record<string, string>>(), // User-defined key-value annotations
   },
   (table) => [
     primaryKey({ columns: [table.commit] }),

@@ -1,0 +1,648 @@
+/* ============================================================================
+   API 配置模态框样式 - Dopamine 适配版
+   ============================================================================ */
+
+.header-actions {
+  display: flex;
+  gap: var(--paper-space-2);
+  align-items: center;
+}
+
+.btn-save-header {
+  padding: 6px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--paper-radius-md);
+  background: var(--paper-electric-blue);
+  color: var(--paper-bg-primary);
+  cursor: pointer;
+  font-size: var(--paper-font-size-sm);
+  font-weight: var(--paper-font-weight-bold);
+  transition: all var(--paper-transition-fast);
+  box-shadow: 0 4px 12px var(--paper-electric-blue-alpha);
+}
+
+.btn-save-header:hover {
+  background: var(--paper-electric-blue);
+  filter: brightness(1.1);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--paper-electric-blue-alpha);
+}
+
+.btn-import-export {
+  padding: 6px 12px;
+  border: 1.5px solid var(--paper-border-color);
+  border-radius: var(--paper-radius-md);
+  background: var(--paper-bg-secondary);
+  color: var(--paper-text-secondary);
+  cursor: pointer;
+  font-size: var(--paper-font-size-xs);
+  transition: all var(--paper-transition-fast);
+  font-weight: var(--paper-font-weight-medium);
+}
+
+.btn-import-export:hover {
+  background: var(--paper-bg-tertiary);
+  color: var(--paper-text-primary);
+  border-color: var(--paper-electric-blue);
+}
+
+/* 模型标签页 - 紧凑横向排列 */
+.model-tabs {
+  display: flex;
+  gap: var(--paper-space-1);
+  margin-bottom: var(--paper-space-3);
+  background: var(--paper-bg-secondary);
+  padding: var(--paper-space-1);
+  border-radius: var(--paper-radius-lg);
+  border: 1px solid var(--paper-border-color);
+}
+
+.model-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--paper-space-1);
+  padding: var(--paper-space-2) var(--paper-space-1);
+  border: none;
+  border-radius: var(--paper-radius-sm);
+  background: transparent;
+  color: var(--paper-text-tertiary);
+  cursor: pointer;
+  transition: all var(--paper-transition-fast);
+  font-size: var(--paper-font-size-sm);
+  font-weight: var(--paper-font-weight-medium);
+}
+
+.model-tab:hover {
+  background: var(--paper-bg-content);
+  color: var(--paper-text-secondary);
+}
+
+.model-tab.active {
+  background: var(--paper-electric-blue);
+  color: var(--paper-bg-primary);
+  font-weight: var(--paper-font-weight-bold);
+  box-shadow: 0 4px 12px rgba(65, 137, 232, 0.3);
+}
+
+.tab-icon {
+  font-size: 1rem;
+}
+
+.tab-label {
+  white-space: nowrap;
+}
+
+.model-desc {
+  text-align: center;
+  color: var(--paper-text-tertiary);
+  font-size: var(--paper-font-size-xs);
+  margin-bottom: var(--paper-space-3);
+}
+
+/* 表单样式 - 紧凑版 */
+.config-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--paper-space-3);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--paper-space-1);
+}
+
+.form-group label {
+  color: var(--paper-text-secondary);
+  font-size: var(--paper-font-size-xs);
+  font-weight: var(--paper-font-weight-bold);
+  letter-spacing: 0.02em;
+}
+
+.form-group input,
+.form-group select {
+  padding: 8px 12px;
+  border: 1.5px solid var(--paper-border-color);
+  border-radius: var(--paper-radius-md);
+  background: var(--paper-bg-tertiary);
+  color: var(--paper-text-primary);
+  font-size: var(--paper-font-size-sm);
+  transition: all var(--paper-transition-fast);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--paper-electric-blue);
+  background: var(--paper-bg-secondary);
+  box-shadow: 0 0 0 3px rgba(65, 137, 232, 0.15);
+}
+
+.form-group input::placeholder {
+  color: var(--paper-text-tertiary);
+}
+
+.form-group select {
+  cursor: pointer;
+}
+
+.form-group select option {
+  background: var(--paper-bg-primary);
+  color: var(--paper-text-primary);
+}
+
+.hint {
+  color: var(--paper-text-tertiary);
+  font-size: var(--paper-font-size-xs);
+}
+
+/* 三列布局 */
+.form-row-3 {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 0.75rem;
+}
+
+/* 两列布局 */
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+/* 高级选项折叠 */
+.advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border: none;
+  background: transparent;
+  color: #718096;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: color 0.2s;
+}
+
+.advanced-toggle:hover {
+  color: #a0aec0;
+}
+
+.advanced-options {
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.advanced-options .hint {
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+/* 模式切换按钮组 */
+.config-mode-toggle {
+  display: flex;
+  gap: var(--paper-space-1);
+  margin-bottom: var(--paper-space-4);
+  background: var(--paper-bg-secondary);
+  padding: var(--paper-space-1);
+  border-radius: var(--paper-radius-lg);
+  border: 1px solid var(--paper-border-color);
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--paper-radius-md);
+  background: transparent;
+  color: var(--paper-text-tertiary);
+  cursor: pointer;
+  transition: all var(--paper-transition-fast);
+  font-size: var(--paper-font-size-sm);
+  font-weight: var(--paper-font-weight-bold);
+}
+
+.mode-btn:hover {
+  background: var(--paper-bg-content);
+  color: var(--paper-text-secondary);
+}
+
+.mode-btn.active {
+  background: var(--paper-candy-purple);
+  color: var(--paper-bg-primary);
+  box-shadow: 0 4px 12px rgba(189, 87, 246, 0.3);
+}
+
+/* 获取模型按钮行 */
+.fetch-models-row {
+  display: flex;
+  align-items: center;
+  gap: var(--paper-space-3);
+}
+
+.fetch-btn {
+  padding: 8px 16px;
+  border: 2px solid rgba(65, 137, 232, 0.3);
+  border-radius: var(--paper-radius-md);
+  background: rgba(65, 137, 232, 0.1);
+  color: var(--paper-electric-blue);
+  cursor: pointer;
+  font-size: var(--paper-font-size-xs);
+  font-weight: var(--paper-font-weight-bold);
+  transition: all var(--paper-transition-fast);
+  white-space: nowrap;
+}
+
+.fetch-btn:hover:not(:disabled) {
+  background: rgba(65, 137, 232, 0.2);
+  border-color: var(--paper-electric-blue);
+  transform: translateY(-1px);
+}
+
+.fetch-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.model-count-hint {
+  color: #48bb78;
+  font-size: 0.75rem;
+}
+
+.fetch-error-hint {
+  color: #fc8181;
+  font-size: 0.75rem;
+}
+
+/* 测试连接按钮 */
+.fetch-btn.test-btn {
+  border-color: rgba(128, 90, 213, 0.4);
+  background: rgba(128, 90, 213, 0.15);
+  color: #b794f4;
+}
+
+.fetch-btn.test-btn:hover:not(:disabled) {
+  background: rgba(128, 90, 213, 0.25);
+  border-color: rgba(128, 90, 213, 0.6);
+}
+
+/* 测试结果 */
+.test-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 6px;
+}
+
+.test-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: #a0aec0;
+}
+
+.test-item.success {
+  color: #48bb78;
+}
+
+.test-item.fail {
+  color: #fc8181;
+}
+
+.test-latency {
+  opacity: 0.6;
+  font-size: 0.75rem;
+}
+
+.test-error {
+  font-size: 0.7rem;
+  opacity: 0.7;
+  margin-left: auto;
+  max-width: 50%;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 简单模式模型选择器 */
+.model-selectors {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.model-selector-group {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 0.75rem !important;
+}
+
+.model-selector-group label {
+  min-width: 90px;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.model-selector-icon {
+  font-size: 0.9rem;
+}
+
+.model-selector-group input {
+  flex: 1;
+}
+
+/* 简单模式 Reasoning Effort 下拉 */
+.reasoning-effort-select {
+  width: 90px !important;
+  flex: 0 0 90px;
+  padding: 6px 4px !important;
+  font-size: var(--paper-font-size-xs) !important;
+  border: 1.5px solid var(--paper-border-color);
+  border-radius: var(--paper-radius-md);
+  background: var(--paper-bg-tertiary);
+  color: var(--paper-text-secondary);
+  cursor: pointer;
+  transition: all var(--paper-transition-fast);
+  text-align: center;
+}
+
+.reasoning-effort-select:focus {
+  outline: none;
+  border-color: var(--paper-electric-blue);
+  box-shadow: 0 0 0 3px rgba(65, 137, 232, 0.15);
+}
+
+.reasoning-effort-select option {
+  background: var(--paper-bg-primary);
+  color: var(--paper-text-primary);
+}
+
+/* 模型推荐区 */
+.model-recommendations {
+  border: 1.5px dashed rgba(65, 137, 232, 0.3);
+  border-radius: var(--paper-radius-md);
+  background: rgba(65, 137, 232, 0.04);
+  overflow: hidden;
+  transition: all var(--paper-transition-fast);
+}
+
+.model-recommendations:hover {
+  border-color: rgba(65, 137, 232, 0.5);
+  background: rgba(65, 137, 232, 0.06);
+}
+
+.model-recommendations[open] {
+  border-style: solid;
+  border-color: rgba(65, 137, 232, 0.35);
+  background: var(--paper-bg-secondary);
+}
+
+.recommendations-toggle {
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--paper-electric-blue);
+  font-size: var(--paper-font-size-xs);
+  font-weight: var(--paper-font-weight-bold);
+  user-select: none;
+  list-style: none;
+  transition: all var(--paper-transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.recommendations-toggle::after {
+  content: '▸';
+  margin-left: auto;
+  font-size: 0.7rem;
+  transition: transform 0.2s ease;
+  color: var(--paper-electric-blue);
+  opacity: 0.6;
+}
+
+.model-recommendations[open] .recommendations-toggle::after {
+  transform: rotate(90deg);
+}
+
+.recommendations-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.recommendations-toggle:hover {
+  color: var(--paper-electric-blue);
+  filter: brightness(1.2);
+}
+
+.recommendations-content {
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--paper-border-color);
+}
+
+.rec-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rec-title {
+  font-size: var(--paper-font-size-xs);
+  font-weight: var(--paper-font-weight-bold);
+  color: var(--paper-text-primary);
+}
+
+.rec-desc {
+  font-size: 0.72rem;
+  color: var(--paper-text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.rec-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.rec-model-chip {
+  padding: 3px 8px;
+  border: 1px solid rgba(65, 137, 232, 0.3);
+  border-radius: 12px;
+  background: rgba(65, 137, 232, 0.08);
+  color: var(--paper-electric-blue);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: all var(--paper-transition-fast);
+  white-space: nowrap;
+}
+
+.rec-model-chip:hover {
+  background: rgba(65, 137, 232, 0.2);
+  border-color: var(--paper-electric-blue);
+  transform: translateY(-1px);
+}
+
+.rec-model-chip.premium {
+  border-color: rgba(189, 87, 246, 0.3);
+  background: rgba(189, 87, 246, 0.08);
+  color: #b794f4;
+}
+
+.rec-model-chip.premium:hover {
+  background: rgba(189, 87, 246, 0.2);
+  border-color: rgba(189, 87, 246, 0.6);
+}
+
+.rec-note {
+  font-size: 0.68rem;
+  color: var(--paper-text-tertiary);
+  margin: 2px 0 0;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.rec-footnote {
+  font-size: 0.68rem;
+  color: var(--paper-text-tertiary);
+  margin: 4px 0 0;
+  padding-top: 6px;
+  border-top: 1px dashed var(--paper-border-color);
+  line-height: 1.4;
+}
+
+/* 自定义模型下拉框 */
+.model-combobox {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.model-combobox input {
+  width: 100%;
+  padding-right: 1.75rem !important;
+}
+
+.model-combobox-toggle {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #718096;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  line-height: 1;
+  border-radius: 3px;
+  transition: color 0.15s;
+}
+
+.model-combobox-toggle:hover {
+  color: #a0aec0;
+}
+
+.model-combobox-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #1e2736;
+  border: 1px solid rgba(66, 153, 225, 0.35);
+  border-radius: 6px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.model-combobox-item {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  color: #a0aec0;
+  cursor: pointer;
+  transition: background 0.1s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-combobox-item:hover {
+  background: rgba(66, 153, 225, 0.2);
+  color: #e0e0e0;
+}
+
+.model-combobox-item.selected {
+  background: rgba(66, 153, 225, 0.25);
+  color: #fff;
+}
+
+.model-combobox-item.prefix-match {
+  color: #e0e0e0;
+}
+
+/* 移动端适配 */
+@media (max-width: 600px) {
+  .api-config-modal {
+    width: 95%;
+    max-height: 85vh;
+  }
+
+  .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .model-tabs {
+    flex-wrap: wrap;
+  }
+
+  .model-tab {
+    flex: 0 0 auto;
+    min-width: 70px;
+  }
+
+  .model-selector-group {
+    flex-direction: row !important;
+    flex-wrap: wrap;
+  }
+
+  .model-selector-group label {
+    min-width: unset;
+    width: 100%;
+  }
+
+  .model-selector-group .model-combobox {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .model-selector-group .reasoning-effort-select {
+    flex: 0 0 80px;
+    width: 80px !important;
+  }
+}

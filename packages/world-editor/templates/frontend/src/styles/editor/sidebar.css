@@ -1,0 +1,360 @@
+/* ============================================================================
+   Sidebar - 左侧导航栏 - Modern Polished
+   ============================================================================ */
+
+/* 侧边栏容器 - Glassmorphism Base */
+.editor-sidebar {
+    display: flex;
+    flex-direction: column;
+    width: var(--sidebar-width);
+    height: 100%;
+    background: var(--bg-sidebar);
+    /* 三级背景最深层 */
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    transition: width var(--transition-slow);
+    flex-shrink: 0;
+    z-index: 10;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+}
+
+.editor-sidebar.expanded {
+    width: var(--sidebar-width-expanded);
+}
+
+/* 侧边栏 Logo 区域 */
+.sidebar-logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Expanded: flex-start handled by padding */
+    height: var(--header-height);
+    padding: 0 var(--spacing-3);
+    margin-bottom: var(--spacing-4);
+    position: relative;
+    /* border-bottom: 1px solid var(--border-color); Removed for cleaner look */
+}
+
+.sidebar-logo-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent-primary) 0%, #ea580c 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 800;
+    font-size: 1.2rem;
+    box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
+    flex-shrink: 0;
+    z-index: 2;
+}
+
+.sidebar-logo-text {
+    margin-left: var(--spacing-3);
+    font-family: 'Outfit', var(--font-sans);
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: all var(--transition-normal);
+    letter-spacing: -0.02em;
+    background: linear-gradient(to right, #fff, #94a3b8);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.editor-sidebar.expanded .sidebar-logo-text {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* 导航列表 */
+.sidebar-nav {
+    flex: 1;
+    padding: 0 var(--spacing-3);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* 隐藏滚动条但保留功能 */
+.sidebar-nav::-webkit-scrollbar {
+    display: none;
+}
+
+.sidebar-nav-group {
+    margin-bottom: var(--spacing-6);
+}
+
+.sidebar-nav-label {
+    padding: var(--spacing-2) var(--spacing-3);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+    opacity: 0;
+    height: 0;
+    overflow: hidden;
+    transition: all var(--transition-normal);
+}
+
+.editor-sidebar.expanded .sidebar-nav-label {
+    opacity: 0.7;
+    height: auto;
+    margin-bottom: var(--spacing-1);
+}
+
+/* 导航项 */
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 44px;
+    /* Fixed height for consistency */
+    padding: 0 var(--spacing-3);
+    /* Icon centered in collapsed */
+    margin-bottom: 4px;
+    border-radius: var(--radius-lg);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    position: relative;
+    border: 1px solid transparent;
+    background: transparent;
+    text-align: left;
+    font-size: 0.92rem;
+    font-weight: 500;
+    overflow: hidden;
+}
+
+/* Collapsed state alignment */
+.editor-sidebar:not(.expanded) .sidebar-nav-item {
+    padding: 0;
+    justify-content: center;
+    width: 44px;
+    /* Square button */
+    margin: 0 auto 8px auto;
+}
+
+.sidebar-nav-item:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* Active State - 统一 Indigo 主色 */
+.sidebar-nav-item.active {
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--accent-blue-hover);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    box-shadow: none;
+}
+
+/* Active Indicator Line */
+.sidebar-nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 20px;
+    background: var(--accent-blue);
+    border-radius: 0 4px 4px 0;
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+    display: block;
+}
+
+/* 导航图标 */
+.sidebar-nav-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    filter: grayscale(100%);
+    opacity: 0.7;
+    transition: all var(--transition-fast);
+}
+
+.sidebar-nav-item:hover .sidebar-nav-icon,
+.sidebar-nav-item.active .sidebar-nav-icon {
+    filter: grayscale(0%);
+    opacity: 1;
+}
+
+/* 导航文字 */
+.sidebar-nav-text {
+    margin-left: var(--spacing-3);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-10px);
+    transition: all var(--transition-normal);
+}
+
+.editor-sidebar.expanded .sidebar-nav-text {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Badge */
+.sidebar-nav-badge {
+    margin-left: auto;
+    padding: 2px 8px;
+    background: var(--accent-red);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border-radius: 10px;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: all var(--transition-normal);
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+}
+
+.editor-sidebar.expanded .sidebar-nav-badge {
+    opacity: 1;
+    transform: scale(1);
+}
+
+/* 底部功能区 */
+.sidebar-footer {
+    padding: var(--spacing-4);
+    /* border-top: 1px solid var(--border-color); Removed */
+    display: flex;
+    justify-content: center;
+}
+
+/* 折叠按钮 */
+.sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-tertiary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.sidebar-toggle:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.sidebar-toggle-icon {
+    font-size: 0.8rem;
+    transition: transform var(--transition-fast);
+}
+
+.editor-sidebar.expanded .sidebar-toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* Tooltip for collapsed state */
+.editor-sidebar:not(.expanded) .sidebar-nav-item:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: 56px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    z-index: 1000;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    animation: tooltipFadeIn 0.2s ease;
+}
+
+@keyframes tooltipFadeIn {
+    from {
+        opacity: 0;
+        transform: translate(-4px, -50%);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(0, -50%);
+    }
+}
+
+/* ============================================================================
+   Long-press progress indicator
+   ============================================================================ */
+
+/* Progress fill overlay - animates from left to right */
+.sidebar-nav-item-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 0;
+    background: linear-gradient(90deg,
+            rgba(59, 130, 246, 0.25) 0%,
+            rgba(96, 165, 250, 0.35) 100%);
+    border-radius: var(--radius-lg);
+    z-index: 0;
+    animation: progressFill var(--press-duration, 600ms) ease-out forwards;
+    pointer-events: none;
+}
+
+@keyframes progressFill {
+    from {
+        width: 0;
+    }
+
+    to {
+        width: 100%;
+    }
+}
+
+/* Pressing state - subtle glow */
+.sidebar-nav-item.pressing {
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.2);
+}
+
+/* Hold hint tooltip - absolutely positioned, no layout impact */
+.sidebar-nav-hold-hint {
+    position: absolute;
+    top: 50%;
+    right: var(--spacing-3);
+    transform: translateY(-50%);
+    font-size: 0.65rem;
+    color: #64748b;
+    white-space: nowrap;
+    opacity: 0;
+    animation: hintFadeIn 0.3s ease 0.5s forwards;
+    pointer-events: none;
+    z-index: 1;
+}
+
+@keyframes hintFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-50%) translateX(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(-50%) translateX(0);
+    }
+}

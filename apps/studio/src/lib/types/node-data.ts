@@ -91,14 +91,15 @@ export type { MessageBlock, MessageBlockType, ToolCallStatus } from '@pubwiki/ch
 export async function createInputNodeData(
   text: string,
   parent: string | null = null,
-  name: string = ''
+  name: string = '',
+  metadata?: Record<string, string>
 ): Promise<InputNodeData> {
   const id = crypto.randomUUID()
   // Convert text to blocks format
   const blocks = text ? [{ type: 'TextBlock' as const, value: text }] : []
   const content = new InputContent(blocks)
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
-  const commit = await computeNodeCommit(id, parent, contentHash, 'INPUT')
+  const commit = await computeNodeCommit(id, parent, contentHash, 'INPUT', metadata)
   return {
     id,
     name,
@@ -107,7 +108,8 @@ export async function createInputNodeData(
     contentHash,
     snapshotRefs: [],
     parent,
-    content
+    content,
+    metadata
   }
 }
 
@@ -117,12 +119,13 @@ export async function createInputNodeData(
 export async function createPromptNodeData(
   text: string = '',
   parent: string | null = null,
-  name: string = ''
+  name: string = '',
+  metadata?: Record<string, string>
 ): Promise<PromptNodeData> {
   const id = crypto.randomUUID()
   const content = PromptContent.fromText(text)
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
-  const commit = await computeNodeCommit(id, parent, contentHash, 'PROMPT')
+  const commit = await computeNodeCommit(id, parent, contentHash, 'PROMPT', metadata)
   return {
     id,
     name,
@@ -131,7 +134,8 @@ export async function createPromptNodeData(
     contentHash,
     snapshotRefs: [],
     parent,
-    content
+    content,
+    metadata
   }
 }
 
@@ -147,12 +151,13 @@ export async function createGeneratedNodeData(
   name: string = '',
   inputVfsRef: import('./content').VfsRef | null = null,
   outputVfsId: string | null = null,
-  postGenerationCommit: string | null = null
+  postGenerationCommit: string | null = null,
+  metadata?: Record<string, string>
 ): Promise<GeneratedNodeData> {
   const id = crypto.randomUUID()
   const content = new GeneratedContent(blocks, inputRef, promptRefs, indirectPromptRefs, inputVfsRef, outputVfsId, postGenerationCommit)
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
-  const commit = await computeNodeCommit(id, parent, contentHash, 'GENERATED')
+  const commit = await computeNodeCommit(id, parent, contentHash, 'GENERATED', metadata)
   return {
     id,
     name,
@@ -161,7 +166,8 @@ export async function createGeneratedNodeData(
     contentHash,
     snapshotRefs: [],
     parent,
-    content
+    content,
+    metadata
   }
 }
 
@@ -173,12 +179,13 @@ export async function createGeneratedNodeData(
  */
 export async function createVFSNodeData(
   projectId: string,
-  name: string = 'Files'
+  name: string = 'Files',
+  metadata?: Record<string, string>
 ): Promise<VFSNodeData> {
   const id = crypto.randomUUID()
   const content = new VFSContent(projectId)
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
-  const commit = await computeNodeCommit(id, null, contentHash, 'VFS')
+  const commit = await computeNodeCommit(id, null, contentHash, 'VFS', metadata)
   return {
     id,
     name,
@@ -187,7 +194,8 @@ export async function createVFSNodeData(
     contentHash,
     snapshotRefs: [],
     parent: null,
-    content
+    content,
+    metadata
   }
 }
 
@@ -195,12 +203,13 @@ export async function createVFSNodeData(
  * Create a new Sandbox node data object
  */
 export async function createSandboxNodeData(
-  name: string = 'Preview'
+  name: string = 'Preview',
+  metadata?: Record<string, string>
 ): Promise<SandboxNodeData> {
   const id = crypto.randomUUID()
   const content = new SandboxContent('index.html')
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
-  const commit = await computeNodeCommit(id, null, contentHash, 'SANDBOX')
+  const commit = await computeNodeCommit(id, null, contentHash, 'SANDBOX', metadata)
   return {
     id,
     name,
@@ -209,7 +218,8 @@ export async function createSandboxNodeData(
     contentHash,
     snapshotRefs: [],
     parent: null,
-    content
+    content,
+    metadata
   }
 }
 
@@ -217,12 +227,13 @@ export async function createSandboxNodeData(
  * Create a new Loader node data object (Lua VM service executor)
  */
 export async function createLoaderNodeData(
-  name: string = 'Services'
+  name: string = 'Services',
+  metadata?: Record<string, string>
 ): Promise<LoaderNodeData> {
   const id = crypto.randomUUID()
   const content = new LoaderContent()
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
-  const commit = await computeNodeCommit(id, null, contentHash, 'LOADER')
+  const commit = await computeNodeCommit(id, null, contentHash, 'LOADER', metadata)
   return {
     id,
     name,
@@ -231,7 +242,8 @@ export async function createLoaderNodeData(
     contentHash,
     snapshotRefs: [],
     parent: null,
-    content
+    content,
+    metadata
   }
 }
 
@@ -239,12 +251,13 @@ export async function createLoaderNodeData(
  * Create a new State node data object (RDF triple store)
  */
 export async function createStateNodeData(
-  name: string = 'State'
+  name: string = 'State',
+  metadata?: Record<string, string>
 ): Promise<StateNodeData> {
   const id = crypto.randomUUID()
   const content = new StateContent(name)
   const contentHash = await computeContentHash(content.toJSON() as Parameters<typeof computeContentHash>[0])
-  const commit = await computeNodeCommit(id, null, contentHash, 'STATE')
+  const commit = await computeNodeCommit(id, null, contentHash, 'STATE', metadata)
   return {
     id,
     name,
@@ -253,6 +266,7 @@ export async function createStateNodeData(
     contentHash,
     snapshotRefs: [],
     parent: null,
-    content
+    content,
+    metadata
   }
 }

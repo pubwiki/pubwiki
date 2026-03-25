@@ -46,6 +46,8 @@ export interface BaseNodeData<T extends NodeContent> {
   snapshotRefs: NodeRef[]
   /** Node content - implements NodeContent interface for polymorphic operations */
   content: T
+  /** User-defined key-value annotations. Participates in commit hash calculation. */
+  metadata?: Record<string, string>
 }
 
 // ============================================================================

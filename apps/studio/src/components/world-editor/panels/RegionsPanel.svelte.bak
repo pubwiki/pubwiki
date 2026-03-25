@@ -1,0 +1,430 @@
+<script lang="ts">
+	import * as m from '$lib/paraglide/messages';
+	import { getWorldEditorContext } from '../state/context';
+	import { EntityCardGrid, BentoGrid, BentoCard, EditModal, FormGroup, FormGrid, CollapsibleSection } from '../shared';
+	import {
+		createDefaultRegionSnapshot,
+		type RegionSnapshot, type RegionPath, type Location, type Metadata, type StatusEffect, type SettingDocument, type LogEntry
+	} from '@pubwiki/world-editor';
+
+	const ctx = getWorldEditorContext();
+
+	let regions = $derived(ctx.stateData.Regions ?? []);
+	let selectedId: string | null = $state(null);
+	let selected = $derived(regions.find((r) => r.region_id === selectedId) ?? null);
+
+	type Section = 'profile' | 'points' | 'paths' | 'metadata' | 'status' | 'documents' | 'log' | null;
+	let openSection: Section = $state(null);
+
+	function regionIndex(id: string) { return regions.findIndex((r) => r.region_id === id); }
+
+	function updateRegion(id: string, patch: Partial<RegionSnapshot>) {
+		const idx = regionIndex(id);
+		if (idx < 0) return;
+		const old = regions[idx];
+		const updated: RegionSnapshot = { ...old, ...patch };
+		const ops = ctx.translator.replaceRegion(old, updated, idx);
+		if (ops.length > 0) ctx.applyOps(ops);
+	}
+
+	function addRegion() {
+		const snapshot = createDefaultRegionSnapshot();
+		snapshot.region.name = 'New Region';
+		const order = regions.length;
+		const triples = ctx.translator.translateCreateRegion(snapshot, order);
+		ctx.applyOps(triples.map((t) => ({ op: 'insert' as const, ...t })));
+		selectedId = snapshot.region_id;
+	}
+
+	function deleteRegion(id: string) {
+		const ops = ctx.translator.translateDeleteEntity('region', id);
+		ctx.applyOps(ops);
+		if (selectedId === id) selectedId = null;
+	}
+
+	let cardItems = $derived(regions.map((r) => ({ id: r.region_id, name: r.region.name || '(unnamed)' })));
+
+	const INPUT_CLS = 'w-full px-3 py-2 text-sm bg-white border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent';
+
+	const ICON = {
+		map: '<path stroke-width="2" d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path stroke-width="2" d="M9 3v15"/><path stroke-width="2" d="M15 6v15"/>',
+		mapPin: '<path stroke-width="2" d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3" stroke-width="2"/>',
+		route: '<circle cx="6" cy="19" r="3" stroke-width="2"/><path stroke-width="2" d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3" stroke-width="2"/>',
+		database: '<ellipse cx="12" cy="5" rx="9" ry="3" stroke-width="2"/><path stroke-width="2" d="M3 5V19A9 3 0 0 0 21 19V5"/><path stroke-width="2" d="M3 12A9 3 0 0 0 21 12"/>',
+		zap: '<path stroke-width="2" d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+		fileText: '<path stroke-width="2" d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path stroke-width="2" d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+		list: '<line stroke-width="2" x1="8" x2="21" y1="6" y2="6"/><line stroke-width="2" x1="8" x2="21" y1="12" y2="12"/><line stroke-width="2" x1="8" x2="21" y1="18" y2="18"/><line stroke-width="2" x1="3" x2="3.01" y1="6" y2="6"/><line stroke-width="2" x1="3" x2="3.01" y1="12" y2="12"/><line stroke-width="2" x1="3" x2="3.01" y1="18" y2="18"/>',
+	};
+</script>
+
+{#snippet card(item: { id: string; name: string }, _selected: boolean)}
+	{@const region = regions.find((r) => r.region_id === item.id)}
+	<div class="p-3 flex flex-col gap-1.5">
+		<span class="text-[0.65rem] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full w-fit" style="background: color-mix(in srgb, var(--we-accent-olive) 12%, transparent); color: var(--we-accent-olive);">{m.we_tab_regions()}</span>
+		<span class="font-serif font-bold text-sm truncate" style="color: var(--we-text-primary);">{item.name}</span>
+		{#if region?.region.description}
+			<p class="text-xs line-clamp-2" style="color: var(--we-text-tertiary);">{region.region.description}</p>
+		{/if}
+		<div class="flex items-center gap-2 mt-0.5">
+			{#if (region?.region.locations ?? []).length > 0}
+				<span class="text-[10px] font-medium" style="color: var(--we-text-tertiary);">{(region?.region.locations ?? []).length} locations</span>
+			{/if}
+			{#if (region?.region.paths ?? []).length > 0}
+				<span class="text-[10px] font-medium" style="color: var(--we-text-tertiary);">{(region?.region.paths ?? []).length} paths</span>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
+<div class="flex flex-col h-full">
+	<EntityCardGrid
+		title={m.we_regions_title()}
+		items={cardItems}
+		{selectedId}
+		{card}
+		onSelect={(id) => (selectedId = id)}
+		onAdd={addRegion}
+		onDelete={deleteRegion}
+		accentColor="var(--we-accent-olive)"
+	/>
+
+	{#if selected}
+		<div class="border-t p-5 overflow-y-auto" style="border-color: var(--we-border); background: var(--we-bg-base); max-height: 45vh;">
+			<div class="flex items-center gap-3 mb-4">
+				<div class="p-1.5 rounded-md" style="background: color-mix(in srgb, var(--we-accent-olive) 12%, transparent);">
+					<svg class="w-4 h-4" style="color: var(--we-accent-olive);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/>
+					</svg>
+				</div>
+				<h3 class="font-serif font-bold text-base" style="color: var(--we-text-primary);">{selected.region.name || '(unnamed)'}</h3>
+			</div>
+			<BentoGrid minWidth={160}>
+				<BentoCard icon={ICON.map} iconColor="var(--we-accent-olive)" label={m.we_region_name()}
+					preview={selected.region.description || '—'}
+					onclick={() => (openSection = 'profile')} />
+				<BentoCard icon={ICON.mapPin} iconColor="var(--we-accent-olive)" label="Locations"
+					badge={`${(selected.region.locations ?? []).length}`}
+					onclick={() => (openSection = 'points')} />
+				<BentoCard icon={ICON.route} iconColor="var(--we-accent-olive)" label={m.we_region_paths()}
+					badge={`${(selected.region.paths ?? []).length}`}
+					onclick={() => (openSection = 'paths')} />
+				<BentoCard icon={ICON.database} iconColor="var(--we-accent-olive)" label={m.we_region_metadata()}
+					preview={selected.metadata?.name || '—'}
+					onclick={() => (openSection = 'metadata')} />
+				<BentoCard icon={ICON.zap} iconColor="var(--we-accent-olive)" label={m.we_region_status_effects()}
+					badge={`${(selected.status_effects ?? []).length}`}
+					onclick={() => (openSection = 'status')} />
+				<BentoCard icon={ICON.fileText} iconColor="var(--we-accent-olive)" label={m.we_region_documents()}
+					badge={`${(selected.bind_setting?.documents ?? []).length}`}
+					onclick={() => (openSection = 'documents')} />
+				<BentoCard icon={ICON.list} iconColor="var(--we-accent-olive)" label={m.we_region_log()}
+					badge={`${(selected.log ?? []).length}`}
+					onclick={() => (openSection = 'log')} />
+			</BentoGrid>
+		</div>
+	{/if}
+</div>
+
+<!-- ================================================================ -->
+<!-- Detail Edit Modals                                               -->
+<!-- ================================================================ -->
+
+{#if selected && openSection === 'profile'}
+	<EditModal title="{selected.region.name || '(unnamed)'} — {m.we_region_name()}" onClose={() => (openSection = null)}>
+		<FormGroup label={m.we_region_name()}>
+			<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+				value={selected.region.name}
+				oninput={(e) => updateRegion(selected!.region_id, { region: { ...selected!.region, name: e.currentTarget.value } })} />
+		</FormGroup>
+		<div class="mt-3">
+			<FormGroup label={m.we_region_description()}>
+				<textarea class="{INPUT_CLS} min-h-[120px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={selected.region.description ?? ''}
+					oninput={(e) => updateRegion(selected!.region_id, { region: { ...selected!.region, description: e.currentTarget.value } })}
+				></textarea>
+			</FormGroup>
+		</div>
+	</EditModal>
+{/if}
+
+{#if selected && openSection === 'points'}
+	{@const locations = selected.region.locations ?? []}
+	<EditModal title="{selected.region.name || '(unnamed)'} — Locations" size="wide" onClose={() => (openSection = null)}>
+		{#each locations as loc, i (i)}
+			<div class="mb-2">
+				<CollapsibleSection title={loc.name || `Location ${i + 1}`} open={false}>
+					<FormGrid cols={3}>
+						<FormGroup label="ID">
+							<input type="text" class="{INPUT_CLS} font-mono text-xs" style="border-color: var(--we-border); color: var(--we-text-tertiary);"
+								value={loc.id} readonly />
+						</FormGroup>
+						<FormGroup label="Name">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={loc.name}
+								oninput={(e) => {
+									const updated = [...locations]; updated[i] = { ...loc, name: e.currentTarget.value };
+									updateRegion(selected!.region_id, { region: { ...selected!.region, locations: updated } });
+								}} />
+						</FormGroup>
+						<FormGroup label="Description">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={loc.description}
+								oninput={(e) => {
+									const updated = [...locations]; updated[i] = { ...loc, description: e.currentTarget.value };
+									updateRegion(selected!.region_id, { region: { ...selected!.region, locations: updated } });
+								}} />
+						</FormGroup>
+					</FormGrid>
+					<div class="flex justify-end mt-2">
+						<button class="px-3 py-1 text-xs font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+							onclick={() => updateRegion(selected!.region_id, { region: { ...selected!.region, locations: locations.filter((_: Location, idx: number) => idx !== i) } })}>
+							{m.we_common_delete()}
+						</button>
+					</div>
+				</CollapsibleSection>
+			</div>
+		{/each}
+		<button class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+			onclick={() => updateRegion(selected!.region_id, { region: { ...selected!.region, locations: [...locations, { id: crypto.randomUUID(), name: '', description: '' }] } })}>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
+			{m.we_common_add()}
+		</button>
+	</EditModal>
+{/if}
+
+{#if selected && openSection === 'paths'}
+	{@const paths = selected.region.paths ?? []}
+	<EditModal title="{selected.region.name || '(unnamed)'} — {m.we_region_paths()}" size="wide" onClose={() => (openSection = null)}>
+		{#each paths as path, i (i)}
+			<div class="mb-2">
+				<CollapsibleSection title={`${path.src_region || '?'} → ${path.to_region || '?'}`} open={false}>
+					<FormGrid cols={3}>
+						<FormGroup label="Source Region">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={path.src_region}
+								oninput={(e) => {
+									const updated = [...paths]; updated[i] = { ...path, src_region: e.currentTarget.value };
+									updateRegion(selected!.region_id, { region: { ...selected!.region, paths: updated } });
+								}} />
+						</FormGroup>
+						<FormGroup label="Source Location">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={path.src_location}
+								oninput={(e) => {
+									const updated = [...paths]; updated[i] = { ...path, src_location: e.currentTarget.value };
+									updateRegion(selected!.region_id, { region: { ...selected!.region, paths: updated } });
+								}} />
+						</FormGroup>
+						<FormGroup label="To Region">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={path.to_region}
+								oninput={(e) => {
+									const updated = [...paths]; updated[i] = { ...path, to_region: e.currentTarget.value };
+									updateRegion(selected!.region_id, { region: { ...selected!.region, paths: updated } });
+								}} />
+						</FormGroup>
+						<FormGroup label="To Location">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={path.to_location}
+								oninput={(e) => {
+									const updated = [...paths]; updated[i] = { ...path, to_location: e.currentTarget.value };
+									updateRegion(selected!.region_id, { region: { ...selected!.region, paths: updated } });
+								}} />
+						</FormGroup>
+						<FormGroup label="Description">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={path.description}
+								oninput={(e) => {
+									const updated = [...paths]; updated[i] = { ...path, description: e.currentTarget.value };
+									updateRegion(selected!.region_id, { region: { ...selected!.region, paths: updated } });
+								}} />
+						</FormGroup>
+						<FormGroup label="Discovered">
+							<label class="inline-flex items-center gap-2 text-sm cursor-pointer" style="color: var(--we-text-secondary);">
+								<input type="checkbox" checked={path.discovered}
+									onchange={(e) => {
+										const updated = [...paths]; updated[i] = { ...path, discovered: e.currentTarget.checked };
+										updateRegion(selected!.region_id, { region: { ...selected!.region, paths: updated } });
+									}} />
+								Discovered
+							</label>
+						</FormGroup>
+					</FormGrid>
+					<div class="flex justify-end mt-2">
+						<button class="px-3 py-1 text-xs font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+							onclick={() => updateRegion(selected!.region_id, { region: { ...selected!.region, paths: paths.filter((_: RegionPath, idx: number) => idx !== i) } })}>
+							{m.we_common_delete()}
+						</button>
+					</div>
+				</CollapsibleSection>
+			</div>
+		{/each}
+		<button class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+			onclick={() => updateRegion(selected!.region_id, { region: { ...selected!.region, paths: [...paths, { src_location: '', src_region: '', discovered: false, to_region: '', to_location: '', description: '' }] } })}>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
+			{m.we_common_add()}
+		</button>
+	</EditModal>
+{/if}
+
+{#if selected && openSection === 'metadata'}
+	<EditModal title="{selected.region.name || '(unnamed)'} — {m.we_region_metadata()}" onClose={() => (openSection = null)}>
+		<FormGrid>
+			<FormGroup label="Name">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={selected.metadata?.name ?? ''}
+					oninput={(e) => updateRegion(selected!.region_id, { metadata: { ...selected!.metadata ?? { name: '', desc: '' }, name: e.currentTarget.value } })} />
+			</FormGroup>
+			<FormGroup label="Description">
+				<textarea class="{INPUT_CLS} min-h-[80px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={selected.metadata?.desc ?? ''}
+					oninput={(e) => updateRegion(selected!.region_id, { metadata: { ...selected!.metadata ?? { name: '', desc: '' }, desc: e.currentTarget.value } })}
+				></textarea>
+			</FormGroup>
+		</FormGrid>
+	</EditModal>
+{/if}
+
+{#if selected && openSection === 'status'}
+	{@const effects = selected.status_effects ?? []}
+	<EditModal title="{selected.region.name || '(unnamed)'} — {m.we_region_status_effects()}" size="wide" onClose={() => (openSection = null)}>
+		{#each effects as eff, i (i)}
+			<div class="mb-2">
+				<CollapsibleSection title={eff.display_name || eff.instance_id || `Effect ${i + 1}`} open={false}>
+					<FormGrid>
+						<FormGroup label="Instance ID">
+							<input type="text" class="{INPUT_CLS} font-mono text-xs" style="border-color: var(--we-border); color: var(--we-text-tertiary);"
+								value={eff.instance_id} readonly />
+						</FormGroup>
+						<FormGroup label="Display Name">
+							<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={eff.display_name ?? ''}
+								oninput={(e) => {
+									const updated = [...effects]; updated[i] = { ...eff, display_name: e.currentTarget.value || undefined };
+									updateRegion(selected!.region_id, { status_effects: updated });
+								}} />
+						</FormGroup>
+					</FormGrid>
+					<div class="mt-2">
+						<FormGroup label="Remark">
+							<textarea class="{INPUT_CLS} min-h-[50px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={eff.remark ?? ''}
+								oninput={(e) => {
+									const updated = [...effects]; updated[i] = { ...eff, remark: e.currentTarget.value || undefined };
+									updateRegion(selected!.region_id, { status_effects: updated });
+								}}
+							></textarea>
+						</FormGroup>
+					</div>
+					<div class="flex justify-end mt-2">
+						<button class="px-3 py-1 text-xs font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+							onclick={() => updateRegion(selected!.region_id, { status_effects: effects.filter((_: StatusEffect, idx: number) => idx !== i) })}>
+							{m.we_common_delete()}
+						</button>
+					</div>
+				</CollapsibleSection>
+			</div>
+		{/each}
+		<button class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+			onclick={() => updateRegion(selected!.region_id, { status_effects: [...effects, { instance_id: crypto.randomUUID() }] })}>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
+			{m.we_status_effect_add()}
+		</button>
+	</EditModal>
+{/if}
+
+{#if selected && openSection === 'documents'}
+	{@const docs = selected.bind_setting?.documents ?? []}
+	<EditModal title="{selected.region.name || '(unnamed)'} — {m.we_region_documents()}" size="wide" onClose={() => (openSection = null)}>
+		{#each docs as doc, i (i)}
+			<div class="mb-2">
+				<CollapsibleSection title={doc.name || `Document ${i + 1}`} open={false}>
+					<div class="flex flex-col gap-3">
+						<FormGrid>
+							<FormGroup label={m.we_document_name()}>
+								<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+									value={doc.name}
+									oninput={(e) => {
+										const updated = [...docs]; updated[i] = { ...doc, name: e.currentTarget.value };
+										updateRegion(selected!.region_id, { bind_setting: { documents: updated } });
+									}} />
+							</FormGroup>
+							<FormGroup label={m.we_document_priority()}>
+								<input type="number" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+									value={doc.static_priority ?? 0}
+									oninput={(e) => {
+										const updated = [...docs]; updated[i] = { ...doc, static_priority: Number(e.currentTarget.value) };
+										updateRegion(selected!.region_id, { bind_setting: { documents: updated } });
+									}} />
+							</FormGroup>
+						</FormGrid>
+						<FormGroup label={m.we_document_content()}>
+							<textarea class="{INPUT_CLS} min-h-[100px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+								value={doc.content}
+								oninput={(e) => {
+									const updated = [...docs]; updated[i] = { ...doc, content: e.currentTarget.value };
+									updateRegion(selected!.region_id, { bind_setting: { documents: updated } });
+								}}></textarea>
+						</FormGroup>
+						<div class="flex justify-end">
+							<button class="px-3 py-1 text-xs font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+								onclick={() => updateRegion(selected!.region_id, { bind_setting: { documents: docs.filter((_: SettingDocument, idx: number) => idx !== i) } })}>
+								{m.we_common_delete()}
+							</button>
+						</div>
+					</div>
+				</CollapsibleSection>
+			</div>
+		{/each}
+		<button class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+			onclick={() => updateRegion(selected!.region_id, { bind_setting: { documents: [...docs, { name: '', content: '' }] } })}>
+			<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
+			{m.we_document_add()}
+		</button>
+	</EditModal>
+{/if}
+
+{#if selected && openSection === 'log'}
+	{@const entries = selected.log ?? []}
+	<EditModal title="{selected.region.name || '(unnamed)'} — {m.we_region_log()}" size="wide" onClose={() => (openSection = null)}>
+		{#if entries.length === 0}
+			<div class="text-center py-6 text-sm border-2 border-dashed rounded-md" style="color: var(--we-text-tertiary); border-color: var(--we-border);">{m.we_common_empty()}</div>
+		{:else}
+			<div class="flex flex-col gap-2">
+				{#each entries as entry, i (i)}
+					<div class="flex items-start gap-2 p-2 rounded-md" style="background: var(--we-bg-base);">
+						<span class="text-xs font-mono shrink-0 pt-0.5" style="color: var(--we-text-tertiary);">{entry.timestamp}</span>
+						<span class="text-sm flex-1" style="color: var(--we-text-primary);">{entry.content}</span>
+						<button class="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 shrink-0" title={m.we_common_delete()}
+							onclick={() => updateRegion(selected!.region_id, { log: entries.filter((_: LogEntry, idx: number) => idx !== i) })}>
+							<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+							</svg>
+						</button>
+					</div>
+				{/each}
+			</div>
+		{/if}
+		<div class="flex items-center gap-2 mt-3">
+			<input type="text" class="flex-1 px-3 py-1.5 text-sm bg-white border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+				style="border-color: var(--we-border); color: var(--we-text-primary);"
+				placeholder={m.we_log_content()} id="region-log-input"
+				onkeydown={(e) => {
+					if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+						updateRegion(selected!.region_id, { log: [...entries, { timestamp: new Date().toISOString(), content: e.currentTarget.value.trim() }] });
+						e.currentTarget.value = '';
+					}
+				}} />
+			<button class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md bg-blue-500 text-white hover:bg-blue-600 transition-colors"
+				onclick={() => {
+					const input = document.getElementById('region-log-input') as HTMLInputElement | null;
+					if (input?.value.trim()) {
+						updateRegion(selected!.region_id, { log: [...entries, { timestamp: new Date().toISOString(), content: input.value.trim() }] });
+						input.value = '';
+					}
+				}}>
+				{m.we_log_add()}
+			</button>
+		</div>
+	</EditModal>
+{/if}

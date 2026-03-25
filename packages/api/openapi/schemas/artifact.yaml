@@ -256,6 +256,12 @@ CreateArtifactNode:
     content:
       $ref: './node-content.yaml#/ArtifactNodeContent'
       description: 节点内容（结构取决于 type）
+    metadata:
+      type: object
+      nullable: true
+      additionalProperties:
+        type: string
+      description: User-defined key-value annotations. Participates in commit hash calculation.
     message:
       type: string
       description: Commit 消息
@@ -310,6 +316,12 @@ ArtifactNodeSummary:
     content:
       $ref: './node-content.yaml#/ArtifactNodeContent'
       description: 节点内容（结构化数据）
+    metadata:
+      type: object
+      nullable: true
+      additionalProperties:
+        type: string
+      description: User-defined key-value annotations.
 
 ArtifactEdge:
   type: object

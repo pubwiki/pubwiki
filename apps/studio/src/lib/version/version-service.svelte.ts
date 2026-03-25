@@ -149,7 +149,8 @@ export class VersionService {
         nodeId,
         nodeData.parent,
         newContentHash,
-        nodeData.type
+        nodeData.type,
+        nodeData.metadata as Record<string, string> | undefined
       );
       
       // Notify NodeStore via callback

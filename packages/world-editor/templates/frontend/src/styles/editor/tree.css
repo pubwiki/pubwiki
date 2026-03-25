@@ -1,0 +1,109 @@
+.tree-children-container {
+    padding-left: 10px;
+    border-left: 1px dashed rgba(255, 255, 255, 0.05);
+    /* Softer guide line */
+}
+
+/* Tree Item */
+.tree-node-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    margin-bottom: 2px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    transition: all 0.15s;
+    user-select: none;
+}
+
+.tree-node-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.tree-node-item.selected {
+    background: rgba(59, 130, 246, 0.15);
+    /* Blue tint */
+    color: #60a5fa;
+    /* Blue text */
+}
+
+.tree-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
+    width: 20px;
+    flex-shrink: 0;
+}
+
+.tree-label {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+/* Tree Actions */
+.tree-item-actions {
+    display: flex;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.tree-more-btn {
+    opacity: 0;
+    background: transparent;
+    border: none;
+    color: var(--text-tertiary);
+    padding: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.tree-node-item:hover .tree-more-btn {
+    opacity: 0.7;
+}
+
+.tree-more-btn:hover,
+.tree-node-item:hover .tree-more-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+}
+
+.tree-more-btn.danger:hover,
+.tree-node-item:hover .tree-more-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+
+.priority-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: var(--accent-warning);
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+/* Virtual Folder Badge */
+.virtual-badge {
+    margin-left: 4px;
+    font-size: 0.8em;
+    opacity: 0.7;
+}
+
+/* Legacy styles compatibility if needed (can be removed later) */
+.tree-node-indent {
+    width: 20px;
+    flex-shrink: 0;
+}

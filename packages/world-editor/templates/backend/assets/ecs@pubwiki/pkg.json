@@ -1,0 +1,17 @@
+{
+  "name": "ecs",
+  "publisher": "pubwiki",
+  "version": "1.0.0",
+  "description": "Entity-Component-System 游戏框架核心，提供实体、组件、系统的基础抽象和蓝图节点支持",
+  
+  "type": "module",
+  "entry": "init.lua",
+  
+  "dependencies": {},
+  
+  "documentation": {
+    "readme": "README.md"
+  },
+  
+  "tags": ["framework", "ecs", "core"]
+}

@@ -1,0 +1,113 @@
+/* ============================================================================
+   Dopamine Tabs - Horizontal navigation tabs (replaces EditorSidebar)
+   ============================================================================ */
+
+.paper-tabs {
+    display: flex;
+    align-items: center;
+    gap: var(--paper-space-1);
+    padding: var(--paper-space-2) var(--paper-space-4);
+    background: var(--paper-bg-secondary);
+    border-bottom: 2px solid var(--paper-border-color);
+    overflow-x: auto;
+    flex-shrink: 0;
+    /* Hide scrollbar but keep scrollable */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.paper-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+/* Tab group separator */
+.paper-tabs .paper-tab-separator {
+    width: 2px;
+    height: 24px;
+    background: var(--paper-border-color);
+    border-radius: var(--paper-radius-pill);
+    flex-shrink: 0;
+    margin: 0 var(--paper-space-1);
+}
+
+/* Individual tab button */
+.paper-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    border: 2px solid transparent;
+    border-radius: var(--paper-radius-pill);
+    background: transparent;
+    color: var(--paper-text-secondary);
+    font-size: var(--paper-font-size-sm);
+    font-weight: var(--paper-font-weight-semibold);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--paper-transition-bounce);
+    flex-shrink: 0;
+}
+
+.paper-tab-btn:hover {
+    background: var(--paper-bg-tertiary);
+    color: var(--paper-text-primary);
+    transform: scale(1.05);
+}
+
+.paper-tab-btn:active {
+    transform: scale(0.97);
+}
+
+/* Active tab */
+.paper-tab-btn.active {
+    background: var(--paper-gradient-aurora);
+    color: var(--paper-text-primary);
+    border-color: var(--paper-text-primary);
+    box-shadow: var(--paper-shadow-hard-sm);
+    font-weight: var(--paper-font-weight-bold);
+}
+
+/* Tab icon */
+.paper-tab-btn .paper-tab-icon {
+    font-size: 1rem;
+    line-height: 1;
+}
+
+/* Tab badge (error count) */
+.paper-tab-btn .paper-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--paper-radius-pill);
+    background: var(--paper-coral);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: var(--paper-font-weight-extrabold);
+}
+
+/* Disabled state (world builder running) */
+.paper-tab-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.paper-tab-btn:disabled:hover {
+    background: transparent;
+    transform: none;
+}
+
+/* Group label (optional, visible on wider screens) */
+.paper-tabs .paper-tab-group-label {
+    font-size: var(--paper-font-size-xs);
+    font-weight: var(--paper-font-weight-extrabold);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--paper-text-tertiary);
+    padding: 0 var(--paper-space-2);
+    white-space: nowrap;
+    flex-shrink: 0;
+}

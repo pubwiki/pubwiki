@@ -150,7 +150,8 @@ async function prepareNodesForPublish(
 			freshData.id,
 			freshData.parent ?? null,
 			contentHash,
-			freshData.type
+			freshData.type,
+			freshData.metadata as Record<string, string> | undefined
 		);
 
 		const apiNode: CreateArtifactNode = {
@@ -161,7 +162,8 @@ async function prepareNodesForPublish(
 			name: freshData.name || undefined,
 			position: { x: node.position.x, y: node.position.y },
 			content: nodeContent,
-			contentHash
+			contentHash,
+			metadata: freshData.metadata as Record<string, string> | undefined
 		};
 
 		apiNodes.push(apiNode);

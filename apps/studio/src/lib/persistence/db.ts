@@ -69,6 +69,8 @@ export interface StoredNodeData {
   content: unknown;
   /** Timestamp when this version was created */
   timestamp?: number;
+  /** Optional key-value metadata */
+  metadata?: Record<string, string>;
   /** Incoming edges at time of snapshot */
   incomingEdges?: StoredSnapshotEdge[];
   /** Node position at time of snapshot */

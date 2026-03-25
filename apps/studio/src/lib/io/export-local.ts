@@ -71,6 +71,7 @@ export interface ExportedSnapshot {
   timestamp?: number;
   incomingEdges?: StoredSnapshotEdge[];
   position?: StoredPosition;
+  metadata?: Record<string, string>;
 }
 
 /**
@@ -91,6 +92,7 @@ export interface ExportedNodeData {
   hasStateExport?: boolean;
   /** Historical snapshots */
   snapshots?: ExportedSnapshot[];
+  metadata?: Record<string, string>;
 }
 
 // ============================================================================
@@ -219,7 +221,8 @@ export async function exportProjectToZip(projectId: string): Promise<void> {
       content: s.content,
       timestamp: s.timestamp,
       incomingEdges: s.incomingEdges,
-      position: s.position
+      position: s.position,
+      metadata: s.metadata
     }));
     
     // Create node data
@@ -231,7 +234,8 @@ export async function exportProjectToZip(projectId: string): Promise<void> {
       contentHash: node.contentHash,
       parent: node.parent,
       content: node.content.toJSON(),
-      snapshots: exportedSnapshots.length > 0 ? exportedSnapshots : undefined
+      snapshots: exportedSnapshots.length > 0 ? exportedSnapshots : undefined,
+      metadata: node.metadata as Record<string, string> | undefined
     };
     
     // For VFS nodes, collect and add files

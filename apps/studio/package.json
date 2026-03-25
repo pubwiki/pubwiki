@@ -46,6 +46,7 @@
 		"@pubwiki/svelte-chat": "workspace:*",
 		"@pubwiki/ui": "workspace:*",
 		"@pubwiki/vfs": "workspace:*",
+		"@pubwiki/world-editor": "workspace:*",
 		"@sentry/sveltekit": "^10.41.0",
 		"@xyflow/svelte": "catalog:",
 		"buffer": "^6.0.3",

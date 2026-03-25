@@ -1,0 +1,236 @@
+/* ============================================================================
+   Dopamine Responsive - Mobile & tablet adaptations
+   Must be imported last to override other styles
+   ============================================================================ */
+
+/* ========== Tablet (max-width: 1024px) ========== */
+
+@media (max-width: 1024px) {
+    /* Bento grid: 2 columns on tablet */
+    .dp-bento-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "time       attr"
+            "docs       docs"
+            "components components"
+            "director   log";
+    }
+
+    .dp-bento-grid:not(:has(.dp-bento-attr)) {
+        grid-template-areas:
+            "time       docs"
+            "components components"
+            "director   log";
+    }
+
+    .dp-creature-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "basic       appearance"
+            "profile     location"
+            "attrs       docs"
+            "inventory   statuses"
+            "relationships components"
+            "log         log";
+    }
+    .dp-creature-grid:not(:has(.dp-creature-attrs)) {
+        grid-template-areas:
+            "basic       appearance"
+            "profile     location"
+            "docs        statuses"
+            "log         log";
+    }
+
+    .dp-region-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "basic      locations"
+            "docs       statuses"
+            "paths      paths"
+            "log        log";
+    }
+
+    .dp-org-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "basic       territories"
+            "statuses    docs"
+            "log         log";
+    }
+
+    .dp-editor .dp-entity-card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+
+    .dp-entity-detail-section {
+        padding: var(--dp-space-4) var(--dp-space-5) 80px;
+    }
+
+    .dp-entity-detail-section .dp-detail-inner {
+        max-width: 100%;
+    }
+
+    .dp-tabs .dp-tab-group-label {
+        display: none;
+    }
+}
+
+/* ========== Mobile (max-width: 768px) ========== */
+
+@media (max-width: 768px) {
+    /* Bento grid: single column on mobile */
+    .dp-bento-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "time"
+            "attr"
+            "docs"
+            "components"
+            "director"
+            "log";
+    }
+
+    .dp-bento-grid:not(:has(.dp-bento-attr)) {
+        grid-template-areas:
+            "time"
+            "docs"
+            "components"
+            "director"
+            "log";
+    }
+
+    .dp-creature-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "basic" "appearance" "profile" "location"
+            "attrs" "docs" "inventory" "statuses"
+            "relationships" "components" "log";
+    }
+    .dp-creature-grid:not(:has(.dp-creature-attrs)) {
+        grid-template-areas:
+            "basic" "appearance" "profile" "location"
+            "docs" "statuses" "log";
+    }
+
+    .dp-region-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "basic" "locations" "statuses"
+            "docs" "paths" "log";
+    }
+
+    .dp-org-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "basic" "territories" "statuses"
+            "docs" "log";
+    }
+
+    .dp-bento-scroll {
+        padding: var(--dp-space-3) var(--dp-space-3) 80px;
+    }
+
+    .dp-bento-card {
+        padding: var(--dp-space-3) var(--dp-space-4);
+    }
+
+    .dp-bento-log {
+        max-height: 400px;
+    }
+
+    .dp-header {
+        padding: 0 var(--dp-space-3);
+        height: 48px;
+    }
+
+    .dp-header-left h1 {
+        font-size: var(--dp-font-size-base);
+    }
+
+    .dp-tabs {
+        padding: var(--dp-space-1) var(--dp-space-2);
+    }
+
+    .dp-tab-btn {
+        padding: 5px 10px;
+        font-size: var(--dp-font-size-xs);
+    }
+
+    .dp-tab-btn .dp-tab-icon {
+        font-size: 0.85rem;
+    }
+
+    .dp-entity-grid-section {
+        max-height: 200px;
+        padding: var(--dp-space-3);
+    }
+
+    .dp-editor .dp-entity-card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: var(--dp-space-2);
+    }
+
+    .dp-entity-card {
+        padding: var(--dp-space-2) var(--dp-space-3);
+    }
+
+    .dp-entity-detail-section {
+        padding: var(--dp-space-3) var(--dp-space-4) 80px;
+    }
+
+    .dp-editor .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dp-editor .form-card {
+        padding: var(--dp-space-3);
+    }
+
+    /* Floating outline becomes a bottom bar */
+    .dp-floating-outline {
+        bottom: 0 !important;
+        right: 0 !important;
+        left: 0 !important;
+        border-radius: var(--dp-radius-xl) var(--dp-radius-xl) 0 0 !important;
+        width: 100% !important;
+    }
+
+    .dp-floating-outline .dp-outline-popup {
+        max-height: 40vh;
+    }
+
+    /* Toolbar compact */
+    .dp-header .toolbar {
+        gap: var(--dp-space-1);
+    }
+
+    .dp-editor .btn-toolbar {
+        padding: 5px 10px;
+        font-size: var(--dp-font-size-xs);
+    }
+
+    /* Registry grid */
+    .dp-editor .registry-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* ========== Small mobile (max-width: 480px) ========== */
+
+@media (max-width: 480px) {
+    .dp-editor .dp-entity-card-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .dp-editor .registry-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .dp-tab-btn {
+        padding: 4px 8px;
+    }
+
+    .dp-tab-btn .dp-tab-text {
+        display: none;
+    }
+}

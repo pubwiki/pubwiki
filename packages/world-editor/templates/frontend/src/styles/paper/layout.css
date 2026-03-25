@@ -1,0 +1,895 @@
+/* ============================================================================
+   Dopamine Layout - Core layout structure
+   ============================================================================ */
+
+/* Root editor container - fullscreen vertical */
+.paper-editor {
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+    background: var(--paper-bg-primary);
+    background-image: var(--paper-gradient-mesh);
+}
+
+
+/* Main content area: content + copilot side panel */
+.paper-main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Scrollable content region */
+.paper-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--paper-space-6);
+    background: var(--paper-bg-content);
+}
+
+/* When paper-content wraps a vertical editor, disable parent scroll & padding
+   so the entity-detail-section inside handles scrolling instead */
+.paper-content:has(.paper-vertical-editor) {
+    overflow: hidden;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ============================================================================
+   Vertical Editor Layout (replaces 3-column .editor-maximize-container)
+   ============================================================================ */
+
+.paper-vertical-editor {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    position: relative;
+}
+
+/* Top section: entity card grid */
+.paper-entity-grid-section {
+    flex-shrink: 0;
+    max-height: var(--paper-entity-grid-max-height);
+    overflow-y: auto;
+    padding: var(--paper-space-4) var(--paper-space-5);
+    border-bottom: 2.5px solid var(--paper-electric-blue);
+    background: var(--paper-bg-glass);
+}
+
+.paper-entity-grid-section .paper-grid-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--paper-space-3);
+    margin-bottom: var(--paper-space-3);
+    flex-wrap: wrap;
+}
+
+.paper-entity-grid-section .paper-grid-toolbar .paper-grid-title {
+    font-family: var(--paper-font-display);
+    font-weight: var(--paper-font-weight-extrabold);
+    font-size: var(--paper-font-size-lg);
+    color: var(--paper-text-primary);
+    margin-right: auto;
+}
+
+.paper-entity-grid-section .paper-grid-search {
+    position: relative;
+    flex: 0 1 240px;
+}
+
+.paper-entity-grid-section .paper-grid-search input {
+    width: 100%;
+    padding: 8px 14px;
+    padding-right: 32px;
+    border-radius: var(--paper-radius-pill);
+    border: 2px solid var(--paper-border-color);
+    background: var(--paper-bg-secondary);
+    color: var(--paper-text-primary);
+    font-size: var(--paper-font-size-sm);
+    transition: all var(--paper-transition-fast);
+}
+
+.paper-entity-grid-section .paper-grid-search input:focus {
+    outline: none;
+    border-color: var(--paper-electric-blue);
+    /* removed glow */
+}
+
+.paper-entity-grid-section .paper-grid-search .paper-search-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--paper-text-tertiary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px;
+}
+
+/* Bottom section: entity detail editor */
+.paper-entity-detail-section {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--paper-space-4) var(--paper-space-5) 80px;
+    position: relative;
+    background: var(--paper-bg-content);
+}
+
+/* Detail content max-width for readability */
+.paper-entity-detail-section .paper-detail-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* ============================================================================
+   Bento Grid Layout (for WorldEditor - all sections visible at once)
+   ============================================================================ */
+
+.paper-bento-scroll {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--paper-space-4) var(--paper-space-5) 80px;
+}
+
+.paper-bento-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+        "time       attr       docs"
+        "components components components"
+        "director   director   log";
+    gap: var(--paper-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Grid area assignments */
+.paper-bento-time {
+    grid-area: time;
+}
+
+.paper-bento-attr {
+    grid-area: attr;
+}
+
+.paper-bento-log {
+    grid-area: log;
+}
+
+.paper-bento-docs {
+    grid-area: docs;
+}
+
+.paper-bento-director {
+    grid-area: director;
+}
+
+.paper-bento-components {
+    grid-area: components;
+}
+
+.paper-bento-registry {
+    grid-column: 1 / -1;
+}
+
+/* When attr_fields is hidden (simpleMode), docs takes top-right */
+.paper-bento-grid:not(:has(.paper-bento-attr)) {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+        "time       docs"
+        "components components"
+        "director   log";
+}
+
+/* Individual bento card */
+.paper-bento-card {
+    background: var(--paper-bg-secondary);
+    border: 2px solid var(--paper-border-color);
+    border-radius: var(--paper-radius-xl);
+    padding: var(--paper-space-4) var(--paper-space-5);
+    transition: all var(--paper-transition-normal);
+    overflow: hidden;
+    min-height: 0;
+}
+
+.paper-bento-card:hover {
+    border-color: var(--paper-border-color-hover);
+    box-shadow: var(--paper-shadow-md);
+}
+
+/* Log & Director cards can grow long - cap height + scroll */
+.paper-bento-log,
+.paper-bento-director,
+.paper-creature-log,
+.paper-region-log,
+.paper-org-log {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+/* Sticky header inside scrollable log cards */
+.paper-bento-log > .paper-bento-summary-header,
+.paper-creature-log > .paper-bento-summary-header,
+.paper-region-log > .paper-bento-summary-header,
+.paper-org-log > .paper-bento-summary-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--paper-bg-card);
+    padding-bottom: var(--paper-space-2);
+}
+
+/* Bento card header (used when section needs a title outside sub-editor) */
+.paper-bento-card-header {
+    margin-bottom: var(--paper-space-2);
+}
+
+.paper-bento-card-header .section-title {
+    margin: 0;
+}
+
+/* ============================================================================
+   Creature Bento Grid
+   ============================================================================ */
+
+.paper-creature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+        "basic      appearance  profile"
+        "location   attrs       docs"
+        "inventory  statuses    relationships"
+        "components info        info"
+        "log        log         log";
+    gap: var(--paper-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.paper-creature-basic {
+    grid-area: basic;
+}
+
+.paper-creature-appearance {
+    grid-area: appearance;
+}
+
+.paper-creature-profile {
+    grid-area: profile;
+}
+
+.paper-creature-location {
+    grid-area: location;
+}
+
+.paper-creature-attrs {
+    grid-area: attrs;
+}
+
+.paper-creature-docs {
+    grid-area: docs;
+}
+
+.paper-creature-inventory {
+    grid-area: inventory;
+}
+
+.paper-creature-statuses {
+    grid-area: statuses;
+}
+
+.paper-creature-relationships {
+    grid-area: relationships;
+}
+
+.paper-creature-components {
+    grid-area: components;
+}
+
+.paper-creature-log {
+    grid-area: log;
+}
+
+.paper-creature-info {
+    grid-area: info;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.paper-creature-info > .paper-bento-summary-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--paper-bg-card);
+}
+
+.paper-creature-known-infos-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.paper-mini-card-delete {
+    flex-shrink: 0;
+    opacity: 0.4;
+    font-size: 0.85em;
+    margin-left: auto;
+    padding-left: 8px;
+}
+
+.paper-bento-mini-card:hover .paper-mini-card-delete {
+    opacity: 1;
+    color: var(--paper-accent);
+}
+
+/* simpleMode: no attrs/inventory/components/relationships */
+.paper-creature-grid:not(:has(.paper-creature-attrs)) {
+    grid-template-areas:
+        "basic      appearance  profile"
+        "location   docs        statuses"
+        "info       info        info"
+        "log        log         log";
+}
+
+/* ============================================================================
+   Region Bento Grid
+   ============================================================================ */
+
+.paper-region-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+        "basic      locations   statuses"
+        "docs       paths       paths"
+        "log        log         log";
+    gap: var(--paper-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.paper-region-basic {
+    grid-area: basic;
+}
+
+.paper-region-locations {
+    grid-area: locations;
+}
+
+.paper-region-paths {
+    grid-area: paths;
+}
+
+.paper-region-statuses {
+    grid-area: statuses;
+}
+
+.paper-region-docs {
+    grid-area: docs;
+}
+
+.paper-region-log {
+    grid-area: log;
+}
+
+/* ============================================================================
+   Organization Bento Grid
+   ============================================================================ */
+
+.paper-org-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+        "basic       territories  statuses"
+        "docs        log          log";
+    gap: var(--paper-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.paper-org-basic {
+    grid-area: basic;
+}
+
+.paper-org-territories {
+    grid-area: territories;
+}
+
+.paper-org-statuses {
+    grid-area: statuses;
+}
+
+.paper-org-docs {
+    grid-area: docs;
+}
+
+.paper-org-log {
+    grid-area: log;
+}
+
+/* Modal body inherits paper-editor context for proper form-card styling */
+.paper-modal-body .form-card {
+    background: var(--paper-bg-secondary);
+    border: 2px solid var(--paper-border-color);
+    border-radius: var(--paper-radius-xl);
+    padding: var(--paper-space-5);
+    margin-bottom: var(--paper-space-4);
+}
+
+.paper-modal-body .form-card:hover {
+    border-color: var(--paper-border-color-hover);
+}
+
+/* ============================================================================
+   Editor Sections & Form Cards
+   ============================================================================ */
+
+.paper-editor .editor-section {
+    margin-bottom: var(--paper-space-8);
+}
+
+.paper-editor .editor-section h3 {
+    margin: 0 0 var(--paper-space-6);
+    padding-bottom: var(--paper-space-3);
+    border-bottom: 2px solid var(--paper-border-color);
+    color: var(--paper-text-primary);
+    font-family: var(--paper-font-display);
+    font-size: var(--paper-font-size-xl);
+    font-weight: var(--paper-font-weight-bold);
+}
+
+/* Section header (large, for entity name) */
+.paper-editor .section-header-large {
+    margin-bottom: var(--paper-space-8);
+    padding-bottom: var(--paper-space-4);
+    border-bottom: 2.5px solid var(--paper-border-color);
+}
+
+/* Field hint */
+.paper-editor .field-hint {
+    font-size: var(--paper-font-size-sm);
+    color: var(--paper-text-tertiary);
+    margin: 0 0 var(--paper-space-8) 0;
+}
+
+/* Empty states */
+.paper-editor .empty-hint {
+    text-align: center;
+    padding: var(--paper-space-8);
+    color: var(--paper-text-tertiary);
+    font-style: italic;
+}
+
+.paper-editor .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--paper-space-12) var(--paper-space-4);
+    color: var(--paper-text-tertiary);
+    gap: var(--paper-space-4);
+}
+
+/* Context menu */
+.paper-editor .context-menu {
+    position: fixed;
+    z-index: 9999;
+    background: var(--paper-bg-secondary);
+    border: var(--paper-border-thick);
+    border-radius: var(--paper-radius-lg);
+    box-shadow: var(--paper-shadow-hard);
+    min-width: 160px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+}
+
+.paper-editor .context-menu button {
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--paper-text-secondary);
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-radius: var(--paper-radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all var(--paper-transition-fast);
+}
+
+.paper-editor .context-menu button:hover {
+    background: var(--paper-electric-blue);
+    color: white;
+}
+
+/* ============================================================================
+   Legacy Layout Compatibility (for editors not yet fully converted)
+   Styled in paper theme
+   ============================================================================ */
+
+/* 3-column container (used by SettingDocsEditor, InitialStoryEditor) */
+.paper-editor .editor-maximize-container {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    gap: 0;
+    overflow: hidden;
+}
+
+/* Left sidebar for tree navigation */
+.paper-editor .editor-left-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--paper-bg-secondary);
+    border-right: 2.5px solid var(--paper-border-color);
+    overflow: hidden;
+}
+
+.paper-editor .editor-left-sidebar .sidebar-header {
+    padding: var(--paper-space-3) var(--paper-space-4);
+    border-bottom: 2px solid var(--paper-border-color);
+    font-weight: 700;
+    color: var(--paper-text-primary);
+    font-family: var(--paper-font-display);
+    font-size: var(--paper-font-size-sm);
+    background: var(--paper-bg-primary);
+}
+
+/* Main editing area */
+.paper-editor .editor-main-area {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    background: var(--paper-bg-content);
+}
+
+/* Tree nodes in sidebar */
+.paper-editor .tree-scroll-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.paper-editor .tree-node-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    border-left: 3px solid transparent;
+    color: var(--paper-text-secondary);
+    gap: 4px;
+    font-size: var(--paper-font-size-sm);
+    position: relative;
+}
+
+.paper-editor .tree-node-item:hover {
+    background: var(--paper-bg-primary);
+}
+
+.paper-editor .tree-node-item.selected {
+    background: var(--paper-bg-primary);
+    border-left-color: var(--paper-electric-blue);
+    color: var(--paper-text-primary);
+    font-weight: 600;
+}
+
+.paper-editor .tree-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.paper-editor .tree-item-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.paper-editor .tree-node-item:hover .tree-item-actions {
+    opacity: 1;
+}
+
+.paper-editor .tree-more-btn {
+    background: transparent;
+    border: none;
+    color: var(--paper-text-tertiary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--paper-radius-sm);
+    display: flex;
+    align-items: center;
+}
+
+.paper-editor .tree-more-btn:hover {
+    background: var(--paper-electric-blue);
+    color: white;
+}
+
+.paper-editor .tree-more-btn.danger:hover {
+    background: var(--paper-coral);
+    color: white;
+}
+
+/* Editor toolbar (for document/text editors) */
+.paper-editor .editor-toolbar {
+    display: flex;
+    align-items: center;
+    padding: var(--paper-space-2) var(--paper-space-4);
+    background: var(--paper-bg-secondary);
+    border-bottom: 2px solid var(--paper-border-color);
+    gap: var(--paper-space-2);
+    flex-shrink: 0;
+}
+
+.paper-editor .editor-toolbar .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.paper-editor .editor-toolbar button {
+    background: transparent;
+    border: 1.5px solid transparent;
+    border-radius: var(--paper-radius-sm);
+    color: var(--paper-text-secondary);
+    cursor: pointer;
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.paper-editor .editor-toolbar button:hover {
+    background: var(--paper-bg-primary);
+    border-color: var(--paper-border-color);
+    color: var(--paper-text-primary);
+}
+
+.paper-editor .toolbar-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--paper-border-color);
+    margin: 0 4px;
+}
+
+/* Editor textarea */
+.paper-editor .editor-textarea {
+    flex: 1;
+    width: 100%;
+    border: none;
+    padding: var(--paper-space-4) var(--paper-space-5);
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: var(--paper-font-size-sm);
+    line-height: 1.8;
+    resize: none;
+    background: var(--paper-bg-secondary);
+    color: var(--paper-text-primary);
+    outline: none;
+}
+
+/* Editor footer */
+.paper-editor .editor-footer {
+    display: flex;
+    gap: var(--paper-space-4);
+    padding: var(--paper-space-2) var(--paper-space-4);
+    background: var(--paper-bg-primary);
+    border-top: 1.5px solid var(--paper-border-color);
+    font-size: var(--paper-font-size-xs);
+    color: var(--paper-text-tertiary);
+    flex-shrink: 0;
+}
+
+/* Virtual badge */
+.paper-editor .virtual-badge {
+    font-size: 0.75rem;
+    color: var(--paper-text-tertiary);
+    font-weight: 600;
+}
+
+/* Generic action buttons in legacy editors */
+.paper-editor .btn-add {
+    background: var(--paper-lime-green);
+    color: white;
+    border: 2px solid var(--paper-text-primary);
+    border-radius: var(--paper-radius-pill);
+    padding: 6px 14px;
+    font-weight: 700;
+    font-size: var(--paper-font-size-sm);
+    cursor: pointer;
+    transition: all 0.2s var(--paper-ease-bounce);
+    box-shadow: 2px 2px 0px var(--paper-text-primary);
+}
+
+.paper-editor .btn-add:hover {
+    transform: translateY(-1px);
+    box-shadow: 3px 3px 0px var(--paper-text-primary);
+}
+
+.paper-editor .btn-delete {
+    background: transparent;
+    color: var(--paper-coral);
+    border: 1.5px solid var(--paper-coral);
+    border-radius: var(--paper-radius-pill);
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: var(--paper-font-size-xs);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.paper-editor .btn-delete:hover {
+    background: var(--paper-coral);
+    color: white;
+}
+
+.paper-editor .btn-add-small {
+    background: var(--paper-lime-green);
+    color: white;
+    border: 1.5px solid var(--paper-text-primary);
+    border-radius: var(--paper-radius-pill);
+    padding: 4px 12px;
+    font-weight: 700;
+    font-size: var(--paper-font-size-xs);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.paper-editor .btn-remove-small {
+    background: transparent;
+    border: none;
+    color: var(--paper-coral);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px 4px;
+    border-radius: var(--paper-radius-sm);
+}
+
+.paper-editor .btn-remove-small:hover {
+    background: var(--paper-coral);
+    color: white;
+}
+
+/* Item/section headers used in various editors */
+.paper-editor .item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--paper-space-3);
+}
+
+.paper-editor .item-title {
+    font-weight: 700;
+    font-size: var(--paper-font-size-base);
+    color: var(--paper-text-primary);
+}
+
+/* Section title */
+.paper-editor .section-title {
+    font-family: var(--paper-font-display);
+    font-weight: var(--paper-font-weight-bold);
+    font-size: var(--paper-font-size-lg);
+    color: var(--paper-text-primary);
+    margin: 0 0 var(--paper-space-4);
+}
+
+/* Schema section */
+.paper-editor .schema-section-title {
+    font-weight: 700;
+    font-size: var(--paper-font-size-sm);
+    color: var(--paper-text-primary);
+    margin-bottom: var(--paper-space-2);
+}
+
+/* List items container */
+.paper-editor .list-items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--paper-space-3);
+}
+
+/* Name input */
+.paper-editor .name-input {
+    width: 100%;
+    background: var(--paper-bg-primary);
+    border: 2px solid var(--paper-border-color);
+    border-radius: var(--paper-radius-md);
+    padding: 8px 12px;
+    color: var(--paper-text-primary);
+    font-size: var(--paper-font-size-sm);
+    transition: border-color 0.15s;
+}
+
+.paper-editor .name-input:focus {
+    outline: none;
+    border-color: var(--paper-electric-blue);
+    /* removed glow */
+}
+
+/* Toggle switch for legacy usage */
+.paper-editor .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.paper-editor .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.paper-editor .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--paper-border-color);
+    border-radius: 9999px;
+    transition: 0.2s;
+    border: 1.5px solid var(--paper-text-primary);
+}
+
+.paper-editor .toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.2s;
+    border: 1px solid var(--paper-text-primary);
+}
+
+.paper-editor .toggle-switch input:checked+.toggle-slider {
+    background: var(--paper-lime-green);
+}
+
+.paper-editor .toggle-switch input:checked+.toggle-slider::before {
+    transform: translateX(18px);
+}
+
+.paper-editor .toggle-group {
+    display: flex;
+    align-items: center;
+    gap: var(--paper-space-2);
+}

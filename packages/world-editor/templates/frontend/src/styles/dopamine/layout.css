@@ -1,0 +1,763 @@
+/* ============================================================================
+   Dopamine Layout - Core layout structure
+   ============================================================================ */
+
+/* Root editor container - fullscreen vertical */
+.dp-editor {
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+    background: var(--dp-bg-primary);
+    background-image: var(--dp-gradient-mesh);
+}
+
+
+/* Main content area: content + copilot side panel */
+.dp-main {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Scrollable content region */
+.dp-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--dp-space-6);
+    background: var(--dp-bg-content);
+}
+
+/* When dp-content wraps a vertical editor, disable parent scroll & padding
+   so the entity-detail-section inside handles scrolling instead */
+.dp-content:has(.dp-vertical-editor) {
+    overflow: hidden;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ============================================================================
+   Vertical Editor Layout (replaces 3-column .editor-maximize-container)
+   ============================================================================ */
+
+.dp-vertical-editor {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+    position: relative;
+}
+
+/* Top section: entity card grid */
+.dp-entity-grid-section {
+    flex-shrink: 0;
+    max-height: var(--dp-entity-grid-max-height);
+    overflow-y: auto;
+    padding: var(--dp-space-4) var(--dp-space-5);
+    border-bottom: 2.5px solid var(--dp-electric-blue);
+    background: var(--dp-bg-glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+}
+
+.dp-entity-grid-section .dp-grid-toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-3);
+    margin-bottom: var(--dp-space-3);
+    flex-wrap: wrap;
+}
+
+.dp-entity-grid-section .dp-grid-toolbar .dp-grid-title {
+    font-family: var(--dp-font-display);
+    font-weight: var(--dp-font-weight-extrabold);
+    font-size: var(--dp-font-size-lg);
+    color: var(--dp-text-primary);
+    margin-right: auto;
+}
+
+.dp-entity-grid-section .dp-grid-search {
+    position: relative;
+    flex: 0 1 240px;
+}
+
+.dp-entity-grid-section .dp-grid-search input {
+    width: 100%;
+    padding: 8px 14px;
+    padding-right: 32px;
+    border-radius: var(--dp-radius-pill);
+    border: 2px solid var(--dp-border-color);
+    background: var(--dp-bg-secondary);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-entity-grid-section .dp-grid-search input:focus {
+    outline: none;
+    border-color: var(--dp-electric-blue);
+    box-shadow: var(--dp-glow-blue);
+}
+
+.dp-entity-grid-section .dp-grid-search .dp-search-clear {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--dp-text-tertiary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px;
+}
+
+/* Bottom section: entity detail editor */
+.dp-entity-detail-section {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--dp-space-4) var(--dp-space-5) 80px;
+    position: relative;
+    background: var(--dp-bg-content);
+}
+
+/* Detail content max-width for readability */
+.dp-entity-detail-section .dp-detail-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* ============================================================================
+   Bento Grid Layout (for WorldEditor - all sections visible at once)
+   ============================================================================ */
+
+.dp-bento-scroll {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--dp-space-4) var(--dp-space-5) 80px;
+}
+
+.dp-bento-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+        "time       attr       docs"
+        "components components components"
+        "director   director   log";
+    gap: var(--dp-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+/* Grid area assignments */
+.dp-bento-time       { grid-area: time; }
+.dp-bento-attr       { grid-area: attr; }
+.dp-bento-log        { grid-area: log; }
+.dp-bento-docs       { grid-area: docs; }
+.dp-bento-director   { grid-area: director; }
+.dp-bento-components { grid-area: components; }
+.dp-bento-registry   { grid-column: 1 / -1; }
+
+/* When attr_fields is hidden (simpleMode), docs takes top-right */
+.dp-bento-grid:not(:has(.dp-bento-attr)) {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+        "time       docs"
+        "components components"
+        "director   log";
+}
+
+/* Individual bento card */
+.dp-bento-card {
+    background: var(--dp-bg-secondary);
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-xl);
+    padding: var(--dp-space-4) var(--dp-space-5);
+    transition: all var(--dp-transition-normal);
+    overflow: hidden;
+    min-height: 0;
+}
+
+.dp-bento-card:hover {
+    border-color: var(--dp-border-color-hover);
+    box-shadow: var(--dp-shadow-md);
+}
+
+/* Log & Director cards can grow long - cap height + scroll */
+.dp-bento-log,
+.dp-bento-director {
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+/* Bento card header (used when section needs a title outside sub-editor) */
+.dp-bento-card-header {
+    margin-bottom: var(--dp-space-2);
+}
+
+.dp-bento-card-header .section-title {
+    margin: 0;
+}
+
+/* ============================================================================
+   Creature Bento Grid
+   ============================================================================ */
+
+.dp-creature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto auto auto;
+    grid-template-areas:
+        "basic      appearance  profile"
+        "location   attrs       docs"
+        "inventory  statuses    relationships"
+        "components log         log";
+    gap: var(--dp-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.dp-creature-basic          { grid-area: basic; }
+.dp-creature-appearance     { grid-area: appearance; }
+.dp-creature-profile        { grid-area: profile; }
+.dp-creature-location       { grid-area: location; }
+.dp-creature-attrs          { grid-area: attrs; }
+.dp-creature-docs           { grid-area: docs; }
+.dp-creature-inventory      { grid-area: inventory; }
+.dp-creature-statuses       { grid-area: statuses; }
+.dp-creature-relationships  { grid-area: relationships; }
+.dp-creature-components     { grid-area: components; }
+.dp-creature-log            { grid-area: log; }
+
+/* simpleMode: no attrs/inventory/components/relationships */
+.dp-creature-grid:not(:has(.dp-creature-attrs)) {
+    grid-template-areas:
+        "basic      appearance  profile"
+        "location   docs        statuses"
+        "log        log         log";
+}
+
+/* ============================================================================
+   Region Bento Grid
+   ============================================================================ */
+
+.dp-region-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+        "basic      locations   statuses"
+        "docs       paths       paths"
+        "log        log         log";
+    gap: var(--dp-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.dp-region-basic      { grid-area: basic; }
+.dp-region-locations  { grid-area: locations; }
+.dp-region-paths      { grid-area: paths; }
+.dp-region-statuses   { grid-area: statuses; }
+.dp-region-docs       { grid-area: docs; }
+.dp-region-log        { grid-area: log; }
+
+/* ============================================================================
+   Organization Bento Grid
+   ============================================================================ */
+
+.dp-org-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+        "basic       territories  statuses"
+        "docs        log          log";
+    gap: var(--dp-space-4);
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.dp-org-basic        { grid-area: basic; }
+.dp-org-territories  { grid-area: territories; }
+.dp-org-statuses     { grid-area: statuses; }
+.dp-org-docs         { grid-area: docs; }
+.dp-org-log          { grid-area: log; }
+
+/* Modal body inherits dp-editor context for proper form-card styling */
+.dp-modal-body .form-card {
+    background: var(--dp-bg-secondary);
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-xl);
+    padding: var(--dp-space-5);
+    margin-bottom: var(--dp-space-4);
+}
+
+.dp-modal-body .form-card:hover {
+    border-color: var(--dp-border-color-hover);
+}
+
+/* ============================================================================
+   Editor Sections & Form Cards
+   ============================================================================ */
+
+.dp-editor .editor-section {
+    margin-bottom: var(--dp-space-8);
+}
+
+.dp-editor .editor-section h3 {
+    margin: 0 0 var(--dp-space-6);
+    padding-bottom: var(--dp-space-3);
+    border-bottom: 2px solid var(--dp-border-color);
+    color: var(--dp-text-primary);
+    font-family: var(--dp-font-display);
+    font-size: var(--dp-font-size-xl);
+    font-weight: var(--dp-font-weight-bold);
+}
+
+/* Section header (large, for entity name) */
+.dp-editor .section-header-large {
+    margin-bottom: var(--dp-space-8);
+    padding-bottom: var(--dp-space-4);
+    border-bottom: 2.5px solid var(--dp-border-color);
+}
+
+/* Field hint */
+.dp-editor .field-hint {
+    font-size: var(--dp-font-size-sm);
+    color: var(--dp-text-tertiary);
+    margin: 0 0 var(--dp-space-8) 0;
+}
+
+/* Empty states */
+.dp-editor .empty-hint {
+    text-align: center;
+    padding: var(--dp-space-8);
+    color: var(--dp-text-tertiary);
+    font-style: italic;
+}
+
+.dp-editor .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--dp-space-12) var(--dp-space-4);
+    color: var(--dp-text-tertiary);
+    gap: var(--dp-space-4);
+}
+
+/* Context menu */
+.dp-editor .context-menu {
+    position: fixed;
+    z-index: 9999;
+    background: var(--dp-bg-secondary);
+    border: var(--dp-border-thick);
+    border-radius: var(--dp-radius-lg);
+    box-shadow: var(--dp-shadow-hard);
+    min-width: 160px;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+}
+
+.dp-editor .context-menu button {
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--dp-text-secondary);
+    padding: 8px 12px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    border-radius: var(--dp-radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .context-menu button:hover {
+    background: var(--dp-electric-blue);
+    color: white;
+}
+
+/* ============================================================================
+   Legacy Layout Compatibility (for editors not yet fully converted)
+   Styled in dopamine theme
+   ============================================================================ */
+
+/* 3-column container (used by SettingDocsEditor, InitialStoryEditor) */
+.dp-editor .editor-maximize-container {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+    gap: 0;
+    overflow: hidden;
+}
+
+/* Left sidebar for tree navigation */
+.dp-editor .editor-left-sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--dp-bg-secondary);
+    border-right: 2.5px solid var(--dp-border-color);
+    overflow: hidden;
+}
+
+.dp-editor .editor-left-sidebar .sidebar-header {
+    padding: var(--dp-space-3) var(--dp-space-4);
+    border-bottom: 2px solid var(--dp-border-color);
+    font-weight: 700;
+    color: var(--dp-text-primary);
+    font-family: var(--dp-font-display);
+    font-size: var(--dp-font-size-sm);
+    background: var(--dp-bg-primary);
+}
+
+/* Main editing area */
+.dp-editor .editor-main-area {
+    flex: 1;
+    min-width: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    background: var(--dp-bg-content);
+}
+
+/* Tree nodes in sidebar */
+.dp-editor .tree-scroll-container {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.dp-editor .tree-node-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    border-left: 3px solid transparent;
+    color: var(--dp-text-secondary);
+    gap: 4px;
+    font-size: var(--dp-font-size-sm);
+    position: relative;
+}
+
+.dp-editor .tree-node-item:hover {
+    background: var(--dp-bg-primary);
+}
+
+.dp-editor .tree-node-item.selected {
+    background: var(--dp-bg-primary);
+    border-left-color: var(--dp-electric-blue);
+    color: var(--dp-text-primary);
+    font-weight: 600;
+}
+
+.dp-editor .tree-label {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dp-editor .tree-item-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+
+.dp-editor .tree-node-item:hover .tree-item-actions {
+    opacity: 1;
+}
+
+.dp-editor .tree-more-btn {
+    background: transparent;
+    border: none;
+    color: var(--dp-text-tertiary);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--dp-radius-sm);
+    display: flex;
+    align-items: center;
+}
+
+.dp-editor .tree-more-btn:hover {
+    background: var(--dp-electric-blue);
+    color: white;
+}
+
+.dp-editor .tree-more-btn.danger:hover {
+    background: var(--dp-coral);
+    color: white;
+}
+
+/* Editor toolbar (for document/text editors) */
+.dp-editor .editor-toolbar {
+    display: flex;
+    align-items: center;
+    padding: var(--dp-space-2) var(--dp-space-4);
+    background: var(--dp-bg-secondary);
+    border-bottom: 2px solid var(--dp-border-color);
+    gap: var(--dp-space-2);
+    flex-shrink: 0;
+}
+
+.dp-editor .editor-toolbar .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.dp-editor .editor-toolbar button {
+    background: transparent;
+    border: 1.5px solid transparent;
+    border-radius: var(--dp-radius-sm);
+    color: var(--dp-text-secondary);
+    cursor: pointer;
+    padding: 6px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.dp-editor .editor-toolbar button:hover {
+    background: var(--dp-bg-primary);
+    border-color: var(--dp-border-color);
+    color: var(--dp-text-primary);
+}
+
+.dp-editor .toolbar-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--dp-border-color);
+    margin: 0 4px;
+}
+
+/* Editor textarea */
+.dp-editor .editor-textarea {
+    flex: 1;
+    width: 100%;
+    border: none;
+    padding: var(--dp-space-4) var(--dp-space-5);
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: var(--dp-font-size-sm);
+    line-height: 1.8;
+    resize: none;
+    background: var(--dp-bg-secondary);
+    color: var(--dp-text-primary);
+    outline: none;
+}
+
+/* Editor footer */
+.dp-editor .editor-footer {
+    display: flex;
+    gap: var(--dp-space-4);
+    padding: var(--dp-space-2) var(--dp-space-4);
+    background: var(--dp-bg-primary);
+    border-top: 1.5px solid var(--dp-border-color);
+    font-size: var(--dp-font-size-xs);
+    color: var(--dp-text-tertiary);
+    flex-shrink: 0;
+}
+
+/* Virtual badge */
+.dp-editor .virtual-badge {
+    font-size: 0.75rem;
+    color: var(--dp-text-tertiary);
+    font-weight: 600;
+}
+
+/* Generic action buttons in legacy editors */
+.dp-editor .btn-add {
+    background: var(--dp-lime-green);
+    color: var(--dp-dark);
+    border: 2px solid var(--dp-dark);
+    border-radius: var(--dp-radius-pill);
+    padding: 6px 14px;
+    font-weight: 700;
+    font-size: var(--dp-font-size-sm);
+    cursor: pointer;
+    transition: all 0.2s var(--dp-ease-bounce);
+    box-shadow: 2px 2px 0px var(--dp-dark);
+}
+
+.dp-editor .btn-add:hover {
+    transform: translateY(-1px);
+    box-shadow: 3px 3px 0px var(--dp-dark);
+}
+
+.dp-editor .btn-delete {
+    background: transparent;
+    color: var(--dp-coral);
+    border: 1.5px solid var(--dp-coral);
+    border-radius: var(--dp-radius-pill);
+    padding: 4px 12px;
+    font-weight: 600;
+    font-size: var(--dp-font-size-xs);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.dp-editor .btn-delete:hover {
+    background: var(--dp-coral);
+    color: white;
+}
+
+.dp-editor .btn-add-small {
+    background: var(--dp-lime-green);
+    color: var(--dp-dark);
+    border: 1.5px solid var(--dp-dark);
+    border-radius: var(--dp-radius-pill);
+    padding: 4px 12px;
+    font-weight: 700;
+    font-size: var(--dp-font-size-xs);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.dp-editor .btn-remove-small {
+    background: transparent;
+    border: none;
+    color: var(--dp-coral);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px 4px;
+    border-radius: var(--dp-radius-sm);
+}
+
+.dp-editor .btn-remove-small:hover {
+    background: var(--dp-coral);
+    color: white;
+}
+
+/* Item/section headers used in various editors */
+.dp-editor .item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--dp-space-3);
+}
+
+.dp-editor .item-title {
+    font-weight: 700;
+    font-size: var(--dp-font-size-base);
+    color: var(--dp-text-primary);
+}
+
+/* Section title */
+.dp-editor .section-title {
+    font-family: var(--dp-font-display);
+    font-weight: var(--dp-font-weight-bold);
+    font-size: var(--dp-font-size-lg);
+    color: var(--dp-text-primary);
+    margin: 0 0 var(--dp-space-4);
+}
+
+/* Schema section */
+.dp-editor .schema-section-title {
+    font-weight: 700;
+    font-size: var(--dp-font-size-sm);
+    color: var(--dp-text-primary);
+    margin-bottom: var(--dp-space-2);
+}
+
+/* List items container */
+.dp-editor .list-items {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dp-space-3);
+}
+
+/* Name input */
+.dp-editor .name-input {
+    width: 100%;
+    background: var(--dp-bg-primary);
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-md);
+    padding: 8px 12px;
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    transition: border-color 0.15s;
+}
+
+.dp-editor .name-input:focus {
+    outline: none;
+    border-color: var(--dp-electric-blue);
+    box-shadow: var(--dp-glow-blue);
+}
+
+/* Toggle switch for legacy usage */
+.dp-editor .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+}
+
+.dp-editor .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.dp-editor .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--dp-border-color);
+    border-radius: 9999px;
+    transition: 0.2s;
+    border: 1.5px solid var(--dp-dark);
+}
+
+.dp-editor .toggle-slider::before {
+    content: '';
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background: white;
+    border-radius: 50%;
+    transition: 0.2s;
+    border: 1px solid var(--dp-dark);
+}
+
+.dp-editor .toggle-switch input:checked + .toggle-slider {
+    background: var(--dp-lime-green);
+}
+
+.dp-editor .toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(18px);
+}
+
+.dp-editor .toggle-group {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-2);
+}

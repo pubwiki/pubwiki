@@ -1,0 +1,224 @@
+/* ============================================================================
+   Dopamine Buttons - All button variants
+   ============================================================================ */
+
+/* ========== Base Button ========== */
+
+.paper-editor .paper-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: var(--paper-radius-pill);
+    border: 2px solid var(--paper-text-primary);
+    background: var(--paper-bg-secondary);
+    color: var(--paper-text-primary);
+    font-size: var(--paper-font-size-sm);
+    font-weight: var(--paper-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--paper-transition-bounce);
+    white-space: nowrap;
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+.paper-editor .paper-btn:hover:not(:disabled) {
+    transform: scale(1.05) translateY(-1px);
+    box-shadow: var(--paper-shadow-hard);
+}
+
+.paper-editor .paper-btn:active:not(:disabled) {
+    transform: scale(0.97);
+    box-shadow: 1px 1px 0px var(--paper-text-primary);
+}
+
+.paper-editor .paper-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* ========== Button Variants ========== */
+
+.paper-editor .paper-btn-primary {
+    background: var(--paper-electric-blue-alpha);
+    color: var(--paper-electric-blue);
+    border-color: var(--paper-electric-blue);
+}
+
+.paper-editor .paper-btn-primary:hover:not(:disabled) {
+    background: var(--paper-electric-blue);
+    color: white;
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+.paper-editor .paper-btn-success {
+    background: var(--paper-lime-green-alpha);
+    color: var(--paper-lime-green);
+    border-color: var(--paper-lime-green);
+}
+
+.paper-editor .paper-btn-success:hover:not(:disabled) {
+    background: var(--paper-lime-green);
+    color: white;
+}
+
+.paper-editor .paper-btn-danger {
+    background: rgba(176, 92, 92, 0.1);
+    color: var(--paper-coral);
+    border-color: var(--paper-coral);
+}
+
+.paper-editor .paper-btn-danger:hover:not(:disabled) {
+    background: var(--paper-coral);
+    color: white;
+}
+
+.paper-editor .paper-btn-warning {
+    background: var(--paper-sunny-yellow);
+    color: var(--paper-text-primary);
+}
+
+.paper-editor .paper-btn-purple {
+    background: var(--paper-candy-purple);
+    color: white;
+}
+
+.paper-editor .paper-btn-purple:hover:not(:disabled) {
+    box-shadow: var(--paper-shadow-hard-purple);
+}
+
+.paper-editor .paper-btn-gradient {
+    background: var(--paper-gradient-aurora);
+    color: white;
+}
+
+/* ========== Ghost Button (no background) ========== */
+
+.paper-editor .paper-btn-ghost {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    color: var(--paper-text-secondary);
+}
+
+.paper-editor .paper-btn-ghost:hover:not(:disabled) {
+    background: var(--paper-bg-tertiary);
+    color: var(--paper-text-primary);
+    box-shadow: none;
+    transform: scale(1.03);
+}
+
+/* ========== Small Button ========== */
+
+.paper-editor .paper-btn-sm {
+    padding: 5px 12px;
+    font-size: var(--paper-font-size-xs);
+    border-width: 1.5px;
+    box-shadow: 2px 2px 0px var(--paper-text-primary);
+}
+
+.paper-editor .paper-btn-sm:hover:not(:disabled) {
+    box-shadow: 3px 3px 0px var(--paper-text-primary);
+}
+
+/* ========== Icon Button ========== */
+
+.paper-editor .paper-btn-icon {
+    padding: 6px;
+    border-radius: var(--paper-radius-md);
+    min-width: 32px;
+    min-height: 32px;
+}
+
+/* Mini icon button (for inline actions) */
+.paper-editor .icon-btn-mini {
+    background: transparent;
+    border: none;
+    padding: 3px 5px;
+    border-radius: var(--paper-radius-sm);
+    cursor: pointer;
+    color: var(--paper-text-tertiary);
+    transition: all var(--paper-transition-fast);
+}
+
+.paper-editor .icon-btn-mini:hover {
+    background: var(--paper-bg-tertiary);
+    color: var(--paper-text-primary);
+}
+
+/* ========== Button Group ========== */
+
+.paper-editor .paper-btn-group {
+    display: inline-flex;
+    gap: var(--paper-space-2);
+    align-items: center;
+}
+
+/* ========== Add Button (prominent) ========== */
+
+.paper-editor .paper-btn-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 14px;
+    border-radius: var(--paper-radius-pill);
+    border: 2px solid var(--paper-lime-green);
+    background: var(--paper-lime-green-alpha);
+    color: var(--paper-lime-green);
+    font-size: var(--paper-font-size-sm);
+    font-weight: var(--paper-font-weight-bold);
+    cursor: pointer;
+    transition: all var(--paper-transition-bounce);
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+.paper-editor .paper-btn-add:hover {
+    transform: scale(1.06);
+    background: var(--paper-lime-green);
+    color: white;
+    box-shadow: var(--paper-shadow-hard-sm);
+}
+
+/* ========== Legacy button compatibility ========== */
+
+/* Existing .btn-inline-* buttons */
+.paper-editor .btn-inline-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: var(--paper-lime-green-alpha);
+    border: 1.5px solid var(--paper-lime-green);
+    border-radius: var(--paper-radius-pill);
+    color: var(--paper-lime-green);
+    font-size: var(--paper-font-size-xs);
+    font-weight: var(--paper-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--paper-transition-fast);
+}
+
+.paper-editor .btn-inline-add:hover {
+    background: var(--paper-lime-green);
+    color: var(--paper-text-primary);
+}
+
+.paper-editor .btn-inline-remove {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1.5px solid var(--paper-coral);
+    border-radius: var(--paper-radius-pill);
+    color: var(--paper-coral);
+    font-size: var(--paper-font-size-xs);
+    font-weight: var(--paper-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--paper-transition-fast);
+}
+
+.paper-editor .btn-inline-remove:hover {
+    background: var(--paper-coral);
+    color: white;
+}

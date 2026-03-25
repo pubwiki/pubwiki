@@ -176,7 +176,8 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
       preservedNodeId,
       exportedNode.parent,
       contentHash,
-      exportedNode.type
+      exportedNode.type,
+      exportedNode.metadata
     );
     
     // Create StoredNodeData for direct DB insert
@@ -189,7 +190,8 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
       contentHash,
       parent: exportedNode.parent,
       content: contentJson,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      metadata: exportedNode.metadata
     };
     
     nodesToInsert.push(storedNode);
@@ -242,7 +244,8 @@ export async function importFromZipFile(file: File): Promise<ImportResult> {
           content: snapshotContent.toJSON(),
           timestamp: snapshot.timestamp,
           incomingEdges: snapshot.incomingEdges,
-          position: snapshot.position
+          position: snapshot.position,
+          metadata: snapshot.metadata
         };
         snapshotsToInsert.push(snapshotData);
       }

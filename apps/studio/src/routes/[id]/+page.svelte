@@ -21,8 +21,10 @@
 	} from '$components/nodes';
 	import VFSFileEditor from '$components/nodes/vfs/VFSFileEditor.svelte';
 	import FlowController from '$components/FlowController.svelte';
-	import { StudioSidebar } from '$components/sidebar';
+	import { StudioSidebar, type EditorMode } from '$components/sidebar';
 	import { CopilotPanel } from '$components/copilot';
+	import { WorldEditor } from '$components/world-editor';
+	import { SimpleModeBridge } from '$lib/simple-mode/bridge';
 	import { 
 		type FlowNodeData,
 		type NodeType,
@@ -63,6 +65,7 @@
 	import { generateUniqueNodeName } from '$lib/validation';
 	import { requestVfsDeleteConfirmation } from '$lib/state/vfs-delete-confirm.svelte';
 	import { useAuth } from '@pubwiki/ui/stores';
+	import { persist } from '@pubwiki/ui/utils';
 	import { createApiClient } from '@pubwiki/api/client';
 	import { API_BASE_URL } from '$lib/config';
 	import * as m from '$lib/paraglide/messages';
@@ -146,6 +149,30 @@
 	
 	// Copilot panel state (controlled from sidebar button)
 	let copilotCollapsed = $state(true);
+
+	// Editor mode state (persisted to localStorage)
+	const persistedEditorMode = persist<EditorMode>('studio-editor-mode', 'expert');
+	let editorMode = $derived(persistedEditorMode.value);
+
+	// Simple Mode Bridge — lazily initialised when the user switches to simple mode
+	let simpleBridge: SimpleModeBridge | null = null;
+	let simpleBridgeGraphReady: Promise<void> | null = null;
+
+	function ensureSimpleBridge(projectId: string): Promise<import('@pubwiki/rdfstore').TripleStore> {
+		if (!simpleBridge || simpleBridge['projectId'] !== projectId) {
+			simpleBridge = new SimpleModeBridge(projectId, {
+				updateNodes: (updater) => { nodes = updater(nodes); },
+				updateEdges: (updater) => { edges = updater(edges); }
+			});
+			simpleBridgeGraphReady = null;
+		}
+		if (!simpleBridgeGraphReady) {
+			simpleBridgeGraphReady = simpleBridge.ensureGraph().then(() => {});
+		}
+		// Always fetch a fresh TripleStore — the cached one may have been closed
+		// by StateNode's onDestroy when switching back from expert mode.
+		return simpleBridgeGraphReady.then(() => simpleBridge!.getTripleStore());
+	}
 
 	// Build cache state
 	let selectedEntrypoint = $state<string | null>(null);
@@ -427,6 +454,10 @@
 		
 		// Cleanup VFS tracking in sync service
 		syncService?.cleanupVfsTracking();
+
+		// Reset simple-mode bridge state
+		simpleBridge = null;
+		simpleBridgeGraphReady = null;
 	});
 
 	// ============================================================================
@@ -1559,35 +1590,54 @@
 		</div>
 	{/if}
 	
-	<!-- Flow Editor -->
-	<div class="flex-1 h-full relative">
-		<SvelteFlow 
-			bind:nodes 
-			bind:edges
-			{nodeTypes} 
-			fitView
-			selectionOnDrag={!isTouchDevice}
-			deleteKey="Delete"
-			selectionMode={SelectionMode.Partial}
-			panOnDrag={isTouchDevice ? true : [1]}
-			multiSelectionKey="Shift"
-			{isValidConnection}
-			proOptions={{hideAttribution: true}}
-			onselectionchange={(e) => selectedNodes = e.nodes}
-			onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
-			onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
-			onconnect={(connection) => handleConnect(connection)}
-			onconnectend={(event, connectionState) => handleConnectEnd(event, connectionState)}
-			onbeforedelete={handleBeforeDelete}
-			ondelete={handleDelete}
-			onnodedragstop={handleNodeDragStop}
-			onselectiondragstop={handleSelectionDragStop}
-		>
-			<FlowController onInit={(flow) => flowApi = flow} />
-			<Background />
-			<Controls />
-		</SvelteFlow>
-	</div>
+	<!-- Flow Editor (Expert Mode) / World Editor (Simple Mode) -->
+	{#if !loaded}
+		<div class="flex-1 h-full flex items-center justify-center">
+			<span class="text-sm text-muted-foreground">Loading…</span>
+		</div>
+	{:else if editorMode === 'expert'}
+		<div class="flex-1 h-full relative">
+			<SvelteFlow 
+				bind:nodes 
+				bind:edges
+				{nodeTypes} 
+				fitView
+				selectionOnDrag={!isTouchDevice}
+				deleteKey="Delete"
+				selectionMode={SelectionMode.Partial}
+				panOnDrag={isTouchDevice ? true : [1]}
+				multiSelectionKey="Shift"
+				{isValidConnection}
+				proOptions={{hideAttribution: true}}
+				onselectionchange={(e) => selectedNodes = e.nodes}
+				onnodecontextmenu={(e) => handleNodeContextMenu(e.event, e.node.id)}
+				onpanecontextmenu={(e) => handlePaneContextMenu(e.event)}
+				onconnect={(connection) => handleConnect(connection)}
+				onconnectend={(event, connectionState) => handleConnectEnd(event, connectionState)}
+				onbeforedelete={handleBeforeDelete}
+				ondelete={handleDelete}
+				onnodedragstop={handleNodeDragStop}
+				onselectiondragstop={handleSelectionDragStop}
+			>
+				<FlowController onInit={(flow) => flowApi = flow} />
+				<Background />
+				<Controls />
+			</SvelteFlow>
+		</div>
+	{:else}
+		<!-- World Editor (Simple Mode) -->
+		{#await ensureSimpleBridge(currentProjectId)}
+			<div class="flex-1 h-full flex items-center justify-center">
+				<span class="text-sm text-muted-foreground">Initializing world editor…</span>
+			</div>
+		{:then tripleStore}
+			<WorldEditor projectId={currentProjectId} store={tripleStore} bind:copilotCollapsed={copilotCollapsed} />
+		{:catch err}
+			<div class="flex-1 h-full flex items-center justify-center text-destructive">
+				<span class="text-sm">Failed to initialize: {err?.message ?? err}</span>
+			</div>
+		{/await}
+	{/if}
 	
 	<!-- Studio Sidebar (Left) - Outside SvelteFlow to avoid pointer event conflicts -->
 	<StudioSidebar
@@ -1620,6 +1670,8 @@
 		}}
 		copilotOpen={!copilotCollapsed}
 		onCopilotToggle={() => copilotCollapsed = !copilotCollapsed}
+		{editorMode}
+		onModeChange={(mode) => persistedEditorMode.value = mode}
 		onNameChange={async (name) => {
 			projectName = name;
 			const project = await getProject(currentProjectId);
@@ -1639,8 +1691,10 @@
 		/>
 	{/if}
 	
-	<!-- Copilot Panel (Right side chat panel) -->
-	<CopilotPanel projectId={currentProjectId} bind:collapsed={copilotCollapsed} hideCollapsedButton={true} />
+	<!-- Copilot Panel (Right side chat panel) — Expert mode only -->
+	{#if editorMode === 'expert'}
+		<CopilotPanel projectId={currentProjectId} bind:collapsed={copilotCollapsed} hideCollapsedButton={true} />
+	{/if}
 	
 	<!-- Context Menu -->
 	{#if contextMenu}

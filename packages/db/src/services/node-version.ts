@@ -40,6 +40,7 @@ export interface SyncNodeVersionInput {
   content: ArtifactNodeContent;  // The actual content to store in the typed content table
   message?: string;
   tag?: string;
+  metadata?: Record<string, string> | null;
   isListed?: boolean;
   /** 
    * Whether this node version should be private.
@@ -210,6 +211,7 @@ export class NodeVersionService {
           contentHash: nodeVersions.contentHash,
           message: nodeVersions.message,
           tag: nodeVersions.tag,
+          metadata: nodeVersions.metadata,
           sourceArtifactId: nodeVersions.sourceArtifactId,
           derivativeOf: nodeVersions.derivativeOf,
           isListed: resourceDiscoveryControl.isListed,
@@ -247,6 +249,7 @@ export class NodeVersionService {
             contentHash: v.contentHash,
             message: v.message,
             tag: v.tag,
+            metadata: v.metadata,
             sourceArtifactId: v.sourceArtifactId,
             derivativeOf: v.derivativeOf,
             isListed: v.isListed ?? false,
@@ -277,6 +280,7 @@ export class NodeVersionService {
           contentHash: nodeVersions.contentHash,
           message: nodeVersions.message,
           tag: nodeVersions.tag,
+          metadata: nodeVersions.metadata,
           sourceArtifactId: nodeVersions.sourceArtifactId,
           derivativeOf: nodeVersions.derivativeOf,
           isListed: resourceDiscoveryControl.isListed,
@@ -315,6 +319,7 @@ export class NodeVersionService {
           contentHash: version.contentHash,
           message: version.message,
           tag: version.tag,
+          metadata: version.metadata,
           sourceArtifactId: version.sourceArtifactId,
           derivativeOf: version.derivativeOf,
           isListed: version.isListed ?? false,
@@ -344,6 +349,7 @@ export class NodeVersionService {
           contentHash: nodeVersions.contentHash,
           message: nodeVersions.message,
           tag: nodeVersions.tag,
+          metadata: nodeVersions.metadata,
           sourceArtifactId: nodeVersions.sourceArtifactId,
           derivativeOf: nodeVersions.derivativeOf,
           isListed: resourceDiscoveryControl.isListed,
@@ -380,6 +386,7 @@ export class NodeVersionService {
           contentHash: version.contentHash,
           message: version.message,
           tag: version.tag,
+          metadata: version.metadata,
           sourceArtifactId: version.sourceArtifactId,
           derivativeOf: version.derivativeOf,
           isListed: version.isListed ?? false,
@@ -409,6 +416,7 @@ export class NodeVersionService {
           contentHash: nodeVersions.contentHash,
           message: nodeVersions.message,
           tag: nodeVersions.tag,
+          metadata: nodeVersions.metadata,
           sourceArtifactId: nodeVersions.sourceArtifactId,
           derivativeOf: nodeVersions.derivativeOf,
           isListed: resourceDiscoveryControl.isListed,
@@ -550,17 +558,18 @@ export class NodeVersionService {
           continue;
         }
 
-        // Validate commit matches hash(nodeId, parent, contentHash, type)
+        // Validate commit matches hash(nodeId, parent, contentHash, type, metadata)
         const expectedCommit = await computeNodeCommit(
           input.nodeId,
           input.parent ?? null,
           input.contentHash,
           input.type,
+          input.metadata,
         );
         if (input.commit !== expectedCommit) {
           result.errors.push(
             `Version for node ${input.nodeId}: commit hash mismatch: expected ${expectedCommit}, got ${input.commit}. ` +
-            `Client must compute commit using computeNodeCommit(nodeId, parent, contentHash, type).`
+            `Client must compute commit using computeNodeCommit(nodeId, parent, contentHash, type, metadata).`
           );
           continue;
         }
@@ -695,6 +704,7 @@ export class NodeVersionService {
             derivativeOf,
             message: input.message ?? null,
             tag: input.tag ?? null,
+            metadata: input.metadata ?? null,
           };
 
           // Collect node version insert (idempotent with onConflictDoNothing)
@@ -965,6 +975,7 @@ export class NodeVersionService {
         sourceCommit,  // The forked version's parent is the source
         sourceVersion.contentHash,
         sourceVersion.type,
+        sourceVersion.metadata,
       );
 
       // Check if this commit already exists
@@ -998,6 +1009,7 @@ export class NodeVersionService {
         derivativeOf,
         message: 'Forked to private',
         tag: null,
+        metadata: sourceVersion.metadata,
       };
 
       this.ctx.modify()

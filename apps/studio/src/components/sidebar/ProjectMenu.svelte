@@ -10,6 +10,7 @@
 	 * - Settings
 	 */
 	import { onMount, onDestroy } from 'svelte';
+	import type { EditorMode } from './StudioSidebar.svelte';
 	import * as m from '$lib/paraglide/messages';
 
 	interface Props {
@@ -18,9 +19,11 @@
 		onOpenSettings: () => void;
 		onExport: () => void;
 		onImport: () => void;
+		editorMode?: EditorMode;
+		onModeChange?: (mode: EditorMode) => void;
 	}
 
-	let { onNewProject, onOpenProjectList, onOpenSettings, onExport, onImport }: Props = $props();
+	let { onNewProject, onOpenProjectList, onOpenSettings, onExport, onImport, editorMode = 'expert', onModeChange }: Props = $props();
 
 	let isOpen = $state(false);
 	let menuRef: HTMLDivElement | undefined = $state();
@@ -62,6 +65,11 @@
 
 	function handleSettings() {
 		onOpenSettings();
+		close();
+	}
+
+	function handleModeSwitch() {
+		onModeChange?.(editorMode === 'expert' ? 'simple' : 'expert');
 		close();
 	}
 
@@ -154,6 +162,20 @@
 				</svg>
 				{m.studio_menu_settings()}
 			</button>
+
+			<!-- Mode Switch -->
+			{#if onModeChange}
+				<div class="border-t border-gray-200 my-1"></div>
+				<button
+					class="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-3"
+					onclick={handleModeSwitch}
+				>
+					<svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+					</svg>
+					{editorMode === 'expert' ? m.studio_menu_switch_to_simple() : m.studio_menu_switch_to_expert()}
+				</button>
+			{/if}
 		</div>
 	{/if}
 </div>

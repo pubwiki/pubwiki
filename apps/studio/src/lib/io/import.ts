@@ -287,7 +287,8 @@ export async function convertArtifactToStudioGraph(
           contentHash,
           snapshotRefs: [],
           parent,
-          content: vfsContent
+          content: vfsContent,
+          metadata: node.metadata ?? undefined
         };
         return {
           id: nodeId,
@@ -313,7 +314,8 @@ export async function convertArtifactToStudioGraph(
           contentHash,
           snapshotRefs: [],
           parent,
-          content: parsedContent
+          content: parsedContent,
+          metadata: node.metadata ?? undefined
         };
         return {
           id: nodeId,
@@ -339,7 +341,8 @@ export async function convertArtifactToStudioGraph(
           contentHash,
           snapshotRefs: [],
           parent,
-          content: parsedContent
+          content: parsedContent,
+          metadata: node.metadata ?? undefined
         };
         return {
           id: nodeId,
@@ -370,7 +373,8 @@ export async function convertArtifactToStudioGraph(
           contentHash,
           snapshotRefs: [],
           parent,
-          content: stateContent
+          content: stateContent,
+          metadata: node.metadata ?? undefined
         };
         return {
           id: nodeId,
@@ -396,7 +400,8 @@ export async function convertArtifactToStudioGraph(
           contentHash,
           snapshotRefs: [],
           parent,
-          content: parsedContent
+          content: parsedContent,
+          metadata: node.metadata ?? undefined
         };
         return {
           id: nodeId,
@@ -422,7 +427,8 @@ export async function convertArtifactToStudioGraph(
           contentHash,
           snapshotRefs: [],
           parent,
-          content: parsedContent
+          content: parsedContent,
+          metadata: node.metadata ?? undefined
         };
         return {
           id: nodeId,
@@ -449,7 +455,8 @@ export async function convertArtifactToStudioGraph(
           contentHash,
           snapshotRefs: [],
           parent,
-          content: parsedContent
+          content: parsedContent,
+          metadata: node.metadata ?? undefined
         };
         return {
           id: nodeId,

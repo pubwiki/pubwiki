@@ -1,0 +1,729 @@
+/* 游戏通用模态框样式 (Paper Media Theme) */
+
+.game-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--paper-border-color-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+/* 高优先级模态框（如信息弹窗）需要更高层级 */
+.game-modal-high-priority {
+  z-index: 1100;
+}
+
+.game-modal {
+  background: var(--paper-bg-content);
+  border-radius: 4px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow: hidden;
+  border: 1px solid var(--paper-text-primary);
+  box-shadow: 4px 4px 0px var(--paper-shadow-color);
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+}
+
+.game-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: var(--paper-bg-primary);
+  border-bottom: 2px solid var(--paper-text-primary);
+  flex-shrink: 0;
+}
+
+.game-modal-header h3 {
+  margin: 0;
+  color: var(--paper-text-primary);
+  font-size: 1.1rem;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+}
+
+.game-modal-close {
+  background: none;
+  border: none;
+  color: var(--paper-text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  transition: color 0.2s;
+}
+
+.game-modal-close:hover {
+  color: var(--paper-electric-blue);
+}
+
+.game-modal-content {
+  padding: 1.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  color: var(--paper-text-primary);
+  line-height: 1.6;
+}
+
+.game-modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.game-modal-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.game-modal-content::-webkit-scrollbar-thumb {
+  background: var(--paper-border-color);
+  border-radius: 3px;
+}
+
+.game-modal-description {
+  margin: 0 0 1rem;
+  color: var(--paper-text-secondary);
+  white-space: pre-wrap;
+}
+
+.game-modal-details {
+  margin: 0;
+  padding-left: 1.5rem;
+  color: var(--paper-text-secondary);
+}
+
+.game-modal-details li {
+  margin-bottom: 0.5rem;
+}
+
+/* 结构化详情 - 标签/值卡片 */
+.game-modal-structured-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.structured-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.65rem 0.9rem;
+  background: var(--paper-bg-secondary);
+  border-radius: 4px;
+  border-left: 3px solid var(--paper-electric-blue); /* 替换为墨色/红色细节 */
+  border-top: 1px solid var(--paper-border-color);
+  border-right: 1px solid var(--paper-border-color);
+  border-bottom: 1px solid var(--paper-border-color);
+  transition: background 0.2s;
+  gap: 1rem;
+}
+
+.structured-detail-row:hover {
+  background: var(--paper-bg-primary);
+}
+
+.structured-detail-label {
+  color: var(--paper-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.structured-detail-key {
+  color: var(--paper-text-primary);
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+.structured-detail-desc {
+  color: #8b949e;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.structured-detail-value {
+  color: var(--paper-text-primary);
+  font-size: 1rem;
+  font-weight: bold;
+  flex-shrink: 1;
+  min-width: 0;
+  padding: 0.15rem 0.6rem;
+  background: transparent;
+  text-align: right;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  width: 70%;
+}
+
+.structured-detail-separator {
+  text-align: center;
+  padding: 0.35rem 0;
+  color: var(--paper-text-secondary);
+  font-size: 0.8rem;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  border-bottom: 1px dashed var(--paper-border-color);
+  margin: 0.25rem 0;
+}
+
+/* 生物模态框 */
+.creature-modal {
+  max-width: 500px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.creature-modal-content {
+  padding: 0 !important;
+  max-height: calc(70vh - 60px);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.creature-modal-content .novel-player-panel {
+  padding: 1rem;
+  background: transparent;
+}
+
+/* 组织模态框 */
+.organization-modal {
+  max-width: 550px;
+  max-height: 85vh;
+}
+
+.org-section {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: var(--paper-bg-secondary);
+  border-radius: 4px;
+  border: 1px solid var(--paper-border-color);
+}
+
+.org-section:last-child {
+  margin-bottom: 0;
+}
+
+.org-section h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--paper-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+
+.org-info-item {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  align-items: center;
+}
+
+.org-info-item:last-child {
+  margin-bottom: 0;
+}
+
+.org-label {
+  color: var(--paper-text-secondary);
+  min-width: 80px;
+  font-size: 0.85rem;
+}
+
+.org-value {
+  color: var(--paper-text-primary);
+  font-size: 0.9rem;
+}
+
+/* 领地列表 */
+.org-territories {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.territory-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--paper-bg-content);
+  border: 1px dashed var(--paper-border-color);
+  border-radius: 4px;
+}
+
+.territory-region {
+  color: var(--paper-text-secondary);
+  font-size: 0.85rem;
+}
+
+.territory-separator {
+  color: var(--paper-border-color);
+}
+
+.territory-location {
+  color: var(--paper-text-primary);
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+/* 秘密列表 */
+.org-secrets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.secret-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: var(--paper-bg-content);
+  border: 1px solid var(--paper-border-color);
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.secret-item:hover {
+  background: #e9e5db;
+}
+
+.secret-name {
+  color: var(--paper-text-primary);
+  font-size: 0.9rem;
+}
+
+.secret-item.hidden .secret-name {
+  color: var(--paper-text-secondary);
+  font-style: italic;
+}
+
+.secret-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+
+.secret-badge.revealed {
+  background: transparent;
+  color: var(--paper-text-primary);
+}
+
+.secret-badge.hidden {
+  background: rgba(106, 100, 94, 0.1);
+  color: var(--paper-text-secondary);
+}
+
+/* 组织库存 */
+.org-inventory {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.org-inventory .inventory-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--paper-bg-content);
+  border: 1px solid var(--paper-border-color);
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.org-inventory .inventory-item:hover {
+  background: #e9e5db;
+}
+
+.org-inventory .item-name {
+  color: var(--paper-text-primary);
+  font-size: 0.9rem;
+}
+
+.org-inventory .item-count {
+  color: var(--paper-text-secondary);
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+/* 组织日志 */
+.org-log {
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.log-entry {
+  padding: 0.5rem;
+  background: var(--paper-bg-secondary);
+  border-left: 2px solid var(--paper-text-secondary);
+  border-bottom: 1px dashed var(--paper-border-color);
+  font-size: 0.85rem;
+  color: #4a4540;
+}
+
+/* 地点模态框 */
+.location-modal {
+  max-width: 550px;
+  max-height: 70vh;
+}
+
+.location-modal .game-modal-content {
+  max-height: calc(70vh - 60px);
+  overflow-y: auto;
+}
+
+.location-section {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: var(--paper-bg-secondary);
+  border-radius: 4px;
+  border: 1px solid var(--paper-border-color);
+}
+
+.location-section:last-child {
+  margin-bottom: 0;
+}
+
+.location-section h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--paper-text-primary);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: bold;
+}
+
+.location-description,
+.region-description {
+  margin: 0;
+  color: #4a4540;
+  line-height: 1.6;
+  font-size: 0.95rem;
+}
+
+.locations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.location-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  background: var(--paper-bg-content);
+  border-radius: 4px;
+  border: 1px solid var(--paper-border-color);
+  border-left: 3px solid var(--paper-text-secondary);
+  transition: background 0.2s;
+}
+
+.location-item:hover {
+  background: #e9e5db;
+}
+
+.location-name {
+  color: var(--paper-text-primary);
+  font-weight: bold;
+  font-size: 0.95rem;
+}
+
+.location-preview {
+  color: var(--paper-text-secondary);
+  font-size: 0.85rem;
+}
+
+/* 词条模态框样式 */
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--paper-border-color-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+
+.entry-modal {
+  background: var(--paper-bg-content);
+  border-radius: 4px;
+  max-width: 700px;
+  width: 90%;
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid var(--paper-text-primary);
+  box-shadow: 4px 4px 0px var(--paper-shadow-color);
+}
+
+.entry-modal::-webkit-scrollbar {
+  width: 6px;
+}
+
+.entry-modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.entry-modal::-webkit-scrollbar-thumb {
+  background: var(--paper-border-color);
+  border-radius: 3px;
+}
+
+.entry-section {
+  padding: 1.5rem;
+  border-bottom: 1px dashed var(--paper-border-color);
+}
+
+.entry-section:last-child {
+  border-bottom: none;
+}
+
+.entry-main {
+  background: var(--paper-bg-secondary);
+  padding: 1.25rem;
+  border-radius: 4px;
+  border-left: 4px solid var(--paper-electric-blue); /* 替换为主色的重点标识 */
+  border-top: 1px solid var(--paper-border-color);
+  border-right: 1px solid var(--paper-border-color);
+  border-bottom: 1px solid var(--paper-border-color);
+}
+
+.entry-sub {
+  background: var(--paper-bg-content);
+  padding: 1rem;
+  border-radius: 4px;
+  border-left: 3px solid var(--paper-text-secondary);
+  border-top: 1px dashed var(--paper-border-color);
+  border-right: 1px dashed var(--paper-border-color);
+  border-bottom: 1px dashed var(--paper-border-color);
+  margin-top: 1rem;
+}
+
+.entry-sub-title {
+  margin: 0 0 0.5rem 0;
+  color: var(--paper-text-secondary);
+  font-size: 0.9rem;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.entry-sub-name {
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color 0.2s;
+  color: var(--paper-text-primary);
+  font-weight: bold;
+}
+
+.entry-sub-name:hover {
+  color: var(--paper-electric-blue);
+}
+
+.entry-content {
+  margin: 0;
+  color: var(--paper-text-primary);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  font-size: 0.95rem;
+}
+
+.entry-reference {
+  color: #0550ae;
+  cursor: pointer;
+  text-decoration: underline;
+  font-weight: bold;
+  transition: color 0.2s, background 0.2s;
+  padding: 0 0.25rem;
+  border-radius: 2px;
+}
+
+.entry-reference:hover {
+  color: var(--paper-electric-blue);
+  background: rgba(139, 43, 26, 0.05);
+}
+
+.entry-references-hint {
+  margin-top: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--paper-bg-primary);
+  border-left: 3px solid var(--paper-border-color);
+  color: var(--paper-text-secondary);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* ========== 移动端/竖屏响应式适配 ========== */
+@media (max-width: 768px) {
+
+  /* 模态框全屏化 */
+  .game-modal {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    margin: 0;
+  }
+
+  .game-modal-header {
+    padding: 1rem;
+  }
+
+  .game-modal-header h3 {
+    font-size: 1rem;
+  }
+
+  .game-modal-close {
+    font-size: 1.4rem;
+    padding: 0.5rem;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .game-modal-content {
+    padding: 1rem;
+    max-height: calc(100% - 60px);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 生物模态框 */
+  .creature-modal {
+    max-width: 100% !important;
+    max-height: 100%;
+    height: 100%;
+  }
+
+  .creature-modal-content {
+    max-height: calc(100% - 60px);
+  }
+
+  /* 组织模态框 */
+  .organization-modal {
+    max-width: 100% !important;
+    max-height: 100%;
+    height: 100%;
+  }
+
+  .org-section {
+    padding: 1rem;
+  }
+
+  /* 地点模态框 */
+  .location-modal {
+    max-width: 100% !important;
+    max-height: 100%;
+    height: 100%;
+  }
+
+  .location-modal .game-modal-content {
+    max-height: calc(100% - 60px);
+  }
+
+  /* 词条模态框 */
+  .entry-modal {
+    max-width: 100% !important;
+    width: 100%;
+    max-height: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .entry-section {
+    padding: 1rem;
+  }
+
+  /* 触屏优化 - 可点击元素最小尺寸 */
+  .territory-item,
+  .secret-item,
+  .location-item,
+  .org-inventory .inventory-item {
+    min-height: 44px;
+    padding: 0.75rem;
+  }
+
+  .entry-reference {
+    padding: 0.25rem 0.5rem;
+  }
+}
+
+/* 设定文档列表（模态框内） */
+.game-modal .setting-docs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.game-modal .setting-doc-item {
+  padding: 0.5rem 0.75rem;
+  background: rgba(44, 40, 37, 0.02);
+  border-radius: 6px;
+  border: 1px solid var(--paper-active-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+.game-modal .setting-doc-item:hover:not(.disabled) {
+  background: rgba(44, 40, 37, 0.06);
+  border-color: var(--paper-border-color);
+}
+
+.game-modal .setting-doc-item.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.game-modal .setting-doc-name {
+  font-size: 0.85rem;
+  color: var(--paper-text-primary);
+  flex: 1;
+}
+
+.game-modal .setting-doc-item.disabled .setting-doc-name {
+  text-decoration: line-through;
+}
+
+.game-modal .setting-doc-badge {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.game-modal .setting-doc-badge.priority {
+  color: #b8860b;
+  background: rgba(184, 134, 11, 0.1);
+}
+
+.game-modal .setting-doc-badge.disabled {
+  color: #999;
+  background: rgba(0, 0, 0, 0.05);
+}

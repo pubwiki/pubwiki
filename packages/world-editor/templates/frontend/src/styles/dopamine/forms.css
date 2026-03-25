@@ -1,0 +1,603 @@
+/* ============================================================================
+   Dopamine Forms - Input fields, textareas, selects
+   ============================================================================ */
+
+/* ========== Form Grid ========== */
+
+.dp-editor .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--dp-space-4);
+}
+
+/* ========== Form Groups ========== */
+
+.dp-editor .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dp-space-2);
+}
+
+.dp-editor .form-group label {
+    font-size: var(--dp-font-size-sm);
+    font-weight: var(--dp-font-weight-semibold);
+    color: var(--dp-text-secondary);
+}
+
+/* ========== Inputs ========== */
+
+.dp-editor .input-modern,
+.dp-editor input[type="text"],
+.dp-editor input[type="number"],
+.dp-editor input[type="url"] {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: var(--dp-radius-lg);
+    border: 2px solid var(--dp-border-color);
+    background: var(--dp-bg-content);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .input-modern:focus,
+.dp-editor input[type="text"]:focus,
+.dp-editor input[type="number"]:focus,
+.dp-editor input[type="url"]:focus {
+    outline: none;
+    border-color: var(--dp-electric-blue);
+    box-shadow: 0 0 0 3px var(--dp-electric-blue-alpha), var(--dp-glow-blue);
+    background: var(--dp-bg-secondary);
+}
+
+.dp-editor .input-modern::placeholder,
+.dp-editor input::placeholder {
+    color: var(--dp-text-tertiary);
+}
+
+/* Error state */
+.dp-editor .form-input-error,
+.dp-editor input.form-input-error {
+    border-color: var(--dp-coral) !important;
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.15) !important;
+}
+
+.dp-editor .form-field-error {
+    font-size: var(--dp-font-size-xs);
+    color: var(--dp-coral);
+    font-weight: var(--dp-font-weight-semibold);
+    margin-top: var(--dp-space-1);
+}
+
+/* ========== Textareas ========== */
+
+.dp-editor .textarea-modern,
+.dp-editor textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: var(--dp-radius-lg);
+    border: 2px solid var(--dp-border-color);
+    background: var(--dp-bg-content);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    resize: vertical;
+    min-height: 80px;
+    transition: all var(--dp-transition-fast);
+    line-height: var(--dp-line-height-relaxed);
+}
+
+.dp-editor .textarea-modern:focus,
+.dp-editor textarea:focus {
+    outline: none;
+    border-color: var(--dp-electric-blue);
+    box-shadow: 0 0 0 3px var(--dp-electric-blue-alpha), var(--dp-glow-blue);
+    background: var(--dp-bg-secondary);
+}
+
+/* ========== Selects ========== */
+
+.dp-editor .select-modern,
+.dp-editor select {
+    width: 100%;
+    padding: 10px 14px;
+    padding-right: 36px;
+    border-radius: var(--dp-radius-lg);
+    border: 2px solid var(--dp-border-color);
+    background: var(--dp-bg-content);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234a5568' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .select-modern:focus,
+.dp-editor select:focus {
+    outline: none;
+    border-color: var(--dp-electric-blue);
+    box-shadow: 0 0 0 3px var(--dp-electric-blue-alpha);
+}
+
+.dp-editor select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ========== Checkbox / Toggle style ========== */
+
+.dp-editor .form-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-2);
+    cursor: pointer;
+}
+
+.dp-editor .form-checkbox input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    border-radius: var(--dp-radius-sm);
+    accent-color: var(--dp-electric-blue);
+}
+
+/* ========== Search Sort Select (compact) ========== */
+
+.dp-editor .search-sort-select {
+    padding: 6px 10px;
+    padding-right: 28px;
+    font-size: var(--dp-font-size-xs);
+    border-radius: var(--dp-radius-pill);
+}
+
+/* ========== Editor Textarea (full) ========== */
+
+.dp-editor .editor-textarea {
+    flex: 1;
+    background: var(--dp-bg-secondary);
+    border: none;
+    resize: none;
+    padding: 20px 28px;
+    color: var(--dp-text-primary);
+    font-family: var(--dp-font-mono);
+    font-size: var(--dp-font-size-base);
+    line-height: var(--dp-line-height-relaxed);
+}
+
+.dp-editor .editor-textarea:focus {
+    outline: none;
+}
+
+/* ========== Validation Panel ========== */
+
+.dp-editor .validation-panel {
+    background: var(--dp-bg-secondary);
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-xl);
+    padding: var(--dp-space-4);
+    margin-bottom: var(--dp-space-4);
+}
+
+.dp-editor .validation-error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--dp-space-2);
+    padding: var(--dp-space-2) var(--dp-space-3);
+    border-radius: var(--dp-radius-md);
+    background: rgba(255, 107, 107, 0.08);
+    border-left: 3px solid var(--dp-coral);
+    margin-bottom: var(--dp-space-2);
+    font-size: var(--dp-font-size-sm);
+    color: var(--dp-coral);
+}
+
+.dp-editor .validation-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--dp-space-2);
+    padding: var(--dp-space-2) var(--dp-space-3);
+    border-radius: var(--dp-radius-md);
+    background: rgba(255, 214, 10, 0.08);
+    border-left: 3px solid var(--dp-sunny-yellow);
+    margin-bottom: var(--dp-space-2);
+    font-size: var(--dp-font-size-sm);
+    color: #b8860b;
+}
+
+/* ============================================================================
+   TypeSchemaEditor - dopamine overrides for schema property editor
+   ============================================================================ */
+
+.dp-editor .type-schema-editor {
+    width: 100%;
+}
+
+.dp-editor .type-schema-editor .schema-type-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--dp-space-3);
+    align-items: center;
+    margin-bottom: var(--dp-space-3);
+}
+
+.dp-editor .type-schema-editor .schema-type-select {
+    min-width: 140px;
+    padding: 8px 12px;
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-md);
+    background: var(--dp-bg-content);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+}
+
+.dp-editor .type-schema-editor .schema-description {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-md);
+    background: var(--dp-bg-content);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+}
+
+.dp-editor .type-schema-editor .schema-properties {
+    padding: var(--dp-space-4);
+    background: var(--dp-bg-tertiary);
+    border-radius: var(--dp-radius-lg);
+    border: 2px dashed var(--dp-border-color);
+}
+
+.dp-editor .type-schema-editor .schema-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--dp-space-3);
+    padding-bottom: var(--dp-space-2);
+    border-bottom: 2px solid var(--dp-border-color);
+}
+
+.dp-editor .type-schema-editor .schema-section-header > span {
+    font-weight: var(--dp-font-weight-bold);
+    color: var(--dp-electric-blue);
+    font-size: var(--dp-font-size-sm);
+}
+
+.dp-editor .type-schema-editor .schema-property-item {
+    padding: var(--dp-space-3) var(--dp-space-4);
+    margin-bottom: var(--dp-space-3);
+    background: var(--dp-bg-secondary);
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-lg);
+    border-left: 4px solid var(--dp-lime-green);
+}
+
+.dp-editor .type-schema-editor .schema-property-item:last-child {
+    margin-bottom: 0;
+}
+
+.dp-editor .type-schema-editor .property-header {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-3);
+    margin-bottom: var(--dp-space-3);
+    padding-bottom: var(--dp-space-2);
+    border-bottom: 2px dashed var(--dp-border-color);
+}
+
+.dp-editor .type-schema-editor .property-name {
+    flex: 1;
+    padding: 8px 12px;
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-md);
+    background: var(--dp-bg-content);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    font-weight: var(--dp-font-weight-bold);
+    font-family: var(--dp-font-mono);
+}
+
+.dp-editor .type-schema-editor .required-checkbox {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-1);
+    font-size: var(--dp-font-size-xs);
+    color: var(--dp-text-secondary);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--dp-radius-sm);
+    border: 1.5px solid var(--dp-border-color);
+    background: var(--dp-bg-tertiary);
+    transition: all var(--dp-transition-fast);
+    white-space: nowrap;
+}
+
+.dp-editor .type-schema-editor .required-checkbox:hover {
+    background: var(--dp-bg-content);
+    border-color: var(--dp-lime-green);
+}
+
+.dp-editor .type-schema-editor .required-checkbox input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--dp-lime-green);
+    cursor: pointer;
+}
+
+.dp-editor .type-schema-editor .btn-remove-inline {
+    padding: 4px 10px;
+    background: rgba(255, 107, 107, 0.1);
+    border: 2px solid rgba(255, 107, 107, 0.3);
+    border-radius: var(--dp-radius-md);
+    color: var(--dp-coral);
+    font-size: var(--dp-font-size-xs);
+    cursor: pointer;
+    transition: all var(--dp-transition-fast);
+    font-weight: var(--dp-font-weight-bold);
+}
+
+.dp-editor .type-schema-editor .btn-remove-inline:hover {
+    background: var(--dp-coral);
+    color: white;
+    border-color: var(--dp-coral);
+}
+
+.dp-editor .type-schema-editor .property-schema {
+    padding-left: var(--dp-space-4);
+    border-left: 3px solid var(--dp-border-color);
+    margin-top: var(--dp-space-2);
+}
+
+.dp-editor .type-schema-editor .schema-array-items {
+    padding: var(--dp-space-4);
+    background: var(--dp-bg-tertiary);
+    border-radius: var(--dp-radius-lg);
+    border: 2px dashed var(--dp-border-color);
+}
+
+.dp-editor .type-schema-editor .array-items-editor {
+    padding-left: var(--dp-space-4);
+    border-left: 3px solid var(--dp-electric-blue);
+}
+
+.dp-editor .type-schema-editor.depth-1 .schema-properties,
+.dp-editor .type-schema-editor.depth-2 .schema-properties,
+.dp-editor .type-schema-editor.depth-3 .schema-properties {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.dp-editor .type-schema-editor .schema-empty-hint {
+    text-align: center;
+    padding: var(--dp-space-4);
+    color: var(--dp-text-tertiary);
+    font-style: italic;
+    font-size: var(--dp-font-size-sm);
+}
+
+/* btn-remove-small (used in director notes etc.) */
+.dp-editor .btn-remove-small {
+    background: rgba(255, 107, 107, 0.1);
+    border: 1.5px solid rgba(255, 107, 107, 0.3);
+    border-radius: var(--dp-radius-md);
+    color: var(--dp-coral);
+    cursor: pointer;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    transition: all var(--dp-transition-fast);
+    flex-shrink: 0;
+}
+
+.dp-editor .btn-remove-small:hover {
+    background: var(--dp-coral);
+    color: white;
+    border-color: var(--dp-coral);
+}
+
+/* ============================================================================
+   SchemaValueEditor - Array edit layouts
+   ============================================================================ */
+
+.dp-editor .schema-array-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dp-space-3);
+    margin-bottom: var(--dp-space-3);
+}
+
+.dp-editor .schema-array-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dp-space-2);
+    padding: var(--dp-space-3);
+    background: var(--dp-bg-secondary);
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-lg);
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .schema-array-item:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* 嵌套深度颜色与边框区分，增强层次感 */
+.dp-editor .depth-0 > .schema-array-items-list > .schema-array-item {
+    background: var(--dp-bg-tertiary);
+    border-left: 4px solid var(--dp-electric-blue);
+}
+
+.dp-editor .depth-1 > .schema-array-items-list > .schema-array-item {
+    background: var(--dp-bg-content);
+    border-left: 4px solid var(--dp-candy-purple);
+    box-shadow: var(--dp-shadow-soft);
+}
+
+.dp-editor .depth-2 > .schema-array-items-list > .schema-array-item {
+    background: rgba(0, 0, 0, 0.15);
+    border-left: 4px solid var(--dp-vivid-orange);
+}
+
+.dp-editor .array-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: var(--dp-space-2);
+    border-bottom: 2px dashed rgba(255, 255, 255, 0.05);
+    margin-bottom: var(--dp-space-1);
+}
+
+.dp-editor .array-item-index {
+    font-size: var(--dp-font-size-xs);
+    font-family: var(--dp-font-mono);
+    font-weight: var(--dp-font-weight-bold);
+    color: var(--dp-text-tertiary);
+}
+
+/* ============================================================================
+   AppInfo Page - Dopamine theme overrides
+   ============================================================================ */
+
+.dp-editor .appinfo-page {
+    display: flex;
+    justify-content: center;
+    padding: var(--dp-space-8) var(--dp-space-6);
+}
+
+.dp-editor .appinfo-container {
+    width: 100%;
+    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--dp-space-5);
+}
+
+.dp-editor .appinfo-header {
+    text-align: center;
+    margin-bottom: var(--dp-space-4);
+}
+
+.dp-editor .appinfo-header h2 {
+    font-family: var(--dp-font-display);
+    font-size: var(--dp-font-size-2xl);
+    font-weight: var(--dp-font-weight-extrabold);
+    color: var(--dp-text-primary);
+    margin: 0 0 var(--dp-space-2);
+}
+
+.dp-editor .appinfo-header p {
+    font-size: var(--dp-font-size-sm);
+    color: var(--dp-text-tertiary);
+    margin: 0;
+}
+
+.dp-editor .appinfo-card {
+    background: var(--dp-bg-secondary);
+    border: 2px solid var(--dp-border-color);
+    border-radius: var(--dp-radius-xl);
+    padding: var(--dp-space-5) var(--dp-space-6);
+    box-shadow: var(--dp-shadow-hard-sm);
+    transition: border-color var(--dp-transition-fast);
+}
+
+.dp-editor .appinfo-card:hover {
+    border-color: var(--dp-border-color-hover);
+}
+
+.dp-editor .appinfo-card-title {
+    font-family: var(--dp-font-display);
+    font-size: var(--dp-font-size-sm);
+    font-weight: var(--dp-font-weight-bold);
+    color: var(--dp-electric-blue);
+    margin-bottom: var(--dp-space-4);
+    padding-bottom: var(--dp-space-2);
+    border-bottom: 2px solid var(--dp-border-color);
+}
+
+.dp-editor .appinfo-card .form-hint {
+    font-size: var(--dp-font-size-xs);
+    color: var(--dp-text-tertiary);
+    margin-top: var(--dp-space-1);
+}
+
+.dp-editor .appinfo-card .required-mark {
+    color: var(--dp-coral);
+}
+
+.dp-editor .appinfo-publish-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dp-space-3);
+    padding-top: var(--dp-space-4);
+    border-top: 2px solid var(--dp-border-color);
+}
+
+.dp-editor .appinfo-status-banner {
+    padding: var(--dp-space-4);
+    border-radius: var(--dp-radius-lg);
+    border: 2px solid;
+}
+
+.dp-editor .appinfo-status-banner.ready {
+    background: var(--dp-lime-green-alpha);
+    border-color: var(--dp-lime-green);
+}
+
+.dp-editor .appinfo-status-banner.incomplete {
+    background: var(--dp-sunny-yellow-alpha);
+    border-color: var(--dp-sunny-yellow);
+}
+
+.dp-editor .appinfo-status-title {
+    font-family: var(--dp-font-display);
+    font-weight: var(--dp-font-weight-bold);
+    font-size: var(--dp-font-size-sm);
+    margin-bottom: var(--dp-space-1);
+}
+
+.dp-editor .appinfo-status-banner.ready .appinfo-status-title {
+    color: var(--dp-lime-green);
+}
+
+.dp-editor .appinfo-status-banner.incomplete .appinfo-status-title {
+    color: #b8860b;
+}
+
+.dp-editor .appinfo-status-desc {
+    font-size: var(--dp-font-size-xs);
+    color: var(--dp-text-secondary);
+}
+
+.dp-editor .appinfo-publish-btn {
+    width: 100%;
+    padding: var(--dp-space-4);
+    font-family: var(--dp-font-display);
+    font-size: var(--dp-font-size-base);
+    font-weight: var(--dp-font-weight-extrabold);
+    color: white;
+    background: var(--dp-electric-blue);
+    border: 2px solid var(--dp-electric-blue);
+    border-radius: var(--dp-radius-lg);
+    cursor: pointer;
+    transition: all var(--dp-transition-fast);
+    box-shadow: var(--dp-shadow-hard-blue);
+}
+
+.dp-editor .appinfo-publish-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: var(--dp-shadow-hard-blue), 0 4px 12px rgba(59, 130, 255, 0.3);
+}
+
+.dp-editor .appinfo-publish-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.dp-editor .appinfo-publish-note {
+    font-size: var(--dp-font-size-xs);
+    color: var(--dp-text-tertiary);
+    text-align: center;
+}

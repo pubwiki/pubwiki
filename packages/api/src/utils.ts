@@ -102,7 +102,7 @@ export async function computeContentHash(content: ArtifactNodeContent | SaveCont
 /**
  * Compute a deterministic, **globally unique** commit hash for a node version.
  *
- * Algorithm: `SHA-256(canonicalize({ nodeId, parent, contentHash, type }))` → full 64-char hex.
+ * Algorithm: `SHA-256(canonicalize({ nodeId, parent, contentHash, type, metadata }))` → full 64-char hex.
  *
  * Including `nodeId` and `parent` in the preimage ensures global uniqueness:
  * - Different nodes always produce different commits (different `nodeId`).
@@ -112,6 +112,7 @@ export async function computeContentHash(content: ArtifactNodeContent | SaveCont
  * @param parent      - Parent commit hash, or `null` for root versions.
  * @param contentHash - Content hash referencing the typed content table.
  * @param type        - Node type (INPUT, PROMPT, GENERATED, VFS, SANDBOX, LOADER, STATE, SAVE).
+ * @param metadata    - Optional key-value annotations. Participates in commit hash.
  * @returns 64-char hex string (full SHA-256).
  */
 export async function computeNodeCommit(
@@ -119,8 +120,13 @@ export async function computeNodeCommit(
   parent: string | null,
   contentHash: string,
   type: string,
+  metadata?: Record<string, string> | null,
 ): Promise<string> {
-  const payload = canonicalize({ nodeId, parent, contentHash, type });
+  // Normalize metadata: undefined / null / {} → null for stable canonicalization
+  const normalizedMeta = metadata && Object.keys(metadata).length > 0
+    ? metadata
+    : null;
+  const payload = canonicalize({ nodeId, parent, contentHash, type, metadata: normalizedMeta });
   return sha256Hex(payload);
 }
 

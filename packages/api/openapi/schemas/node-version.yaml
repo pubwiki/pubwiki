@@ -53,6 +53,12 @@ NodeVersionSummary:
     isListed:
       type: boolean
       description: 是否在公开列表中可见（可发现性）
+    metadata:
+      type: object
+      nullable: true
+      additionalProperties:
+        type: string
+      description: User-defined key-value annotations. Participates in commit hash calculation.
 
 NodeVersionDetail:
   allOf:

@@ -6,3 +6,27 @@
 @source "../../../packages/svelte-chat/src/**/*.svelte";
 @source "../../../packages/ui/src/**/*.svelte";
 @source "../../../packages/world-editor/src/**/*.svelte";
+
+/* World Editor warm palette */
+.world-editor {
+  --we-bg-base: #f4f1ea;
+  --we-bg-card: #fbf9f4;
+  --we-bg-secondary: #ece7de;
+  --we-bg-content: #fdfaf3;
+  --we-text-primary: #2c2825;
+  --we-text-secondary: #6a645e;
+  --we-text-tertiary: #8b857a;
+  --we-accent: #b05c5c;
+  --we-accent-ochre: #d18a4a;
+  --we-accent-olive: #5c6256;
+  --we-accent-plum: #6a586d;
+  --we-border: rgba(44, 40, 37, 0.15);
+  --we-border-hover: rgba(44, 40, 37, 0.3);
+  --we-shadow-sm: 0 1px 2px rgba(44, 40, 37, 0.05);
+  --we-shadow-md: 0 4px 8px rgba(44, 40, 37, 0.06);
+  --we-shadow-lg: 0 8px 16px rgba(44, 40, 37, 0.08);
+
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--we-text-primary);
+  background: var(--we-bg-base);
+}
