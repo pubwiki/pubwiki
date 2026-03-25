@@ -1,8 +1,54 @@
 import { test, expect } from '../fixtures/test.js';
+import type { Locator, Page } from '@playwright/test';
 import { HubPage } from '../fixtures/pages/hub-page.js';
 import { StudioPage } from '../fixtures/pages/studio-page.js';
 import { packArtifact } from '../fixtures/pack-artifact.js';
 import path from 'node:path';
+
+/**
+ * Wait for a locator to become visible, extending the deadline as long as
+ * CDN fetches (esm.sh / unpkg / jsdelivr) or build-progress console logs
+ * are still happening.  Only times out after {@link idleTimeout} ms of
+ * *silence* — no hard upper bound on total wait time.
+ */
+async function waitWhileBundling(
+  page: Page,
+  locator: Locator,
+  { idleTimeout = 30_000 }: { idleTimeout?: number } = {},
+): Promise<void> {
+  let lastActivity = Date.now();
+
+  const trackActivity = () => { lastActivity = Date.now(); };
+
+  const onRequest = (req: { url(): string }) => {
+    if (/esm\.sh|unpkg|jsdelivr/.test(req.url())) trackActivity();
+  };
+  const onConsole = (msg: { text(): string }) => {
+    if (/Downloading|Resolving|Building|Bundling/.test(msg.text())) trackActivity();
+  };
+
+  page.on('request', onRequest);
+  page.on('console', onConsole);
+
+  try {
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      if (await locator.isVisible().catch(() => false)) return;
+
+      if (Date.now() - lastActivity > idleTimeout) {
+        throw new Error(
+          `waitWhileBundling: no CDN/build activity for ${idleTimeout}ms, ` +
+          `element still not visible`,
+        );
+      }
+
+      await page.waitForTimeout(500);
+    }
+  } finally {
+    page.off('request', onRequest);
+    page.off('console', onConsole);
+  }
+}
 
 const BLOBS = path.resolve(import.meta.dirname, '../blobs');
 const ARTIFACT_DIR = path.join(BLOBS, 'artifacts/artifact1');
@@ -18,7 +64,8 @@ test.describe('Integration — Sandbox Preview (local build)', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
   test('import → open sandbox preview → verify React app renders', async ({ page }) => {
-    test.setTimeout(180_000);
+    // No fixed timeout — waitWhileBundling handles dynamic deadline extension
+    test.setTimeout(0);
     const artifactZip = packArtifact(ARTIFACT_DIR);
     const timestamp = Date.now();
     const username = `e2e_sandbox_${timestamp}`;
@@ -77,9 +124,9 @@ test.describe('Integration — Sandbox Preview (local build)', () => {
       });
       page.on('pageerror', err => errors.push(`PAGE_ERROR: ${err.message}`));
 
-      // Wait for the iframe to appear in the floating panel
+      // Wait for the iframe to appear — keep waiting while CDN fetches are in progress
       const sandboxIframe = page.locator('iframe[sandbox]');
-      await expect(sandboxIframe).toBeVisible({ timeout: 60_000 });
+      await waitWhileBundling(page, sandboxIframe);
 
       // Note: the build runs before the iframe opens (warmup), so the module
       // script is served instantly from the L0 cache.
@@ -87,7 +134,7 @@ test.describe('Integration — Sandbox Preview (local build)', () => {
       const skipBtn = userIframe.locator('.welcome-skip');
       const creaturesTab = userIframe.locator('.paper-tab-btn').filter({ hasText: '👥' });
 
-      await expect(skipBtn.or(creaturesTab).first()).toBeVisible({ timeout: 120_000 }).catch(async (e) => {
+      await waitWhileBundling(page, skipBtn.or(creaturesTab).first()).catch(async (e) => {
         const buildLogs = logs.filter(l =>
           l.includes('[BuildAwareVfs]') || l.includes('[BundlerService]') ||
           l.includes('[ESBuildEngine]') || l.includes('[SandboxPreviewView]') ||

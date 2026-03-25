@@ -366,6 +366,67 @@ export class StudioPage {
   }
 
   /**
+   * Add a node via right-click context menu on the canvas.
+   * Unlike addStateNode(), this does NOT dismiss the auto-focus name editing,
+   * so the name input remains focused with its default text selected.
+   *
+   * @param nodeTypeLabel - The visible text on the submenu button (e.g. 'VFS', 'State')
+   * @returns The data-id of the newly created node
+   */
+  async addNodeViaContextMenu(nodeTypeLabel: string): Promise<string> {
+    // Collect existing node IDs before adding
+    const existingIds = new Set<string>();
+    const existingNodes = this.page.locator('.svelte-flow__node');
+    const count = await existingNodes.count();
+    for (let i = 0; i < count; i++) {
+      const id = await existingNodes.nth(i).getAttribute('data-id');
+      if (id) existingIds.add(id);
+    }
+
+    // Collapse the sidebar so it doesn't block the canvas
+    await this.collapseSidebar();
+    await this.page.waitForTimeout(500);
+
+    // Zoom out so the nodes are small and there's plenty of empty canvas
+    const zoomOut = this.page.locator('button[title="Zoom Out"], button:has-text("Zoom Out")').first();
+    await expect(zoomOut).toBeVisible({ timeout: 5_000 });
+    for (let i = 0; i < 5; i++) {
+      await zoomOut.click({ force: true });
+      await this.page.waitForTimeout(100);
+    }
+
+    // Right-click on the canvas pane
+    const pane = this.page.locator('.svelte-flow__pane');
+    const box = await pane.boundingBox();
+    if (!box) throw new Error('Canvas not visible');
+    await pane.click({ button: 'right', position: { x: box.width * 0.3, y: box.height * 0.3 } });
+
+    // Hover "Add Node" to open submenu
+    const addNodeBtn = this.page.locator('button', { hasText: 'Add Node' });
+    await expect(addNodeBtn).toBeVisible({ timeout: 5_000 });
+    await addNodeBtn.hover();
+
+    // Click the target node type in the submenu
+    const typeBtn = this.page.locator('button', { hasText: nodeTypeLabel }).last();
+    await expect(typeBtn).toBeVisible({ timeout: 5_000 });
+    await typeBtn.click();
+
+    // Wait for a new node to appear in DOM
+    await expect(this.page.locator('.svelte-flow__node')).toHaveCount(count + 1, { timeout: 10_000 });
+
+    // Find the new node ID
+    const allNodes = this.page.locator('.svelte-flow__node');
+    const newCount = await allNodes.count();
+    for (let i = 0; i < newCount; i++) {
+      const id = await allNodes.nth(i).getAttribute('data-id');
+      if (id && !existingIds.has(id)) {
+        return id;
+      }
+    }
+    throw new Error(`Could not find newly created ${nodeTypeLabel} node`);
+  }
+
+  /**
    * Connect two nodes by dragging from a source handle to a target handle.
    * Uses fitView first to ensure all nodes are visible, then performs the drag.
    */

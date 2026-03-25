@@ -181,14 +181,23 @@
 		}
 	});
 
-	// Svelte action for autofocus when input mounts
+	// Svelte action for autofocus when input mounts.
+	// We need one frame of delay because the input is just inserted into the DOM
+	// and xyflow's NodeWrapper runs updateNodeInternals in a rAF. A double-rAF
+	// ensures our focus() runs after xyflow's own rAF completes.
+	// Note: requestIdleCallback cannot be used here — Chrome silently ignores
+	// focus() calls from idle callbacks.
 	function autofocusAction(node: HTMLInputElement) {
-		console.log('[BaseNode] autofocusAction called for node:', id);
-		console.log('[BaseNode] input element:', node);
-		console.log('[BaseNode] document.activeElement before focus:', document.activeElement);
-		node.focus();
-		console.log('[BaseNode] document.activeElement after focus:', document.activeElement);
-		console.log('[BaseNode] node === document.activeElement:', node === document.activeElement);
+		let rafId = requestAnimationFrame(() => {
+			rafId = requestAnimationFrame(() => {
+				if (node.isConnected) {
+					node.focus();
+					node.select();
+				}
+			});
+		});
+
+		return { destroy() { cancelAnimationFrame(rafId); } };
 	}
 
 	// ============================================================================
