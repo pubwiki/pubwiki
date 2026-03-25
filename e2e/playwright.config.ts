@@ -1,20 +1,26 @@
 import { defineConfig } from '@playwright/test';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
 
 const CI = !!process.env.CI;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WORKSPACE_ROOT = path.resolve(__dirname, '..');
 
-// Local dev servers use HTTPS with self-signed certs.
-// CI starts fresh HTTP servers (no certs available).
-const protocol = CI ? 'http' : 'https';
+const chromeArgs = [
+  '--enable-gpu',
+  '--enable-unsafe-webgpu',
+  '--ignore-gpu-blocklist',
+  '--enable-features=Vulkan',
+];
 
-// Override API URL to always point to localhost (the .env files may use a LAN IP
-// that causes certificate hostname mismatch in the browser).
-const TEST_ENV = {
-  PUBLIC_API_BASE_URL: `${protocol}://localhost:8787/api`,
-};
+// Chrome for Testing binaries (downloaded via @puppeteer/browsers)
+const CHROME_130 = path.resolve(
+  process.env.HOME ?? '~',
+  '.cache/chrome-for-testing/chrome/linux-130.0.6723.116/chrome-linux64/chrome',
+);
+
+// Which browser set to run: 'current' (default) or 'compat' (includes old versions)
+const COMPAT = !!process.env.E2E_COMPAT;
+
+// Shared authenticated project config
+const authUse = { storageState: '.auth/user.json' };
 
 export default defineConfig({
   testDir: '.',
@@ -25,6 +31,10 @@ export default defineConfig({
   workers: CI ? 1 : undefined,
   reporter: CI ? 'html' : 'list',
   outputDir: './test-results',
+
+  // globalSetup spawns backend + frontend servers on dynamic ports,
+  // seeds the DB, and returns a teardown function that cleans everything up.
+  globalSetup: './fixtures/global-setup.ts',
 
   use: {
     trace: 'on-first-retry',
@@ -38,63 +48,97 @@ export default defineConfig({
     {
       name: 'setup',
       testMatch: 'fixtures/auth.setup.ts',
+      use: { channel: 'chrome', launchOptions: { args: chromeArgs } },
     },
     {
       name: 'hub',
       testDir: './hub',
       dependencies: ['setup'],
-      use: {
-        baseURL: `${protocol}://localhost:5173`,
-        storageState: '.auth/user.json',
-      },
+      use: { ...authUse, channel: 'chrome', launchOptions: { args: chromeArgs } },
     },
     {
       name: 'studio',
       testDir: './studio',
       dependencies: ['setup'],
-      use: {
-        baseURL: `${protocol}://localhost:5174`,
-        storageState: '.auth/user.json',
-      },
+      use: { ...authUse, channel: 'chrome', launchOptions: { args: chromeArgs } },
     },
     {
       name: 'integration',
       testDir: './integration',
       dependencies: ['setup'],
-      use: {
-        storageState: '.auth/user.json',
-      },
+      use: { ...authUse, channel: 'chrome', launchOptions: { args: chromeArgs } },
     },
+
+    // ── Firefox ───────────────────────────────────────────────
+    {
+      name: 'firefox-setup',
+      testMatch: 'fixtures/auth.setup.ts',
+      use: { browserName: 'firefox' },
+    },
+    {
+      name: 'firefox-integration',
+      testDir: './integration',
+      dependencies: ['firefox-setup'],
+      use: { ...authUse, browserName: 'firefox' },
+    },
+
+    // ── Compatibility: Chrome 130 ──────────────────────────────
+    // Activated with E2E_COMPAT=1 or --project=chrome130-*
+    ...(COMPAT
+      ? [
+          {
+            name: 'chrome130-setup',
+            testMatch: 'fixtures/auth.setup.ts',
+            use: {
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+          {
+            name: 'chrome130-hub',
+            testDir: './hub',
+            dependencies: ['chrome130-setup'],
+            use: {
+              ...authUse,
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+          {
+            name: 'chrome130-studio',
+            testDir: './studio',
+            dependencies: ['chrome130-setup'],
+            use: {
+              ...authUse,
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+          {
+            name: 'chrome130-integration',
+            testDir: './integration',
+            dependencies: ['chrome130-setup'],
+            use: {
+              ...authUse,
+              channel: undefined as unknown as string,
+              launchOptions: {
+                executablePath: CHROME_130,
+                args: chromeArgs,
+              },
+            },
+          },
+        ]
+      : []),
   ],
 
-  webServer: [
-    {
-      // CI: start fresh HTTP wrangler dev (no certs)
-      // Local: reuseExistingServer picks up the already-running HTTPS server
-      command: 'cd services/hub && npx wrangler dev',
-      url: `${protocol}://localhost:8787/api`,
-      reuseExistingServer: !CI,
-      timeout: 60_000,
-      cwd: WORKSPACE_ROOT,
-      ignoreHTTPSErrors: true,
-    },
-    {
-      command: 'pnpm --filter pubwiki dev -- --port 5173',
-      url: `${protocol}://localhost:5173`,
-      reuseExistingServer: !CI,
-      timeout: 30_000,
-      cwd: WORKSPACE_ROOT,
-      env: TEST_ENV,
-      ignoreHTTPSErrors: true,
-    },
-    {
-      command: 'pnpm --filter @pubwiki/studio dev -- --port 5174',
-      url: `${protocol}://localhost:5174`,
-      reuseExistingServer: !CI,
-      timeout: 30_000,
-      cwd: WORKSPACE_ROOT,
-      env: TEST_ENV,
-      ignoreHTTPSErrors: true,
-    },
-  ],
+  // Servers are managed by globalSetup — no webServer config needed.
 });

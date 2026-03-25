@@ -1,0 +1,522 @@
+{
+    "title": "Game",
+    "ink": {
+        "title": "Ink Interactive Novel",
+        "loading": "Loading...",
+        "continue": "Continue",
+        "restart": "Restart",
+        "save": "Save Progress",
+        "load": "Load Progress",
+        "backToEditor": "Back to Editor",
+        "intro": "Ink Interactive Novel",
+        "introDesc": "Here, you shape the story through your choices. Every decision influences the plot.",
+        "backgroundStory": "Background Story",
+        "startAdventure": "Start Adventure",
+        "chooseCharacter": "Choose Your Character",
+        "noBackgroundStory": "No background story",
+        "prologue": "Prologue",
+        "continueOpening": "Continue opening story",
+        "continueWithChoices": "Continue story and present choices",
+        "unnamedChapter": "Unnamed Chapter",
+        "chapterJump": "Chapters",
+        "generating": "Generating...",
+        "preparing": "Preparing...",
+        "action": {
+            "yourAction": "Your Action",
+            "custom": "Custom",
+            "special": "Special"
+        },
+        "dice": {
+            "title": "Dice Roll",
+            "difficulty": "Difficulty",
+            "roll": "Roll Dice",
+            "rolling": "Rolling...",
+            "success": "Success!",
+            "fail": "Fail",
+            "first": "1st",
+            "retry": "Retry",
+            "retried": "retried",
+            "continueAdventure": "Continue",
+            "acceptFate": "Accept Fate",
+            "backToChoices": "Back to Choices",
+            "resultBadge": "{{roll}}/{{difficulty}} {{result}}",
+            "difficultyTag": "Difficulty {{level}}"
+        },
+        "choices": {
+            "title": "Your Choices",
+            "customAction": "Custom Action...",
+            "inputPlaceholder": "Enter what you want to do...",
+            "cancel": "Cancel",
+            "confirm": "Confirm",
+            "noChoicesHint": "AI didn't generate choices. Use custom action to continue."
+        },
+        "director": {
+            "button": "Director Note...",
+            "label": "Director Note",
+            "hint": "(Influences narrative direction, not character actions)",
+            "placeholder": "e.g. Focus on the emotional tension between characters, slow down the pace...",
+            "clear": "Clear"
+        },
+        "ooc": {
+            "title": "OOC Instructions",
+            "addButton": "OOC Instruction",
+            "placeholder": "e.g. Keep the pace light, introduce a mysterious character...",
+            "permanent": "Permanent",
+            "forTurns": "For turns:",
+            "turnsLeft": "{{count}} turns left",
+            "cancel": "Cancel",
+            "save": "Save",
+            "add": "Add"
+        },
+        "settings": {
+            "secondPerson": "2nd Person",
+            "thirdPerson": "3rd Person",
+            "secondPersonTitle": "Current: Second person (you)",
+            "thirdPersonTitle": "Current: Third person (he/she)",
+            "diceOff": "Off",
+            "diceVisible": "Visible",
+            "diceHidden": "Hidden",
+            "diceOffTitle": "Dice System: Off",
+            "diceVisibleTitle": "Dice System: Visible (roll for difficulty options)",
+            "diceHiddenTitle": "Dice System: Hidden (hidden roll for all actions)",
+            "paragraphs": "{{count}} para",
+            "paragraphsTitle": "Total paragraphs per generation",
+            "typewriterSpeed": "{{speed}} ch/s",
+            "typewriterInstant": "Instant",
+            "typewriterSpeedTitle": "Typewriter display speed (characters/sec)",
+            "autoFollow": "Auto-follow",
+            "autoFollowTitle": "Auto-scroll to latest generated text",
+            "gameSettings": "Game Settings",
+            "apiConfig": "API Config"
+        },
+        "sidebar": {
+            "backToWorkspace": "Back to Workspace",
+            "worldOverview": "World Overview",
+            "timeline": "Story Timeline",
+            "events": "Plot Events",
+            "publishArticle": "Publish Article",
+            "collapsePanel": "Collapse Panel",
+            "expandPanel": "Expand Panel"
+        },
+        "timeline": {
+            "title": "Story Timeline",
+            "empty": "No story checkpoints yet",
+            "current": "Current",
+            "loadConfirm": "Load this checkpoint? Current unsaved progress will be lost.",
+            "loading": "Loading...",
+            "nodes": "nodes",
+            "branches": "branches",
+            "unknownTime": "Unknown time"
+        },
+        "events": {
+            "title": "Plot Events",
+            "empty": "No plot events yet",
+            "relatedEntities": "Related entities",
+            "updatedAt": "Last updated"
+        },
+        "phase": {
+            "generatingStory": "Generating story...",
+            "updatingState": "Updating game state..."
+        },
+        "refresh": {
+            "button": "Refresh game data",
+            "loading": "Refreshing..."
+        },
+        "sections": {
+            "ragCollection": "RAG Collection",
+            "ragBadge": "{{selectedCount}} entities, {{totalDocs}} docs",
+            "ragEvents": "events",
+            "selectedEvents": "Selected Events",
+            "reasoning": "Model Reasoning",
+            "thinking": "AI Thinking Process",
+            "changeSuggestions": "State & Setting Change Suggestions",
+            "directorNotes": "Director Notes",
+            "changeCount": "{{count}} items",
+            "phaseThinking": "Thinking",
+            "phaseWriting": "Writing",
+            "phaseUpdating": "State Update"
+        },
+        "update": {
+            "updating": "Updating game state...",
+            "failed": "Game state update failed",
+            "success": "Game state updated",
+            "callSuccess": "{{success}}/{{total}} calls succeeded",
+            "audit": "Audit:",
+            "executionPlan": "Execution Plan:",
+            "serviceCalls": "Service Calls:",
+            "executionResults": "Execution Results:",
+            "unknownError": "Unknown error"
+        },
+        "rewind": {
+            "confirmTitle": "Are you sure you want to rewind to this point?\nCurrent progress will be lost.",
+            "loadFailed": "Failed to load checkpoint: ",
+            "buttonTitle": "Rewind to this point",
+            "buttonText": "Rewind"
+        },
+        "rewrite": {
+            "buttonTitle": "Rewind to this checkpoint and rewrite subsequent turns into a dense historical chapter",
+            "buttonText": "Rewrite Chronicle",
+            "modalTitle": "Rewrite the Chronicle",
+            "rewindTo": "Rewind to:",
+            "roundsToCompress": "{{count}} turn(s) will be compressed into one chapter:",
+            "maxRoundsWarning": "({{total}} total turns, only the first 9 will be used)",
+            "opinionLabel": "Intervention Instructions",
+            "opinionHint": "Tell the chronicler how you want this history rewritten. Leave empty to compress as-is.",
+            "opinionPlaceholder": "e.g.: Have the protagonist take a different path at round 3...\nor: Speed up the pacing, skip daily conversations...\nor: Shift the writing style to a darker tone...",
+            "confirm": "Begin Rewrite",
+            "loadFailed": "Failed to load checkpoint: ",
+            "actionLabel": "Rewrite Chronicle",
+            "defaultOpinion": "Compress history following the original course of events"
+        },
+        "publishCheckpoint": {
+            "buttonTitle": "Publish this checkpoint so others can start playing from here",
+            "buttonText": "Publish Save",
+            "modalTitle": "Publish Checkpoint",
+            "isListed": "Public checkpoint",
+            "listedHint": "Other players can see and use this checkpoint in the public list",
+            "unlistedHint": "Checkpoint will not appear in the public list, only accessible via link",
+            "confirm": "Publish",
+            "success": "Checkpoint published successfully!",
+            "failed": "Publish failed: {{error}}",
+            "publishing": "Publishing..."
+        },
+        "regenerate": {
+            "confirmTitle": "Are you sure you want to regenerate this story?\nCurrent content will be replaced.",
+            "loadFailed": "Failed to rollback checkpoint: ",
+            "buttonTitle": "Regenerate this story",
+            "buttonText": "Regenerate"
+        },
+        "rewrite": {
+            "buttonTitle": "Intervene in the past and rewrite the chronicle: compress subsequent rounds into a dense historical record",
+            "buttonText": "Rewrite Chronicle",
+            "modalTitle": "Intervene in the Past · Rewrite the Chronicle",
+            "rewindTo": "Rewind to:",
+            "roundsToCompress": "{{count}} round(s) will be compressed and rewritten",
+            "maxRoundsWarning": "({{total}} total rounds, max 9 processed)",
+            "opinionLabel": "Your Intervention",
+            "opinionHint": "Tell the chronicler how you want to alter this history. You can address plot direction, writing style, character development, etc.",
+            "opinionPlaceholder": "e.g., I want the protagonist to form a brief alliance with the antagonist instead of direct conflict...",
+            "confirm": "Rewrite History",
+            "loadFailed": "Failed to load checkpoint: ",
+            "actionLabel": "Rewrite Chronicle",
+            "defaultOpinion": "Compress history following the original trajectory"
+        },
+        "time": {
+            "format": "{{month}}/{{day}}/{{year}} {{hour}}:{{minute}}"
+        },
+        "confirm": {
+            "clearHistory": "Are you sure you want to clear all story history? This cannot be undone!",
+            "clearFailed": "Clear failed: {{error}}"
+        },
+        "error": {
+            "generateFailed": "Generation failed: {{error}}",
+            "noContent": "No content returned",
+            "unknownError": "Unknown error",
+            "getStateFailed": "Failed to get game state",
+            "retry": "Retry",
+            "dismiss": "Dismiss"
+        },
+        "highlight": {
+            "viewCreature": "Click to view {{name}}'s info",
+            "viewOrganization": "Click to view organization {{name}}",
+            "viewLocation": "Click to view location {{name}}",
+            "viewEntry": "Entry: {{name}}",
+            "viewEntryDetail": "View entry details"
+        },
+        "gm": {
+            "title": "GM Mode",
+            "emptyHint": "Enter GM commands to modify the game world state.\nE.g., \"Give the player 500 gold\" or \"Teleport the player to the capital\"",
+            "inputPlaceholder": "Enter GM command...",
+            "clearChat": "Clear chat history",
+            "phaseCollecting": "Collecting relevant info...",
+            "phaseReasoning": "Reasoning...",
+            "phaseThinking": "Thinking deeply...",
+            "phaseAnalyzing": "Generating change suggestions...",
+            "proposedChanges": "Proposed Changes",
+            "stateChanges": "State changes:",
+            "settingChanges": "Setting changes:",
+            "eventChanges": "Event changes:",
+            "approve": "Approve",
+            "reject": "Reject",
+            "applying": "Applying changes...",
+            "applied": "Changes applied successfully",
+            "applyFailed": "Apply failed",
+            "rejected": "Rejected",
+            "executionDetails": "Execution Details",
+            "gameBusy": "Game is generating, please wait before applying",
+            "error": "Generation failed"
+        }
+    },
+    "custom": {
+        "back": "\u2190 Back",
+        "title": "Custom Game",
+        "contentArea": "Game Content Area",
+        "emptyTemplate": "This is a blank game template. You can start building your game interface here."
+    },
+    "world": {
+        "title": "🌍 World Overview",
+        "creatures": "🎭 Characters",
+        "regions": "🗺️ Regions",
+        "organizations": "🏛️ Organizations",
+        "noCreatures": "No character data",
+        "noRegions": "No region data",
+        "noOrganizations": "No organization data",
+        "locationCount": "{{count}} locations",
+        "director": "🎬 Director Notes",
+        "directorNotes": "Notes",
+        "directorFlags": "Flags",
+        "stageGoal": "Stage Goal",
+        "noDirectorNotes": "No director notes"
+    },
+    "publish": {
+        "title": "📤 Publish Article",
+        "articleTitle": "Article Title",
+        "titlePlaceholder": "Leave empty to use game name",
+        "visibility": "Visibility",
+        "public": "Public",
+        "unlisted": "Unlisted (accessible via link only)",
+        "private": "Private",
+        "selectRange": "Select Chapter Range",
+        "from": "From Chapter",
+        "to": "To Chapter",
+        "chapter": "",
+        "chapterDefault": "Chapter {{num}}",
+        "chapterCount": "Will publish {{count}} chapters",
+        "previewList": "Preview Chapter List:",
+        "hasCheckpoint": "Has checkpoint",
+        "noChaptersSelected": "No chapters selected",
+        "success": "Article published successfully!\nArticle ID: {{articleId}}",
+        "failed": "Publish failed: {{error}}",
+        "publishing": "Publishing...",
+        "confirm": "Confirm Publish",
+        "next": "Next"
+    },
+    "modals": {
+        "creatureDetails": "Character Details",
+        "locationDetails": "Location Details",
+        "organizationDetails": "Organization Details",
+        "itemDetails": "Item Details",
+        "close": "Close",
+        "thinking": "💭 AI Thinking Process",
+        "storyPreview": "📖 Story Preview",
+        "confirm": "⚠️ Confirm"
+    },
+    "collapsible": {
+        "expand": "Expand",
+        "collapse": "Collapse"
+    },
+    "worldOverview": {
+        "title": "World Overview",
+        "currentLocation": "Current Location",
+        "characters": "Characters",
+        "inventory": "Inventory",
+        "statuses": "Statuses"
+    },
+    "creatureList": {
+        "title": "Characters",
+        "empty": "No characters",
+        "clickToView": "Click to view {{name}}'s details"
+    },
+    "player": "Player",
+    "npc": "NPC",
+    "panel": {
+        "characterInfo": "Character Info",
+        "loading": "Loading...",
+        "noCharacterSelected": "No character selected",
+        "unknown": "Unknown",
+        "playerBadge": "Player",
+        "basicInfo": "Basic Info",
+        "appearance": "Appearance",
+        "clothing": "Clothing",
+        "gender": "Gender",
+        "race": "Race",
+        "emotion": "Emotional State",
+        "goal": "Current Goal",
+        "knownInfos": "Known Information",
+        "organization": "Organization",
+        "attributes": "Attributes",
+        "inventory": "Inventory",
+        "itemTitle": "Item: {{name}}",
+        "statusEffects": "Status Effects",
+        "statusEffectTitle": "Status Effect: {{name}}",
+        "addedAt": "Added at: {{time}}",
+        "lastUpdatedAt": "Last updated: {{time}}",
+        "statusData": "Data: {{data}}",
+        "customComponents": "Custom Components",
+        "currentValue": "Current value",
+        "fieldName": "Field name",
+        "noData": "No data",
+        "itemCount": "{{count}} items",
+        "fieldCount": "{{count}} fields",
+        "value": "Value",
+        "listComponent": "List component · {{count}} items",
+        "relationships": "Relationships",
+        "location": "Location",
+        "regionLabel": "Region:",
+        "locationLabel": "Location:",
+        "log": "Log",
+        "settingDocs": "Setting Documents",
+        "disabled": "Disabled",
+        "references": "References: {{refs}}"
+    },
+    "locationModal": {
+        "description": "Location Description",
+        "belongsToRegion": "Region: {{name}}",
+        "otherLocations": "Other Locations in Region",
+        "locationTitle": "Location: {{name}}",
+        "settingDocs": "Setting Documents"
+    },
+    "orgModal": {
+        "basicInfo": "Basic Info",
+        "orgId": "Org ID:",
+        "description": "Description:",
+        "territories": "Territories",
+        "orgLog": "Organization Log",
+        "settingDocs": "Setting Documents"
+    },
+    "galgame": {
+        "expressions": {
+            "normal": "Calm",
+            "happy": "Happy",
+            "angry": "Angry",
+            "sad": "Sad",
+            "surprised": "Surprised",
+            "shy": "Shy",
+            "confused": "Confused",
+            "thinking": "Thinking",
+            "smirk": "Smirk"
+        },
+        "choices": {
+            "customAction": "Custom action...",
+            "inputPlaceholder": "Describe what you want to do...",
+            "cancel": "Cancel",
+            "confirm": "Confirm"
+        },
+        "log": {
+            "title": "Dialogue Log",
+            "yourAction": "Your Action"
+        },
+        "settings": {
+            "title": "Settings",
+            "typewriterSpeed": "Typing Speed",
+            "typewriterSpeedUnit": "{{speed}} ch/s",
+            "autoPlayDelay": "Auto-advance Delay",
+            "autoPlayDelayUnit": "{{delay}} sec",
+            "dialogueLines": "Dialogue Lines",
+            "dialogueLinesUnit": "{{count}} lines",
+            "clearHistory": "Clear Story History"
+        },
+        "controls": {
+            "autoPlay": "Auto-advance",
+            "skip": "Fast-forward",
+            "log": "Dialogue Log",
+            "settings": "Settings"
+        },
+        "time": {
+            "format": "{{month}}/{{day}}/{{year}} {{hour}}:{{minute}}"
+        },
+        "status": {
+            "updatingState": "Updating game state...",
+            "generating": "Composing...",
+            "waitingForChoice": "Awaiting your choice",
+            "turnCount": "Turn {{count}}"
+        },
+        "player": "Player",
+        "actNav": {
+            "prev": "Previous Act",
+            "next": "View Next Act",
+            "viewingHistory": "Act {{current}} / {{total}}"
+        },
+        "cg": {
+            "placeholder": "CG illustration (pending)"
+        },
+        "error": {
+            "retry": "Retry",
+            "ragEmpty": "Generation failed: RAG collected no relevant documents, please retry",
+            "noContent": "Generation failed: No content returned",
+            "unknownError": "Unknown error",
+            "generateFailed": "Generation failed: {{error}}",
+            "clearFailed": "Clear failed: {{error}}",
+            "getStateFailed": "Failed to get game state"
+        },
+        "confirm": {
+            "clearHistory": "Are you sure you want to clear all story history? This cannot be undone!"
+        },
+        "startGame": {
+            "back": "Back",
+            "prologue": "Prologue",
+            "continueStory": "Continue Story",
+            "continueStoryDesc": "Continue the story and present choices"
+        },
+        "nav": {
+            "back": "Back",
+            "characterInfo": "Character Info",
+            "worldOverview": "World Overview",
+            "spriteManager": "Character Sprites",
+            "publishArticle": "Publish Article",
+            "imageApiConfig": "Image API",
+            "resourceManager": "Resources"
+        },
+        "thinking": {
+            "title": "Thinking Process"
+        },
+        "noBackgroundStory": "No background story",
+        "unnamedChapter": "Unnamed Chapter",
+        "spriteManager": {
+            "title": "Character Images",
+            "characters": "Characters",
+            "noCharacters": "No character data yet",
+            "selectCharacter": "Select a character to configure",
+            "clearAll": "Clear All",
+            "standing": "Standing Sprite",
+            "avatar": "Expression Avatar",
+            "export": "Export",
+            "import": "Import"
+        },
+        "imageApi": {
+            "title": "Image API Configuration",
+            "save": "Save",
+            "saved": "Saved",
+            "standing": "Standing",
+            "avatar": "Avatar",
+            "cg": "CG",
+            "endpoint": "Endpoint",
+            "apiKey": "API Key",
+            "model": "Model",
+            "extraParams": "Extra Parameters (JSON)",
+            "standingHint": "Model for generating full-body character standing sprites from text descriptions.",
+            "avatarHint": "Model for generating expression avatars from standing sprites (image-to-image).",
+            "cgHint": "Model for generating CG illustrations (coming soon).",
+            "enhancer": "Prompt Enhance",
+            "enhancerHint": "Optional. OpenAI-compatible chat API for rewriting literary character descriptions into concrete visual prompts that image models can understand accurately. Removes metaphors and exaggeration."
+        },
+        "resourceManager": {
+            "title": "Resource Manager",
+            "selectAll": "Select All Missing",
+            "selectedInfo": "{{count}} characters selected, {{calls}} API calls",
+            "generate": "Generate",
+            "generating": "Generating...",
+            "noCharacters": "No character data yet",
+            "missing": "{{count}} missing",
+            "standing": "Standing",
+            "avatars": "Avatars",
+            "generatingStanding": "Generating standing...",
+            "generatingAvatars": "Avatars {{done}}/{{total}}",
+            "done": "All generation complete!",
+            "regenerate": "Regenerate all"
+        },
+        "actGallery": {
+            "title": "Act Gallery",
+            "empty": "No acts to review yet",
+            "segments": "{{count}} segments",
+            "dialogues": "{{count}} dialogues"
+        },
+        "highlight": {
+            "viewCreature": "Click to view {{name}}'s info",
+            "viewOrganization": "Click to view organization {{name}}",
+            "viewLocation": "Click to view location {{name}}",
+            "viewEntry": "Entry: {{name}}",
+            "viewEntryDetail": "View entry details"
+        }
+    }
+}

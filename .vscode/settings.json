@@ -5,5 +5,11 @@
 	"svelte.enable-ts-plugin": true,
 	// Fucking ridiculous feature that makes terminal created by AI hidden introduced in 1.109.0
 	"chat.tools.terminal.outputLocation": "terminal",
-	"rust-analyzer.cargo.extraArgs": ["+nightly"]
+	"rust-analyzer.cargo.extraArgs": ["+nightly"],
+	"search.exclude": {
+		"e2e/blobs": true
+	},
+	"typescript.tsserver.watchOptions": {
+		"excludeDirectories": ["e2e/blobs"]
+	}
 }

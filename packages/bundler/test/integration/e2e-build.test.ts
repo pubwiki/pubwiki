@@ -10,7 +10,7 @@ import type { Vfs } from '@pubwiki/vfs'
 import { ESBuildEngine } from '../../src/core/esbuild-engine'
 import { DependencyResolver } from '../../src/core/dependency-resolver'
 import type { BuildCacheStorage } from '../../src/cache'
-import { createTestVfs, addFile, MockBuildCacheStorage } from '../helpers'
+import { createTestVfs, addFile, updateFile, MockBuildCacheStorage } from '../helpers'
 import {
   createSimpleProject,
   createMultiEntryProject,
@@ -379,33 +379,143 @@ describe('End-to-End Build Tests', () => {
   })
 
   describe('Incremental Builds', () => {
-    it('should be faster on subsequent builds', async () => {
+    it('should reuse context for faster incremental rebuilds', async () => {
       await createSimpleProject(vfs)
       const engine = await setupEngine()
 
-      // First build
+      // First build — cold (creates context + initializes worker)
       const start1 = performance.now()
-      await engine.build({
+      const result1 = await engine.build({
         projectRoot: '/project',
         entryFiles: ['/project/src/main.tsx'],
-        options: {}
+        options: { format: 'esm', target: 'es2020' }
       })
       const time1 = performance.now() - start1
+      expect(result1.success).toBe(true)
 
-      // Second build (should use context/cache)
+      // Second build — incremental (reuses context via ctx.rebuild())
       const start2 = performance.now()
-      await engine.build({
+      const result2 = await engine.build({
+        projectRoot: '/project',
+        entryFiles: ['/project/src/main.tsx'],
+        options: { format: 'esm', target: 'es2020' }
+      })
+      const time2 = performance.now() - start2
+      expect(result2.success).toBe(true)
+
+      console.log(`First build: ${time1.toFixed(2)}ms, Incremental rebuild: ${time2.toFixed(2)}ms`)
+
+      // Incremental rebuild should be faster (no worker init, esbuild caches ASTs)
+      expect(time2).toBeLessThan(time1)
+
+      // Output should be equivalent
+      const code1 = result1.outputs.get('/project/src/main.tsx')?.code || ''
+      const code2 = result2.outputs.get('/project/src/main.tsx')?.code || ''
+      expect(code1).toBe(code2)
+    }, 60000)
+
+    it('should pick up file changes on incremental rebuild', async () => {
+      await createComplexDependencyProject(vfs)
+      const engine = await setupEngine()
+
+      // First build
+      const result1 = await engine.build({
+        projectRoot: '/complex',
+        entryFiles: ['/complex/src/main.tsx'],
+        options: {}
+      })
+      expect(result1.success).toBe(true)
+
+      const code1 = result1.outputs.get('/complex/src/main.tsx')?.code || ''
+      expect(code1).not.toContain('INCREMENTAL_CHANGE_MARKER')
+
+      // Modify a dependency file
+      await updateFile(vfs, '/complex/src/utils/config.ts', `
+export const APP_NAME = "INCREMENTAL_CHANGE_MARKER"
+export const config = { name: APP_NAME }
+`)
+
+      // Incremental rebuild should reflect the change
+      const result2 = await engine.build({
+        projectRoot: '/complex',
+        entryFiles: ['/complex/src/main.tsx'],
+        options: {}
+      })
+      expect(result2.success).toBe(true)
+
+      const code2 = result2.outputs.get('/complex/src/main.tsx')?.code || ''
+      expect(code2).toContain('INCREMENTAL_CHANGE_MARKER')
+    }, 60000)
+
+    it('should recover from build failure and continue incremental builds', async () => {
+      await createSimpleProject(vfs)
+      const engine = await setupEngine()
+
+      // Build 1: success
+      const r1 = await engine.build({
         projectRoot: '/project',
         entryFiles: ['/project/src/main.tsx'],
         options: {}
       })
-      const time2 = performance.now() - start2
+      expect(r1.success).toBe(true)
 
-      console.log(`First build: ${time1.toFixed(2)}ms, Second build: ${time2.toFixed(2)}ms`)
-      
-      // Second build should be at least somewhat faster (or similar)
-      // We don't assert this strictly as it depends on caching behavior
-      expect(time2).toBeLessThanOrEqual(time1 * 2) // At worst, not much slower
+      // Build 2: break the file → failure (triggers full reset)
+      await updateFile(vfs, '/project/src/main.tsx', 'INVALID {{{ SYNTAX')
+      const r2 = await engine.build({
+        projectRoot: '/project',
+        entryFiles: ['/project/src/main.tsx'],
+        options: {}
+      })
+      expect(r2.success).toBe(false)
+
+      // Build 3: fix the file → success (re-creates context from scratch)
+      await updateFile(vfs, '/project/src/main.tsx', `
+import React from 'react'
+export function App() { return <div>Recovered</div> }
+export default App
+`)
+      const r3 = await engine.build({
+        projectRoot: '/project',
+        entryFiles: ['/project/src/main.tsx'],
+        options: {}
+      })
+      expect(r3.success).toBe(true)
+      expect(r3.outputs.get('/project/src/main.tsx')?.code).toContain('Recovered')
+
+      // Build 4: incremental rebuild on the recovered context
+      const r4 = await engine.build({
+        projectRoot: '/project',
+        entryFiles: ['/project/src/main.tsx'],
+        options: {}
+      })
+      expect(r4.success).toBe(true)
+      expect(r4.outputs.get('/project/src/main.tsx')?.code).toContain('Recovered')
+    }, 60000)
+
+    it('should create new context when build options change', async () => {
+      await createSimpleProject(vfs)
+      const engine = await setupEngine()
+
+      // Build with minify=false
+      const r1 = await engine.build({
+        projectRoot: '/project',
+        entryFiles: ['/project/src/main.tsx'],
+        options: { minify: false }
+      })
+      expect(r1.success).toBe(true)
+      const code1 = r1.outputs.get('/project/src/main.tsx')?.code || ''
+
+      // Build with minify=true — different options, new context
+      const r2 = await engine.build({
+        projectRoot: '/project',
+        entryFiles: ['/project/src/main.tsx'],
+        options: { minify: true }
+      })
+      expect(r2.success).toBe(true)
+      const code2 = r2.outputs.get('/project/src/main.tsx')?.code || ''
+
+      // Minified code should be shorter
+      expect(code2.length).toBeLessThan(code1.length)
     }, 60000)
   })
 })

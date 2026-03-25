@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/test.js';
-import { HUB_URL, API_BASE_URL } from '../fixtures/constants.js';
+import { getHubUrl } from '../fixtures/constants.js';
 import { createUser, createArtifact } from '../fixtures/test-data-factory.js';
 
 test.describe('Hub — Artifact detail', () => {
@@ -15,7 +15,7 @@ test.describe('Hub — Artifact detail', () => {
   });
 
   test('artifact detail page renders metadata', async ({ page }) => {
-    await page.goto(`${HUB_URL}/artifact/${artifactId}`);
+    await page.goto(`${getHubUrl()}/artifact/${artifactId}`);
 
     await expect(page.locator('main')).toBeVisible();
     // Title should contain the artifact name

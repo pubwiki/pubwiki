@@ -1,0 +1,331 @@
+/* ============================================================================
+   Dopamine Responsive - Mobile & tablet adaptations
+   Must be imported last to override other styles
+   ============================================================================ */
+
+/* ========== Tablet (max-width: 1024px) ========== */
+
+@media (max-width: 1024px) {
+    /* Bento grid: 2 columns on tablet */
+    .paper-bento-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "time       attr"
+            "docs       docs"
+            "components components"
+            "director   log";
+    }
+
+    .paper-bento-grid:not(:has(.paper-bento-attr)) {
+        grid-template-areas:
+            "time       docs"
+            "components components"
+            "director   log";
+    }
+
+    .paper-creature-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "basic       appearance"
+            "profile     location"
+            "attrs       docs"
+            "inventory   statuses"
+            "relationships components"
+            "info        info"
+            "log         log";
+    }
+    .paper-creature-grid:not(:has(.paper-creature-attrs)) {
+        grid-template-areas:
+            "basic       appearance"
+            "profile     location"
+            "docs        statuses"
+            "info        info"
+            "log         log";
+    }
+
+    .paper-region-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "basic      locations"
+            "docs       statuses"
+            "paths      paths"
+            "log        log";
+    }
+
+    .paper-org-grid {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "basic       territories"
+            "statuses    docs"
+            "log         log";
+    }
+
+    .paper-entity-grid-section {
+        width: 190px;
+    }
+
+    .paper-entity-detail-section {
+        padding: var(--paper-space-4) var(--paper-space-5) 80px;
+    }
+
+    .paper-entity-detail-section .paper-detail-inner {
+        max-width: 100%;
+    }
+
+    .paper-tabs .paper-tab-group-label {
+        display: none;
+    }
+}
+
+/* ========== Mobile (max-width: 768px) ========== */
+
+@media (max-width: 768px) {
+    /* Bento grid: single column on mobile */
+    .paper-bento-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "time"
+            "attr"
+            "docs"
+            "components"
+            "director"
+            "log";
+    }
+
+    .paper-bento-grid:not(:has(.paper-bento-attr)) {
+        grid-template-areas:
+            "time"
+            "docs"
+            "components"
+            "director"
+            "log";
+    }
+
+    .paper-creature-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "basic" "appearance" "profile" "location"
+            "attrs" "docs" "inventory" "statuses"
+            "relationships" "components" "info" "log";
+    }
+    .paper-creature-grid:not(:has(.paper-creature-attrs)) {
+        grid-template-areas:
+            "basic" "appearance" "profile" "location"
+            "docs" "statuses" "info" "log";
+    }
+
+    .paper-region-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "basic" "locations" "statuses"
+            "docs" "paths" "log";
+    }
+
+    .paper-org-grid {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+            "basic" "territories" "statuses"
+            "docs" "log";
+    }
+
+    .paper-bento-scroll {
+        padding: var(--paper-space-3) var(--paper-space-3) 80px;
+    }
+
+    .paper-bento-card {
+        padding: var(--paper-space-3) var(--paper-space-4);
+    }
+
+    .paper-bento-log,
+    .paper-creature-log,
+    .paper-region-log,
+    .paper-org-log {
+        max-height: 400px;
+    }
+
+    .paper-creature-info {
+        max-height: 400px;
+    }
+
+    .paper-creature-known-infos-list {
+        max-height: 200px;
+    }
+
+    .paper-header {
+        padding: 0 var(--paper-space-3);
+        height: 48px;
+    }
+
+    .paper-header-left h1 {
+        display: none;
+    }
+
+    .mobile-menu-toggle {
+        display: block;
+    }
+
+    /* Hide text labels in toolbar buttons to save space */
+    .paper-editor .btn-toolbar .btn-text {
+        display: none;
+    }
+
+    .paper-editor .btn-toolbar {
+        padding: 5px 8px;
+    }
+
+    /* Hide desktop-only toolbar items on mobile */
+    .paper-editor .toolbar-desktop-only {
+        display: none !important;
+    }
+
+    /* Show overflow menu on mobile */
+    .paper-editor .toolbar-overflow-menu {
+        display: inline-block !important;
+    }
+
+    /* Convert Legacy Sidebar into a Mobile Drawer */
+    .paper-editor .editor-left-sidebar {
+        position: fixed;
+        top: 48px;
+        left: -100%;
+        bottom: 0;
+        width: 280px;
+        max-width: 85%;
+        z-index: 100;
+        transition: left 0.3s ease;
+        box-shadow: var(--paper-shadow-hard);
+    }
+
+    .paper-editor.mobile-menu-open .editor-left-sidebar {
+        left: 0;
+    }
+
+    /* The dark overlay behind the open sidebar */
+    .mobile-overlay {
+        position: fixed;
+        top: 48px;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(2px);
+        z-index: 90;
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    .paper-tabs {
+        padding: var(--paper-space-1) var(--paper-space-2);
+    }
+
+    .paper-tab-btn {
+        padding: 5px 10px;
+        font-size: var(--paper-font-size-xs);
+    }
+
+    .paper-tab-btn .paper-tab-icon {
+        font-size: 0.85rem;
+    }
+
+    /* Hide tab text labels on tablet/mobile, show icon-only */
+    .paper-tab-btn .paper-tab-text {
+        display: none;
+    }
+
+    /* Keep API button text visible on mobile */
+    .paper-editor .btn-settings .btn-text {
+        display: inline !important;
+    }
+
+    /* Revert to stacked layout on mobile */
+    .paper-vertical-editor {
+        flex-direction: column;
+    }
+
+    .paper-entity-grid-section {
+        width: 100%;
+        max-height: 180px;
+        border-right: none;
+        border-bottom: 2.5px solid var(--paper-electric-blue);
+        padding: var(--paper-space-3);
+    }
+
+    .paper-entity-grid-section .paper-grid-toolbar {
+        flex-direction: row;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .paper-entity-card-grid {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .paper-entity-card {
+        flex: 0 0 auto;
+        width: auto;
+        min-width: 120px;
+    }
+
+    .paper-entity-detail-section {
+        padding: var(--paper-space-3) var(--paper-space-4) 80px;
+    }
+
+    .paper-editor .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .paper-editor .form-card {
+        padding: var(--paper-space-3);
+    }
+
+    /* Floating outline becomes a bottom bar */
+    .paper-floating-outline {
+        bottom: 0 !important;
+        right: 0 !important;
+        left: 0 !important;
+        border-radius: var(--paper-radius-xl) var(--paper-radius-xl) 0 0 !important;
+        width: 100% !important;
+    }
+
+    .paper-floating-outline .paper-outline-popup {
+        max-height: 40vh;
+    }
+
+    /* Toolbar compact */
+    .paper-header .toolbar {
+        gap: var(--paper-space-1);
+    }
+
+    .paper-editor .btn-toolbar {
+        padding: 5px 10px;
+        font-size: var(--paper-font-size-xs);
+    }
+
+    /* Story editor: stack vertically on mobile */
+    .paper-editor .editor-maximize-container {
+        flex-direction: column;
+        overflow-y: auto;
+    }
+
+    /* Registry grid */
+    .paper-editor .registry-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+/* ========== Small mobile (max-width: 480px) ========== */
+
+@media (max-width: 480px) {
+    .paper-entity-card {
+        min-width: 100px;
+    }
+
+    .paper-editor .registry-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .paper-tab-btn {
+        padding: 4px 8px;
+    }
+
+}

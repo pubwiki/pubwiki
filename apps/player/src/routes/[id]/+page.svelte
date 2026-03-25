@@ -15,7 +15,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import type { PageData } from './$types';
 	import { createApiClient } from '@pubwiki/api/client';
-	import { API_BASE_URL, SANDBOX_SITE_URL } from '$lib/config';
+	import { API_BASE_URL, SANDBOX_SITE_URL_TEMPLATE } from '$lib/config';
 	import {
 		loadArtifactGraph,
 		discoverEntryNodes,
@@ -43,6 +43,8 @@
 	import { createPlayerLoaderServices } from '$lib/sandbox';
 	import {
 		createSandboxConnection,
+		computeSandboxId,
+		getSandboxOrigin,
 		type SandboxConnection,
 		type ConsoleLogEntry,
 	} from '@pubwiki/sandbox-host';
@@ -514,22 +516,33 @@
 				? await createPlayerLoaderServices(backends)
 				: undefined;
 
+			// Compute per-instance sandbox origin for storage isolation
+			const sandboxId = await computeSandboxId(data.artifactId, entryFile);
+			const sandboxOrigin = getSandboxOrigin(sandboxId, SANDBOX_SITE_URL_TEMPLATE);
+
+			// Read URL hash as initial path for deep linking
+			const hashPath = window.location.hash.slice(1) || undefined;
+
 			// Create sandbox connection
 			sandboxConnection = createSandboxConnection({
 				iframe: iframeRef,
 				basePath: '/',
 				projectConfig,
-				targetOrigin: SANDBOX_SITE_URL,
+				targetOrigin: sandboxOrigin,
 				entryFile,
+				initialPath: hashPath,
 				vfs: buildAwareVfs!,
 				customServices,
 				onLog: (entry) => {
 					consoleLogs = [...consoleLogs, entry];
+				},
+				onUrlChange: (path) => {
+					history.replaceState(null, '', `/${data.artifactId}#${path}`);
 				}
 			});
 
 			// Set iframe src AFTER creating connection to avoid missing SANDBOX_READY
-			iframeSrc = `${SANDBOX_SITE_URL}/__sandbox.html`;
+			iframeSrc = `${sandboxOrigin}/__sandbox.html`;
 
 			const success = await sandboxConnection.waitForReady();
 			if (!success) throw new Error('Failed to initialize sandbox');

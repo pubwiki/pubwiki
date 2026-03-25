@@ -14,7 +14,9 @@ export default defineConfig({
     include: ['test/**/*.test.ts'],
     // These tests require browser environment (esbuild-wasm)
     exclude: [
-      'test/integration/e2e-build.test.ts'
+      'test/integration/e2e-build.test.ts',
+      'test/integration/bundler-service-watch.test.ts',
+      'test/integration/reproduce-lazy-binding.test.ts'
     ],
     coverage: {
       reporter: ['text', 'json', 'html'],

@@ -765,9 +765,8 @@
 		const newPromptData = await createPromptNodeData('', null, uniqueName);
 		const position = getNewNodePosition();
 		await addNode(newPromptData, position);
-		// Auto-trigger name editing for new nodes
-		editingNameNodeId = newPromptData.id;
 		closeContextMenu();
+		editingNameNodeId = newPromptData.id;
 	}
 
 	async function addInputNode() {
@@ -775,21 +774,17 @@
 		const newInputData = await createInputNodeData('', null, uniqueName);
 		const position = getNewNodePosition();
 		await addNode(newInputData, position);
-		// Auto-trigger name editing for new nodes
-		editingNameNodeId = newInputData.id;
 		closeContextMenu();
+		editingNameNodeId = newInputData.id;
 	}
 
 	async function addVFSNode() {
-		// Create new VFS node with unique name - will trigger auto-edit mode
 		const uniqueName = generateUniqueNodeName('VFS');
 		const newVFSData = await createVFSNodeData(currentProjectId, uniqueName);
 		const position = getNewNodePosition();
 		await addNode(newVFSData, position);
-		// VFS change tracking is automatically setup by the $effect
-		// Auto-trigger name editing for new VFS nodes
-		editingNameNodeId = newVFSData.id;
 		closeContextMenu();
+		editingNameNodeId = newVFSData.id;
 	}
 
 	async function addSandboxNode() {
@@ -797,9 +792,8 @@
 		const newSandboxData = await createSandboxNodeData(uniqueName);
 		const position = getNewNodePosition();
 		await addNode(newSandboxData, position);
-		// Auto-trigger name editing for new nodes
-		editingNameNodeId = newSandboxData.id;
 		closeContextMenu();
+		editingNameNodeId = newSandboxData.id;
 	}
 
 	async function addLoaderNode() {
@@ -807,9 +801,8 @@
 		const newLoaderData = await createLoaderNodeData(uniqueName);
 		const position = getNewNodePosition();
 		await addNode(newLoaderData, position);
-		// Auto-trigger name editing for new nodes
-		editingNameNodeId = newLoaderData.id;
 		closeContextMenu();
+		editingNameNodeId = newLoaderData.id;
 	}
 
 	async function addStateNode() {
@@ -817,9 +810,8 @@
 		const newStateData = await createStateNodeData(uniqueName);
 		const position = getNewNodePosition();
 		await addNode(newStateData, position);
-		// Auto-trigger name editing for new nodes
-		editingNameNodeId = newStateData.id;
 		closeContextMenu();
+		editingNameNodeId = newStateData.id;
 	}
 
 	function _deleteNodes(nodeIds: string[]) {
@@ -1401,13 +1393,26 @@
 		edgesToPublish: Edge[],
 		buildCacheKey?: string
 	) {
-		if (!publishState.state.lastCloudCommit) {
-			throw new Error('No base commit for update. Please try a full publish instead.');
+		let baseCommit = publishState.state.lastCloudCommit;
+
+		// Recover from missing local commit (e.g. IndexedDB write lost due to navigation race)
+		if (!baseCommit) {
+			console.warn('[Studio] lastCloudCommit missing locally, fetching latest from server...');
+			const { data } = await apiClient.GET('/artifacts/{artifactId}/graph', {
+				params: { path: { artifactId: currentProjectId }, query: { version: 'latest' } },
+			});
+			baseCommit = data?.version?.commitHash;
+			if (baseCommit) {
+				console.log('[Studio] Recovered baseCommit from server:', baseCommit);
+				publishState.markPublished(baseCommit);
+			} else {
+				throw new Error('No base commit for update. Please try a full publish instead.');
+			}
 		}
 
 		const patchMeta: PatchMetadata = {
 			artifactId: currentProjectId,
-			baseCommit: publishState.state.lastCloudCommit,
+			baseCommit,
 			version: metadata.version,
 			commitTags: ['draft-latest'],
 			entrypoint: metadata.entrypoint,

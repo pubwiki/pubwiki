@@ -1,13 +1,12 @@
-import { test, expect } from '../fixtures/test.js';
-import { HUB_URL } from '../fixtures/constants.js';
+import { test } from '../fixtures/test.js';
 
 test.describe('Hub — Discussions', () => {
-  test.skip('create a discussion on an artifact', async ({ page }) => {
+  test.skip('create a discussion on an artifact', async ({ page: _page }) => {
     // TODO: Seed an artifact, navigate to its discussion tab,
     //       create a new discussion and verify it appears.
   });
 
-  test.skip('reply to an existing discussion', async ({ page }) => {
+  test.skip('reply to an existing discussion', async ({ page: _page }) => {
     // TODO
   });
 });

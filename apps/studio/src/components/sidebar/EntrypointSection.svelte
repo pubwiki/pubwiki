@@ -58,9 +58,11 @@
 		onBuildCacheKeyChange?: (key: string | null) => void;
 		/** Called when the selected save changes */
 		onSaveChange?: (save: SelectedSave | null) => void;
+		/** Called when graph completeness changes (true = required connections are missing) */
+		onGraphIncompleteChange?: (incomplete: boolean) => void;
 	}
 
-	let { nodes, edges, projectId, selectedEntrypoint, onEntrypointChange, onBuildCacheKeyChange, onSaveChange }: Props = $props();
+	let { nodes, edges, projectId, selectedEntrypoint, onEntrypointChange, onBuildCacheKeyChange, onSaveChange, onGraphIncompleteChange }: Props = $props();
 
 	// Dropdown item type: null represents "No entrypoint"
 	interface EntrypointItem {
@@ -118,6 +120,15 @@
 			}
 		}
 		return null;
+	});
+
+	// Graph completeness: when an entrypoint is selected, required connections must exist
+	let graphIncomplete = $derived(
+		selectedEntrypoint != null && (connectedVfsNodeId == null || connectedStateNodeId == null)
+	);
+
+	$effect(() => {
+		onGraphIncompleteChange?.(graphIncomplete);
 	});
 
 	// ---- Save selector state ----

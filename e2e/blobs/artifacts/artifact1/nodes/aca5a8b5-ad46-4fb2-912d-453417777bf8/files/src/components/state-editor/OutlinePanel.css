@@ -1,0 +1,313 @@
+/* ============================================================================
+   大纲面板样式
+   ============================================================================ */
+
+/* 面板容器 */
+.outline-panel {
+  position: sticky;
+  top: 0;
+  right: 0;
+  height: fit-content;
+  max-height: calc(100vh - 200px);
+  z-index: 100;
+  transition: all 0.3s ease;
+}
+
+.outline-panel.collapsed {
+  width: 40px;
+}
+
+.outline-panel.expanded {
+  width: 220px;
+  min-width: 180px;
+}
+
+/* 收起状态的展开按钮 */
+.outline-expand-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+}
+
+.outline-expand-btn:hover {
+  background: #f5f5f5;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 展开状态的内容区 */
+.outline-content {
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 200px);
+}
+
+/* 标题栏 */
+.outline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.outline-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.outline-collapse-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.outline-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* 内容区域 */
+.outline-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.outline-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.outline-body::-webkit-scrollbar-track {
+  background: #f5f5f5;
+}
+
+.outline-body::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+}
+
+.outline-body::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+/* 大纲项 */
+.outline-item-wrapper {
+  /* wrapper for item + children */
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #444;
+  transition: all 0.15s;
+  border-left: 3px solid transparent;
+  gap: 4px;
+}
+
+.outline-item:hover {
+  background: #f5f7fa;
+}
+
+.outline-item.active {
+  background: #e8f0fe;
+  border-left-color: #667eea;
+  color: #667eea;
+  font-weight: 500;
+}
+
+/* 层级样式 */
+.outline-item.level-0 {
+  font-weight: 500;
+}
+
+.outline-item.level-1 {
+  font-size: 12px;
+  color: #666;
+}
+
+.outline-item.level-2 {
+  font-size: 11px;
+  color: #888;
+}
+
+/* 展开/收起按钮 */
+.outline-toggle {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  color: #999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.outline-toggle:hover {
+  color: #667eea;
+}
+
+.outline-toggle-placeholder {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+/* 图标 */
+.outline-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.outline-item.level-1 .outline-icon {
+  font-size: 12px;
+}
+
+/* 标签 */
+.outline-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 计数 */
+.outline-count {
+  font-size: 11px;
+  color: #999;
+  flex-shrink: 0;
+}
+
+/* 子项容器 */
+.outline-children {
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.outline-children.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+.outline-children.expanded {
+  max-height: 1000px;
+  opacity: 1;
+}
+
+/* 空状态 */
+.outline-empty {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 13px;
+}
+
+/* ============================================================================
+   高亮动画 - 当点击大纲项跳转时
+   ============================================================================ */
+
+@keyframes outlineHighlight {
+  0% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.2);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0);
+  }
+}
+
+.outline-highlight {
+  animation: outlineHighlight 1.5s ease-out;
+  position: relative;
+}
+
+.outline-highlight::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  animation: highlightBar 1.5s ease-out;
+}
+
+@keyframes highlightBar {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ============================================================================
+   带大纲的编辑器布局
+   ============================================================================ */
+
+.editor-with-outline {
+  display: flex;
+  gap: 16px;
+  position: relative;
+}
+
+.editor-main-content {
+  flex: 1;
+  min-width: 0; /* 防止 flex 子项溢出 */
+  overflow-y: auto;
+  max-height: calc(100vh - 250px);
+  padding-right: 8px;
+}
+
+.editor-main-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.editor-main-content::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.editor-main-content::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+}
+
+.editor-main-content::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+/* 确保大纲面板固定在右侧 */
+.editor-with-outline > .outline-panel {
+  flex-shrink: 0;
+  align-self: flex-start;
+}

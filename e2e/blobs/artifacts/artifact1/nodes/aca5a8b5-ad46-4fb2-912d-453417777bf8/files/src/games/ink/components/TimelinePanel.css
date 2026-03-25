@@ -1,0 +1,378 @@
+/* ============================================================================
+   TimelinePanel - 横向卷轴分支时间线
+   底部滑出面板，Y 轴展示分支层次，X 轴展示每条分支的节点
+   ============================================================================ */
+
+/* 遮罩 */
+.tl-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--paper-border-color-hover, rgba(0, 0, 0, 0.3));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 900;
+  animation: tl-fade-in 0.15s ease-out;
+}
+
+@keyframes tl-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* 居中模态框 */
+.tl-panel {
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  background: var(--paper-bg-content, #f5f0e8);
+  border: 1px solid var(--paper-border-color, #d4cfc6);
+  border-radius: 8px;
+  box-shadow: 4px 4px 0px var(--paper-shadow-color, rgba(0,0,0,0.1));
+  display: flex;
+  flex-direction: column;
+  z-index: 901;
+  animation: tl-modal-in 0.2s ease-out;
+}
+
+@keyframes tl-modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 头部 */
+.tl-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1.5px solid var(--paper-border-color, #d4cfc6);
+  flex-shrink: 0;
+}
+
+.tl-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--paper-text-primary, #1a1a2e);
+  letter-spacing: 0.06em;
+}
+
+.tl-close {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: var(--paper-text-secondary, #6b6560);
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+  line-height: 1;
+}
+
+.tl-close:hover {
+  color: var(--paper-text-primary);
+  background: var(--paper-bg-secondary, #ebe6dd);
+}
+
+/* 主体滚动区（纵向滚动所有分支行） */
+.tl-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px 16px;
+}
+
+.tl-empty {
+  padding: 24px;
+  color: var(--paper-text-secondary, #6b6560);
+  font-style: italic;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.tl-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ============================================================================
+   分支行（展开态）
+   ============================================================================ */
+
+.tl-branch {
+  border-left: 2px solid var(--paper-border-color, #d4cfc6);
+  padding-left: 8px;
+}
+
+.tl-branch--current {
+  border-left-color: var(--paper-electric-blue, #4189e8);
+}
+
+/* 折叠按钮 */
+.tl-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--paper-text-secondary, #6b6560);
+  font-size: 0.75rem;
+  padding: 4px 0;
+  margin-bottom: 2px;
+  transition: color 0.15s;
+}
+
+.tl-collapse-btn:hover {
+  color: var(--paper-text-primary);
+}
+
+.tl-collapse-label {
+  font-weight: 600;
+}
+
+/* 横向滚动行 */
+.tl-row-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-border-color, #d4cfc6) transparent;
+  padding-bottom: 4px;
+}
+
+.tl-row-scroll::-webkit-scrollbar {
+  height: 3px;
+}
+
+.tl-row-scroll::-webkit-scrollbar-thumb {
+  background: var(--paper-border-color, #d4cfc6);
+  border-radius: 2px;
+}
+
+/* 节点行 */
+.tl-row {
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  min-width: max-content;
+  padding: 6px 0;
+  gap: 4px;
+}
+
+/* 水平轴线 */
+.tl-axis {
+  position: absolute;
+  top: 17px;
+  left: 8px;
+  right: 8px;
+  height: 1.5px;
+  background: var(--paper-border-color, #d4cfc6);
+  pointer-events: none;
+}
+
+.tl-branch--current .tl-axis {
+  background: rgba(65, 137, 232, 0.25);
+}
+
+/* 子分支容器 */
+.tl-sub-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+  margin-left: 4px;
+}
+
+/* ============================================================================
+   折叠态分支
+   ============================================================================ */
+
+.tl-branch-collapsed {
+  border-left: 2px solid var(--paper-border-color, #d4cfc6);
+  padding-left: 8px;
+}
+
+.tl-expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--paper-bg-secondary, #ebe6dd);
+  border: 1px solid var(--paper-border-color, #d4cfc6);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+  text-align: left;
+}
+
+.tl-expand-btn:hover {
+  border-color: var(--paper-text-primary, #1a1a2e);
+  box-shadow: 1px 1px 0 var(--paper-text-primary, #1a1a2e);
+}
+
+.tl-expand-arrow {
+  font-size: 0.7rem;
+  color: var(--paper-text-secondary, #6b6560);
+  flex-shrink: 0;
+  width: 12px;
+}
+
+.tl-expand-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--paper-text-primary, #1a1a2e);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-expand-count {
+  font-size: 0.7rem;
+  color: var(--paper-text-secondary, #6b6560);
+  flex-shrink: 0;
+}
+
+/* ============================================================================
+   节点
+   ============================================================================ */
+
+.tl-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 110px;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
+.tl-node:hover .tl-card {
+  background: var(--paper-bg-secondary, #ebe6dd);
+  border-radius: 4px;
+}
+
+.tl-node--current {
+  cursor: default;
+}
+
+.tl-node--current:hover .tl-card {
+  background: transparent;
+}
+
+.tl-node--loading {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+/* 圆点 */
+.tl-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--paper-bg-content, #f5f0e8);
+  border: 2px solid var(--paper-border-color, #d4cfc6);
+  flex-shrink: 0;
+  z-index: 2;
+  transition: all 0.15s;
+}
+
+.tl-node--on-path .tl-dot {
+  background: var(--paper-text-primary, #1a1a2e);
+  border-color: var(--paper-text-primary, #1a1a2e);
+}
+
+.tl-node--current .tl-dot {
+  width: 12px;
+  height: 12px;
+  background: var(--paper-electric-blue, #4189e8);
+  border-color: var(--paper-electric-blue, #4189e8);
+  box-shadow: 0 0 0 3px rgba(65, 137, 232, 0.2);
+}
+
+/* 分支点标记 */
+.tl-branch-point {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 60px;
+  z-index: 1;
+}
+
+.tl-dot--branch {
+  width: 8px;
+  height: 8px;
+  background: var(--paper-text-secondary, #6b6560);
+  border-color: var(--paper-text-secondary, #6b6560);
+}
+
+.tl-branch-point-label {
+  font-size: 0.6rem;
+  color: var(--paper-text-secondary, #6b6560);
+  margin-top: 6px;
+  white-space: nowrap;
+}
+
+/* 卡片（无边框，仅文字） */
+.tl-card {
+  margin-top: 6px;
+  padding: 4px 6px;
+  text-align: center;
+  transition: background 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 4px;
+}
+
+.tl-card-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--paper-text-primary, #1a1a2e);
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tl-card-time {
+  display: block;
+  font-size: 0.6rem;
+  color: var(--paper-text-secondary, #6b6560);
+  margin-top: 2px;
+}
+
+.tl-card-badge {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--paper-electric-blue, #4189e8);
+  background: rgba(65, 137, 232, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-top: 2px;
+}
+
+/* ============================================================================
+   移动端
+   ============================================================================ */
+
+@media (max-width: 768px) {
+  .tl-panel {
+    width: 95%;
+    max-height: 85vh;
+  }
+
+  .tl-node {
+    width: 96px;
+  }
+
+  .tl-card-title {
+    font-size: 0.7rem;
+  }
+}

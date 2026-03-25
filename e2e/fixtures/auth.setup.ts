@@ -8,15 +8,17 @@
  */
 
 import { test as setup, expect } from '@playwright/test';
-import { API_BASE_URL, HUB_URL, TEST_PASSWORD, AUTH_STATE_PATH } from './constants.js';
+import { getApiBaseUrl, getHubUrl, TEST_PASSWORD, AUTH_STATE_PATH } from './constants.js';
 
 const DEFAULT_USER = 'e2e_default';
 
 setup('authenticate default user', async ({ page }) => {
   // 1. Ensure the user exists via API (idempotent)
+  const API_BASE_URL = getApiBaseUrl();
+  const HUB_URL = getHubUrl();
   const origin = new URL(API_BASE_URL).origin;
 
-  const res = await page.request.post(`${API_BASE_URL}/auth/sign-up/email`, {
+  const _res = await page.request.post(`${API_BASE_URL}/auth/sign-up/email`, {
     data: {
       name: DEFAULT_USER,
       username: DEFAULT_USER,
@@ -30,8 +32,12 @@ setup('authenticate default user', async ({ page }) => {
 
   // 2. Intercept API calls in the browser so they hit localhost
   //    (the Hub .env may point to a LAN IP).
-  await page.route(/https?:\/\/(?!localhost)[^/]*:8787\//, (route) => {
-    const rewritten = route.request().url().replace(/https?:\/\/[^/]+:8787/, origin);
+  const apiPort = new URL(API_BASE_URL).port;
+  await page.route(new RegExp(`https?://(?!localhost)[^/]*:${apiPort}/`), (route) => {
+    const rewritten = route.request().url().replace(
+      new RegExp(`https?://[^/]+:${apiPort}`),
+      origin,
+    );
     route.continue({ url: rewritten });
   });
 

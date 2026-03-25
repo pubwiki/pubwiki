@@ -1,0 +1,11 @@
+{
+  "id": "01d047f7-0aa0-4231-867f-9ef65c221ad9",
+  "type": "LOADER",
+  "name": "Service",
+  "commit": "762e888502ca0821f196437047b5974e89653c1f1e9ee9897009d2b0421652d2",
+  "contentHash": "09e495d5c02ccd3df880a30e7e5479dde73fee842b52decdd6b0602886df085e",
+  "parent": null,
+  "content": {
+    "type": "LOADER"
+  }
+}

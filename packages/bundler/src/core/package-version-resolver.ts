@@ -133,10 +133,11 @@ export class PackageVersionResolver {
         devDependencies?: Record<string, string>
       }
 
-      // Merge both sections; devDependencies can be useful for build-time deps
-      for (const deps of [pkg.dependencies, pkg.devDependencies]) {
-        if (!deps) continue
-        for (const [name, range] of Object.entries(deps)) {
+      // Only use runtime dependencies – devDependencies (e.g. @types/*, typescript, vite)
+      // are not needed at runtime and inflate esm.sh ?external= URLs, which can trigger
+      // esbuild binding resolution issues with very long module paths.
+      if (pkg.dependencies) {
+        for (const [name, range] of Object.entries(pkg.dependencies)) {
           if (PackageVersionResolver.isValidVersion(range)) {
             this.versions.set(name, range)
           } else {
@@ -227,10 +228,12 @@ export class PackageVersionResolver {
   private parsePnpmLock(content: string): void {
     const lines = content.split('\n')
 
-    // We only care about the root importer (importers > . > dependencies/devDependencies).
+    // We only care about the root importer (importers > . > dependencies).
     // Other importers (workspace members) have link: versions that don't apply to us.
+    // devDependencies are skipped — they inflate esm.sh ?external= URLs and are
+    // not needed at runtime (e.g. @types/*, typescript, vite).
 
-    let state: 'scanning' | 'in-root-importer' | 'in-deps' | 'done' = 'scanning'
+    let state: 'scanning' | 'in-root-importer' | 'in-deps' | 'skip-section' | 'done' = 'scanning'
     let currentPkg: string | null = null
 
     for (let i = 0; i < lines.length; i++) {
@@ -247,10 +250,15 @@ export class PackageVersionResolver {
           break
 
         case 'in-root-importer':
-          // Inside root importer block — look for dependencies/devDependencies
-          if (/^ {4}(dependencies|devDependencies):/.test(trimmed)) {
+          // Inside root importer block — only enter runtime dependencies
+          if (/^ {4}dependencies:/.test(trimmed)) {
             state = 'in-deps'
             currentPkg = null
+            break
+          }
+          // Skip devDependencies section entirely
+          if (/^ {4}devDependencies:/.test(trimmed)) {
+            state = 'skip-section'
             break
           }
           // If we hit a line at ≤2-space indent, we've left the root importer
@@ -259,10 +267,30 @@ export class PackageVersionResolver {
           }
           break
 
+        case 'skip-section':
+          // Skip until we hit a new section at 4-space indent or leave the importer
+          if (/^ {4}dependencies:/.test(trimmed)) {
+            state = 'in-deps'
+            currentPkg = null
+            break
+          }
+          if (/^ {4}devDependencies:/.test(trimmed)) {
+            break // Stay in skip-section
+          }
+          if (/^\S/.test(trimmed) || (/^ {2}\S/.test(trimmed) && !/^ {4}/.test(trimmed))) {
+            state = 'done'
+          }
+          break
+
         case 'in-deps': {
-          // Exit deps section if we're back at importer-level indent (4 spaces or less)
-          // A new "dependencies:" or "devDependencies:" at 4-space indent stays in root importer
-          if (/^ {4}(dependencies|devDependencies):/.test(trimmed)) {
+          // A new "dependencies:" at 4-space indent stays in deps
+          if (/^ {4}dependencies:/.test(trimmed)) {
+            currentPkg = null
+            break
+          }
+          // devDependencies at 4-space indent — skip it
+          if (/^ {4}devDependencies:/.test(trimmed)) {
+            state = 'skip-section'
             currentPkg = null
             break
           }
@@ -327,12 +355,14 @@ export class PackageVersionResolver {
       }
 
       // v2/v3: packages section ("node_modules/<name>" → { version })
+      // Only update versions for packages already known from package.json (runtime deps).
+      // Lock files contain both deps and devDeps but we only need runtime deps.
       if (lock.packages) {
         for (const [key, entry] of Object.entries(lock.packages)) {
           if (!entry.version) continue
           // key is like "node_modules/react" or "node_modules/@scope/pkg"
           const match = key.match(/^node_modules\/(.+)$/)
-          if (match && PackageVersionResolver.isValidVersion(entry.version)) {
+          if (match && this.versions.has(match[1]) && PackageVersionResolver.isValidVersion(entry.version)) {
             this.versions.set(match[1], entry.version)
           }
         }
@@ -341,7 +371,7 @@ export class PackageVersionResolver {
       // v1 fallback: dependencies section
       if (lock.dependencies) {
         for (const [name, entry] of Object.entries(lock.dependencies)) {
-          if (entry.version && PackageVersionResolver.isValidVersion(entry.version)) {
+          if (entry.version && this.versions.has(name) && PackageVersionResolver.isValidVersion(entry.version)) {
             this.versions.set(name, entry.version)
           }
         }
@@ -404,8 +434,11 @@ export class PackageVersionResolver {
         if (versionMatch) {
           const version = versionMatch[1]
           if (PackageVersionResolver.isValidVersion(version)) {
+            // Only update packages already known from package.json (runtime deps)
             for (const pkg of currentPackages) {
-              this.versions.set(pkg, version)
+              if (this.versions.has(pkg)) {
+                this.versions.set(pkg, version)
+              }
             }
           }
           currentPackages = []

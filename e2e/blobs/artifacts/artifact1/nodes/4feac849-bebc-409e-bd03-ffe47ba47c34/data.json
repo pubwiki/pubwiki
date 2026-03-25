@@ -1,0 +1,13 @@
+{
+  "id": "4feac849-bebc-409e-bd03-ffe47ba47c34",
+  "type": "STATE",
+  "name": "State",
+  "commit": "6465750ef9eb7649fde6382b0f4d173e9d341fd45d40b76f3566290057ba25dc",
+  "contentHash": "0f75821a4e1945231b838b8aa34d8c6713f1422538fb8770a959a8d0b691a465",
+  "parent": null,
+  "content": {
+    "type": "STATE",
+    "name": "State"
+  },
+  "hasStateExport": true
+}

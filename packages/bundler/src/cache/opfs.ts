@@ -443,6 +443,47 @@ export class OpfsBuildCacheStorage implements BuildCacheStorage {
     return null
   }
 
+  // ---- alias() — Direct key alias without dep-matching ----
+
+  async alias(existingKey: string, newKey: string, fileHashes: Record<string, string>): Promise<boolean> {
+    await this.ensureInitialized()
+
+    const existingMeta = this.index.get(existingKey)
+    if (!existingMeta) return false
+
+    const root = this.rootHandle!
+    try {
+      const buildsDir = await root.getDirectoryHandle(BUILDS_DIR)
+      const existingBuildDir = await buildsDir.getDirectoryHandle(existingKey)
+      const distKey = await this.readDistPointer(existingBuildDir)
+      if (!distKey) return false
+
+      // Create builds/<newKey>/ pointing to the same distKey
+      const newBuildDir = await buildsDir.getDirectoryHandle(newKey, { create: true })
+
+      const pointerHandle = await newBuildDir.getFileHandle(DIST_POINTER_FILE, { create: true })
+      const pointerWritable = await pointerHandle.createWritable()
+      await pointerWritable.write(distKey)
+      await pointerWritable.close()
+
+      const newMetadata: BuildCacheMetadata = {
+        ...existingMeta,
+        buildCacheKey: newKey,
+        fileHashes,
+        lastAccessedAt: Date.now(),
+      }
+      const metaHandle = await newBuildDir.getFileHandle(META_FILE, { create: true })
+      const metaWritable = await metaHandle.createWritable()
+      await metaWritable.write(JSON.stringify(newMetadata))
+      await metaWritable.close()
+
+      this.index.set(newKey, newMetadata)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   // ---- HTTP content cache ----
 
   async getHttp(url: string): Promise<{ content: string; contentType: string } | null> {

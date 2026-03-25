@@ -25,7 +25,6 @@
 	import type { ProjectConfig } from '@pubwiki/sandbox-host';
 	import { detectProject } from '@pubwiki/bundler';
 	import * as m from '$lib/paraglide/messages';
-	import { PUBLIC_SANDBOX_SITE_URL } from "$env/static/public"
 
 	// ============================================================================
 	// Props & Context
@@ -328,7 +327,6 @@
 	<SandboxPreviewView
 		{vfs}
 		{projectConfig}
-		sandboxOrigin={PUBLIC_SANDBOX_SITE_URL ?? "https://sandbox.soyo.mu"}
 		entryFile={nodeData.content.entryFile}
 		name={nodeData.name}
 		loaderNodes={connectedLoaderNodes}

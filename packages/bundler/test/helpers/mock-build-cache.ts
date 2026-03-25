@@ -43,6 +43,13 @@ export class MockBuildCacheStorage implements BuildCacheStorage {
     return this.get(buildCacheKey)
   }
 
+  async alias(existingKey: string, newKey: string, _fileHashes: Record<string, string>): Promise<boolean> {
+    const e = this.entries.get(existingKey)
+    if (!e) return false
+    this.entries.set(newKey, e)
+    return true
+  }
+
   async getHttp(url: string) { return this.httpCache.get(url) ?? null }
   async setHttp(url: string, content: string, contentType: string) { this.httpCache.set(url, { content, contentType }) }
 

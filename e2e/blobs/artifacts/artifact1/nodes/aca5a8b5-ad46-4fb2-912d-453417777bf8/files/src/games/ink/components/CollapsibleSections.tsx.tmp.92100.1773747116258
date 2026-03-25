@@ -1,0 +1,341 @@
+import { useTranslation } from 'react-i18next'
+import { useUIStore } from '../stores/uiStore'
+import { useGameStore } from '../stores/gameStore'
+import type { StoryTurn, CollectorResult } from '../types'
+import { formatSettingChange, type ServiceCallRecord } from '../../../api/types'
+import { useCallback } from 'react'
+
+interface CollapsibleSectionProps {
+  sectionId: string
+  title: string
+  autoCollapsed: boolean
+  icon?: string
+  badge?: string
+  generatingIndicator?: boolean
+  children: React.ReactNode
+  className?: string
+}
+
+export function CollapsibleSection({
+  sectionId,
+  title,
+  autoCollapsed,
+  icon,
+  badge,
+  generatingIndicator,
+  children,
+  className = ''
+}: CollapsibleSectionProps) {
+  const { t } = useTranslation('game')
+  const toggleSection = useUIStore(s => s.toggleSection)
+  const collapsedSections = useUIStore(s => s.collapsedSections)
+
+  const collapsed = useCallback(() => {
+    const userChoice = collapsedSections[sectionId]
+    return userChoice !== undefined ? userChoice : autoCollapsed
+  }, [collapsedSections, sectionId, autoCollapsed])()
+
+  return (
+    <div className={`collapsible-section ${className} ${collapsed ? 'collapsed' : ''}`}>
+      <div
+        className="collapsible-header"
+        onClick={() => toggleSection(sectionId)}
+      >
+        <span className="collapse-icon">{collapsed ? '▶' : '▼'}</span>
+        <span className="section-title">{icon} {title} {badge && `(${badge})`}</span>
+        {generatingIndicator && <span className="generating-indicator">{t('ink.generating')}</span>}
+      </div>
+      {!collapsed && (
+        <div className="collapsible-content">
+          {children}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 渲染可折叠的 collector 结果
+export function CollectorResultsSection({ turn }: { turn: StoryTurn }) {
+  const { t } = useTranslation('game')
+  if (!turn.collectorResults || turn.collectorResults.length === 0) return null
+
+  const sectionId = `collector-${turn.id}`
+  const autoCollapsed = turn.generationPhase === 'done' || turn.generationPhase === 'writing'
+  const selectedCount = turn.collectorResults.filter((r: CollectorResult) => r.selected).length
+  const totalDocs = turn.collectorResults.reduce((sum: number, entity: CollectorResult) =>
+    sum + (entity.documents?.filter((d: { selected: boolean }) => d.selected).length || 0), 0
+  )
+
+  return (
+    <CollapsibleSection
+      sectionId={sectionId}
+      title={t('ink.sections.ragCollection')}
+      autoCollapsed={autoCollapsed}
+      icon="🎯"
+      badge={t('ink.sections.ragBadge', { selectedCount, totalDocs })}
+      generatingIndicator={turn.generationPhase === 'collecting'}
+      className="collector-section"
+    >
+      {turn.collectorOutline && (
+        <div className="collector-outline">{turn.collectorOutline}</div>
+      )}
+      {turn.collectorResults.map((result: CollectorResult, idx: number) => (
+        <div key={idx} className={`collector-item ${result.selected ? 'selected' : 'rejected'}`}>
+          <div className="collector-entity">
+            {result.selected ? '✅' : '❌'} {result.entity_id}
+          </div>
+          <div className="collector-thinking">{result.thinking}</div>
+          {result.documents && result.documents.length > 0 && (
+            <div className="collector-docs">
+              {result.documents.map((doc, docIdx: number) => (
+                <div key={docIdx} className={`doc-item ${doc.selected ? 'selected' : ''}`}>
+                  <div className="doc-path">
+                    {doc.selected ? '📄' : '⬜'} {doc.path}
+                    {doc.flag_is_thinking_instruction && <span className="doc-phase-badge thinking">💭 {t('ink.sections.phaseThinking')}</span>}
+                    {doc.flag_is_writing_instruction && <span className="doc-phase-badge writing">✍️ {t('ink.sections.phaseWriting')}</span>}
+                    {doc.flag_is_updating_instruction && <span className="doc-phase-badge updating">🔄 {t('ink.sections.phaseUpdating')}</span>}
+                  </div>
+                  {doc.thinking && (
+                    <div className="doc-thinking">{doc.thinking}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </CollapsibleSection>
+  )
+}
+
+// 渲染可折叠的大模型推理过程
+export function ReasoningSection({ turn }: { turn: StoryTurn }) {
+  const { t } = useTranslation('game')
+  if (!turn.reasoning) return null
+
+  const sectionId = `reasoning-${turn.id}`
+  const autoCollapsed = !!turn.thinking || !!(turn.content && turn.content.length > 0)
+
+  return (
+    <CollapsibleSection
+      sectionId={sectionId}
+      title={t('ink.sections.reasoning')}
+      autoCollapsed={autoCollapsed}
+      icon="🧠"
+      generatingIndicator={turn.generationPhase === 'reasoning'}
+      className="reasoning-section"
+    >
+      <pre>{turn.reasoning}</pre>
+    </CollapsibleSection>
+  )
+}
+
+// 渲染可折叠的思考过程
+export function ThinkingSection({ turn }: { turn: StoryTurn }) {
+  const { t } = useTranslation('game')
+  if (!turn.thinking) return null
+
+  const sectionId = `thinking-${turn.id}`
+  const autoCollapsed = !!(turn.content && turn.content.length > 0)
+
+  return (
+    <CollapsibleSection
+      sectionId={sectionId}
+      title={t('ink.sections.thinking')}
+      autoCollapsed={autoCollapsed}
+      icon="💭"
+      generatingIndicator={turn.generationPhase === 'thinking'}
+      className="thinking-section"
+    >
+      <pre>{turn.thinking}</pre>
+    </CollapsibleSection>
+  )
+}
+
+// 渲染可折叠的状态/设定变更建议
+export function ChangeSuggestionsSection({ turn }: { turn: StoryTurn }) {
+  const { t } = useTranslation('game')
+  const hasStateChanges = turn.stateChanges && turn.stateChanges.length > 0
+  const hasSettingChanges = turn.settingChanges && turn.settingChanges.length > 0
+
+  if (!hasStateChanges && !hasSettingChanges) return null
+
+  const sectionId = `changes-${turn.id}`
+  const totalChanges = (turn.settingChanges?.length || 0) + (turn.stateChanges?.length || 0)
+
+  return (
+    <CollapsibleSection
+      sectionId={sectionId}
+      title={t('ink.sections.changeSuggestions')}
+      autoCollapsed={false}
+      icon="📝"
+      badge={t('ink.sections.changeCount', { count: totalChanges })}
+      className="changes-section"
+    >
+      {turn.stateChanges && turn.stateChanges.map((change: string, idx: number) => (
+        <div key={idx} className="change-item">
+          <span className="change-bullet">•</span>
+          <span className="change-text">{change}</span>
+        </div>
+      ))}
+      {turn.settingChanges && turn.settingChanges.map((change: any, idx: number) => (
+        <div key={idx} className="change-item">
+          <span className="change-bullet">•</span>
+          <span className="change-text">{formatSettingChange(change)}</span>
+        </div>
+      ))}
+    </CollapsibleSection>
+  )
+}
+
+// 首次尝试失败记录（重试后显示）
+function FirstAttemptSection({ firstAttempt }: { firstAttempt?: { calls?: ServiceCallRecord[]; results?: ServiceCallRecord[]; outline?: string; failCount?: number } }) {
+  if (!firstAttempt) return null
+  return (
+    <div className="error-detail" style={{ opacity: 0.7 }}>
+      <strong>⚠️ 首次尝试失败（{firstAttempt.failCount} 条失败，已重试）</strong>
+      {firstAttempt.outline && <pre className="call-args">{firstAttempt.outline}</pre>}
+      {firstAttempt.results?.map((r, idx) => (
+        <div key={idx} className={`call-result ${r.success ? 'success' : 'failed'}`}>
+          {r.success ? '✅' : '❌'} [{r.service}]
+          {r.args && <pre className="call-args">{JSON.stringify(r.args, null, 2)}</pre>}
+          {r.error && <div className="call-error">{r.error}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// 渲染可折叠的游戏状态更新结果（带重试）
+export function UpdateGameStateSection({ turn }: { turn: StoryTurn }) {
+  const { t } = useTranslation('game')
+  const toggleSection = useUIStore(s => s.toggleSection)
+  const collapsedSections = useUIStore(s => s.collapsedSections)
+  const { retryUpdateGameState } = useGameStore()
+
+  const result = turn.updateGameStateResult
+  const sectionId = `update-${turn.id}`
+
+  const collapsed = useCallback(() => {
+    const userChoice = collapsedSections[sectionId]
+    return userChoice !== undefined ? userChoice : true
+  }, [collapsedSections, sectionId])()
+
+  if (result === undefined && turn.generationPhase === 'done') {
+    return (
+      <div className="collapsible-section update-section updating">
+        <div className="collapsible-header">
+          <span className="section-title">⏳ {t('ink.update.updating')}</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (!result) return null
+
+  if (!result.success) {
+    return (
+      <div className="collapsible-section update-section error">
+        <div
+          className="collapsible-header"
+          onClick={() => toggleSection(sectionId)}
+        >
+          <span className="collapse-icon">{collapsed ? '▶' : '▼'}</span>
+          <span className="section-title">❌ {t('ink.update.failed')}</span>
+          <button
+            className="retry-inline-btn"
+            onClick={(e) => {
+              e.stopPropagation()
+              retryUpdateGameState(turn.id)
+            }}
+          >
+            🔄 {t('ink.error.retry')}
+          </button>
+        </div>
+        {!collapsed && (
+          <div className="collapsible-content error-content">
+            <div className="error-message">{result.error || t('ink.update.unknownError')}</div>
+            {result.audit && (
+              <div className="error-detail">
+                <strong>{t('ink.update.audit')}</strong>
+                <pre>{result.audit}</pre>
+              </div>
+            )}
+            {result.outline && (
+              <div className="error-detail">
+                <strong>{t('ink.update.executionPlan')}</strong>
+                <pre>{result.outline}</pre>
+              </div>
+            )}
+            {result.results && result.results.length > 0 && (
+              <div className="error-detail">
+                <strong>{t('ink.update.executionResults')}</strong>
+                {result.results.map((r, idx) => (
+                  <div key={idx} className={`call-result ${r.success ? 'success' : 'failed'}`}>
+                    {r.success ? '✅' : '❌'} [{r.service}]
+                    {r.args && <pre className="call-args">{JSON.stringify(r.args, null, 2)}</pre>}
+                    {r.error && <div className="call-error">{r.error}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <FirstAttemptSection firstAttempt={result.first_attempt} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const successCount = result.results?.filter(r => r.success).length || 0
+  const totalCount = result.results?.length || 0
+
+  return (
+    <div className={`collapsible-section update-section success ${collapsed ? 'collapsed' : ''}`}>
+      <div
+        className="collapsible-header"
+        onClick={() => toggleSection(sectionId)}
+      >
+        <span className="collapse-icon">{collapsed ? '▶' : '▼'}</span>
+        <span className="section-title">✅ {t('ink.update.success')}</span>
+        {totalCount > 0 && <span className="update-badge">({t('ink.update.callSuccess', { success: successCount, total: totalCount })})</span>}
+      </div>
+      {!collapsed && (
+        <div className="collapsible-content">
+          {result.audit && (
+            <div className="update-detail">
+              <strong>{t('ink.update.audit')}</strong>
+              <pre>{result.audit}</pre>
+            </div>
+          )}
+          {result.outline && (
+            <div className="update-detail">
+              <strong>{t('ink.update.executionPlan')}</strong>
+              <pre>{result.outline}</pre>
+            </div>
+          )}
+          {result.calls && result.calls.length > 0 && (
+            <div className="update-detail">
+              <strong>{t('ink.update.serviceCalls')}</strong>
+              {result.calls.map((call, idx) => (
+                <div key={idx} className="call-item">
+                  📡 [{call.service}] {call.reason}
+                </div>
+              ))}
+            </div>
+          )}
+          {result.results && result.results.length > 0 && (
+            <div className="update-detail">
+              <strong>{t('ink.update.executionResults')}</strong>
+              {result.results.map((r, idx) => (
+                <div key={idx} className={`call-result ${r.success ? 'success' : 'failed'}`}>
+                  {r.success ? '✅' : '❌'} [{r.service}] {r.reason}
+                  {r.error && <div className="call-error">{r.error}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}

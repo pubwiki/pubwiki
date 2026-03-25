@@ -66,7 +66,6 @@
 	let composer: Composer | undefined = $state();
 	let containerRef: HTMLDivElement | undefined = $state();
 	let editorRef: LexicalEditor | undefined = $state();
-	let isInitialized = $state(false);
 	let isInternalChange = false;
 	let isFocused = false;
 
@@ -111,8 +110,6 @@
 				const blocks = exportToBlocks(editorState);
 				onchange?.(blocks);
 			});
-
-			isInitialized = true;
 
 			return () => {
 				unsubscribe();

@@ -24,6 +24,17 @@ let vfsRpcPort: MessagePort | null = null
 let bootstrapClientId: string | null = null
 let userIframe: HTMLIFrameElement | null = null
 let pendingVfsPortRequest = false
+let swRegistration: ServiceWorkerRegistration | null = null
+
+/**
+ * Get the active Service Worker instance.
+ * Prefers navigator.serviceWorker.controller, but falls back to
+ * registration.active for browsers (Firefox) where controller stays
+ * null inside cross-origin iframes even after clients.claim().
+ */
+function getActiveWorker(): ServiceWorker | null {
+  return navigator.serviceWorker?.controller ?? swRegistration?.active ?? null
+}
 
 // Parse allowed origins at module scope so Vite inlining + minification
 // cannot fold the .split() away into a single-string comparison.
@@ -192,12 +203,13 @@ function sendVfsPortToServiceWorker(): boolean {
     return false
   }
   
-  if (!navigator.serviceWorker.controller) {
-    console.warn('[SandboxBootstrap] No active Service Worker controller')
+  const worker = getActiveWorker()
+  if (!worker) {
+    console.warn('[SandboxBootstrap] No active Service Worker')
     return false
   }
   
-  navigator.serviceWorker.controller.postMessage(
+  worker.postMessage(
     { type: 'SETUP_VFS_RPC_PORT' },
     [vfsRpcPort]
   )
@@ -334,7 +346,7 @@ function injectConsoleInterceptor(): void {
 /**
  * Load user iframe
  */
-async function loadUserIframe(entryFile: string): Promise<void> {
+async function loadUserIframe(entryFile: string, initialPath?: string): Promise<void> {
   userIframe = document.getElementById('user-iframe') as HTMLIFrameElement
   
   if (!userIframe) {
@@ -381,10 +393,20 @@ async function loadUserIframe(entryFile: string): Promise<void> {
           iframeWindow.navigator.serviceWorker.addEventListener('controllerchange', () => {
             resolve()
           }, { once: true })
-          // Timeout protection
+          // Timeout protection — in some browsers (Chrome <131) srcdoc iframes
+          // never get a SW controller, so don't block forever
           setTimeout(resolve, 1000)
         })
       }
+    }
+    
+    // Check if we can actually send the registration message
+    const controller = iframeWindow.navigator.serviceWorker?.controller
+    if (!controller) {
+      // No SW controller on this iframe (e.g. about:srcdoc in older Chrome).
+      // Skip registration — the SW will establish the mapping when the iframe
+      // navigates to a real URL via the _bid query parameter.
+      return false
     }
     
     // Wait for SW to complete registration
@@ -398,18 +420,16 @@ async function loadUserIframe(entryFile: string): Promise<void> {
       navigator.serviceWorker.addEventListener('message', handler)
     })
     
-    // Register user iframe with SW using iframe's serviceWorker
-    if (iframeWindow.navigator.serviceWorker?.controller) {
-      iframeWindow.navigator.serviceWorker.controller.postMessage({
-        type: 'REGISTER_USER_IFRAME',
-        bootstrapClientId: bootstrapClientId
-      })
-    }
+    // Register user iframe with SW
+    controller.postMessage({
+      type: 'REGISTER_USER_IFRAME',
+      bootstrapClientId: bootstrapClientId
+    })
     
     // Wait for confirmation
     await registrationPromise
     
-    hideLoading()
+    return true
   }
   
   userIframe.onerror = () => {
@@ -417,14 +437,16 @@ async function loadUserIframe(entryFile: string): Promise<void> {
   }
   
   
-  // Manually call register before loading entryFile to ensure SW is ready
-  await registerUserIframe()
-  
+  // Try to pre-register the user iframe with SW before navigation.
+  // This may fail on about:srcdoc in older Chrome versions that don't
+  // assign a SW controller to srcdoc iframes.
+  const preRegistered = await registerUserIframe()
   
   // Include bootstrap ID in URL for iOS Safari workaround
   // iOS Safari doesn't provide clientId on nested iframe navigation,
   // so we pass it via URL parameter for SW to establish the mapping
-  iframeWindow.location.replace(`/${entryFile}?_bid=${bootstrapClientId}`)
+  const targetPath = initialPath || `/${entryFile}`
+  iframeWindow.location.replace(`${targetPath}${targetPath.includes('?') ? '&' : '?'}_bid=${bootstrapClientId}`)
   
   // Wait for content to load
   await new Promise<void>(resolve => {
@@ -435,11 +457,75 @@ async function loadUserIframe(entryFile: string): Promise<void> {
     userIframe!.addEventListener('load', handler)
   })
   
+  // If pre-registration failed (srcdoc had no SW controller), register now
+  // that the iframe has navigated to a real URL
+  if (!preRegistered) {
+    await registerUserIframe()
+  }
+  
+  hideLoading()
+  
   
   // Inject console interceptor into user iframe
   injectConsoleInterceptor()
   
+  // Setup URL tracking to notify host of navigation changes
+  setupUrlTracking()
+  
+  // Re-setup URL tracking on user iframe reload (contentWindow changes)
+  userIframe.addEventListener('load', () => {
+    injectConsoleInterceptor()
+    setupUrlTracking()
+  })
+  
   // Context will be provided on-demand when user iframe calls initSandboxClient()
+}
+
+/**
+ * Setup URL tracking on user iframe
+ * Hooks into the user iframe's navigation events to notify the host of URL changes.
+ * Uses Navigation API (Chrome 102+) when available, falls back to history monkey-patch.
+ */
+function setupUrlTracking(): void {
+  if (!userIframe?.contentWindow || !mainRpcClient) return
+
+  const win = userIframe.contentWindow as Window & typeof globalThis
+
+  const notify = () => {
+    if (!userIframe?.contentWindow) return
+    try {
+      const w = userIframe.contentWindow
+      const path = w.location.pathname + w.location.search + w.location.hash
+      mainRpcClient?.hmr.notifyUrlChange(path).catch(() => {
+        // Silently ignore RPC errors
+      })
+    } catch {
+      // Silently ignore cross-origin errors during navigation
+    }
+  }
+
+  // Prefer Navigation API (Chrome 102+) — one event covers all navigation types
+  if ('navigation' in win) {
+    ;(win as unknown as { navigation: EventTarget }).navigation.addEventListener('navigatesuccess', notify)
+    return
+  }
+
+  // Fallback: monkey-patch history methods on the user iframe's window
+  const childHistory = win.history
+  const origPush = childHistory.pushState.bind(childHistory)
+  const origReplace = childHistory.replaceState.bind(childHistory)
+
+  childHistory.pushState = (...args: Parameters<typeof childHistory.pushState>) => {
+    origPush(...args)
+    notify()
+  }
+  childHistory.replaceState = (...args: Parameters<typeof childHistory.replaceState>) => {
+    origReplace(...args)
+    notify()
+  }
+
+  win.addEventListener('popstate', notify)
+  win.addEventListener('hashchange', notify)
 }
 
 /**
@@ -534,22 +620,12 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
     exposeSandboxClient()
     
     // Register Service Worker
-    await registerServiceWorker()
+    swRegistration = await registerServiceWorker()
     
-    // Wait for SW to control the page
-    if (!navigator.serviceWorker.controller) {
-      await new Promise<void>((resolve) => {
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          resolve()
-        }, { once: true })
-      })
-    }
-    
-    // Get bootstrap client ID
-    // We'll get this from the Service Worker via a message
-    // Send a request to SW to get our client ID
-    if (navigator.serviceWorker.controller) {
-      navigator.serviceWorker.controller.postMessage({ type: 'GET_CLIENT_ID' })
+    // Get bootstrap client ID from SW
+    const worker = getActiveWorker()
+    if (worker) {
+      worker.postMessage({ type: 'GET_CLIENT_ID' })
       
       // Wait for response
       const clientIdPromise = new Promise<string>((resolve) => {
@@ -566,7 +642,7 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
     }
     
     // Load user iframe (now async)
-    await loadUserIframe(context.entryFile)
+    await loadUserIframe(context.entryFile, context.initialPath)
     
     
   } catch (error) {
@@ -581,9 +657,7 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
 navigator.serviceWorker?.addEventListener('message', (event: MessageEvent) => {
   const message = event.data
   
-  
   if (message?.type === 'REQUEST_VFS_PORT') {
-    
     if (vfsRpcPort) {
       sendVfsPortToServiceWorker()
     } else {
@@ -619,13 +693,15 @@ window.addEventListener('message', (event: MessageEvent) => {
   // Handle sandbox initialization
   if (message?.type === 'sandbox-init') {
     
+    
     const urlParams = new URLSearchParams(window.location.search)
     const entryFromUrl = urlParams.get('entry')
     
     sandboxContext = {
       workspaceId: message.workspaceId,
       basePath: message.basePath,
-      entryFile: message.entryFile || entryFromUrl || 'index.html'
+      entryFile: message.entryFile || entryFromUrl || 'index.html',
+      initialPath: message.initialPath
     }
     
     const mainPort = event.ports?.[0]
@@ -672,8 +748,9 @@ if (window.parent !== window) {
 
 // Cleanup on unload
 window.addEventListener('beforeunload', () => {
-  if (bootstrapClientId && navigator.serviceWorker.controller) {
-    navigator.serviceWorker.controller.postMessage({
+  const worker = getActiveWorker()
+  if (bootstrapClientId && worker) {
+    worker.postMessage({
       type: 'CLIENT_DISCONNECTED',
       clientId: bootstrapClientId
     })

@@ -35,9 +35,9 @@ export interface TripleStoreInterface {
   insert(s: string, p: string, o: Value, g?: string): void
   delete(s: string, p: string, o?: Value, g?: string): void
 
-  // Query
-  match(pattern: MatchPattern): Triple[]
-  get(s: string, p: string, g?: string): Value | undefined
+  // Query (optional checkpoint to query a specific snapshot without checkout)
+  match(pattern: MatchPattern, checkpoint?: string): Triple[]
+  get(s: string, p: string, g?: string, checkpoint?: string): Value | undefined
   getAll(): Triple[]
 
   // Batch

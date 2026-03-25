@@ -95,6 +95,9 @@ export { Vfs } from './types'
 // Re-export RpcTarget from capnweb for custom service implementations
 export { RpcTarget, RpcStub } from 'capnweb'
 
+// Sandbox ID computation and origin resolution
+export { computeSandboxId, getSandboxOrigin } from './sandbox-id'
+
 // Utility functions
 export {
   getMimeType,

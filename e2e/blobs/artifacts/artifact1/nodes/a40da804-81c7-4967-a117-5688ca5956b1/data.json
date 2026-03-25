@@ -1,0 +1,42 @@
+{
+  "id": "a40da804-81c7-4967-a117-5688ca5956b1",
+  "type": "VFS",
+  "name": "Files",
+  "commit": "155d540df8aaeaefdf31b119ba59a4f491cb08747bbba1d41cb88daf04a0458b",
+  "contentHash": "7a76d29ddb1355c096c13ceacf20421c9294ab9ed6b9b64e28767c7e184445f4",
+  "parent": null,
+  "content": {
+    "type": "VFS",
+    "projectId": "9dcec529-7c8c-4e77-9a06-8472e1477a04",
+    "mounts": []
+  },
+  "files": [
+    "/save.lua",
+    "/regex.lua",
+    "/pubwiki-lua.md",
+    "/loader.lua",
+    "/init.lua",
+    "/assets/ecs@pubwiki/pkg.json",
+    "/assets/ecs@pubwiki/init.lua",
+    "/assets/ecs@pubwiki/ecs_services.lua",
+    "/assets/ecs@pubwiki/ecs_rag.lua",
+    "/assets/ecs@pubwiki/ecs.lua",
+    "/assets/avg-template@pubwiki/test_updater.lua",
+    "/assets/avg-template@pubwiki/test.lua",
+    "/assets/avg-template@pubwiki/systems.lua",
+    "/assets/avg-template@pubwiki/state.lua",
+    "/assets/avg-template@pubwiki/rag.lua.tmp.54024.1774256903970",
+    "/assets/avg-template@pubwiki/rag.lua",
+    "/assets/avg-template@pubwiki/publish.lua",
+    "/assets/avg-template@pubwiki/prompt_update_gamestate_and_setting.lua",
+    "/assets/avg-template@pubwiki/prompt_generate_content_with_change_recomands.lua",
+    "/assets/avg-template@pubwiki/pkg.json",
+    "/assets/avg-template@pubwiki/overview.lua",
+    "/assets/avg-template@pubwiki/llm_collector.lua",
+    "/assets/avg-template@pubwiki/init.lua",
+    "/assets/avg-template@pubwiki/generate.lua",
+    "/assets/avg-template@pubwiki/components.lua",
+    "/assets/avg-template@pubwiki/chat.lua",
+    "/CLAUDE.md"
+  ]
+}

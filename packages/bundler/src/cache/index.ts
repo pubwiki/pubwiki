@@ -79,6 +79,18 @@ export interface BuildCacheStorage {
    */
   resolve(buildCacheKey: string, fileHashes: Record<string, string>): Promise<BuildCacheEntry | null>
 
+  /**
+   * Create a direct alias: make `newKey` point to the same compiled output as `existingKey`,
+   * updating `fileHashes` to reflect the current VFS state under `newKey`.
+   *
+   * Used when importmap.json is updated after a build (resolving package versions),
+   * which changes the content hash and therefore the cache key, but the compiled
+   * output (dist files) remains exactly the same.
+   *
+   * Returns false if `existingKey` is not found in the cache.
+   */
+  alias(existingKey: string, newKey: string, fileHashes: Record<string, string>): Promise<boolean>
+
   // ---- HTTP content cache (replaces BundleCache) ----
   getHttp(url: string): Promise<{ content: string; contentType: string } | null>
   setHttp(url: string, content: string, contentType: string): Promise<void>

@@ -68,5 +68,11 @@ export interface IHmrService {
    * Clear all stored console logs
    */
   clearLogs(): Promise<void>
+
+  /**
+   * Report a URL change from the sandbox user iframe
+   * @param path - The new path (pathname + search + hash)
+   */
+  notifyUrlChange(path: string): Promise<void>
 }
 

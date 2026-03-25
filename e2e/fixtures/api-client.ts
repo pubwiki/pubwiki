@@ -5,9 +5,7 @@
  * can run in Playwright's Node.js setup scripts or inside `page.evaluate`.
  */
 
-import { API_BASE_URL, TEST_PASSWORD } from './constants.js';
-
-const ORIGIN = new URL(API_BASE_URL).origin;
+import { getApiBaseUrl, TEST_PASSWORD } from './constants.js';
 
 interface AuthResult {
   sessionCookie: string;
@@ -18,6 +16,8 @@ interface AuthResult {
  * Register a new user via Better-Auth and return the session cookie.
  */
 export async function registerUser(username: string): Promise<AuthResult> {
+  const API_BASE_URL = getApiBaseUrl();
+  const ORIGIN = new URL(API_BASE_URL).origin;
   const res = await fetch(`${API_BASE_URL}/auth/sign-up/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: ORIGIN },
@@ -44,6 +44,8 @@ export async function registerUser(username: string): Promise<AuthResult> {
  * Log in an existing user via Better-Auth.
  */
 export async function loginUser(username: string): Promise<AuthResult> {
+  const API_BASE_URL = getApiBaseUrl();
+  const ORIGIN = new URL(API_BASE_URL).origin;
   const res = await fetch(`${API_BASE_URL}/auth/sign-in/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Origin: ORIGIN },

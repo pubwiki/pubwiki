@@ -19,6 +19,7 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
   private subscriptionId: string | null = null
   private logs: ConsoleLogEntry[] = []
   private onLogCallback: OnLogCallback | null = null
+  private onUrlChangeCallback: ((path: string) => void) | null = null
   private readonly maxLogs = 500 // Limit stored logs
 
   constructor() {
@@ -31,6 +32,13 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
    */
   setOnLogCallback(callback: OnLogCallback | null): void {
     this.onLogCallback = callback
+  }
+
+  /**
+   * Set callback for URL change events (called by host)
+   */
+  setOnUrlChangeCallback(callback: ((path: string) => void) | null): void {
+    this.onUrlChangeCallback = callback
   }
 
   /**
@@ -114,6 +122,15 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
   }
 
   /**
+   * Report a URL change from the sandbox user iframe (RPC method)
+   */
+  async notifyUrlChange(path: string): Promise<void> {
+    if (this.onUrlChangeCallback) {
+      this.onUrlChangeCallback(path)
+    }
+  }
+
+  /**
    * Cleanup resources
    */
   dispose(): void {
@@ -121,6 +138,7 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
     this.subscriptionId = null
     this.logs = []
     this.onLogCallback = null
+    this.onUrlChangeCallback = null
     console.log(`[HmrServiceImpl] Disposed`)
   }
 }

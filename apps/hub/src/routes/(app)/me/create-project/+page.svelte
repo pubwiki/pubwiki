@@ -280,6 +280,7 @@
 					{:else if userArtifacts.length === 0}
 						<div class="text-center py-8 text-gray-500">
 							<p>You don't have any artifacts yet.</p>
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 							<a href={PUBLIC_STUDIO_URL || 'http://localhost:5174'} class="text-[#0969da] hover:underline text-sm mt-2 inline-block">Create your first artifact</a>
 						</div>
 					{:else if filteredArtifacts.length === 0}

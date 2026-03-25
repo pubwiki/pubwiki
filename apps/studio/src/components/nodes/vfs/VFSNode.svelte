@@ -13,6 +13,7 @@
 	 * - Version info in footbar with clickable commit history
 	 */
 	import { type NodeProps, type Node, useConnection, useEdges, useUpdateNodeInternals, Position, Handle, useSvelteFlow } from '@xyflow/svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount, onDestroy } from 'svelte';
 	import type { VFSNodeData, FlowNodeData, VFSContent, GeneratedNodeData } from '$lib/types';
 	import { countFiles, countFolders, vfsVersionStore, type VfsVersionState } from '$lib/vfs';
@@ -172,7 +173,7 @@
 
 	// Get the set of connected mount handles
 	const mountConnections = $derived.by(() => {
-		const connected = new Set<string>();
+		const connected = new SvelteSet<string>();
 		for (const edge of currentEdges.current) {
 			if (edge.target === id && isVfsMountHandle(edge.targetHandle)) {
 				connected.add(edge.targetHandle!);

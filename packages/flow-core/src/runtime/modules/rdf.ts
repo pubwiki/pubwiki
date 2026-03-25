@@ -58,13 +58,13 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 
 		async match(_self: unknown, pattern: {
 			subject?: string; predicate?: string; object?: unknown; graph?: string;
-		}): Promise<LuaTable<Array<{ subject: string; predicate: string; object: unknown; graph?: string }>>> {
+		}, checkpoint?: string): Promise<LuaTable<Array<{ subject: string; predicate: string; object: unknown; graph?: string }>>> {
 			const triples = (await resolveStore()).match({
 				subject: pattern.subject,
 				predicate: pattern.predicate,
 				object: pattern.object != null ? luaToValue(pattern.object) : undefined,
 				graph: pattern.graph,
-			});
+			}, checkpoint);
 			return new LuaTable(triples.map(t => ({
 				subject: t.subject,
 				predicate: t.predicate,
@@ -73,8 +73,8 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 			})));
 		},
 
-		async get(_self: unknown, subject: string, predicate: string, graph?: string): Promise<unknown> {
-			const v = (await resolveStore()).get(subject, predicate, graph);
+		async get(_self: unknown, subject: string, predicate: string, graph?: string, checkpoint?: string): Promise<unknown> {
+			const v = (await resolveStore()).get(subject, predicate, graph, checkpoint);
 			return v !== undefined ? valueToLua(v) : undefined;
 		},
 

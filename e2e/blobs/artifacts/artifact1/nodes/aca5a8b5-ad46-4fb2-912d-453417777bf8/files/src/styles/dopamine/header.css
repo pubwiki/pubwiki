@@ -1,0 +1,271 @@
+/* ============================================================================
+   Dopamine Header - Top toolbar
+   ============================================================================ */
+
+.dp-header {
+    height: var(--dp-header-height);
+    display: flex;
+    align-items: center;
+    padding: 0 var(--dp-space-4);
+    background: var(--dp-bg-glass-strong);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 2.5px solid var(--dp-text-primary);
+    position: relative;
+    z-index: var(--dp-z-sticky);
+    gap: var(--dp-space-3);
+    flex-shrink: 0;
+}
+
+/* Aurora gradient decoration line at top */
+.dp-header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--dp-gradient-aurora);
+}
+
+/* Left section: logo and title */
+.dp-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-3);
+}
+
+.dp-header-left .dp-logo {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--dp-radius-md);
+    background: var(--dp-gradient-aurora);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    box-shadow: var(--dp-shadow-hard-sm);
+    border: 2px solid var(--dp-text-primary);
+}
+
+.dp-header-left h1 {
+    font-family: var(--dp-font-display);
+    font-size: var(--dp-font-size-lg);
+    font-weight: var(--dp-font-weight-extrabold);
+    color: var(--dp-text-primary);
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.dp-header-left .dp-dirty-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--dp-font-size-xs);
+    font-weight: var(--dp-font-weight-bold);
+    color: var(--dp-vivid-orange);
+    padding: 2px 8px;
+    border-radius: var(--dp-radius-pill);
+    background: rgba(255, 133, 52, 0.12);
+    border: 1.5px solid var(--dp-vivid-orange);
+    animation: dp-glow-pulse 2s ease-in-out infinite;
+}
+
+/* Toolbar area */
+.dp-header .toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-2);
+    margin-left: auto;
+}
+
+/* Toolbar buttons */
+.dp-editor .btn-toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--dp-space-2);
+    padding: 7px 14px;
+    border-radius: var(--dp-radius-pill);
+    border: 2px solid var(--dp-border-color);
+    background: var(--dp-bg-secondary);
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    font-weight: var(--dp-font-weight-semibold);
+    cursor: pointer;
+    transition: all var(--dp-transition-bounce);
+    white-space: nowrap;
+}
+
+.dp-editor .btn-toolbar:hover:not(:disabled) {
+    transform: scale(1.05);
+    border-color: var(--dp-electric-blue);
+    box-shadow: var(--dp-shadow-hard-sm);
+}
+
+.dp-editor .btn-toolbar:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.dp-editor .btn-toolbar:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Primary action buttons */
+.dp-editor .btn-toolbar.btn-primary {
+    background: var(--dp-electric-blue);
+    color: white;
+    border-color: var(--dp-text-primary);
+    box-shadow: var(--dp-shadow-hard-sm);
+}
+
+.dp-editor .btn-toolbar.btn-primary:hover:not(:disabled) {
+    background: #5a9bff;
+    box-shadow: var(--dp-shadow-hard-blue);
+    transform: scale(1.05);
+}
+
+/* Save button - warm accent */
+.dp-editor .btn-toolbar.btn-save {
+    background: var(--dp-sunny-yellow);
+    color: var(--dp-text-primary);
+    border-color: var(--dp-text-primary);
+    box-shadow: var(--dp-shadow-hard-sm);
+}
+
+.dp-editor .btn-toolbar.btn-save:hover:not(:disabled) {
+    box-shadow: var(--dp-shadow-hard);
+    transform: scale(1.05);
+}
+
+/* AI button */
+.dp-editor .btn-toolbar.btn-ai {
+    background: var(--dp-gradient-aurora);
+    color: white;
+    border-color: var(--dp-text-primary);
+    box-shadow: var(--dp-shadow-hard-sm);
+}
+
+.dp-editor .btn-toolbar.btn-ai:hover:not(:disabled) {
+    box-shadow: var(--dp-glow-purple);
+    transform: scale(1.05);
+}
+
+.dp-editor .btn-toolbar.btn-ai.active {
+    box-shadow: var(--dp-glow-purple), var(--dp-shadow-hard-purple);
+}
+
+/* Settings button */
+.dp-editor .btn-toolbar.btn-settings {
+    background: var(--dp-bg-secondary);
+    border-color: var(--dp-border-color);
+}
+
+.dp-editor .btn-toolbar.btn-settings:hover:not(:disabled) {
+    border-color: var(--dp-candy-purple);
+    box-shadow: var(--dp-glow-purple);
+}
+
+/* Danger buttons */
+.dp-editor .btn-toolbar.btn-danger {
+    background: var(--dp-coral);
+    color: white;
+    border-color: var(--dp-text-primary);
+}
+
+/* ========== Dropdown Menus ========== */
+
+.dp-editor .dropdown-menu {
+    position: relative;
+    display: inline-block;
+}
+
+.dp-editor .dropdown-content {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: var(--dp-bg-secondary);
+    border: var(--dp-border-thick);
+    border-radius: var(--dp-radius-lg);
+    box-shadow: var(--dp-shadow-hard);
+    min-width: 180px;
+    padding: 6px;
+    z-index: var(--dp-z-dropdown);
+    animation: dp-bounce-in 0.2s ease-out;
+}
+
+.dp-editor .dropdown-content button,
+.dp-editor .dropdown-content a {
+    display: flex;
+    align-items: center;
+    gap: var(--dp-space-2);
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--dp-text-primary);
+    font-size: var(--dp-font-size-sm);
+    border-radius: var(--dp-radius-md);
+    cursor: pointer;
+    text-align: left;
+    text-decoration: none;
+    transition: all var(--dp-transition-fast);
+}
+
+.dp-editor .dropdown-content button:hover,
+.dp-editor .dropdown-content a:hover {
+    background: var(--dp-electric-blue);
+    color: white;
+}
+
+.dp-editor .dropdown-content .dropdown-info {
+    color: var(--dp-text-tertiary);
+}
+
+.dp-editor .dropdown-content .dropdown-hint {
+    color: var(--dp-text-tertiary);
+    background: rgba(0, 0, 0, 0.03);
+    border-left-color: var(--dp-border-color);
+    font-size: var(--paper-font-size-xs);
+    padding: 0px 0px 0px 12px;
+}
+
+.dp-editor .dropdown-content .dropdown-divider {
+    height: 2px;
+    background: var(--dp-border-color);
+    margin: 4px 0;
+}
+
+/* World Builder button gradient */
+.dp-editor .btn-toolbar.btn-world-builder {
+    background: var(--dp-gradient-aurora);
+    color: white;
+    border-color: var(--dp-text-primary);
+    box-shadow: var(--dp-shadow-hard-sm);
+}
+
+.dp-editor .btn-toolbar.btn-world-builder:hover:not(:disabled) {
+    box-shadow: var(--dp-glow-purple);
+    transform: scale(1.05);
+}
+
+.dp-editor .btn-toolbar.btn-world-builder.active {
+    box-shadow: var(--dp-glow-purple), var(--dp-shadow-hard-purple);
+}
+
+/* Mode indicator */
+.dp-editor .mode-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--dp-font-size-xs);
+    font-weight: var(--dp-font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 3px 10px;
+    border-radius: var(--dp-radius-pill);
+    background: var(--dp-lime-green-alpha);
+    color: var(--dp-lime-green);
+    border: 1.5px solid var(--dp-lime-green);
+}
