@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
-import { registerUser } from './helpers';
+import { registerUser, createArtifactFormData } from './helpers';
+import { computeArtifactCommit } from '@pubwiki/api';
 
 /**
  * E2E 测试：访问控制
@@ -65,21 +66,11 @@ describe('E2E: Access Control', () => {
       options: { isPrivate?: boolean; isListed?: boolean } = {}
     ): Promise<{ id: string; name: string }> {
       const { isListed = true } = options;
-      const artifactId = crypto.randomUUID();
-      const commit = crypto.randomUUID().slice(0, 40);
-      const slug = `test-artifact-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-      const formData = new FormData();
-      formData.append('metadata', JSON.stringify({
-        artifactId,
-        commit,
-        name: `Test Artifact ${slug}`,
+      const formData = await createArtifactFormData({
+        name: `Test Artifact ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         isListed,
-      }));
-      // 新的 API 格式需要 nodes（空数组是有效的）
-      formData.append('nodes', JSON.stringify([]));
-      // 新的 API 格式需要 edges
-      formData.append('edges', JSON.stringify([]));
+      });
 
       const response = await fetch(`${baseUrl}/artifacts`, {
         method: 'POST',
@@ -271,34 +262,29 @@ describe('E2E: Access Control', () => {
       });
 
       it('should allow owner to update artifact', async () => {
-        const response = await fetch(`${baseUrl}/artifacts/${artifactId}`, {
-          method: 'PATCH',
+        const response = await fetch(`${baseUrl}/artifacts/${artifactId}/metadata`, {
+          method: 'PUT',
           headers: {
             Cookie: userASession,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            artifactId,
-            baseCommit: 'dummy-commit',
             name: 'Updated Name by Owner',
           }),
         });
 
-        // PATCH 可能返回 200 或其他成功状态
-        // 如果 baseCommit 不匹配，可能返回 400 或 404，但不应该是 403
-        expect(response.status !== 403).toBe(true);
+        // PUT /metadata should succeed for owner
+        expect(response.status).toBe(200);
       });
 
       it('should NOT allow other users to update artifact', async () => {
-        const response = await fetch(`${baseUrl}/artifacts/${artifactId}`, {
-          method: 'PATCH',
+        const response = await fetch(`${baseUrl}/artifacts/${artifactId}/metadata`, {
+          method: 'PUT',
           headers: {
             Cookie: userBSession,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            artifactId,
-            baseCommit: 'dummy-commit',
             name: 'Hacked Name',
           }),
         });
@@ -307,14 +293,12 @@ describe('E2E: Access Control', () => {
       });
 
       it('should NOT allow unauthenticated users to update artifact', async () => {
-        const response = await fetch(`${baseUrl}/artifacts/${artifactId}`, {
-          method: 'PATCH',
+        const response = await fetch(`${baseUrl}/artifacts/${artifactId}/metadata`, {
+          method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            artifactId,
-            baseCommit: 'dummy-commit',
             name: 'Anonymous Hack',
           }),
         });
@@ -581,7 +565,7 @@ describe('E2E: Access Control', () => {
       it('should allow owner to make public artifact private', async () => {
         // Create public artifact
         const artifactId = crypto.randomUUID();
-        const commit = crypto.randomUUID().slice(0, 40);
+        const commit = await computeArtifactCommit(artifactId, null, [], []);
         
         const formData = new FormData();
         formData.append('metadata', JSON.stringify({
@@ -608,25 +592,23 @@ describe('E2E: Access Control', () => {
         expect(publicCheck.status).toBe(200);
 
         // Update to private
-        const updateResponse = await fetch(`${baseUrl}/artifacts/${artifactId}`, {
-          method: 'PATCH',
+        const updateResponse = await fetch(`${baseUrl}/artifacts/${artifactId}/metadata`, {
+          method: 'PUT',
           headers: {
             Cookie: userASession,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            artifactId,
-            baseCommit: commit,
             isPrivate: true,
           }),
         });
         expect(updateResponse.status).toBe(200);
 
-        // Verify it's now private (unauthenticated should get 404)
+        // Verify it's now private (unauthenticated should get 403)
         const { response: privateCheck } = await client.GET('/artifacts/{artifactId}/graph', {
           params: { path: { artifactId } },
         });
-        expect(privateCheck.status).toBe(404);
+        expect(privateCheck.status).toBe(403);
 
         // But owner can still access
         const { response: ownerCheck } = await client.GET('/artifacts/{artifactId}/graph', {
@@ -639,7 +621,7 @@ describe('E2E: Access Control', () => {
       it('should allow owner to make listed artifact unlisted', async () => {
         // Create listed artifact
         const artifactId = crypto.randomUUID();
-        const commit = crypto.randomUUID().slice(0, 40);
+        const commit = await computeArtifactCommit(artifactId, null, [], []);
         
         const formData = new FormData();
         formData.append('metadata', JSON.stringify({
@@ -664,15 +646,13 @@ describe('E2E: Access Control', () => {
         expect(beforeList?.artifacts.map(a => a.id)).toContain(artifactId);
 
         // Update to unlisted
-        const updateResponse = await fetch(`${baseUrl}/artifacts/${artifactId}`, {
-          method: 'PATCH',
+        const updateResponse = await fetch(`${baseUrl}/artifacts/${artifactId}/metadata`, {
+          method: 'PUT',
           headers: {
             Cookie: userASession,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            artifactId,
-            baseCommit: commit,
             isListed: false,
           }),
         });

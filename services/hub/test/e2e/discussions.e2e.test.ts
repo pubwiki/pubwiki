@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
-import { registerUser } from './helpers';
+import { registerUser, createTestArtifactHelper } from './helpers';
 
 describe('E2E: Discussions API', () => {
   let worker: Unstable_DevWorker;
@@ -39,29 +39,7 @@ describe('E2E: Discussions API', () => {
 
   // Helper to create a test artifact
   async function createTestArtifact(): Promise<string> {
-    const slug = `test-artifact-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const formData = new FormData();
-    formData.append('metadata', JSON.stringify({
-      artifactId: crypto.randomUUID(),
-      type: 'RECIPE',
-      name: 'Test Artifact',
-      slug,
-      version: '1.0.0',
-    }));
-    formData.append('descriptor', JSON.stringify({
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      nodes: [],
-      edges: [],
-    }));
-    
-    const response = await fetch(`${baseUrl}/artifacts`, {
-      method: 'POST',
-      headers: { Cookie: sessionCookie },
-      body: formData,
-    });
-    const data = await response.json() as { artifact: { id: string } };
-    return data.artifact.id;
+    return createTestArtifactHelper(baseUrl, sessionCookie);
   }
 
   // Helper to create a test project
