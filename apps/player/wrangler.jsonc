@@ -15,5 +15,16 @@
       "pattern": "play.pub.wiki",
       "custom_domain": true
     }
-  ]
+  ],
+  "env": {
+    "dev": {
+      "name": "pubwiki-player-dev",
+      "routes": [
+        {
+          "pattern": "dev-play.pub.wiki",
+          "custom_domain": true
+        }
+      ]
+    }
+  }
 }

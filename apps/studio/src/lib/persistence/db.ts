@@ -336,10 +336,18 @@ export async function deleteEdge(edgeId: string): Promise<void> {
 // ============================================================================
 
 /**
- * Create or update a project
+ * Create or update a project (full replace)
  */
 export async function saveProject(project: StoredProject): Promise<void> {
   await db.projects.put(project);
+}
+
+/**
+ * Partially update a project. Only the specified fields are modified;
+ * all other fields (e.g. selectedEntrypoint) are left intact.
+ */
+export async function updateProject(projectId: string, updates: Partial<StoredProject>): Promise<void> {
+  await db.projects.update(projectId, updates);
 }
 
 /**

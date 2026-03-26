@@ -34,6 +34,12 @@ export class DependencyResolver {
   // Resolved npm packages for importmap write-back (basePkg → versionedName, e.g. "react" → "react@18.2.0")
   private resolvedPackageVersions = new Map<string, string>()
 
+  // In-flight npm resolve promises — coalesces concurrent resolutions for the same package
+  private inflightNpmResolves = new Map<string, Promise<ResolveResult>>()
+
+  // Content-type cache from HEAD responses during npm resolution
+  private headContentTypes = new Map<string, string>()
+
 
   constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean>; cache?: BuildCacheStorage }) {
     this.fileExistsChecker = options?.fileExistsChecker
@@ -242,6 +248,21 @@ export class DependencyResolver {
     const esmExt = this.getEsmShExternalParam()
     const cacheKey = esmExt ? `${versionedName}${esmExt}` : versionedName
 
+    // Coalesce concurrent resolutions for the same package.
+    // The sync Map check must happen before any await to prevent races.
+    const inflight = this.inflightNpmResolves.get(cacheKey)
+    if (inflight) return inflight
+
+    const promise = this.resolveNpmPackageUncached(versionedName, cacheKey)
+    this.inflightNpmResolves.set(cacheKey, promise)
+    try {
+      return await promise
+    } finally {
+      this.inflightNpmResolves.delete(cacheKey)
+    }
+  }
+
+  private async resolveNpmPackageUncached(versionedName: string, cacheKey: string): Promise<ResolveResult> {
     // Check persistent CDN cache
     if (this.cache) {
       const cached = await this.cache.getCdnUrl(cacheKey)
@@ -262,6 +283,8 @@ export class DependencyResolver {
         const response = await fetch(url, { method: 'HEAD' })
 
         if (response.ok) {
+          const contentType = response.headers.get('content-type') || ''
+          this.headContentTypes.set(url, contentType)
           if (this.cache) {
             this.cache.setCdnUrl(cacheKey, url).catch(() => {})
           }
@@ -361,6 +384,8 @@ export class DependencyResolver {
   clearCache(): void {
     this.resolveCache.clear()
     this.resolvedPackageVersions.clear()
+    this.inflightNpmResolves.clear()
+    this.headContentTypes.clear()
   }
 
   /**
@@ -379,5 +404,13 @@ export class DependencyResolver {
     return {
       resolveCache: this.resolveCache.size,
     }
+  }
+
+  /**
+   * Get content-type for a URL that was previously HEAD-checked during npm resolution.
+   * Returns undefined if the URL was not resolved by this resolver.
+   */
+  getKnownContentType(url: string): string | undefined {
+    return this.headContentTypes.get(url)
   }
 }

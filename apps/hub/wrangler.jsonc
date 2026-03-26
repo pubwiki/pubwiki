@@ -15,5 +15,16 @@
       "pattern": "hub.pub.wiki",
       "custom_domain": true
     }
-  ]
+  ],
+  "env": {
+    "dev": {
+      "name": "pubwiki-hub-dev",
+      "routes": [
+        {
+          "pattern": "dev-hub.pub.wiki",
+          "custom_domain": true
+        }
+      ]
+    }
+  }
 }

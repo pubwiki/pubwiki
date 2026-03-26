@@ -15,5 +15,16 @@
       "pattern": "studio.pub.wiki",
       "custom_domain": true
     }
-  ]
+  ],
+  "env": {
+    "dev": {
+      "name": "pubwiki-studio-dev",
+      "routes": [
+        {
+          "pattern": "dev-studio.pub.wiki",
+          "custom_domain": true
+        }
+      ]
+    }
+  }
 }

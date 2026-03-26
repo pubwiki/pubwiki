@@ -7,6 +7,8 @@
 		"build": "turbo run build",
 		"check": "turbo run check",
 		"test": "turbo run test",
+		"deploy": "turbo run deploy",
+		"deploy:dev": "turbo run deploy:dev",
 		"test:e2e": "turbo run test:e2e --filter=@pubwiki/e2e",
 		"test:e2e:hub": "pnpm --filter @pubwiki/e2e test:hub",
 		"test:e2e:studio": "pnpm --filter @pubwiki/e2e test:studio",

@@ -4,6 +4,7 @@
   "scripts": {
     "dev": "wrangler dev --local-protocol https --https-cert-path cert.pem --https-key-path key.pem",
     "deploy": "wrangler deploy --minify",
+    "deploy:dev": "wrangler deploy --minify --env dev",
     "cf-typegen": "wrangler types",
     "migrate:local": "wrangler d1 migrations apply DB --local",
     "migrate:remote": "wrangler d1 migrations apply DB --remote",

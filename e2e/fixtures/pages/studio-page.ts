@@ -373,7 +373,7 @@ export class StudioPage {
    * @param nodeTypeLabel - The visible text on the submenu button (e.g. 'VFS', 'State')
    * @returns The data-id of the newly created node
    */
-  async addNodeViaContextMenu(nodeTypeLabel: string): Promise<string> {
+  async addNodeViaContextMenu(nodeTypeLabel: string, canvasPosition?: { x: number; y: number }): Promise<string> {
     // Collect existing node IDs before adding
     const existingIds = new Set<string>();
     const existingNodes = this.page.locator('.svelte-flow__node');
@@ -399,7 +399,8 @@ export class StudioPage {
     const pane = this.page.locator('.svelte-flow__pane');
     const box = await pane.boundingBox();
     if (!box) throw new Error('Canvas not visible');
-    await pane.click({ button: 'right', position: { x: box.width * 0.3, y: box.height * 0.3 } });
+    const clickPos = canvasPosition ?? { x: box.width * 0.3, y: box.height * 0.3 };
+    await pane.click({ button: 'right', position: clickPos });
 
     // Hover "Add Node" to open submenu
     const addNodeBtn = this.page.locator('button', { hasText: 'Add Node' });
@@ -621,6 +622,62 @@ export class StudioPage {
 
     // Wait for build to fail
     await expect(form.locator('text=Build failed')).toBeVisible({ timeout: 120_000 });
+  }
+
+  /**
+   * Mount a source VFS node into a target VFS node by dragging from the source
+   * output handle to the target node's file tree area.
+   * The drop lands on the file tree root, so the mount path is '/'.
+   */
+  async mountVfsToVfs(sourceNodeId: string, targetNodeId: string, targetFolderPath?: string) {
+    // Fit view so both nodes are visible
+    const fitViewBtn = this.page.locator('button[title="Fit View"], button:has-text("Fit View")').first();
+    if (await fitViewBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await fitViewBtn.click({ force: true });
+      await this.page.waitForTimeout(500);
+    }
+
+    const sourceHandle = this.page.locator(
+      `.svelte-flow__handle[data-nodeid="${sourceNodeId}"][data-handleid="default"]`
+    );
+
+    // If a specific folder path is given, target that folder item in the node card;
+    // otherwise target the entire file tree area (root).
+    const targetNode = this.page.locator(`.svelte-flow__node[data-id="${targetNodeId}"]`);
+    const targetElement = targetFolderPath
+      ? targetNode.locator(`.vfs-drop-target [data-path="${targetFolderPath}"]`)
+      : targetNode.locator('.vfs-drop-target');
+
+    await expect(sourceHandle).toBeVisible({ timeout: 10_000 });
+    await expect(targetElement).toBeVisible({ timeout: 10_000 });
+
+    // Use manual mouse API: xyflow tracks pointer events on handles to start
+    // a connection drag. Dropping on the file tree (non-handle area) triggers
+    // handleConnectEnd with toHandle=null, which activates mount logic.
+    const srcBox = await sourceHandle.boundingBox();
+    const tgtBox = await targetElement.boundingBox();
+    if (!srcBox || !tgtBox) throw new Error('Cannot get bounding boxes for mount drag');
+
+    const startX = srcBox.x + srcBox.width / 2;
+    const startY = srcBox.y + srcBox.height / 2;
+    const endX = tgtBox.x + tgtBox.width / 2;
+    const endY = tgtBox.y + tgtBox.height / 2;
+
+    await this.page.mouse.move(startX, startY);
+    await this.page.mouse.down();
+    // Move in steps so mouseenter fires on the target file tree
+    const steps = 10;
+    for (let i = 1; i <= steps; i++) {
+      await this.page.mouse.move(
+        startX + (endX - startX) * (i / steps),
+        startY + (endY - startY) * (i / steps),
+      );
+    }
+    await this.page.waitForTimeout(100); // Let reactive state update
+    await this.page.mouse.up();
+
+    // Wait for the edge to appear (mount creates an edge)
+    await this.page.waitForTimeout(500);
   }
 
   /** Get the current project ID from the URL */
