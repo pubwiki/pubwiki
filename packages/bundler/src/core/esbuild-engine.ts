@@ -53,8 +53,29 @@ export class ESBuildEngine {
   private currentBuildEntryFiles: string[] = []
   private currentBuildEntry: string | null = null
 
+  // In-flight HTTP promise maps — coalesces concurrent fetches for the same URL
+  private inflightHttpLoads = new Map<string, Promise<{ content: string; contentType: string }>>()
+  private inflightContentTypes = new Map<string, Promise<string>>()
+
+  // Content-type results from HEAD requests — survives across sequential calls
+  private knownContentTypes = new Map<string, string>()
+
   // HTTP loader with caching - returns content and content-type
   private async httpLoader(url: string): Promise<{ content: string; contentType: string }> {
+    // Sync check before any await to coalesce concurrent requests
+    const inflight = this.inflightHttpLoads.get(url)
+    if (inflight) return inflight
+
+    const promise = this.httpLoaderUncached(url)
+    this.inflightHttpLoads.set(url, promise)
+    try {
+      return await promise
+    } finally {
+      this.inflightHttpLoads.delete(url)
+    }
+  }
+
+  private async httpLoaderUncached(url: string): Promise<{ content: string; contentType: string }> {
     const cached = await this.cache.getHttp(url)
     if (cached) {
       return cached
@@ -76,6 +97,28 @@ export class ESBuildEngine {
 
   // Get Content-Type for HTTP resource (uses cache or HEAD request)
   private async getHttpContentType(url: string): Promise<string> {
+    // Sync check before any await to coalesce concurrent requests
+    const inflight = this.inflightContentTypes.get(url)
+    if (inflight) return inflight
+
+    const promise = this.getHttpContentTypeUncached(url)
+    this.inflightContentTypes.set(url, promise)
+    try {
+      return await promise
+    } finally {
+      this.inflightContentTypes.delete(url)
+    }
+  }
+
+  private async getHttpContentTypeUncached(url: string): Promise<string> {
+    // Check if the resolver already fetched this content-type via its HEAD request
+    const resolverKnown = this.resolver.getKnownContentType(url)
+    if (resolverKnown !== undefined) return resolverKnown
+
+    // Check local content-type cache (populated by previous HEAD responses)
+    const known = this.knownContentTypes.get(url)
+    if (known !== undefined) return known
+
     // Check cache first
     const cached = await this.cache.getHttp(url)
     if (cached) {
@@ -86,7 +129,9 @@ export class ESBuildEngine {
     try {
       const response = await fetch(url, { method: 'HEAD' })
       if (response.ok) {
-        return response.headers.get('content-type') || ''
+        const contentType = response.headers.get('content-type') || ''
+        this.knownContentTypes.set(url, contentType)
+        return contentType
       }
     } catch {
       // Ignore HEAD request errors, will be handled during actual load
