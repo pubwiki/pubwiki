@@ -9,7 +9,7 @@ import { username } from 'better-auth/plugins';
 // Replaces default bcrypt which exceeds Workers CPU time limits
 // TODO: Switch to native node:crypto scrypt once better-auth integrates @better-auth/utils@0.4.0+
 //   Tracking: https://github.com/better-auth/better-auth/issues/8456
-const PBKDF2_ITERATIONS = 600_000; // OWASP recommended for SHA-256
+const PBKDF2_ITERATIONS = 100_000; // OWASP recommended for SHA-256
 const SALT_LENGTH = 16;
 const KEY_LENGTH = 32;
 
