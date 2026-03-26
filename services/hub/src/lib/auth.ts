@@ -5,6 +5,57 @@ import type { Env } from '../types';
 import { user, session, account, verification } from '@pubwiki/db';
 import { username } from 'better-auth/plugins';
 
+// PBKDF2 password hashing using Web Crypto API (hardware-accelerated in Workers)
+// Replaces default bcrypt which exceeds Workers CPU time limits
+// TODO: Switch to native node:crypto scrypt once better-auth integrates @better-auth/utils@0.4.0+
+//   Tracking: https://github.com/better-auth/better-auth/issues/8456
+const PBKDF2_ITERATIONS = 600_000; // OWASP recommended for SHA-256
+const SALT_LENGTH = 16;
+const KEY_LENGTH = 32;
+
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    key,
+    KEY_LENGTH * 8,
+  );
+  const saltHex = [...new Uint8Array(salt)].map(b => b.toString(16).padStart(2, '0')).join('');
+  const hashHex = [...new Uint8Array(derivedBits)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return `pbkdf2:${PBKDF2_ITERATIONS}:${saltHex}:${hashHex}`;
+}
+
+async function verifyPassword(hash: string, password: string): Promise<boolean> {
+  const parts = hash.split(':');
+  // Support legacy bcrypt hashes (start with $2) by rejecting them
+  // so Better Auth falls back to re-hashing on next login
+  if (!parts[0] || parts[0] !== 'pbkdf2') return false;
+  const iterations = parseInt(parts[1], 10);
+  const salt = new Uint8Array((parts[2].match(/.{2}/g) ?? []).map(b => parseInt(b, 16)));
+  const expectedHash = parts[3];
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    key,
+    KEY_LENGTH * 8,
+  );
+  const hashHex = [...new Uint8Array(derivedBits)].map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashHex === expectedHash;
+}
+
 export const createAuth = (env: Env) => {
   const db = createDb(env.DB);
   
@@ -40,6 +91,10 @@ export const createAuth = (env: Env) => {
     },
     emailAndPassword: {
       enabled: true,
+      password: {
+        hash: hashPassword,
+        verify: ({ hash, password }) => verifyPassword(hash, password),
+      },
     },
     user: {
       // 字段映射：Better Auth 的 name/image 映射到我们 schema 的 displayName/avatarUrl
