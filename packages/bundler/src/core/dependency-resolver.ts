@@ -40,6 +40,9 @@ export class DependencyResolver {
   // Content-type cache from HEAD responses during npm resolution
   private headContentTypes = new Map<string, string>()
 
+  // tsconfig path aliases for local package resolution (e.g. @pubwiki/game-sdk → /lib/game-sdk)
+  private pathAliases: Map<string, string[]> | null = null
+
 
   constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean>; cache?: BuildCacheStorage }) {
     this.fileExistsChecker = options?.fileExistsChecker
@@ -93,6 +96,24 @@ export class DependencyResolver {
   }
 
   /**
+   * Set tsconfig path aliases for local package resolution.
+   * Entries like { "@pubwiki/game-sdk": ["./lib/game-sdk"] }
+   * are normalized to absolute VFS paths.
+   */
+  setPathAliases(paths: Record<string, string[]>, baseUrl: string = '/'): void {
+    this.pathAliases = new Map()
+    const base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/'
+    for (const [pattern, targets] of Object.entries(paths)) {
+      const normalized = targets.map(t => {
+        const clean = t.startsWith('./') ? t.slice(2) : t
+        return base + clean
+      })
+      this.pathAliases.set(pattern, normalized)
+    }
+    this.resolveCache.clear()
+  }
+
+  /**
    * Resolve an import path
    * @param specifier Import specifier (e.g., './app', 'react', '@scope/package')
    * @param importer Importer file path
@@ -131,14 +152,50 @@ export class DependencyResolver {
     else if (specifier.startsWith('data:')) {
       result = { path: specifier, namespace: 'external' }
     }
-    // 5. npm packages
+    // 5. tsconfig path aliases (before npm to intercept local packages)
     else {
-      result = await this.resolveNpmPackage(specifier)
+      const aliasResult = this.pathAliases ? await this.resolvePathAlias(specifier) : null
+      if (aliasResult) {
+        result = aliasResult
+      } else {
+        // 6. npm packages
+        result = await this.resolveNpmPackage(specifier)
+      }
     }
 
     // Cache result
     this.resolveCache.set(cacheKey, result)
     return result
+  }
+
+  /**
+   * Try to resolve a specifier using tsconfig path aliases.
+   * Returns null if no alias matches.
+   */
+  private async resolvePathAlias(specifier: string): Promise<ResolveResult | null> {
+    if (!this.pathAliases) return null
+
+    for (const [pattern, targets] of this.pathAliases) {
+      if (pattern.endsWith('/*')) {
+        // Wildcard pattern: "@pubwiki/game-sdk/*" matches "@pubwiki/game-sdk/hooks"
+        const prefix = pattern.slice(0, -2)
+        if (specifier.startsWith(prefix + '/')) {
+          const rest = specifier.slice(prefix.length + 1)
+          const target = targets[0]
+          const targetBase = target.endsWith('/*') ? target.slice(0, -2) : target
+          const resolved = await this.resolveExtensions(targetBase + '/' + rest)
+          return { path: resolved, namespace: 'vfs' }
+        }
+      } else {
+        // Exact pattern: "@pubwiki/game-sdk" matches "@pubwiki/game-sdk"
+        if (specifier === pattern) {
+          const target = targets[0]
+          const resolved = await this.resolveExtensions(target)
+          return { path: resolved, namespace: 'vfs' }
+        }
+      }
+    }
+    return null
   }
 
   /**

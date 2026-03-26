@@ -114,6 +114,13 @@ export class BundlerService {
         console.log('[BundlerService] Package versions loaded from project files')
       }
 
+      // Load tsconfig paths for local package alias resolution
+      const tsconfigPaths = await this.loadTsconfigPaths()
+      if (tsconfigPaths) {
+        this.resolver.setPathAliases(tsconfigPaths.paths, tsconfigPaths.baseUrl)
+        console.log('[BundlerService] tsconfig paths loaded:', Object.keys(tsconfigPaths.paths))
+      }
+
       // Wire progress callbacks so resolver/engine activity is surfaced
       this.resolver.setProgressCallback((message) => {
         this.notifyProgress({ type: 'progress', path: '', message })
@@ -589,6 +596,37 @@ export class BundlerService {
   private createFileExistsChecker() {
     return async (path: string): Promise<boolean> => {
       return this.vfs.exists(path)
+    }
+  }
+
+  /**
+   * Load tsconfig path aliases from tsconfig.json in the VFS.
+   */
+  private async loadTsconfigPaths(): Promise<{ paths: Record<string, string[]>; baseUrl: string } | null> {
+    try {
+      const exists = await this.vfs.exists('/tsconfig.json')
+      if (!exists) return null
+
+      const file = await this.vfs.readFile('/tsconfig.json')
+      let raw: string
+      if (file.content instanceof ArrayBuffer) {
+        raw = new TextDecoder().decode(file.content)
+      } else if (typeof file.content === 'string') {
+        raw = file.content
+      } else {
+        return null
+      }
+
+      // Strip JSON comments (// and /* */)
+      const stripped = raw.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+      const parsed = JSON.parse(stripped)
+      const paths = parsed?.compilerOptions?.paths
+      if (!paths || typeof paths !== 'object') return null
+
+      const baseUrl = (parsed?.compilerOptions?.baseUrl as string) || '/'
+      return { paths, baseUrl }
+    } catch {
+      return null
     }
   }
 

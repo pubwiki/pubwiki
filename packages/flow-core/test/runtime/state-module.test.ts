@@ -246,3 +246,156 @@ describe('State module value round-trip', () => {
 		expect(components[0]).not.toHaveProperty('value')
 	})
 })
+
+describe('State module subscribeChanges', () => {
+	function setup() {
+		const store = createTripleStore()
+		const stateModule = createStateModule(() => Promise.resolve(store))
+		return { store, stateModule }
+	}
+
+	it('should yield an initial snapshot of all triples', async () => {
+		const { store, stateModule } = setup()
+
+		// Pre-populate the store
+		store.insert('entity:1', 'name', 'Alice')
+		store.insert('entity:2', 'name', 'Bob')
+
+		const iter = stateModule.subscribeChanges(null)
+		const first = await iter.next()
+
+		expect(first.done).toBe(false)
+		expect(first.value.type).toBe('snapshot')
+
+		const triples = unwrapLuaTable(first.value.triples) as Array<Record<string, unknown>>
+		expect(triples).toHaveLength(2)
+
+		const names = triples.map(t => t.object).sort()
+		expect(names).toEqual(['Alice', 'Bob'])
+
+		// Cleanup
+		await iter.return!(undefined)
+	})
+
+	it('should yield an empty snapshot when store is empty', async () => {
+		const { stateModule } = setup()
+
+		const iter = stateModule.subscribeChanges(null)
+		const first = await iter.next()
+
+		expect(first.done).toBe(false)
+		expect(first.value.type).toBe('snapshot')
+
+		const triples = unwrapLuaTable(first.value.triples) as unknown[]
+		expect(triples).toHaveLength(0)
+
+		await iter.return!(undefined)
+	})
+
+	it('should yield change events when triples are inserted after subscribing', async () => {
+		const { store, stateModule } = setup()
+
+		const iter = stateModule.subscribeChanges(null)
+
+		// Consume the snapshot
+		await iter.next()
+
+		// Insert a triple — this should trigger a change event
+		store.insert('entity:1', 'name', 'Charlie')
+
+		const second = await iter.next()
+		expect(second.done).toBe(false)
+		expect(second.value.type).toBe('changes')
+
+		const events = unwrapLuaTable(second.value.events) as Array<{ type: string; triple: Record<string, unknown> }>
+		expect(events).toHaveLength(1)
+		expect(events[0].type).toBe('insert')
+		expect(events[0].triple.subject).toBe('entity:1')
+		expect(events[0].triple.predicate).toBe('name')
+		expect(events[0].triple.object).toBe('Charlie')
+
+		await iter.return!(undefined)
+	})
+
+	it('should yield delete change events', async () => {
+		const { store, stateModule } = setup()
+
+		store.insert('entity:1', 'name', 'Dave')
+
+		const iter = stateModule.subscribeChanges(null)
+		await iter.next() // snapshot
+
+		store.delete('entity:1', 'name', 'Dave')
+
+		const second = await iter.next()
+		expect(second.value.type).toBe('changes')
+
+		const events = unwrapLuaTable(second.value.events) as Array<{ type: string; triple: Record<string, unknown> }>
+		expect(events).toHaveLength(1)
+		expect(events[0].type).toBe('delete')
+		expect(events[0].triple.subject).toBe('entity:1')
+
+		await iter.return!(undefined)
+	})
+
+	it('should batch multiple changes into a single yield', async () => {
+		const { store, stateModule } = setup()
+
+		const iter = stateModule.subscribeChanges(null)
+		await iter.next() // snapshot
+
+		// batch() groups all operations into one change event array
+		store.batch(() => {
+			store.insert('entity:1', 'hp', 100)
+			store.insert('entity:1', 'mp', 50)
+		})
+
+		const second = await iter.next()
+		expect(second.value.type).toBe('changes')
+
+		const events = unwrapLuaTable(second.value.events) as Array<{ type: string; triple: Record<string, unknown> }>
+		expect(events).toHaveLength(2)
+		expect(events.map(e => e.triple.predicate).sort()).toEqual(['hp', 'mp'])
+
+		await iter.return!(undefined)
+	})
+
+	it('should unsubscribe from store when iterator is returned', async () => {
+		const { store, stateModule } = setup()
+
+		const iter = stateModule.subscribeChanges(null)
+		await iter.next() // snapshot
+
+		// Return the iterator (triggers finally block → unsubscribe)
+		await iter.return!(undefined)
+
+		// After unsubscribing, inserting should not cause issues
+		// (no way to verify unsubscribe directly, but at least no errors)
+		store.insert('entity:1', 'name', 'Eve')
+	})
+
+	it('should queue changes that arrive while consumer is slow', async () => {
+		const { store, stateModule } = setup()
+
+		const iter = stateModule.subscribeChanges(null)
+		await iter.next() // snapshot
+
+		// Fire two separate mutations before consuming
+		store.insert('entity:1', 'a', 1)
+		store.insert('entity:2', 'b', 2)
+
+		// First next() should get the first batch
+		const second = await iter.next()
+		expect(second.value.type).toBe('changes')
+		const events1 = unwrapLuaTable(second.value.events) as Array<{ type: string; triple: Record<string, unknown> }>
+		expect(events1[0].triple.subject).toBe('entity:1')
+
+		// Second next() should get the second batch
+		const third = await iter.next()
+		expect(third.value.type).toBe('changes')
+		const events2 = unwrapLuaTable(third.value.events) as Array<{ type: string; triple: Record<string, unknown> }>
+		expect(events2[0].triple.subject).toBe('entity:2')
+
+		await iter.return!(undefined)
+	})
+})

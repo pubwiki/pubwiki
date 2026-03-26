@@ -232,6 +232,37 @@ end
 ServiceRegistry.call = ServiceRegistry.execute
 
 ----------------------------------------------------------------
+-- Streaming iteration (for streaming services)
+----------------------------------------------------------------
+
+--[[
+  ServiceRegistry.iterate(identifier, inputs, callback)
+
+  Calls a service and streams its return value:
+  - If the return is a function (iterator/generator), iterates
+    and calls callback for each yielded value.
+  - Otherwise calls callback once with the return value.
+]]
+function ServiceRegistry.iterate(identifier, inputs, callback)
+    local result = ServiceRegistry.execute(identifier, inputs)
+
+    if result and result._error then
+        error(result._error)
+    end
+
+    if type(result) == "function" then
+        for value in result do
+            if value == nil then break end
+            callback(value)
+        end
+    else
+        if result ~= nil then
+            callback(result)
+        end
+    end
+end
+
+----------------------------------------------------------------
 -- 序列化导出
 ----------------------------------------------------------------
 

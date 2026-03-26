@@ -17,6 +17,8 @@ packages:
   - packages/reader
   - packages/flow-core
   - packages/world-editor
+  - packages/game-sdk
+  - packages/game-ui
   - apps/hub
   - apps/studio
   - apps/sandbox

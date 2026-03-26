@@ -5,7 +5,7 @@
  * Native JS values map directly — no RDF type conversion needed.
  */
 
-import type { TripleStore, Value } from '@pubwiki/rdfstore';
+import type { TripleStore, Value, ChangeEvent } from '@pubwiki/rdfstore';
 import { LuaTable } from '@pubwiki/lua';
 
 /**
@@ -112,6 +112,56 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 
 		async deleteCheckpoint(_self: unknown, checkpointId: string): Promise<void> {
 			(await resolveStore()).deleteCheckpoint(checkpointId);
+		},
+
+		async *subscribeChanges(_self: unknown): AsyncGenerator<{ type: string; triples?: unknown; events?: ChangeEvent[] }> {
+			const store = await resolveStore();
+
+			// Register the change listener BEFORE yielding the snapshot.
+			// This ensures no changes are missed between snapshot consumption
+			// and the consumer calling next() again.
+			const queue: ChangeEvent[][] = [];
+			let resolve: (() => void) | null = null;
+
+			const unsubscribe = store.on('change', (changes: ChangeEvent[]) => {
+				queue.push(changes);
+				if (resolve) { resolve(); resolve = null; }
+			});
+
+			try {
+				// Push current snapshot first
+				yield {
+					type: 'snapshot',
+					triples: new LuaTable(store.getAll().map(t => ({
+						subject: t.subject,
+						predicate: t.predicate,
+						object: t.object,
+						...(t.graph ? { graph: t.graph } : {}),
+					}))),
+				};
+
+				while (true) {
+					if (queue.length > 0) {
+						const events = queue.shift()!;
+						yield {
+							type: 'changes',
+							events: new LuaTable(events.map(e => ({
+								type: e.type,
+								triple: {
+									subject: e.triple.subject,
+									predicate: e.triple.predicate,
+									object: e.triple.object,
+									...(e.triple.graph ? { graph: e.triple.graph } : {}),
+								},
+							}))),
+						};
+					} else {
+						await new Promise<void>(r => { resolve = r; });
+					}
+				}
+			} finally {
+				unsubscribe();
+			}
 		},
 	};
 }

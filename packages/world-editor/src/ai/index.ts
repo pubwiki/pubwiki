@@ -91,3 +91,9 @@ export {
   computePhaseChanges,
 } from './world-builder/service'
 export { WBNSessionStore } from './world-builder/session-store'
+
+// Designer Agent
+export {
+  DesignerOrchestrator,
+  type DesignerConfig,
+} from './designer/orchestrator'

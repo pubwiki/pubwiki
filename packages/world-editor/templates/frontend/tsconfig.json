@@ -29,6 +29,18 @@
       "@/*": [
         "./src/*"
       ],
+      "@pubwiki/game-sdk": [
+        "./lib/game-sdk"
+      ],
+      "@pubwiki/game-sdk/*": [
+        "./lib/game-sdk/*"
+      ],
+      "@pubwiki/game-ui": [
+        "./lib/game-ui"
+      ],
+      "@pubwiki/game-ui/*": [
+        "./lib/game-ui/*"
+      ],
       "@pubwiki/wiki-rag-lab": [
         "../src"
       ]

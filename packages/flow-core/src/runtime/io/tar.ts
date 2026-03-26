@@ -135,7 +135,7 @@ export function extractTar(tarData: Uint8Array): TarEntry[] {
 
 		offset += 512;
 
-		if (size > 0 && name) {
+		if (name) {
 			files.push({ path: name, content: new Uint8Array(tarData.slice(offset, offset + size)) });
 		}
 

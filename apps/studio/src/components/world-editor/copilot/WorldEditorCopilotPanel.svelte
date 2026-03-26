@@ -44,15 +44,22 @@
     type LorebookData,
     type StateChangeEntry,
     WBNSessionStore,
+    // Designer
+    DesignerOrchestrator,
+    type DesignerConfig,
   } from '@pubwiki/world-editor';
   import { getSettingsStore } from '@pubwiki/ui/stores';
   import { persist } from '@pubwiki/ui/utils';
   import { getWorldEditorContext } from '../state/context';
-  import { getNodeVfs } from '$lib/vfs';
+  import { getNodeVfs, type NodeVfs } from '$lib/vfs';
+  import { nodeStore } from '$lib/persistence/node-store.svelte';
   import { VfsWorkspaceFileProvider } from './vfs-file-provider';
   import CopilotToolCallBlock from '../../copilot/CopilotToolCallBlock.svelte';
   import QueryUserFormBlock from './QueryUserFormBlock.svelte';
   import { ChatMessageStore } from './chat-message-store';
+  import SandboxPreviewView from '../../nodes/sandbox/SandboxPreviewView.svelte';
+  import { detectProject } from '@pubwiki/bundler';
+  import type { ProjectConfig } from '@pubwiki/sandbox-host';
   // Builder views
   import BuilderPhaseIndicator from './builder/BuilderPhaseIndicator.svelte';
   import BuilderSetupView from './builder/BuilderSetupView.svelte';
@@ -87,8 +94,8 @@
   let error = $state<string | null>(null);
   let panelEl = $state<HTMLDivElement | null>(null);
 
-  // Panel mode: chat (free-form copilot) vs builder (guided world-building wizard)
-  type PanelMode = 'chat' | 'builder';
+  // Panel mode: chat (free-form copilot) vs builder (guided world-building wizard) vs designer (frontend code agent)
+  type PanelMode = 'chat' | 'builder' | 'designer';
   const persistedPanelMode = persist<PanelMode>('world-editor-copilot-mode', 'chat');
   let panelMode = $state<PanelMode>(persistedPanelMode.value);
 
@@ -101,7 +108,7 @@
 
   // Mode switching is blocked when builder is actively generating/revising
   let canSwitchMode = $derived(
-    panelMode === 'chat' || builderPhase === 'setup' || builderPhase === 'waiting' || builderPhase === 'completed' || builderPhase === 'error'
+    panelMode === 'chat' || panelMode === 'designer' || builderPhase === 'setup' || builderPhase === 'waiting' || builderPhase === 'completed' || builderPhase === 'error'
   );
 
   // query_user state
@@ -118,6 +125,16 @@
   let builderQuerySubmitted = $state(false);
   let builderQueryResolve = $state<((data: Record<string, unknown>) => void) | null>(null);
   let builderIsRevising = $state(false);
+
+  // Designer state
+  let designerOrchestrator = $state<DesignerOrchestrator | null>(null);
+  let designerMessages = createMessagesStore();
+  let designerInputStore = createChatInputStore();
+  let designerActiveChatStore = createActiveChatStore();
+  let designerShowPreview = $state(false);
+  let designerPreviewVfs = $state<NodeVfs | null>(null);
+  let designerProjectConfig = $state<ProjectConfig | null>(null);
+  let designerEntryFile = $state('index.html');
   let builderRevisionLog = $state<Array<{ toolName: string; summary: string }>>([]);
   let builderError = $state<string | null>(null);
   let builderEventLog = $state<LogEntry[]>([]);
@@ -307,6 +324,62 @@
 
     // Eagerly initialize file provider in background
     ensureFileProvider().then(() => refreshFileList()).catch(() => {});
+
+    // Also initialize designer orchestrator
+    initializeDesignerOrchestrator();
+  }
+
+  function initializeDesignerOrchestrator() {
+    if (!isLLMConfigured) return;
+
+    const frontendVfsNode = nodeStore.findByMetadata('simple-mode-role', 'frontend-vfs');
+    const frontendVfsNodeId = frontendVfsNode?.id ?? null;
+
+    // Also find the sandbox node for entryFile
+    const sandboxNode = nodeStore.findByMetadata('simple-mode-role', 'sandbox');
+    if (sandboxNode && 'content' in sandboxNode && (sandboxNode as any).content?.entryFile) {
+      designerEntryFile = (sandboxNode as any).content.entryFile;
+    }
+
+    // Cache the VFS instance
+    let frontendVfs: import('@pubwiki/vfs').Vfs | null = null;
+    let frontendVfsInitializing = false;
+
+    async function ensureFrontendVfs() {
+      if (frontendVfs || frontendVfsInitializing || !frontendVfsNodeId) return;
+      frontendVfsInitializing = true;
+      try {
+        const nodeVfs = await getNodeVfs(weCtx.projectId, frontendVfsNodeId);
+        frontendVfs = nodeVfs;
+        // Store NodeVfs for preview and detect project config
+        designerPreviewVfs = nodeVfs;
+        const config = await detectProject('/tsconfig.json', nodeVfs);
+        if (config?.isBuildable) {
+          designerProjectConfig = config;
+        }
+      } catch (e) {
+        console.warn('[Designer] Failed to get frontend VFS:', e);
+      } finally {
+        frontendVfsInitializing = false;
+      }
+    }
+
+    // Start VFS init eagerly
+    ensureFrontendVfs();
+
+    const designerConfig: DesignerConfig = {
+      llm: {
+        apiKey: settingsStore.api.apiKey,
+        model: settingsStore.api.selectedModel,
+        baseUrl: settingsStore.effectiveBaseUrl,
+        temperature: 0.7,
+        maxTokens: 4096,
+      },
+      aiContext: createAIContext(),
+      getFrontendVfs: () => frontendVfs,
+    };
+
+    designerOrchestrator = new DesignerOrchestrator(designerConfig);
   }
 
   // Guard: only restore once per panel lifetime
@@ -469,6 +542,104 @@
     if (!orchestrator) return;
     queryFormSubmitted = true;
     orchestrator.submitQueryUserForm(data);
+  }
+
+  // ============================================================================
+  // Designer Chat Handling
+  // ============================================================================
+
+  async function handleDesignerSend(content: string) {
+    if (!content.trim() || !designerOrchestrator) return;
+
+    const userMessage: DisplayMessage = {
+      id: `msg-${Date.now()}`,
+      parentId: null,
+      role: 'user',
+      blocks: [{ id: `block-${Date.now()}`, type: 'markdown', content }],
+      timestamp: Date.now(),
+    };
+    designerMessages.addMessage(userMessage);
+    designerInputStore.reset();
+    designerActiveChatStore.startGeneration();
+
+    try {
+      for await (const event of designerOrchestrator.chat(content)) {
+        if (event.type === 'token') {
+          if (!designerActiveChatStore.firstTokenReceived) {
+            designerActiveChatStore.markFirstTokenReceived();
+          }
+          const currentBlocks = designerActiveChatStore.streamingMessage?.blocks || [];
+          const lastBlock = currentBlocks[currentBlocks.length - 1];
+          if (lastBlock && lastBlock.type === 'markdown') {
+            designerActiveChatStore.updateStreamingBlocks([
+              ...currentBlocks.slice(0, -1),
+              { ...lastBlock, content: lastBlock.content + event.token },
+            ]);
+          } else {
+            designerActiveChatStore.updateStreamingBlocks([
+              ...currentBlocks,
+              { id: `block-${Date.now()}`, type: 'markdown', content: event.token },
+            ]);
+          }
+        } else if (event.type === 'tool_call') {
+          const toolBlock: UIMessageBlock = {
+            id: `block-${Date.now()}`,
+            type: 'tool_call',
+            content: '',
+            toolCallId: event.id,
+            toolName: event.name,
+            toolArgs: event.args,
+            toolStatus: 'running',
+          };
+          designerActiveChatStore.updateStreamingBlocks([
+            ...(designerActiveChatStore.streamingMessage?.blocks || []),
+            toolBlock,
+          ]);
+        } else if (event.type === 'tool_result') {
+          const blocks = designerActiveChatStore.streamingMessage?.blocks || [];
+          const updatedBlocks = blocks.map((b) =>
+            b.toolCallId === event.id && b.type === 'tool_call'
+              ? { ...b, toolStatus: 'completed' as const }
+              : b
+          );
+          const resultBlock: UIMessageBlock = {
+            id: `result-${Date.now()}`,
+            type: 'tool_result',
+            content: typeof event.result === 'string' ? event.result : JSON.stringify(event.result),
+            toolCallId: event.id,
+          };
+          designerActiveChatStore.updateStreamingBlocks([...updatedBlocks, resultBlock]);
+          designerActiveChatStore.incrementIteration();
+        } else if (event.type === 'done') {
+          const assistantMessage: DisplayMessage = {
+            id: event.message.id,
+            parentId: userMessage.id,
+            role: 'assistant',
+            blocks: event.message.blocks as UIMessageBlock[],
+            timestamp: event.message.timestamp,
+            model: event.message.model,
+          };
+          designerMessages.addMessage(assistantMessage);
+          designerActiveChatStore.endGeneration();
+        } else if (event.type === 'error') {
+          console.error('Designer error:', event.error);
+          designerActiveChatStore.endGeneration();
+        }
+      }
+    } catch (err) {
+      console.error('Designer error:', err);
+      designerActiveChatStore.endGeneration();
+    }
+  }
+
+  function handleDesignerAbort() {
+    designerOrchestrator?.abort();
+    designerActiveChatStore.endGeneration();
+  }
+
+  function handleDesignerClearHistory() {
+    designerOrchestrator?.reset();
+    designerMessages.setMessages([]);
   }
 
   // ============================================================================
@@ -946,6 +1117,17 @@
             </svg>
             Builder
           </button>
+          <button
+            class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors {panelMode === 'designer' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}"
+            onclick={() => { if (canSwitchMode) panelMode = 'designer'; }}
+            disabled={!canSwitchMode && panelMode !== 'designer'}
+            title="AI frontend designer"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+            </svg>
+            Designer
+          </button>
         </div>
 
         <!-- Actions -->
@@ -972,6 +1154,29 @@
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          {:else if panelMode === 'designer'}
+            <!-- Preview Button -->
+            <button
+              class="p-1.5 transition-colors rounded-lg {designerProjectConfig ? 'text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50' : 'text-gray-300 cursor-not-allowed'}"
+              onclick={() => { if (designerProjectConfig) designerShowPreview = true; }}
+              disabled={!designerProjectConfig}
+              title={designerProjectConfig ? 'Open preview' : 'Preview unavailable (project not detected)'}
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            <!-- Clear Designer History -->
+            <button
+              class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              onclick={handleDesignerClearHistory}
+              title="Clear conversation"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
           {/if}
@@ -1208,7 +1413,7 @@
         />
       </div>
 
-    {:else}
+    {:else if panelMode === 'builder'}
       <!-- ============ BUILDER MODE ============ -->
       {#if viewingPhase && builderSession}
         <!-- Viewing a past phase's changes (read-only) -->
@@ -1324,6 +1529,83 @@
           </div>
         </div>
       {/if}
+
+    {:else if panelMode === 'designer'}
+      <!-- ============ DESIGNER MODE ============ -->
+
+      <!-- Messages or Welcome -->
+      <div class="flex-1 overflow-y-auto px-2">
+        {#if designerMessages.messages.length === 0 && !designerActiveChatStore.isGenerating && !designerActiveChatStore.streamingMessage}
+          <!-- Welcome message -->
+          <div class="flex flex-col items-center justify-center h-full px-6 py-8 text-center">
+            <div class="w-12 h-12 mb-4 bg-indigo-100 rounded-full flex items-center justify-center">
+              <svg class="w-6 h-6 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+              </svg>
+            </div>
+            <h3 class="text-base font-medium text-gray-700 mb-1">Frontend Designer</h3>
+            <p class="text-sm text-gray-500 mb-6 max-w-70">
+              I can create and modify the React frontend for your game. Describe what you want and I'll write the code.
+            </p>
+            <div class="space-y-2 text-left w-full max-w-70">
+              <p class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Try asking:</p>
+              <button
+                class="w-full text-left px-3 py-2.5 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-100"
+                onclick={() => handleDesignerSend('Show me the current project structure')}
+              >
+                Show me the project structure
+              </button>
+              <button
+                class="w-full text-left px-3 py-2.5 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-100"
+                onclick={() => handleDesignerSend('Add a character status panel showing HP and attributes')}
+              >
+                Add a character status panel
+              </button>
+              <button
+                class="w-full text-left px-3 py-2.5 text-sm text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors border border-gray-100"
+                onclick={() => handleDesignerSend('Change the dialog box style to use chat bubbles')}
+              >
+                Change dialog box to chat bubbles
+              </button>
+            </div>
+          </div>
+        {:else}
+          <ChatMessages
+            messages={designerMessages.messages}
+            streamingMessage={designerActiveChatStore.streamingMessage}
+            isLoading={designerActiveChatStore.isGenerating && !designerActiveChatStore.firstTokenReceived}
+            showAvatars={true}
+            showActions={false}
+            showEmptyState={false}
+            toolCallRenderer={CopilotToolCallBlock}
+          />
+        {/if}
+      </div>
+
+      <!-- Input -->
+      <div class="border-t border-gray-200 p-4">
+        <ChatInput
+          placeholder="Describe a UI change..."
+          showAttachments={false}
+          isGenerating={designerActiveChatStore.isGenerating}
+          onSend={handleDesignerSend}
+          onAbort={handleDesignerAbort}
+        />
+      </div>
+
     {/if}
   </div>
+{/if}
+
+<!-- Designer Preview (rendered as portal outside panel) -->
+{#if designerShowPreview && designerPreviewVfs && designerProjectConfig}
+  <SandboxPreviewView
+    vfs={designerPreviewVfs}
+    projectConfig={designerProjectConfig}
+    entryFile={designerEntryFile}
+    name="Frontend Preview"
+    onClose={() => { designerShowPreview = false; }}
+    projectId={weCtx.projectId}
+    vfsNodeId={nodeStore.findByMetadata('simple-mode-role', 'frontend-vfs')?.id}
+  />
 {/if}

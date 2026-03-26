@@ -3,17 +3,27 @@
  *
  * Usage:  npx tsx scripts/pack-templates.ts
  *
- * Reads  templates/backend/  and  templates/frontend/
- * Writes dist/templates/backend.tar.gz  and  dist/templates/frontend.tar.gz
+ * Reads  templates/backend/  and  templates/frontend/  and  packages/game-sdk/src/  and  packages/game-ui/src/
+ * Writes dist/templates/{backend,frontend,game-sdk,game-ui}.tar.gz
  */
 
 import { createTar, type TarEntry } from '@pubwiki/flow-core';
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, copyFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 
 const gzipAsync = promisify(gzip);
+
+const ROOT = join(import.meta.dirname!, '..');
+
+/** Template sources: name → source directory */
+const TEMPLATES: { name: string; srcDir: string }[] = [
+  { name: 'backend',  srcDir: join(ROOT, 'templates', 'backend') },
+  { name: 'frontend', srcDir: join(ROOT, 'templates', 'frontend') },
+  { name: 'game-sdk', srcDir: join(ROOT, '..', '..', 'packages', 'game-sdk', 'src') },
+  { name: 'game-ui',  srcDir: join(ROOT, '..', '..', 'packages', 'game-ui', 'src') },
+];
 
 function collectFiles(dir: string, base: string = dir): TarEntry[] {
   const entries: TarEntry[] = [];
@@ -33,16 +43,19 @@ function collectFiles(dir: string, base: string = dir): TarEntry[] {
 }
 
 async function main() {
-  const outDir = join(import.meta.dirname!, '..', 'dist', 'templates');
+  const outDir = join(ROOT, 'dist', 'templates');
+  const staticDir = join(ROOT, '..', '..', 'apps', 'studio', 'static', 'templates');
   mkdirSync(outDir, { recursive: true });
+  mkdirSync(staticDir, { recursive: true });
 
-  for (const name of ['backend', 'frontend'] as const) {
-    const srcDir = join(import.meta.dirname!, '..', 'templates', name);
+  for (const { name, srcDir } of TEMPLATES) {
     const entries = collectFiles(srcDir);
     const tar = createTar(entries);
     const gz = await gzipAsync(tar);
     const outPath = join(outDir, `${name}.tar.gz`);
     writeFileSync(outPath, gz);
+    // Also copy to studio static so they are served at /templates/*.tar.gz
+    copyFileSync(outPath, join(staticDir, `${name}.tar.gz`));
     console.log(`${name}: ${entries.length} files → ${outPath} (${gz.length} bytes)`);
   }
 }

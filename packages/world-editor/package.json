@@ -12,7 +12,9 @@
       "import": "./src/index.ts"
     },
     "./templates/backend.tar.gz": "./dist/templates/backend.tar.gz",
-    "./templates/frontend.tar.gz": "./dist/templates/frontend.tar.gz"
+    "./templates/frontend.tar.gz": "./dist/templates/frontend.tar.gz",
+    "./templates/game-sdk.tar.gz": "./dist/templates/game-sdk.tar.gz",
+    "./templates/game-ui.tar.gz": "./dist/templates/game-ui.tar.gz"
   },
   "files": [
     "dist",
@@ -32,6 +34,7 @@
   "dependencies": {
     "@pubwiki/chat": "workspace:*",
     "@pubwiki/rdfstore": "workspace:*",
+    "@pubwiki/vfs": "workspace:*",
     "zod": "^4.1.13"
   },
   "devDependencies": {

@@ -378,20 +378,24 @@ export class MountedVfsProvider implements VfsProvider {
       }
     }
     
+    // Check if it's a virtual directory (prefix of any mount point)
+    // Must happen before resolvePath, because resolvePath falls back to
+    // rootVfs which may not have this path (e.g. /lib when mounts exist
+    // at /lib/game-sdk).
+    const isVirtualDir = Array.from(this.mounts.keys()).some(mountPathStr => {
+      const mountPath = VfsPath.parse(mountPathStr)
+      return mountPath.isUnder(vp, true)
+    })
+
     const resolved = this.resolvePath(filePath)
     if (!resolved) {
-      // Check if it's a virtual directory (prefix of any mount point)
-      for (const mountPathStr of this.mounts.keys()) {
-        const mountPath = VfsPath.parse(mountPathStr)
-        // If mountPath is under vp, then vp is a virtual directory
-        if (mountPath.isUnder(vp, true)) {
-          return {
-            isFile: false,
-            isDirectory: true,
-            size: 0,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }
+      if (isVirtualDir) {
+        return {
+          isFile: false,
+          isDirectory: true,
+          size: 0,
+          createdAt: new Date(),
+          updatedAt: new Date()
         }
       }
       throw new Error(`Path not mounted: ${filePath}`)
@@ -400,7 +404,23 @@ export class MountedVfsProvider implements VfsProvider {
     const [vfs, relativePath, mountPath] = resolved
     
     // Get stat from the underlying VFS
-    const stat = await vfs.stat(relativePath)
+    let stat: VfsStat
+    try {
+      stat = await vfs.stat(relativePath)
+    } catch {
+      // If the path doesn't exist in the resolved VFS but it's a virtual
+      // directory (prefix of mount paths), return a virtual directory stat.
+      if (isVirtualDir) {
+        return {
+          isFile: false,
+          isDirectory: true,
+          size: 0,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      }
+      throw new Error(`Path not found: ${filePath}`)
+    }
     
     // If this is from a non-root mount and we're at the root of that mount,
     // add the mountedId (this case is handled above, but keeping for safety)
