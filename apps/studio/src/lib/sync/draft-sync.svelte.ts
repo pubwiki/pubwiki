@@ -16,7 +16,7 @@
 import type { Node, Edge } from '@xyflow/svelte';
 import type { FlowNodeData } from '../types/flow';
 import type { StoredProject } from '../persistence/db';
-import { saveProject, getProject } from '../persistence/db';
+import { saveProject, getProject, updateProject } from '../persistence/db';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 import { publishArtifact, patchArtifact, type PublishMetadata, type PatchMetadata } from '../io/publish';
@@ -311,10 +311,11 @@ export function createDraftSyncService() {
         // Local never synced, but cloud has data - need to handle carefully
         // For now, update local state to match cloud
         console.info('[DraftSync] Local never synced but cloud has data, updating local state');
+        const now = Date.now();
         currentProject.lastDraftSyncCommit = cloudCommit;
         currentProject.lastCloudCommit = cloudCommit;
-        currentProject.lastDraftSyncAt = Date.now();
-        await saveProject(currentProject);
+        currentProject.lastDraftSyncAt = now;
+        await updateProject(currentProject.id, { lastDraftSyncCommit: cloudCommit, lastCloudCommit: cloudCommit, lastDraftSyncAt: now });
         
         baseState.lastSyncedCommit = cloudCommit;
         baseState.hasUnsyncedChanges = true; // Local changes exist since we just loaded
@@ -362,7 +363,7 @@ export function createDraftSyncService() {
     currentProject.lastCloudCommit = undefined;
     // Keep draftSyncEnabled as user preference
     
-    await saveProject(currentProject);
+    await updateProject(currentProject.id, { lastDraftSyncCommit: undefined, lastDraftSyncAt: undefined, lastCloudCommit: undefined });
     
     // Update state
     baseState.lastSyncedCommit = null;
@@ -423,7 +424,7 @@ export function createDraftSyncService() {
     // Start tracking VFS nodes
     await updateTrackedVfsNodes(currentNodes);
     
-    await saveProject(currentProject);
+    await updateProject(currentProject.id, { draftSyncEnabled: true });
   }
 
   /**
@@ -439,7 +440,7 @@ export function createDraftSyncService() {
     // Stop tracking VFS nodes
     cleanupVfsTracking();
     
-    await saveProject(currentProject);
+    await updateProject(currentProject.id, { draftSyncEnabled: false });
   }
 
   /**
@@ -535,13 +536,19 @@ export function createDraftSyncService() {
         });
 
         // Update project and state
+        const syncAt = Date.now();
         currentProject.lastDraftSyncCommit = result.newCommit;
-        currentProject.lastDraftSyncAt = Date.now();
+        currentProject.lastDraftSyncAt = syncAt;
         currentProject.draftSyncEnabled = true;
         // Also update lastCloudCommit to keep sync state consistent across page refreshes
         currentProject.lastCloudCommit = result.newCommit;
         
-        await saveProject(currentProject);
+        await updateProject(currentProject.id, {
+          lastDraftSyncCommit: result.newCommit,
+          lastDraftSyncAt: syncAt,
+          draftSyncEnabled: true,
+          lastCloudCommit: result.newCommit,
+        });
 
         baseState.status = 'success';
         baseState.lastSyncedCommit = result.newCommit ?? null;
@@ -609,7 +616,7 @@ export function createDraftSyncService() {
     if (result.success && result.artifactId) {
       // Update project with artifact ID
       project.artifactId = result.artifactId;
-      await saveProject(project);
+      await updateProject(project.id, { artifactId: result.artifactId });
 
       return {
         success: true,
@@ -818,10 +825,11 @@ export function createDraftSyncService() {
     
     const { cloudCommit } = baseState.diverged;
     
+    const acceptAt = Date.now();
     currentProject.lastDraftSyncCommit = cloudCommit;
     currentProject.lastCloudCommit = cloudCommit;
-    currentProject.lastDraftSyncAt = Date.now();
-    await saveProject(currentProject);
+    currentProject.lastDraftSyncAt = acceptAt;
+    await updateProject(currentProject.id, { lastDraftSyncCommit: cloudCommit, lastCloudCommit: cloudCommit, lastDraftSyncAt: acceptAt });
     
     baseState.lastSyncedCommit = cloudCommit;
     baseState.lastSyncedAt = currentProject.lastDraftSyncAt;
