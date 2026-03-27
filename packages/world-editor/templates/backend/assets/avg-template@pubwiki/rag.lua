@@ -892,8 +892,23 @@ Service:definePure()
 Service:define()
     :namespace("GameTemplate")
     :name("UpdateGameStateAndDocs")
-    :desc("根据新剧情内容和状态变化列表，生成 Lua 代码在沙箱中执行来更新游戏状态和设定文档")
-    :usage("根据新剧情内容和状态/设定变化列表，使用 LLM 生成 ServiceRegistry.call() Lua 代码并在沙箱中执行来更新游戏状态。通常与 CreativeWriting 配合使用，在生成剧情后自动更新。")
+    :desc("根据 CreativeWriting 的输出结果，自动更新游戏状态和设定文档（内部使用 LLM 生成并执行 Lua 代码）")
+    :usage([==[
+在 CreativeWriting 服务的 "done" 回调完成后调用此服务，将生成的剧情内容同步到游戏状态。
+
+【典型调用流程】
+1. 调用 CreativeWriting，在 callback 中监听 "done" 事件
+2. 从 "done" 事件的 event_data 中提取字段，传入本服务：
+   - new_event        ← event_data.content（step_2 创意内容，转为字符串）
+   - setting_changes  ← event_data.setting_changes（step_3a，可能为 nil）
+   - event_changes    ← event_data.event_changes（step_3b，可能为 nil）
+   - new_entities     ← event_data.new_entities（step_3c，可能为 nil）
+   - director_notes   ← event_data.director_notes（step_4，可能为 nil）
+   - collector_built_messages ← event_data.updater_messages（可能为 nil）
+
+【重要】调用方不需要自己构造 setting_changes / event_changes / new_entities / director_notes 的内容，
+这些都是 CreativeWriting 内部 LLM 自动生成的，直接透传即可。
+]==])
     :inputs(Type.Object({
         new_event = Type.String:desc("新剧情内容，即 CreativeWriting done 事件的 content 字段（step_2 创意内容的完整文本）"),
         state_changes = Type.Optional(Type.Object({
