@@ -9,10 +9,10 @@
  */
 
 // Primitives
-export {} from './primitives'
+export {} from './primitives/index.ts'
 
 // Game components
-export {} from './game'
+export {} from './game/index.ts'
 
 // Hooks
-export {} from './hooks'
+export {} from './hooks/index.ts'

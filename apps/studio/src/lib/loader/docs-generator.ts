@@ -341,72 +341,73 @@ function generateAgentsMd(services: ServiceDefinition[]): string {
     return `| \`${s.identifier}\` | ${s.kind} | ${streaming} | ${desc} |`;
   }).join('\n');
 
+  // Generate usePub() usage examples grouped by namespace
+  const byNs = new Map<string, ServiceDefinition[]>();
+  for (const s of services) {
+    const [ns] = s.identifier.split(':');
+    if (!byNs.has(ns)) byNs.set(ns, []);
+    byNs.get(ns)!.push(s);
+  }
+
+  const usePubExamples = Array.from(byNs.entries()).map(([ns, svcs]) => {
+    const lines = svcs.map(s => {
+      const name = s.name;
+      const isStream = isStreamingService(s);
+      if (isStream) {
+        return `  // Streaming service\n  await pub.${ns}.${name}.stream({ /* inputs */ }, (chunk) => {\n    console.log(chunk)\n  })`;
+      }
+      return `  await pub.${ns}.${name}({ /* inputs */ })`;
+    });
+    return lines.join('\n');
+  }).join('\n\n');
+
   return `# Agent Integration Guide
 
-## 类型安全的服务调用
+## usePub() — Type-safe Backend Service Proxy
 
-本 VFS 包含自动生成的 TypeScript 类型定义，支持与 \`@pubwiki/sandbox-client\` 无缝集成。
+The \`usePub()\` hook from \`@pubwiki/game-sdk\` provides a type-safe proxy for calling backend services.
+Service types are auto-generated from the Lua backend's ServiceRegistry.
 
-## 快速开始
+## Quick Start
 
-### 1. 复制类型文件
+\`\`\`tsx
+import { usePub } from '@pubwiki/game-sdk'
 
-将整个 VFS 内容复制到你的项目中（如 \`src/generated/\` 目录）。
+function MyComponent() {
+  const pub = usePub()
 
-### 2. 在 tsconfig.json 中包含类型
-
-\`\`\`json
-{
-  "include": ["src/**/*", "src/generated/**/*"]
+  async function handleAction() {
+${usePubExamples}
+  }
 }
 \`\`\`
 
-### 3. 享受类型安全
-
-\`\`\`typescript
-// 直接从生成的 index.ts 导入
-import { initSandboxClient } from './generated/index';
-
-const client = await initSandboxClient();
-
-// 🎯 自动补全 service ID
-const service = await client.getService('...');
-
-// 🎯 类型检查输入和输出
-const result = await service.call({ ... });
-\`\`\`
-
-## 可用服务
+## Available Services
 
 | Service ID | Kind | Streaming | Description |
 |------------|------|-----------|-------------|
 ${serviceList}
 
-## 类型定义文件
+## API Pattern
 
-- \`index.ts\` - 入口文件，re-export sandbox-client + 生成的类型
-- \`services.d.ts\` - TypeScript 类型定义 + ServiceMap 声明合并
-- \`services.md\` - 详细 API 文档
+Services are accessed as \`pub.namespace.ServiceName\`:
 
-## 高级用法
+- **Call**: \`await pub.ns.Name({ ...inputs })\` — returns the service output
+- **Stream**: \`await pub.ns.Name.stream({ ...inputs }, (chunk) => { ... })\` — yields chunks via callback
 
-### 获取所有服务标识符
+## Type Definitions
 
-\`\`\`typescript
-import type { ServiceMap } from '@pubwiki/sandbox-client';
+- \`services.d.ts\` — TypeScript type definitions + ServiceMap declaration merging (auto-generated)
+- \`services.md\` — Detailed API documentation with input/output schemas
 
-type ServiceId = keyof ServiceMap;
-\`\`\`
-
-### 获取特定服务的输入/输出类型
+## Accessing Types
 
 \`\`\`typescript
-import type { Services } from './services.d.ts';
+import type { Services } from '@pubwiki/game-sdk/generated/services.d.ts'
 
-// 获取特定服务的输入类型
-type MyServiceInput = Services['my:service']['input'];
-// 获取嵌套字段类型
-type ConfigField = Services['my:service']['input']['config'];
+// Input/output types for a specific service
+type MyInput = Services['namespace:service']['input']
+type MyOutput = Services['namespace:service']['output']
 \`\`\`
 `;
 }

@@ -28,6 +28,28 @@ function normalizePath(path: string): string {
   return path
 }
 
+/** Read a VFS file and decode to string */
+async function readFileText(vfs: Vfs, filePath: string): Promise<string | null> {
+  try {
+    const file = await vfs.readFile(filePath)
+    if (typeof file.content === 'string') return file.content
+    if (file.content instanceof ArrayBuffer) return new TextDecoder().decode(file.content)
+    return null
+  } catch {
+    return null
+  }
+}
+
+/** Format file content with line numbers */
+function formatWithLineNumbers(content: string, startLine = 1): string {
+  const lines = content.split('\n')
+  const maxLineNo = startLine + lines.length - 1
+  const pad = String(maxLineNo).length
+  return lines
+    .map((line, i) => `${String(startLine + i).padStart(pad)} | ${line}`)
+    .join('\n')
+}
+
 async function listRecursive(
   vfs: Vfs,
   dirPath: string,
@@ -95,61 +117,72 @@ export function createListFrontendFilesTool(getVfs: FrontendVfsGetter) {
 }
 
 /**
- * read_frontend_file — Read a file from the Frontend VFS.
+ * read_frontend_file — Read a file from the Frontend VFS with optional line range.
  */
 export function createReadFrontendFileTool(getVfs: FrontendVfsGetter) {
   return defineTool({
     name: 'read_frontend_file',
     description:
-      '读取前端项目中的文件内容（UTF-8 文本）。',
+      '读取前端项目中的文件内容（UTF-8 文本）。输出带行号。可用 startLine/endLine 指定行范围（1-based，闭区间）。',
     schema: z.object({
       path: z.string().describe('文件路径，如 "/src/App.tsx"'),
+      startLine: z.number().optional().describe('起始行号（1-based），省略则从第 1 行开始'),
+      endLine: z.number().optional().describe('结束行号（1-based，包含），省略则到末尾'),
     }),
-    handler: async ({ path }) => {
+    handler: async ({ path, startLine, endLine }) => {
       const vfs = getVfs()
       if (!vfs) return '⚠️ Frontend VFS not available.'
 
       const filePath = normalizePath(path)
-      try {
-        const file = await vfs.readFile(filePath)
-        let content: string
-        if (typeof file.content === 'string') {
-          content = file.content
-        } else if (file.content instanceof ArrayBuffer) {
-          content = new TextDecoder().decode(file.content)
-        } else {
-          return `❌ Cannot read binary file: ${filePath}`
-        }
+      const content = await readFileText(vfs, filePath)
+      if (content === null) return `❌ File not found or binary: ${filePath}`
 
-        // Truncate very long files
-        const MAX_CHARS = 8000
-        if (content.length > MAX_CHARS) {
-          return (
-            `### ${filePath}\n\`\`\`\n${content.slice(0, MAX_CHARS)}\n\`\`\`\n` +
-            `⚠️ File truncated (${content.length} chars total, showing first ${MAX_CHARS}).`
-          )
-        }
-        return `### ${filePath}\n\`\`\`\n${content}\n\`\`\``
-      } catch {
-        return `❌ File not found: ${filePath}`
+      const allLines = content.split('\n')
+      const totalLines = allLines.length
+
+      // Resolve range (1-based inclusive)
+      const start = Math.max(1, startLine ?? 1)
+      const end = Math.min(totalLines, endLine ?? totalLines)
+      if (start > end) return `❌ Invalid range: startLine=${start} > endLine=${end} (file has ${totalLines} lines)`
+
+      const slice = allLines.slice(start - 1, end)
+      const numbered = formatWithLineNumbers(slice.join('\n'), start)
+
+      const rangeLabel = (startLine || endLine)
+        ? ` (lines ${start}-${end} of ${totalLines})`
+        : ` (${totalLines} lines)`
+
+      // Truncate if too long
+      const MAX_CHARS = 12000
+      if (numbered.length > MAX_CHARS) {
+        return (
+          `### ${filePath}${rangeLabel}\n\`\`\`\n${numbered.slice(0, MAX_CHARS)}\n\`\`\`\n` +
+          `⚠️ Output truncated. Use startLine/endLine to read smaller ranges.`
+        )
       }
+      return `### ${filePath}${rangeLabel}\n\`\`\`\n${numbered}\n\`\`\``
     },
   })
 }
 
 /**
- * write_frontend_file — Write/overwrite a file in the Frontend VFS.
+ * write_frontend_file — Write/overwrite a file (or a line range) in the Frontend VFS.
  */
 export function createWriteFrontendFileTool(getVfs: FrontendVfsGetter) {
   return defineTool({
     name: 'write_frontend_file',
     description:
-      '写入或覆盖前端项目中的文件。父目录会自动创建。写入后 sandbox 会自动热更新。',
+      '写入或覆盖前端项目中的文件。支持两种模式：\n' +
+      '1. 全量写入：只提供 path 和 content，覆盖整个文件。\n' +
+      '2. 行范围替换：提供 startLine 和 endLine（1-based，闭区间），用 content 替换指定行。\n' +
+      '父目录会自动创建。写入后 sandbox 会自动热更新。',
     schema: z.object({
       path: z.string().describe('文件路径，如 "/src/components/MyComponent.tsx"'),
-      content: z.string().describe('文件内容（完整源码）'),
+      content: z.string().describe('文件内容（全量写入时为完整源码，行范围替换时为替换内容）'),
+      startLine: z.number().optional().describe('替换起始行号（1-based）。省略则全量写入。'),
+      endLine: z.number().optional().describe('替换结束行号（1-based，包含）。省略则全量写入。'),
     }),
-    handler: async ({ path, content }) => {
+    handler: async ({ path, content, startLine, endLine }) => {
       const vfs = getVfs()
       if (!vfs) return '⚠️ Frontend VFS not available.'
 
@@ -157,7 +190,29 @@ export function createWriteFrontendFileTool(getVfs: FrontendVfsGetter) {
       if (filePath.startsWith('/lib/')) {
         return '❌ /lib/ is read-only (contains platform libraries). Write files under /src/ instead.'
       }
+
       try {
+        // Line-range replacement mode
+        if (startLine !== undefined && endLine !== undefined) {
+          const existing = await readFileText(vfs, filePath)
+          if (existing === null) return `❌ File not found: ${filePath} (line-range mode requires existing file)`
+
+          const lines = existing.split('\n')
+          if (startLine < 1 || endLine < startLine || startLine > lines.length) {
+            return `❌ Invalid range: startLine=${startLine}, endLine=${endLine} (file has ${lines.length} lines)`
+          }
+
+          const newLines = content.split('\n')
+          // Replace lines [startLine-1 .. endLine-1] (inclusive) with newLines
+          const clampedEnd = Math.min(endLine, lines.length)
+          lines.splice(startLine - 1, clampedEnd - startLine + 1, ...newLines)
+
+          const finalContent = lines.join('\n')
+          await vfs.updateFile(filePath, finalContent)
+          return `✅ Replaced lines ${startLine}-${clampedEnd} in ${filePath} with ${newLines.length} line(s). File now has ${lines.length} lines.`
+        }
+
+        // Full-file write mode
         const exists = await vfs.exists(filePath)
         if (exists) {
           await vfs.updateFile(filePath, content)
@@ -203,4 +258,73 @@ export function createDeleteFrontendFileTool(getVfs: FrontendVfsGetter) {
       }
     },
   })
+}
+
+/**
+ * search_frontend_files — Search for a string or regex across all files.
+ */
+export function createSearchFrontendFilesTool(getVfs: FrontendVfsGetter) {
+  return defineTool({
+    name: 'search_frontend_files',
+    description:
+      '在前端项目的所有文本文件中搜索字符串或正则表达式。返回匹配的文件路径、行号和行内容。',
+    schema: z.object({
+      query: z.string().describe('搜索字符串或正则表达式'),
+      isRegex: z.boolean().optional().describe('是否作为正则表达式匹配，默认 false'),
+      path: z.string().optional().describe('限定搜索目录，默认 "/"'),
+      maxResults: z.number().optional().describe('最大匹配条数，默认 50'),
+    }),
+    handler: async ({ query, isRegex, path, maxResults }) => {
+      const vfs = getVfs()
+      if (!vfs) return '⚠️ Frontend VFS not available.'
+
+      const searchDir = normalizePath(path ?? '/')
+      const limit = Math.min(maxResults ?? 50, 200)
+
+      // Build matcher
+      let regex: RegExp
+      try {
+        regex = isRegex ? new RegExp(query, 'gi') : new RegExp(escapeRegExp(query), 'gi')
+      } catch (e) {
+        return `❌ Invalid regex: ${(e as Error).message}`
+      }
+
+      // Collect all files
+      const allFiles = await listRecursive(vfs, searchDir, 10)
+      const textFiles = allFiles.filter(f => !f.endsWith('/'))
+
+      const matches: string[] = []
+      let totalMatches = 0
+
+      for (const filePath of textFiles) {
+        if (totalMatches >= limit) break
+
+        const content = await readFileText(vfs, filePath)
+        if (content === null) continue
+
+        const lines = content.split('\n')
+        for (let i = 0; i < lines.length; i++) {
+          if (totalMatches >= limit) break
+          regex.lastIndex = 0
+          if (regex.test(lines[i])) {
+            matches.push(`${filePath}:${i + 1}: ${lines[i].trimEnd()}`)
+            totalMatches++
+          }
+        }
+      }
+
+      if (matches.length === 0) {
+        return `🔍 No matches for "${query}" in ${searchDir}`
+      }
+
+      const header = `🔍 ${totalMatches} match(es) for "${query}" in ${searchDir}`
+      const truncated = totalMatches >= limit ? `\n⚠️ Results capped at ${limit}. Narrow your search or specify a path.` : ''
+      return `${header}\n\n${matches.join('\n')}${truncated}`
+    },
+  })
+}
+
+/** Escape special regex characters in a plain string */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

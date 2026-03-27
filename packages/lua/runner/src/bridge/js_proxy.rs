@@ -21,11 +21,13 @@ unsafe extern "C" {
     /// - args_handles: 参数 handles 数组指针
     /// - args_count: 参数数量
     /// - callback_id: 回调 ID，用于返回结果
+    /// - instance_id: Lua 实例 ID，用于追踪 async iterator 归属
     fn js_jsproxy_call(
         func_handle: EM_VAL,
         args_handles: *const EM_VAL,
         args_count: u32,
         callback_id: u32,
+        instance_id: u32,
     );
     
     // Async iterator 支持
@@ -439,6 +441,7 @@ impl LuaUserData for JsProxy {
                         handles.as_ptr(),
                         handles.len() as u32,
                         callback_id,
+                        instance_id,
                     );
                 }
                 

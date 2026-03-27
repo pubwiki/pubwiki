@@ -114,7 +114,7 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 			(await resolveStore()).deleteCheckpoint(checkpointId);
 		},
 
-		async *subscribeChanges(_self: unknown): AsyncGenerator<{ type: string; triples?: unknown; events?: ChangeEvent[] }> {
+		async *subscribeChanges(_self: unknown) {
 			const store = await resolveStore();
 
 			// Register the change listener BEFORE yielding the snapshot.
@@ -130,22 +130,22 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 
 			try {
 				// Push current snapshot first
-				yield {
+				yield new LuaTable({
 					type: 'snapshot',
-					triples: new LuaTable(store.getAll().map(t => ({
+					triples: store.getAll().map(t => ({
 						subject: t.subject,
 						predicate: t.predicate,
 						object: t.object,
 						...(t.graph ? { graph: t.graph } : {}),
-					}))),
-				};
+					})),
+				});
 
 				while (true) {
 					if (queue.length > 0) {
 						const events = queue.shift()!;
-						yield {
+						yield new LuaTable({
 							type: 'changes',
-							events: new LuaTable(events.map(e => ({
+							events: events.map(e => ({
 								type: e.type,
 								triple: {
 									subject: e.triple.subject,
@@ -153,8 +153,8 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 									object: e.triple.object,
 									...(e.triple.graph ? { graph: e.triple.graph } : {}),
 								},
-							}))),
-						};
+							})),
+						});
 					} else {
 						await new Promise<void>(r => { resolve = r; });
 					}

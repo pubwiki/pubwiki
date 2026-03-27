@@ -24,6 +24,8 @@
 		theme = 'light-plus',
 		fontSize = 13,
 		autoImports = true,
+		localLibraries,
+		localLibraryDeps,
 		onContentChange,
 		onSave,
 		onExternalChange,
@@ -98,6 +100,8 @@
 	 * Build TypeScript compiler options for modern-monaco LSP configuration
 	 * Note: Do NOT set jsxImportSource here - modern-monaco auto-detects it from importMap
 	 * and sets jsx option accordingly in #updateJsxImportSource()
+	 * Note: Do NOT set paths/baseUrl here - modern-monaco reads tsconfig.json from
+	 * the VFS via loadCompilerOptions() and applies paths itself.
 	 * @returns Compiler options object (using any to bypass strict type checking)
 	 */
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,6 +160,8 @@
 
 				importMapManager = new ImportMapManager(vfs, {
 					packageVersionResolver: versionResolver.hasVersions() ? versionResolver : undefined,
+					localLibraries,
+					localLibraryDeps,
 				});
 				await importMapManager.initializeKnownImports();
 				await importMapManager.ensureImportMapExists();
@@ -170,6 +176,7 @@
 			});
 			
 			// Initialize modern-monaco with workspace and LSP configuration
+			// modern-monaco reads tsconfig.json from the VFS via loadCompilerOptions()
 			monaco = await init({
 				defaultTheme: theme,
 				workspace,

@@ -53,6 +53,15 @@ export class ESBuildEngine {
   private currentBuildEntryFiles: string[] = []
   private currentBuildEntry: string | null = null
 
+  // CSS packages whose @import is handled by injecting a browser runtime script
+  // Maps CSS package name → script URL to load at runtime
+  private static readonly CSS_RUNTIME_SCRIPTS: Record<string, string> = {
+    'tailwindcss': 'https://unpkg.com/@tailwindcss/browser@4',
+  }
+
+  // CSS runtimes actually encountered during the current build
+  private cssRuntimesUsed = new Set<string>()
+
   // In-flight HTTP promise maps — coalesces concurrent fetches for the same URL
   private inflightHttpLoads = new Map<string, Promise<{ content: string; contentType: string }>>()
   private inflightContentTypes = new Map<string, Promise<string>>()
@@ -324,12 +333,18 @@ export class ESBuildEngine {
     return {
       name: 'bundler-resolver',
       setup: (build) => {
-        // Resolve imports
         build.onResolve({ filter: /.*/ }, async (args) => {
           try {
             // Track which entry we're processing
             if (this.currentBuildEntryFiles.includes(args.importer) || !args.importer) {
               this.currentBuildEntry = args.importer || args.path
+            }
+
+            // CSS @import of packages with browser runtimes (e.g. tailwindcss)
+            // Return empty CSS and record that the runtime needs injection
+            if (args.kind === 'import-rule' && args.path in ESBuildEngine.CSS_RUNTIME_SCRIPTS) {
+              this.cssRuntimesUsed.add(args.path)
+              return { path: args.path, namespace: 'empty-css' }
             }
 
             // For CSS url() tokens referencing external URLs, mark as external
@@ -412,6 +427,12 @@ export class ESBuildEngine {
             throw error
           }
         })
+
+        // Empty CSS — for CSS packages whose processing is handled by
+        // injected browser runtimes (see generateCssRuntimeInjectionCode)
+        build.onLoad({ filter: /.*/, namespace: 'empty-css' }, () => {
+          return { contents: '', loader: 'css' }
+        })
       }
     }
   }
@@ -482,6 +503,9 @@ export class ESBuildEngine {
     // Update instance state for plugin callbacks
     this.currentBuildEntryFiles = entryFiles
     this.currentBuildEntry = null
+
+    // Reset per-build state
+    this.cssRuntimesUsed.clear()
 
     // Clear dependency graph for entry files before rebuild to get fresh data
     // This ensures new imports are tracked correctly during incremental builds
@@ -574,6 +598,11 @@ export class ESBuildEngine {
             const cssInjectionCode = this.generateCssInjectionCode(cssFile.text, entryPath)
             // Prepend CSS injection to JS so styles are applied before script runs
             finalCode = cssInjectionCode + '\n' + finalCode
+          }
+
+          // Inject browser runtimes for CSS packages (e.g. @tailwindcss/browser)
+          if (this.cssRuntimesUsed.size > 0) {
+            finalCode = this.generateCssRuntimeInjectionCode() + '\n' + finalCode
           }
 
           outputs.set(entryPath, {
@@ -682,6 +711,32 @@ export class ESBuildEngine {
   }
 })();
 `
+  }
+
+  /**
+   * Generate script-injection code for CSS browser runtimes.
+   * For each CSS package that was @import-ed (e.g. tailwindcss),
+   * injects the corresponding browser runtime script tag.
+   */
+  private generateCssRuntimeInjectionCode(): string {
+    const parts: string[] = []
+    for (const pkg of this.cssRuntimesUsed) {
+      const scriptUrl = ESBuildEngine.CSS_RUNTIME_SCRIPTS[pkg]
+      if (!scriptUrl) continue
+      const markerId = `css-runtime-${pkg.replace(/[^a-zA-Z0-9]/g, '-')}`
+      parts.push(`
+// CSS runtime: ${pkg}
+(function() {
+  if (typeof document === 'undefined') return;
+  if (document.querySelector('script[data-css-runtime="${markerId}"]')) return;
+  var s = document.createElement('script');
+  s.src = ${JSON.stringify(scriptUrl)};
+  s.setAttribute('data-css-runtime', ${JSON.stringify(markerId)});
+  document.head.appendChild(s);
+})();
+`)
+    }
+    return parts.join('')
   }
 
   /**

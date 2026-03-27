@@ -1,16 +1,13 @@
 /**
- * GameProvider — React context for the GameStateManager.
- *
- * Wraps the app (or a game component) to provide access to the
- * reactive TripleStore via hooks like useCreatures(), usePlayer(), etc.
+ * GameProvider — Provides the zustand store and manages connection lifecycle.
  */
 
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react'
-import { GameStateManager } from './store'
+import { createGameStore, connectStore, type GameStore } from './store.ts'
 
-const GameStoreContext = createContext<GameStateManager | null>(null)
+const GameStoreContext = createContext<GameStore | null>(null)
 
-export function useGameStore(): GameStateManager {
+export function useGameStore(): GameStore {
   const store = useContext(GameStoreContext)
   if (!store) {
     throw new Error('useGameStore must be used within a <GameProvider>')
@@ -23,15 +20,18 @@ interface GameProviderProps {
 }
 
 export function GameProvider({ children }: GameProviderProps) {
-  const managerRef = useRef<GameStateManager | null>(null)
+  const storeRef = useRef<GameStore | null>(null)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const manager = new GameStateManager()
-    managerRef.current = manager
+  if (!storeRef.current) {
+    storeRef.current = createGameStore()
+  }
 
-    manager.connect()
+  useEffect(() => {
+    const store = storeRef.current!
+
+    connectStore(store)
       .then(() => setReady(true))
       .catch((err) => {
         console.error('[GameProvider] connection failed:', err)
@@ -39,8 +39,7 @@ export function GameProvider({ children }: GameProviderProps) {
       })
 
     return () => {
-      manager.dispose()
-      managerRef.current = null
+      store.setState({ connected: false, triples: [] })
     }
   }, [])
 
@@ -49,14 +48,14 @@ export function GameProvider({ children }: GameProviderProps) {
       `Game SDK connection failed: ${error}`)
   }
 
-  if (!ready || !managerRef.current) {
+  if (!ready) {
     return React.createElement('div', { style: { padding: 16 } },
       'Connecting to game state...')
   }
 
   return React.createElement(
     GameStoreContext.Provider,
-    { value: managerRef.current },
+    { value: storeRef.current },
     children
   )
 }

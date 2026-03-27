@@ -46,6 +46,8 @@ export interface JsModuleDefinition {
 
 // Async Iterator 存储：iteratorId -> AsyncIterator
 const asyncIteratorRegistry = new Map<number, AsyncIterator<unknown>>()
+// 按 instance 追踪 iterators，用于 destroy 时批量清理
+const instanceIteratorIds = new Map<number, Set<number>>()
 let nextAsyncIteratorId = 1
 
 /**
@@ -615,7 +617,8 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
             funcHandle: number,
             argsHandlesPtr: number,
             argsCount: number,
-            callbackId: number
+            callbackId: number,
+            callerInstanceId: number
           ) => {
             const module = localModule
             if (!module) return
@@ -698,12 +701,17 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
                   const iterator = result[Symbol.asyncIterator]()
                   const iteratorId = nextAsyncIteratorId++
                   asyncIteratorRegistry.set(iteratorId, iterator)
+                  // 追踪 iterator 归属的 instance
+                  if (!instanceIteratorIds.has(callerInstanceId)) instanceIteratorIds.set(callerInstanceId, new Set())
+                  instanceIteratorIds.get(callerInstanceId)!.add(iteratorId)
                   // 使用 Symbol 标记，避免与用户数据冲突
                   actualResult = { [ASYNC_ITERATOR_SYMBOL]: iteratorId }
                 } else if (isAsyncIterator(result)) {
                   // 直接注册迭代器
                   const iteratorId = nextAsyncIteratorId++
                   asyncIteratorRegistry.set(iteratorId, result)
+                  if (!instanceIteratorIds.has(callerInstanceId)) instanceIteratorIds.set(callerInstanceId, new Set())
+                  instanceIteratorIds.get(callerInstanceId)!.add(iteratorId)
                   actualResult = { [ASYNC_ITERATOR_SYMBOL]: iteratorId }
                 } else {
                   actualResult = result
@@ -777,6 +785,10 @@ export async function loadRunner(customGluePath?: string, customWasmPath?: strin
                 iterator.return()
               }
               asyncIteratorRegistry.delete(iteratorId)
+              // 从 instance 追踪中移除
+              for (const ids of instanceIteratorIds.values()) {
+                ids.delete(iteratorId)
+              }
             }
           }
           
@@ -1130,6 +1142,19 @@ export function createLuaInstance(options: LuaInstanceOptions = {}): LuaInstance
     
     destroy() {
       if (destroyed) return
+      
+      // 关闭该实例的所有 async iterators（触发 finally 清理）
+      const iteratorIds = instanceIteratorIds.get(instanceId)
+      if (iteratorIds) {
+        for (const iteratorId of iteratorIds) {
+          const iterator = asyncIteratorRegistry.get(iteratorId)
+          if (iterator && typeof iterator.return === 'function') {
+            iterator.return()
+          }
+          asyncIteratorRegistry.delete(iteratorId)
+        }
+        instanceIteratorIds.delete(instanceId)
+      }
       
       module._lua_destroy_instance(instanceId)
       if (vfs) clearVfsContext(contextId)

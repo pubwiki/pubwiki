@@ -120,7 +120,11 @@ export class SandboxClient implements ISandboxClient {
    * @returns The ICustomService implementation via RPC
    */
   async getService(serviceId: string): Promise<ICustomService> {
-    const rpcService = await this.session.getService(serviceId)
+    // Coerce to string to prevent cross-realm serialization errors.
+    // User code runs in a nested iframe with a different JS realm;
+    // objects created there have a different Object.prototype and
+    // would fail capnweb's typeForRpc check if passed directly.
+    const rpcService = await this.session.getService(String(serviceId))
     if (!rpcService) {
       throw new Error(`Service not found: ${serviceId}`)
     }

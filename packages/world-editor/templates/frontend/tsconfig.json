@@ -22,9 +22,6 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-    "types": [
-      "vite/client"
-    ],
     "paths": {
       "@/*": [
         "./src/*"
@@ -52,10 +49,5 @@
   "include": [
     "src",
     "../src"
-  ],
-  "references": [
-    {
-      "path": "./tsconfig.node.json"
-    }
   ]
 }

@@ -1,103 +1,131 @@
 /**
- * GameStateManager — Frontend TripleStore Mirror
+ * GameStore — Zustand store for game state.
  *
- * Maintains a local TripleStore that mirrors the backend state.
- * Receives incremental ChangeEvent[] via the streaming subscription,
- * applies them to the local store, and exposes LiveQuery-based subscriptions.
+ * Stores triples as a flat array. The backend pushes snapshot/change
+ * events via the sandbox-client service API; the store applies them
+ * and React re-renders automatically through zustand selectors.
  */
 
-import { createTripleStore, type TripleStore, type LiveQuery } from '@pubwiki/rdfstore'
-import type { Triple, MatchPattern, Value, ChangeEvent, SubscriptionEvent } from './types'
+import { createStore } from 'zustand/vanilla'
+import { initSandboxClient } from '@pubwiki/sandbox-client'
+import type { Triple, MatchPattern, Value, ChangeEvent, SubscriptionEvent } from './types.ts'
 
-export class GameStateManager {
-  private store: TripleStore
-  private connected = false
+// ── Triple matching ──
 
-  constructor() {
-    this.store = createTripleStore()
-  }
+function tripleEquals(a: Triple, b: Triple): boolean {
+  return (
+    a.subject === b.subject &&
+    a.predicate === b.predicate &&
+    a.object === b.object &&
+    (a.graph ?? undefined) === (b.graph ?? undefined)
+  )
+}
 
-  /**
-   * Connect to the backend triple subscription service.
-   * Uses the same callback-as-input pattern as CreativeWritingStream.
-   */
-  async connect(): Promise<void> {
-    if (this.connected) return
-    this.connected = true
+export function matchTriples(triples: Triple[], pattern: MatchPattern): Triple[] {
+  return triples.filter((t) => {
+    if (pattern.subject !== undefined && t.subject !== pattern.subject) return false
+    if (pattern.predicate !== undefined && t.predicate !== pattern.predicate) return false
+    if (pattern.object !== undefined && t.object !== pattern.object) return false
+    if (pattern.graph !== undefined && t.graph !== pattern.graph) return false
+    return true
+  })
+}
 
-    // Fire-and-forget: the subscription runs indefinitely.
-    // The callback fires for each snapshot/change event.
-    window.callService('core:SubscribeTriples', {
-      callback: (event: unknown) => {
-        this.handleEvent(event as SubscriptionEvent)
-      },
-    }).catch((err: unknown) => {
-      console.error('[GameStateManager] subscription error:', err)
-      this.connected = false
-    })
+// ── Store shape ──
 
-    // Wait briefly for the initial snapshot to arrive
-    await new Promise<void>((resolve) => {
-      const check = () => {
-        if (this.store.getAll().length > 0) {
-          resolve()
-        } else {
-          setTimeout(check, 50)
-        }
-      }
-      // Resolve immediately if no data yet (empty store is valid)
-      setTimeout(resolve, 500)
-      check()
-    })
-  }
+export interface GameState {
+  triples: Triple[]
+  connected: boolean
+  /** Apply a full snapshot — replaces all triples */
+  applySnapshot: (triples: Triple[]) => void
+  /** Apply incremental changes */
+  applyChanges: (events: ChangeEvent[]) => void
+  /** Query */
+  match: (pattern: MatchPattern) => Triple[]
+  get: (subject: string, predicate: string, graph?: string) => Value | undefined
+}
 
-  private handleEvent(event: SubscriptionEvent): void {
-    if (event.type === 'snapshot') {
-      // Full snapshot: clear and rebuild
-      this.store.clear()
-      this.store.batchInsert(event.triples)
-    } else if (event.type === 'changes') {
-      // Incremental changes
-      this.store.batch((writer) => {
-        for (const e of event.events) {
+export function createGameStore() {
+  return createStore<GameState>((set, get) => ({
+    triples: [],
+    connected: false,
+
+    applySnapshot: (incoming: Triple[]) => {
+      set({ triples: incoming })
+    },
+
+    applyChanges: (events: ChangeEvent[]) => {
+      set((state) => {
+        let triples = state.triples
+        for (const e of events) {
           if (e.type === 'insert') {
-            writer.insert(e.triple.subject, e.triple.predicate, e.triple.object, e.triple.graph)
+            triples = [...triples, e.triple]
           } else {
-            writer.delete(e.triple.subject, e.triple.predicate, e.triple.object, e.triple.graph)
+            triples = triples.filter((t) => !tripleEquals(t, e.triple))
           }
         }
+        return { triples }
       })
+    },
+
+    match: (pattern: MatchPattern) => matchTriples(get().triples, pattern),
+
+    get: (subject: string, predicate: string, graph?: string) => {
+      const found = get().triples.find(
+        (t) =>
+          t.subject === subject &&
+          t.predicate === predicate &&
+          (graph === undefined || t.graph === graph)
+      )
+      return found?.object
+    },
+  }))
+}
+
+export type GameStore = ReturnType<typeof createGameStore>
+
+/**
+ * Connect the store to the backend triple subscription.
+ */
+export async function connectStore(store: GameStore): Promise<void> {
+  if (store.getState().connected) return
+  store.setState({ connected: true })
+
+  const client = initSandboxClient()
+  const service = await client.getService('core:SubscribeTriples')
+
+  if (!service) {
+    console.error('[GameSDK] core:SubscribeTriples service not found')
+    store.setState({ connected: false })
+    return
+  }
+
+  // SubscribeTriples uses a callback-as-input pattern.
+  // The sandbox-client automatically wraps functions as RPC stubs.
+  service.call({
+    callback: (event: unknown) => {
+      const e = event as SubscriptionEvent
+      if (e.type === 'snapshot') {
+        store.getState().applySnapshot(e.triples)
+      } else if (e.type === 'changes') {
+        store.getState().applyChanges(e.events)
+      }
+    },
+  }).catch((err: unknown) => {
+    console.error('[GameSDK] subscription error:', err)
+    store.setState({ connected: false })
+  })
+
+  // Wait briefly for the initial snapshot
+  await new Promise<void>((resolve) => {
+    const check = () => {
+      if (store.getState().triples.length > 0) {
+        resolve()
+      } else {
+        setTimeout(check, 50)
+      }
     }
-  }
-
-  // ── Query API ──
-
-  match(pattern: MatchPattern): Triple[] {
-    return this.store.match(pattern)
-  }
-
-  get(subject: string, predicate: string, graph?: string): Value | undefined {
-    return this.store.get(subject, predicate, graph)
-  }
-
-  getAll(): Triple[] {
-    return this.store.getAll()
-  }
-
-  liveMatch(pattern: MatchPattern): LiveQuery<Triple[]> {
-    return this.store.liveMatch(pattern)
-  }
-
-  liveGet(subject: string, predicate: string, graph?: string): LiveQuery<Value | undefined> {
-    return this.store.liveGet(subject, predicate, graph)
-  }
-
-  get isConnected(): boolean {
-    return this.connected
-  }
-
-  dispose(): void {
-    this.connected = false
-    this.store.close()
-  }
+    setTimeout(resolve, 500)
+    check()
+  })
 }

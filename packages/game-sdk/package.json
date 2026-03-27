@@ -17,8 +17,9 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@pubwiki/rdfstore": "workspace:*",
-    "react": "^18.3.1"
+    "@pubwiki/sandbox-client": "workspace:*",
+    "react": "^18.3.1",
+    "zustand": "^5.0.5"
   },
   "devDependencies": {
     "@types/react": "^18.3.12",

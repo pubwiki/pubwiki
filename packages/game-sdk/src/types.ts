@@ -1,5 +1,5 @@
 /**
- * Core types mirroring @pubwiki/rdfstore for the game-sdk.
+ * Core types for the game-sdk.
  * These match the types used by the backend TripleStore.
  */
 

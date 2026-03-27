@@ -6,6 +6,11 @@ import type { ErrorRoute } from './router';
  * 规则按顺序匹配，第一个匹配的规则生效
  */
 export const studioErrorRoutes: ErrorRoute[] = [
+	// Canceled operations (e.g. Monaco file switch canceling pending diagnostics): silent
+	{
+		match: (e) => e.message === 'Canceled',
+		handle: 'silent'
+	},
 	// 网络断开：静默，SyncStatusIndicator 已经在显示状态
 	{
 		match: (e) => e.category === 'network' && e.retryable,

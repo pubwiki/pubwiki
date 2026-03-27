@@ -58,8 +58,12 @@
   import QueryUserFormBlock from './QueryUserFormBlock.svelte';
   import { ChatMessageStore } from './chat-message-store';
   import SandboxPreviewView from '../../nodes/sandbox/SandboxPreviewView.svelte';
+  import { VFSContent, type LoaderNodeData } from '$lib/types';
   import { detectProject } from '@pubwiki/bundler';
   import type { ProjectConfig } from '@pubwiki/sandbox-host';
+  import { initializeLoader, isLoaderReady, listServices, onLoaderReload } from '$components/nodes/loader/controller.svelte';
+  import { getNodeRDFStore } from '$lib/rdf';
+  import { generateServiceDocs } from '$lib/loader/docs-generator';
   // Builder views
   import BuilderPhaseIndicator from './builder/BuilderPhaseIndicator.svelte';
   import BuilderSetupView from './builder/BuilderSetupView.svelte';
@@ -135,6 +139,7 @@
   let designerPreviewVfs = $state<NodeVfs | null>(null);
   let designerProjectConfig = $state<ProjectConfig | null>(null);
   let designerEntryFile = $state('index.html');
+  let designerLoaderNodes = $state<Array<{ id: string; data: LoaderNodeData }>>([]);
   let builderRevisionLog = $state<Array<{ toolName: string; summary: string }>>([]);
   let builderError = $state<string | null>(null);
   let builderEventLog = $state<LogEntry[]>([]);
@@ -332,41 +337,6 @@
   function initializeDesignerOrchestrator() {
     if (!isLLMConfigured) return;
 
-    const frontendVfsNode = nodeStore.findByMetadata('simple-mode-role', 'frontend-vfs');
-    const frontendVfsNodeId = frontendVfsNode?.id ?? null;
-
-    // Also find the sandbox node for entryFile
-    const sandboxNode = nodeStore.findByMetadata('simple-mode-role', 'sandbox');
-    if (sandboxNode && 'content' in sandboxNode && (sandboxNode as any).content?.entryFile) {
-      designerEntryFile = (sandboxNode as any).content.entryFile;
-    }
-
-    // Cache the VFS instance
-    let frontendVfs: import('@pubwiki/vfs').Vfs | null = null;
-    let frontendVfsInitializing = false;
-
-    async function ensureFrontendVfs() {
-      if (frontendVfs || frontendVfsInitializing || !frontendVfsNodeId) return;
-      frontendVfsInitializing = true;
-      try {
-        const nodeVfs = await getNodeVfs(weCtx.projectId, frontendVfsNodeId);
-        frontendVfs = nodeVfs;
-        // Store NodeVfs for preview and detect project config
-        designerPreviewVfs = nodeVfs;
-        const config = await detectProject('/tsconfig.json', nodeVfs);
-        if (config?.isBuildable) {
-          designerProjectConfig = config;
-        }
-      } catch (e) {
-        console.warn('[Designer] Failed to get frontend VFS:', e);
-      } finally {
-        frontendVfsInitializing = false;
-      }
-    }
-
-    // Start VFS init eagerly
-    ensureFrontendVfs();
-
     const designerConfig: DesignerConfig = {
       llm: {
         apiKey: settingsStore.api.apiKey,
@@ -376,14 +346,177 @@
         maxTokens: 4096,
       },
       aiContext: createAIContext(),
-      getFrontendVfs: () => frontendVfs,
+      getFrontendVfs: () => designerPreviewVfs,
     };
 
     designerOrchestrator = new DesignerOrchestrator(designerConfig);
   }
 
+  // Loader initialization + docs generation — runs unconditionally on mount.
+  let loaderDocsInitialized = false;
+  let docsReloadUnsub: (() => void) | null = null;
+
+  /**
+   * Initialize the Lua loader backend and generate service type definitions.
+   * Runs unconditionally on mount (not gated by copilot panel visibility)
+   * so that the docs VFS node is populated as soon as the loader is ready.
+   */
+  async function initializeLoaderAndDocs() {
+    if (loaderDocsInitialized) return;
+    loaderDocsInitialized = true;
+
+    const loaderNode = nodeStore.findByMetadata('simple-mode-role', 'loader');
+    if (!loaderNode || loaderNode.type !== 'LOADER') return;
+
+    // In simple mode, LoaderNode.svelte is not mounted (SvelteFlow is not
+    // rendered), so the Lua VM backend is never initialised.  Do it here
+    // so that the preview can connect to loader services on first open.
+    if (!isLoaderReady(loaderNode.id)) {
+      try {
+        const backendVfsNode = nodeStore.findByMetadata('simple-mode-role', 'backend-vfs');
+        if (backendVfsNode && backendVfsNode.type === 'VFS') {
+          const backendVfsContent = backendVfsNode.content as VFSContent;
+          const backendVfs = await getNodeVfs(backendVfsContent.projectId, backendVfsNode.id);
+
+          const stateNode = nodeStore.findByMetadata('simple-mode-role', 'state');
+          const rdfStore = stateNode ? await getNodeRDFStore(stateNode.id) : undefined;
+
+          const llmConfig = settingsStore.api.apiKey && settingsStore.api.selectedModel ? {
+            apiKey: settingsStore.api.apiKey,
+            model: settingsStore.api.selectedModel,
+            baseUrl: settingsStore.effectiveBaseUrl,
+          } : undefined;
+
+          const result = await initializeLoader(
+            loaderNode.id,
+            backendVfs,
+            new Map(), // asset mounts — not needed in simple mode
+            rdfStore,
+            llmConfig,
+            undefined, // pubwikiConfig — not needed for preview
+            stateNode?.id,
+          );
+          if (!result.success) {
+            console.warn('[Designer] Loader init failed:', result.error);
+          }
+        }
+      } catch (e) {
+        console.warn('[Designer] Failed to initialize loader backend:', e);
+      }
+    }
+
+    // Generate service type definitions after loader is ready
+    if (isLoaderReady(loaderNode.id)) {
+      generateAndMountDocs(loaderNode.id);
+    }
+
+    // Auto-regenerate when loader reloads (e.g. Lua file changes)
+    docsReloadUnsub = onLoaderReload(loaderNode.id, (result) => {
+      if (result.success) {
+        generateAndMountDocs(loaderNode.id);
+      }
+    });
+  }
+
+  // Designer preview VFS detection — independent of LLM configuration.
+  // Mirrors SandboxNode's detectProjectConfig() logic.
+  let designerVfsInitialized = false;
+
+  /**
+   * Generate service type definitions and write them to the docs VFS node.
+   * The docs VFS node is created by SimpleModeBridge and already mounted
+   * into game-sdk at /generated/.  This function only writes the generated
+   * files (services.d.ts, agents.md, etc.) after the loader is ready.
+   */
+  async function generateAndMountDocs(loaderNodeId: string) {
+    try {
+      const services = await listServices(loaderNodeId);
+      if (services.length === 0) return;
+
+      const docs = generateServiceDocs(services);
+
+      // Find the docs VFS node (created by SimpleModeBridge)
+      const docsNode = nodeStore.findByMetadata('simple-mode-role', 'docs-vfs');
+      if (!docsNode || docsNode.type !== 'VFS') {
+        console.warn('[Designer] Docs VFS node not found — ensure SimpleModeBridge has run');
+        return;
+      }
+
+      const docsProjectId = (docsNode.content as VFSContent).projectId;
+      const docsVfs = await getNodeVfs(docsProjectId, docsNode.id);
+
+      // Write generated files to docs VFS
+      for (const [path, content] of [
+        ['/index.ts', docs.indexTs],
+        ['/services.d.ts', docs.servicesDts],
+        ['/services.md', docs.servicesMd],
+        ['/agents.md', docs.agentsMd],
+      ] as const) {
+        try {
+          await docsVfs.readFile(path);
+          await docsVfs.updateFile(path, content);
+        } catch {
+          await docsVfs.createFile(path, content);
+        }
+      }
+
+      console.log(`[Designer] Service types generated (${services.length} services) → docs-vfs`);
+    } catch (e) {
+      console.warn('[Designer] Failed to generate service types:', e);
+    }
+  }
+
+  async function initializeDesignerPreview() {
+    if (designerVfsInitialized) return;
+    designerVfsInitialized = true;
+
+    const frontendVfsNode = nodeStore.findByMetadata('simple-mode-role', 'frontend-vfs');
+    const frontendVfsNodeId = frontendVfsNode?.id ?? null;
+    if (!frontendVfsNodeId) return;
+
+    // Also find the sandbox node for entryFile
+    const sandboxNode = nodeStore.findByMetadata('simple-mode-role', 'sandbox');
+    if (sandboxNode && 'content' in sandboxNode && (sandboxNode as any).content?.entryFile) {
+      designerEntryFile = (sandboxNode as any).content.entryFile;
+    }
+
+    // Also find the loader node for designer preview
+    const loaderNode = nodeStore.findByMetadata('simple-mode-role', 'loader');
+    if (loaderNode && loaderNode.type === 'LOADER') {
+      designerLoaderNodes = [{ id: loaderNode.id, data: loaderNode as LoaderNodeData }];
+    }
+
+    try {
+      const nodeVfs = await getNodeVfs(weCtx.projectId, frontendVfsNodeId);
+      designerPreviewVfs = nodeVfs;
+      const config = await detectProject('/tsconfig.json', nodeVfs);
+      if (config?.isBuildable) {
+        designerProjectConfig = config;
+      }
+    } catch (e) {
+      console.warn('[Designer] Failed to detect project:', e);
+    }
+  }
+
   // Guard: only restore once per panel lifetime
   let sessionRestored = false;
+
+  // Initialize loader and generate service types on mount — no copilot dependency.
+  // This ensures the docs VFS is populated even before the copilot panel is opened.
+  $effect(() => {
+    initializeLoaderAndDocs();
+    return () => {
+      docsReloadUnsub?.();
+      docsReloadUnsub = null;
+    };
+  });
+
+  // Detect designer preview VFS when copilot opens
+  $effect(() => {
+    if (!collapsed) {
+      initializeDesignerPreview();
+    }
+  });
 
   // Initialize on mount and when settings change
   $effect(() => {
@@ -1604,6 +1737,7 @@
     projectConfig={designerProjectConfig}
     entryFile={designerEntryFile}
     name="Frontend Preview"
+    loaderNodes={designerLoaderNodes}
     onClose={() => { designerShowPreview = false; }}
     projectId={weCtx.projectId}
     vfsNodeId={nodeStore.findByMetadata('simple-mode-role', 'frontend-vfs')?.id}

@@ -17,12 +17,12 @@ const gzipAsync = promisify(gzip);
 
 const ROOT = join(import.meta.dirname!, '..');
 
-/** Template sources: name → source directory */
-const TEMPLATES: { name: string; srcDir: string }[] = [
+/** Template sources: name → source directory (+ optional extra files from parent) */
+const TEMPLATES: { name: string; srcDir: string; extraFiles?: string[] }[] = [
   { name: 'backend',  srcDir: join(ROOT, 'templates', 'backend') },
   { name: 'frontend', srcDir: join(ROOT, 'templates', 'frontend') },
-  { name: 'game-sdk', srcDir: join(ROOT, '..', '..', 'packages', 'game-sdk', 'src') },
-  { name: 'game-ui',  srcDir: join(ROOT, '..', '..', 'packages', 'game-ui', 'src') },
+  { name: 'game-sdk', srcDir: join(ROOT, '..', '..', 'packages', 'game-sdk', 'src'), extraFiles: [join(ROOT, '..', '..', 'packages', 'game-sdk', 'package.json')] },
+  { name: 'game-ui',  srcDir: join(ROOT, '..', '..', 'packages', 'game-ui', 'src'), extraFiles: [join(ROOT, '..', '..', 'packages', 'game-ui', 'package.json')] },
 ];
 
 function collectFiles(dir: string, base: string = dir): TarEntry[] {
@@ -48,8 +48,17 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   mkdirSync(staticDir, { recursive: true });
 
-  for (const { name, srcDir } of TEMPLATES) {
+  for (const { name, srcDir, extraFiles } of TEMPLATES) {
     const entries = collectFiles(srcDir);
+    // Include extra files (e.g. package.json from parent dir) at archive root
+    if (extraFiles) {
+      for (const filePath of extraFiles) {
+        entries.push({
+          path: filePath.split('/').pop()!,
+          content: new Uint8Array(readFileSync(filePath)),
+        });
+      }
+    }
     const tar = createTar(entries);
     const gz = await gzipAsync(tar);
     const outPath = join(outDir, `${name}.tar.gz`);

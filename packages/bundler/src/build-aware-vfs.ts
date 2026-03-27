@@ -494,6 +494,16 @@ class BuildAwareVfsProvider implements VfsProvider {
   }
 
   /**
+   * Invalidate all cached state so the next readFile() falls through
+   * to L3 live compilation.  Called when the source VFS reports file
+   * changes that did NOT go through this provider's writeFile().
+   */
+  invalidate(): void {
+    this.compiledCache.clear()
+    this.buildCacheKey = null
+  }
+
+  /**
    * Get all resolved npm package versions from the bundler.
    * Returns an empty map if no L3 build was performed (cache hit).
    */
@@ -520,14 +530,23 @@ export function createBuildAwareVfs(config: BuildAwareVfsConfig): Vfs<BuildAware
   const provider = new BuildAwareVfsProvider(config)
   const vfs = new Vfs(provider) as Vfs<BuildAwareVfsProvider> & { warmup(): Promise<void>; getResolvedPackageVersions(): ReadonlyMap<string, string> }
 
-  // Forward events from source VFS to the new VFS
+  // Forward events from source VFS to the new VFS, invalidating
+  // the compiled cache so stale L0/L1 entries are not served.
+  // Also trigger onFileChange so consumers (e.g. sandbox) reload.
+  // When HMR watch is active it will fire onFileChange again after
+  // its debounced rebuild; the redundant reload is harmless.
   const unsubCreate = config.sourceVfs.events.on('file:created', (event) => {
+    provider.invalidate()
     vfs.events.emit(event)
   })
   const unsubUpdate = config.sourceVfs.events.on('file:updated', (event) => {
+    provider.invalidate()
+    config.onFileChange?.(event.path)
     vfs.events.emit(event)
   })
   const unsubDelete = config.sourceVfs.events.on('file:deleted', (event) => {
+    provider.invalidate()
+    config.onFileChange?.(event.path)
     vfs.events.emit(event)
   })
 

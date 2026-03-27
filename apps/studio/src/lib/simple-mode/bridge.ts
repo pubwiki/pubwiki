@@ -2,15 +2,16 @@
  * Simple Mode Bridge
  *
  * Automatically creates and maintains a minimal flow-graph when the user is
- * in "simple mode".  The graph consists of 7 nodes and 4 edges that wire
- * STATE, VFS (backend + frontend + game-sdk + game-ui), LOADER, and SANDBOX
- * together.  game-sdk and game-ui are mounted into the frontend VFS as
- * read-only library directories.
+ * in "simple mode".  The graph consists of 8 nodes and edges that wire
+ * STATE, VFS (backend + frontend + game-sdk + game-ui + docs), LOADER, and
+ * SANDBOX together.  game-sdk and game-ui are mounted into the frontend VFS
+ * as read-only library directories.  The docs VFS is auto-generated from
+ * loader services and mounted into game-sdk at /generated/.
  *
  * Node identification relies on `metadata["simple-mode-role"]`.
  */
 
-import { extractTar, extractTarGz, type TarEntry, createVfsMountHandleId } from '@pubwiki/flow-core';
+import { extractTar, extractTarGz, type TarEntry, createVfsMountHandleId, HandleId } from '@pubwiki/flow-core';
 import { Position, type Node, type Edge } from '@xyflow/svelte';
 import { nodeStore } from '$lib/persistence/node-store.svelte';
 import { layoutStore } from '$lib/persistence/layout-store';
@@ -40,6 +41,7 @@ const ROLES = {
 	frontendVfs: 'frontend-vfs',
 	gameSdkVfs: 'game-sdk-vfs',
 	gameUiVfs: 'game-ui-vfs',
+	docsVfs: 'docs-vfs',
 	loader: 'loader',
 	sandbox: 'sandbox'
 } as const;
@@ -54,6 +56,7 @@ const LAYOUT: Record<RoleValue, { x: number; y: number }> = {
 	'frontend-vfs': { x: 400, y: 375 },
 	'game-sdk-vfs': { x: 0, y: 500 },
 	'game-ui-vfs': { x: 400, y: 500 },
+	'docs-vfs': { x: 0, y: 375 },
 	sandbox: { x: 800, y: 250 }
 };
 
@@ -67,6 +70,7 @@ export interface SimpleModeNodeIds {
 	frontendVfs: string;
 	gameSdkVfs: string;
 	gameUiVfs: string;
+	docsVfs: string;
 	loader: string;
 	sandbox: string;
 }
@@ -151,16 +155,18 @@ export class SimpleModeBridge {
 		const frontendVfs = nodeStore.findByMetadata(META_KEY, ROLES.frontendVfs);
 		const gameSdkVfs = nodeStore.findByMetadata(META_KEY, ROLES.gameSdkVfs);
 		const gameUiVfs = nodeStore.findByMetadata(META_KEY, ROLES.gameUiVfs);
+		const docsVfs = nodeStore.findByMetadata(META_KEY, ROLES.docsVfs);
 		const loader = nodeStore.findByMetadata(META_KEY, ROLES.loader);
 		const sandbox = nodeStore.findByMetadata(META_KEY, ROLES.sandbox);
 
-		if (state && backendVfs && frontendVfs && gameSdkVfs && gameUiVfs && loader && sandbox) {
+		if (state && backendVfs && frontendVfs && gameSdkVfs && gameUiVfs && docsVfs && loader && sandbox) {
 			return {
 				state: state.id,
 				backendVfs: backendVfs.id,
 				frontendVfs: frontendVfs.id,
 				gameSdkVfs: gameSdkVfs.id,
 				gameUiVfs: gameUiVfs.id,
+				docsVfs: docsVfs.id,
 				loader: loader.id,
 				sandbox: sandbox.id
 			};
@@ -173,14 +179,15 @@ export class SimpleModeBridge {
 	// -----------------------------------------------------------------------
 
 	private async createGraph(): Promise<SimpleModeNodeIds> {
-		// Create the 7 nodes with metadata tags
-		const [stateNode, backendVfsNode, frontendVfsNode, gameSdkVfsNode, gameUiVfsNode, loaderNode, sandboxNode] =
+		// Create the 8 nodes with metadata tags
+		const [stateNode, backendVfsNode, frontendVfsNode, gameSdkVfsNode, gameUiVfsNode, docsVfsNode, loaderNode, sandboxNode] =
 			await Promise.all([
 				createStateNodeData('🌍 World Data', { [META_KEY]: ROLES.state }),
 				createVFSNodeData(this.projectId, '📦 Backend', { [META_KEY]: ROLES.backendVfs }),
 				createVFSNodeData(this.projectId, '🎮 Frontend', { [META_KEY]: ROLES.frontendVfs }),
 				createVFSNodeData(this.projectId, '📊 Game SDK', { [META_KEY]: ROLES.gameSdkVfs }),
 				createVFSNodeData(this.projectId, '🎨 Game UI', { [META_KEY]: ROLES.gameUiVfs }),
+				createVFSNodeData(this.projectId, '📄 Service Types', { [META_KEY]: ROLES.docsVfs }),
 				createLoaderNodeData('⚙️ Engine', { [META_KEY]: ROLES.loader }),
 				createSandboxNodeData('👁️ Preview', { [META_KEY]: ROLES.sandbox })
 			]);
@@ -193,6 +200,7 @@ export class SimpleModeBridge {
 		nodeStore.create(frontendVfsNode as StudioNodeData);
 		nodeStore.create(gameSdkVfsNode as StudioNodeData);
 		nodeStore.create(gameUiVfsNode as StudioNodeData);
+		nodeStore.create(docsVfsNode as StudioNodeData);
 		nodeStore.create(loaderNode as StudioNodeData);
 		nodeStore.create(sandboxNode as StudioNodeData);
 		await nodeStore.flush();
@@ -203,6 +211,7 @@ export class SimpleModeBridge {
 		layoutStore.add(frontendVfsNode.id, LAYOUT['frontend-vfs'].x, LAYOUT['frontend-vfs'].y);
 		layoutStore.add(gameSdkVfsNode.id, LAYOUT['game-sdk-vfs'].x, LAYOUT['game-sdk-vfs'].y);
 		layoutStore.add(gameUiVfsNode.id, LAYOUT['game-ui-vfs'].x, LAYOUT['game-ui-vfs'].y);
+		layoutStore.add(docsVfsNode.id, LAYOUT['docs-vfs'].x, LAYOUT['docs-vfs'].y);
 		layoutStore.add(loaderNode.id, LAYOUT.loader.x, LAYOUT.loader.y);
 		layoutStore.add(sandboxNode.id, LAYOUT.sandbox.x, LAYOUT.sandbox.y);
 
@@ -223,11 +232,12 @@ export class SimpleModeBridge {
 			toFlowNode(frontendVfsNode.id, 'VFS', LAYOUT['frontend-vfs']),
 			toFlowNode(gameSdkVfsNode.id, 'VFS', LAYOUT['game-sdk-vfs']),
 			toFlowNode(gameUiVfsNode.id, 'VFS', LAYOUT['game-ui-vfs']),
+			toFlowNode(docsVfsNode.id, 'VFS', LAYOUT['docs-vfs']),
 			toFlowNode(loaderNode.id, 'LOADER', LAYOUT.loader),
 			toFlowNode(sandboxNode.id, 'SANDBOX', LAYOUT.sandbox)
 		]);
 
-		// Create 7 edges: 4 data-flow + 3 mount edges
+		// Create edges: 4 data-flow + 3 mount edges + 2 docs edges
 		const newEdges: Edge[] = [
 			{
 				id: `e-${stateNode.id}-${loaderNode.id}`,
@@ -278,6 +288,21 @@ export class SimpleModeBridge {
 				target: frontendVfsNode.id,
 				sourceHandle: 'default',
 				targetHandle: createVfsMountHandleId('mount-game-ui')
+			},
+			// Docs edges: loader → docs VFS, docs VFS → game-sdk mount
+			{
+				id: `e-${loaderNode.id}-${docsVfsNode.id}-docs`,
+				source: loaderNode.id,
+				sourceHandle: HandleId.LOADER_DOCS_OUTPUT,
+				target: docsVfsNode.id,
+				targetHandle: HandleId.VFS_GENERATOR_INPUT
+			},
+			{
+				id: `${docsVfsNode.id}-${gameSdkVfsNode.id}-mount-docs`,
+				source: docsVfsNode.id,
+				target: gameSdkVfsNode.id,
+				sourceHandle: 'default',
+				targetHandle: createVfsMountHandleId('mount-docs')
 			}
 		];
 
@@ -298,6 +323,7 @@ export class SimpleModeBridge {
 			frontendVfs: frontendVfsNode.id,
 			gameSdkVfs: gameSdkVfsNode.id,
 			gameUiVfs: gameUiVfsNode.id,
+			docsVfs: docsVfsNode.id,
 			loader: loaderNode.id,
 			sandbox: sandboxNode.id
 		};
@@ -335,6 +361,11 @@ export class SimpleModeBridge {
 				.addMount({ id: 'mount-game-sdk', sourceNodeId: ids.gameSdkVfs, mountPath: '/lib/game-sdk' })
 				.addMount({ id: 'mount-game-ui', sourceNodeId: ids.gameUiVfs, mountPath: '/lib/game-ui' })
 		}) as unknown as StudioNodeData);
+		nodeStore.update(ids.gameSdkVfs, (data) => ({
+			...data,
+			content: (data.content as VFSContent)
+				.addMount({ id: 'mount-docs', sourceNodeId: ids.docsVfs, mountPath: '/generated' })
+		}) as unknown as StudioNodeData);
 		await nodeStore.flush();
 
 		// 2. Set up in-memory mounts on cached NodeVfs instances
@@ -342,10 +373,12 @@ export class SimpleModeBridge {
 		const frontendVfs = await getNodeVfs(this.projectId, ids.frontendVfs);
 		const gameSdkVfs = await getNodeVfs(this.projectId, ids.gameSdkVfs);
 		const gameUiVfs = await getNodeVfs(this.projectId, ids.gameUiVfs);
+		const docsVfs = await getNodeVfs(this.projectId, ids.docsVfs);
 
 		gameUiVfs.mount('/lib/game-sdk', gameSdkVfs, ids.gameSdkVfs);
 		frontendVfs.mount('/lib/game-sdk', gameSdkVfs, ids.gameSdkVfs);
 		frontendVfs.mount('/lib/game-ui', gameUiVfs, ids.gameUiVfs);
+		gameSdkVfs.mount('/generated', docsVfs, ids.docsVfs);
 
 		console.log('[SimpleModeBridge] VFS mounts persisted and established');
 	}

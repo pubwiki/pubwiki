@@ -24,6 +24,63 @@
 	let { vfs, nodeId, filePath, onClose }: Props = $props();
 
 	// ============================================================================
+	// Local library detection from VFS mounts
+	// ============================================================================
+
+	/**
+	 * Result of local library detection from VFS mounts.
+	 */
+	interface LocalLibraryInfo {
+		/** Package name → local VFS entry path */
+		libraries: Record<string, string>;
+		/** Transitive dependency names (from dependencies/peerDependencies of local libs) */
+		deps: Set<string>;
+	}
+
+	/**
+	 * Auto-detect local library mounts by reading package.json at each mount point.
+	 * Also collects their dependencies so they can be added to the import map.
+	 */
+	async function detectLocalLibraries(): Promise<LocalLibraryInfo> {
+		const libraries: Record<string, string> = {};
+		const deps = new Set<string>();
+		const mountPoints = vfs.getMountPoints();
+		for (const mp of mountPoints) {
+			if (mp === '/') continue;
+			try {
+				const pkgFile = await vfs.readFile(`${mp}/package.json`);
+				if (pkgFile.content === null) continue;
+				const text = typeof pkgFile.content === 'string'
+					? pkgFile.content
+					: new TextDecoder().decode(pkgFile.content as ArrayBuffer);
+				const pkg = JSON.parse(text);
+				if (!pkg.name) continue;
+				let mainEntry = 'index.ts';
+				if (pkg.main) {
+					const candidate = pkg.main.replace(/^\.\//, '');
+					if (await vfs.exists(`${mp}/${candidate}`)) {
+						mainEntry = candidate;
+					}
+				}
+				libraries[pkg.name] = `${mp}/${mainEntry}`;
+				// Collect dependencies so they can be resolved via CDN
+				for (const dep of Object.keys(pkg.dependencies ?? {})) {
+					deps.add(dep);
+				}
+				for (const dep of Object.keys(pkg.peerDependencies ?? {})) {
+					deps.add(dep);
+				}
+			} catch {
+				// No package.json or parse error — skip this mount
+			}
+		}
+		return { libraries, deps };
+	}
+
+	// Resolved promise — ensures localLibraries is ready before editor renders
+	const localLibrariesPromise = detectLocalLibraries();
+
+	// ============================================================================
 	// State
 	// ============================================================================
 
@@ -149,17 +206,21 @@
 			{#snippet loadingContent()}
 				{m.studio_vfs_loading()}
 			{/snippet}
-			<VfsMonacoEditor
-				bind:this={editorComponent}
-				{vfs}
-				instanceId={nodeId}
-				{filePath}
-				autoImports={true}
-				onContentChange={handleContentChange}
-				onExternalChange={handleExternalChange}
-				onSave={handleSave}
-				loading={loadingContent}
-			/>
+			{#await localLibrariesPromise then { libraries: localLibraries, deps: localLibraryDeps }}
+				<VfsMonacoEditor
+					bind:this={editorComponent}
+					{vfs}
+					instanceId={nodeId}
+					{filePath}
+					autoImports={true}
+					{localLibraries}
+					{localLibraryDeps}
+					onContentChange={handleContentChange}
+					onExternalChange={handleExternalChange}
+					onSave={handleSave}
+					loading={loadingContent}
+				/>
+			{/await}
 		</div>
 	</div>
 </div>

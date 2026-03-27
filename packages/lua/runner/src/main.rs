@@ -1,9 +1,3 @@
-#![feature(iterator_try_collect)]
-
-// Minimal binary to force Emscripten to generate JS glue alongside the WASM.
-// The exported C ABI functions are defined in lib.rs; they are retained
-// by the -sEXPORTED_FUNCTIONS link flag configured in .cargo/config.toml.
-
 use mlua::prelude::*;
 use std::cell::RefCell;
 use std::ffi::{CStr, CString};

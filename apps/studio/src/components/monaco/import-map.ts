@@ -25,6 +25,20 @@ export interface ImportMapConfig {
 	defaultImports?: Record<string, string>;
 	/** Optional package version resolver for pinning dependency versions */
 	packageVersionResolver?: PackageVersionResolver;
+	/**
+	 * Local library path mappings.
+	 * Maps npm package names to local VFS entry points.
+	 * E.g. `{ '@pubwiki/game-sdk': '/lib/game-sdk/index.ts' }`
+	 * These are resolved locally instead of via CDN, and are also
+	 * added to builtinPackages so auto-detect skips them.
+	 */
+	localLibraries?: Record<string, string>;
+	/**
+	 * Transitive dependencies of local libraries.
+	 * These package names are added to the default import map as CDN entries
+	 * so that imports inside mounted libraries resolve correctly.
+	 */
+	localLibraryDeps?: Set<string>;
 }
 
 // ============================================================================
@@ -80,6 +94,8 @@ export class ImportMapManager {
 	private readonly cdnUrl: string;
 	private readonly builtinPackages: Set<string>;
 	private readonly defaultImports: Record<string, string>;
+	private readonly localLibraries: Record<string, string>;
+	private readonly localLibraryDeps: Set<string>;
 	
 	private knownImports = new Set<string>();
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,7 +107,15 @@ export class ImportMapManager {
 	) {
 		this.importMapPath = config.path ?? DEFAULT_IMPORTMAP_PATH;
 		this.cdnUrl = config.cdnUrl ?? DEFAULT_CDN_URL;
-		this.builtinPackages = config.builtinPackages ?? DEFAULT_BUILTIN_PACKAGES;
+		this.localLibraries = config.localLibraries ?? {};
+		this.localLibraryDeps = config.localLibraryDeps ?? new Set();
+		// Merge caller-supplied builtins with local library package names
+		// and their transitive deps (so auto-detect doesn't re-add them)
+		this.builtinPackages = new Set([
+			...(config.builtinPackages ?? DEFAULT_BUILTIN_PACKAGES),
+			...Object.keys(this.localLibraries),
+			...this.localLibraryDeps,
+		]);
 		this.packageVersionResolver = config.packageVersionResolver;
 		this.defaultImports = config.defaultImports ?? this.buildDefaultImports();
 	}
@@ -147,7 +171,8 @@ export class ImportMapManager {
 	}
 
 	/**
-	 * Ensure importmap.json exists with default mappings
+	 * Ensure importmap.json exists with default mappings.
+	 * If the file already exists, merge in any local library entries that are missing.
 	 */
 	async ensureImportMapExists(): Promise<void> {
 		const exists = await this.vfs.exists(this.importMapPath);
@@ -158,6 +183,30 @@ export class ImportMapManager {
 			};
 			await this.vfs.createFile(this.importMapPath, JSON.stringify(defaultImportMap, null, 2));
 			console.log('[ImportMapManager] Created default importmap.json');
+		} else if (Object.keys(this.localLibraries).length > 0 || this.localLibraryDeps.size > 0) {
+			// Merge local library entries and their deps into existing import map
+			const importMap = await this.readImportMap();
+			let hasChanges = false;
+			for (const [pkg, localPath] of Object.entries(this.localLibraries)) {
+				if (importMap.imports[pkg] !== localPath) {
+					importMap.imports[pkg] = localPath;
+					const dir = localPath.replace(/\/index\.ts$/, '');
+					importMap.imports[`${pkg}/`] = `${dir}/`;
+					hasChanges = true;
+				}
+			}
+			for (const dep of this.localLibraryDeps) {
+				if (!importMap.imports[dep]) {
+					const versionedDep = this.applyVersion(dep);
+					importMap.imports[dep] = `${this.cdnUrl}/${versionedDep}`;
+					importMap.imports[`${dep}/`] = `${this.cdnUrl}/${versionedDep}/`;
+					hasChanges = true;
+				}
+			}
+			if (hasChanges) {
+				await this.writeImportMap(importMap);
+				console.log('[ImportMapManager] Merged local library/dep entries into existing importmap.json');
+			}
 		}
 	}
 
@@ -270,6 +319,21 @@ export class ImportMapManager {
 		if (Object.keys(stored.imports).length === 0) {
 			return { imports: { ...this.defaultImports }, scopes: {} };
 		}
+		// Always ensure local library entries are present in the LSP import map,
+		// even if the stored file was created before mounts were configured.
+		for (const [pkg, localPath] of Object.entries(this.localLibraries)) {
+			stored.imports[pkg] = localPath;
+			const dir = localPath.replace(/\/index\.ts$/, '');
+			stored.imports[`${pkg}/`] = `${dir}/`;
+		}
+		// Ensure transitive dep CDN entries are present
+		for (const dep of this.localLibraryDeps) {
+			if (!stored.imports[dep]) {
+				const versionedDep = this.applyVersion(dep);
+				stored.imports[dep] = `${this.cdnUrl}/${versionedDep}`;
+				stored.imports[`${dep}/`] = `${this.cdnUrl}/${versionedDep}/`;
+			}
+		}
 		return stored;
 	}
 
@@ -286,7 +350,7 @@ export class ImportMapManager {
 			return this.applyVersion(pkg, fallbackVersion);
 		};
 
-		return {
+		const imports: Record<string, string> = {
 			// React is needed for JSX support detection by modern-monaco
 			'react': `${this.cdnUrl}/${v('react', '18')}`,
 			'react/': `${this.cdnUrl}/${v('react', '18')}/`,
@@ -295,6 +359,25 @@ export class ImportMapManager {
 			'@pubwiki/sandbox-client': `${this.cdnUrl}/${v('@pubwiki/sandbox-client', '2')}`,
 			'@pubwiki/sandbox-client/': `${this.cdnUrl}/${v('@pubwiki/sandbox-client', '2')}/`,
 		};
+
+		// Add local library paths (resolved via VFS mounts, not CDN)
+		for (const [pkg, localPath] of Object.entries(this.localLibraries)) {
+			imports[pkg] = localPath;
+			// Subpath entry: @pubwiki/game-sdk/hooks → /lib/game-sdk/hooks
+			const dir = localPath.replace(/\/index\.ts$/, '');
+			imports[`${pkg}/`] = `${dir}/`;
+		}
+
+		// Add CDN entries for transitive dependencies of local libraries
+		for (const dep of this.localLibraryDeps) {
+			if (!(dep in imports)) {
+				const versionedDep = this.applyVersion(dep);
+				imports[dep] = `${this.cdnUrl}/${versionedDep}`;
+				imports[`${dep}/`] = `${this.cdnUrl}/${versionedDep}/`;
+			}
+		}
+
+		return imports;
 	}
 
 	/**

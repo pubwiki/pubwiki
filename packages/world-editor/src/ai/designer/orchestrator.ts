@@ -24,12 +24,17 @@ import {
   createReadFrontendFileTool,
   createWriteFrontendFileTool,
   createDeleteFrontendFileTool,
+  createSearchFrontendFilesTool,
   type FrontendVfsGetter,
 } from './tools/frontend-file-tools'
 import {
   createGetStateOverviewTool,
   createGetStateContentTool,
 } from '../copilot/tools/state-tools'
+import {
+  createListBackendServicesTool,
+  createGetServiceDefinitionTool,
+} from './tools/service-tools'
 
 // ============================================================================
 // Configuration
@@ -86,6 +91,7 @@ export class DesignerOrchestrator {
       createReadFrontendFileTool(getFrontendVfs),
       createWriteFrontendFileTool(getFrontendVfs),
       createDeleteFrontendFileTool(getFrontendVfs),
+      createSearchFrontendFilesTool(getFrontendVfs),
     ]
 
     // State tools (read-only subset)
@@ -94,8 +100,14 @@ export class DesignerOrchestrator {
       createGetStateContentTool(aiContext),
     ]
 
+    // Backend service discovery tools
+    const serviceTools = [
+      createListBackendServicesTool(getFrontendVfs),
+      createGetServiceDefinitionTool(getFrontendVfs),
+    ]
+
     // Register all tools
-    for (const tool of [...fileTools, ...stateTools]) {
+    for (const tool of [...fileTools, ...stateTools, ...serviceTools]) {
       this.pubchat.registerTool({
         name: tool.name,
         description: tool.description,
