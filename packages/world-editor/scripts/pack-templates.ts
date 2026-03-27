@@ -34,7 +34,8 @@ function collectFiles(dir: string, base: string = dir): TarEntry[] {
       entries.push(...collectFiles(full, base));
     } else {
       entries.push({
-        path: relative(base, full),
+        // Always use forward slashes in tar paths (OPFS rejects backslashes on Windows)
+        path: relative(base, full).replaceAll('\\', '/'),
         content: new Uint8Array(readFileSync(full)),
       });
     }
@@ -53,8 +54,10 @@ async function main() {
     // Include extra files (e.g. package.json from parent dir) at archive root
     if (extraFiles) {
       for (const filePath of extraFiles) {
+        // Use path.basename equivalent that works on both Windows and Unix
+        const fileName = filePath.replace(/\\/g, '/').split('/').pop()!;
         entries.push({
-          path: filePath.split('/').pop()!,
+          path: fileName,
           content: new Uint8Array(readFileSync(filePath)),
         });
       }

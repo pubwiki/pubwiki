@@ -251,6 +251,31 @@
 							oninput={(e) => updateCreature(selected!.creature_id, { creature: { ...selected!.creature, goal: e.currentTarget.value || undefined } })}
 						></textarea>
 					</FormGroup>
+					<!-- Known Infos -->
+					{#if true}
+					{@const infos = selected.creature.known_infos ?? []}
+					<div class="mt-1">
+						<div class="bento-list-header">
+							<span class="text-xs font-semibold uppercase" style="color: var(--we-text-tertiary);">Known Infos ({infos.length})</span>
+							<button class="add-btn" onclick={() => updateCreature(selected!.creature_id, { creature: { ...selected!.creature, known_infos: [...infos, ''] } })}>+ {m.we_common_add()}</button>
+						</div>
+						{#each infos as info, i (i)}
+							<div class="flex items-center gap-2 mt-1">
+								<input type="text" class="{INPUT_CLS} flex-1" style="border-color: var(--we-border); color: var(--we-text-primary);"
+									value={info}
+									oninput={(e) => {
+										const updated = [...infos]; updated[i] = e.currentTarget.value;
+										updateCreature(selected!.creature_id, { creature: { ...selected!.creature, known_infos: updated } });
+									}} />
+								<button class="shrink-0 p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600" style="border: none; background: none; cursor: pointer;" title={m.we_common_delete()}
+									onclick={() => updateCreature(selected!.creature_id, { creature: { ...selected!.creature, known_infos: infos.filter((_: string, idx: number) => idx !== i) } })}>
+									<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+								</button>
+							</div>
+						{/each}
+					</div>
+					{/if}
+
 					<FormGroup label="Organization">
 						<select class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
 							value={selected.creature.organization_id ?? ''}
