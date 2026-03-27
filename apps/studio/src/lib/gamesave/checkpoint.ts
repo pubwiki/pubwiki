@@ -12,7 +12,7 @@
 
 import type { TripleStore, Triple } from '@pubwiki/rdfstore';
 import type { SaveDetail, CreateArtifactNode } from '@pubwiki/api';
-import { computeContentHash, computeNodeCommit, computeQuadsHash } from '@pubwiki/api';
+import { computeContentHash, computeNodeCommit, computeSha256Hex } from '@pubwiki/api';
 import { createApiClient } from '@pubwiki/api/client';
 import { API_BASE_URL } from '$lib/config';
 import {
@@ -118,10 +118,10 @@ export async function uploadSaveToCloud(
   const triplesJson = JSON.stringify(triples);
   const triplesData = new TextEncoder().encode(triplesJson);
 
-  // 3. Compute quadsHash (reuse from sync metadata if available)
+  // 3. Compute quadsHash from the actual binary data (reuse from sync metadata if available)
   const existingMeta = await getSyncMetadata(checkpointId);
   const quadsHash = existingMeta?.quadsHash
-    ?? await computeQuadsHash(triples);
+    ?? await computeSha256Hex(triplesData.buffer as ArrayBuffer);
 
   // 4. Build the SAVE content object
   const saveContent = {
@@ -499,8 +499,9 @@ export async function prepareSaveForPublish(
   const triplesJson = JSON.stringify(triples);
   const quadsData = new TextEncoder().encode(triplesJson);
 
-  // 3. Compute quadsHash via shared utility
-  const quadsHash = await computeQuadsHash(triples);
+  // 3. Compute quadsHash from the actual binary data (not JCS canonical form)
+  // Must match SHA-256(binary) since backend validates save[{quadsHash}] by hashing the uploaded bytes.
+  const quadsHash = await computeSha256Hex(quadsData.buffer as ArrayBuffer);
 
   // 4. Build the SAVE content object
   const saveContent = {

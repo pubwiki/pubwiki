@@ -25,9 +25,10 @@
 	import * as m from '$lib/paraglide/messages';
 	import { PUBLIC_HUB_URL } from '$env/static/public';
 	import EntrypointSection, { type SelectedSave } from './EntrypointSection.svelte';
-	import { prepareSaveForPublish, getArtifactContext, putSyncMetadata } from '$lib/gamesave';
+	import { prepareSaveForPublish, putSyncMetadata } from '$lib/gamesave';
 	import type { SaveDataForPublish } from '$lib/io';
 	import { getNodeRDFStore } from '$lib/rdf';
+	import { HandleId } from '$lib/graph';
 
 	const hubUrl = PUBLIC_HUB_URL || 'http://localhost:5173';
 	const auth = useAuth();
@@ -272,28 +273,67 @@
 		return prefix ? `${prefix}-${randomSuffix}` : randomSuffix;
 	}
 
-	/** Resolve the entrypoint save commit, preparing SAVE node data for the artifact graph */
+	/**
+	 * Find the STATE node connected to the selected sandbox via graph edges.
+	 * Path: SANDBOX ←[SERVICE_INPUT]── LOADER ←[LOADER_STATE]── STATE
+	 */
+	function findConnectedStateNodeId(): string | null {
+		if (!selectedEntrypoint) return null;
+		for (const edge of edges) {
+			if (edge.target === selectedEntrypoint && edge.targetHandle === HandleId.SERVICE_INPUT) {
+				const loaderData = nodeStore.get(edge.source);
+				if (loaderData?.type !== 'LOADER') continue;
+				for (const e2 of edges) {
+					if (e2.target === edge.source && e2.targetHandle === HandleId.LOADER_STATE) {
+						const stateData = nodeStore.get(e2.source);
+						if (stateData?.type === 'STATE') return e2.source;
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Resolve the entrypoint save commit, preparing SAVE node data for the artifact graph.
+	 *
+	 * Handles three cases:
+	 * 1. Save already synced to cloud → use existing commit (no binary upload needed)
+	 * 2. Local-only save selected → prepare inline save data for upload with artifact
+	 * 3. No save selected but entrypoint set → auto-create from current RDF state
+	 *
+	 * For both cases 2 and 3, the save archive is included in the artifact publish
+	 * request via `save[{quadsHash}]` — the backend supports inline save upload.
+	 */
 	async function resolveEntrypoint(): Promise<{ saveCommit: string; sandboxNodeId: string; saveData?: SaveDataForPublish } | undefined> {
-		if (!selectedEntrypoint || !selectedSave) return undefined;
+		if (!selectedEntrypoint) return undefined;
 
 		let saveCommit: string;
 		let saveData: SaveDataForPublish | undefined;
-		if (selectedSave.cloudCommit) {
+
+		if (selectedSave?.cloudCommit) {
 			// Save already synced to cloud — use existing commit
 			saveCommit = selectedSave.cloudCommit;
 		} else {
-			// Local-only save — need to upload first
-			const ctx = await getArtifactContext(projectId);
-			if (!ctx.isPublished || !ctx.artifactId || !ctx.artifactCommit) {
-				throw new Error('Cannot upload save: artifact not yet published. Please publish first without an entrypoint, then update with one.');
+			// Local-only save or no save selected — prepare inline for upload with artifact.
+			// The backend accepts save archives via save[{quadsHash}] in multipart form data,
+			// so we don't need the artifact to exist beforehand.
+			const stateNodeId = selectedSave?.stateNodeId ?? findConnectedStateNodeId();
+			if (!stateNodeId) return undefined;
+
+			const artifactId = projectId;
+			const artifactCommit = publishState.state.lastCloudCommit || '';
+
+			const store = await getNodeRDFStore(stateNodeId);
+			if (selectedSave) {
+				store.checkout(selectedSave.checkpointId);
 			}
-			const store = await getNodeRDFStore(selectedSave.stateNodeId);
-			store.checkout(selectedSave.checkpointId);
+
 			const prepared = await prepareSaveForPublish(store, {
-				stateNodeId: selectedSave.stateNodeId,
-				artifactId: ctx.artifactId,
-				artifactCommit: ctx.artifactCommit,
-				title: selectedSave.title,
+				stateNodeId,
+				artifactId,
+				artifactCommit,
+				title: selectedSave?.title || 'Initial State',
 			});
 			saveCommit = prepared.saveCommit;
 			saveData = {
