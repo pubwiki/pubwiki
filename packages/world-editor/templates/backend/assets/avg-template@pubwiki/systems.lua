@@ -1,26 +1,26 @@
 -- systems_new.lua
--- 基于新组件设计的系统实现
--- 
--- 设计原则：
--- - 使用 creature_id 而非 entity_id 进行操作
--- - 自动维护 Registry 注册表的一致性
--- - 所有 ECS 操作通过 Service.call 完成
+-- System implementation based on new component design
+--
+-- Design principles:
+-- - Use creature_id instead of entity_id for operations
+-- - Auto-maintain Registry consistency
+-- - All ECS operations done via Service.call
 
 local ComponentTypes = require("./components")
 
--- ============ 辅助工具 ============
+-- ============ Utilities ============
 
--- 注册系统的辅助函数
+-- Helper function for registering systems
 local function registerSystem(spec)
-    -- inputs 和 outputs 应该是 Type.Object
+    -- inputs and outputs must be Type.Object
     assert(Type.isType(spec.inputs), "inputs must be a Type")
     assert(Type.isType(spec.outputs), "outputs must be a Type")
     assert(spec.inputs.kind == "object", "inputs must be Type.Object")
     assert(spec.outputs.kind == "object", "outputs must be Type.Object")
 
-    print("[ecs:RegisterSystem] 注册系统: " .. spec.name)
+    print("[ecs:RegisterSystem] Registering system: " .. spec.name)
     
-    -- 直接序列化完整的 Type.Object
+    -- Directly serialize the complete Type.Object
     local inputs_typedef = Type.serialize(spec.inputs)
     local outputs_typedef = Type.serialize(spec.outputs)
     
@@ -44,7 +44,7 @@ local function registerSystem(spec)
     end
 end
 
--- 获取世界实体ID（假设只有一个世界实体，拥有 Registry 组件）
+-- Get world entity ID (assumes a single world entity with Registry component)
 local function getWorldEntityId()
     local result = Service.call("ecs:GetEntitiesByComponent", {
         component_keys = {"Registry"}
@@ -56,7 +56,7 @@ local function getWorldEntityId()
     return nil
 end
 
--- 通过 creature_id 查找实体ID
+-- Find entity ID by creature_id
 local function getEntityIdByCreatureId(creatureId)
     local result = Service.call("ecs:GetEntitiesByComponent", {
         component_keys = {"Creature"}
@@ -76,7 +76,7 @@ local function getEntityIdByCreatureId(creatureId)
     return nil
 end
 
--- 通过 region_id 查找地域实体ID
+-- Find region entity ID by region_id
 local function getRegionEntityId(regionId)
     local result = Service.call("ecs:GetEntitiesByComponent", {
         component_keys = {"Region"}
@@ -96,7 +96,7 @@ local function getRegionEntityId(regionId)
     return nil
 end
 
--- 通过 organization_id 查找组织实体ID
+-- Find organization entity ID by organization_id
 local function getEntityIdByOrganizationId(organizationId)
     local result = Service.call("ecs:GetEntitiesByComponent", {
         component_keys = {"Organization"}
@@ -119,7 +119,7 @@ end
 
 
 
--- 向 lines 中追加 creature_attr_fields 属性字段列表
+-- Append creature_attr_fields list to lines
 local function appendAttrFieldsList(lines)
     local worldEntityId = getWorldEntityId()
     if not worldEntityId then return end
@@ -128,7 +128,7 @@ local function appendAttrFieldsList(lines)
         component_key = "Registry"
     })
     if registryResult.found and registryResult.data.creature_attr_fields and #registryResult.data.creature_attr_fields > 0 then
-        table.insert(lines, "-- 当前定义的属性字段 (creature_attr_fields):")
+        table.insert(lines, "-- Currently defined attribute fields (creature_attr_fields):")
         for _, field in ipairs(registryResult.data.creature_attr_fields) do
             table.insert(lines, "--   " .. field.field_name .. ": " .. field.hint)
         end
@@ -136,7 +136,7 @@ local function appendAttrFieldsList(lines)
 end
 
 
--- 向 lines 中追加已注册的自定义组件列表
+-- Append registered custom components list to lines
 local function appendCustomComponentRegistryList(lines)
     local worldEntityId = getWorldEntityId()
     if not worldEntityId then return end
@@ -145,17 +145,17 @@ local function appendCustomComponentRegistryList(lines)
         component_key = "CustomComponentRegistry"
     })
     if registryResult.found and registryResult.data.custom_components and #registryResult.data.custom_components > 0 then
-        table.insert(lines, "-- 当前已注册的自定义组件:")
+        table.insert(lines, "-- Currently registered custom components:")
         for _, def in ipairs(registryResult.data.custom_components) do
             local info = "--   " .. def.component_key .. ": " .. def.component_name
             if def.is_array then
-                info = info .. " [数组型]"
+                info = info .. " [array]"
             else
-                info = info .. " [对象型]"
+                info = info .. " [object]"
             end
             table.insert(lines, info)
             if def.data_registry and #def.data_registry > 0 then
-                table.insert(lines, "--     可用注册项:")
+                table.insert(lines, "--     Available registry items:")
                 for _, item in ipairs(def.data_registry) do
                     table.insert(lines, "--       " .. item.item_id)
                 end
@@ -164,30 +164,33 @@ local function appendCustomComponentRegistryList(lines)
     end
 end
 
--- ============ 创建类服务 ============
+-- ============ Spawn Services ============
 
 registerSystem({
     category = "Spawn",
     name = "spawnWorld",
-    description = "创建世界状态实体，直接传入各组件数据",
-    usage = "创建唯一的世界状态实体，包含 GameTime、Registry、DirectorNotes 等组件。所有组件均可选，未传入则使用默认值。世界实体已存在时会返回错误。",
+    description = "Create world state entity with component data",
+    usage = "Create the unique world state entity containing GameTime, Registry, DirectorNotes, etc. All components are optional with defaults. Returns error if world entity already exists.",
     inputs = Type.Object({
-        GameTime = Type.Optional(ComponentTypes.GameTime):desc("游戏时间"),
-        Registry = Type.Optional(ComponentTypes.Registry):desc("世界注册表"),
-        DirectorNotes = Type.Optional(ComponentTypes.DirectorNotes):desc("导演笔记"),
-        CustomComponentRegistry = Type.Optional(ComponentTypes.CustomComponentRegistry):desc("自定义组件注册表"),
-        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("绑定设定"),
+        GameTime = Type.Optional(ComponentTypes.GameTime):desc("game time"),
+        Registry = Type.Optional(ComponentTypes.Registry):desc("world registry"),
+        DirectorNotes = Type.Optional(ComponentTypes.DirectorNotes):desc("director notes"),
+        CustomComponentRegistry = Type.Optional(ComponentTypes.CustomComponentRegistry):desc("custom component registry"),
+        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("bind settings"),
+        Events = Type.Optional(ComponentTypes.Events):desc("plot event data"),
+        Interaction = Type.Optional(ComponentTypes.Interaction):desc("interaction options"),
+        BaseInteraction = Type.Optional(ComponentTypes.BaseInteraction):desc("base interaction options shared by all entities of each type"),
     }),
     outputs = ComponentTypes.BasicOutput,
     tags = {"create", "world"},
     execute = function(params)
-        -- 检查是否已存在世界实体
+        -- Check if world entity already exists
         local existing = getWorldEntityId()
         if existing then
-            return {success = false, error = "世界实体已存在"}
+            return {success = false, error = "World entity already exists"}
         end
-        
-        -- 默认值
+
+        -- Default values
         local gameTime = params.GameTime or { year = 1, month = 1, day = 1, hour = 0, minute = 0 }
         local registry = params.Registry or {
             creature_attr_fields = {},
@@ -195,21 +198,24 @@ registerSystem({
         local directorNotes = params.DirectorNotes or { notes = {}, flags = {} }
         local customComponentRegistry = params.CustomComponentRegistry or { custom_components = {} }
         local bindSetting = params.BindSetting or { documents = {} }
-        
+
         local result = Service.call("ecs:SpawnEntity", {
-            name = "世界",
-            desc = "游戏世界状态",
+            name = "World",
+            desc = "Game world state",
             components = {
-                { key = "Metadata", data = { name = "TheWorld", desc = "游戏世界状态实体，存储注册表等信息" } },
+                { key = "Metadata", data = { name = "TheWorld", desc = "Game world state entity storing registry and other info" } },
                 { key = "GameTime", data = gameTime },
                 { key = "Registry", data = registry },
                 { key = "DirectorNotes", data = directorNotes },
                 { key = "CustomComponentRegistry", data = customComponentRegistry },
                 { key = "Log", data = { } },
-                { key = "BindSetting", data = bindSetting }
+                { key = "BindSetting", data = bindSetting },
+                { key = "Events", data = params.Events or { events = {} } },
+                { key = "Interaction", data = params.Interaction or { options = {} } },
+                { key = "BaseInteraction", data = params.BaseInteraction or { creature_options = {}, region_options = {}, organization_options = {} } }
             }
         })
-        
+
         return {
             success = result.success,
             entity_id = result.entity_id,
@@ -221,40 +227,41 @@ registerSystem({
 registerSystem({
     category = "Spawn",
     name = "spawnCharacter",
-    description = "创建角色实体（NPC或玩家），直接传入组件数据",
+    description = "Create character entity (NPC or player) with component data",
     usage = function()
         local lines = {
-            "创建角色实体（NPC或玩家）。必须传入 Creature，其余组件可选。",
-            "is_player=true 时标记为玩家角色（添加 IsPlayer 组件）。",
-            "creature_id 重复时返回错误。attrs 的键应与下方 creature_attr_fields 一致，值可以是数字或字符串。",
+            "Create character entity (NPC or player). Creature is required, other components are optional.",
+            "Set is_player=true to mark as player character (adds IsPlayer component).",
+            "Returns error if creature_id is duplicate. attrs keys should match creature_attr_fields below, values can be numbers or strings.",
         }
         appendAttrFieldsList(lines)
         return table.concat(lines, "\n")
     end,
     inputs = Type.Object({
-        is_player = Type.Optional(Type.Bool):desc("是否为玩家角色"),
-        Creature = ComponentTypes.Creature:desc("生物属性"),
-        LocationRef = Type.Optional(ComponentTypes.LocationRef):desc("位置引用"),
-        StatusEffects = Type.Optional(ComponentTypes.StatusEffects):desc("状态效果列表"),
-        Inventory = Type.Optional(ComponentTypes.Inventory):desc("背包"),
-        CustomComponents = Type.Optional(ComponentTypes.CustomComponents):desc("自定义组件"),
-        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("绑定设定文档"),
+        is_player = Type.Optional(Type.Bool):desc("whether this is a player character"),
+        Creature = ComponentTypes.Creature:desc("creature attributes"),
+        LocationRef = Type.Optional(ComponentTypes.LocationRef):desc("location reference"),
+        StatusEffects = Type.Optional(ComponentTypes.StatusEffects):desc("status effects list"),
+        Inventory = Type.Optional(ComponentTypes.Inventory):desc("inventory"),
+        CustomComponents = Type.Optional(ComponentTypes.CustomComponents):desc("custom components"),
+        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("bind settings document"),
+        Interaction = Type.Optional(ComponentTypes.Interaction):desc("interaction options"),
     }),
     outputs = ComponentTypes.BasicOutput,
     tags = {"create", "character"},
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在，请先创建世界"}
+            return {success = false, error = "World entity does not exist, please create world first"}
         end
         
         local creatureAttrs = params.Creature
         local creatureId = creatureAttrs.creature_id
         
-        -- 检查 creature_id 是否已存在
+        -- Check if creature_id already exists
         local existing = getEntityIdByCreatureId(creatureId)
         if existing then
-            return {success = false, error = "creature_id 已存在: " .. creatureId}
+            return {success = false, error = "creature_id already exists: " .. creatureId}
         end
         
         local isPlayer = params.is_player or false
@@ -262,13 +269,13 @@ registerSystem({
         local initialStatusEffects = params.StatusEffects or { status_effects = {} }
         local initialCustomComponents = params.CustomComponents or { custom_components = {} }
         
-        -- 构建组件列表
+        -- Build component list
         local components = {
             {
                 key = "Metadata",
                 data = {
                     name = "Creature:" .. creatureAttrs.name,
-                    desc = (isPlayer and "玩家角色" or "NPC角色") .. "Creature ID:" .. creatureId .. "，包含基本属性、状态、位置等信息"
+                    desc = (isPlayer and "Player character" or "NPC character") .. " Creature ID:" .. creatureId .. ", contains basic attributes, status, location info"
                 }
             },
             { key = "Creature", data = creatureAttrs },
@@ -276,18 +283,18 @@ registerSystem({
             { key = "StatusEffects", data = initialStatusEffects },
             { key = "Inventory", data = params.Inventory or { items = {} } },
             { key = "Log", data = { entries = {} } },
-            { key = "Relationship", data = { relationships = {} } },
             { key = "BindSetting", data = params.BindSetting or { documents = {} } },
             { key = "CustomComponents", data = initialCustomComponents },
+            { key = "Interaction", data = params.Interaction or { options = {} } },
         }
-        
+
         if isPlayer then
             table.insert(components, { key = "IsPlayer", data = {} })
         end
         
         local result = Service.call("ecs:SpawnEntity", {
             name = creatureAttrs.name,
-            desc = isPlayer and "玩家角色" or "NPC角色",
+            desc = isPlayer and "Player character" or "NPC character",
             components = components
         })
         
@@ -302,46 +309,48 @@ registerSystem({
 registerSystem({
     category = "Spawn",
     name = "spawnRegion",
-    description = "创建地域实体，直接传入组件数据",
-    usage = "创建地域实体。必须传入 Region（含 region_id、locations、paths）。region_id 重复时返回错误。",
+    description = "Create region entity with component data",
+    usage = "Create region entity. Region (with region_id, locations, paths) is required. Returns error if region_id is duplicate.",
     inputs = Type.Object({
-        Region = ComponentTypes.Region:desc("地点和路径数据"),
-        StatusEffects = Type.Optional(ComponentTypes.StatusEffects):desc("状态效果列表"),
-        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("绑定设定"),
+        Region = ComponentTypes.Region:desc("location and path data"),
+        StatusEffects = Type.Optional(ComponentTypes.StatusEffects):desc("status effects list"),
+        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("bind settings"),
+        Interaction = Type.Optional(ComponentTypes.Interaction):desc("interaction options"),
     }),
     outputs = ComponentTypes.BasicOutput,
     tags = {"create", "region"},
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在，请先创建世界"}
+            return {success = false, error = "World entity does not exist, please create world first"}
         end
         
         local locData = params.Region
         local regionId = locData.region_id
         
-        -- 检查 region_id 是否已存在
+        -- Check if region_id already exists
         local existing = getRegionEntityId(regionId)
         if existing then
-            return {success = false, error = "region_id 已存在: " .. regionId}
+            return {success = false, error = "region_id already exists: " .. regionId}
         end
         
         local result = Service.call("ecs:SpawnEntity", {
             name = regionId,
-            desc = "地域实体",
+            desc = "Region entity",
             components = {
                 { key = "Metadata", data = { name = locData.region_name, desc = regionId } },
                 { key = "Region", data = locData },
                 { key = "Log", data = { entries = {} } },
                 { key = "StatusEffects", data = params.StatusEffects or { status_effects = {} } },
-                { key = "BindSetting", data = params.BindSetting or { documents = {} } }
+                { key = "BindSetting", data = params.BindSetting or { documents = {} } },
+                { key = "Interaction", data = params.Interaction or { options = {} } }
             }
         })
-        
+
         if not result.success then
             return {success = false, error = result.error}
         end
-        
+
         return { success = true, entity_id = result.entity_id }
     end
 })
@@ -349,12 +358,13 @@ registerSystem({
 registerSystem({
     category = "Spawn",
     name = "spawnOrganization",
-    description = "创建组织实体，直接传入组件数据",
-    usage = "创建组织实体。必须传入 Organization（含 organization_id、name、territories）。organization_id 重复时返回错误。",
+    description = "Create organization entity with component data",
+    usage = "Create organization entity. Organization (with organization_id, name, territories) is required. Returns error if organization_id is duplicate.",
     inputs = Type.Object({
-        Organization = ComponentTypes.Organization:desc("组织数据"),
-        StatusEffects = Type.Optional(ComponentTypes.StatusEffects):desc("状态效果列表"),
-        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("绑定设定"),
+        Organization = ComponentTypes.Organization:desc("organization data"),
+        StatusEffects = Type.Optional(ComponentTypes.StatusEffects):desc("status effects list"),
+        BindSetting = Type.Optional(ComponentTypes.BindSetting):desc("bind settings"),
+        Interaction = Type.Optional(ComponentTypes.Interaction):desc("interaction options"),
     }),
     outputs = ComponentTypes.BasicOutput,
     tags = {"create", "organization"},
@@ -362,41 +372,42 @@ registerSystem({
         local orgData = params.Organization
         local organizationId = orgData.organization_id
         
-        -- 检查 organization_id 是否已存在
+        -- Check if organization_id already exists
         local existing = getEntityIdByOrganizationId(organizationId)
         if existing then
-            return {success = false, error = "organization_id 已存在: " .. organizationId}
+            return {success = false, error = "organization_id already exists: " .. organizationId}
         end
         
         local result = Service.call("ecs:SpawnEntity", {
             name = orgData.name,
-            desc = "组织实体",
+            desc = "Organization entity",
             components = {
-                { key = "Metadata", data = { name = "Organization:" .. orgData.name, desc = "组织实体ID:" .. organizationId .. ", 包含组织信息、状态、库存"} },
+                { key = "Metadata", data = { name = "Organization:" .. orgData.name, desc = "Organization entity ID:" .. organizationId .. ", contains organization info, status, inventory"} },
                 { key = "Organization", data = orgData },
                 { key = "StatusEffects", data = params.StatusEffects or { status_effects = {} } },
                 { key = "Log", data = { entries = {} } },
-                { key = "BindSetting", data = params.BindSetting or { documents = {} } }
+                { key = "BindSetting", data = params.BindSetting or { documents = {} } },
+                { key = "Interaction", data = params.Interaction or { options = {} } }
             }
         })
-        
+
         if not result.success then
             return {success = false, error = result.error}
         end
-        
+
         return { success = true, entity_id = result.entity_id }
     end
 })
 
--- ============ 查询服务（使用 creature_id） ============
+-- ============ Query Services (using creature_id) ============
 
 registerSystem({
     category = "Query",
     name = "getCreatureInfo",
-    description = "获取生物的基本信息",
-    usage = "查询角色的完整 Creature 数据（姓名、外貌、属性、技艺等）。角色不存在时返回 exists=false。",
+    description = "Get creature basic info",
+    usage = "Query creature's full Creature data (name, appearance, attributes, skills, etc.). Returns exists=false if creature not found.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
+        creature_id = Type.String:desc("creature ID"),
     }),
     outputs = ComponentTypes.ExistsOutput,
     tags = {"query", "character"},
@@ -422,18 +433,18 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "hasItem",
-    description = "查询生物是否拥有指定物品",
-    usage = "检查角色背包中是否持有指定物品及数量。返回 has_item 和 count。",
+    description = "Query whether creature has a specific item",
+    usage = "Check if creature inventory contains specified item and quantity. Returns has_item and count.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        item_id = Type.String:desc("物品ID"),
+        creature_id = Type.String:desc("creature ID"),
+        item_id = Type.String:desc("item ID"),
     }),
     outputs = ComponentTypes.ItemQueryOutput,
     tags = {"query", "inventory"},
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
         
         local result = Service.call("ecs:GetComponentData", {
@@ -459,24 +470,24 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "getAttributeValue",
-    description = "查询生物的属性值",
+    description = "Query creature attribute value",
     usage = function()
         local lines = {
-            "查询角色的属性值。attr_name 应与 Registry.creature_attr_fields 中定义的 field_name 一致。",
+            "Query creature attribute value. attr_name should match field_name defined in Registry.creature_attr_fields.",
         }
         appendAttrFieldsList(lines)
         return table.concat(lines, "\n")
     end,
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        attr_name = Type.String:desc("属性名，应与 Registry.creature_attr_fields 中定义的 field_name 一致"),
+        creature_id = Type.String:desc("creature ID"),
+        attr_name = Type.String:desc("attribute name, should match field_name defined in Registry.creature_attr_fields"),
     }),
     outputs = ComponentTypes.AttrValueOutput,
     tags = {"query", "attribute"},
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
         
         local result = Service.call("ecs:GetComponentData", {
@@ -485,7 +496,7 @@ registerSystem({
         })
         
         if not result.found then
-            return {success = false, error = "Creature 组件不存在"}
+            return {success = false, error = "Creature component not found"}
         end
         
         local value = result.data.attrs[params.attr_name]
@@ -499,59 +510,18 @@ registerSystem({
 
 registerSystem({
     category = "Query",
-    name = "getRelationship",
-    description = "查询两个生物之间的关系",
-    usage = "查询 source 对 target 的单向关系。返回 has_relationship、name、value。",
-    inputs = Type.Object({
-        source_creature_id = Type.String:desc("源生物ID"),
-        target_creature_id = Type.String:desc("目标生物ID"),
-    }),
-    outputs = ComponentTypes.RelationshipQueryOutput,
-    tags = {"query", "relationship"},
-    execute = function(params)
-        local entityId = getEntityIdByCreatureId(params.source_creature_id)
-        if not entityId then
-            return {success = false, error = "源生物不存在: " .. params.source_creature_id}
-        end
-        
-        local result = Service.call("ecs:GetComponentData", {
-            entity_id = entityId,
-            component_key = "Relationship"
-        })
-        
-        if not result.found then
-            return {success = true, has_relationship = false}
-        end
-        
-        for _, rel in ipairs(result.data.relationships) do
-            if rel.target_creature_id == params.target_creature_id then
-                return {
-                    success = true,
-                    has_relationship = true,
-                    name = rel.name,
-                    value = rel.value
-                }
-            end
-        end
-        
-        return {success = true, has_relationship = false}
-    end
-})
-
-registerSystem({
-    category = "Query",
     name = "getCreatureLocation",
-    description = "查询生物的当前位置",
-    usage = "查询生物当前所在的 region_id 和 location_id。",
+    description = "Query creature current location",
+    usage = "Query creature's current region_id and location_id.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
+        creature_id = Type.String:desc("creature ID"),
     }),
     outputs = ComponentTypes.LocationQueryOutput,
     tags = {"query", "location"},
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
         
         local result = Service.call("ecs:GetComponentData", {
@@ -560,7 +530,7 @@ registerSystem({
         })
         
         if not result.found then
-            return {success = false, error = "LocationRef 组件不存在"}
+            return {success = false, error = "LocationRef component not found"}
         end
         
         return {
@@ -574,8 +544,8 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "getPlayerEntity",
-    description = "获取玩家实体的完整数据",
-    usage = "无需参数，自动查找拥有 IsPlayer 组件的实体，返回其所有组件数据的完整快照。",
+    description = "Get player entity full data",
+    usage = "No parameters needed. Auto-finds entity with IsPlayer component and returns full component snapshot.",
     inputs = Type.Object({}),
     outputs = ComponentTypes.PlayerEntityOutput,
     tags = {"query", "player"},
@@ -605,10 +575,10 @@ registerSystem({
             LocationRef = components.LocationRef,
             Inventory = components.Inventory,
             StatusEffects = components.StatusEffects,
-            Relationship = components.Relationship,
             Log = components.Log,
             CustomComponents = components.CustomComponents,
             BindSetting = components.BindSetting,
+            Interaction = components.Interaction,
         }
     end
 })
@@ -616,8 +586,8 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "getNPCEntities",
-    description = "获取所有NPC实体的完整数据",
-    usage = "无需参数，返回所有NPC（非 IsPlayer）角色实体的完整组件快照列表。",
+    description = "Get all NPC entities full data",
+    usage = "No parameters needed. Returns full component snapshots of all NPC (non-IsPlayer) character entities.",
     inputs = Type.Object({}),
     outputs = ComponentTypes.NPCEntitiesOutput,
     tags = {"query", "npc"},
@@ -639,14 +609,14 @@ registerSystem({
                     LocationRef = components.LocationRef,
                     Inventory = components.Inventory,
                     StatusEffects = components.StatusEffects,
-                    Relationship = components.Relationship,
                     Log = components.Log,
                     CustomComponents = components.CustomComponents,
                     BindSetting = components.BindSetting,
+                    Interaction = components.Interaction,
                 })
             end
         end
-        
+
         return {
             success = true,
             entities = npcs,
@@ -658,8 +628,8 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "getWorldEntity",
-    description = "获取世界状态实体的完整数据",
-    usage = "无需参数，返回世界实体的完整快照（GameTime、Registry、DirectorNotes、CustomComponentRegistry、Log）。",
+    description = "Get world state entity full data",
+    usage = "No parameters needed. Returns world entity full snapshot (GameTime, Registry, DirectorNotes, CustomComponentRegistry, Log).",
     inputs = Type.Object({}),
     outputs = ComponentTypes.WorldEntityOutput,
     tags = {"query", "world"},
@@ -687,6 +657,8 @@ registerSystem({
             Log = components.Log,
             BindSetting = components.BindSetting,
             CustomComponentRegistry = components.CustomComponentRegistry,
+            Events = components.Events,
+            Interaction = components.Interaction,
         }
     end
 })
@@ -694,8 +666,8 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "getRegionEntities",
-    description = "获取所有地域实体的完整数据",
-    usage = "无需参数，返回所有地域实体的快照列表（Metadata、Region、Log）。",
+    description = "Get all region entities full data",
+    usage = "No parameters needed. Returns snapshot list of all region entities (Metadata, Region, Log).",
     inputs = Type.Object({}),
     outputs = ComponentTypes.RegionEntitiesOutput,
     tags = {"query", "region"},
@@ -717,10 +689,11 @@ registerSystem({
                     Region = components.Region,
                     Log = components.Log,
                     BindSetting = components.BindSetting,
+                    Interaction = components.Interaction,
                 })
             end
         end
-        
+
         return {
             success = true,
             regions = regions,
@@ -732,8 +705,8 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "getOrganizationEntities",
-    description = "获取所有组织实体的完整数据",
-    usage = "无需参数，返回所有组织实体的快照列表（Organization、Inventory、Log）。",
+    description = "Get all organization entities full data",
+    usage = "No parameters needed. Returns snapshot list of all organization entities (Organization, Inventory, Log).",
     inputs = Type.Object({}),
     outputs = ComponentTypes.OrganizationEntitiesOutput,
     tags = {"query", "organization"},
@@ -755,10 +728,11 @@ registerSystem({
                     Inventory = components.Inventory,
                     Log = components.Log,
                     BindSetting = components.BindSetting,
+                    Interaction = components.Interaction,
                 })
             end
         end
-        
+
         return {
             success = true,
             organizations = organizations,
@@ -767,21 +741,165 @@ registerSystem({
     end
 })
 
--- ============ 修改服务（自动维护 Registry） ============
+-- ============ Interaction Services ============
+
+-- Helper: resolve entity_id from flexible target params
+local function resolveInteractionEntityId(params)
+    if params.entity_id then
+        return params.entity_id
+    elseif params.creature_id then
+        return getEntityIdByCreatureId(params.creature_id)
+    elseif params.region_id then
+        return getRegionEntityId(params.region_id)
+    elseif params.organization_id then
+        return getEntityIdByOrganizationId(params.organization_id)
+    elseif params.is_world then
+        return getWorldEntityId()
+    end
+    return nil
+end
+
+local InteractionTargetInputs = {
+    entity_id = Type.Optional(Type.Int):desc("直接指定实体ID"),
+    creature_id = Type.Optional(Type.String):desc("通过 creature_id 定位角色实体"),
+    region_id = Type.Optional(Type.String):desc("通过 region_id 定位地域实体"),
+    organization_id = Type.Optional(Type.String):desc("通过 organization_id 定位组织实体"),
+    is_world = Type.Optional(Type.Bool):desc("设为 true 定位世界实体"),
+}
+
+registerSystem({
+    category = "Modify",
+    name = "addInteractionOption",
+    description = "Add or update an interaction option on any entity",
+    usage = "Add a new interaction option to the entity's Interaction component. If an option with the same id already exists, it will be updated. Provide exactly one target identifier (entity_id, creature_id, region_id, organization_id, or is_world=true). Use memo for mutable data (e.g. shop inventory, prices, state); instruction is static and should not change.",
+    inputs = Type.Object({
+        entity_id = InteractionTargetInputs.entity_id,
+        creature_id = InteractionTargetInputs.creature_id,
+        region_id = InteractionTargetInputs.region_id,
+        organization_id = InteractionTargetInputs.organization_id,
+        is_world = InteractionTargetInputs.is_world,
+        option = ComponentTypes.InteractionOption:desc("要添加或更新的交互选项"),
+    }),
+    outputs = ComponentTypes.SuccessOutput,
+    tags = {"modify", "interaction"},
+    execute = function(params)
+        local entityId = resolveInteractionEntityId(params)
+        if not entityId then
+            return { success = false, error = "Target entity not found" }
+        end
+
+        local compResult = Service.call("ecs:GetComponentData", {
+            entity_id = entityId,
+            component_key = "Interaction"
+        })
+
+        local interaction = (compResult.found and compResult.data) or { options = {} }
+
+        -- Update existing or append
+        local found = false
+        for i, opt in ipairs(interaction.options) do
+            if opt.id == params.option.id then
+                interaction.options[i] = params.option
+                found = true
+                break
+            end
+        end
+        if not found then
+            table.insert(interaction.options, params.option)
+        end
+
+        local setResult = Service.call("ecs:SetComponentData", {
+            entity_id = entityId,
+            component_key = "Interaction",
+            data = interaction,
+            merge = false,
+        })
+
+        if not setResult.success then
+            return { success = false, error = "Failed to set Interaction: " .. (setResult.error or "") }
+        end
+
+        return { success = true }
+    end
+})
+
+registerSystem({
+    category = "Modify",
+    name = "removeInteractionOption",
+    description = "Remove an interaction option from any entity by option id",
+    usage = "Remove the interaction option with the given option_id from the entity's Interaction component. Provide exactly one target identifier (entity_id, creature_id, region_id, organization_id, or is_world=true).",
+    inputs = Type.Object({
+        entity_id = InteractionTargetInputs.entity_id,
+        creature_id = InteractionTargetInputs.creature_id,
+        region_id = InteractionTargetInputs.region_id,
+        organization_id = InteractionTargetInputs.organization_id,
+        is_world = InteractionTargetInputs.is_world,
+        option_id = Type.String:desc("要删除的交互选项ID"),
+    }),
+    outputs = ComponentTypes.SuccessOutput,
+    tags = {"modify", "interaction"},
+    execute = function(params)
+        local entityId = resolveInteractionEntityId(params)
+        if not entityId then
+            return { success = false, error = "Target entity not found" }
+        end
+
+        local compResult = Service.call("ecs:GetComponentData", {
+            entity_id = entityId,
+            component_key = "Interaction"
+        })
+
+        if not compResult.found then
+            return { success = false, error = "Entity has no Interaction component" }
+        end
+
+        local interaction = compResult.data
+        local newOptions = {}
+        local removed = false
+        for _, opt in ipairs(interaction.options) do
+            if opt.id == params.option_id then
+                removed = true
+            else
+                table.insert(newOptions, opt)
+            end
+        end
+
+        if not removed then
+            return { success = false, error = "Option not found: " .. params.option_id }
+        end
+
+        interaction.options = newOptions
+
+        local setResult = Service.call("ecs:SetComponentData", {
+            entity_id = entityId,
+            component_key = "Interaction",
+            data = interaction,
+            merge = false,
+        })
+
+        if not setResult.success then
+            return { success = false, error = "Failed to set Interaction: " .. (setResult.error or "") }
+        end
+
+        return { success = true }
+    end
+})
+
+-- ============ Modify Services (auto-maintaining Registry) ============
 
 registerSystem({
     category = "Modify",
     name = "addItemToCreature",
-    description = "给生物添加物品",
-    usage = "向角色背包添加物品。必须提供 item_id、item_name、item_description。已有同 ID 物品时增加数量。",
+    description = "Add item to creature",
+    usage = "Add item to creature inventory. item_id, item_name, item_description are required. Increases count if item with same ID exists.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        item_id = Type.String:desc("物品ID"),
-        count = Type.Optional(Type.Int):desc("数量（默认1）"),
-        item_name = Type.String:desc("物品名称"),
-        item_description = Type.String:desc("物品描述"),
-        item_details = Type.Optional(Type.Array(Type.String)):desc("物品详细说明（可选）"),
-        equipped = Type.Optional(Type.Bool):desc("是否已装备（可选）"),
+        creature_id = Type.String:desc("creature ID"),
+        item_id = Type.String:desc("item ID"),
+        count = Type.Optional(Type.Int):desc("quantity (default 1)"),
+        item_name = Type.String:desc("item name"),
+        item_description = Type.String:desc("item description"),
+        item_details = Type.Optional(Type.Array(Type.String)):desc("item details (optional)"),
+        equipped = Type.Optional(Type.Bool):desc("whether equipped (optional)"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -792,19 +910,19 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id, new_count = 0}
+            return {success = false, error = "Creature not found: " .. params.creature_id, new_count = 0}
         end
 
         local count = params.count or 1
 
-        -- 添加物品到背包
+        -- Add item to inventory
         local invResult = Service.call("ecs:GetComponentData", {
             entity_id = entityId,
             component_key = "Inventory"
         })
 
         if not invResult.found then
-            return {success = false, error = "Inventory 组件不存在", new_count = 0}
+            return {success = false, error = "Inventory component not found", new_count = 0}
         end
 
         local inventory = invResult.data
@@ -814,7 +932,7 @@ registerSystem({
         for _, item in ipairs(inventory.items) do
             if item.id == params.item_id then
                 item.count = item.count + count
-                -- 更新名称、描述和详情（如果提供了新的）
+                -- Update name, description and details (if new ones provided)
                 item.name = params.item_name
                 item.description = params.item_description
                 if params.item_details then
@@ -855,12 +973,12 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "removeItemFromCreature",
-    description = "从生物背包移除物品",
-    usage = "从角色背包移除指定数量的物品。数量不足时失败。物品数量归零时自动从背包移除。",
+    description = "Remove item from creature inventory",
+    usage = "Remove specified quantity of item from creature inventory. Fails if insufficient quantity. Auto-removes item when count reaches zero.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        item_id = Type.String:desc("物品ID"),
-        count = Type.Optional(Type.Int):desc("数量（默认1）"),
+        creature_id = Type.String:desc("creature ID"),
+        item_id = Type.String:desc("item ID"),
+        count = Type.Optional(Type.Int):desc("quantity (default 1)"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -871,7 +989,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id, remaining = 0}
+            return {success = false, error = "Creature not found: " .. params.creature_id, remaining = 0}
         end
         
         local count = params.count or 1
@@ -882,7 +1000,7 @@ registerSystem({
         })
         
         if not invResult.found then
-            return {success = false, error = "Inventory 组件不存在", remaining = 0}
+            return {success = false, error = "Inventory component not found", remaining = 0}
         end
         
         local inventory = invResult.data
@@ -890,7 +1008,7 @@ registerSystem({
         for i, item in ipairs(inventory.items) do
             if item.id == params.item_id then
                 if item.count < count then
-                    return {success = false, error = "物品数量不足", remaining = item.count}
+                    return {success = false, error = "Insufficient item quantity", remaining = item.count}
                 end
                 
                 item.count = item.count - count
@@ -911,22 +1029,22 @@ registerSystem({
             end
         end
         
-        return {success = false, error = "未持有该物品", remaining = 0}
+        return {success = false, error = "Item not held", remaining = 0}
     end
 })
 
 registerSystem({
     category = "Modify",
     name = "updateItemForCreature",
-    description = "更新生物背包中已有物品的描述信息",
-    usage = "更新角色背包中指定物品的描述、详情或装备状态。只传入需要更新的字段即可，未传入的字段保持不变。物品不存在时返回错误。",
+    description = "Update description of existing item in creature inventory",
+    usage = "Update description, details or equipped status of item in creature inventory. Only pass fields to update, others remain unchanged. Returns error if item not found.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        item_id = Type.String:desc("物品ID"),
-        item_name = Type.Optional(Type.String):desc("新的物品名称"),
-        item_description = Type.Optional(Type.String):desc("新的物品描述"),
-        item_details = Type.Optional(Type.Array(Type.String)):desc("新的物品详细说明列表"),
-        equipped = Type.Optional(Type.Bool):desc("是否已装备"),
+        creature_id = Type.String:desc("creature ID"),
+        item_id = Type.String:desc("item ID"),
+        item_name = Type.Optional(Type.String):desc("new item name"),
+        item_description = Type.Optional(Type.String):desc("new item description"),
+        item_details = Type.Optional(Type.Array(Type.String)):desc("new item details list"),
+        equipped = Type.Optional(Type.Bool):desc("whether equipped"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -937,7 +1055,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, updated = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, updated = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local invResult = Service.call("ecs:GetComponentData", {
@@ -946,7 +1064,7 @@ registerSystem({
         })
 
         if not invResult.found then
-            return {success = false, updated = false, error = "Inventory 组件不存在"}
+            return {success = false, updated = false, error = "Inventory component not found"}
         end
 
         local inventory = invResult.data
@@ -969,25 +1087,25 @@ registerSystem({
             end
         end
 
-        return {success = false, updated = false, error = "未持有该物品: " .. params.item_id}
+        return {success = false, updated = false, error = "Item not held: " .. params.item_id}
     end
 })
 
 registerSystem({
     category = "Modify",
     name = "setCreatureAttribute",
-    description = "设置生物的属性值",
+    description = "Set creature attribute value",
     usage = function()
         local lines = {
-            "直接设置角色的属性值（覆盖）。attribute 应与 Registry.creature_attr_fields 中的 field_name 一致，value 可以是数字或字符串。",
+            "Directly set creature attribute value (overwrite). attribute should match field_name in Registry.creature_attr_fields, value can be number or string.",
         }
         appendAttrFieldsList(lines)
         return table.concat(lines, "\n")
     end,
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        attribute = Type.String:desc("属性名，应与 Registry.creature_attr_fields 中定义的 field_name 一致"),
-        value = Type.Or(Type.Int, Type.String):desc("新的属性值（可以为数字或字符串）"),
+        creature_id = Type.String:desc("creature ID"),
+        attribute = Type.String:desc("attribute name, should match field_name defined in Registry.creature_attr_fields"),
+        value = Type.Or(Type.Int, Type.String):desc("new attribute value (can be number or string)"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -997,7 +1115,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
         
         local attrResult = Service.call("ecs:GetComponentData", {
@@ -1006,12 +1124,12 @@ registerSystem({
         })
         
         if not attrResult.found then
-            return {success = false, error = "Creature 组件不存在"}
+            return {success = false, error = "Creature component not found"}
         end
         
         local attrs = attrResult.data
         
-        -- Record 类型允许任意键，直接设置
+        -- Record type allows arbitrary keys, set directly
         attrs.attrs[params.attribute] = params.value
         
         Service.call("ecs:SetComponentData", {
@@ -1028,17 +1146,17 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "setCreatureAppearance",
-    description = "设置角色的身体外貌描述",
-    usage = "直接覆盖角色的身体/脸部外貌描述文本。用于角色创建、外观变化、剧情需要等场景。",
+    description = "Set creature body appearance description",
+    usage = "Directly overwrite creature's body/face appearance text. Used for character creation, appearance changes, story needs, etc.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        body = Type.String:desc("身体、脸部等外貌描述"),
+        creature_id = Type.String:desc("creature ID"),
+        body = Type.String:desc("body, face appearance description"),
     }),
     outputs = ComponentTypes.SuccessOutput,
     execute = function(params)
         local entity_id = getEntityIdByCreatureId(params.creature_id)
         if not entity_id then
-            return {success = false, error = "未找到生物: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local comp_result = Service.call("ecs:GetComponentData", {
@@ -1047,7 +1165,7 @@ registerSystem({
         })
 
         if not comp_result.found then
-            return {success = false, error = "生物缺少 Creature 组件"}
+            return {success = false, error = "Creature missing Creature component"}
         end
 
         local attrs = comp_result.data
@@ -1066,7 +1184,7 @@ registerSystem({
         })
 
         if not update_result.success then
-            return {success = false, error = "更新组件失败: " .. (update_result.error or update_result._error or "unknown")}
+            return {success = false, error = "Failed to update component: " .. (update_result.error or update_result._error or "unknown")}
         end
 
         return {success = true}
@@ -1076,17 +1194,17 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "setCreatureClothing",
-    description = "设置角色的服装描述",
-    usage = "直接覆盖角色的服装描述文本。用于换装、装备外观变化、剧情需要等场景。",
+    description = "Set creature clothing description",
+    usage = "Directly overwrite creature's clothing description text. Used for outfit changes, equipment appearance, story needs, etc.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        clothing = Type.String:desc("服装描述"),
+        creature_id = Type.String:desc("creature ID"),
+        clothing = Type.String:desc("clothing description"),
     }),
     outputs = ComponentTypes.SuccessOutput,
     execute = function(params)
         local entity_id = getEntityIdByCreatureId(params.creature_id)
         if not entity_id then
-            return {success = false, error = "未找到生物: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local comp_result = Service.call("ecs:GetComponentData", {
@@ -1095,7 +1213,7 @@ registerSystem({
         })
 
         if not comp_result.found then
-            return {success = false, error = "生物缺少 Creature 组件"}
+            return {success = false, error = "Creature missing Creature component"}
         end
 
         local attrs = comp_result.data
@@ -1114,7 +1232,7 @@ registerSystem({
         })
 
         if not update_result.success then
-            return {success = false, error = "更新组件失败: " .. (update_result.error or update_result._error or "unknown")}
+            return {success = false, error = "Failed to update component: " .. (update_result.error or update_result._error or "unknown")}
         end
 
         return {success = true}
@@ -1124,19 +1242,19 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "setCreatureProfile",
-    description = "设置角色的基础档案信息（性别、种族、情绪状态）",
-    usage = "更新角色的基础档案字段。所有参数均为可选，只传入需修改的字段即可。emotion 为自由文本描述当前情绪状态。",
+    description = "Set creature profile info (gender, race, emotion)",
+    usage = "Update creature profile fields. All params are optional, only pass fields to modify. emotion is free-text describing current emotional state.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        gender = Type.Optional(Type.String):desc("性别描述，如男、女、其他"),
-        race = Type.Optional(Type.String):desc("种族描述，如 智人-大和民族，精灵-森林族"),
-        emotion = Type.Optional(Type.String):desc("当前情绪状态的描述"),
+        creature_id = Type.String:desc("creature ID"),
+        gender = Type.Optional(Type.String):desc("gender description, e.g. male, female, other"),
+        race = Type.Optional(Type.String):desc("race description, e.g. Homo sapiens-Yamato, Elf-Forest"),
+        emotion = Type.Optional(Type.String):desc("description of current emotional state"),
     }),
     outputs = ComponentTypes.SuccessOutput,
     execute = function(params)
         local entity_id = getEntityIdByCreatureId(params.creature_id)
         if not entity_id then
-            return {success = false, error = "未找到生物: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local comp_result = Service.call("ecs:GetComponentData", {
@@ -1145,7 +1263,7 @@ registerSystem({
         })
 
         if not comp_result.found then
-            return {success = false, error = "生物缺少 Creature 组件"}
+            return {success = false, error = "Creature missing Creature component"}
         end
 
         local attrs = comp_result.data
@@ -1162,117 +1280,9 @@ registerSystem({
         })
 
         if not update_result.success then
-            return {success = false, error = "更新组件失败: " .. (update_result.error or update_result._error or "unknown")}
+            return {success = false, error = "Failed to update component: " .. (update_result.error or update_result._error or "unknown")}
         end
 
-        return {success = true}
-    end
-})
-
-registerSystem({
-    category = "Modify",
-    name = "setRelationship",
-    description = "设置或更新两个生物之间的关系",
-    usage = "设置 source 对 target 的关系名称和值。默认单向；is_mutual=true 时双方同时设置。已有关系会被覆盖。",
-    inputs = Type.Object({
-        source_creature_id = Type.String:desc("源生物ID"),
-        target_creature_id = Type.String:desc("目标生物ID"),
-        relationship_name = Type.String:desc("关系名称"),
-        value = Type.Int:desc("关系值"),
-        is_mutual = Type.Optional(Type.Bool):desc("是否设置双向关系（默认false，即单向）"),
-    }),
-    outputs = Type.Object({
-        success = Type.Bool,
-        error = Type.Optional(Type.String),
-    }),
-    tags = {"modify", "relationship"},
-    execute = function(params)
-        local entityId = getEntityIdByCreatureId(params.source_creature_id)
-        if not entityId then
-            return {success = false, error = "源生物不存在: " .. params.source_creature_id}
-        end
-        
-        -- 设置 source -> target 的关系
-        local relResult = Service.call("ecs:GetComponentData", {
-            entity_id = entityId,
-            component_key = "Relationship"
-        })
-        
-        if not relResult.found then
-            return {success = false, error = "Relationship 组件不存在"}
-        end
-        
-        local relationship = relResult.data
-        local found = false
-        
-        for _, rel in ipairs(relationship.relationships) do
-            if rel.target_creature_id == params.target_creature_id then
-                rel.name = params.relationship_name
-                rel.value = params.value
-                found = true
-                break
-            end
-        end
-        
-        if not found then
-            table.insert(relationship.relationships, {
-                target_creature_id = params.target_creature_id,
-                name = params.relationship_name,
-                value = params.value
-            })
-        end
-        
-        Service.call("ecs:SetComponentData", {
-            entity_id = entityId,
-            component_key = "Relationship",
-            data = relationship,
-            merge = false
-        })
-        
-        -- 如果是双向关系，同时设置 target -> source 的关系
-        if params.is_mutual then
-            local targetEntityId = getEntityIdByCreatureId(params.target_creature_id)
-            if not targetEntityId then
-                return {success = false, error = "目标生物不存在: " .. params.target_creature_id}
-            end
-            
-            local targetRelResult = Service.call("ecs:GetComponentData", {
-                entity_id = targetEntityId,
-                component_key = "Relationship"
-            })
-            
-            if not targetRelResult.found then
-                return {success = false, error = "目标生物的Relationship组件不存在"}
-            end
-            
-            local targetRelationship = targetRelResult.data
-            local targetFound = false
-            
-            for _, rel in ipairs(targetRelationship.relationships) do
-                if rel.target_creature_id == params.source_creature_id then
-                    rel.name = params.relationship_name
-                    rel.value = params.value
-                    targetFound = true
-                    break
-                end
-            end
-            
-            if not targetFound then
-                table.insert(targetRelationship.relationships, {
-                    target_creature_id = params.source_creature_id,
-                    name = params.relationship_name,
-                    value = params.value
-                })
-            end
-            
-            Service.call("ecs:SetComponentData", {
-                entity_id = targetEntityId,
-                component_key = "Relationship",
-                data = targetRelationship,
-                merge = false
-            })
-        end
-        
         return {success = true}
     end
 })
@@ -1280,12 +1290,12 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "moveCreature",
-    description = "移动生物到新位置",
-    usage = "将生物的 LocationRef 更新为指定的 region_id 和 location_id。",
+    description = "Move creature to new location",
+    usage = "Update creature's LocationRef to specified region_id and location_id.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        region_id = Type.String:desc("目标地域ID"),
-        location_id = Type.String:desc("目标地点ID"),
+        creature_id = Type.String:desc("creature ID"),
+        region_id = Type.String:desc("target region ID"),
+        location_id = Type.String:desc("target location ID"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -1295,13 +1305,13 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
-        -- 验证目标地域和地点存在
+        -- Validate target region and location exist
         local regionEntityId = getRegionEntityId(params.region_id)
         if not regionEntityId then
-            return {success = false, error = "目标地域不存在: " .. params.region_id}
+            return {success = false, error = "Target region not found: " .. params.region_id}
         end
 
         local locResult = Service.call("ecs:GetComponentData", {
@@ -1318,7 +1328,7 @@ registerSystem({
                 end
             end
             if not locationExists then
-                return {success = false, error = "目标地点不存在: " .. params.location_id .. " (地域: " .. params.region_id .. ")"}
+                return {success = false, error = "Target location not found: " .. params.location_id .. " (region: " .. params.region_id .. ")"}
             end
         end
 
@@ -1339,11 +1349,11 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "setCreatureOrganization",
-    description = "设置生物所属的组织",
-    usage = "设置生物所属的组织。organization_id 为空或不传表示脱离组织。会验证组织是否存在。",
+    description = "Set creature's organization",
+    usage = "Set creature's organization. Empty or omitted organization_id means leaving organization. Validates organization exists.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        organization_id = Type.Optional(Type.String):desc("组织ID（为空则脱离组织）"),
+        creature_id = Type.String:desc("creature ID"),
+        organization_id = Type.Optional(Type.String):desc("organization ID (empty to leave organization)"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -1353,14 +1363,14 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
         
-        -- 如果提供了 organization_id，验证组织是否存在
+        -- If organization_id provided, validate organization exists
         if params.organization_id and params.organization_id ~= "" then
             local orgEntityId = getEntityIdByOrganizationId(params.organization_id)
             if not orgEntityId then
-                return {success = false, error = "组织不存在: " .. params.organization_id}
+                return {success = false, error = "Organization not found: " .. params.organization_id}
             end
         end
         
@@ -1370,12 +1380,12 @@ registerSystem({
         })
         
         if not attrResult.found then
-            return {success = false, error = "Creature 组件不存在"}
+            return {success = false, error = "Creature component not found"}
         end
         
         local attrs = attrResult.data
         
-        -- 设置组织ID（空字符串或nil表示无组织）
+        -- Set organization ID (empty string or nil means no organization)
         if params.organization_id and params.organization_id ~= "" then
             attrs.organization_id = params.organization_id
         else
@@ -1396,14 +1406,14 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "setOrganizationTerritories",
-    description = "设置组织拥有的地块",
-    usage = "完全替换组织的领土列表（注意是整体替换，不是追加）。",
+    description = "Set organization territories",
+    usage = "Fully replace organization's territory list (note: full replacement, not append).",
     inputs = Type.Object({
-        organization_id = Type.String:desc("组织ID"),
+        organization_id = Type.String:desc("organization ID"),
         territories = Type.Array(Type.Object({
-            region_id = Type.String:desc("区域ID"),
-            location_id = Type.String:desc("地点ID"),
-        })):desc("新的地块列表"),
+            region_id = Type.String:desc("region ID"),
+            location_id = Type.String:desc("location ID"),
+        })):desc("new territory list"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -1413,7 +1423,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByOrganizationId(params.organization_id)
         if not entityId then
-            return {success = false, error = "组织不存在: " .. params.organization_id}
+            return {success = false, error = "Organization not found: " .. params.organization_id}
         end
         
         local orgResult = Service.call("ecs:GetComponentData", {
@@ -1422,7 +1432,7 @@ registerSystem({
         })
         
         if not orgResult.found then
-            return {success = false, error = "Organization 组件不存在"}
+            return {success = false, error = "Organization component not found"}
         end
         
         local org = orgResult.data
@@ -1442,18 +1452,18 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "addLog",
-    description = "为实体添加日志",
-    usage = "为实体添加日志条目，自动附加当前世界时间。支持四种目标：creature_id、region_id、organization_id、is_world（四选一）。",
+    description = "Add log entry to entity",
+    usage = "Add log entry to entity, auto-appends current world time. Supports four targets: creature_id, region_id, organization_id, is_world (pick one).",
     inputs = Type.Object({
-        creature_id = Type.Optional(Type.String):desc("生物ID（可选，和 region_id 二选一）"),
-        region_id = Type.Optional(Type.String):desc("地域ID（可选，和 creature_id 二选一）"),
-        organization_id = Type.Optional(Type.String):desc("组织ID（可选）"),
-        is_world = Type.Optional(Type.Bool):desc("是否添加到世界实体（可选）"),
-        entry = Type.String:desc("日志内容"),
+        creature_id = Type.Optional(Type.String):desc("creature ID (optional, pick one with region_id)"),
+        region_id = Type.Optional(Type.String):desc("region ID (optional, pick one with creature_id)"),
+        organization_id = Type.Optional(Type.String):desc("organization ID (optional)"),
+        is_world = Type.Optional(Type.Bool):desc("whether to add to world entity (optional)"),
+        entry = Type.String:desc("log content"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
-        add_at = Type.Optional(Type.String):desc("添加时间"),
+        add_at = Type.Optional(Type.String):desc("add time"),
         error = Type.Optional(Type.String),
     }),
     tags = {"modify", "log"},
@@ -1463,25 +1473,25 @@ registerSystem({
         if params.is_world then
             entityId = getWorldEntityId()
             if not entityId then
-                return {success = false, error = "世界实体不存在"}
+                return {success = false, error = "World entity not found"}
             end
         elseif params.creature_id then
             entityId = getEntityIdByCreatureId(params.creature_id)
             if not entityId then
-                return {success = false, error = "生物不存在: " .. params.creature_id}
+                return {success = false, error = "Creature not found: " .. params.creature_id}
             end
         elseif params.region_id then
             entityId = getRegionEntityId(params.region_id)
             if not entityId then
-                return {success = false, error = "地域不存在: " .. params.region_id}
+                return {success = false, error = "Region not found: " .. params.region_id}
             end
         elseif params.organization_id then
             entityId = getEntityIdByOrganizationId(params.organization_id)
             if not entityId then
-                return {success = false, error = "组织不存在: " .. params.organization_id}
+                return {success = false, error = "Organization not found: " .. params.organization_id}
             end
         else
-            return {success = false, error = "必须提供 creature_id、region_id、organization_id 或 is_world"}
+            return {success = false, error = "Must provide one of creature_id, region_id, organization_id, or is_world"}
         end
         
         local logResult = Service.call("ecs:GetComponentData", {
@@ -1490,13 +1500,13 @@ registerSystem({
         })
         
         if not logResult.found then
-            return {success = false, error = "Log 组件不存在"}
+            return {success = false, error = "Log component not found"}
         end
         
-        -- 获取当前世界时间
+        -- Get current world time
         local worldEntityId = getWorldEntityId()
-        local timeText = "未知时间"
-        
+        local timeText = "Unknown time"
+
         if worldEntityId then
             local timeResult = Service.call("ecs:GetComponentData", {
                 entity_id = worldEntityId,
@@ -1505,7 +1515,7 @@ registerSystem({
             
             if timeResult.found then
                 local time = timeResult.data
-                timeText = string.format("%d年%d月%d日 %02d:%02d", 
+                timeText = string.format("Y%d-M%d-D%d %02d:%02d", 
                     time.year, time.month, time.day, time.hour, time.minute)
             end
         end
@@ -1529,45 +1539,108 @@ registerSystem({
 
 registerSystem({
     category = "Modify",
-    name = "addStatusEffect",
-    description = "为实体添加新的状态效果（支持生物、地域、组织）",
-    usage = "为实体添加新状态效果。支持生物、地域、组织三种目标（三选一）。instance_id 可手动指定或自动生成。data 为任意对象。只负责添加，更新/删除请用 updateStatusEffect。",
+    name = "deleteLog",
+    description = "Soft-delete entity log entry (mark as [deleted] without removal to avoid index shift)",
+    usage = "Mark entity log entry at specified index as [deleted]. Index starts from 1, corresponds to [IDX=N] in GetGameEntityOverview [Log].",
     inputs = Type.Object({
-        creature_id = Type.Optional(Type.String):desc("生物ID（与 region_id、organization_id 三选一）"),
-        region_id = Type.Optional(Type.String):desc("地域ID（与 creature_id、organization_id 三选一）"),
-        organization_id = Type.Optional(Type.String):desc("组织ID（与 creature_id、region_id 三选一）"),
-        instance_id = Type.Optional(Type.String):desc("状态效果实例ID（可选，不提供则自动生成）"),
-        display_name = Type.Optional(Type.String):desc("状态效果显示名称，用于在UI中展示"),
-        remark = Type.Optional(Type.String):desc("状态备注，描述来源、效果、持续条件等"),
-        data = Type.Object({}):desc("状态效果数据，任意对象"),
+        creature_id = Type.Optional(Type.String):desc("creature ID (optional, pick one of four)"),
+        region_id = Type.Optional(Type.String):desc("region ID (optional, pick one of four)"),
+        organization_id = Type.Optional(Type.String):desc("organization ID (optional, pick one of four)"),
+        is_world = Type.Optional(Type.Bool):desc("whether world entity (optional, pick one of four)"),
+        index = Type.Int:desc("log entry index (1-based, corresponds to [IDX=N])"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
-        instance_id = Type.Optional(Type.String):desc("新创建的状态效果实例ID"),
+        error = Type.Optional(Type.String),
+    }),
+    tags = {"modify", "log"},
+    execute = function(params)
+        local entityId = nil
+
+        if params.is_world then
+            entityId = getWorldEntityId()
+            if not entityId then return {success = false, error = "World entity not found"} end
+        elseif params.creature_id then
+            entityId = getEntityIdByCreatureId(params.creature_id)
+            if not entityId then return {success = false, error = "Creature not found: " .. params.creature_id} end
+        elseif params.region_id then
+            entityId = getRegionEntityId(params.region_id)
+            if not entityId then return {success = false, error = "Region not found: " .. params.region_id} end
+        elseif params.organization_id then
+            entityId = getEntityIdByOrganizationId(params.organization_id)
+            if not entityId then return {success = false, error = "Organization not found: " .. params.organization_id} end
+        else
+            return {success = false, error = "Must provide one of creature_id, region_id, organization_id, or is_world"}
+        end
+
+        local logResult = Service.call("ecs:GetComponentData", {
+            entity_id = entityId,
+            component_key = "Log"
+        })
+
+        if not logResult.found then
+            return {success = false, error = "Log component not found"}
+        end
+
+        local log = logResult.data
+        if not log.entries or params.index < 1 or params.index > #log.entries then
+            return {success = false, error = string.format("Index %d out of range (total %d entries)", params.index, log.entries and #log.entries or 0)}
+        end
+
+        log.entries[params.index].content = "[deleted]"
+
+        Service.call("ecs:SetComponentData", {
+            entity_id = entityId,
+            component_key = "Log",
+            data = log,
+            merge = false
+        })
+
+        return {success = true}
+    end
+})
+
+registerSystem({
+    category = "Modify",
+    name = "addStatusEffect",
+    description = "Add new status effect to entity (supports creature, region, organization)",
+    usage = "Add new status effect to entity. Supports creature, region, organization (pick one). instance_id can be specified or auto-generated. data is any object. Only adds; use updateStatusEffect for update/delete.",
+    inputs = Type.Object({
+        creature_id = Type.Optional(Type.String):desc("creature ID (pick one of creature_id, region_id, organization_id)"),
+        region_id = Type.Optional(Type.String):desc("region ID (pick one of creature_id, region_id, organization_id)"),
+        organization_id = Type.Optional(Type.String):desc("organization ID (pick one of creature_id, region_id, organization_id)"),
+        instance_id = Type.Optional(Type.String):desc("status effect instance ID (optional, auto-generated if omitted)"),
+        display_name = Type.Optional(Type.String):desc("status effect display name for UI"),
+        remark = Type.Optional(Type.String):desc("status remark describing source, effect, duration conditions, etc."),
+        data = Type.Object({}):desc("status effect data, any object"),
+    }),
+    outputs = Type.Object({
+        success = Type.Bool,
+        instance_id = Type.Optional(Type.String):desc("newly created status effect instance ID"),
         error = Type.Optional(Type.String),
     }),
     tags = {"modify", "status"},
     execute = function(params)
-        -- 确定目标实体
+        -- Determine target entity
         local entityId = nil
-        
+
         if params.creature_id then
             entityId = getEntityIdByCreatureId(params.creature_id)
             if not entityId then
-                return {success = false, error = "生物不存在: " .. params.creature_id}
+                return {success = false, error = "Creature not found: " .. params.creature_id}
             end
         elseif params.region_id then
             entityId = getRegionEntityId(params.region_id)
             if not entityId then
-                return {success = false, error = "地域不存在: " .. params.region_id}
+                return {success = false, error = "Region not found: " .. params.region_id}
             end
         elseif params.organization_id then
             entityId = getEntityIdByOrganizationId(params.organization_id)
             if not entityId then
-                return {success = false, error = "组织不存在: " .. params.organization_id}
+                return {success = false, error = "Organization not found: " .. params.organization_id}
             end
         else
-            return {success = false, error = "必须提供 creature_id、region_id 或 organization_id 之一"}
+            return {success = false, error = "Must provide one of creature_id, region_id, or organization_id"}
         end
         
         local statusResult = Service.call("ecs:GetComponentData", {
@@ -1576,23 +1649,23 @@ registerSystem({
         })
         
         if not statusResult.found then
-            return {success = false, error = "StatusEffects 组件不存在"}
+            return {success = false, error = "StatusEffects component not found"}
         end
         
         local statusEffects = statusResult.data
         
-        -- 生成或使用提供的实例ID
+        -- Generate or use provided instance ID
         local finalInstanceId = params.instance_id or ("status_" .. tostring(os.time()) .. tostring(math.random(1000, 9999)))
         
-        -- 检查 instance_id 是否已存在
+        -- Check if instance_id already exists
         for _, effect in ipairs(statusEffects.status_effects) do
             if effect.instance_id == finalInstanceId then
-                return {success = false, error = "instance_id 已存在: " .. finalInstanceId}
+                return {success = false, error = "instance_id already exists: " .. finalInstanceId}
             end
         end
         
-        -- 获取当前世界时间
-        local timeText = "未知时间"
+        -- Get current world time
+        local timeText = "Unknown time"
         local worldEntityId = getWorldEntityId()
         if worldEntityId then
             local timeResult = Service.call("ecs:GetComponentData", {
@@ -1601,12 +1674,12 @@ registerSystem({
             })
             if timeResult.found then
                 local time = timeResult.data
-                timeText = string.format("%d年%d月%d日 %02d:%02d",
+                timeText = string.format("Y%d-M%d-D%d %02d:%02d",
                     time.year, time.month, time.day, time.hour, time.minute)
             end
         end
 
-        -- 添加新实例
+        -- Add new instance
         table.insert(statusEffects.status_effects, {
             instance_id = finalInstanceId,
             display_name = params.display_name,
@@ -1633,46 +1706,46 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "updateStatusEffect",
-    description = "更新实体的状态效果（支持生物、地域、组织）。若 instance_id 不存在则自动创建。",
-    usage = "按 instance_id 更新状态效果的 data（浅合并）、display_name 和 remark。若 instance_id 不存在则自动创建新状态效果（upsert 语义）。目标实体支持生物、地域、组织三选一。删除操作请使用 removeStatusEffect。",
+    description = "Update entity status effect (supports creature, region, organization). Auto-creates if instance_id not found.",
+    usage = "Update status effect data (shallow merge), display_name and remark by instance_id. Auto-creates if instance_id not found (upsert). Target supports creature, region, organization (pick one). Use removeStatusEffect to delete.",
     inputs = Type.Object({
-        creature_id = Type.Optional(Type.String):desc("生物ID（与 region_id、organization_id 三选一）"),
-        region_id = Type.Optional(Type.String):desc("地域ID（与 creature_id、organization_id 三选一）"),
-        organization_id = Type.Optional(Type.String):desc("组织ID（与 creature_id、region_id 三选一）"),
-        instance_id = Type.String:desc("要更新的状态效果实例ID"),
-        data = Type.Optional(Type.Object({})):desc("要浅合并到 effect.data 的字段"),
-        display_name = Type.Optional(Type.String):desc("更新 effect.display_name"),
-        remark = Type.Optional(Type.String):desc("更新 effect.remark"),
+        creature_id = Type.Optional(Type.String):desc("creature ID (pick one of creature_id, region_id, organization_id)"),
+        region_id = Type.Optional(Type.String):desc("region ID (pick one of creature_id, region_id, organization_id)"),
+        organization_id = Type.Optional(Type.String):desc("organization ID (pick one of creature_id, region_id, organization_id)"),
+        instance_id = Type.String:desc("status effect instance ID to update"),
+        data = Type.Optional(Type.Object({})):desc("fields to shallow merge into effect.data"),
+        display_name = Type.Optional(Type.String):desc("update effect.display_name"),
+        remark = Type.Optional(Type.String):desc("update effect.remark"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
-        updated_count = Type.Optional(Type.Int):desc("实际更新的状态数量"),
-        instance_id = Type.Optional(Type.String):desc("自动创建时返回的实例ID"),
-        created = Type.Optional(Type.Bool):desc("是否为自动创建（instance_id不存在时兜底创建）"),
+        updated_count = Type.Optional(Type.Int):desc("actual number of statuses updated"),
+        instance_id = Type.Optional(Type.String):desc("instance ID returned on auto-creation"),
+        created = Type.Optional(Type.Bool):desc("whether auto-created (fallback when instance_id not found)"),
         error = Type.Optional(Type.String),
     }),
     tags = {"modify", "status"},
     execute = function(params)
-        -- 确定目标实体
+        -- Determine target entity
         local entityId = nil
 
         if params.creature_id then
             entityId = getEntityIdByCreatureId(params.creature_id)
             if not entityId then
-                return {success = false, error = "生物不存在: " .. params.creature_id}
+                return {success = false, error = "Creature not found: " .. params.creature_id}
             end
         elseif params.region_id then
             entityId = getRegionEntityId(params.region_id)
             if not entityId then
-                return {success = false, error = "地域不存在: " .. params.region_id}
+                return {success = false, error = "Region not found: " .. params.region_id}
             end
         elseif params.organization_id then
             entityId = getEntityIdByOrganizationId(params.organization_id)
             if not entityId then
-                return {success = false, error = "组织不存在: " .. params.organization_id}
+                return {success = false, error = "Organization not found: " .. params.organization_id}
             end
         else
-            return {success = false, error = "必须提供 creature_id、region_id 或 organization_id 之一"}
+            return {success = false, error = "Must provide one of creature_id, region_id, or organization_id"}
         end
 
         local statusResult = Service.call("ecs:GetComponentData", {
@@ -1681,18 +1754,18 @@ registerSystem({
         })
 
         if not statusResult.found then
-            return {success = false, error = "StatusEffects 组件不存在"}
+            return {success = false, error = "StatusEffects component not found"}
         end
 
         local statusEffects = statusResult.data
 
-        -- 必须提供至少一个更新字段
+        -- Must provide at least one update field
         if not params.data and not params.display_name and not params.remark then
-            return {success = false, error = "必须提供 data、display_name 或 remark 中的至少一个"}
+            return {success = false, error = "Must provide at least one of data, display_name, or remark"}
         end
 
-        -- 获取当前世界时间
-        local timeText = "未知时间"
+        -- Get current world time
+        local timeText = "Unknown time"
         local worldEntityId = getWorldEntityId()
         if worldEntityId then
             local timeResult = Service.call("ecs:GetComponentData", {
@@ -1701,7 +1774,7 @@ registerSystem({
             })
             if timeResult.found then
                 local time = timeResult.data
-                timeText = string.format("%d年%d月%d日 %02d:%02d",
+                timeText = string.format("Y%d-M%d-D%d %02d:%02d",
                     time.year, time.month, time.day, time.hour, time.minute)
             end
         end
@@ -1709,22 +1782,22 @@ registerSystem({
         local updatedCount = 0
         for i, effect in ipairs(statusEffects.status_effects) do
             if effect.instance_id == params.instance_id then
-                -- 浅合并 data
+                -- Shallow merge data
                 if params.data then
                     if not effect.data then effect.data = {} end
                     for k, v in pairs(params.data) do
                         effect.data[k] = v
                     end
                 end
-                -- 更新 display_name
+                -- Update display_name
                 if params.display_name then
                     effect.display_name = params.display_name
                 end
-                -- 更新 remark
+                -- Update remark
                 if params.remark then
                     effect.remark = params.remark
                 end
-                -- 自动更新 last_update_at
+                -- Auto update last_update_at
                 effect.last_update_at = timeText
                 statusEffects.status_effects[i] = effect
                 updatedCount = updatedCount + 1
@@ -1733,7 +1806,7 @@ registerSystem({
         end
 
         if updatedCount == 0 then
-            -- 兜底：instance_id 不存在时自动创建新状态效果
+            -- Fallback: auto-create new status effect when instance_id not found
             table.insert(statusEffects.status_effects, {
                 instance_id = params.instance_id,
                 display_name = params.display_name,
@@ -1762,42 +1835,42 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "removeStatusEffect",
-    description = "删除实体的状态效果（支持生物、地域、组织）",
-    usage = "删除状态效果。支持两种模式：1) 提供 instance_id 删除指定实例；2) remove_all=true 清除所有状态。目标实体支持生物、地域、组织三选一。",
+    description = "Remove entity status effect (supports creature, region, organization)",
+    usage = "Delete status effect. Two modes: 1) provide instance_id to delete specific instance; 2) remove_all=true to clear all. Target supports creature, region, organization (pick one).",
     inputs = Type.Object({
-        creature_id = Type.Optional(Type.String):desc("生物ID（与 region_id、organization_id 三选一）"),
-        region_id = Type.Optional(Type.String):desc("地域ID（与 creature_id、organization_id 三选一）"),
-        organization_id = Type.Optional(Type.String):desc("组织ID（与 creature_id、region_id 三选一）"),
-        instance_id = Type.Optional(Type.String):desc("要删除的状态效果实例ID（与 remove_all 二选一）"),
-        remove_all = Type.Optional(Type.Bool):desc("是否删除所有状态效果（与 instance_id 二选一）"),
+        creature_id = Type.Optional(Type.String):desc("creature ID (pick one of creature_id, region_id, organization_id)"),
+        region_id = Type.Optional(Type.String):desc("region ID (pick one of creature_id, region_id, organization_id)"),
+        organization_id = Type.Optional(Type.String):desc("organization ID (pick one of creature_id, region_id, organization_id)"),
+        instance_id = Type.Optional(Type.String):desc("status effect instance ID to delete (pick one with remove_all)"),
+        remove_all = Type.Optional(Type.Bool):desc("whether to delete all status effects (pick one with instance_id)"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
-        removed_count = Type.Optional(Type.Int):desc("实际移除的状态数量"),
+        removed_count = Type.Optional(Type.Int):desc("actual number of statuses removed"),
         error = Type.Optional(Type.String),
     }),
     tags = {"modify", "status"},
     execute = function(params)
-        -- 确定目标实体
+        -- Determine target entity
         local entityId = nil
 
         if params.creature_id then
             entityId = getEntityIdByCreatureId(params.creature_id)
             if not entityId then
-                return {success = false, error = "生物不存在: " .. params.creature_id}
+                return {success = false, error = "Creature not found: " .. params.creature_id}
             end
         elseif params.region_id then
             entityId = getRegionEntityId(params.region_id)
             if not entityId then
-                return {success = false, error = "地域不存在: " .. params.region_id}
+                return {success = false, error = "Region not found: " .. params.region_id}
             end
         elseif params.organization_id then
             entityId = getEntityIdByOrganizationId(params.organization_id)
             if not entityId then
-                return {success = false, error = "组织不存在: " .. params.organization_id}
+                return {success = false, error = "Organization not found: " .. params.organization_id}
             end
         else
-            return {success = false, error = "必须提供 creature_id、region_id 或 organization_id 之一"}
+            return {success = false, error = "Must provide one of creature_id, region_id, or organization_id"}
         end
 
         local statusResult = Service.call("ecs:GetComponentData", {
@@ -1806,12 +1879,12 @@ registerSystem({
         })
 
         if not statusResult.found then
-            return {success = false, error = "StatusEffects 组件不存在"}
+            return {success = false, error = "StatusEffects component not found"}
         end
 
         local statusEffects = statusResult.data
 
-        -- 模式1: 删除所有
+        -- Mode 1: Remove all
         if params.remove_all then
             local removedCount = #statusEffects.status_effects
             statusEffects.status_effects = {}
@@ -1826,9 +1899,9 @@ registerSystem({
             return {success = true, removed_count = removedCount}
         end
 
-        -- 模式2: 按 instance_id 删除
+        -- Mode 2: Remove by instance_id
         if not params.instance_id then
-            return {success = false, error = "必须提供 instance_id 或 remove_all=true"}
+            return {success = false, error = "Must provide instance_id or remove_all=true"}
         end
 
         local removedCount = 0
@@ -1849,26 +1922,26 @@ registerSystem({
             })
             return {success = true, removed_count = removedCount}
         else
-            return {success = false, removed_count = 0, error = "未找到 instance_id: " .. params.instance_id}
+            return {success = false, removed_count = 0, error = "instance_id not found: " .. params.instance_id}
         end
     end
 })
 
--- ============ 自定义组件系统 ============
+-- ============ Custom Component System ============
 
--- 辅助函数：获取角色的 CustomComponents 数据
+-- Helper: get creature's CustomComponents data
 local function getCustomComponents(entityId)
     local result = Service.call("ecs:GetComponentData", {
         entity_id = entityId,
         component_key = "CustomComponents"
     })
     if not result.found then
-        return nil, "CustomComponents 组件不存在"
+        return nil, "CustomComponents component not found"
     end
     return result.data
 end
 
--- 辅助函数：获取世界的 CustomComponentRegistry 中某个组件的定义
+-- Helper: get component definition from world's CustomComponentRegistry
 local function getCustomComponentDef(componentKey)
     local worldEntityId = getWorldEntityId()
     if not worldEntityId then return nil end
@@ -1885,7 +1958,7 @@ local function getCustomComponentDef(componentKey)
     return nil
 end
 
--- 辅助函数：从 data_registry 中查找模板数据
+-- Helper: find template data from data_registry
 local function getRegistryItemData(def, registryItemId)
     if not def or not def.data_registry then return nil end
     for _, item in ipairs(def.data_registry) do
@@ -1896,7 +1969,7 @@ local function getRegistryItemData(def, registryItemId)
     return nil
 end
 
--- 辅助函数：合并两个表（浅合并）
+-- Helper: merge two tables (shallow merge)
 local function shallowMerge(base, override)
     local merged = {}
     if base then
@@ -1911,51 +1984,56 @@ end
 registerSystem({
     category = "Modify",
     name = "setCustomComponent",
-    description = "为角色设置自定义组件数据（自动根据 CustomComponentRegistry 中的 is_array 判断：对象型直接覆盖，数组型追加到末尾）",
+    description = "Set custom component data for creature (auto-detects array/object type from CustomComponentRegistry: object overwrites, array appends)",
     usage = function()
         local lines = {
-            "为角色设置自定义组件数据。根据 CustomComponentRegistry 中 is_array 自动判断行为：",
-            "  对象型(is_array=false): 直接覆盖整个 data",
-            "  数组型(is_array=true): 将 data 追加到数组末尾",
-            "可选 registry_item_id 从 data_registry 获取基础数据再与 data 合并。",
+            "Set custom component data for creature. Auto-detects behavior based on is_array in CustomComponentRegistry:",
+            "  Object type (is_array=false): overwrites entire data",
+            "  Array type (is_array=true): appends data to end of array",
+            "Optional registry_item_id to fetch base data from data_registry and merge with data.",
         }
         appendCustomComponentRegistryList(lines)
         return table.concat(lines, "\n")
     end,
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        component_key = Type.String:desc("自定义组件的key"),
-        registry_item_id = Type.Optional(Type.String):desc("可选的注册项ID，用于从 data_registry 获取基础数据"),
-        data = Type.Optional(Type.Object({})):desc("要设置或追加的数据（如果有 registry_item_id 则与模板合并）"),
+        creature_id = Type.String:desc("creature ID"),
+        component_key = Type.String:desc("custom component key"),
+        registry_item_id = Type.Optional(Type.String):desc("optional registry item ID for fetching base data from data_registry"),
+        data = Type.Optional(Type.Object({})):desc("data to set or append (merged with template if registry_item_id provided)"),
     }),
     outputs = ComponentTypes.SuccessOutput,
     tags = {"modify", "custom_component"},
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: '" .. params.creature_id .. "'. Spawn the creature first via ecs.system:Spawn.spawnCharacter."}
         end
-        
+
         local customComponents, err = getCustomComponents(entityId)
         if not customComponents then
             return {success = false, error = err}
         end
-        
-        -- 从注册表查找该组件是数组型还是对象型
+
+        -- Look up whether this component is array or object type from registry
         local def = getCustomComponentDef(params.component_key)
-        local isArray = def and def.is_array or false
-        
-        -- 构建数据（支持 registry_item_id 模板合并）
+        if not def then
+            return {success = false, error = "component_key '" .. params.component_key .. "' not found in CustomComponentRegistry. Check the World entity's CustomComponentRegistry for available keys."}
+        end
+        local isArray = def.is_array or false
+
+        -- Build data (supports registry_item_id template merging)
         local newData = params.data or {}
-        if params.registry_item_id and def then
+        if params.registry_item_id then
             local templateData = getRegistryItemData(def, params.registry_item_id)
             if templateData then
                 newData = shallowMerge(templateData, params.data)
+            else
+                return {success = false, error = "registry_item_id '" .. params.registry_item_id .. "' not found in data_registry of component '" .. params.component_key .. "'."}
             end
         end
-        
+
         if isArray then
-            -- 数组型：追加到末尾
+            -- Array type: append to end
             local targetComp = nil
             local targetIndex = nil
             for i, comp in ipairs(customComponents.custom_components) do
@@ -1965,21 +2043,21 @@ registerSystem({
                     break
                 end
             end
-            
+
             if not targetComp then
                 targetComp = { component_key = params.component_key, data = {} }
                 table.insert(customComponents.custom_components, targetComp)
                 targetIndex = #customComponents.custom_components
             end
-            
+
             if type(targetComp.data) ~= "table" then
                 targetComp.data = {}
             end
-            
+
             table.insert(targetComp.data, newData)
             customComponents.custom_components[targetIndex] = targetComp
         else
-            -- 对象型：直接设置/覆盖
+            -- Object type: set/overwrite directly
             local found = false
             for i, comp in ipairs(customComponents.custom_components) do
                 if comp.component_key == params.component_key then
@@ -1988,7 +2066,7 @@ registerSystem({
                     break
                 end
             end
-            
+
             if not found then
                 table.insert(customComponents.custom_components, {
                     component_key = params.component_key,
@@ -1996,14 +2074,14 @@ registerSystem({
                 })
             end
         end
-        
+
         Service.call("ecs:SetComponentData", {
             entity_id = entityId,
             component_key = "CustomComponents",
             data = customComponents,
             merge = false
         })
-        
+
         return {success = true}
     end
 })
@@ -2011,30 +2089,30 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "updateCustomComponent",
-    description = "声明式更新角色的自定义组件数据（对象型浅合并，数组型按索引更新/删除）",
+    description = "Declaratively update creature custom component data (object: shallow merge, array: update/delete by index)",
     usage = function()
         local lines = {
-            "声明式更新自定义组件数据：",
-            "  对象型: 传入 data 浅合并到现有数据（仅覆盖指定字段）",
-            "  数组型: array_index + array_data 更新指定元素（1-based，浅合并），或 array_remove_index 删除元素",
+            "Declaratively update custom component data:",
+            "  Object type: pass data to shallow merge into existing data (only overwrites specified fields)",
+            "  Array type: array_index + array_data to update element (1-based, shallow merge), or array_remove_index to delete element, or pass data only to append new element",
         }
         appendCustomComponentRegistryList(lines)
         return table.concat(lines, "\n")
     end,
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        component_key = Type.String:desc("自定义组件的key"),
-        data = Type.Optional(Type.Object({})):desc("对象型组件：要浅合并的字段"),
-        array_index = Type.Optional(Type.Int):desc("数组型组件：要更新的元素索引（1-based）"),
-        array_data = Type.Optional(Type.Object({})):desc("数组型组件：要浅合并到该元素的数据"),
-        array_remove_index = Type.Optional(Type.Int):desc("数组型组件：要删除的元素索引（1-based）"),
+        creature_id = Type.String:desc("creature ID"),
+        component_key = Type.String:desc("custom component key"),
+        data = Type.Optional(Type.Object({})):desc("object component: fields to shallow merge"),
+        array_index = Type.Optional(Type.Int):desc("array component: element index to update (1-based)"),
+        array_data = Type.Optional(Type.Object({})):desc("array component: data to shallow merge into element"),
+        array_remove_index = Type.Optional(Type.Int):desc("array component: element index to delete (1-based)"),
     }),
     outputs = ComponentTypes.SuccessOutput,
     tags = {"modify", "custom_component"},
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: '" .. params.creature_id .. "'. Spawn the creature first via ecs.system:Spawn.spawnCharacter."}
         end
 
         local customComponents, err = getCustomComponents(entityId)
@@ -2042,61 +2120,107 @@ registerSystem({
             return {success = false, error = err}
         end
 
+        -- Pre-query registry definition
+        local def = getCustomComponentDef(params.component_key)
+        if not def then
+            return {success = false, error = "component_key '" .. params.component_key .. "' not found in CustomComponentRegistry. Check the World entity's CustomComponentRegistry for available keys."}
+        end
+        local isArray = def.is_array or false
+
+        -- Find existing component
         local found = false
+        local foundIndex = nil
         for i, comp in ipairs(customComponents.custom_components) do
             if comp.component_key == params.component_key then
                 found = true
-
-                -- 判断是对象型还是数组型
-                local def = getCustomComponentDef(params.component_key)
-                local isArray = def and def.is_array or false
-
-                if isArray then
-                    -- 数组型：按索引操作
-                    if params.array_remove_index then
-                        local idx = params.array_remove_index
-                        if type(comp.data) == "table" and idx >= 1 and idx <= #comp.data then
-                            table.remove(comp.data, idx)
-                        else
-                            return {success = false, error = "数组索引越界: " .. tostring(idx)}
-                        end
-                    elseif params.array_index and params.array_data then
-                        local idx = params.array_index
-                        if type(comp.data) == "table" and idx >= 1 and idx <= #comp.data then
-                            -- 浅合并到指定元素
-                            if type(comp.data[idx]) == "table" then
-                                for k, v in pairs(params.array_data) do
-                                    comp.data[idx][k] = v
-                                end
-                            else
-                                comp.data[idx] = params.array_data
-                            end
-                        else
-                            return {success = false, error = "数组索引越界: " .. tostring(idx)}
-                        end
-                    else
-                        return {success = false, error = "数组型组件需要提供 array_index + array_data 或 array_remove_index"}
-                    end
-                else
-                    -- 对象型：浅合并
-                    if params.data then
-                        if type(comp.data) ~= "table" then comp.data = {} end
-                        for k, v in pairs(params.data) do
-                            comp.data[k] = v
-                        end
-                    else
-                        return {success = false, error = "对象型组件需要提供 data 参数"}
-                    end
-                end
-
-                customComponents.custom_components[i] = comp
+                foundIndex = i
                 break
             end
         end
 
+        -- Auto-create when component doesn't exist (upsert semantics)
         if not found then
-            return {success = false, error = "未找到自定义组件: " .. params.component_key}
+            if isArray then
+                if params.data then
+                    -- Array type + data: create component and append first element
+                    table.insert(customComponents.custom_components, {
+                        component_key = params.component_key,
+                        data = { params.data }
+                    })
+                elseif params.array_remove_index then
+                    -- Attempting to delete from non-existent component, silent success
+                    return {success = true, created = false}
+                else
+                    return {success = false, error = "Array component '" .. params.component_key .. "' does not exist on creature '" .. params.creature_id .. "' yet. Use data={...} to create it with the first element, or use setCustomComponent."}
+                end
+            else
+                if params.data then
+                    -- Object type + data: create component
+                    table.insert(customComponents.custom_components, {
+                        component_key = params.component_key,
+                        data = params.data
+                    })
+                else
+                    return {success = false, error = "Object component '" .. params.component_key .. "' does not exist on creature '" .. params.creature_id .. "'. Provide data={...} to create it, or use setCustomComponent."}
+                end
+            end
+
+            Service.call("ecs:SetComponentData", {
+                entity_id = entityId,
+                component_key = "CustomComponents",
+                data = customComponents,
+                merge = false
+            })
+            return {success = true, created = true}
         end
+
+        -- Component exists, perform update
+        local comp = customComponents.custom_components[foundIndex]
+
+        if isArray then
+            local arrLen = type(comp.data) == "table" and #comp.data or 0
+            -- Array type: operate by index, or append
+            if params.array_remove_index then
+                local idx = params.array_remove_index
+                if type(comp.data) == "table" and idx >= 1 and idx <= #comp.data then
+                    table.remove(comp.data, idx)
+                else
+                    return {success = false, error = "Array index out of bounds: index=" .. tostring(idx) .. ", but array '" .. params.component_key .. "' has " .. arrLen .. " elements (valid: 1-" .. arrLen .. "). Use a valid index or check the array contents in ECS data."}
+                end
+            elseif params.array_index and params.array_data then
+                local idx = params.array_index
+                if type(comp.data) == "table" and idx >= 1 and idx <= #comp.data then
+                    -- Shallow merge to specified element
+                    if type(comp.data[idx]) == "table" then
+                        for k, v in pairs(params.array_data) do
+                            comp.data[idx][k] = v
+                        end
+                    else
+                        comp.data[idx] = params.array_data
+                    end
+                else
+                    return {success = false, error = "Array index out of bounds: index=" .. tostring(idx) .. ", but array '" .. params.component_key .. "' has " .. arrLen .. " elements (valid: 1-" .. arrLen .. "). To append a new element, use data={...} without array_index."}
+                end
+            elseif params.data then
+                -- Only data passed (no array_index): append to array end
+                if type(comp.data) ~= "table" then comp.data = {} end
+                table.insert(comp.data, params.data)
+            else
+                return {success = false, error = "Array component '" .. params.component_key .. "' requires one of: (1) data={...} to append, (2) array_index+array_data to update element, (3) array_remove_index to delete element."}
+            end
+        else
+            -- Object type: shallow merge
+            if params.data then
+                if type(comp.data) ~= "table" then comp.data = {} end
+                for k, v in pairs(params.data) do
+                    comp.data[k] = v
+                end
+            else
+                return {success = false, error = "Object component '" .. params.component_key .. "' requires data={...} for shallow merge."}
+            end
+        end
+
+        customComponents.custom_components[foundIndex] = comp
 
         Service.call("ecs:SetComponentData", {
             entity_id = entityId,
@@ -2108,16 +2232,16 @@ registerSystem({
         return {success = true}
     end
 })
--- ============ 称号系统 ============
+-- ============ Title System ============
 
 registerSystem({
     category = "Modify",
     name = "addTitleToCreature",
-    description = "给生物添加称号",
-    usage = "给角色添加一个称号。已有相同称号时不会重复添加。",
+    description = "Add title to creature",
+    usage = "Add a title to creature. Won't duplicate if title already exists.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        title = Type.String:desc("称号名称"),
+        creature_id = Type.String:desc("creature ID"),
+        title = Type.String:desc("title name"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2128,7 +2252,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2137,12 +2261,12 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "Creature 组件不存在"}
+            return {success = false, error = "Creature component not found"}
         end
 
         local attrs = result.data
 
-        -- 检查是否已有该称号
+        -- Check if title already exists
         for _, t in ipairs(attrs.titles or {}) do
             if t == params.title then
                 return {success = true, already_exists = true}
@@ -2168,11 +2292,11 @@ registerSystem({
 registerSystem({
     category = "Modify",
     name = "removeTitleFromCreature",
-    description = "移除生物的称号",
-    usage = "移除角色的指定称号。称号不存在时返回错误。",
+    description = "Remove title from creature",
+    usage = "Remove specified title from creature. Returns error if title not found.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        title = Type.String:desc("称号名称"),
+        creature_id = Type.String:desc("creature ID"),
+        title = Type.String:desc("title name"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2182,7 +2306,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2191,7 +2315,7 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "Creature 组件不存在"}
+            return {success = false, error = "Creature component not found"}
         end
 
         local attrs = result.data
@@ -2213,20 +2337,20 @@ registerSystem({
             end
         end
 
-        return {success = false, error = "未拥有该称号: " .. params.title}
+        return {success = false, error = "Title not held: " .. params.title}
     end
 })
 
--- ============ 已知信息 & 目标 ============
+-- ============ Known Info & Goals ============
 
 registerSystem({
     category = "Modify",
     name = "addKnownInfo",
-    description = "给生物添加一条已知信息",
-    usage = "给角色添加一条已知信息。已有相同信息时不会重复添加。",
+    description = "Add known info to creature",
+    usage = "Add known info to creature. Won't duplicate if same info already exists.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        info = Type.String:desc("已知信息内容"),
+        creature_id = Type.String:desc("creature ID"),
+        info = Type.String:desc("known info content"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2237,7 +2361,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2246,7 +2370,7 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "Creature 组件不存在"}
+            return {success = false, error = "Creature component not found"}
         end
 
         local attrs = result.data
@@ -2255,7 +2379,7 @@ registerSystem({
             attrs.known_infos = {}
         end
 
-        -- 检查是否已存在
+        -- Check if already exists
         for _, v in ipairs(attrs.known_infos) do
             if v == params.info then
                 return {success = true, already_exists = true}
@@ -2277,12 +2401,59 @@ registerSystem({
 
 registerSystem({
     category = "Modify",
-    name = "setCreatureGoal",
-    description = "设置生物的当前目标",
-    usage = "设置角色的当前目标或意图。传入空字符串或不传则清除目标。",
+    name = "deleteKnownInfo",
+    description = "Soft-delete creature known info (mark as [deleted] without removal to avoid index shift)",
+    usage = "Mark creature known info at specified index as [deleted]. Index starts from 1, corresponds to [IDX=N] in GetGameEntityOverview known_infos.",
     inputs = Type.Object({
-        creature_id = Type.String:desc("生物ID"),
-        goal = Type.Optional(Type.String):desc("目标描述，为空或不传则清除"),
+        creature_id = Type.String:desc("creature ID"),
+        index = Type.Int:desc("known info index (1-based, corresponds to [IDX=N])"),
+    }),
+    outputs = Type.Object({
+        success = Type.Bool,
+        error = Type.Optional(Type.String),
+    }),
+    tags = {"modify", "known_info"},
+    execute = function(params)
+        local entityId = getEntityIdByCreatureId(params.creature_id)
+        if not entityId then
+            return {success = false, error = "Creature not found: " .. params.creature_id}
+        end
+
+        local result = Service.call("ecs:GetComponentData", {
+            entity_id = entityId,
+            component_key = "Creature"
+        })
+
+        if not result.found then
+            return {success = false, error = "Creature component not found"}
+        end
+
+        local attrs = result.data
+        if not attrs.known_infos or params.index < 1 or params.index > #attrs.known_infos then
+            return {success = false, error = string.format("Index %d out of range (total %d entries)", params.index, attrs.known_infos and #attrs.known_infos or 0)}
+        end
+
+        attrs.known_infos[params.index] = "[deleted]"
+
+        Service.call("ecs:SetComponentData", {
+            entity_id = entityId,
+            component_key = "Creature",
+            data = attrs,
+            merge = false
+        })
+
+        return {success = true}
+    end
+})
+
+registerSystem({
+    category = "Modify",
+    name = "setCreatureGoal",
+    description = "Set creature current goal",
+    usage = "Set creature's current goal or intent. Pass empty string or omit to clear goal.",
+    inputs = Type.Object({
+        creature_id = Type.String:desc("creature ID"),
+        goal = Type.Optional(Type.String):desc("goal description, empty or omit to clear"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2292,7 +2463,7 @@ registerSystem({
     execute = function(params)
         local entityId = getEntityIdByCreatureId(params.creature_id)
         if not entityId then
-            return {success = false, error = "生物不存在: " .. params.creature_id}
+            return {success = false, error = "Creature not found: " .. params.creature_id}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2301,7 +2472,7 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "Creature 组件不存在"}
+            return {success = false, error = "Creature component not found"}
         end
 
         local attrs = result.data
@@ -2323,15 +2494,15 @@ registerSystem({
     end
 })
 
--- ============ 时间系统 ============
+-- ============ Time System ============
 
 registerSystem({
     category = "Time",
     name = "advanceTime",
-    description = "推进游戏时间",
-    usage = "推进指定分钟数的游戏时间，自动处理时/日/月/年进位（每月30天）。返回格式化的时间文本。",
+    description = "Advance game time",
+    usage = "Advance game time by specified minutes, auto-handles hour/day/month/year carry (30 days per month). Returns formatted time text.",
     inputs = Type.Object({
-        minutes = Type.Int:desc("推进的分钟数"),
+        minutes = Type.Int:desc("minutes to advance"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2342,7 +2513,7 @@ registerSystem({
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在", time_text = ""}
+            return {success = false, error = "World entity not found", time_text = ""}
         end
         
         local timeResult = Service.call("ecs:GetComponentData", {
@@ -2351,7 +2522,7 @@ registerSystem({
         })
         
         if not timeResult.found then
-            return {success = false, error = "GameTime 组件不存在", time_text = ""}
+            return {success = false, error = "GameTime component not found", time_text = ""}
         end
         
         local time = timeResult.data
@@ -2367,7 +2538,7 @@ registerSystem({
             time.day = time.day + 1
         end
         
-        -- 简单的月份处理（假设每月30天）
+        -- Simple month handling (assuming 30 days per month)
         while time.day > 30 do
             time.day = time.day - 30
             time.month = time.month + 1
@@ -2385,7 +2556,7 @@ registerSystem({
             merge = false
         })
         
-        local timeText = string.format("%d年%d月%d日 %02d:%02d", 
+        local timeText = string.format("Y%d-M%d-D%d %02d:%02d", 
             time.year, time.month, time.day, time.hour, time.minute)
         
         return {success = true, time_text = timeText}
@@ -2395,8 +2566,8 @@ registerSystem({
 registerSystem({
     category = "Query",
     name = "getGameTime",
-    description = "获取当前游戏时间",
-    usage = "获取当前游戏世界的年月日时分和星期。可用于判断昼夜、季节等。",
+    description = "Get current game time",
+    usage = "Get current game world year/month/day/hour/minute and weekday. Can be used to determine day/night, season, etc.",
     inputs = Type.Object({}),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2412,7 +2583,7 @@ registerSystem({
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在"}
+            return {success = false, error = "World entity not found"}
         end
         
         local timeResult = Service.call("ecs:GetComponentData", {
@@ -2421,7 +2592,7 @@ registerSystem({
         })
         
         if not timeResult.found then
-            return {success = false, error = "GameTime 组件不存在"}
+            return {success = false, error = "GameTime component not found"}
         end
         
         local time = timeResult.data
@@ -2437,15 +2608,15 @@ registerSystem({
     end
 })
 
--- ============ 导演笔记系统 ============
+-- ============ Director Notes System ============
 
 registerSystem({
     category = "DirectorNotes",
     name = "addDirectorNote",
-    description = "添加导演笔记",
-    usage = "向导演笔记列表末尾添加一条简短总结或剧情走向建议。",
+    description = "Add director note",
+    usage = "Add a brief summary or plot direction suggestion to the end of director notes.",
     inputs = Type.Object({
-        note = Type.String:desc("笔记内容，简短描述剧情总结或走向建议"),
+        note = Type.String:desc("note content, brief plot summary or direction suggestion"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2455,7 +2626,7 @@ registerSystem({
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在"}
+            return {success = false, error = "World entity not found"}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2464,13 +2635,13 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "DirectorNotes 组件不存在"}
+            return {success = false, error = "DirectorNotes component not found"}
         end
 
         local data = result.data
         table.insert(data.notes, params.note)
 
-        -- 只保留最新 10 条笔记
+        -- Keep only the latest 10 notes
         if #data.notes > 10 then
             local trimmed = {}
             for i = #data.notes - 9, #data.notes do
@@ -2493,10 +2664,10 @@ registerSystem({
 registerSystem({
     category = "DirectorNotes",
     name = "removeDirectorNote",
-    description = "移除导演笔记",
-    usage = "按索引移除一条导演笔记（从1开始）。",
+    description = "Remove director note",
+    usage = "Remove a director note by index (1-based).",
     inputs = Type.Object({
-        index = Type.Int:desc("要移除的笔记索引（从1开始）"),
+        index = Type.Int:desc("note index to remove (1-based)"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2506,7 +2677,7 @@ registerSystem({
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在"}
+            return {success = false, error = "World entity not found"}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2515,12 +2686,12 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "DirectorNotes 组件不存在"}
+            return {success = false, error = "DirectorNotes component not found"}
         end
 
         local data = result.data
         if params.index < 1 or params.index > #data.notes then
-            return {success = false, error = "索引超出范围，当前笔记数量: " .. #data.notes}
+            return {success = false, error = "Index out of range, current note count: " .. #data.notes}
         end
 
         table.remove(data.notes, params.index)
@@ -2539,12 +2710,12 @@ registerSystem({
 registerSystem({
     category = "DirectorNotes",
     name = "setDirectorFlag",
-    description = "设置导演标记",
-    usage = "设置或更新一个导演标记（布尔开关），用于记录关键事件是否发生、重要转变是否达成等。",
+    description = "Set director flag",
+    usage = "Set or update a director flag (boolean toggle), used to record whether key events occurred, important transitions achieved, etc.",
     inputs = Type.Object({
-        flag_id = Type.String:desc("标记名称"),
-        value = Type.Bool:desc("标记状态"),
-        remark = Type.Optional(Type.String):desc("标记备注，描述标记的含义或触发条件"),
+        flag_id = Type.String:desc("flag name"),
+        value = Type.Bool:desc("flag state"),
+        remark = Type.Optional(Type.String):desc("flag remark describing meaning or trigger conditions"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2554,7 +2725,7 @@ registerSystem({
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在"}
+            return {success = false, error = "World entity not found"}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2563,12 +2734,12 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "DirectorNotes 组件不存在"}
+            return {success = false, error = "DirectorNotes component not found"}
         end
 
         local data = result.data
 
-        -- 自动在 remark 中附加世界时间
+        -- Auto-append world time to remark
         local remark = params.remark or ""
         local timeResult = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2604,10 +2775,10 @@ registerSystem({
 registerSystem({
     category = "DirectorNotes",
     name = "getDirectorFlag",
-    description = "获取导演标记",
-    usage = "查询导演标记的状态。未设置的标记返回 exists=false。",
+    description = "Get director flag",
+    usage = "Query director flag status. Returns exists=false for unset flags.",
     inputs = Type.Object({
-        flag_id = Type.String:desc("标记名称"),
+        flag_id = Type.String:desc("flag name"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2620,7 +2791,7 @@ registerSystem({
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在", exists = false}
+            return {success = false, error = "World entity not found", exists = false}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2629,7 +2800,7 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "DirectorNotes 组件不存在", exists = false}
+            return {success = false, error = "DirectorNotes component not found", exists = false}
         end
 
         local data = result.data
@@ -2646,10 +2817,10 @@ registerSystem({
 registerSystem({
     category = "DirectorNotes",
     name = "setStageGoal",
-    description = "设置或清除当前阶段叙事目标",
-    usage = "设置当前游戏阶段的叙事目标和节奏控制。传入 stage_goal 字符串来设置，传入空字符串或不传来清除。",
+    description = "Set or clear current stage narrative goal",
+    usage = "Set narrative goal and pacing control for current game stage. Pass stage_goal string to set, empty string or omit to clear.",
     inputs = Type.Object({
-        stage_goal = Type.Optional(Type.String):desc("阶段叙事目标描述，为空或不传则清除"),
+        stage_goal = Type.Optional(Type.String):desc("stage narrative goal description, empty or omit to clear"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2659,7 +2830,7 @@ registerSystem({
     execute = function(params)
         local worldEntityId = getWorldEntityId()
         if not worldEntityId then
-            return {success = false, error = "世界实体不存在"}
+            return {success = false, error = "World entity not found"}
         end
 
         local result = Service.call("ecs:GetComponentData", {
@@ -2668,7 +2839,7 @@ registerSystem({
         })
 
         if not result.found then
-            return {success = false, error = "DirectorNotes 组件不存在"}
+            return {success = false, error = "DirectorNotes component not found"}
         end
 
         local data = result.data
@@ -2689,18 +2860,18 @@ registerSystem({
     end
 })
 
--- ============ 地域管理系统 ============
+-- ============ Region Management System ============
 
 registerSystem({
     category = "Region",
     name = "addLocationToRegion",
-    description = "向地域实体添加一个新地点",
-    usage = "向指定地域添加一个新地点。地点ID已存在时返回错误。",
+    description = "Add new location to region entity",
+    usage = "Add a new location to specified region. Returns error if location ID already exists.",
     inputs = Type.Object({
-        region_id = Type.String:desc("地域ID"),
-        location_id = Type.String:desc("新地点的ID"),
-        location_name = Type.String:desc("新地点的名称"),
-        location_description = Type.String:desc("新地点的描述"),
+        region_id = Type.String:desc("region ID"),
+        location_id = Type.String:desc("new location ID"),
+        location_name = Type.String:desc("new location name"),
+        location_description = Type.String:desc("new location description"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
@@ -2711,7 +2882,7 @@ registerSystem({
     execute = function(params)
         local regionEntityId = getRegionEntityId(params.region_id)
         if not regionEntityId then
-            return {success = false, added = false, error = "地域不存在: " .. params.region_id}
+            return {success = false, added = false, error = "Region not found: " .. params.region_id}
         end
         
         local locationsResult = Service.call("ecs:GetComponentData", {
@@ -2720,26 +2891,26 @@ registerSystem({
         })
         
         if not locationsResult.found then
-            return {success = false, added = false, error = "Region 组件不存在"}
+            return {success = false, added = false, error = "Region component not found"}
         end
         
         local locationsAndPaths = locationsResult.data
         
-        -- 检查地点是否已存在
+        -- Check if location already exists
         for _, location in ipairs(locationsAndPaths.locations) do
             if location.id == params.location_id then
-                return {success = false, added = false, error = "地点已存在: " .. params.location_id}
+                return {success = false, added = false, error = "Location already exists: " .. params.location_id}
             end
         end
         
-        -- 构建新地点
+        -- Build new location
         local newLocation = {
             id = params.location_id,
             name = params.location_name,
             description = params.location_description
         }
         
-        -- 添加到地点列表
+        -- Add to location list
         table.insert(locationsAndPaths.locations, newLocation)
         
         Service.call("ecs:SetComponentData", {
@@ -2756,24 +2927,24 @@ registerSystem({
 registerSystem({
     category = "Region",
     name = "discoverPath",
-    description = "发现地域中的一条路径（将 discovered 设为 true）",
-    usage = "将地域中指定路径标记为已发现（discovered=true）。通过 to_region + to_location 定位路径。路径不存在时返回错误。",
+    description = "Discover a path in region (set discovered to true)",
+    usage = "Mark specified path in region as discovered (discovered=true). Located by to_region + to_location. Returns error if path not found.",
     inputs = Type.Object({
-        region_id = Type.String:desc("地域ID"),
-        to_region = Type.String:desc("路径目标地域ID"),
-        to_location = Type.String:desc("路径目标地点ID"),
+        region_id = Type.String:desc("region ID"),
+        to_region = Type.String:desc("path target region ID"),
+        to_location = Type.String:desc("path target location ID"),
     }),
     outputs = Type.Object({
         success = Type.Bool,
         discovered = Type.Bool,
-        already_discovered = Type.Optional(Type.Bool):desc("路径是否已经处于发现状态"),
+        already_discovered = Type.Optional(Type.Bool):desc("whether path is already discovered"),
         error = Type.Optional(Type.String),
     }),
     tags = {"modify", "region", "path"},
     execute = function(params)
         local regionEntityId = getRegionEntityId(params.region_id)
         if not regionEntityId then
-            return {success = false, discovered = false, error = "地域不存在: " .. params.region_id}
+            return {success = false, discovered = false, error = "Region not found: " .. params.region_id}
         end
 
         local locationsResult = Service.call("ecs:GetComponentData", {
@@ -2782,7 +2953,7 @@ registerSystem({
         })
 
         if not locationsResult.found then
-            return {success = false, discovered = false, error = "Region 组件不存在"}
+            return {success = false, discovered = false, error = "Region component not found"}
         end
 
         local locationsAndPaths = locationsResult.data
@@ -2806,7 +2977,7 @@ registerSystem({
             end
         end
 
-        -- 如果没有找到匹配的路径, 直接添加一个新路径
+        -- If no matching path found, add a new path directly
 
         table.insert(locationsAndPaths.paths, {
             to_region = params.to_region,
@@ -2825,6 +2996,269 @@ registerSystem({
             success = true,
             discovered = true,
         }
+    end
+})
+
+-- ============ Plot Events System ============
+
+-- Helper: get formatted string of current game time
+local function getFormattedGameTime()
+    local worldEntityId = getWorldEntityId()
+    if not worldEntityId then
+        return nil
+    end
+    local timeResult = Service.call("ecs:GetComponentData", {
+        entity_id = worldEntityId,
+        component_key = "GameTime"
+    })
+    if not timeResult.found then
+        return nil
+    end
+    local t = timeResult.data
+    return string.format("Y%d-M%02d-D%02d %02d:%02d", t.year, t.month, t.day, t.hour, t.minute)
+end
+
+registerSystem({
+    category = "Events",
+    name = "createEvent",
+    description = "Create a new plot event",
+    usage = "Add a new plot event to world entity's Events component. event_id must be unique. Auto-uses current game time if created_at not provided.",
+    inputs = Type.Object({
+        event_id = Type.String:desc("event unique ID, naming convention: YYYY_MM_DD_ShortDesc"),
+        title = Type.String:desc("event title"),
+        summary = Type.String:desc("event summary"),
+        content = Type.String:desc("event detailed content"),
+        related_entities = Type.Optional(Type.Array(Type.String)):desc("related entity ID list"),
+        created_at = Type.Optional(Type.String):desc("creation time, auto-filled with game time if omitted"),
+    }),
+    outputs = ComponentTypes.SuccessOutput,
+    tags = {"create", "events"},
+    execute = function(params)
+        local worldEntityId = getWorldEntityId()
+        if not worldEntityId then
+            return {success = false, error = "World entity not found"}
+        end
+
+        local eventsResult = Service.call("ecs:GetComponentData", {
+            entity_id = worldEntityId,
+            component_key = "Events"
+        })
+
+        local eventsData
+        if eventsResult.found then
+            eventsData = eventsResult.data
+        else
+            eventsData = { events = {} }
+        end
+
+        -- Check if event_id is duplicate
+        for _, ev in ipairs(eventsData.events) do
+            if ev.event_id == params.event_id then
+                return {success = false, error = "event_id already exists: " .. params.event_id}
+            end
+        end
+
+        local now = params.created_at or getFormattedGameTime() or ""
+
+        -- Auto-prepend world timestamp to content
+        local timestamped_content = params.content
+        if now ~= "" then
+            timestamped_content = "<!-- " .. now .. " -->\n" .. params.content
+        end
+
+        local newEvent = {
+            event_id = params.event_id,
+            title = params.title,
+            summary = params.summary,
+            content = timestamped_content,
+            related_entities = params.related_entities,
+            created_at = now,
+            updated_at = now,
+        }
+
+        table.insert(eventsData.events, newEvent)
+
+        Service.call("ecs:SetComponentData", {
+            entity_id = worldEntityId,
+            component_key = "Events",
+            data = eventsData,
+            merge = false
+        })
+
+        return {success = true}
+    end
+})
+
+registerSystem({
+    category = "Events",
+    name = "appendEvent",
+    description = "Append content to existing plot event",
+    usage = "Find existing event by event_id, append new content to content field with newline, optionally replace summary. Auto-updates updated_at.",
+    inputs = Type.Object({
+        event_id = Type.String:desc("event ID to append to"),
+        content = Type.String:desc("content to append, joined to existing content with newline"),
+        summary = Type.Optional(Type.String):desc("optional, replace event summary"),
+    }),
+    outputs = ComponentTypes.SuccessOutput,
+    tags = {"modify", "events"},
+    execute = function(params)
+        local worldEntityId = getWorldEntityId()
+        if not worldEntityId then
+            return {success = false, error = "World entity not found"}
+        end
+
+        local eventsResult = Service.call("ecs:GetComponentData", {
+            entity_id = worldEntityId,
+            component_key = "Events"
+        })
+
+        if not eventsResult.found then
+            return {success = false, error = "Events component not found"}
+        end
+
+        local eventsData = eventsResult.data
+        local found = false
+
+        for _, ev in ipairs(eventsData.events) do
+            if ev.event_id == params.event_id then
+                local now = getFormattedGameTime() or ""
+                -- Auto-insert time separator before appending content
+                local separator = "\n"
+                if now ~= "" then
+                    separator = "\n<!-- " .. now .. " -->\n"
+                end
+                ev.content = ev.content .. separator .. params.content
+                if params.summary then
+                    ev.summary = params.summary
+                end
+                ev.updated_at = now
+                found = true
+                break
+            end
+        end
+
+        if not found then
+            return {success = false, error = "Event not found: " .. params.event_id}
+        end
+
+        Service.call("ecs:SetComponentData", {
+            entity_id = worldEntityId,
+            component_key = "Events",
+            data = eventsData,
+            merge = false
+        })
+
+        return {success = true}
+    end
+})
+
+registerSystem({
+    category = "Events",
+    name = "updateEvent",
+    description = "Update fields of existing plot event",
+    usage = "Find event by event_id, merge provided fields (title, summary, content, related_entities). Auto-updates updated_at.",
+    inputs = Type.Object({
+        event_id = Type.String:desc("event ID to update"),
+        title = Type.Optional(Type.String):desc("new title"),
+        summary = Type.Optional(Type.String):desc("new summary"),
+        content = Type.Optional(Type.String):desc("new content (full replacement)"),
+        related_entities = Type.Optional(Type.Array(Type.String)):desc("new related entity ID list"),
+    }),
+    outputs = ComponentTypes.SuccessOutput,
+    tags = {"modify", "events"},
+    execute = function(params)
+        local worldEntityId = getWorldEntityId()
+        if not worldEntityId then
+            return {success = false, error = "World entity not found"}
+        end
+
+        local eventsResult = Service.call("ecs:GetComponentData", {
+            entity_id = worldEntityId,
+            component_key = "Events"
+        })
+
+        if not eventsResult.found then
+            return {success = false, error = "Events component not found"}
+        end
+
+        local eventsData = eventsResult.data
+        local found = false
+
+        for _, ev in ipairs(eventsData.events) do
+            if ev.event_id == params.event_id then
+                if params.title then ev.title = params.title end
+                if params.summary then ev.summary = params.summary end
+                if params.content then ev.content = params.content end
+                if params.related_entities then ev.related_entities = params.related_entities end
+                ev.updated_at = getFormattedGameTime() or ""
+                found = true
+                break
+            end
+        end
+
+        if not found then
+            return {success = false, error = "Event not found: " .. params.event_id}
+        end
+
+        Service.call("ecs:SetComponentData", {
+            entity_id = worldEntityId,
+            component_key = "Events",
+            data = eventsData,
+            merge = false
+        })
+
+        return {success = true}
+    end
+})
+
+registerSystem({
+    category = "Events",
+    name = "getEvents",
+    description = "Query plot events",
+    usage = "Get plot events list from world entity. Filter by event_ids, or omit to return all events.",
+    inputs = Type.Object({
+        event_ids = Type.Optional(Type.Array(Type.String)):desc("optional, event ID list to query, returns all if omitted"),
+    }),
+    outputs = Type.Object({
+        success = Type.Bool,
+        events = Type.Array(ComponentTypes.EventEntry),
+        error = Type.Optional(Type.String),
+    }),
+    tags = {"query", "events"},
+    execute = function(params)
+        local worldEntityId = getWorldEntityId()
+        if not worldEntityId then
+            return {success = false, events = {}, error = "World entity not found"}
+        end
+
+        local eventsResult = Service.call("ecs:GetComponentData", {
+            entity_id = worldEntityId,
+            component_key = "Events"
+        })
+
+        if not eventsResult.found then
+            return {success = true, events = {}}
+        end
+
+        local eventsData = eventsResult.data
+        local resultEvents = {}
+
+        if params.event_ids and #params.event_ids > 0 then
+            -- Build query set
+            local idSet = {}
+            for _, id in ipairs(params.event_ids) do
+                idSet[id] = true
+            end
+            for _, ev in ipairs(eventsData.events) do
+                if idSet[ev.event_id] then
+                    table.insert(resultEvents, ev)
+                end
+            end
+        else
+            resultEvents = eventsData.events
+        end
+
+        return {success = true, events = resultEvents}
     end
 })
 

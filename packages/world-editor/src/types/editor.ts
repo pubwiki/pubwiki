@@ -64,7 +64,6 @@ export function createDefaultCreatureSnapshot(creatureId?: string): CreatureSnap
     inventory: [],
     status_effects: [],
     custom_components: [],
-    relationships: [],
     bind_setting: { documents: [] },
     log: [],
   }
@@ -196,18 +195,6 @@ export function validateStateData(state: StateData): ValidationError[] {
         path: `Creatures[${i}].location.region_id`,
         message: `References non-existent region: ${c.location.region_id}`,
       })
-    }
-  }
-
-  // Validate referential integrity: creature relationship targets
-  for (const [i, c] of (state.Creatures ?? []).entries()) {
-    for (const [j, rel] of (c.relationships ?? []).entries()) {
-      if (rel.target_id && !creatureIds.has(rel.target_id)) {
-        errors.push({
-          path: `Creatures[${i}].relationships[${j}].target_id`,
-          message: `References non-existent creature: ${rel.target_id}`,
-        })
-      }
     }
   }
 

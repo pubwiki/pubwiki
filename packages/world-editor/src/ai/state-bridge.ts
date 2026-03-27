@@ -49,7 +49,9 @@ const FIELD_LABELS: Record<string, string> = {
   custom_components: 'Custom Components',
   log: 'Log',
   inventory: 'Inventory',
-  relationships: 'Relationships',
+  interaction: 'Interaction',
+  base_interaction: 'Base Interaction',
+  events: 'Events',
   location: 'Location',
   metadata: 'Metadata',
 }

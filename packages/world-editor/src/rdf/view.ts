@@ -23,7 +23,6 @@ import type {
   GameTime,
   SettingDocument,
   InventoryItem,
-  Relationship,
   StatusEffect,
   LogEntry,
   CreatureAttrField,
@@ -40,6 +39,10 @@ import type {
   Location,
   RegionPath,
   Territory,
+  Events,
+  Interaction,
+  BaseInteraction,
+  GameInitChoice,
 } from '../types/state-data'
 import {
   PW_PRED,
@@ -137,6 +140,9 @@ export class StateDataView {
     const appInfo = this.materializeAppInfo(bySubject)
     if (appInfo) state.AppInfo = appInfo
 
+    const gameInitChoice = this.materializeGameInitChoice(bySubject)
+    if (gameInitChoice) state.GameInitChoice = gameInitChoice
+
     return state
   }
 
@@ -172,6 +178,15 @@ export class StateDataView {
       }
       if (t.predicate === PW_WORLD.director_notes) {
         try { world.director_notes = JSON.parse(String(t.object)) as DirectorNotes } catch { /* ignore */ }
+      }
+      if (t.predicate === PW_WORLD.events) {
+        try { world.events = JSON.parse(String(t.object)) as Events } catch { /* ignore */ }
+      }
+      if (t.predicate === PW_WORLD.interaction) {
+        try { world.interaction = JSON.parse(String(t.object)) as Interaction } catch { /* ignore */ }
+      }
+      if (t.predicate === PW_WORLD.base_interaction) {
+        try { world.base_interaction = JSON.parse(String(t.object)) as BaseInteraction } catch { /* ignore */ }
       }
     }
 
@@ -274,9 +289,6 @@ export class StateDataView {
     // Location
     if (location.region_id || location.point) snapshot.location = location
 
-    // Relationships
-    snapshot.relationships = this.materializeRelationships(creatureId, triples, bySubject)
-
     // Inventory
     snapshot.inventory = this.materializeInventory(creatureId, triples, bySubject)
 
@@ -291,6 +303,13 @@ export class StateDataView {
 
     // Setting documents
     snapshot.bind_setting = this.materializeSettingDocs('creature', creatureId, bySubject)
+
+    // Interaction
+    for (const t of triples) {
+      if (t.predicate === PW_WORLD.interaction) {
+        try { snapshot.interaction = JSON.parse(String(t.object)) as Interaction } catch { /* ignore */ }
+      }
+    }
 
     return snapshot
   }
@@ -354,6 +373,13 @@ export class StateDataView {
     snapshot.log = this.materializeLogs(triples, PWR_PRED.log_entry, bySubject)
     snapshot.bind_setting = this.materializeSettingDocs('region', regionId, bySubject)
 
+    // Interaction
+    for (const t of triples) {
+      if (t.predicate === PW_WORLD.interaction) {
+        try { snapshot.interaction = JSON.parse(String(t.object)) as Interaction } catch { /* ignore */ }
+      }
+    }
+
     return snapshot
   }
 
@@ -403,40 +429,19 @@ export class StateDataView {
     snapshot.log = this.materializeLogs(triples, PWO_PRED.log_entry, bySubject)
     snapshot.bind_setting = this.materializeSettingDocs('org', orgId, bySubject)
 
+    // Interaction
+    for (const t of triples) {
+      if (t.predicate === PW_WORLD.interaction) {
+        try { snapshot.interaction = JSON.parse(String(t.object)) as Interaction } catch { /* ignore */ }
+      }
+    }
+
     return snapshot
   }
 
   // =========================================================================
   // Component materializers
   // =========================================================================
-
-  private materializeRelationships(
-    _creatureId: string, ownerTriples: Triple[], bySubject: Map<string, Triple[]>
-  ): Relationship[] {
-    const rels: Relationship[] = []
-    for (const t of ownerTriples) {
-      if (t.predicate !== PWC_PRED.relationship) continue
-      const relSubject = String(t.object)
-      const relTriples = bySubject.get(relSubject)
-      if (!relTriples) continue
-
-      const rel: Relationship = { target_id: '', name: '' }
-      for (const rt of relTriples) {
-        if (rt.predicate === PW_PRED.target) {
-          // Extract creature ID from "creature:xxx"
-          const targetSubject = String(rt.object)
-          rel.target_id = targetSubject.startsWith(SUBJECT_PREFIX.creature)
-            ? targetSubject.substring(SUBJECT_PREFIX.creature.length)
-            : targetSubject
-        }
-        if (rt.predicate === PW_PRED.name) rel.name = String(rt.object)
-        if (rt.predicate === PW_PRED.value) rel.value = Number(rt.object)
-        if (rt.predicate === PW_PRED.description) rel.description = String(rt.object)
-      }
-      rels.push(rel)
-    }
-    return rels
-  }
 
   private materializeInventory(
     _ownerId: string, ownerTriples: Triple[], bySubject: Map<string, Triple[]>
@@ -669,6 +674,19 @@ export class StateDataView {
     entries.sort((a, b) => a.order - b.order)
     if (entries.length === 0) return undefined
     return entries.map(e => e.entry)
+  }
+
+  private materializeGameInitChoice(bySubject: Map<string, Triple[]>): GameInitChoice | undefined {
+    const subject = `${SUBJECT_PREFIX.story}game_init_choice`
+    const triples = bySubject.get(subject)
+    if (!triples) return undefined
+
+    for (const t of triples) {
+      if (t.predicate === PW_STORY.game_init_choice) {
+        try { return JSON.parse(String(t.object)) as GameInitChoice } catch { /* ignore */ }
+      }
+    }
+    return undefined
   }
 
   private materializeAppInfo(bySubject: Map<string, Triple[]>): AppInfo | undefined {

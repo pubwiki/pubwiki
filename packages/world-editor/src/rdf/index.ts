@@ -31,7 +31,6 @@ export {
 
   // Subject helpers
   entitySubject,
-  relationshipSubject,
   inventorySubject,
   statusEffectSubject,
   settingDocSubject,

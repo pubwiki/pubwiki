@@ -69,7 +69,7 @@ const PHASE_RULES: Partial<Record<WBNPhaseId, string>> = {
 ### World Data Format Rules
 - creature_attr_fields: field_name (snake_case), hint, field_display_name (optional)
 - GameTime: all 5 fields (year, month, day, hour, minute) required
-- CustomComponentRegistry: do not duplicate built-in components (Inventory, Relationship, StatusEffects, Creature, LocationRef)
+- CustomComponentRegistry: do not duplicate built-in components (Inventory, Interaction, StatusEffects, Creature, LocationRef)
 - documents: each at least 500 words; important ones 800+`,
   regions: `
 ### Region Format Rules

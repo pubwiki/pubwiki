@@ -25,5 +25,8 @@
 		"typescript": "catalog:",
 		"typescript-eslint": "catalog:",
 		"vitest": "catalog:"
+	},
+	"dependencies": {
+		"tslib": "^2.8.1"
 	}
 }

@@ -103,6 +103,12 @@ export const PW_WORLD = {
   log_entry: `${PW}logEntry`,
   /** Links to a setting document */
   setting_doc: `${PW}settingDoc`,
+  /** Events component (JSON-serialized) */
+  events: `${PW}events`,
+  /** Interaction options (JSON-serialized) */
+  interaction: `${PW}interaction`,
+  /** Base interaction options (JSON-serialized, World only) */
+  base_interaction: `${PW}baseInteraction`,
 } as const
 
 // ---------------------------------------------------------------------------
@@ -242,6 +248,8 @@ export const PW_STORY = {
   checkpoint_id: `${PW}storyCheckpointId`,
   initial_background: `${PW}initialBackground`,
   initial_start_story: `${PW}initialStartStory`,
+  /** Game init choice configuration (JSON-serialized) */
+  game_init_choice: `${PW}gameInitChoice`,
 } as const
 
 // ---------------------------------------------------------------------------

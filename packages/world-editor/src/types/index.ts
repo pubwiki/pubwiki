@@ -25,7 +25,6 @@ export type {
   Attributes,
   CreatureComponent,
   Appearance,
-  Relationship,
   InventoryItem,
   LocationRef,
   CustomComponents,
@@ -34,6 +33,15 @@ export type {
   RegionPath,
   Territory,
   OrganizationComponent,
+
+  // New components
+  EventEntry,
+  Events,
+  InteractionOption,
+  Interaction,
+  BaseInteraction,
+  GameInitChoiceItem,
+  GameInitChoice,
 
   // Story & supplementary
   StoryHistoryEntry,

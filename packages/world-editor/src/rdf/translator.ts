@@ -17,7 +17,6 @@ import type {
   SettingDocument,
   StatusEffect,
   InventoryItem,
-  Relationship,
   LogEntry,
   CreatureAttrField,
   CustomComponentDef,
@@ -42,7 +41,6 @@ import {
   SUBJECT_PREFIX,
   GRAPH_PREFIX,
   entitySubject,
-  relationshipSubject,
   inventorySubject,
   statusEffectSubject,
   settingDocSubject,
@@ -143,6 +141,12 @@ export class TripleTranslator {
       if (state.AppInfo.publish_type) triples.push({ subject: s, predicate: PW_APP.publish_type, object: state.AppInfo.publish_type, graph: GRAPH_PREFIX.app })
     }
 
+    // GameInitChoice
+    if (state.GameInitChoice) {
+      const s = `${SUBJECT_PREFIX.story}game_init_choice`
+      triples.push({ subject: s, predicate: PW_STORY.game_init_choice, object: JSON.stringify(state.GameInitChoice), graph: GRAPH_PREFIX.story })
+    }
+
     return triples
   }
 
@@ -179,6 +183,21 @@ export class TripleTranslator {
 
     // Setting documents
     this.settingDocsToTriples(s, 'world', world.entity_id, world.bind_setting?.documents, out)
+
+    // Events
+    if (world.events) {
+      out.push({ subject: s, predicate: PW_WORLD.events, object: JSON.stringify(world.events), graph: g })
+    }
+
+    // Interaction
+    if (world.interaction) {
+      out.push({ subject: s, predicate: PW_WORLD.interaction, object: JSON.stringify(world.interaction), graph: g })
+    }
+
+    // Base interaction
+    if (world.base_interaction) {
+      out.push({ subject: s, predicate: PW_WORLD.base_interaction, object: JSON.stringify(world.base_interaction), graph: g })
+    }
   }
 
   private creatureToTriples(creature: CreatureSnapshot, order: number, out: Triple[]): void {
@@ -222,11 +241,6 @@ export class TripleTranslator {
       if (creature.location.point) out.push({ subject: s, predicate: PWC_PRED.location_point, object: creature.location.point, graph: g })
     }
 
-    // Relationships
-    for (const rel of creature.relationships ?? []) {
-      this.relationshipToTriples(creature.creature_id, rel, out, g)
-    }
-
     // Inventory
     for (const item of creature.inventory ?? []) {
       this.inventoryItemToTriples(creature.creature_id, item, out, g)
@@ -254,6 +268,11 @@ export class TripleTranslator {
 
     // Setting documents
     this.settingDocsToTriples(s, 'creature', creature.creature_id, creature.bind_setting?.documents, out)
+
+    // Interaction
+    if (creature.interaction) {
+      out.push({ subject: s, predicate: PW_WORLD.interaction, object: JSON.stringify(creature.interaction), graph: g })
+    }
   }
 
   private regionToTriples(region: RegionSnapshot, order: number, out: Triple[]): void {
@@ -294,6 +313,11 @@ export class TripleTranslator {
 
     // Setting documents
     this.settingDocsToTriples(s, 'region', region.region_id, region.bind_setting?.documents, out)
+
+    // Interaction
+    if (region.interaction) {
+      out.push({ subject: s, predicate: PW_WORLD.interaction, object: JSON.stringify(region.interaction), graph: g })
+    }
   }
 
   private organizationToTriples(org: OrganizationSnapshot, order: number, out: Triple[]): void {
@@ -322,22 +346,16 @@ export class TripleTranslator {
 
     // Setting documents
     this.settingDocsToTriples(s, 'org', org.organization_id, org.bind_setting?.documents, out)
+
+    // Interaction
+    if (org.interaction) {
+      out.push({ subject: s, predicate: PW_WORLD.interaction, object: JSON.stringify(org.interaction), graph: g })
+    }
   }
 
   // =========================================================================
   // Component-level triple generation
   // =========================================================================
-
-  private relationshipToTriples(ownerId: string, rel: Relationship, out: Triple[], graph: string): void {
-    const ownerSubject = entitySubject('creature', ownerId)
-    const relSubject = relationshipSubject(ownerId, rel.target_id)
-
-    out.push({ subject: ownerSubject, predicate: PWC_PRED.relationship, object: relSubject, graph })
-    out.push({ subject: relSubject, predicate: PW_PRED.target, object: entitySubject('creature', rel.target_id), graph })
-    out.push({ subject: relSubject, predicate: PW_PRED.name, object: rel.name, graph })
-    if (rel.value !== undefined) out.push({ subject: relSubject, predicate: PW_PRED.value, object: rel.value, graph })
-    if (rel.description) out.push({ subject: relSubject, predicate: PW_PRED.description, object: rel.description, graph })
-  }
 
   private inventoryItemToTriples(ownerId: string, item: InventoryItem, out: Triple[], graph: string): void {
     const ownerSubject = entitySubject('creature', ownerId)
@@ -543,43 +561,6 @@ export class TripleTranslator {
     }
 
     return []
-  }
-
-  // =========================================================================
-  // Relationship operations
-  // =========================================================================
-
-  /** Translate adding a relationship between two creatures. */
-  translateAddRelationship(
-    fromId: string, toId: string, name: string, value?: number, description?: string
-  ): TripleOperation[] {
-    const g = GRAPH_PREFIX.creature
-    const ownerSubject = entitySubject('creature', fromId)
-    const relSubject = relationshipSubject(fromId, toId)
-
-    const ops: TripleOperation[] = [
-      { op: 'insert', subject: ownerSubject, predicate: PWC_PRED.relationship, object: relSubject, graph: g },
-      { op: 'insert', subject: relSubject, predicate: PW_PRED.target, object: entitySubject('creature', toId), graph: g },
-      { op: 'insert', subject: relSubject, predicate: PW_PRED.name, object: name, graph: g },
-    ]
-    if (value !== undefined) ops.push({ op: 'insert', subject: relSubject, predicate: PW_PRED.value, object: value, graph: g })
-    if (description) ops.push({ op: 'insert', subject: relSubject, predicate: PW_PRED.description, object: description, graph: g })
-    return ops
-  }
-
-  /** Translate removing a relationship. */
-  translateRemoveRelationship(fromId: string, toId: string): TripleOperation[] {
-    const g = GRAPH_PREFIX.creature
-    const ownerSubject = entitySubject('creature', fromId)
-    const relSubject = relationshipSubject(fromId, toId)
-
-    return [
-      { op: 'delete', subject: ownerSubject, predicate: PWC_PRED.relationship, object: relSubject, graph: g },
-      { op: 'delete', subject: relSubject, predicate: PW_PRED.target, graph: g },
-      { op: 'delete', subject: relSubject, predicate: PW_PRED.name, graph: g },
-      { op: 'delete', subject: relSubject, predicate: PW_PRED.value, graph: g },
-      { op: 'delete', subject: relSubject, predicate: PW_PRED.description, graph: g },
-    ]
   }
 
   // =========================================================================

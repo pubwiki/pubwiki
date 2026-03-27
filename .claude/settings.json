@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(openssl req:*)",
+      "Bash(MSYS_NO_PATHCONV=1 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj \"/CN=localhost\" -addext \"subjectAltName=DNS:localhost,IP:192.168.31.46,IP:127.0.0.1\")",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm preview:*)",
+      "Bash(pnpm dev:*)",
+      "Bash(pnpm install:*)",
+      "Bash(netstat -ano)",
+      "Bash(kill 277128)",
+      "Bash(kill 55664)",
+      "Bash(taskkill //F //PID 277128)",
+      "Bash(taskkill //F //PID 55664)",
+      "Bash(npx tsc:*)",
+      "Bash(NODE_OPTIONS=\"--max-old-space-size=8192\" npx tsc --noEmit --skipLibCheck)"
+    ]
+  }
+}

@@ -113,7 +113,7 @@ query_user({
 
 StateData is a complete game snapshot in ECS architecture, containing the following top-level entities:
 - **World** (required) — Global state: game_time, registry (creature_attr_fields), custom_component_registry, director_notes, bind_setting
-- **Creatures[]** — Character list: creature (creature_id, name, appearance, attrs...), is_player, inventory, status_effects, relationships, custom_components, bind_setting
+- **Creatures[]** — Character list: creature (creature_id, name, appearance, attrs...), is_player, inventory, status_effects, custom_components, interaction, bind_setting
 - **Regions[]** — Region list: region (region_id, locations, paths), status_effects, bind_setting
 - **Organizations[]** — Organization list: organization (organization_id, territories), status_effects, bind_setting
 - **GameInitialStory** (top-level) — Opening story: { background, start_story }

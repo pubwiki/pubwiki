@@ -58,7 +58,7 @@ CreatureSnapshot {
   inventory?: Array<{ id: string, count: number, name: string, description?: string, details?: string[], equipped?: boolean }>,
   status_effects?: Array<{ instance_id: string, display_name?: string, remark?: string, data?: any }>,
   custom_components?: Array<{ component_key: string, data: any }>,
-  relationships?: Array<{ target_id: string, name: string, value?: number, description?: string }>,
+  interaction?: { options: Array<{ id: string, title: string, usage?: string, instruction: string, memo?: string }> },
   log?: LogEntry[],
   bind_setting?: { documents: SettingDocument[] }
 }

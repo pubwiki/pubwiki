@@ -18,7 +18,7 @@ Service:define():namespace("test"):name("ExecuteLuaCode")
         if not code or code == "" then
             return {
                 success = false,
-                error = "代码不能为空",
+                error = "Code cannot be empty",
             }
         end
         
@@ -48,7 +48,7 @@ Service:define():namespace("test"):name("ExecuteLuaCode")
             -- 编译代码
             local chunk, loadErr = load(code, "user_code", "t")
             if not chunk then
-                errorMsg = "代码编译失败: " .. (loadErr or "未知错误")
+                errorMsg = "Code compilation failed: " .. (loadErr or "unknown error")
                 success = false
                 return
             end
@@ -60,7 +60,7 @@ Service:define():namespace("test"):name("ExecuteLuaCode")
                 result = execResult
             else
                 success = false
-                errorMsg = "代码执行失败: " .. tostring(execResult)
+                errorMsg = "Code execution failed: " .. tostring(execResult)
             end
         end)
         
@@ -71,7 +71,7 @@ Service:define():namespace("test"):name("ExecuteLuaCode")
         if not ok then
             return {
                 success = false,
-                error = "执行过程异常: " .. tostring(err),
+                error = "Execution exception: " .. tostring(err),
                 output = #outputLines > 0 and table.concat(outputLines, "\n") or nil,
             }
         end

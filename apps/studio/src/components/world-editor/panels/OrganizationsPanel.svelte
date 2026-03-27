@@ -4,7 +4,7 @@
 	import { EntityCardGrid, EditModal, FormGroup, FormGrid } from '../shared';
 	import {
 		createDefaultOrganizationSnapshot,
-		type OrganizationSnapshot, type StatusEffect, type Territory, type SettingDocument, type LogEntry
+		type OrganizationSnapshot, type StatusEffect, type Territory, type SettingDocument, type LogEntry, type InteractionOption
 	} from '@pubwiki/world-editor';
 
 	const ctx = getWorldEditorContext();
@@ -15,7 +15,8 @@
 
 	type ModalState = { section: 'territory'; index: number }
 		| { section: 'status'; index: number }
-		| { section: 'document'; index: number };
+		| { section: 'document'; index: number }
+		| { section: 'interaction'; index: number };
 	let editModal: ModalState | null = $state(null);
 	let logInput = $state('');
 
@@ -70,6 +71,13 @@
 		editModal = { section: 'document', index: docs.length - 1 };
 	}
 
+	function addInteraction() {
+		if (!selected) return;
+		const opts = [...(selected.interaction?.options ?? []), { id: crypto.randomUUID(), title: '', instruction: '' }];
+		updateOrg(selected.organization_id, { interaction: { options: opts } });
+		editModal = { section: 'interaction', index: opts.length - 1 };
+	}
+
 	function deleteFromModal() {
 		if (!editModal || !selected) return;
 		const { section, index } = editModal;
@@ -82,6 +90,9 @@
 		} else if (section === 'document') {
 			const docs = (selected.bind_setting?.documents ?? []).filter((_: SettingDocument, i: number) => i !== index);
 			updateOrg(selected.organization_id, { bind_setting: { documents: docs } });
+		} else if (section === 'interaction') {
+			const opts = (selected.interaction?.options ?? []).filter((_: InteractionOption, i: number) => i !== index);
+			updateOrg(selected.organization_id, { interaction: { options: opts } });
 		}
 		editModal = null;
 	}
@@ -230,6 +241,29 @@
 				</div>
 				{/if}
 
+				<!-- Interactions (mini-cards) -->
+				{#if true}
+				{@const opts = selected.interaction?.options ?? []}
+				<div class="bento-card" style="grid-area: interactions;">
+					<div class="bento-list-header">
+						<h4 class="bento-title">Interactions ({opts.length})</h4>
+						<button class="add-btn" onclick={addInteraction}>+ {m.we_common_add()}</button>
+					</div>
+					{#if opts.length === 0}
+						<div class="bento-empty">{m.we_common_empty()}</div>
+					{:else}
+						<div class="mini-card-grid">
+							{#each opts as opt, i (i)}
+								<button class="mini-card" onclick={() => (editModal = { section: 'interaction', index: i })}>
+									<span class="mini-card-title">{opt.title || '(unnamed)'}</span>
+									<span class="mini-card-desc">{opt.instruction?.slice(0, 50) || ''}{(opt.instruction?.length ?? 0) > 50 ? '…' : ''}</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				{/if}
+
 				<!-- Log (inline) -->
 				{#if true}
 				{@const entries = selected.log ?? []}
@@ -346,6 +380,56 @@
 		{/if}
 	{/if}
 
+	<!-- Interaction Modal -->
+	{#if editModal.section === 'interaction'}
+		{#if true}
+		{@const opts = selected.interaction?.options ?? []}
+		{@const opt = opts[editModal.index]}
+		{#if opt}
+		<EditModal title="Interaction – {opt.title || '(unnamed)'}" size="normal" onClose={() => (editModal = null)}>
+			<FormGroup label="Title">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.title}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, title: e.currentTarget.value };
+						updateOrg(selected!.organization_id, { interaction: { options: updated } });
+					}} />
+			</FormGroup>
+			<FormGroup label="Usage">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.usage ?? ''}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, usage: e.currentTarget.value || undefined };
+						updateOrg(selected!.organization_id, { interaction: { options: updated } });
+					}} />
+			</FormGroup>
+			<FormGroup label="Instruction">
+				<textarea class="{INPUT_CLS} min-h-[80px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.instruction}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, instruction: e.currentTarget.value };
+						updateOrg(selected!.organization_id, { interaction: { options: updated } });
+					}}></textarea>
+			</FormGroup>
+			<FormGroup label="Memo">
+				<textarea class="{INPUT_CLS} min-h-[60px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.memo ?? ''}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, memo: e.currentTarget.value || undefined };
+						updateOrg(selected!.organization_id, { interaction: { options: updated } });
+					}}></textarea>
+			</FormGroup>
+			{#snippet footer()}
+				<button class="px-3 py-1.5 text-sm font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+					onclick={deleteFromModal}>
+					{m.we_common_delete()}
+				</button>
+			{/snippet}
+		</EditModal>
+		{/if}
+		{/if}
+	{/if}
+
 	<!-- Document Modal -->
 	{#if editModal.section === 'document'}
 		{#if true}
@@ -411,9 +495,10 @@
 		display: grid;
 		grid-template-columns: repeat(2, 1fr);
 		grid-template-areas:
-			"profile      territories"
-			"statuses     docs"
-			"log          log";
+			"profile        territories"
+			"statuses       docs"
+			"interactions   interactions"
+			"log            log";
 		gap: 12px;
 	}
 	.bento-card {

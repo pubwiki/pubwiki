@@ -4,7 +4,7 @@
 	import { EntityCardGrid, EditModal, FormGroup, FormGrid } from '../shared';
 	import {
 		createDefaultRegionSnapshot,
-		type RegionSnapshot, type RegionPath, type Location, type Metadata, type StatusEffect, type SettingDocument, type LogEntry
+		type RegionSnapshot, type RegionPath, type Location, type Metadata, type StatusEffect, type SettingDocument, type LogEntry, type InteractionOption
 	} from '@pubwiki/world-editor';
 
 	const ctx = getWorldEditorContext();
@@ -48,7 +48,8 @@
 		| { section: 'location'; index: number }
 		| { section: 'path'; index: number }
 		| { section: 'status'; index: number }
-		| { section: 'document'; index: number };
+		| { section: 'document'; index: number }
+		| { section: 'interaction'; index: number };
 
 	let editModal: ModalState | null = $state(null);
 	let logInput = $state('');
@@ -81,6 +82,13 @@
 		editModal = { section: 'document', index: docs.length - 1 };
 	}
 
+	function addInteraction() {
+		if (!selected) return;
+		const opts = [...(selected.interaction?.options ?? []), { id: crypto.randomUUID(), title: '', instruction: '' }];
+		updateRegion(selected.region_id, { interaction: { options: opts } });
+		editModal = { section: 'interaction', index: opts.length - 1 };
+	}
+
 	function deleteFromModal() {
 		if (!editModal || !selected) return;
 		const i = editModal.index;
@@ -93,6 +101,9 @@
 			updateRegion(id, { status_effects: (selected.status_effects ?? []).filter((_: StatusEffect, idx: number) => idx !== i) });
 		} else if (editModal.section === 'document') {
 			updateRegion(id, { bind_setting: { documents: (selected.bind_setting?.documents ?? []).filter((_: SettingDocument, idx: number) => idx !== i) } });
+		} else if (editModal.section === 'interaction') {
+			const opts = (selected.interaction?.options ?? []).filter((_: InteractionOption, idx: number) => idx !== i);
+			updateRegion(id, { interaction: { options: opts } });
 		}
 		editModal = null;
 	}
@@ -279,6 +290,29 @@
 						<span class="mini-card-desc">{doc.content.slice(0, 60)}{doc.content.length > 60 ? '…' : ''}</span>
 						{#if doc.static_priority}<span class="mini-card-meta">Priority: {doc.static_priority}</span>{/if}
 						{#if doc.condition}<span class="mini-card-meta">{m.we_document_condition()}: {doc.condition.slice(0, 40)}{doc.condition.length > 40 ? '…' : ''}</span>{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+				{/if}
+
+				<!-- Interactions (mini-cards) -->
+				{#if true}
+				{@const opts = selected.interaction?.options ?? []}
+				<div class="bento-card" style="grid-area: interactions;">
+					<div class="bento-list-header">
+						<h4 class="bento-title">Interactions ({opts.length})</h4>
+						<button class="add-btn" onclick={addInteraction}>+ {m.we_common_add()}</button>
+					</div>
+					{#if opts.length === 0}
+						<div class="bento-empty">{m.we_common_empty()}</div>
+					{:else}
+						<div class="mini-card-grid">
+							{#each opts as opt, i (i)}
+								<button class="mini-card" onclick={() => (editModal = { section: 'interaction', index: i })}>
+									<span class="mini-card-title">{opt.title || '(unnamed)'}</span>
+									<span class="mini-card-desc">{opt.instruction?.slice(0, 50) || ''}{(opt.instruction?.length ?? 0) > 50 ? '…' : ''}</span>
 								</button>
 							{/each}
 						</div>
@@ -474,6 +508,56 @@
 		{/if}
 	{/if}
 
+	<!-- Interaction Modal -->
+	{#if editModal.section === 'interaction'}
+		{#if true}
+		{@const opts = selected.interaction?.options ?? []}
+		{@const opt = opts[editModal.index]}
+		{#if opt}
+		<EditModal title="Interaction – {opt.title || '(unnamed)'}" size="normal" onClose={() => (editModal = null)}>
+			<FormGroup label="Title">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.title}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, title: e.currentTarget.value };
+						updateRegion(selected!.region_id, { interaction: { options: updated } });
+					}} />
+			</FormGroup>
+			<FormGroup label="Usage">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.usage ?? ''}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, usage: e.currentTarget.value || undefined };
+						updateRegion(selected!.region_id, { interaction: { options: updated } });
+					}} />
+			</FormGroup>
+			<FormGroup label="Instruction">
+				<textarea class="{INPUT_CLS} min-h-[80px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.instruction}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, instruction: e.currentTarget.value };
+						updateRegion(selected!.region_id, { interaction: { options: updated } });
+					}}></textarea>
+			</FormGroup>
+			<FormGroup label="Memo">
+				<textarea class="{INPUT_CLS} min-h-[60px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.memo ?? ''}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, memo: e.currentTarget.value || undefined };
+						updateRegion(selected!.region_id, { interaction: { options: updated } });
+					}}></textarea>
+			</FormGroup>
+			{#snippet footer()}
+				<button class="px-3 py-1.5 text-sm font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+					onclick={deleteFromModal}>
+					{m.we_common_delete()}
+				</button>
+			{/snippet}
+		</EditModal>
+		{/if}
+		{/if}
+	{/if}
+
 	<!-- Document Modal -->
 	{#if editModal.section === 'document'}
 		{#if true}
@@ -539,9 +623,10 @@
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
 		grid-template-areas:
-			"profile    locations   paths"
-			"metadata   statuses    docs"
-			"log        log         log";
+			"profile    locations    paths"
+			"metadata   statuses     docs"
+			"interactions interactions interactions"
+			"log        log          log";
 		gap: 12px;
 	}
 	.bento-card {

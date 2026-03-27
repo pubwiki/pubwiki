@@ -149,10 +149,12 @@ const InventoryItemSchema = z.object({
   details: z.array(z.string()),
 })
 
-const RelationshipEntrySchema = z.object({
-  target_creature_id: z.string().min(1),
-  name: z.string().min(1),
-  value: z.number(),
+const InteractionOptionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  usage: z.string().optional(),
+  instruction: z.string().min(1),
+  memo: z.string().optional(),
 })
 
 const StatusEffectSchema = z.object({
@@ -181,9 +183,9 @@ const CreatureEntitySchema = z.object({
       items: z.array(InventoryItemSchema),
     })
     .optional(),
-  Relationship: z
+  Interaction: z
     .object({
-      relationships: z.array(RelationshipEntrySchema),
+      options: z.array(InteractionOptionSchema),
     })
     .optional(),
   StatusEffects: z
@@ -486,19 +488,6 @@ function validateCreaturesSemantics(
       }
     }
 
-    // Validate Relationship target IDs
-    if (creature.Relationship) {
-      const rel = creature.Relationship as {
-        relationships: Array<{ target_creature_id: string }>
-      }
-      for (const r of rel.relationships || []) {
-        if (!allKnownCreatureIds.has(r.target_creature_id)) {
-          warnings.push(
-            `Character "${cId}": relationship target "${r.target_creature_id}" is not in known character list`,
-          )
-        }
-      }
-    }
   }
 
   return { errors, warnings }

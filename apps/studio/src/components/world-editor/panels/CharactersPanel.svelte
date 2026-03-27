@@ -4,7 +4,7 @@
 	import { FormGroup, FormGrid, EditModal, EntityCardGrid } from '../shared';
 	import {
 		createDefaultCreatureSnapshot,
-		type CreatureSnapshot, type InventoryItem, type Relationship,
+		type CreatureSnapshot, type InventoryItem, type InteractionOption,
 		type StatusEffect, type SettingDocument, type LogEntry
 	} from '@pubwiki/world-editor';
 
@@ -71,12 +71,12 @@
 		editModal = { section: 'status', index: effects.length - 1 };
 	}
 
-	function addRel() {
+	function addInteraction() {
 		if (!selected) return;
-		const newRel: Relationship = { target_id: '', name: '' };
-		const rels = [...(selected.relationships ?? []), newRel];
-		updateCreature(selected.creature_id, { relationships: rels });
-		editModal = { section: 'relationship', index: rels.length - 1 };
+		const newOpt: InteractionOption = { id: crypto.randomUUID(), title: '', instruction: '' };
+		const opts = [...(selected.interaction?.options ?? []), newOpt];
+		updateCreature(selected.creature_id, { interaction: { options: opts } });
+		editModal = { section: 'interaction', index: opts.length - 1 };
 	}
 
 	function addDoc() {
@@ -95,8 +95,9 @@
 			updateCreature(id, { inventory: (selected.inventory ?? []).filter((_: InventoryItem, idx: number) => idx !== i) });
 		} else if (editModal.section === 'status') {
 			updateCreature(id, { status_effects: (selected.status_effects ?? []).filter((_: StatusEffect, idx: number) => idx !== i) });
-		} else if (editModal.section === 'relationship') {
-			updateCreature(id, { relationships: (selected.relationships ?? []).filter((_: Relationship, idx: number) => idx !== i) });
+		} else if (editModal.section === 'interaction') {
+			const opts = (selected.interaction?.options ?? []).filter((_: InteractionOption, idx: number) => idx !== i);
+			updateCreature(id, { interaction: { options: opts } });
 		} else if (editModal.section === 'document') {
 			updateCreature(id, { bind_setting: { documents: (selected.bind_setting?.documents ?? []).filter((_: SettingDocument, idx: number) => idx !== i) } });
 		}
@@ -353,25 +354,22 @@
 				</div>
 				{/if}
 
-				<!-- Relationships -->
+				<!-- Interactions -->
 				{#if true}
-				{@const rels = selected.relationships ?? []}
-				<div class="bento-card" style="grid-area: relationships;">
+				{@const opts = selected.interaction?.options ?? []}
+				<div class="bento-card" style="grid-area: interactions;">
 					<div class="bento-list-header">
-						<h4 class="bento-title">{m.we_creature_relationships()} ({rels.length})</h4>
-						<button class="add-btn" onclick={addRel}>+ {m.we_common_add()}</button>
+						<h4 class="bento-title">Interactions ({opts.length})</h4>
+						<button class="add-btn" onclick={addInteraction}>+ {m.we_common_add()}</button>
 					</div>
-					{#if rels.length === 0}
+					{#if opts.length === 0}
 						<div class="bento-empty">{m.we_common_empty()}</div>
 					{:else}
 						<div class="mini-card-grid">
-							{#each rels as rel, i (i)}
-								<button class="mini-card" onclick={() => (editModal = { section: 'relationship', index: i })}>
-									{#if true}
-									{@const targetName = creatures.find(c => c.creature_id === rel.target_id)?.creature.name}
-									<span class="mini-card-title">{rel.name || '(unnamed)'}</span>
-									<span class="mini-card-meta">{(targetName ?? rel.target_id) || '?'}{rel.value != null ? ` · ${rel.value}` : ''}</span>
-									{/if}
+							{#each opts as opt, i (i)}
+								<button class="mini-card" onclick={() => (editModal = { section: 'interaction', index: i })}>
+									<span class="mini-card-title">{opt.title || '(unnamed)'}</span>
+									<span class="mini-card-meta">{opt.instruction?.substring(0, 40) || ''}{opt.instruction?.length > 40 ? '...' : ''}</span>
 								</button>
 							{/each}
 						</div>
@@ -516,48 +514,43 @@
 		{/if}
 	{/if}
 
-	<!-- Relationship Modal -->
-	{#if editModal.section === 'relationship'}
+	<!-- Interaction Modal -->
+	{#if editModal.section === 'interaction'}
 		{#if true}
-		{@const rels = selected.relationships ?? []}
-		{@const rel = rels[editModal.index]}
-		{#if rel}
-		<EditModal title="{m.we_creature_relationships()} – {rel.name || '(unnamed)'}" size="normal" onClose={() => (editModal = null)}>
-			<FormGroup label={m.we_creature_rel_target()}>
-				<select class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
-					value={rel.target_id}
-					onchange={(e) => {
-						const updated = [...rels]; updated[editModal!.index] = { ...rel, target_id: e.currentTarget.value };
-						updateCreature(selected!.creature_id, { relationships: updated });
-					}}>
-					<option value="">—</option>
-					{#each creatures.filter((c) => c.creature_id !== selected!.creature_id) as other}
-						<option value={other.creature_id}>{other.creature.name || other.creature_id}</option>
-					{/each}
-				</select>
-			</FormGroup>
-			<FormGroup label={m.we_creature_rel_name()}>
+		{@const opts = selected.interaction?.options ?? []}
+		{@const opt = opts[editModal.index]}
+		{#if opt}
+		<EditModal title="Interaction – {opt.title || '(unnamed)'}" size="normal" onClose={() => (editModal = null)}>
+			<FormGroup label="Title">
 				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
-					value={rel.name}
+					value={opt.title}
 					oninput={(e) => {
-						const updated = [...rels]; updated[editModal!.index] = { ...rel, name: e.currentTarget.value };
-						updateCreature(selected!.creature_id, { relationships: updated });
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, title: e.currentTarget.value };
+						updateCreature(selected!.creature_id, { interaction: { options: updated } });
 					}} />
 			</FormGroup>
-			<FormGroup label={m.we_creature_rel_value()}>
-				<input type="number" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
-					value={rel.value ?? 0}
+			<FormGroup label="Usage">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.usage ?? ''}
 					oninput={(e) => {
-						const updated = [...rels]; updated[editModal!.index] = { ...rel, value: Number(e.currentTarget.value) };
-						updateCreature(selected!.creature_id, { relationships: updated });
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, usage: e.currentTarget.value || undefined };
+						updateCreature(selected!.creature_id, { interaction: { options: updated } });
 					}} />
 			</FormGroup>
-			<FormGroup label="Description">
+			<FormGroup label="Instruction">
+				<textarea class="{INPUT_CLS} min-h-[80px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.instruction}
+					oninput={(e) => {
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, instruction: e.currentTarget.value };
+						updateCreature(selected!.creature_id, { interaction: { options: updated } });
+					}}></textarea>
+			</FormGroup>
+			<FormGroup label="Memo">
 				<textarea class="{INPUT_CLS} min-h-[60px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
-					value={rel.description ?? ''}
+					value={opt.memo ?? ''}
 					oninput={(e) => {
-						const updated = [...rels]; updated[editModal!.index] = { ...rel, description: e.currentTarget.value || undefined };
-						updateCreature(selected!.creature_id, { relationships: updated });
+						const updated = [...opts]; updated[editModal!.index] = { ...opt, memo: e.currentTarget.value || undefined };
+						updateCreature(selected!.creature_id, { interaction: { options: updated } });
 					}}></textarea>
 			</FormGroup>
 			{#snippet footer()}
@@ -638,7 +631,7 @@
 		grid-template-areas:
 			"basic      appearance  profile"
 			"location   statuses    docs"
-			"inventory  relationships relationships"
+			"inventory  interactions interactions"
 			"log        log         log";
 		gap: 12px;
 	}

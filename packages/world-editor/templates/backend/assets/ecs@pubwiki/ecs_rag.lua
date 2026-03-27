@@ -20,9 +20,9 @@ ServiceRegistry:definePure()
         
         table.insert(resources, {
             path = {"ComponentTypes"},
-            content = "组件类型定义文档",
+            content = "Component type definition document",
             metadata = {
-                description = "所有已注册的组件类型及其数据结构说明",
+                description = "All registered component types and their data structure specifications",
                 priority = 100,
             }
         })
@@ -48,10 +48,10 @@ ServiceRegistry:definePure()
             
             -- 组合组件信息
             local componentDoc = string.format(
-                "【组件：%s (%s)】\n描述：%s\n\n数据结构：\n%s",
+                "[Component: %s (%s)]\nDescription: %s\n\nData Structure:\n%s",
                 componentType.name or componentKey,
                 componentKey,
-                componentType.description or "无描述",
+                componentType.description or "No description",
                 typeDoc
             )
             
@@ -61,7 +61,7 @@ ServiceRegistry:definePure()
                 metadata = {
                     componentKey = componentKey,
                     componentName = componentType.name or componentKey,
-                    description = "组件类型定义：" .. (componentType.name or componentKey),
+                    description = "Component type definition: " .. (componentType.name or componentKey),
                     priority = 90,
                 }
             })
@@ -102,9 +102,9 @@ ServiceRegistry:definePure()
             
             table.insert(resources, {
                 path = {"Entities", tostring(entityId)},
-                content = "拥有组件: " .. table.concat(componentKeys, ", "),
+                content = "Has components: " .. table.concat(componentKeys, ", "),
                 metadata = {
-                    description = "实体 ID：" .. tostring(entityId),
+                    description = "Entity ID: " .. tostring(entityId),
                     priority = 40,
                 }
             })
@@ -126,7 +126,7 @@ ServiceRegistry:definePure()
                 
                 -- 构建资源内容
                 local content = string.format(
-                    "【%s】\n%s",
+                    "[%s]\n%s",
                     componentType.name or componentKey,
                     serializedData
                 )
@@ -138,7 +138,7 @@ ServiceRegistry:definePure()
                         entityId = entityId,
                         componentKey = componentKey,
                         componentName = componentType.name or componentKey,
-                        description = string.format("实体 %s 的 %s 组件数据", entityId, componentType.name or componentKey),
+                        description = string.format("Entity %s %s component data", entityId, componentType.name or componentKey),
                         priority = 30,
                     }
                 })

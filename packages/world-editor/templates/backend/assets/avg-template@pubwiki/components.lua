@@ -87,15 +87,6 @@ ComponentTypes.AttrValueOutput = Type.Object({
 	error = Type.Optional(Type.String),
 })
 
--- 关系查询输出
-ComponentTypes.RelationshipQueryOutput = Type.Object({
-	success = Type.Bool,
-	has_relationship = Type.Bool,
-	name = Type.Optional(Type.String),
-	value = Type.Optional(Type.Int),
-	error = Type.Optional(Type.String),
-})
-
 -- 位置查询输出
 ComponentTypes.LocationQueryOutput = Type.Object({
 	success = Type.Bool,
@@ -170,6 +161,20 @@ ComponentTypes.DirectorNotes = Type.Object({
 	stage_goal = Type.Optional(Type.String):desc("当前游戏阶段的叙事目标和节奏控制，供剧情生成参考"),
 })
 
+ComponentTypes.EventEntry = Type.Object({
+	event_id = Type.String:desc("事件唯一标识，命名约定：YYYY_MM_DD_ShortDesc"),
+	title = Type.String:desc("事件标题"),
+	summary = Type.String:desc("事件摘要，简要描述事件的关键内容"),
+	content = Type.String:desc("事件详细内容"),
+	related_entities = Type.Optional(Type.Array(Type.String)):desc("相关实体ID列表，如 creature_id, region_id 等"),
+	created_at = Type.Optional(Type.String):desc("创建时间"),
+	updated_at = Type.Optional(Type.String):desc("最后更新时间"),
+})
+
+ComponentTypes.Events = Type.Object({
+	events = Type.Array(ComponentTypes.EventEntry):desc("剧情事件列表"),
+})
+
 registerComponent({
 	key = "Metadata",
 	name = "元数据",
@@ -196,6 +201,13 @@ registerComponent({
 	name = "导演笔记",
 	description = "导演笔记与标记，用于记录剧情总结、走向建议和关键事件开关。",
 	properties = ComponentTypes.DirectorNotes
+})
+
+registerComponent({
+	key = "Events",
+	name = "剧情事件",
+	description = "世界级剧情事件列表，记录所有已发生的重要情节事件。与设定文档不同，事件不绑定单个实体。",
+	properties = ComponentTypes.Events
 })
 
 -- ============ 组织系统 ============
@@ -345,26 +357,11 @@ ComponentTypes.Inventory = Type.Object({
 	})):desc("物品列表"),
 })
 
-ComponentTypes.Relationship = Type.Object({
-	relationships = Type.Array(Type.Object({
-		target_creature_id = Type.String:desc("目标生物ID"),
-		name = Type.String:desc("关系名称"),
-		value = Type.Int:desc("关系值/好感度，10代表该关系非常浅薄，50代表该关系尚可，100代表该关系非常强烈"),
-	})):desc("关系列表"),
-})
-
 registerComponent({
 	key = "Inventory",
 	name = "背包",
 	description = "携带的物品列表（物品本身不作为独立实体）。",
 	properties = ComponentTypes.Inventory
-})
-
-registerComponent({
-	key = "Relationship",
-	name = "生物和生物之间的关系",
-	description = "任何生物都会持有的组件，表明ta的视角下，和其他目标生物的关系。",
-	properties = ComponentTypes.Relationship
 })
 
 -- ============ 玩家状态 ============
@@ -395,6 +392,26 @@ registerComponent({
 
 -- ============ 填充快照类型（组件定义完成后） ============
 
+-- ============ 交互选项 ============
+ComponentTypes.InteractionOption = Type.Object({
+	id = Type.String:desc("交互选项唯一标识符"),
+	title = Type.String:desc("交互选项标题，用于在UI中展示"),
+	usage = Type.Optional(Type.String):desc("交互选项的使用说明，面向玩家展示该选项的功能和用法"),
+	instruction = Type.String:desc("交互选项的指令内容，描述该选项触发的行为"),
+	memo = Type.Optional(Type.String):desc("交互选项的备忘录，存储可变数据（如商店库存、价格、状态等），区别于 instruction（静态规则不可变）"),
+})
+
+ComponentTypes.Interaction = Type.Object({
+	options = Type.Array(ComponentTypes.InteractionOption):desc("交互选项列表"),
+})
+
+-- 基础交互选项（World 级，为所有同类实体提供默认交互）
+ComponentTypes.BaseInteraction = Type.Object({
+	creature_options = Type.Array(ComponentTypes.InteractionOption):desc("所有NPC生物实体默认拥有的基础交互选项（玩家角色除外）"),
+	region_options = Type.Array(ComponentTypes.InteractionOption):desc("所有地域实体默认拥有的基础交互选项"),
+	organization_options = Type.Array(ComponentTypes.InteractionOption):desc("所有组织实体默认拥有的基础交互选项"),
+})
+
 -- 角色实体快照
 ComponentTypes.CreatureSnapshot = Type.Object({
 	entity_id = Type.Int,
@@ -402,11 +419,11 @@ ComponentTypes.CreatureSnapshot = Type.Object({
 	LocationRef = Type.Optional(ComponentTypes.LocationRef),
 	Inventory = Type.Optional(ComponentTypes.Inventory),
 	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
-	Relationship = Type.Optional(ComponentTypes.Relationship),
 	Log = Type.Optional(ComponentTypes.Log),
 	IsPlayer = Type.Optional(ComponentTypes.IsPlayer),
 	BindSetting = Type.Optional(ComponentTypes.BindSetting),
 	CustomComponents = Type.Optional(ComponentTypes.CustomComponents),
+	Interaction = Type.Optional(ComponentTypes.Interaction),
 })
 
 -- 世界实体快照
@@ -418,6 +435,9 @@ ComponentTypes.WorldSnapshot = Type.Object({
 	CustomComponentRegistry = Type.Optional(ComponentTypes.CustomComponentRegistry),
 	Log = Type.Optional(ComponentTypes.Log),
 	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	Events = Type.Optional(ComponentTypes.Events),
+	Interaction = Type.Optional(ComponentTypes.Interaction),
+	BaseInteraction = Type.Optional(ComponentTypes.BaseInteraction),
 })
 
 -- 地域实体快照
@@ -427,6 +447,7 @@ ComponentTypes.RegionSnapshot = Type.Object({
 	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
 	Log = Type.Optional(ComponentTypes.Log),
 	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	Interaction = Type.Optional(ComponentTypes.Interaction),
 })
 
 -- 组织实体快照
@@ -436,6 +457,7 @@ ComponentTypes.OrganizationSnapshot = Type.Object({
 	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
 	Log = Type.Optional(ComponentTypes.Log),
 	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	Interaction = Type.Optional(ComponentTypes.Interaction),
 })
 
 -- ============ 实体查询输出类型 ============
@@ -449,11 +471,11 @@ ComponentTypes.PlayerEntityOutput = Type.Object({
 	LocationRef = Type.Optional(ComponentTypes.LocationRef),
 	Inventory = Type.Optional(ComponentTypes.Inventory),
 	StatusEffects = Type.Optional(ComponentTypes.StatusEffects),
-	Relationship = Type.Optional(ComponentTypes.Relationship),
 	Log = Type.Optional(ComponentTypes.Log),
 	IsPlayer = Type.Optional(ComponentTypes.IsPlayer),
 	BindSetting = Type.Optional(ComponentTypes.BindSetting),
 	CustomComponents = Type.Optional(ComponentTypes.CustomComponents),
+	Interaction = Type.Optional(ComponentTypes.Interaction),
 	error = Type.Optional(Type.String),
 })
 
@@ -476,6 +498,8 @@ ComponentTypes.WorldEntityOutput = Type.Object({
 	CustomComponentRegistry = Type.Optional(ComponentTypes.CustomComponentRegistry),
 	Log = Type.Optional(ComponentTypes.Log),
 	BindSetting = Type.Optional(ComponentTypes.BindSetting),
+	Events = Type.Optional(ComponentTypes.Events),
+	Interaction = Type.Optional(ComponentTypes.Interaction),
 	error = Type.Optional(Type.String),
 })
 
@@ -501,8 +525,42 @@ registerComponent({
 	properties = ComponentTypes.BindSetting
 })
 
+
+registerComponent({
+	key = "Interaction",
+	name = "交互选项",
+	description = "实体的可交互选项列表，定义玩家可对该实体执行的交互操作。所有实体类型（角色、地域、组织、世界）都可持有此组件。",
+	properties = ComponentTypes.Interaction
+})
+
+registerComponent({
+	key = "BaseInteraction",
+	name = "基础交互选项",
+	description = "世界级基础交互选项。按实体类型定义所有同类实体默认拥有的交互选项。仅 World 实体持有。",
+	properties = ComponentTypes.BaseInteraction
+})
+
 ComponentTypes.AppInfo = Type.Object({
 	publish_type = Type.Optional(Type.String):desc("发布类型，EDITOR|INK|TEST|CUSTOM, 不填则为EDITOR"),
+})
+
+-- ============ 开局选择类型 ============
+
+ComponentTypes.GameInitChoiceItem = Type.Object({
+	id = Type.String:desc("选项唯一标识符"),
+	name = Type.String:desc("选项显示名称"),
+	description = Type.String:desc("选项描述"),
+	player_creature_id = Type.String:desc("选择后作为玩家角色的 creature_id"),
+	exclude_creature_ids = Type.Optional(Type.Array(Type.String)):desc("选择后需要删除的角色 creature_id 列表"),
+	exclude_region_ids = Type.Optional(Type.Array(Type.String)):desc("选择后需要删除的地域 region_id 列表"),
+	exclude_organization_ids = Type.Optional(Type.Array(Type.String)):desc("选择后需要删除的组织 organization_id 列表"),
+	background_story = Type.Optional(Type.String):desc("选择后覆盖的背景故事（不填则使用 GameInitialStory.background）"),
+	start_story = Type.Optional(Type.String):desc("选择后覆盖的开场故事（不填则使用 GameInitialStory.start_story）"),
+})
+
+ComponentTypes.GameInitChoice = Type.Object({
+	enable = Type.Bool:desc("是否启用开局选择，选择完成后自动置为 false"),
+	choices = Type.Array(ComponentTypes.GameInitChoiceItem):desc("可选的开局角色/路线列表"),
 })
 
 -- ============ 存档数据类型 ============
@@ -525,6 +583,7 @@ ComponentTypes.StateDataType = Type.Object({
 			start_story = Type.String:desc("游戏开始时的故事片段"),
 		}
 	)):desc("游戏初始故事背景"),
+	GameInitChoice = Type.Optional(ComponentTypes.GameInitChoice):desc("开局角色/路线选择配置"),
 	SystemPrompts = Type.Optional(Type.Array(Type.Object({
 		id = Type.String:desc("提示词ID"),
 		content = Type.String:desc("提示词内容"),

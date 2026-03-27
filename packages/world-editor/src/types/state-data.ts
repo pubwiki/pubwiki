@@ -110,6 +110,43 @@ export interface DirectorNotes {
   stage_goal?: string | null
 }
 
+/** A story event entry */
+export interface EventEntry {
+  event_id: string
+  title: string
+  summary: string
+  content: string
+  related_entities?: string[]
+  created_at?: string
+  updated_at?: string
+}
+
+/** Component: world-level story events */
+export interface Events {
+  events: EventEntry[]
+}
+
+/** An interaction option for an entity */
+export interface InteractionOption {
+  id: string
+  title: string
+  usage?: string
+  instruction: string
+  memo?: string
+}
+
+/** Component: interaction options for an entity */
+export interface Interaction {
+  options: InteractionOption[]
+}
+
+/** Component: base interaction options (World-level, provides defaults per entity type) */
+export interface BaseInteraction {
+  creature_options: InteractionOption[]
+  region_options: InteractionOption[]
+  organization_options: InteractionOption[]
+}
+
 /** World-level snapshot (always required) */
 export interface WorldSnapshot {
   entity_id: string
@@ -126,6 +163,12 @@ export interface WorldSnapshot {
   // Auxiliary
   log?: LogEntry[]
   bind_setting?: BindSetting
+  /** World-level story events */
+  events?: Events
+  /** Per-entity interaction options for this world */
+  interaction?: Interaction
+  /** Base interaction options applied to all entities by type */
+  base_interaction?: BaseInteraction
 }
 
 // ---------------------------------------------------------------------------
@@ -155,14 +198,6 @@ export interface CreatureComponent {
   known_infos?: string[]
   goal?: string
   personality?: string
-  description?: string
-}
-
-/** A relationship to another creature */
-export interface Relationship {
-  target_id: string
-  name: string
-  value?: number
   description?: string
 }
 
@@ -207,9 +242,10 @@ export interface CreatureSnapshot {
   inventory?: InventoryItem[]
   status_effects?: StatusEffect[]
   custom_components?: CustomComponents
-  relationships?: Relationship[]
   bind_setting?: BindSetting
   log?: LogEntry[]
+  /** Interaction options for this creature */
+  interaction?: Interaction
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +291,8 @@ export interface RegionSnapshot {
   status_effects?: StatusEffect[]
   bind_setting?: BindSetting
   log?: LogEntry[]
+  /** Interaction options for this region */
+  interaction?: Interaction
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +324,8 @@ export interface OrganizationSnapshot {
   status_effects?: StatusEffect[]
   bind_setting?: BindSetting
   log?: LogEntry[]
+  /** Interaction options for this organization */
+  interaction?: Interaction
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +362,25 @@ export interface AppInfo {
   publish_type?: 'EDITOR' | 'NOVEL' | 'INK' | 'TEST' | 'CUSTOM' | 'GALGAME'
 }
 
+/** A single choice item for game init selection */
+export interface GameInitChoiceItem {
+  id: string
+  name: string
+  description: string
+  player_creature_id: string
+  exclude_creature_ids?: string[]
+  exclude_region_ids?: string[]
+  exclude_organization_ids?: string[]
+  background_story?: string
+  start_story?: string
+}
+
+/** Game init choice configuration */
+export interface GameInitChoice {
+  enable: boolean
+  choices: GameInitChoiceItem[]
+}
+
 // ---------------------------------------------------------------------------
 // StateData (Root)
 // ---------------------------------------------------------------------------
@@ -344,6 +403,8 @@ export interface StateData {
   GameWikiEntry?: GameWikiEntry
   /** Application metadata */
   AppInfo?: AppInfo
+  /** Game init choice configuration */
+  GameInitChoice?: GameInitChoice
   /** Save format version marker */
   _save_version?: 'v2'
 }

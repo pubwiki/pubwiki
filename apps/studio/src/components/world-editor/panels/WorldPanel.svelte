@@ -2,7 +2,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { getWorldEditorContext } from '../state/context';
 	import { EditModal, FormGroup, FormGrid, TypeSchemaEditor } from '../shared';
-	import type { WorldSnapshot, CreatureAttrField, CustomComponentDef, SettingDocument, LogEntry } from '@pubwiki/world-editor';
+	import type { WorldSnapshot, CreatureAttrField, CustomComponentDef, SettingDocument, LogEntry, EventEntry, InteractionOption } from '@pubwiki/world-editor';
 
 	const ctx = getWorldEditorContext();
 
@@ -12,10 +12,18 @@
 	let customComponents = $derived(world.custom_component_registry ?? []);
 	let documents = $derived(world.bind_setting?.documents ?? []);
 	let log = $derived(world.log ?? []);
+	let events = $derived(world.events?.events ?? []);
+	let interactions = $derived(world.interaction?.options ?? []);
+	let baseInteraction = $derived(world.base_interaction);
 
 	type ModalState = { section: 'registry'; index: number }
 		| { section: 'component'; index: number }
-		| { section: 'document'; index: number };
+		| { section: 'document'; index: number }
+		| { section: 'event'; index: number }
+		| { section: 'interaction'; index: number }
+		| { section: 'base_creature'; index: number }
+		| { section: 'base_region'; index: number }
+		| { section: 'base_org'; index: number };
 	let editModal: ModalState | null = $state(null);
 	let logInput = $state('');
 
@@ -45,6 +53,27 @@
 		editModal = { section: 'document', index: updated.length - 1 };
 	}
 
+	function addEvent() {
+		const updated = [...events, { event_id: `evt_${Date.now()}`, title: '', summary: '', content: '' }];
+		updateWorld({ events: { events: updated } });
+		editModal = { section: 'event', index: updated.length - 1 };
+	}
+
+	function addInteraction() {
+		const updated = [...interactions, { id: crypto.randomUUID(), title: '', instruction: '' }];
+		updateWorld({ interaction: { options: updated } });
+		editModal = { section: 'interaction', index: updated.length - 1 };
+	}
+
+	function addBaseInteractionOpt(type: 'creature' | 'region' | 'org') {
+		const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+		const key = type === 'creature' ? 'creature_options' : type === 'region' ? 'region_options' : 'organization_options';
+		const section = type === 'creature' ? 'base_creature' as const : type === 'region' ? 'base_region' as const : 'base_org' as const;
+		const updated = [...(base[key] ?? []), { id: crypto.randomUUID(), title: '', instruction: '' }];
+		updateWorld({ base_interaction: { ...base, [key]: updated } });
+		editModal = { section, index: updated.length - 1 };
+	}
+
 	function deleteFromModal() {
 		if (!editModal) return;
 		const { section, index } = editModal;
@@ -54,6 +83,19 @@
 			updateWorld({ custom_component_registry: customComponents.filter((_: CustomComponentDef, i: number) => i !== index) });
 		} else if (section === 'document') {
 			updateWorld({ bind_setting: { documents: documents.filter((_: SettingDocument, i: number) => i !== index) } });
+		} else if (section === 'event') {
+			updateWorld({ events: { events: events.filter((_: EventEntry, i: number) => i !== index) } });
+		} else if (section === 'interaction') {
+			updateWorld({ interaction: { options: interactions.filter((_: InteractionOption, i: number) => i !== index) } });
+		} else if (section === 'base_creature') {
+			const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+			updateWorld({ base_interaction: { ...base, creature_options: base.creature_options.filter((_: InteractionOption, i: number) => i !== index) } });
+		} else if (section === 'base_region') {
+			const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+			updateWorld({ base_interaction: { ...base, region_options: base.region_options.filter((_: InteractionOption, i: number) => i !== index) } });
+		} else if (section === 'base_org') {
+			const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+			updateWorld({ base_interaction: { ...base, organization_options: base.organization_options.filter((_: InteractionOption, i: number) => i !== index) } });
 		}
 		editModal = null;
 	}
@@ -250,6 +292,111 @@
 			{/if}
 		</div>
 
+		<!-- Events (mini-cards) -->
+		<div class="bento-card" style="grid-area: events;">
+			<div class="bento-list-header">
+				<h4 class="bento-title">Events ({events.length})</h4>
+				<button class="add-btn" onclick={addEvent}>+ {m.we_common_add()}</button>
+			</div>
+			{#if events.length === 0}
+				<div class="bento-empty">{m.we_common_empty()}</div>
+			{:else}
+				<div class="mini-card-grid">
+					{#each events as evt, i (i)}
+						<button class="mini-card" onclick={() => (editModal = { section: 'event', index: i })}>
+							<span class="mini-card-title">{evt.title || '(untitled)'}</span>
+							<span class="mini-card-desc">{evt.summary?.slice(0, 60) || ''}{(evt.summary?.length ?? 0) > 60 ? '…' : ''}</span>
+							<span class="mini-card-meta">{evt.event_id}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- World Interactions (mini-cards) -->
+		<div class="bento-card" style="grid-area: interactions;">
+			<div class="bento-list-header">
+				<h4 class="bento-title">Interactions ({interactions.length})</h4>
+				<button class="add-btn" onclick={addInteraction}>+ {m.we_common_add()}</button>
+			</div>
+			{#if interactions.length === 0}
+				<div class="bento-empty">{m.we_common_empty()}</div>
+			{:else}
+				<div class="mini-card-grid">
+					{#each interactions as opt, i (i)}
+						<button class="mini-card" onclick={() => (editModal = { section: 'interaction', index: i })}>
+							<span class="mini-card-title">{opt.title || '(unnamed)'}</span>
+							<span class="mini-card-desc">{opt.instruction?.slice(0, 50) || ''}{(opt.instruction?.length ?? 0) > 50 ? '…' : ''}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		<!-- Base Interactions -->
+		{#if true}
+		{@const baseCr = baseInteraction?.creature_options ?? []}
+		{@const baseRg = baseInteraction?.region_options ?? []}
+		{@const baseOg = baseInteraction?.organization_options ?? []}
+		<div class="bento-card" style="grid-area: base;">
+			<h4 class="bento-title">Base Interactions (defaults per entity type)</h4>
+			<!-- Creature defaults -->
+			<div class="mt-1">
+				<div class="bento-list-header">
+					<span class="text-xs font-semibold uppercase" style="color: var(--we-text-tertiary);">Creature ({baseCr.length})</span>
+					<button class="add-btn" onclick={() => addBaseInteractionOpt('creature')}>+ {m.we_common_add()}</button>
+				</div>
+				{#if baseCr.length === 0}
+					<div class="bento-empty" style="padding: 8px; font-size: 0.75rem;">{m.we_common_empty()}</div>
+				{:else}
+					<div class="mini-card-grid">
+						{#each baseCr as opt, i (i)}
+							<button class="mini-card" onclick={() => (editModal = { section: 'base_creature', index: i })}>
+								<span class="mini-card-title">{opt.title || '(unnamed)'}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+			<!-- Region defaults -->
+			<div class="mt-2">
+				<div class="bento-list-header">
+					<span class="text-xs font-semibold uppercase" style="color: var(--we-text-tertiary);">Region ({baseRg.length})</span>
+					<button class="add-btn" onclick={() => addBaseInteractionOpt('region')}>+ {m.we_common_add()}</button>
+				</div>
+				{#if baseRg.length === 0}
+					<div class="bento-empty" style="padding: 8px; font-size: 0.75rem;">{m.we_common_empty()}</div>
+				{:else}
+					<div class="mini-card-grid">
+						{#each baseRg as opt, i (i)}
+							<button class="mini-card" onclick={() => (editModal = { section: 'base_region', index: i })}>
+								<span class="mini-card-title">{opt.title || '(unnamed)'}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+			<!-- Organization defaults -->
+			<div class="mt-2">
+				<div class="bento-list-header">
+					<span class="text-xs font-semibold uppercase" style="color: var(--we-text-tertiary);">Organization ({baseOg.length})</span>
+					<button class="add-btn" onclick={() => addBaseInteractionOpt('org')}>+ {m.we_common_add()}</button>
+				</div>
+				{#if baseOg.length === 0}
+					<div class="bento-empty" style="padding: 8px; font-size: 0.75rem;">{m.we_common_empty()}</div>
+				{:else}
+					<div class="mini-card-grid">
+						{#each baseOg as opt, i (i)}
+							<button class="mini-card" onclick={() => (editModal = { section: 'base_org', index: i })}>
+								<span class="mini-card-title">{opt.title || '(unnamed)'}</span>
+							</button>
+						{/each}
+					</div>
+				{/if}
+			</div>
+		</div>
+		{/if}
+
 		<!-- Log (inline) -->
 		<div class="bento-card" style="grid-area: log;">
 			<h4 class="bento-title">{m.we_world_log()} ({log.length})</h4>
@@ -380,6 +527,134 @@
 		{/if}
 	{/if}
 
+	<!-- Event Modal -->
+	{#if editModal.section === 'event'}
+		{#if true}
+		{@const evt = events[editModal.index]}
+		{#if evt}
+		<EditModal title="Event – {evt.title || '(untitled)'}" size="wide" onClose={() => (editModal = null)}>
+			<FormGrid>
+				<FormGroup label="Event ID">
+					<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+						value={evt.event_id}
+						oninput={(e) => {
+							const updated = [...events]; updated[editModal!.index] = { ...evt, event_id: e.currentTarget.value };
+							updateWorld({ events: { events: updated } });
+						}} />
+				</FormGroup>
+				<FormGroup label="Title">
+					<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+						value={evt.title}
+						oninput={(e) => {
+							const updated = [...events]; updated[editModal!.index] = { ...evt, title: e.currentTarget.value };
+							updateWorld({ events: { events: updated } });
+						}} />
+				</FormGroup>
+			</FormGrid>
+			<FormGroup label="Summary">
+				<textarea class="{INPUT_CLS} min-h-[60px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={evt.summary}
+					oninput={(e) => {
+						const updated = [...events]; updated[editModal!.index] = { ...evt, summary: e.currentTarget.value };
+						updateWorld({ events: { events: updated } });
+					}}></textarea>
+			</FormGroup>
+			<FormGroup label="Content">
+				<textarea class="{INPUT_CLS} min-h-[150px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={evt.content}
+					oninput={(e) => {
+						const updated = [...events]; updated[editModal!.index] = { ...evt, content: e.currentTarget.value };
+						updateWorld({ events: { events: updated } });
+					}}></textarea>
+			</FormGroup>
+			{#snippet footer()}
+				<button class="px-3 py-1.5 text-sm font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+					onclick={deleteFromModal}>
+					{m.we_common_delete()}
+				</button>
+			{/snippet}
+		</EditModal>
+		{/if}
+		{/if}
+	{/if}
+
+	<!-- Interaction Modal (shared for world interaction + base interaction sub-types) -->
+	{#if editModal.section === 'interaction' || editModal.section === 'base_creature' || editModal.section === 'base_region' || editModal.section === 'base_org'}
+		{#if true}
+		{@const optsList = editModal.section === 'interaction' ? interactions
+			: editModal.section === 'base_creature' ? (baseInteraction?.creature_options ?? [])
+			: editModal.section === 'base_region' ? (baseInteraction?.region_options ?? [])
+			: (baseInteraction?.organization_options ?? [])}
+		{@const opt = optsList[editModal.index]}
+		{#if opt}
+		{@const sectionLabel = editModal.section === 'interaction' ? 'World Interaction'
+			: editModal.section === 'base_creature' ? 'Base Creature Interaction'
+			: editModal.section === 'base_region' ? 'Base Region Interaction'
+			: 'Base Organization Interaction'}
+		<EditModal title="{sectionLabel} – {opt.title || '(unnamed)'}" size="normal" onClose={() => (editModal = null)}>
+			<FormGroup label="Title">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.title}
+					oninput={(e) => {
+						const updated = [...optsList]; updated[editModal!.index] = { ...opt, title: e.currentTarget.value };
+						if (editModal!.section === 'interaction') updateWorld({ interaction: { options: updated } });
+						else {
+							const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+							const key = editModal!.section === 'base_creature' ? 'creature_options' : editModal!.section === 'base_region' ? 'region_options' : 'organization_options';
+							updateWorld({ base_interaction: { ...base, [key]: updated } });
+						}
+					}} />
+			</FormGroup>
+			<FormGroup label="Usage">
+				<input type="text" class={INPUT_CLS} style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.usage ?? ''}
+					oninput={(e) => {
+						const updated = [...optsList]; updated[editModal!.index] = { ...opt, usage: e.currentTarget.value || undefined };
+						if (editModal!.section === 'interaction') updateWorld({ interaction: { options: updated } });
+						else {
+							const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+							const key = editModal!.section === 'base_creature' ? 'creature_options' : editModal!.section === 'base_region' ? 'region_options' : 'organization_options';
+							updateWorld({ base_interaction: { ...base, [key]: updated } });
+						}
+					}} />
+			</FormGroup>
+			<FormGroup label="Instruction">
+				<textarea class="{INPUT_CLS} min-h-[80px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.instruction}
+					oninput={(e) => {
+						const updated = [...optsList]; updated[editModal!.index] = { ...opt, instruction: e.currentTarget.value };
+						if (editModal!.section === 'interaction') updateWorld({ interaction: { options: updated } });
+						else {
+							const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+							const key = editModal!.section === 'base_creature' ? 'creature_options' : editModal!.section === 'base_region' ? 'region_options' : 'organization_options';
+							updateWorld({ base_interaction: { ...base, [key]: updated } });
+						}
+					}}></textarea>
+			</FormGroup>
+			<FormGroup label="Memo">
+				<textarea class="{INPUT_CLS} min-h-[60px] resize-y" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={opt.memo ?? ''}
+					oninput={(e) => {
+						const updated = [...optsList]; updated[editModal!.index] = { ...opt, memo: e.currentTarget.value || undefined };
+						if (editModal!.section === 'interaction') updateWorld({ interaction: { options: updated } });
+						else {
+							const base = baseInteraction ?? { creature_options: [], region_options: [], organization_options: [] };
+							const key = editModal!.section === 'base_creature' ? 'creature_options' : editModal!.section === 'base_region' ? 'region_options' : 'organization_options';
+							updateWorld({ base_interaction: { ...base, [key]: updated } });
+						}
+					}}></textarea>
+			</FormGroup>
+			{#snippet footer()}
+				<button class="px-3 py-1.5 text-sm font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
+					onclick={deleteFromModal}>
+					{m.we_common_delete()}
+				</button>
+			{/snippet}
+		</EditModal>
+		{/if}
+		{/if}
+	{/if}
+
 	<!-- Document Modal -->
 	{#if editModal.section === 'document'}
 		{#if true}
@@ -444,9 +719,10 @@
 		display: grid;
 		grid-template-columns: repeat(3, 1fr);
 		grid-template-areas:
-			"time       director    director"
-			"registry   components  docs"
-			"log        log         log";
+			"time         director      director"
+			"registry     components    docs"
+			"events       interactions  base"
+			"log          log           log";
 		gap: 12px;
 	}
 	.bento-card {
