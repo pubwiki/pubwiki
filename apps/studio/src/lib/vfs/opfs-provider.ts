@@ -114,8 +114,9 @@ export class OpfsProvider {
   }
 
   private splitPath(path: string): string[] {
-    // Normalize: strip leading/trailing slashes, treat '.' as root
-    const normalized = path.replace(/^\/+|\/+$/g, '');
+    // Normalize: convert backslashes to forward slashes (Windows paths),
+    // strip leading/trailing slashes, treat '.' as root
+    const normalized = path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
     if (!normalized || normalized === '.') return [];
     return normalized.split('/').filter(s => s !== '.');
   }
