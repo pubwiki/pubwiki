@@ -895,7 +895,7 @@ Service:define()
     :desc("根据新剧情内容和状态变化列表，生成 Lua 代码在沙箱中执行来更新游戏状态和设定文档")
     :usage("根据新剧情内容和状态/设定变化列表，使用 LLM 生成 ServiceRegistry.call() Lua 代码并在沙箱中执行来更新游戏状态。通常与 CreativeWriting 配合使用，在生成剧情后自动更新。")
     :inputs(Type.Object({
-        new_event = Type.String:desc("新剧情内容"),
+        new_event = Type.String:desc("新剧情内容，即 CreativeWriting done 事件的 content 字段（step_2 创意内容的完整文本）"),
         state_changes = Type.Optional(Type.Object({
             related_creature_ids = Type.Optional(Type.Array(Type.String)):desc("相关角色ID列表"),
             related_region_ids = Type.Optional(Type.Array(Type.String)):desc("相关地域ID列表"),
@@ -905,11 +905,27 @@ Service:define()
                 suggestion = Type.String:desc("变更描述"),
             }))):desc("结构化服务调用描述列表（可选，Analyzer 会独立从剧情提取）"),
         })):desc("可选的状态变化提示，如不提供则 Analyzer 完全独立从剧情提取"),
-        setting_changes = Type.Optional(Type.Array(Type.Any)):desc("设定变化列表"),
-        event_changes = Type.Optional(Type.Array(Type.Any)):desc("事件变化列表"),
+        setting_changes = Type.Optional(Type.Array(Type.Object({
+            option = Type.String:desc("操作类型: 'create' | 'append' | 'update'"),
+            creature_id = Type.Optional(Type.String):desc("关联角色ID，绑定到角色实体的设定文档时提供"),
+            organization_id = Type.Optional(Type.String):desc("关联组织ID，绑定到组织实体的设定文档时提供"),
+            region_id = Type.Optional(Type.String):desc("关联地域ID，绑定到地域实体的设定文档时提供"),
+            doc_name = Type.String:desc("设定文档名称"),
+            suggestion = Type.String:desc("变更建议：create 时需包含 [CONDITION: xxx]；update 时描述修改内容和原因"),
+        }))):desc("设定文档变化列表，来自 CreativeWriting done 事件的 setting_changes 字段（step_3a_setting_update_recommands）"),
+        event_changes = Type.Optional(Type.Array(Type.Object({
+            option = Type.String:desc("操作类型: 'create' | 'append' | 'update'"),
+            event_id = Type.String:desc("事件唯一标识，命名约定：YYYY_MM_DD_ShortDesc"),
+            title = Type.Optional(Type.String):desc("事件标题，create 时提供"),
+            summary = Type.String:desc("事件摘要，简要描述事件关键内容"),
+            suggestion = Type.String:desc("变更建议，描述事件内容或修改原因"),
+            related_entities = Type.Optional(Type.Array(Type.String)):desc("相关实体ID列表，如 creature_id, region_id 等"),
+        }))):desc("事件变化列表，来自 CreativeWriting done 事件的 event_changes 字段（step_3b_event_recommands）"),
         new_entities = Type.Optional(Type.Array(Type.Object({
-            type = Type.String:desc("实体类型: creature/region/organization"),
-        }))):desc("Writer 提供的新实体定义，包含丰富的描述信息供 Analyzer 创建实体"),
+            type = Type.String:desc("实体类型: 'creature' | 'region' | 'organization'"),
+            name = Type.String:desc("实体名称"),
+            description = Type.String:desc("实体详细描述，包含外貌、性格、所在地点等丰富信息"),
+        }))):desc("新实体定义，来自 CreativeWriting done 事件的 new_entities 字段（step_3c_new_entities），包含丰富的描述信息供 Analyzer 创建实体"),
         director_notes = Type.Optional(Type.Object({
             notes = Type.Optional(Type.Array(Type.String)):desc("导演笔记列表"),
             flags = Type.Optional(Type.Array(Type.Object({
@@ -918,21 +934,35 @@ Service:define()
                 remark = Type.Optional(Type.String):desc("标记备注"),
             }))):desc("导演标记列表"),
             stage_goal = Type.Optional(Type.String):desc("阶段叙事目标"),
-        })):desc("导演笔记与标记，直接执行无需 LLM 转换"),
+        })):desc("来自 CreativeWriting done 事件的 director_notes 字段（step_4_director_notes），直接执行无需 LLM 转换"),
         collector_built_messages = Type.Optional(Type.Array(Type.Object({
-            role = Type.String:desc("消息角色"),
+            role = Type.String:desc("消息角色，如 'system' / 'user'"),
             content = Type.String:desc("消息内容"),
-        }))):desc("Collector 阶段构建的设定文档 premessages，包含游戏规则和设定文档，注入到 Analyzer LLM 上下文中"),
+        }))):desc("来自 CreativeWriting 流程中 Collector 阶段构建的 updater_messages（done 事件的 updater_messages 字段），包含游戏规则和设定文档，注入到 Analyzer LLM 上下文中"),
     }))
     :outputs(Type.Object({
-        success = Type.Bool:desc("是否成功"),
-        audit = Type.Optional(Type.String):desc("LLM的审计文本（检查过期状态、遗漏变更、物品消耗等）"),
-        outline = Type.Optional(Type.String):desc("LLM的简短概要（1-2句）"),
+        success = Type.Bool:desc("是否成功，所有调用均成功时为 true"),
+        audit = Type.Optional(Type.String):desc("LLM 的审计文本（检查过期状态、遗漏变更、物品消耗等）"),
+        outline = Type.Optional(Type.String):desc("LLM 的简短概要（1-2 句）"),
         summary = Type.Optional(Type.String):desc("面向用户的状态变更摘要，用剧情语言描述"),
-        calls = Type.Optional(Type.Array(Type.Object({}))):desc("原始调用数组"),
-        results = Type.Optional(Type.Array(Type.Object({}))):desc("每条调用的执行结果"),
-        error = Type.Optional(Type.String):desc("错误信息"),
-        raw_text = Type.Optional(Type.String):desc("LLM返回的原始文本输出"),
+        calls = Type.Optional(Type.Array(Type.Object({
+            service = Type.String:desc("服务名称"),
+            args = Type.Object({}):desc("调用参数"),
+        }))):desc("最终执行的调用数组（重试时为重试后的调用）"),
+        results = Type.Optional(Type.Array(Type.Object({
+            service = Type.String:desc("服务名称"),
+            success = Type.Bool:desc("该调用是否成功"),
+            error = Type.Optional(Type.String):desc("失败时的错误信息"),
+            args = Type.Object({}):desc("调用参数"),
+        }))):desc("每条调用的执行结果"),
+        error = Type.Optional(Type.String):desc("失败时的错误信息，格式：'N/M calls failed: details'"),
+        raw_text = Type.Optional(Type.String):desc("LLM 返回的原始 JSON 文本"),
+        first_attempt = Type.Optional(Type.Object({
+            calls = Type.Array(Type.Object({})):desc("首次尝试的调用数组"),
+            results = Type.Array(Type.Object({})):desc("首次尝试的执行结果"),
+            outline = Type.String:desc("首次尝试的概要"),
+            failCount = Type.Int:desc("首次尝试的失败数"),
+        })):desc("仅在首次执行有失败并触发重试时存在，包含首次尝试的完整调用和结果（用于调试）"),
     }))
     :impl(function(inputs)
         local new_event = inputs.new_event
