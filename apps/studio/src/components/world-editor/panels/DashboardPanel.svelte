@@ -1,9 +1,47 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
 	import { getWorldEditorContext } from '../state/context';
-	import { validateStateData } from '@pubwiki/world-editor';
+	import { validateStateData, type StateData } from '@pubwiki/world-editor';
 
 	const ctx = getWorldEditorContext();
+
+	let importStatus: { type: 'success' | 'error'; message: string } | null = $state(null);
+
+	function exportJson() {
+		const json = JSON.stringify(ctx.stateData, null, 2);
+		const blob = new Blob([json], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `world-state-${new Date().toISOString().slice(0, 10)}.json`;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	function importJson() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.json';
+		input.onchange = async () => {
+			const file = input.files?.[0];
+			if (!file) return;
+			try {
+				const text = await file.text();
+				const data = JSON.parse(text) as StateData;
+				if (!data.World) {
+					importStatus = { type: 'error', message: 'Invalid StateData: missing World field' };
+					return;
+				}
+				ctx.store.clear();
+				const triples = ctx.translator.stateDataToTriples(data);
+				ctx.store.batchInsert(triples);
+				importStatus = { type: 'success', message: `Imported successfully (${(ctx.stateData.Creatures?.length ?? 0)} creatures, ${(ctx.stateData.Regions?.length ?? 0)} regions, ${(ctx.stateData.Organizations?.length ?? 0)} orgs)` };
+			} catch (e) {
+				importStatus = { type: 'error', message: `Import failed: ${e instanceof Error ? e.message : String(e)}` };
+			}
+		};
+		input.click();
+	}
 
 	const stats = $derived({
 		creatures: ctx.stateData.Creatures?.length ?? 0,
@@ -130,6 +168,44 @@
 						<li><span class="font-mono">{error.path}</span>: {error.message}</li>
 					{/each}
 				</ul>
+			</div>
+		{/if}
+	</div>
+
+	<!-- Import / Export -->
+	<div class="mb-8">
+		<h3 class="text-sm font-semibold mb-3" style="color: var(--we-text-primary);">
+			Import / Export
+		</h3>
+		<div class="flex gap-3">
+			<button
+				class="flex items-center gap-2 px-4 py-2.5 rounded-md border-2 text-sm font-medium transition-all cursor-pointer hover:scale-[1.01]"
+				style="background: var(--we-bg-card); border-color: var(--we-border); color: var(--we-text-primary); box-shadow: var(--we-shadow-sm);"
+				onmouseenter={(e) => { e.currentTarget.style.borderColor = 'var(--we-accent-olive)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-md)'; }}
+				onmouseleave={(e) => { e.currentTarget.style.borderColor = 'var(--we-border)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-sm)'; }}
+				onclick={exportJson}
+			>
+				<svg class="w-4 h-4" style="color: var(--we-accent-olive);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>
+				</svg>
+				Export JSON
+			</button>
+			<button
+				class="flex items-center gap-2 px-4 py-2.5 rounded-md border-2 text-sm font-medium transition-all cursor-pointer hover:scale-[1.01]"
+				style="background: var(--we-bg-card); border-color: var(--we-border); color: var(--we-text-primary); box-shadow: var(--we-shadow-sm);"
+				onmouseenter={(e) => { e.currentTarget.style.borderColor = 'var(--we-accent-ochre)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-md)'; }}
+				onmouseleave={(e) => { e.currentTarget.style.borderColor = 'var(--we-border)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-sm)'; }}
+				onclick={importJson}
+			>
+				<svg class="w-4 h-4" style="color: var(--we-accent-ochre);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>
+				</svg>
+				Import JSON
+			</button>
+		</div>
+		{#if importStatus}
+			<div class="mt-3 px-3 py-2 rounded-md text-sm {importStatus.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}">
+				{importStatus.message}
 			</div>
 		{/if}
 	</div>

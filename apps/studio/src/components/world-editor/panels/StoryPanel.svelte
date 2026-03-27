@@ -65,26 +65,50 @@
 		<h2 class="font-serif font-bold text-xl" style="color: var(--we-text-primary);">{m.we_story_title()}</h2>
 	</div>
 
-	<!-- Background Story Card (full width, prominent) -->
-	<button
-		class="w-full text-left p-5 rounded-lg border-2 transition-all cursor-pointer hover:scale-[1.005]"
-		style="background: var(--we-bg-card); border-color: var(--we-border); box-shadow: var(--we-shadow-sm);"
-		onmouseenter={(e) => { e.currentTarget.style.borderColor = 'var(--we-border-hover)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-md)'; }}
-		onmouseleave={(e) => { e.currentTarget.style.borderColor = 'var(--we-border)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-sm)'; }}
-		onclick={() => (openSection = 'background')}
-	>
-		<div class="flex items-center gap-2 mb-3">
-			<svg class="w-4 h-4 shrink-0" style="color: var(--we-accent-ochre);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				{@html ICON.book}
-			</svg>
-			<span class="text-sm font-semibold" style="color: var(--we-text-primary);">{m.we_story_background()}</span>
-		</div>
-		{#if initialStory?.background}
-			<p class="text-sm leading-relaxed line-clamp-4" style="color: var(--we-text-secondary);">{initialStory.background}</p>
-		{:else}
-			<p class="text-sm italic" style="color: var(--we-text-tertiary);">{m.we_story_background_hint()}</p>
-		{/if}
-	</button>
+	<!-- Initial Story Cards (two columns) -->
+	<div class="grid grid-cols-2 gap-4">
+		<!-- Background Story -->
+		<button
+			class="w-full text-left p-5 rounded-lg border-2 transition-all cursor-pointer hover:scale-[1.005]"
+			style="background: var(--we-bg-card); border-color: var(--we-border); box-shadow: var(--we-shadow-sm);"
+			onmouseenter={(e) => { e.currentTarget.style.borderColor = 'var(--we-border-hover)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-md)'; }}
+			onmouseleave={(e) => { e.currentTarget.style.borderColor = 'var(--we-border)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-sm)'; }}
+			onclick={() => (openSection = 'background')}
+		>
+			<div class="flex items-center gap-2 mb-3">
+				<svg class="w-4 h-4 shrink-0" style="color: var(--we-accent-ochre);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					{@html ICON.book}
+				</svg>
+				<span class="text-sm font-semibold" style="color: var(--we-text-primary);">{m.we_story_background()}</span>
+			</div>
+			{#if initialStory?.background}
+				<p class="text-sm leading-relaxed line-clamp-4" style="color: var(--we-text-secondary);">{initialStory.background}</p>
+			{:else}
+				<p class="text-sm italic" style="color: var(--we-text-tertiary);">{m.we_story_background_hint()}</p>
+			{/if}
+		</button>
+
+		<!-- Start Story (Opening Scene) -->
+		<button
+			class="w-full text-left p-5 rounded-lg border-2 transition-all cursor-pointer hover:scale-[1.005]"
+			style="background: var(--we-bg-card); border-color: var(--we-border); box-shadow: var(--we-shadow-sm);"
+			onmouseenter={(e) => { e.currentTarget.style.borderColor = 'var(--we-border-hover)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-md)'; }}
+			onmouseleave={(e) => { e.currentTarget.style.borderColor = 'var(--we-border)'; e.currentTarget.style.boxShadow = 'var(--we-shadow-sm)'; }}
+			onclick={() => (openSection = 'background')}
+		>
+			<div class="flex items-center gap-2 mb-3">
+				<svg class="w-4 h-4 shrink-0" style="color: var(--we-accent-ochre);" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+					<path stroke-width="2" d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline stroke-width="2" points="14 2 14 8 20 8"/>
+				</svg>
+				<span class="text-sm font-semibold" style="color: var(--we-text-primary);">Start Story</span>
+			</div>
+			{#if initialStory?.start_story}
+				<p class="text-sm leading-relaxed line-clamp-4" style="color: var(--we-text-secondary);">{initialStory.start_story}</p>
+			{:else}
+				<p class="text-sm italic" style="color: var(--we-text-tertiary);">The opening scene or narration.</p>
+			{/if}
+		</button>
+	</div>
 
 	<!-- Story History Section -->
 	<div>
