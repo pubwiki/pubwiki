@@ -4,6 +4,7 @@ ServiceRegistry = Service
 Loader = require("./loader")
 Regex = require("./regex")
 require("./save")
+require("./subscribe")
 local ok, errors = Loader.load("/user/backend/assets")
 
 if not ok then
