@@ -9,7 +9,7 @@ import type { z } from 'zod'
 import type { MessageNode, ConversationSnapshot } from '../types/message'
 import type { ChatStreamEvent } from './pubchat'
 import type { Vfs } from '@pubwiki/vfs'
-import type { ToolRegistry } from '../llm/tools'
+import type { ToolRegistry, AfterExecutionHook } from '../llm/tools'
 
 /**
  * Chat result from non-streaming chat
@@ -33,6 +33,8 @@ export interface ToolRegistrationParams<T extends z.ZodTypeAny = z.ZodTypeAny> {
   schema: T
   /** Tool handler function - args type is inferred from schema */
   handler: (args: z.infer<T>) => Promise<unknown>
+  /** Optional hook called after tool execution, before next LLM call */
+  afterExecution?: AfterExecutionHook
 }
 
 /**

@@ -17,6 +17,7 @@ import type {
   Tool as OpenAITool,
   EasyInputMessage,
   ResponseInputItem,
+  ResponseInputContent,
   ResponseReasoningItem,
   ResponseFunctionToolCallItem
 } from 'openai/resources/responses/responses'
@@ -176,12 +177,31 @@ function isFunctionCall(item: unknown): item is FunctionCallOutputItemExtended {
 }
 
 /**
- * Build EasyInputMessage
+ * Build EasyInputMessage, supporting multimodal content for user messages
  */
 function buildEasyInputMessage(
   role: 'user' | 'assistant' | 'system' | 'developer',
-  content: string
+  msg: ChatMessage
 ): EasyInputMessage {
+  // For user messages with ContentPart[] that contain image_url, build multimodal content
+  if (msg.role === 'user' && Array.isArray(msg.content)) {
+    const hasImage = msg.content.some(p => p.type === 'image_url')
+    if (hasImage) {
+      const parts: ResponseInputContent[] = msg.content.map(part => {
+        if (part.type === 'image_url' && part.image_url) {
+          return {
+            type: 'input_image' as const,
+            image_url: part.image_url.url,
+            detail: (part.image_url.detail ?? 'auto') as 'auto' | 'low' | 'high',
+          }
+        }
+        return { type: 'input_text' as const, text: part.text || '' }
+      })
+      return { role, content: parts }
+    }
+  }
+  // Default: string content
+  const content = getStringContent(msg)
   return { role, content }
 }
 
@@ -438,7 +458,7 @@ export class LLMClient {
         // sending unnecessary empty assistant messages in the input
         const shouldAddMessage = msg.role !== 'assistant' || content || !msg.tool_calls?.length
         if (shouldAddMessage) {
-          input.push(buildEasyInputMessage(role, content))
+          input.push(buildEasyInputMessage(role, msg))
         }
 
         // Handle tool_calls for assistant messages (AFTER text content)
@@ -780,7 +800,7 @@ export class LLMClient {
         // sending unnecessary empty assistant messages in the input
         const shouldAddMessage = msg.role !== 'assistant' || content || !msg.tool_calls?.length
         if (shouldAddMessage) {
-          input.push(buildEasyInputMessage(role, content))
+          input.push(buildEasyInputMessage(role, msg))
         }
 
         // Handle tool_calls for assistant messages (AFTER text content)

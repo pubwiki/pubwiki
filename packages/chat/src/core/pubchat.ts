@@ -585,7 +585,8 @@ export class PubChat implements ChatProvider {
       tool.name,
       tool.description,
       tool.schema,
-      tool.handler
+      tool.handler,
+      tool.afterExecution
     )
   }
   

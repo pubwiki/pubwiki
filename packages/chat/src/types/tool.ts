@@ -3,6 +3,7 @@
  */
 
 import type { z } from 'zod'
+import type { AfterExecutionHook } from '../llm/tools'
 
 /**
  * Tool handler function
@@ -17,6 +18,7 @@ export interface ToolRegistration<T extends z.ZodTypeAny = z.ZodTypeAny> {
   description: string
   schema: T
   handler: (args: z.infer<T>) => Promise<unknown>
+  afterExecution?: AfterExecutionHook
 }
 
 /**
