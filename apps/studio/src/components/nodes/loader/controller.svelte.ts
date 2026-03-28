@@ -181,9 +181,11 @@ export async function initializeLoader(
 		});
 		
 		// Register LLM module (needs PubChat which is Studio/Player specific)
-		const { pubchat, messageStore } = createPubChat({ 
-			llmConfig: llmConfig ?? {}, 
-			rdfStore: rdfStore as BackendConfig['rdfStore']
+		// Use lazy store getter to survive store re-creation (e.g. StateNode remount)
+		const { pubchat, messageStore } = createPubChat({
+			llmConfig: llmConfig ?? {},
+			getStore: stateNodeId ? () => getNodeRDFStore(stateNodeId) : undefined,
+			rdfStore: stateNodeId ? undefined : rdfStore as BackendConfig['rdfStore'],
 		});
 		jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore) });
 		

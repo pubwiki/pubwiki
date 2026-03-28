@@ -18,6 +18,8 @@ export { RDFMessageStore, CHAT_HISTORY_GRAPH_URI }
 export interface LLMModuleConfig {
   llmConfig: LLMConfig
   rdfStore?: TripleStore
+  /** Lazy store getter — preferred over rdfStore for lifecycle safety */
+  getStore?: () => Promise<TripleStore>
 }
 
 // ============================================================================
@@ -32,11 +34,13 @@ export function createPubChat(config: LLMModuleConfig): {
   pubchat: PubChat
   messageStore: MessageStoreProvider 
 } {
-  const { llmConfig, rdfStore } = config
-  
-  const messageStore = rdfStore
-    ? new RDFMessageStore(rdfStore, CHAT_HISTORY_GRAPH_URI)
-    : new MemoryMessageStore()
+  const { llmConfig, rdfStore, getStore } = config
+
+  const messageStore = getStore
+    ? new RDFMessageStore(getStore, CHAT_HISTORY_GRAPH_URI)
+    : rdfStore
+      ? new RDFMessageStore(rdfStore, CHAT_HISTORY_GRAPH_URI)
+      : new MemoryMessageStore()
   
   const pubchat = new PubChat({
     llm: {

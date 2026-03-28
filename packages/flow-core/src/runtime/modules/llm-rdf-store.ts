@@ -33,129 +33,145 @@ const PREDICATES = {
 // ============================================================================
 
 export class RDFMessageStore implements MessageStoreProvider {
-  private store: TripleStore
+  private getStore: () => Promise<TripleStore>
   private graph: string
-  
+
   constructor(
-    store: TripleStore,
+    storeOrGetter: TripleStore | (() => Promise<TripleStore>),
     graphUri: string = CHAT_HISTORY_GRAPH_URI
   ) {
-    this.store = store
+    // Support both direct store (legacy) and lazy getter (preferred)
+    this.getStore = typeof storeOrGetter === 'function'
+      ? storeOrGetter
+      : () => Promise.resolve(storeOrGetter)
     this.graph = graphUri
   }
-  
+
   private msgUri(id: string) {
     return `${MSG_NS}${id}`
   }
-  
+
+  private async resolveStore(): Promise<TripleStore> {
+    const s = await this.getStore()
+    if (!s.isOpen) {
+      throw new Error('TripleStore is closed')
+    }
+    return s
+  }
+
   async save(node: MessageNode): Promise<void> {
+    const store = await this.resolveStore()
     const subject = this.msgUri(node.id)
     const g = this.graph
-    
-    const parentIdStr = node.parentId == null || typeof node.parentId !== 'string' 
-      ? 'null' 
+
+    const parentIdStr = node.parentId == null || typeof node.parentId !== 'string'
+      ? 'null'
       : node.parentId
-    
-    this.store.insert(subject, PREDICATES.TYPE, PREDICATES.MESSAGE_NODE_TYPE, g)
-    this.store.insert(subject, PREDICATES.PARENT_ID, parentIdStr, g)
-    this.store.insert(subject, PREDICATES.ROLE, node.role, g)
-    this.store.insert(subject, PREDICATES.TIMESTAMP, String(node.timestamp), g)
-    
+
+    store.insert(subject, PREDICATES.TYPE, PREDICATES.MESSAGE_NODE_TYPE, g)
+    store.insert(subject, PREDICATES.PARENT_ID, parentIdStr, g)
+    store.insert(subject, PREDICATES.ROLE, node.role, g)
+    store.insert(subject, PREDICATES.TIMESTAMP, String(node.timestamp), g)
+
     if (node.model) {
-      this.store.insert(subject, PREDICATES.MODEL, node.model, g)
+      store.insert(subject, PREDICATES.MODEL, node.model, g)
     }
-    
-    this.store.insert(subject, PREDICATES.BLOCKS, JSON.stringify(node.blocks), g)
-    
+
+    store.insert(subject, PREDICATES.BLOCKS, JSON.stringify(node.blocks), g)
+
     if (node.metadata) {
-      this.store.insert(subject, PREDICATES.METADATA, JSON.stringify(node.metadata), g)
+      store.insert(subject, PREDICATES.METADATA, JSON.stringify(node.metadata), g)
     }
   }
-  
+
   async saveBatch(nodes: MessageNode[]): Promise<void> {
     for (const node of nodes) {
       await this.save(node)
     }
   }
-  
+
   async get(id: string): Promise<MessageNode | null> {
+    const store = await this.resolveStore()
     const subject = this.msgUri(id)
-    const triples = this.store.match({ subject, graph: this.graph })
-    
+    const triples = store.match({ subject, graph: this.graph })
+
     if (triples.length === 0) return null
-    
+
     return this.triplesToMessageNode(id, triples)
   }
-  
+
   async getChildren(parentId: string): Promise<MessageNode[]> {
-    const triples = this.store.match({
+    const store = await this.resolveStore()
+    const triples = store.match({
       predicate: PREDICATES.PARENT_ID,
       object: parentId,
       graph: this.graph
     })
-    
+
     const childIds = triples.map(t => t.subject.replace(MSG_NS, ''))
     const children: MessageNode[] = []
-    
+
     for (const childId of childIds) {
       const node = await this.get(childId)
       if (node) children.push(node)
     }
-    
+
     return children.sort((a, b) => a.timestamp - b.timestamp)
   }
-  
+
   async getPath(leafId: string): Promise<MessageNode[]> {
     const path: MessageNode[] = []
     let current = await this.get(leafId)
-    
+
     while (current) {
       path.unshift(current)
       if (!current.parentId) break
       current = await this.get(current.parentId)
     }
-    
+
     return path
   }
-  
+
   async delete(id: string, deleteDescendants: boolean = true): Promise<void> {
+    const store = await this.resolveStore()
     if (deleteDescendants) {
       const children = await this.getChildren(id)
       for (const child of children) {
         await this.delete(child.id, true)
       }
     }
-    
+
     const subject = this.msgUri(id)
-    // Delete all triples for this subject in the graph
-    const triples = this.store.match({ subject, graph: this.graph })
+    const triples = store.match({ subject, graph: this.graph })
     for (const t of triples) {
-      this.store.delete(t.subject, t.predicate, t.object, t.graph)
+      store.delete(t.subject, t.predicate, t.object, t.graph)
     }
   }
-  
+
   async listRoots(): Promise<MessageNode[]> {
-    const triples = this.store.match({
+    const store = await this.resolveStore()
+    const triples = store.match({
       predicate: PREDICATES.PARENT_ID,
       object: 'null',
       graph: this.graph
     })
-    
+
     const rootIds = triples.map(t => t.subject.replace(MSG_NS, ''))
     const roots: MessageNode[] = []
-    
+
     for (const rootId of rootIds) {
       const node = await this.get(rootId)
       if (node) roots.push(node)
     }
-    
+
     return roots.sort((a, b) => b.timestamp - a.timestamp)
   }
-  
+
   async clear(): Promise<void> {
-    const triples = this.store.match({ graph: this.graph })
+    const store = await this.resolveStore()
+    const triples = store.match({ graph: this.graph })
     for (const t of triples) {
-      this.store.delete(t.subject, t.predicate, t.object, this.graph)
+      store.delete(t.subject, t.predicate, t.object, this.graph)
     }
   }
   

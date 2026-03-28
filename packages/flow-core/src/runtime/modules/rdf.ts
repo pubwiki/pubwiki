@@ -130,22 +130,24 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 
 			try {
 				// Push current snapshot first
-				yield new LuaTable({
+				// Yield a plain object with type discriminator; only wrap the data
+				// arrays in LuaTable so Lua gets native tables for iteration.
+				yield {
 					type: 'snapshot',
-					triples: store.getAll().map(t => ({
+					triples: new LuaTable(store.getAll().map(t => ({
 						subject: t.subject,
 						predicate: t.predicate,
 						object: t.object,
 						...(t.graph ? { graph: t.graph } : {}),
-					})),
-				});
+					}))),
+				};
 
 				while (true) {
 					if (queue.length > 0) {
 						const events = queue.shift()!;
-						yield new LuaTable({
+						yield {
 							type: 'changes',
-							events: events.map(e => ({
+							events: new LuaTable(events.map(e => ({
 								type: e.type,
 								triple: {
 									subject: e.triple.subject,
@@ -153,8 +155,8 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 									object: e.triple.object,
 									...(e.triple.graph ? { graph: e.triple.graph } : {}),
 								},
-							})),
-						});
+							}))),
+						};
 					} else {
 						await new Promise<void>(r => { resolve = r; });
 					}
