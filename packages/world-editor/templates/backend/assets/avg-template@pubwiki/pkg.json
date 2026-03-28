@@ -7,9 +7,7 @@
   "type": "app",
   "entry": "init.lua",
   
-  "dependencies": {
-    "ecs@pubwiki": "^1.0.0"
-  },
+  "dependencies": {},
   
   "documentation": {
     "readme": "README.md",

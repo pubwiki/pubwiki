@@ -246,7 +246,7 @@ callback 按以下顺序接收事件：
         print("[GENERATE]THINKING INSTRUCTION 长度:", #inputs.thinking_instruction)
         -- 在 previous_content_overview 末尾追加当前游戏时间提醒，强化 LLM 时间感知
         local prev_content = inputs.previous_content_overview or ""
-        local timeQueryResult = ServiceRegistry.call("ecs.system:Time.getWorldTime", {})
+        local timeQueryResult = ServiceRegistry.call("ecs.system:Query.getGameTime", {})
         if timeQueryResult.success then
             local t = timeQueryResult
             prev_content = prev_content .. string.format(
