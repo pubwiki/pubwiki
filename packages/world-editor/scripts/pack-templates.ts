@@ -23,6 +23,8 @@ const TEMPLATES: { name: string; srcDir: string; extraFiles?: string[] }[] = [
   { name: 'frontend', srcDir: join(ROOT, 'templates', 'frontend') },
   { name: 'game-sdk', srcDir: join(ROOT, '..', '..', 'packages', 'game-sdk', 'src'), extraFiles: [join(ROOT, '..', '..', 'packages', 'game-sdk', 'package.json')] },
   { name: 'game-ui',  srcDir: join(ROOT, '..', '..', 'packages', 'game-ui', 'src'), extraFiles: [join(ROOT, '..', '..', 'packages', 'game-ui', 'package.json')] },
+  { name: 'copilot-skills',  srcDir: join(ROOT, 'skills', 'copilot') },
+  { name: 'designer-skills', srcDir: join(ROOT, 'skills', 'designer') },
 ];
 
 function collectFiles(dir: string, base: string = dir): TarEntry[] {

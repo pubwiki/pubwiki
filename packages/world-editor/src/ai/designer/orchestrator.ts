@@ -32,6 +32,11 @@ import {
   createGetStateContentTool,
 } from '../copilot/tools/state-tools'
 import {
+  createListSkillsTool,
+  createGetSkillContentTool,
+  type SkillFileProvider,
+} from '../copilot/tools/skill-tools'
+import {
   createListBackendServicesTool,
   createGetServiceDefinitionTool,
 } from './tools/service-tools'
@@ -53,6 +58,8 @@ export interface DesignerConfig {
   aiContext: WorldEditorAIContext
   /** Lazy getter for the Frontend VFS */
   getFrontendVfs: FrontendVfsGetter
+  /** Lazy getter for the designer skill VFS file provider */
+  getSkillProvider?: () => SkillFileProvider | null
   /** Lazy getter for the sandbox connection (may be null if preview not open) */
   getSandboxConnection?: SandboxConnectionGetter
   /** Optional: max tool iterations per turn (default 20) */
@@ -124,6 +131,13 @@ export class DesignerOrchestrator {
       createGetServiceDefinitionTool(getFrontendVfs),
     ]
 
+    // Skill tools (read from VFS-backed skill file provider)
+    const getSkillProvider = this.config.getSkillProvider ?? (() => null)
+    const skillTools = [
+      createListSkillsTool(getSkillProvider),
+      createGetSkillContentTool(getSkillProvider),
+    ]
+
     // Sandbox tools (preview interaction)
     const sandboxTools = getSandboxConnection ? [
       createGetConsoleLogsTool(getSandboxConnection),
@@ -132,7 +146,7 @@ export class DesignerOrchestrator {
     ] : []
 
     // Register all tools
-    for (const tool of [...fileTools, ...stateTools, ...serviceTools, ...sandboxTools]) {
+    for (const tool of [...fileTools, ...stateTools, ...serviceTools, ...skillTools, ...sandboxTools]) {
       this.pubchat.registerTool({
         name: tool.name,
         description: tool.description,

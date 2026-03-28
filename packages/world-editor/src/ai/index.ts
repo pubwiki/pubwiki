@@ -37,12 +37,11 @@ export {
   type WorldEditorCopilotConfig,
 } from './copilot/orchestrator'
 
-// Skill provider interface (for external implementations)
-export type { SkillProvider } from './copilot/tools/skill-tools'
+// Skill file provider interface (for VFS-backed skill implementations)
+export type { SkillFileProvider } from './copilot/tools/skill-tools'
 
 // Services
 export { MemoryStore, type MemoryEntry } from './services/memory-store'
-export { SkillStore, type UserSkillEntry } from './services/skill-store'
 export { parseSillyTavernLorebook } from './services/lorebook-parser'
 
 // State bridge utilities (for direct use if needed)

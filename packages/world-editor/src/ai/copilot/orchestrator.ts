@@ -16,7 +16,6 @@ import {
 
 import type {
   WorldEditorAIContext,
-  SkillListItem,
   MemoryListItem,
   WorkspaceFileInfo,
   WorkspaceFileProvider,
@@ -24,7 +23,6 @@ import type {
 } from '../types'
 import { COPILOT_SYSTEM_PROMPT } from './prompts/system-prompt'
 import { generateUserMessagePrefix, COT_SUFFIX } from './prompts/context-prefix'
-import { BUILTIN_SKILLS } from './prompts/skills'
 import { getNudgeForTool } from './nudges'
 import {
   createGetStateOverviewTool,
@@ -36,7 +34,7 @@ import {
 import {
   createListSkillsTool,
   createGetSkillContentTool,
-  type SkillProvider,
+  type SkillFileProvider,
 } from './tools/skill-tools'
 import { createQueryUserTool } from './tools/query-user-tool'
 import {
@@ -62,8 +60,8 @@ export interface WorldEditorCopilotConfig {
   llm: LLMConfig
   /** World editor AI context (state access) */
   aiContext: WorldEditorAIContext
-  /** Optional skill provider for user-defined skills */
-  skillProvider?: SkillProvider
+  /** Lazy getter for the skill VFS file provider */
+  getSkillProvider?: () => SkillFileProvider | null
   /** Optional memory store for working memory persistence */
   memoryStore?: MemoryStore
   /** Optional workspace file provider for user-uploaded files */
@@ -93,7 +91,6 @@ export class WorldEditorCopilotOrchestrator {
   private roundCount = 0
 
   private readonly config: WorldEditorCopilotConfig
-  private readonly skillProvider: SkillProvider
 
   // query_user blocking mechanism
   private pendingQueryResolve: ((data: Record<string, unknown>) => void) | null = null
@@ -101,10 +98,6 @@ export class WorldEditorCopilotOrchestrator {
 
   constructor(config: WorldEditorCopilotConfig) {
     this.config = config
-    this.skillProvider = config.skillProvider ?? {
-      getUserSkills: () => [],
-      getUserSkillContent: () => null,
-    }
 
     // Create message store (use provided or fallback to in-memory)
     const messageStore = config.messageStore ?? new MemoryMessageStore()
@@ -142,10 +135,11 @@ export class WorldEditorCopilotOrchestrator {
       createUpdateStateTool(ctx),
     ]
 
-    // Skill tools
+    // Skill tools (read from VFS-backed skill file provider)
+    const getSkillProvider = this.config.getSkillProvider ?? (() => null)
     const skillTools = [
-      createListSkillsTool(this.skillProvider),
-      createGetSkillContentTool(this.skillProvider),
+      createListSkillsTool(getSkillProvider),
+      createGetSkillContentTool(getSkillProvider),
     ]
 
     // Query user tool (blocks until user submits a form)
@@ -235,15 +229,11 @@ export class WorldEditorCopilotOrchestrator {
    */
   private preprocessUserMessage(content: string): string {
     // Gather context for prefix
-    const allSkills: SkillListItem[] = [
-      ...BUILTIN_SKILLS,
-      ...this.skillProvider.getUserSkills(),
-    ]
     const memories = this.config.getMemories?.() ?? []
     const workspaceFiles = this.config.getWorkspaceFiles?.()
 
-    // Generate dynamic prefix
-    const prefix = generateUserMessagePrefix(allSkills, memories, workspaceFiles)
+    // Generate dynamic prefix (skills are now discovered via list_skills tool)
+    const prefix = generateUserMessagePrefix([], memories, workspaceFiles)
 
     // Append CoT suffix on first round only
     const suffix = this.roundCount === 0 ? COT_SUFFIX : ''

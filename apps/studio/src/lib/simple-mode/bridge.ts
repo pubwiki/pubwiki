@@ -42,6 +42,8 @@ const ROLES = {
 	gameSdkVfs: 'game-sdk-vfs',
 	gameUiVfs: 'game-ui-vfs',
 	docsVfs: 'docs-vfs',
+	copilotSkillsVfs: 'copilot-skills-vfs',
+	designerSkillsVfs: 'designer-skills-vfs',
 	loader: 'loader',
 	sandbox: 'sandbox'
 } as const;
@@ -57,6 +59,8 @@ const LAYOUT: Record<RoleValue, { x: number; y: number }> = {
 	'game-sdk-vfs': { x: 0, y: 500 },
 	'game-ui-vfs': { x: 400, y: 500 },
 	'docs-vfs': { x: 0, y: 375 },
+	'copilot-skills-vfs': { x: 0, y: 625 },
+	'designer-skills-vfs': { x: 400, y: 625 },
 	sandbox: { x: 800, y: 250 }
 };
 
@@ -71,6 +75,8 @@ export interface SimpleModeNodeIds {
 	gameSdkVfs: string;
 	gameUiVfs: string;
 	docsVfs: string;
+	copilotSkillsVfs: string;
+	designerSkillsVfs: string;
 	loader: string;
 	sandbox: string;
 }
@@ -156,10 +162,12 @@ export class SimpleModeBridge {
 		const gameSdkVfs = nodeStore.findByMetadata(META_KEY, ROLES.gameSdkVfs);
 		const gameUiVfs = nodeStore.findByMetadata(META_KEY, ROLES.gameUiVfs);
 		const docsVfs = nodeStore.findByMetadata(META_KEY, ROLES.docsVfs);
+		const copilotSkillsVfs = nodeStore.findByMetadata(META_KEY, ROLES.copilotSkillsVfs);
+		const designerSkillsVfs = nodeStore.findByMetadata(META_KEY, ROLES.designerSkillsVfs);
 		const loader = nodeStore.findByMetadata(META_KEY, ROLES.loader);
 		const sandbox = nodeStore.findByMetadata(META_KEY, ROLES.sandbox);
 
-		if (state && backendVfs && frontendVfs && gameSdkVfs && gameUiVfs && docsVfs && loader && sandbox) {
+		if (state && backendVfs && frontendVfs && gameSdkVfs && gameUiVfs && docsVfs && copilotSkillsVfs && designerSkillsVfs && loader && sandbox) {
 			return {
 				state: state.id,
 				backendVfs: backendVfs.id,
@@ -167,6 +175,8 @@ export class SimpleModeBridge {
 				gameSdkVfs: gameSdkVfs.id,
 				gameUiVfs: gameUiVfs.id,
 				docsVfs: docsVfs.id,
+				copilotSkillsVfs: copilotSkillsVfs.id,
+				designerSkillsVfs: designerSkillsVfs.id,
 				loader: loader.id,
 				sandbox: sandbox.id
 			};
@@ -179,8 +189,8 @@ export class SimpleModeBridge {
 	// -----------------------------------------------------------------------
 
 	private async createGraph(): Promise<SimpleModeNodeIds> {
-		// Create the 8 nodes with metadata tags
-		const [stateNode, backendVfsNode, frontendVfsNode, gameSdkVfsNode, gameUiVfsNode, docsVfsNode, loaderNode, sandboxNode] =
+		// Create the 10 nodes with metadata tags
+		const [stateNode, backendVfsNode, frontendVfsNode, gameSdkVfsNode, gameUiVfsNode, docsVfsNode, copilotSkillsVfsNode, designerSkillsVfsNode, loaderNode, sandboxNode] =
 			await Promise.all([
 				createStateNodeData('🌍 World Data', { [META_KEY]: ROLES.state }),
 				createVFSNodeData(this.projectId, '📦 Backend', { [META_KEY]: ROLES.backendVfs }),
@@ -188,6 +198,8 @@ export class SimpleModeBridge {
 				createVFSNodeData(this.projectId, '📊 Game SDK', { [META_KEY]: ROLES.gameSdkVfs }),
 				createVFSNodeData(this.projectId, '🎨 Game UI', { [META_KEY]: ROLES.gameUiVfs }),
 				createVFSNodeData(this.projectId, '📄 Service Types', { [META_KEY]: ROLES.docsVfs }),
+				createVFSNodeData(this.projectId, '📚 Copilot Skills', { [META_KEY]: ROLES.copilotSkillsVfs }),
+				createVFSNodeData(this.projectId, '📚 Designer Skills', { [META_KEY]: ROLES.designerSkillsVfs }),
 				createLoaderNodeData('⚙️ Engine', { [META_KEY]: ROLES.loader }),
 				createSandboxNodeData('👁️ Preview', { [META_KEY]: ROLES.sandbox })
 			]);
@@ -201,6 +213,8 @@ export class SimpleModeBridge {
 		nodeStore.create(gameSdkVfsNode as StudioNodeData);
 		nodeStore.create(gameUiVfsNode as StudioNodeData);
 		nodeStore.create(docsVfsNode as StudioNodeData);
+		nodeStore.create(copilotSkillsVfsNode as StudioNodeData);
+		nodeStore.create(designerSkillsVfsNode as StudioNodeData);
 		nodeStore.create(loaderNode as StudioNodeData);
 		nodeStore.create(sandboxNode as StudioNodeData);
 		await nodeStore.flush();
@@ -212,6 +226,8 @@ export class SimpleModeBridge {
 		layoutStore.add(gameSdkVfsNode.id, LAYOUT['game-sdk-vfs'].x, LAYOUT['game-sdk-vfs'].y);
 		layoutStore.add(gameUiVfsNode.id, LAYOUT['game-ui-vfs'].x, LAYOUT['game-ui-vfs'].y);
 		layoutStore.add(docsVfsNode.id, LAYOUT['docs-vfs'].x, LAYOUT['docs-vfs'].y);
+		layoutStore.add(copilotSkillsVfsNode.id, LAYOUT['copilot-skills-vfs'].x, LAYOUT['copilot-skills-vfs'].y);
+		layoutStore.add(designerSkillsVfsNode.id, LAYOUT['designer-skills-vfs'].x, LAYOUT['designer-skills-vfs'].y);
 		layoutStore.add(loaderNode.id, LAYOUT.loader.x, LAYOUT.loader.y);
 		layoutStore.add(sandboxNode.id, LAYOUT.sandbox.x, LAYOUT.sandbox.y);
 
@@ -233,6 +249,8 @@ export class SimpleModeBridge {
 			toFlowNode(gameSdkVfsNode.id, 'VFS', LAYOUT['game-sdk-vfs']),
 			toFlowNode(gameUiVfsNode.id, 'VFS', LAYOUT['game-ui-vfs']),
 			toFlowNode(docsVfsNode.id, 'VFS', LAYOUT['docs-vfs']),
+			toFlowNode(copilotSkillsVfsNode.id, 'VFS', LAYOUT['copilot-skills-vfs']),
+			toFlowNode(designerSkillsVfsNode.id, 'VFS', LAYOUT['designer-skills-vfs']),
 			toFlowNode(loaderNode.id, 'LOADER', LAYOUT.loader),
 			toFlowNode(sandboxNode.id, 'SANDBOX', LAYOUT.sandbox)
 		]);
@@ -316,6 +334,8 @@ export class SimpleModeBridge {
 		await this.populateVfs(frontendVfsNode.id, 'frontend');
 		await this.populateVfs(gameSdkVfsNode.id, 'game-sdk');
 		await this.populateVfs(gameUiVfsNode.id, 'game-ui');
+		await this.populateVfs(copilotSkillsVfsNode.id, 'copilot-skills');
+		await this.populateVfs(designerSkillsVfsNode.id, 'designer-skills');
 
 		const ids: SimpleModeNodeIds = {
 			state: stateNode.id,
@@ -324,6 +344,8 @@ export class SimpleModeBridge {
 			gameSdkVfs: gameSdkVfsNode.id,
 			gameUiVfs: gameUiVfsNode.id,
 			docsVfs: docsVfsNode.id,
+			copilotSkillsVfs: copilotSkillsVfsNode.id,
+			designerSkillsVfs: designerSkillsVfsNode.id,
 			loader: loaderNode.id,
 			sandbox: sandboxNode.id
 		};
@@ -383,7 +405,7 @@ export class SimpleModeBridge {
 		console.log('[SimpleModeBridge] VFS mounts persisted and established');
 	}
 
-	private async populateVfs(nodeId: string, template: 'backend' | 'frontend' | 'game-sdk' | 'game-ui') {
+	private async populateVfs(nodeId: string, template: 'backend' | 'frontend' | 'game-sdk' | 'game-ui' | 'copilot-skills' | 'designer-skills') {
 		const vfs = await getNodeVfs(this.projectId, nodeId);
 
 		console.log(`[SimpleModeBridge] Populating VFS ${template} from template...`);

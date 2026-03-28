@@ -85,7 +85,7 @@ export function generateUserMessagePrefix(
 
     // Skill-First trigger when files are uploaded
     lines.push('> **SKILL-FIRST**: Files detected! Before processing, read relevant Skills:')
-    lines.push('> `get_skill_content("builtin_quickstart_workflow")` + `get_skill_content("builtin_file_processing")`')
+    lines.push('> `list_skills()` then `get_skill_content("workflow")`')
     lines.push('')
   }
 

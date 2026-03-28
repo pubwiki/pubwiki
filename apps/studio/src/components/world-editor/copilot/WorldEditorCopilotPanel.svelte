@@ -53,6 +53,7 @@
   import { getNodeVfs, type NodeVfs } from '$lib/vfs';
   import { nodeStore } from '$lib/persistence/node-store.svelte';
   import { VfsWorkspaceFileProvider } from './vfs-file-provider';
+  import { VfsSkillFileProvider } from './vfs-skill-provider';
   import CopilotToolCallBlock from '../../copilot/CopilotToolCallBlock.svelte';
   import QueryUserFormBlock from './QueryUserFormBlock.svelte';
   import {
@@ -209,6 +210,10 @@
 
   // File provider (lazy-initialized, needs async VFS)
   let fileProvider = $state<VfsWorkspaceFileProvider | null>(null);
+
+  // Skill file providers (lazy-initialized from skill VFS nodes)
+  let copilotSkillProvider = $state<VfsSkillFileProvider | null>(null);
+  let designerSkillProvider = $state<VfsSkillFileProvider | null>(null);
   let fileList = $state<WorkspaceFileInfo[]>([]);
   let showFilesPanel = $state(false);
   let fileInputEl = $state<HTMLInputElement | null>(null);
@@ -232,6 +237,22 @@
     const vfs = await getNodeVfs(weCtx.projectId, '__copilot_files__');
     fileProvider = new VfsWorkspaceFileProvider(vfs);
     return fileProvider;
+  }
+
+  async function ensureSkillProviders(): Promise<void> {
+    if (copilotSkillProvider && designerSkillProvider) return;
+
+    const copilotNode = nodeStore.findByMetadata('simple-mode-role', 'copilot-skills-vfs');
+    const designerNode = nodeStore.findByMetadata('simple-mode-role', 'designer-skills-vfs');
+
+    if (copilotNode && copilotNode.type === 'VFS' && !copilotSkillProvider) {
+      const vfs = await getNodeVfs(weCtx.projectId, copilotNode.id);
+      copilotSkillProvider = new VfsSkillFileProvider(vfs);
+    }
+    if (designerNode && designerNode.type === 'VFS' && !designerSkillProvider) {
+      const vfs = await getNodeVfs(weCtx.projectId, designerNode.id);
+      designerSkillProvider = new VfsSkillFileProvider(vfs);
+    }
   }
 
   async function refreshFileList() {
@@ -482,8 +503,9 @@
 
     rebuildChatOrchestrator(currentMessageStore ?? undefined, currentSession?.historyId);
 
-    // Eagerly initialize file provider in background
+    // Eagerly initialize file provider and skill providers in background
     ensureFileProvider().then(() => refreshFileList()).catch(() => {});
+    ensureSkillProviders().catch(() => {});
 
     // Also initialize designer orchestrator
     rebuildDesignerOrchestrator(designerMessageStore ?? undefined, currentSession?.mode === 'designer' ? currentSession?.historyId : undefined);
@@ -504,6 +526,7 @@
         maxTokens: 4096,
       },
       aiContext: createAIContext(),
+      getSkillProvider: () => copilotSkillProvider,
       fileProvider: fileProvider ?? undefined,
       getWorkspaceFiles: () => fileList,
       messageStore: msgStore,
@@ -529,6 +552,7 @@
       },
       aiContext: createAIContext(),
       getFrontendVfs: () => designerPreviewVfs,
+      getSkillProvider: () => designerSkillProvider,
       getSandboxConnection: async () => {
         // Already connected
         if (designerSandboxConnection) return designerSandboxConnection;

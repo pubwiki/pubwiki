@@ -1,35 +1,80 @@
 /**
  * Skill Tools — list_skills / get_skill_content
  *
- * Provides read-only access to built-in skills and user-defined skills.
+ * Reads skill markdown files from a VFS-backed SkillFileProvider.
+ * Each .md file in the VFS is a skill; the filename (without extension) is the skill ID.
+ * YAML frontmatter provides title and description metadata.
+ *
  * Tracks which skills have been read for Skill-First guard enforcement.
  */
 
 import { z } from 'zod'
 import { defineTool } from '@pubwiki/chat'
-import type { SkillListItem } from '../../types'
-import { BUILTIN_SKILLS, getBuiltinSkillContent } from '../prompts/skills'
 import { markSkillRead } from './state-tools'
 
 // ============================================================================
-// Skill Provider Interface
+// Skill File Provider Interface
 // ============================================================================
 
 /**
- * Interface for providing user-defined skills.
- * The orchestrator injects an implementation of this.
+ * Abstraction for reading skill files from a VFS or other storage.
+ * Implemented by the studio app using NodeVfs.
  */
-export interface SkillProvider {
-  /** Get all user-defined skills */
-  getUserSkills(): SkillListItem[]
-  /** Get content of a user-defined skill by ID */
-  getUserSkillContent(id: string): string | null
+export interface SkillFileProvider {
+  /** List all .md filenames in the skill directory (e.g. ['workflow.md', 'statedata_schema.md']) */
+  listFiles(): Promise<string[]>
+  /** Read a file's UTF-8 content. Returns null if not found. */
+  readFile(filename: string): Promise<string | null>
 }
 
-/** No-op provider for when user skills are not available */
-const EMPTY_SKILL_PROVIDER: SkillProvider = {
-  getUserSkills: () => [],
-  getUserSkillContent: () => null,
+/** No-op provider for when skill VFS is not available */
+const EMPTY_PROVIDER: SkillFileProvider = {
+  listFiles: async () => [],
+  readFile: async () => null,
+}
+
+// ============================================================================
+// Frontmatter Parsing
+// ============================================================================
+
+interface SkillMeta {
+  id: string
+  title: string
+  description: string
+}
+
+/**
+ * Parse YAML frontmatter from a markdown file.
+ * Expects the format:
+ * ```
+ * ---
+ * title: ...
+ * description: ...
+ * ---
+ * ```
+ */
+function parseSkillMeta(filename: string, content: string): SkillMeta {
+  const id = filename.replace(/\.md$/i, '')
+  let title = id
+  let description = ''
+
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---/)
+  if (match) {
+    const frontmatter = match[1]
+    const titleMatch = frontmatter.match(/^title:\s*(.+)$/m)
+    const descMatch = frontmatter.match(/^description:\s*(.+)$/m)
+    if (titleMatch) title = titleMatch[1].trim().replace(/^["']|["']$/g, '')
+    if (descMatch) description = descMatch[1].trim().replace(/^["']|["']$/g, '')
+  }
+
+  return { id, title, description }
+}
+
+/**
+ * Strip YAML frontmatter from content, returning only the body.
+ */
+function stripFrontmatter(content: string): string {
+  return content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '')
 }
 
 // ============================================================================
@@ -37,33 +82,40 @@ const EMPTY_SKILL_PROVIDER: SkillProvider = {
 // ============================================================================
 
 /**
- * list_skills — List all available skills (built-in + user-defined).
+ * Lazy getter type — the provider may not be available at tool registration time.
  */
-export function createListSkillsTool(provider: SkillProvider = EMPTY_SKILL_PROVIDER) {
+type SkillFileProviderGetter = () => SkillFileProvider | null
+
+/**
+ * list_skills — List all available skills from the skill VFS.
+ */
+export function createListSkillsTool(getProvider: SkillFileProviderGetter) {
   return defineTool({
     name: 'list_skills',
-    description: '列出所有可用的技能文档（内置指南 + 用户自定义）。',
+    description: '列出所有可用的技能文档。',
     schema: z.object({}),
     handler: async () => {
-      const builtIn = BUILTIN_SKILLS
-      const userSkills = provider.getUserSkills()
+      const provider = getProvider() ?? EMPTY_PROVIDER
+      const files = await provider.listFiles()
+      const mdFiles = files.filter(f => f.endsWith('.md'))
+
+      if (mdFiles.length === 0) {
+        return '没有可用的技能文档。'
+      }
 
       const lines = ['# 📚 Available Skills']
+      lines.push('')
 
-      lines.push('\n## Built-in Skills (⭐ = recommended first read)')
-      for (const s of builtIn) {
-        const star = s.id.includes('schema') ? ' ⭐' : ''
-        lines.push(`- \`${s.id}\`${star} — ${s.description}`)
+      for (const filename of mdFiles) {
+        const content = await provider.readFile(filename)
+        if (!content) continue
+        const meta = parseSkillMeta(filename, content)
+        const star = meta.id.includes('schema') ? ' ⭐' : ''
+        lines.push(`- \`${meta.id}\`${star} — ${meta.description || meta.title}`)
       }
 
-      if (userSkills.length > 0) {
-        lines.push('\n## User Skills')
-        for (const s of userSkills) {
-          lines.push(`- \`${s.id}\` — ${s.description || s.title}`)
-        }
-      }
-
-      lines.push('\n> Use `get_skill_content(id)` to read a skill\'s full content.')
+      lines.push('')
+      lines.push('> Use `get_skill_content(id)` to read a skill\'s full content.')
       return lines.join('\n')
     },
   })
@@ -73,26 +125,31 @@ export function createListSkillsTool(provider: SkillProvider = EMPTY_SKILL_PROVI
  * get_skill_content — Read a skill's full content.
  * Also tracks which skills have been read for Skill-First guard.
  */
-export function createGetSkillContentTool(provider: SkillProvider = EMPTY_SKILL_PROVIDER) {
+export function createGetSkillContentTool(getProvider: SkillFileProviderGetter) {
   return defineTool({
     name: 'get_skill_content',
     description: '读取指定技能文档的完整内容。用于在执行任务前学习相关知识。',
     schema: z.object({
-      id: z.string().describe('Skill ID'),
+      id: z.string().describe('Skill ID (filename without .md extension)'),
     }),
     handler: async ({ id }) => {
-      // Try built-in first
-      const builtinContent = getBuiltinSkillContent(id)
-      if (builtinContent) {
+      const provider = getProvider() ?? EMPTY_PROVIDER
+
+      // Try with .md extension
+      const content = await provider.readFile(`${id}.md`)
+      if (content) {
         markSkillRead(id)
-        return builtinContent
+        return stripFrontmatter(content)
       }
 
-      // Try user-defined
-      const userContent = provider.getUserSkillContent(id)
-      if (userContent) {
-        markSkillRead(id)
-        return userContent
+      // Try exact filename (in case user passed 'foo.md')
+      if (id.endsWith('.md')) {
+        const content2 = await provider.readFile(id)
+        if (content2) {
+          const bareId = id.replace(/\.md$/i, '')
+          markSkillRead(bareId)
+          return stripFrontmatter(content2)
+        }
       }
 
       return `错误: 找不到技能 "${id}"。使用 list_skills() 查看所有可用技能。`
