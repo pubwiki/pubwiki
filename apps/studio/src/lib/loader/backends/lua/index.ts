@@ -381,7 +381,7 @@ export class LuaBackend implements LoaderBackend {
 			return { success: false, error: 'Lua backend not initialized' };
 		}
 
-		console.log('[LuaBackend.callService] invoked with inputs', inputs);
+		console.log('[LuaBackend.callService] invoked with inputs', identifier, inputs);
 		const result = await this.instance.run(
 			`
 			local ServiceRegistry = require("core/service")

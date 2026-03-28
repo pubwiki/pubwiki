@@ -49,7 +49,8 @@
 		| { section: 'inventory'; index: number }
 		| { section: 'status'; index: number }
 		| { section: 'relationship'; index: number }
-		| { section: 'document'; index: number };
+		| { section: 'document'; index: number }
+		| { section: 'interaction'; index: number };;
 
 	let editModal: ModalState | null = $state(null);
 	let logInput = $state('');
