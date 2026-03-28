@@ -1,4 +1,3 @@
-Loader.loadModule("ecs@pubwiki")
 require("./components")
 require("./systems")
 require("./state")
@@ -904,7 +903,7 @@ Service:define()
    - event_changes    ← event_data.event_changes（step_3b，可能为 nil）
    - new_entities     ← event_data.new_entities（step_3c，可能为 nil）
    - director_notes   ← event_data.director_notes（step_4，可能为 nil）
-   - collector_built_messages ← event_data.updater_messages（可能为 nil）
+   - updater_messages ← event_data.updater_messages（可能为 nil）
 
 【重要】调用方不需要自己构造 setting_changes / event_changes / new_entities / director_notes 的内容，
 这些都是 CreativeWriting 内部 LLM 自动生成的，直接透传即可。
@@ -950,7 +949,7 @@ Service:define()
             }))):desc("导演标记列表"),
             stage_goal = Type.Optional(Type.String):desc("阶段叙事目标"),
         })):desc("来自 CreativeWriting done 事件的 director_notes 字段（step_4_director_notes），直接执行无需 LLM 转换"),
-        collector_built_messages = Type.Optional(Type.Array(Type.Object({
+        updater_messages = Type.Optional(Type.Array(Type.Object({
             role = Type.String:desc("消息角色，如 'system' / 'user'"),
             content = Type.String:desc("消息内容"),
         }))):desc("来自 CreativeWriting 流程中 Collector 阶段构建的 updater_messages（done 事件的 updater_messages 字段），包含游戏规则和设定文档，注入到 Analyzer LLM 上下文中"),
@@ -1235,7 +1234,7 @@ Service:define()
         -- 层级1: system prompt = SYSTEM_PROMPT 核心指令（完全不变 → 最高 KV cache 命中率）
         -- 层级2: premessage 1 = API 参考 A-H（完全不变 → 高 KV cache）
         -- 层级3: premessage 2 = 实体索引 + 属性定义 + 文档概览（每回合可能变化）
-        -- 层级4: collector_built_messages = 设定文档（来自 Collector，包含游戏规则）
+        -- 层级4: updater_messages = 设定文档（来自 Collector，包含游戏规则）
         -- 层级5: user prompt = 过滤后的 ECS 数据 + 动态内容（每回合都变）
 
         local analyzer_system_prompt = PromptTemplateWithSettingDocs.SYSTEM_PROMPT
@@ -1251,15 +1250,15 @@ Service:define()
 
         -- 层级4: 注入 Collector 构建的设定文档 premessages（包含游戏规则、状态更新指令等）
         -- 注意：JS 传递的数组/对象在 Lua 中是 userdata，需用 type() 检查
-        if inputs.collector_built_messages and type(inputs.collector_built_messages) ~= "nil" then
+        if inputs.updater_messages and type(inputs.updater_messages) ~= "nil" then
             local count = 0
-            for _, msg in ipairs(inputs.collector_built_messages) do
+            for _, msg in ipairs(inputs.updater_messages) do
                 if msg.role and msg.content then
                     table.insert(analyzer_premessages, { role = tostring(msg.role), content = tostring(msg.content) })
                     count = count + 1
                 end
             end
-            print("[UpdateGameStateAndDocs] 注入 collector_built_messages: " .. count .. " 条消息")
+            print("[UpdateGameStateAndDocs] 注入 updater_messages: " .. count .. " 条消息")
         end
 
         -- === 构建 dynamic prompt（每回合都变的数据） ===

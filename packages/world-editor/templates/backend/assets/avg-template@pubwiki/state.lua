@@ -464,7 +464,7 @@ Service:definePure():namespace("state"):name("GetSettingDocsResource")
             content = Type.String,
             condition = Type.Optional(Type.String),
             static_priority = Type.Optional(Type.Int),
-            entity_id = Type.Optional(Type.Int),
+            entity_id = Type.Optional(Type.String),
             specific_id = Type.Optional(Type.String), -- 返回时会根据实体类型自动填充 creature_id / organization_id / region_id / "world"
         }))),
         error = Type.Optional(Type.String),

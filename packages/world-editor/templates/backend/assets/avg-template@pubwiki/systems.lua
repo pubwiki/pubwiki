@@ -7,6 +7,7 @@
 -- - All ECS operations done via Service.call
 
 local ComponentTypes = require("./components")
+local RDF = require("./rdf")
 
 -- ============ Utilities ============
 
@@ -44,75 +45,27 @@ local function registerSystem(spec)
     end
 end
 
--- Get world entity ID (assumes a single world entity with Registry component)
+-- Get world entity ID (returns subject string "world:default" or nil)
 local function getWorldEntityId()
-    local result = Service.call("ecs:GetEntitiesByComponent", {
-        component_keys = {"Registry"}
-    })
-    
-    if result.count > 0 then
-        return result.entity_ids[1]
-    end
+    if RDF.worldExists() then return RDF.worldSubject() end
     return nil
 end
 
--- Find entity ID by creature_id
+-- Find entity by creature_id (returns subject string "creature:{id}" or nil)
 local function getEntityIdByCreatureId(creatureId)
-    local result = Service.call("ecs:GetEntitiesByComponent", {
-        component_keys = {"Creature"}
-    })
-    
-    for _, entityId in ipairs(result.entity_ids) do
-        local compResult = Service.call("ecs:GetComponentData", {
-            entity_id = entityId,
-            component_key = "Creature"
-        })
-        
-        if compResult.found and compResult.data.creature_id == creatureId then
-            return entityId
-        end
-    end
-    
+    if RDF.creatureExists(creatureId) then return RDF.creatureSubject(creatureId) end
     return nil
 end
 
--- Find region entity ID by region_id
+-- Find entity by region_id (returns subject string "region:{id}" or nil)
 local function getRegionEntityId(regionId)
-    local result = Service.call("ecs:GetEntitiesByComponent", {
-        component_keys = {"Region"}
-    })
-    
-    for _, entityId in ipairs(result.entity_ids) do
-        local compResult = Service.call("ecs:GetComponentData", {
-            entity_id = entityId,
-            component_key = "Region"
-        })
-        
-        if compResult.found and compResult.data.region_id == regionId then
-            return entityId
-        end
-    end
-    
+    if RDF.regionExists(regionId) then return RDF.regionSubject(regionId) end
     return nil
 end
 
--- Find organization entity ID by organization_id
+-- Find entity by organization_id (returns subject string "org:{id}" or nil)
 local function getEntityIdByOrganizationId(organizationId)
-    local result = Service.call("ecs:GetEntitiesByComponent", {
-        component_keys = {"Organization"}
-    })
-    
-    for _, entityId in ipairs(result.entity_ids) do
-        local compResult = Service.call("ecs:GetComponentData", {
-            entity_id = entityId,
-            component_key = "Organization"
-        })
-        
-        if compResult.found and compResult.data.organization_id == organizationId then
-            return entityId
-        end
-    end
-    
+    if RDF.orgExists(organizationId) then return RDF.orgSubject(organizationId) end
     return nil
 end
 
@@ -760,7 +713,7 @@ local function resolveInteractionEntityId(params)
 end
 
 local InteractionTargetInputs = {
-    entity_id = Type.Optional(Type.Int):desc("直接指定实体ID"),
+    entity_id = Type.Optional(Type.String):desc("直接指定实体ID（如 creature:xxx, region:xxx）"),
     creature_id = Type.Optional(Type.String):desc("通过 creature_id 定位角色实体"),
     region_id = Type.Optional(Type.String):desc("通过 region_id 定位地域实体"),
     organization_id = Type.Optional(Type.String):desc("通过 organization_id 定位组织实体"),
@@ -3003,19 +2956,7 @@ registerSystem({
 
 -- Helper: get formatted string of current game time
 local function getFormattedGameTime()
-    local worldEntityId = getWorldEntityId()
-    if not worldEntityId then
-        return nil
-    end
-    local timeResult = Service.call("ecs:GetComponentData", {
-        entity_id = worldEntityId,
-        component_key = "GameTime"
-    })
-    if not timeResult.found then
-        return nil
-    end
-    local t = timeResult.data
-    return string.format("Y%d-M%02d-D%02d %02d:%02d", t.year, t.month, t.day, t.hour, t.minute)
+    return RDF.getFormattedGameTime()
 end
 
 registerSystem({

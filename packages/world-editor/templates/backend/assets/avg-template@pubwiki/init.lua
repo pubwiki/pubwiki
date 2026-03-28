@@ -1,4 +1,4 @@
-Loader.loadModule("ecs@pubwiki")
+require("./ecs_compat")
 require("./components")
 require("./systems")
 require("./state")
