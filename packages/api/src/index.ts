@@ -105,6 +105,7 @@ export type GetMeResponse = operations['getMe']['responses']['200']['content']['
 export type UpdateProfileResponse = operations['updateProfile']['responses']['200']['content']['application/json'];
 export type ListArtifactsResponse = operations['listArtifacts']['responses']['200']['content']['application/json'];
 export type SearchArtifactsResponse = operations['searchArtifacts']['responses']['200']['content']['application/json'];
+export type GetArtifactResponse = operations['getArtifact']['responses']['200']['content']['application/json'];
 export type GetArtifactLineageResponse = operations['getArtifactLineage']['responses']['200']['content']['application/json'];
 export type ListTagsResponse = operations['listTags']['responses']['200']['content']['application/json'];
 export type ListProjectsResponse = operations['listProjects']['responses']['200']['content']['application/json'];

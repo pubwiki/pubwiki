@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../types';
 import { createDb, BatchContext, ArtifactService, BuildCacheService, OptimisticLockError, type GetLineageParams, type CreateArtifactInput, type PatchArtifactInput, type UpdateArtifactMetadataInput, type UpdateVersionMetadataInput, type SearchArtifactsParams } from '@pubwiki/db';
-import type { ListArtifactsResponse, GetArtifactLineageResponse, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse, SearchArtifactsResponse } from '@pubwiki/api';
+import type { ListArtifactsResponse, GetArtifactLineageResponse, CreateArtifactResponse, GetArtifactGraphResponse, PatchArtifactResponse, UpdateArtifactMetadataResponse, UpdateVersionMetadataResponse, SearchArtifactsResponse, GetArtifactResponse } from '@pubwiki/api';
 import { computeSha256Hex } from '@pubwiki/api';
 import { ListArtifactsQueryParams, GetArtifactLineageQueryParams, CreateArtifactBody, PatchArtifactBody, UpdateArtifactMetadataBody, UpdateVersionMetadataBody, SearchArtifactsQueryParams } from '@pubwiki/api/validate';
 import { authMiddleware } from '../middleware/auth';
@@ -87,6 +87,24 @@ artifactsRoute.get('/search', async (c) => {
   }
 
   return c.json<SearchArtifactsResponse>(result.data);
+});
+
+// 获取单个 artifact 详情
+artifactsRoute.get('/:artifactId', resourceAccessMiddleware, async (c) => {
+  const ctx = new BatchContext(createDb(c.env.DB));
+  const artifactService = new ArtifactService(ctx);
+  const artifactId = c.req.param('artifactId');
+
+  // 访问控制检查（handles private artifacts — unlisted/public pass through）
+  const accessError = await checkResourceAccess(c, { type: 'artifact', id: artifactId });
+  if (accessError) return accessError;
+
+  const result = await artifactService.getArtifactDetail(artifactId);
+  if (!result.success) {
+    return serviceErrorResponse(c, result.error);
+  }
+
+  return c.json<GetArtifactResponse>(result.data);
 });
 
 // 获取 artifact 谱系信息

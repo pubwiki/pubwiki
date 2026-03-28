@@ -231,18 +231,44 @@
 			? { saveCommit, sandboxNodeId: resolvedSandboxNodeId }
 			: graphData.version?.entrypoint ?? undefined;
 
+		const buildCacheKey = resolvedBuildCacheKey ?? graphData.version?.buildCacheKey ?? undefined;
+
+		if (!entrypoint) {
+			return { success: false, error: 'Cannot publish: missing entrypoint (no save commit or sandbox node)' };
+		}
+		if (!buildCacheKey) {
+			return { success: false, error: 'Cannot publish: missing buildCacheKey' };
+		}
+
+		// Convert visibility string (from publish form dropdown) to isListed / isPrivate booleans.
+		// The form outputs { visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' } which gets spread
+		// over the metadata object by the pubwiki module's publish() function.
+		const visibility = (metadata as Record<string, unknown>).visibility as string | undefined;
+		let isListed = metadata.isListed ?? true;
+		let isPrivate = metadata.isPrivate ?? false;
+		if (visibility === 'UNLISTED') {
+			isListed = false;
+			isPrivate = false;
+		} else if (visibility === 'PRIVATE') {
+			isListed = false;
+			isPrivate = true;
+		} else if (visibility === 'PUBLIC') {
+			isListed = true;
+			isPrivate = false;
+		}
+
 		const apiMetadata = {
 			artifactId: newArtifactId,
 			commit,
 			parentCommit: null,
 			name: metadata.name,
 			description: metadata.description || undefined,
-			isListed: metadata.isListed ?? true,
-			isPrivate: metadata.isPrivate ?? false,
+			isListed,
+			isPrivate,
 			version: metadata.version || '1.0.0',
 			tags: metadata.tags && metadata.tags.length > 0 ? metadata.tags : undefined,
 			entrypoint,
-			buildCacheKey: resolvedBuildCacheKey ?? graphData.version?.buildCacheKey ?? undefined,
+			buildCacheKey,
 		};
 
 		try {

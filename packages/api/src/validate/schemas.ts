@@ -698,6 +698,50 @@ export const PatchArtifactResponse = zod.object({
 
 
 /**
+ * 获取指定 Artifact 的详细信息。
+- public artifact: 任何人可访问
+- unlisted artifact: 任何人可通过直接链接访问（不出现在列表中）
+- private artifact: 仅拥有者或有权限的用户可访问
+
+ * @summary 获取单个 Artifact 详情
+ */
+export const GetArtifactParams = zod.object({
+  "artifactId": zod.uuid().describe('Artifact ID')
+})
+
+export const GetArtifactResponse = zod.object({
+  "artifact": zod.object({
+  "id": zod.uuid(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "isListed": zod.boolean().describe('是否在公开列表中可见（可发现性）'),
+  "thumbnailUrl": zod.url().nullish(),
+  "license": zod.string().nullish(),
+  "createdAt": zod.iso.datetime({}),
+  "updatedAt": zod.iso.datetime({}),
+  "author": zod.object({
+  "id": zod.uuid(),
+  "username": zod.string(),
+  "displayName": zod.string().nullish(),
+  "avatarUrl": zod.url().nullish()
+}),
+  "tags": zod.array(zod.object({
+  "slug": zod.string().describe('Tag slug (primary key)'),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "color": zod.string().nullish().describe('颜色代码 #RRGGBB')
+})).optional(),
+  "stats": zod.object({
+  "viewCount": zod.number().optional().describe('浏览次数'),
+  "favCount": zod.number().optional().describe('收藏次数'),
+  "refCount": zod.number().optional().describe('引用次数（被 fork 次数）'),
+  "downloadCount": zod.number().optional().describe('下载次数')
+}).optional().describe('Artifact 统计信息')
+})
+})
+
+
+/**
  * 删除指定 Artifact。需要认证且具有 manage 权限。
 删除时会：
 - 级联删除所有关联的 Article

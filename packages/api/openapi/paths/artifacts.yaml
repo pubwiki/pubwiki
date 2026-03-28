@@ -267,6 +267,49 @@
               $ref: '../schemas/common.yaml#/ApiError'
 
 /artifacts/{artifactId}:
+  get:
+    summary: 获取单个 Artifact 详情
+    description: |
+      获取指定 Artifact 的详细信息。
+      - public artifact: 任何人可访问
+      - unlisted artifact: 任何人可通过直接链接访问（不出现在列表中）
+      - private artifact: 仅拥有者或有权限的用户可访问
+    operationId: getArtifact
+    tags:
+      - Artifacts
+    parameters:
+      - name: artifactId
+        in: path
+        required: true
+        description: Artifact ID
+        schema:
+          type: string
+          format: uuid
+    responses:
+      '200':
+        description: 成功获取 Artifact 详情
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - artifact
+              properties:
+                artifact:
+                  $ref: '../schemas/artifact.yaml#/ArtifactListItem'
+      '403':
+        description: 无权限（private artifact 且未认证/无权限）
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+      '404':
+        description: Artifact 不存在
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ApiError'
+
   delete:
     summary: 删除 Artifact
     description: |
