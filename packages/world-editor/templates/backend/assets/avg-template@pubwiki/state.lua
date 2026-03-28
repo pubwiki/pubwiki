@@ -904,6 +904,32 @@ Service:define():namespace("state"):name("InitialGameFromChoice")
         return { success = true }
     end)
 
+-- ============ 获取开场故事：GetGameInitialStory ============
+
+Service:definePure():namespace("state"):name("GetGameInitialStory")
+    :desc("获取游戏的背景故事和开场故事")
+    :usage("获取 GameInitialStory（背景故事 background 和开场故事 start_story）。Pure 服务，不修改状态。")
+    :inputs(Type.Object({}))
+    :outputs(Type.Object({
+        success = Type.Bool,
+        found = Type.Bool,
+        background = Type.Optional(Type.String):desc("背景故事"),
+        start_story = Type.Optional(Type.String):desc("开场故事"),
+        error = Type.Optional(Type.String),
+    }))
+    :impl(function(inputs)
+        local story = State:get(STATE_SUBJECT, "game://state/game_initial_story")
+        if not story then
+            return { success = true, found = false }
+        end
+        return {
+            success = true,
+            found = true,
+            background = story.background,
+            start_story = story.start_story,
+        }
+    end)
+
 return {
     StateDataType = StateDataType,
 }
