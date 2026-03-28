@@ -11,9 +11,9 @@ import {
   MemoryMessageStore,
   createSystemMessage,
   type LLMConfig,
+  type MessageStoreProvider,
 } from '@pubwiki/chat'
 
-import type { Vfs } from '@pubwiki/vfs'
 import type {
   WorldEditorAIContext,
   WorldEditorStreamEvent,
@@ -57,6 +57,10 @@ export interface DesignerConfig {
   getSandboxConnection?: SandboxConnectionGetter
   /** Optional: max tool iterations per turn (default 20) */
   maxIterations?: number
+  /** Optional external message store (IDB-backed). Falls back to MemoryMessageStore. */
+  messageStore?: MessageStoreProvider
+  /** Optional: restore historyId from a persisted session. */
+  initialHistoryId?: string | null
 }
 
 // ============================================================================
@@ -69,8 +73,8 @@ export class DesignerOrchestrator {
   private initialized = false
 
   constructor(private readonly config: DesignerConfig) {
-    // Create message store
-    const messageStore = new MemoryMessageStore()
+    // Create message store (use provided or fallback to in-memory)
+    const messageStore = config.messageStore ?? new MemoryMessageStore()
 
     // Create PubChat instance
     this.pubchat = new PubChat({
@@ -81,6 +85,12 @@ export class DesignerOrchestrator {
         maxIterations: config.maxIterations ?? 20,
       },
     })
+
+    // Restore historyId if provided
+    if (config.initialHistoryId) {
+      this.historyId = config.initialHistoryId
+      this.initialized = true
+    }
 
     // Register all tools
     this.registerTools()
@@ -183,5 +193,12 @@ export class DesignerOrchestrator {
   async reset(): Promise<void> {
     this.initialized = false
     this.historyId = null
+  }
+
+  /**
+   * Get the current history ID (conversation position) for session persistence.
+   */
+  getHistoryId(): string | null {
+    return this.historyId
   }
 }

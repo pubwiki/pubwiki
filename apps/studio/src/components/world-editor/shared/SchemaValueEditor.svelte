@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { TypeSchema } from '@pubwiki/world-editor';
+	import Self from './SchemaValueEditor.svelte';
 
 	interface Props {
 		schema: TypeSchema | undefined;
@@ -100,13 +101,13 @@
 		{#each Object.entries(properties) as [key, propSchema] (key)}
 			{@const isRequired = schema.required?.includes(key) ?? false}
 			<div class="flex flex-col gap-0.5">
-				<label class="text-xs font-medium" style="color: var(--we-text-secondary);">
+				<label class="text-xs font-medium" for="prop-{key}-{depth}" style="color: var(--we-text-secondary);">
 					{key}{#if isRequired}<span class="text-red-500 ml-0.5">*</span>{/if}
 					{#if propSchema.description}
 						<span class="font-normal ml-1" style="color: var(--we-text-tertiary);" title={propSchema.description}>ⓘ</span>
 					{/if}
 				</label>
-				<svelte:self
+				<Self
 					schema={propSchema}
 					value={currentObj[key]}
 					onChange={(newVal: unknown) => {
@@ -134,7 +135,7 @@
 			<div class="flex items-start gap-1">
 				<span class="text-[10px] font-mono shrink-0 pt-1" style="color: var(--we-text-tertiary);">#{index + 1}</span>
 				<div class="flex-1">
-					<svelte:self
+					<Self
 						schema={itemSchema}
 						value={item}
 						onChange={(newVal: unknown) => {
@@ -148,6 +149,7 @@
 				<button
 					type="button"
 					class="p-0.5 rounded hover:bg-red-50 text-red-400 hover:text-red-600 shrink-0 mt-0.5"
+					title="Remove item"
 					onclick={() => {
 						const newArr = currentArray.filter((_, i) => i !== index);
 						onChange(newArr.length > 0 ? newArr : undefined);

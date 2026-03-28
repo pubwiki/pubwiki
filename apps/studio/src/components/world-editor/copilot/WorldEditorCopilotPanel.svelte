@@ -43,7 +43,6 @@
     type WorkspaceFileInfo,
     type LorebookData,
     type StateChangeEntry,
-    WBNSessionStore,
     // Designer
     DesignerOrchestrator,
     type DesignerConfig,
@@ -56,7 +55,14 @@
   import { VfsWorkspaceFileProvider } from './vfs-file-provider';
   import CopilotToolCallBlock from '../../copilot/CopilotToolCallBlock.svelte';
   import QueryUserFormBlock from './QueryUserFormBlock.svelte';
-  import { ChatMessageStore } from './chat-message-store';
+  import {
+    CopilotSessionStore,
+    generateSessionId,
+    generateSessionTitle,
+    type CopilotSession,
+    type CopilotSessionMeta,
+    type SessionMode,
+  } from './copilot-session-store';
   import SandboxPreviewView from '../../nodes/sandbox/SandboxPreviewView.svelte';
   import { VFSContent, type LoaderNodeData } from '$lib/types';
   import { detectProject } from '@pubwiki/bundler';
@@ -101,10 +107,7 @@
   // Panel mode: chat (free-form copilot) vs builder (guided world-building wizard) vs designer (frontend code agent)
   type PanelMode = 'chat' | 'builder' | 'designer';
   const persistedPanelMode = persist<PanelMode>('world-editor-copilot-mode', 'chat');
-  let panelMode = $state<PanelMode>(persistedPanelMode.value);
-
-  // Sync panelMode to localStorage
-  $effect(() => { persistedPanelMode.value = panelMode; });
+  let panelMode = $derived(persistedPanelMode.value);
 
   // Builder sub-state (for future Phase D implementation)
   type BuilderPhase = 'setup' | 'generating' | 'waiting' | 'revising' | 'error' | 'completed';
@@ -135,11 +138,13 @@
   let designerMessages = createMessagesStore();
   let designerInputStore = createChatInputStore();
   let designerActiveChatStore = createActiveChatStore();
-  let designerShowPreview = $state(false);
+  const persistedShowPreview = persist<boolean>('we-designer-show-preview', false);
+  let designerShowPreview = $derived(persistedShowPreview.value);
   let designerPreviewVfs = $state<NodeVfs | null>(null);
   let designerProjectConfig = $state<ProjectConfig | null>(null);
   let designerEntryFile = $state('index.html');
   let designerLoaderNodes = $state<Array<{ id: string; data: LoaderNodeData }>>([]);
+  let designerLoaderReady = $state(false);
   let designerSandboxConnection = $state<import('@pubwiki/world-editor').SandboxConnectionLike | null>(null);
   /** Resolvers waiting for the sandbox connection to be established after auto-open */
   let connectionWaiters: Array<(conn: import('@pubwiki/world-editor').SandboxConnectionLike | null) => void> = [];
@@ -209,9 +214,17 @@
   let fileInputEl = $state<HTMLInputElement | null>(null);
 
   // WBN session persistence
-  const sessionStore = new WBNSessionStore(weCtx.projectId);
-  // Chat message persistence
-  const chatStore = new ChatMessageStore(weCtx.projectId);
+  const copilotSessionStore = new CopilotSessionStore();
+
+  // Current session tracking
+  let currentSessionId = $state<string | null>(null);
+  let currentSession = $state<CopilotSession | null>(null);
+  let sessionList = $state<CopilotSessionMeta[]>([]);
+  let showSessionList = $state(false);
+
+  // IDB-backed message store for current session (shared by orchestrator + UI)
+  let currentMessageStore = $state<ReturnType<CopilotSessionStore['createMessageStore']> | null>(null);
+  let designerMessageStore = $state<ReturnType<CopilotSessionStore['createMessageStore']> | null>(null);
 
   async function ensureFileProvider(): Promise<VfsWorkspaceFileProvider> {
     if (fileProvider) return fileProvider;
@@ -256,21 +269,96 @@
     };
   }
 
-  /** Persist the current builder session (fire-and-forget). */
-  function saveBuilderSession() {
-    if (builderSession) {
-      // Strip Svelte 5 $state proxies — IndexedDB structured clone cannot handle Proxy objects
-      sessionStore.save($state.snapshot(builderSession)).catch((e) => console.warn('[WBN] Failed to save session:', e));
+  function formatTimeAgo(timestamp: number): string {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  /** Persist the current session metadata (fire-and-forget). */
+  function saveCurrentSession() {
+    if (currentSession) {
+      currentSession.updatedAt = Date.now();
+      // Capture historyId from the active orchestrator
+      if (currentSession.mode === 'chat' || currentSession.mode === 'builder') {
+        currentSession.historyId = orchestrator?.getHistoryId() ?? currentSession.historyId;
+      } else if (currentSession.mode === 'designer') {
+        currentSession.historyId = designerOrchestrator?.getHistoryId() ?? currentSession.historyId;
+      }
+      copilotSessionStore.save($state.snapshot(currentSession)).catch((e) => console.warn('[Session] Failed to save:', e));
     }
   }
 
-  /** Try to restore a saved builder session on mount. */
-  async function restoreBuilderSession() {
-    try {
-      const saved = await sessionStore.load();
-      if (saved && saved.status !== 'error') {
+  /** Persist the current builder session inside the copilot session (fire-and-forget). */
+  function saveBuilderSession() {
+    if (currentSession && builderSession) {
+      currentSession.builderSession = $state.snapshot(builderSession);
+      saveCurrentSession();
+    }
+  }
+
+  /** Create a new session for the given mode and wire up message stores + orchestrators. */
+  async function createNewSession(mode: SessionMode): Promise<void> {
+    // Save the outgoing session before creating a new one
+    saveCurrentSession();
+
+    const sessionId = generateSessionId();
+    const now = Date.now();
+    const session: CopilotSession = {
+      id: sessionId,
+      projectId: weCtx.projectId,
+      mode,
+      title: 'New Chat',
+      createdAt: now,
+      updatedAt: now,
+    };
+    await copilotSessionStore.save(session);
+    await activateSession(session);
+    await refreshSessionList();
+  }
+
+  /** Activate a session: set up message stores and rebuild orchestrators. */
+  async function activateSession(session: CopilotSession): Promise<void> {
+    currentSession = session;
+    currentSessionId = session.id;
+
+    if (session.mode === 'chat' || session.mode === 'builder') {
+      // Wire chat message store
+      const msgStore = copilotSessionStore.createMessageStore(session.id);
+      await msgStore.warmup();
+      currentMessageStore = msgStore;
+
+      // Rebuild chat orchestrator with IDB-backed store
+      rebuildChatOrchestrator(msgStore, session.historyId);
+
+      // Restore messages into UI
+      const msgs = msgStore.getAllMessages();
+      messagesStore.setMessages(msgs);
+    }
+
+    if (session.mode === 'designer') {
+      const dMsgStore = copilotSessionStore.createMessageStore(session.id);
+      await dMsgStore.warmup();
+      designerMessageStore = dMsgStore;
+
+      // Rebuild designer orchestrator with IDB-backed store
+      rebuildDesignerOrchestrator(dMsgStore, session.historyId);
+
+      // Restore designer messages into UI
+      const msgs = dMsgStore.getAllMessages();
+      designerMessages.setMessages(msgs);
+    }
+
+    // Restore builder session if present
+    if (session.mode === 'builder' && session.builderSession) {
+      const saved = session.builderSession;
+      if (saved.status !== 'error') {
         builderSession = saved;
-        // Determine builder phase from session state
         const currentPhaseStatus = saved.phases[saved.currentPhase].status;
         if (saved.status === 'completed') {
           builderPhase = 'completed';
@@ -278,18 +366,95 @@
           builderPhase = 'waiting';
         } else {
           builderPhase = 'waiting';
-          // Reset the active phase to completed so user can retry or continue
           saved.phases[saved.currentPhase].status = 'completed';
         }
-        // Reconstruct change report for current phase from saved outputs
         if (builderPhase === 'waiting' && saved.phases[saved.currentPhase].output) {
           builderChanges = computePhaseChanges(saved, saved.currentPhase);
         }
-        panelMode = 'builder';
+      }
+    }
+
+    // Auto-switch panel mode
+    persistedPanelMode.value = session.mode;
+  }
+
+  /** Switch to an existing session. */
+  async function switchToSession(sessionId: string): Promise<void> {
+    if (sessionId === currentSessionId) {
+      showSessionList = false;
+      return;
+    }
+
+    saveCurrentSession();
+
+    const session = await copilotSessionStore.load(sessionId);
+    if (!session) return;
+
+    // Clear current state
+    resetLocalState();
+    await activateSession(session);
+    showSessionList = false;
+  }
+
+  /** Refresh the session list for the current project. */
+  async function refreshSessionList(): Promise<void> {
+    sessionList = await copilotSessionStore.list(weCtx.projectId);
+  }
+
+  /** Delete a session from the list. */
+  async function deleteSession(sessionId: string): Promise<void> {
+    await copilotSessionStore.delete(sessionId);
+    if (sessionId === currentSessionId) {
+      // Deleted the active session — create a fresh one
+      resetLocalState();
+      await createNewSession('chat');
+    }
+    await refreshSessionList();
+  }
+
+  /** Reset local UI state (messages, builder, etc.) without touching IDB. */
+  function resetLocalState(): void {
+    messagesStore.setMessages([]);
+    designerMessages.setMessages([]);
+    builderSession = null;
+    builderPhase = 'setup';
+    builderError = null;
+    builderRevisionLog = [];
+    builderStatusMessage = '';
+    builderCharCount = 0;
+    builderAiText = '';
+    builderPendingQuery = null;
+    builderQuerySubmitted = false;
+    builderQueryResolve = null;
+    builderIsRevising = false;
+    builderEventLog = [];
+    builderChanges = [];
+    pendingQueryRequest = null;
+    queryFormSubmitted = false;
+    currentMessageStore?.clearCache();
+    designerMessageStore?.clearCache();
+    currentMessageStore = null;
+    designerMessageStore = null;
+  }
+
+  /** Try to restore the most recent session for this project, or create a new chat session. */
+  async function restoreSessions() {
+    try {
+      await refreshSessionList();
+      if (sessionList.length > 0) {
+        // Restore the most recent session
+        const latest = sessionList[0];
+        const session = await copilotSessionStore.load(latest.id);
+        if (session) {
+          await activateSession(session);
+          return;
+        }
       }
     } catch (e) {
-      console.warn('[WBN] Failed to restore session:', e);
+      console.warn('[Session] Failed to restore sessions:', e);
     }
+    // No sessions found — create a fresh chat session
+    await createNewSession('chat');
   }
 
   // ============================================================================
@@ -315,6 +480,21 @@
 
     error = null;
 
+    rebuildChatOrchestrator(currentMessageStore ?? undefined, currentSession?.historyId);
+
+    // Eagerly initialize file provider in background
+    ensureFileProvider().then(() => refreshFileList()).catch(() => {});
+
+    // Also initialize designer orchestrator
+    rebuildDesignerOrchestrator(designerMessageStore ?? undefined, currentSession?.mode === 'designer' ? currentSession?.historyId : undefined);
+  }
+
+  function rebuildChatOrchestrator(
+    msgStore?: ReturnType<CopilotSessionStore['createMessageStore']>,
+    historyId?: string | null,
+  ) {
+    if (!isLLMConfigured) return;
+
     const config: WorldEditorCopilotConfig = {
       llm: {
         apiKey: settingsStore.api.apiKey,
@@ -326,18 +506,17 @@
       aiContext: createAIContext(),
       fileProvider: fileProvider ?? undefined,
       getWorkspaceFiles: () => fileList,
+      messageStore: msgStore,
+      initialHistoryId: historyId,
     };
 
     orchestrator = new WorldEditorCopilotOrchestrator(config);
-
-    // Eagerly initialize file provider in background
-    ensureFileProvider().then(() => refreshFileList()).catch(() => {});
-
-    // Also initialize designer orchestrator
-    initializeDesignerOrchestrator();
   }
 
-  function initializeDesignerOrchestrator() {
+  function rebuildDesignerOrchestrator(
+    msgStore?: ReturnType<CopilotSessionStore['createMessageStore']>,
+    historyId?: string | null,
+  ) {
     if (!isLLMConfigured) return;
 
     const designerConfig: DesignerConfig = {
@@ -358,7 +537,7 @@
         if (!designerPreviewVfs || !designerProjectConfig) return null;
 
         // Auto-open the preview
-        designerShowPreview = true;
+        persistedShowPreview.value = true;
 
         // Wait for connection to be established (timeout 30s)
         return new Promise<import('@pubwiki/world-editor').SandboxConnectionLike | null>((resolve) => {
@@ -374,6 +553,8 @@
           });
         });
       },
+      messageStore: msgStore,
+      initialHistoryId: historyId,
     };
 
     designerOrchestrator = new DesignerOrchestrator(designerConfig);
@@ -434,6 +615,7 @@
 
     // Generate service type definitions after loader is ready
     if (isLoaderReady(loaderNode.id)) {
+      designerLoaderReady = true;
       generateAndMountDocs(loaderNode.id);
     }
 
@@ -552,8 +734,7 @@
       // Try to restore saved state (only once)
       if (!sessionRestored) {
         sessionRestored = true;
-        restoreBuilderSession();
-        restoreChatMessages();
+        restoreSessions();
       }
     }
   });
@@ -561,26 +742,11 @@
   // Save session before page unload
   $effect(() => {
     function onBeforeUnload() {
-      saveBuilderSession();
+      saveCurrentSession();
     }
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   });
-
-  async function restoreChatMessages() {
-    try {
-      const saved = await chatStore.load();
-      if (saved.length > 0) {
-        messagesStore.setMessages(saved);
-      }
-    } catch (e) {
-      console.warn('[Chat] Failed to restore messages:', e);
-    }
-  }
-
-  function saveChatMessages() {
-    chatStore.save($state.snapshot(messagesStore.messages)).catch((e) => console.warn('[Chat] Failed to save messages:', e));
-  }
 
   // ============================================================================
   // Chat Handling
@@ -588,6 +754,13 @@
 
   async function handleSend(content: string) {
     if (!content.trim() || !orchestrator) return;
+
+    // Auto-title the session on first user message
+    if (currentSession && currentSession.title === 'New Chat') {
+      currentSession.title = generateSessionTitle(content);
+      saveCurrentSession();
+      refreshSessionList();
+    }
 
     // Add user message
     const userMessage: DisplayMessage = {
@@ -673,7 +846,7 @@
           };
           messagesStore.addMessage(assistantMessage);
           activeChatStore.endGeneration();
-          saveChatMessages();
+          saveCurrentSession();
         } else if (event.type === 'error') {
           console.error('World Editor Copilot error:', event.error);
           activeChatStore.endGeneration();
@@ -695,7 +868,12 @@
     messagesStore.setMessages([]);
     pendingQueryRequest = null;
     queryFormSubmitted = false;
-    chatStore.clear().catch(() => {});
+    // Delete current session and create a fresh one
+    if (currentSessionId) {
+      deleteSession(currentSessionId);
+    } else {
+      createNewSession('chat');
+    }
   }
 
   function handleQueryUserSubmit(data: Record<string, unknown>) {
@@ -710,6 +888,13 @@
 
   async function handleDesignerSend(content: string) {
     if (!content.trim() || !designerOrchestrator) return;
+
+    // Auto-title the session on first user message
+    if (currentSession && currentSession.title === 'New Chat') {
+      currentSession.title = generateSessionTitle(content);
+      saveCurrentSession();
+      refreshSessionList();
+    }
 
     const userMessage: DisplayMessage = {
       id: `msg-${Date.now()}`,
@@ -800,6 +985,12 @@
   function handleDesignerClearHistory() {
     designerOrchestrator?.reset();
     designerMessages.setMessages([]);
+    // Delete current session and create a fresh designer session
+    if (currentSessionId) {
+      deleteSession(currentSessionId);
+    } else {
+      createNewSession('designer');
+    }
   }
 
   // ============================================================================
@@ -851,7 +1042,16 @@
     builderPhase = 'generating';
     builderError = null;
     builderRevisionLog = [];
-    saveBuilderSession();
+
+    // Auto-title the session from the builder prompt
+    if (currentSession && currentSession.title === 'New Chat') {
+      currentSession.title = generateSessionTitle(prompt);
+      refreshSessionList();
+    }
+    if (currentSession) {
+      currentSession.builderSession = $state.snapshot(session);
+    }
+    saveCurrentSession();
 
     await runBuilderPhase(session, 'synopsis');
   }
@@ -1092,7 +1292,12 @@
     builderQueryResolve = null;
     builderIsRevising = false;
     builderEventLog = [];
-    sessionStore.delete().catch(() => {});
+    // Delete current session and create a fresh builder session
+    if (currentSessionId) {
+      deleteSession(currentSessionId);
+    } else {
+      createNewSession('builder');
+    }
   }
 
   /** Rollback to a previously completed phase, re-applying all phases up to and including the target. */
@@ -1257,7 +1462,7 @@
         <div class="flex items-center gap-0.5 rounded-lg bg-gray-200/70 p-0.5">
           <button
             class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors {panelMode === 'chat' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}"
-            onclick={() => { if (canSwitchMode) panelMode = 'chat'; }}
+            onclick={() => { if (canSwitchMode) persistedPanelMode.value = 'chat'; }}
             disabled={!canSwitchMode && panelMode !== 'chat'}
             title="Free-form AI chat"
           >
@@ -1268,7 +1473,7 @@
           </button>
           <button
             class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors {panelMode === 'builder' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}"
-            onclick={() => { if (canSwitchMode) panelMode = 'builder'; }}
+            onclick={() => { if (canSwitchMode) persistedPanelMode.value = 'builder'; }}
             disabled={!canSwitchMode && panelMode !== 'builder'}
             title="Guided world-building wizard"
           >
@@ -1279,7 +1484,7 @@
           </button>
           <button
             class="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors {panelMode === 'designer' ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-500 hover:text-gray-700'}"
-            onclick={() => { if (canSwitchMode) panelMode = 'designer'; }}
+            onclick={() => { if (canSwitchMode) persistedPanelMode.value = 'designer'; }}
             disabled={!canSwitchMode && panelMode !== 'designer'}
             title="AI frontend designer"
           >
@@ -1291,8 +1496,73 @@
         </div>
 
         <!-- Actions -->
-        <div class="flex items-center gap-0.5">
-          <span class="px-1.5 py-0.5 text-[10px] font-medium bg-gray-200 text-gray-500 rounded">Beta</span>
+        <div class="flex items-center gap-0.5 relative">
+          <!-- Session list button (replaces Beta badge) -->
+          <button
+            class="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            onclick={() => { showSessionList = !showSessionList; if (showSessionList) refreshSessionList(); }}
+            title="Sessions"
+          >
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </button>
+
+          <!-- Session list popup -->
+          {#if showSessionList}
+            <!-- Backdrop -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="fixed inset-0 z-40" onclick={() => { showSessionList = false; }}></div>
+            <div class="absolute right-0 top-full mt-1 z-50 w-72 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+              <div class="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+                <span class="text-xs font-medium text-gray-700">Sessions</span>
+                <button
+                  class="flex items-center gap-1 px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                  onclick={() => { showSessionList = false; createNewSession(panelMode); }}
+                >
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  New
+                </button>
+              </div>
+              <div class="max-h-64 overflow-y-auto">
+                {#if sessionList.length === 0}
+                  <div class="px-3 py-4 text-xs text-gray-400 text-center">No sessions yet</div>
+                {:else}
+                  {#each sessionList as session (session.id)}
+                    <div
+                      class="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer transition-colors group {session.id === currentSessionId ? 'bg-indigo-50' : ''}"
+                      role="button"
+                      tabindex="0"
+                      onclick={() => switchToSession(session.id)}
+                      onkeydown={(e) => { if (e.key === 'Enter') switchToSession(session.id); }}
+                    >
+                      <div class="flex-1 min-w-0">
+                        <div class="text-xs font-medium text-gray-800 truncate {session.id === currentSessionId ? 'text-indigo-700' : ''}">{session.title}</div>
+                        <div class="flex items-center gap-1.5 mt-0.5">
+                          <span class="text-[10px] px-1 py-0.5 rounded bg-gray-100 text-gray-500">{session.mode}</span>
+                          <span class="text-[10px] text-gray-400">{formatTimeAgo(session.updatedAt)}</span>
+                        </div>
+                      </div>
+                      {#if session.id !== currentSessionId}
+                        <button
+                          class="p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded"
+                          onclick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
+                          title="Delete session"
+                        >
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
+              </div>
+            </div>
+          {/if}
           {#if panelMode === 'chat'}
             <!-- Clear History (chat mode only) -->
             <button
@@ -1320,7 +1590,7 @@
             <!-- Preview Button -->
             <button
               class="p-1.5 transition-colors rounded-lg {designerProjectConfig ? 'text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50' : 'text-gray-300 cursor-not-allowed'}"
-              onclick={() => { if (designerProjectConfig) designerShowPreview = true; }}
+              onclick={() => { if (designerProjectConfig) persistedShowPreview.value = true; }}
               disabled={!designerProjectConfig}
               title={designerProjectConfig ? 'Open preview' : 'Preview unavailable (project not detected)'}
             >
@@ -1682,7 +1952,7 @@
             </button>
             <button
               class="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors"
-              onclick={() => panelMode = 'chat'}
+              onclick={() => persistedPanelMode.value = 'chat'}
             >
               Switch to Chat
             </button>
@@ -1758,14 +2028,14 @@
 {/if}
 
 <!-- Designer Preview (rendered as portal outside panel) -->
-{#if designerShowPreview && designerPreviewVfs && designerProjectConfig}
+{#if designerShowPreview && designerPreviewVfs && designerProjectConfig && designerLoaderReady}
   <SandboxPreviewView
     vfs={designerPreviewVfs}
     projectConfig={designerProjectConfig}
     entryFile={designerEntryFile}
     name="Frontend Preview"
     loaderNodes={designerLoaderNodes}
-    onClose={() => { designerShowPreview = false; }}
+    onClose={() => { persistedShowPreview.value = false; }}
     projectId={weCtx.projectId}
     vfsNodeId={nodeStore.findByMetadata('simple-mode-role', 'frontend-vfs')?.id}
     onSandboxConnection={(conn) => {

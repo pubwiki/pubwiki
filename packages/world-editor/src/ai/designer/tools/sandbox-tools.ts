@@ -137,7 +137,7 @@ export function createVerifyFrontendTool(getConnection: SandboxConnectionGetter)
       console.log(`[verify_frontend] Starting. expect="${expect}", timeout=${timeoutMs}ms`)
 
       // Promise that resolves when expected log is found, build error occurs, or timeout
-      const result = await new Promise<{ type: 'found' | 'build_error' | 'timeout' }>((resolve) => {
+      const result = await new Promise<{ type: 'found' | 'build_error' | 'timeout'; buildErrors?: string[] }>((resolve) => {
         let timer: ReturnType<typeof setTimeout> | null = null
         let unsubLog: (() => void) | null = null
         let unsubBuild: (() => void) | null = null
@@ -153,7 +153,7 @@ export function createVerifyFrontendTool(getConnection: SandboxConnectionGetter)
           console.log(`[verify_frontend] onBuildError fired at +${Date.now() - t0}ms, errors:`, errors)
           buildErrorMessages = errors
           cleanup()
-          resolve({ type: 'build_error' })
+          resolve({ type: 'build_error', buildErrors: errors })
         })
 
         // Listen for logs
@@ -188,7 +188,7 @@ export function createVerifyFrontendTool(getConnection: SandboxConnectionGetter)
 
       switch (result.type) {
         case 'build_error': {
-          const errorText = buildErrorMessages?.join('\n') ?? 'Unknown build error'
+          const errorText = result.buildErrors?.join('\n') ?? 'Unknown build error'
           return `❌ Build failed:\n\`\`\`\n${errorText}\n\`\`\`\nFix the build errors and try again.`
         }
         case 'found': {

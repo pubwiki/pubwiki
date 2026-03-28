@@ -90,7 +90,6 @@ export {
   applyRevisionPatch,
   computePhaseChanges,
 } from './world-builder/service'
-export { WBNSessionStore } from './world-builder/session-store'
 
 // Designer Agent
 export {

@@ -147,11 +147,11 @@
 	// Project name (display, updated on every keystroke)
 	let projectName = $state('');
 	
-	// Copilot panel state (controlled from sidebar button)
-	let copilotCollapsed = $state(true);
+	// Copilot panel state (controlled from sidebar button, persisted)
+	const copilotCollapsed = persist('studio-copilot-collapsed', true);
 
-	// Sidebar state (for dynamic layout padding)
-	let sidebarCollapsed = $state(false);
+	// Sidebar state (for dynamic layout padding, persisted)
+	const sidebarCollapsed = persist('studio-sidebar-collapsed', false);
 	let sidebarWidthValue = $state(360);
 
 	// Editor mode state (persisted to localStorage)
@@ -1640,7 +1640,7 @@
 				<span class="text-sm text-muted-foreground">Initializing world editor…</span>
 			</div>
 		{:then tripleStore}
-			<WorldEditor projectId={currentProjectId} store={tripleStore} bind:copilotCollapsed={copilotCollapsed} {sidebarCollapsed} sidebarWidth={sidebarWidthValue} />
+			<WorldEditor projectId={currentProjectId} store={tripleStore} bind:copilotCollapsed={copilotCollapsed.value} sidebarCollapsed={sidebarCollapsed.value} sidebarWidth={sidebarWidthValue} />
 		{:catch err}
 			<div class="flex-1 h-full flex items-center justify-center text-destructive">
 				<span class="text-sm">Failed to initialize: {err?.message ?? err}</span>
@@ -1670,7 +1670,7 @@
 		onAcceptCloud={handleAcceptCloud}
 		onForcePushLocal={handleForcePushLocal}
 		{selectedEntrypoint}
-		bind:sidebarCollapsed={sidebarCollapsed}
+		bind:sidebarCollapsed={sidebarCollapsed.value}
 		bind:sidebarWidth={sidebarWidthValue}
 		onEntrypointChange={async (id) => {
 			selectedEntrypoint = id;
@@ -1679,8 +1679,8 @@
 				await saveProject({ ...project, selectedEntrypoint: id, updatedAt: Date.now() });
 			}
 		}}
-		copilotOpen={!copilotCollapsed}
-		onCopilotToggle={() => copilotCollapsed = !copilotCollapsed}
+		copilotOpen={!copilotCollapsed.value}
+		onCopilotToggle={() => copilotCollapsed.value = !copilotCollapsed.value}
 		{editorMode}
 		onModeChange={(mode) => persistedEditorMode.value = mode}
 		onNameChange={async (name) => {
@@ -1704,7 +1704,7 @@
 	
 	<!-- Copilot Panel (Right side chat panel) — Expert mode only -->
 	{#if editorMode === 'expert'}
-		<CopilotPanel projectId={currentProjectId} bind:collapsed={copilotCollapsed} hideCollapsedButton={true} />
+		<CopilotPanel projectId={currentProjectId} bind:collapsed={copilotCollapsed.value} hideCollapsedButton={true} />
 	{/if}
 	
 	<!-- Context Menu -->

@@ -11,6 +11,7 @@ import {
   MemoryMessageStore,
   createSystemMessage,
   type LLMConfig,
+  type MessageStoreProvider,
 } from '@pubwiki/chat'
 
 import type {
@@ -75,6 +76,10 @@ export interface WorldEditorCopilotConfig {
   getWorkspaceFiles?: () => WorkspaceFileInfo[]
   /** Optional: max tool iterations per turn (default 20) */
   maxIterations?: number
+  /** Optional external message store (IDB-backed). Falls back to MemoryMessageStore. */
+  messageStore?: MessageStoreProvider
+  /** Optional: restore historyId from a persisted session. */
+  initialHistoryId?: string | null
 }
 
 // ============================================================================
@@ -101,8 +106,8 @@ export class WorldEditorCopilotOrchestrator {
       getUserSkillContent: () => null,
     }
 
-    // Create message store
-    const messageStore = new MemoryMessageStore()
+    // Create message store (use provided or fallback to in-memory)
+    const messageStore = config.messageStore ?? new MemoryMessageStore()
 
     // Create PubChat instance
     this.pubchat = new PubChat({
@@ -113,6 +118,12 @@ export class WorldEditorCopilotOrchestrator {
         maxIterations: config.maxIterations ?? 20,
       },
     })
+
+    // Restore historyId if provided
+    if (config.initialHistoryId) {
+      this.historyId = config.initialHistoryId
+      this.initialized = true
+    }
 
     // Register all tools
     this.registerTools(config.aiContext)
@@ -315,7 +326,7 @@ export class WorldEditorCopilotOrchestrator {
     resetSkillReadTracking()
 
     // Re-create PubChat with fresh message store
-    const messageStore = new MemoryMessageStore()
+    const messageStore = this.config.messageStore ?? new MemoryMessageStore()
     this.pubchat = new PubChat({
       llm: this.config.llm,
       messageStore,
@@ -334,5 +345,12 @@ export class WorldEditorCopilotOrchestrator {
    */
   updateLLMConfig(llmConfig: Partial<LLMConfig>): void {
     Object.assign(this.config.llm, llmConfig)
+  }
+
+  /**
+   * Get the current history ID (conversation position) for session persistence.
+   */
+  getHistoryId(): string | null {
+    return this.historyId
   }
 }
