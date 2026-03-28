@@ -287,7 +287,7 @@ export class BundlerService {
    * Only one watcher can be active at a time.
    */
   watch(options: WatchOptions): () => void {
-    const { tsconfigPath, onRebuild, onFileChange } = options
+    const { tsconfigPath, bundleOptions, onRebuild, onFileChange } = options
 
     // Cancel previous watching
     if (this.fileWatchUnsubscriber) {
@@ -308,7 +308,7 @@ export class BundlerService {
 
     const setupWatch = async () => {
       try {
-        const result = await this.build({ tsconfigPath })
+        const result = await this.build({ tsconfigPath, options: bundleOptions })
         dependencies = result.dependencies
 
         if (!isWatching) return
@@ -338,7 +338,7 @@ export class BundlerService {
             }
             
             // Rebuild once
-            const newResult = await this.build({ tsconfigPath })
+            const newResult = await this.build({ tsconfigPath, options: bundleOptions })
             
             // Update watched dependencies
             dependencies = newResult.dependencies

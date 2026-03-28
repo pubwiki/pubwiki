@@ -43,6 +43,9 @@ export class DependencyResolver {
   // tsconfig path aliases for local package resolution (e.g. @pubwiki/game-sdk → /lib/game-sdk)
   private pathAliases: Map<string, string[]> | null = null
 
+  // Development mode flag — CDN URLs request dev builds (e.g. esm.sh?dev)
+  private devMode = false
+
 
   constructor(options?: { fileExistsChecker?: (path: string) => Promise<boolean>; cache?: BuildCacheStorage }) {
     this.fileExistsChecker = options?.fileExistsChecker
@@ -54,7 +57,8 @@ export class DependencyResolver {
         name: 'esm.sh',
         url: (pkg) => {
           const ext = this.getEsmShExternalParam()
-          return `https://esm.sh/${pkg}${ext}`
+          const dev = this.devMode ? (ext ? '&dev' : '?dev') : ''
+          return `https://esm.sh/${pkg}${ext}${dev}`
         },
         priority: 1
       },
@@ -93,6 +97,17 @@ export class DependencyResolver {
   setPackageVersionResolver(resolver: PackageVersionResolver): void {
     this.packageVersionResolver = resolver
     this.esmShExternalParam = null // Reset cached param so it's recomputed
+  }
+
+  /**
+   * Enable/disable development mode for CDN URLs.
+   * When enabled, esm.sh serves development builds with better error messages.
+   */
+  setDevMode(dev: boolean): void {
+    if (this.devMode !== dev) {
+      this.devMode = dev
+      this.resolveCache.clear() // CDN URLs change with dev mode
+    }
   }
 
   /**
@@ -301,9 +316,10 @@ export class DependencyResolver {
     // Track resolved package for importmap write-back
     this.trackResolvedPackage(packageName)
 
-    // Cache key includes esm.sh external params so entries invalidate when deps change
+    // Cache key includes esm.sh external params and dev mode so entries invalidate correctly
     const esmExt = this.getEsmShExternalParam()
-    const cacheKey = esmExt ? `${versionedName}${esmExt}` : versionedName
+    const devSuffix = this.devMode ? '&dev' : ''
+    const cacheKey = esmExt ? `${versionedName}${esmExt}${devSuffix}` : `${versionedName}${devSuffix}`
 
     // Coalesce concurrent resolutions for the same package.
     // The sync Map check must happen before any await to prevent races.

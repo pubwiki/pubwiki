@@ -507,6 +507,17 @@ export class ESBuildEngine {
     // Reset per-build state
     this.cssRuntimesUsed.clear()
 
+    // Apply development mode: dev CDN builds + NODE_ENV define
+    if (options.development) {
+      this.resolver.setDevMode(true)
+    }
+
+    // Merge define map — development mode injects NODE_ENV unless caller overrides
+    const define = { ...options.define }
+    if (options.development && !define['process.env.NODE_ENV']) {
+      define['process.env.NODE_ENV'] = '"development"'
+    }
+
     // Clear dependency graph for entry files before rebuild to get fresh data
     // This ensures new imports are tracked correctly during incremental builds
     for (const entry of entryFiles) {
@@ -529,14 +540,14 @@ export class ESBuildEngine {
         sourcemap: options.sourcemap === true ? 'inline' : 
                    options.sourcemap === 'external' ? 'external' :
                    options.sourcemap === 'inline' ? 'inline' : 'inline',
-        minify: options.minify || false,
+        minify: options.development ? false : (options.minify || false),
         treeShaking: options.treeShaking ?? true,
         splitting: entryFiles.length > 1, // Enable code splitting for multi-entry
         chunkNames: 'chunks/[name]-[hash]',
         outdir: 'out', // Required for splitting
         plugins: [this.createResolverPlugin()],
         logLevel: 'warning',
-        define: options.define
+        define: Object.keys(define).length > 0 ? define : undefined
       }
 
       const configHash = this.hashBuildConfig(entryFiles, buildOptions)

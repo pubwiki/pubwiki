@@ -54,6 +54,8 @@ export type BuildProgressCallback = (event: BuildProgressEvent) => void
 export interface WatchOptions {
   /** tsconfig.json 的路径 */
   tsconfigPath: string
+  /** Bundle options forwarded to each rebuild */
+  bundleOptions?: BundleOptions
   /** Callback when rebuild completes */
   onRebuild?: (result: ProjectBuildResult) => void
   /** Callback when file changes (before rebuild) */

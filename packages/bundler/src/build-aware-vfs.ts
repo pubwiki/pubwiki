@@ -17,6 +17,7 @@ import { BundlerService } from './service/bundler-service'
 import type { ProjectConfig } from './service/project-detector'
 import type { ProjectBuildResult, BuildManifest } from './types/result'
 import type { BuildProgressEvent } from './types/service'
+import type { BundleOptions } from './types/options'
 import type { BuildCacheStorage, BuildCacheFile } from './cache'
 
 // ============================================================================
@@ -72,6 +73,8 @@ export interface BuildAwareVfsConfig {
   computeBuildCacheKey?: () => Promise<string>
   /** Callback for build progress events (start/complete/error) — used by UI for compilation indicator */
   onBuildProgress?: (event: BuildProgressEvent) => void
+  /** Bundle options forwarded to the bundler (e.g. development mode, minify, define) */
+  bundleOptions?: BundleOptions
 }
 
 // ============================================================================
@@ -251,6 +254,7 @@ class BuildAwareVfsProvider implements VfsProvider {
     // Execute build
     const buildResult = await this.bundlerService.build({
       tsconfigPath: this.config.projectConfig.tsconfigPath,
+      options: this.config.bundleOptions,
     })
 
     if (!buildResult.success) {
@@ -395,6 +399,7 @@ class BuildAwareVfsProvider implements VfsProvider {
 
     this.watchUnsub = this.bundlerService.watch({
       tsconfigPath: this.config.projectConfig.tsconfigPath,
+      bundleOptions: this.config.bundleOptions,
       onRebuild: (result: ProjectBuildResult) => {
         if (result.success) {
           // Update L0 cache with new build output

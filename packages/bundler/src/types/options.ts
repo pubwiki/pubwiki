@@ -26,4 +26,12 @@ export interface BundleOptions {
   jsxImportSource?: string
   /** Enable tree shaking */
   treeShaking?: boolean
+  /**
+   * Development mode.
+   * When true:
+   * - Sets process.env.NODE_ENV to 'development' (unless explicitly overridden in define)
+   * - Fetches development builds from CDN (e.g. esm.sh?dev) for better error messages
+   * - Disables minification
+   */
+  development?: boolean
 }
