@@ -9,6 +9,7 @@ import { useStore } from 'zustand'
 import { useGameStore } from './provider.tsx'
 import { matchTriples } from './store.ts'
 import type { Triple, MatchPattern, Value } from './types.ts'
+import { GRAPH, PWC_PRED, JSON_PREDICATES, extractId } from './vocabulary.ts'
 
 // ── Low-level hook ──
 
@@ -31,24 +32,46 @@ export function useTripleQuery<T>(
   return useStore(store, selector)
 }
 
-// ── High-level hooks ──
+// ── Entity materialization ──
 
-function materializeEntities(triples: Triple[]): Record<string, Record<string, Value>> {
-  const entities: Record<string, Record<string, Value>> = {}
-  for (const t of triples) {
-    if (!entities[t.subject]) entities[t.subject] = {}
-    entities[t.subject][t.predicate] = t.object
+/** Try to parse a JSON string; return the original value on failure. */
+function tryParseJson(value: Value): Value {
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value) as Value
+  } catch {
+    return value
   }
-  return entities
 }
+
+/**
+ * Materialize a flat triple array into entity objects.
+ *
+ * - Groups triples by subject
+ * - Extracts pure entity ID (e.g. "creature:npc_01" → "npc_01")
+ * - Auto-parses known JSON-serialized predicates
+ */
+function materializeEntities(triples: Triple[]): Array<{ id: string } & Record<string, Value>> {
+  const bySubject = new Map<string, Record<string, Value>>()
+
+  for (const t of triples) {
+    let entity = bySubject.get(t.subject)
+    if (!entity) {
+      entity = { id: extractId(t.subject) }
+      bySubject.set(t.subject, entity)
+    }
+    entity[t.predicate] = JSON_PREDICATES.has(t.predicate) ? tryParseJson(t.object) : t.object
+  }
+
+  return Array.from(bySubject.values()) as Array<{ id: string } & Record<string, Value>>
+}
+
+// ── High-level hooks ──
 
 export function useCreatures(): Array<{ id: string } & Record<string, Value>> {
   return useTripleQuery(
-    { graph: 'graph:creature' },
-    (triples) => {
-      const entities = materializeEntities(triples)
-      return Object.entries(entities).map(([id, props]) => ({ id, ...props }))
-    }
+    { graph: GRAPH.creature },
+    materializeEntities
   )
 }
 
@@ -57,31 +80,42 @@ export function usePlayer(): ({ id: string } & Record<string, Value>) | undefine
 
   return useStore(store, (state) => {
     const playerTriple = state.triples.find(
-      (t) => t.predicate === 'pw:is_player' && t.object === true
+      (t) => t.predicate === PWC_PRED.is_player && t.object === true
     )
     if (!playerTriple) return undefined
+
     const playerId = playerTriple.subject
-    const props: Record<string, Value> = {}
+    const props: Record<string, Value> = { id: extractId(playerId) }
     for (const t of state.triples) {
-      if (t.subject === playerId) props[t.predicate] = t.object
+      if (t.subject === playerId) {
+        props[t.predicate] = JSON_PREDICATES.has(t.predicate) ? tryParseJson(t.object) : t.object
+      }
     }
-    return { id: playerId, ...props }
+    return props as { id: string } & Record<string, Value>
   })
 }
 
 export function useRegions(): Array<{ id: string } & Record<string, Value>> {
   return useTripleQuery(
-    { graph: 'graph:region' },
-    (triples) => {
-      const entities = materializeEntities(triples)
-      return Object.entries(entities).map(([id, props]) => ({ id, ...props }))
-    }
+    { graph: GRAPH.region },
+    materializeEntities
+  )
+}
+
+export function useOrganizations(): Array<{ id: string } & Record<string, Value>> {
+  return useTripleQuery(
+    { graph: GRAPH.organization },
+    materializeEntities
   )
 }
 
 export function useField(subject: string, predicate: string): Value | undefined {
   return useTripleQuery(
     { subject, predicate },
-    (triples) => triples[0]?.object
+    (triples) => {
+      const raw = triples[0]?.object
+      if (raw === undefined) return undefined
+      return JSON_PREDICATES.has(predicate) ? tryParseJson(raw) : raw
+    }
   )
 }
