@@ -284,7 +284,7 @@ end
 -- ============================================================================
 
 function RDF.getAllCreatureIds()
-    local triples = State:query({ predicate = RDF.PW.type, object = "Creature" })
+    local triples = State:match({ predicate = RDF.PW.type, object = "Creature" })
     local ids = {}
     local prefix_len = #RDF.SUBJECT.creature
     for _, t in ipairs(triples) do
@@ -297,7 +297,7 @@ function RDF.getAllCreatureIds()
 end
 
 function RDF.getAllRegionIds()
-    local triples = State:query({ predicate = RDF.PW.type, object = "Region" })
+    local triples = State:match({ predicate = RDF.PW.type, object = "Region" })
     local ids = {}
     local prefix_len = #RDF.SUBJECT.region
     for _, t in ipairs(triples) do
@@ -310,7 +310,7 @@ function RDF.getAllRegionIds()
 end
 
 function RDF.getAllOrganizationIds()
-    local triples = State:query({ predicate = RDF.PW.type, object = "Organization" })
+    local triples = State:match({ predicate = RDF.PW.type, object = "Organization" })
     local ids = {}
     local prefix_len = #RDF.SUBJECT.organization
     for _, t in ipairs(triples) do
@@ -324,7 +324,7 @@ end
 
 --- Find the player creature_id (the one with pwc:isPlayer = true)
 function RDF.getPlayerCreatureId()
-    local triples = State:query({ predicate = RDF.PWC.is_player, object = true })
+    local triples = State:match({ predicate = RDF.PWC.is_player, object = true })
     if #triples > 0 then
         local prefix_len = #RDF.SUBJECT.creature
         return triples[1].subject:sub(prefix_len + 1)
@@ -369,6 +369,10 @@ function RDF.getCreatureSnapshot(creature_id)
     if name == nil then return nil end
 
     local snapshot = {
+        Metadata = {
+            name = tostring(name),
+            desc = State:get(s, RDF.PW.description) or "",
+        },
         Creature = {
             creature_id = creature_id,
             name = name,
@@ -438,6 +442,10 @@ function RDF.getOrganizationSnapshot(organization_id)
     if name == nil then return nil end
 
     return {
+        Metadata = {
+            name = tostring(name),
+            desc = State:get(s, RDF.PW.description) or "",
+        },
         Organization = {
             organization_id = organization_id,
             name = name,
@@ -460,6 +468,10 @@ function RDF.getWorldSnapshot()
     local s = RDF.worldSubject()
 
     return {
+        Metadata = {
+            name = State:get(s, RDF.PW.name) or "World",
+            desc = State:get(s, RDF.PW.description) or "",
+        },
         GameTime = RDF.jsonGet(s, RDF.PW_WORLD.game_time),
         Registry = RDF.getRegistry(s),
         DirectorNotes = RDF.jsonGet(s, RDF.PW_WORLD.director_notes),
@@ -481,7 +493,7 @@ function RDF.getInventoryItems(owner_id)
     local prefix = RDF.SUBJECT.inventory .. owner_id .. "_"
     local items = {}
     -- Query all triples for this owner's inventory items
-    local triples = State:query({ predicate = RDF.PWI.item_id })
+    local triples = State:match({ predicate = RDF.PWI.item_id })
     for _, t in ipairs(triples) do
         if t.subject:sub(1, #prefix) == prefix then
             local item_id = tostring(t.object)
@@ -501,7 +513,7 @@ end
 --- Get status effects from link triples
 function RDF.getStatusEffects(entity_subject, link_predicate)
     local effects = {}
-    local links = State:query({ subject = entity_subject, predicate = link_predicate })
+    local links = State:match({ subject = entity_subject, predicate = link_predicate })
     for _, link in ipairs(links) do
         local se_subject = link.object
         if type(se_subject) == "string" then
@@ -527,7 +539,7 @@ end
 --- Get log entries from link triples
 function RDF.getLogEntries(entity_subject, link_predicate)
     local raw = {}
-    local links = State:query({ subject = entity_subject, predicate = link_predicate })
+    local links = State:match({ subject = entity_subject, predicate = link_predicate })
     for _, link in ipairs(links) do
         local log_subject = link.object
         if type(log_subject) == "string" then
@@ -557,7 +569,7 @@ end
 --- Get setting documents from link triples
 function RDF.getSettingDocs(entity_subject, link_predicate)
     local docs = {}
-    local links = State:query({ subject = entity_subject, predicate = link_predicate })
+    local links = State:match({ subject = entity_subject, predicate = link_predicate })
     for _, link in ipairs(links) do
         local doc_subject = link.object
         if type(doc_subject) == "string" then
@@ -580,7 +592,7 @@ end
 --- Get registry fields from world entity
 function RDF.getRegistry(world_subject)
     local registry = { creature_attr_fields = {} }
-    local links = State:query({ subject = world_subject, predicate = RDF.PW_WORLD.registry_field })
+    local links = State:match({ subject = world_subject, predicate = RDF.PW_WORLD.registry_field })
     for _, link in ipairs(links) do
         local field_subject = link.object
         if type(field_subject) == "string" then
@@ -600,7 +612,7 @@ end
 --- Get custom component registry from world entity
 function RDF.getCustomComponentRegistry(world_subject)
     local registry = { custom_components = {} }
-    local links = State:query({ subject = world_subject, predicate = RDF.PW_WORLD.custom_schema })
+    local links = State:match({ subject = world_subject, predicate = RDF.PW_WORLD.custom_schema })
     for _, link in ipairs(links) do
         local schema_subject = link.object
         if type(schema_subject) == "string" then
@@ -623,7 +635,7 @@ end
 function RDF.getCustomComponents(creature_subject)
     local result = { custom_components = {} }
     -- Query all triples for this creature and filter by custom component prefix
-    local triples = State:query({ subject = creature_subject })
+    local triples = State:match({ subject = creature_subject })
     local prefix = RDF.PWC.custom_component_prefix
     for _, t in ipairs(triples) do
         if type(t.predicate) == "string" and t.predicate:sub(1, #prefix) == prefix then
@@ -852,22 +864,22 @@ end
 function RDF.deleteCreature(creature_id)
     local s = RDF.creatureSubject(creature_id)
     -- Delete all inventory items
-    local inv_links = State:query({ subject = s, predicate = RDF.PWC.inventory_item })
+    local inv_links = State:match({ subject = s, predicate = RDF.PWC.inventory_item })
     for _, link in ipairs(inv_links) do
         RDF.deleteSubject(link.object)
     end
     -- Delete all status effects
-    local se_links = State:query({ subject = s, predicate = RDF.PWC.status_effect })
+    local se_links = State:match({ subject = s, predicate = RDF.PWC.status_effect })
     for _, link in ipairs(se_links) do
         RDF.deleteSubject(link.object)
     end
     -- Delete all log entries
-    local log_links = State:query({ subject = s, predicate = RDF.PWC.log_entry })
+    local log_links = State:match({ subject = s, predicate = RDF.PWC.log_entry })
     for _, link in ipairs(log_links) do
         RDF.deleteSubject(link.object)
     end
     -- Delete all setting docs (all entity types use pw:settingDoc)
-    local doc_links = State:query({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
+    local doc_links = State:match({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
     for _, link in ipairs(doc_links) do
         RDF.deleteSubject(link.object)
     end
@@ -877,35 +889,35 @@ end
 
 function RDF.deleteRegion(region_id)
     local s = RDF.regionSubject(region_id)
-    local se_links = State:query({ subject = s, predicate = RDF.PWR.status_effect })
+    local se_links = State:match({ subject = s, predicate = RDF.PWR.status_effect })
     for _, link in ipairs(se_links) do RDF.deleteSubject(link.object) end
-    local log_links = State:query({ subject = s, predicate = RDF.PWR.log_entry })
+    local log_links = State:match({ subject = s, predicate = RDF.PWR.log_entry })
     for _, link in ipairs(log_links) do RDF.deleteSubject(link.object) end
-    local doc_links = State:query({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
+    local doc_links = State:match({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
     for _, link in ipairs(doc_links) do RDF.deleteSubject(link.object) end
     RDF.deleteSubject(s)
 end
 
 function RDF.deleteOrganization(organization_id)
     local s = RDF.orgSubject(organization_id)
-    local doc_links = State:query({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
+    local doc_links = State:match({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
     for _, link in ipairs(doc_links) do RDF.deleteSubject(link.object) end
-    local se_links = State:query({ subject = s, predicate = RDF.PWO.status_effect })
+    local se_links = State:match({ subject = s, predicate = RDF.PWO.status_effect })
     for _, link in ipairs(se_links) do RDF.deleteSubject(link.object) end
-    local log_links = State:query({ subject = s, predicate = RDF.PWO.log_entry })
+    local log_links = State:match({ subject = s, predicate = RDF.PWO.log_entry })
     for _, link in ipairs(log_links) do RDF.deleteSubject(link.object) end
     RDF.deleteSubject(s)
 end
 
 function RDF.deleteWorld()
     local s = RDF.worldSubject()
-    local rf_links = State:query({ subject = s, predicate = RDF.PW_WORLD.registry_field })
+    local rf_links = State:match({ subject = s, predicate = RDF.PW_WORLD.registry_field })
     for _, link in ipairs(rf_links) do RDF.deleteSubject(link.object) end
-    local cs_links = State:query({ subject = s, predicate = RDF.PW_WORLD.custom_schema })
+    local cs_links = State:match({ subject = s, predicate = RDF.PW_WORLD.custom_schema })
     for _, link in ipairs(cs_links) do RDF.deleteSubject(link.object) end
-    local log_links = State:query({ subject = s, predicate = RDF.PW_WORLD.log_entry })
+    local log_links = State:match({ subject = s, predicate = RDF.PW_WORLD.log_entry })
     for _, link in ipairs(log_links) do RDF.deleteSubject(link.object) end
-    local doc_links = State:query({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
+    local doc_links = State:match({ subject = s, predicate = RDF.PW_WORLD.setting_doc })
     for _, link in ipairs(doc_links) do RDF.deleteSubject(link.object) end
     RDF.deleteSubject(s)
 end
@@ -913,7 +925,7 @@ end
 --- Delete all triples for a given subject
 function RDF.deleteSubject(subject)
     if type(subject) ~= "string" then return end
-    local triples = State:query({ subject = subject })
+    local triples = State:match({ subject = subject })
     for _, t in ipairs(triples) do
         State:delete(subject, t.predicate, t.object)
     end

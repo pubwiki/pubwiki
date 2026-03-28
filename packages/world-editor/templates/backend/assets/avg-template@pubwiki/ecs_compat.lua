@@ -196,7 +196,7 @@ end
 -- ============================================================================
 
 local function clearSubResources(subject, link_predicate)
-    local links = State:query({ subject = subject, predicate = link_predicate })
+    local links = State:match({ subject = subject, predicate = link_predicate })
     for _, link in ipairs(links) do
         if type(link.object) == "string" then
             RDF.deleteSubject(link.object)
@@ -327,7 +327,7 @@ local function writeComponent(subject, component_key, data, merge)
     elseif component_key == "CustomComponents" then
         if not merge then
             -- Clear all custom component predicates
-            local triples = State:query({ subject = subject })
+            local triples = State:match({ subject = subject })
             local prefix = RDF.PWC.custom_component_prefix
             for _, t in ipairs(triples) do
                 if type(t.predicate) == "string" and t.predicate:sub(1, #prefix) == prefix then

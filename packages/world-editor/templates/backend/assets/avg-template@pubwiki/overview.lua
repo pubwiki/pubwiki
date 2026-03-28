@@ -152,7 +152,6 @@ Service:define()
             local specific_id = nil
             local id_key = nil
             entity_obj.entity_id = tostring(entity.entity_id)
-            entity_obj.description = entity.components["Metadata"].desc
             entity_obj.content = world_overview_dict[tostring(entity.entity_id)] or ""
             if entity.components["Organization"] then
                 entity_type = "org"
@@ -440,8 +439,9 @@ Service:define()
                      overview_ecs = overview_ecs .. "## Entity ID: " .. tostring(entity.entity_id) .. "\n"
                      --选择原因
                      overview_ecs = overview_ecs .. "### Selection Reason: " .. selected_entity.reason .. "\n"
-                     overview_ecs = overview_ecs .. "### Name: " .. entity.components["Metadata"].name .. "\n"
-                     overview_ecs = overview_ecs .. "### Description: " .. entity.components["Metadata"].desc .. "\n"
+                     local meta = entity.components["Metadata"]
+                     overview_ecs = overview_ecs .. "### Name: " .. (meta and meta.name or "Unknown") .. "\n"
+                     overview_ecs = overview_ecs .. "### Description: " .. (meta and meta.desc or "") .. "\n"
                      overview_ecs = overview_ecs .. world_overview_dict[tostring(entity.entity_id)] .. "\n\n"
                  end
              end

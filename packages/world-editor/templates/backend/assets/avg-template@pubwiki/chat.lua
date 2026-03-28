@@ -71,9 +71,9 @@ Service:define():namespace("chat"):name("SetAPIConfig")
             --召回模型配置
             retrievalModel = Type.Optional(LLM_Config_Type):desc("召回模型配置，影响游戏中需要检索知识的场景，如查询世界状态、查询设定文档等，建议使用 google/gemini-2.5-flash-lite"),
             --生成模型配置
-            generationModel = Type.Optional(LLM_Config_Type),
+            generationModel = Type.Optional(LLM_Config_Type):desc("生成模型配置，影响游戏中需要生成内容的场景，如对话、叙述等 建议使用 google/gemini-3.1-pro-preview"),
             --更新世界状态的模型配置
-            updateModel = Type.Optional(LLM_Config_Type),
+            updateModel = Type.Optional(LLM_Config_Type):desc("更新世界状态的模型配置，影响游戏中需要更新世界状态的场景，如根据玩家行动更新设定文档、根据对话内容更新NPC状态等，建议使用 google/gemini-3.1-flash-lite-preview"),
         })
     )
     :outputs(Type.Object({
