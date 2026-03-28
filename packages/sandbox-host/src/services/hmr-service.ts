@@ -21,6 +21,7 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
   private onLogCallback: OnLogCallback | null = null
   private onUrlChangeCallback: ((path: string) => void) | null = null
   private readonly maxLogs = 500 // Limit stored logs
+  private screenshotResolvers = new Map<number, (dataUrl: string) => void>()
 
   constructor() {
     super()
@@ -97,8 +98,6 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
    * Report a console log entry from sandbox (RPC method)
    */
   async reportLog(entry: ConsoleLogEntry): Promise<void> {
-    console.log(`[HmrServiceImpl] Log received: [${entry.level}] ${entry.message.substring(0, 100)}`)
-    
     // Store log
     this.logs.push(entry)
     
@@ -131,9 +130,50 @@ export class HmrServiceImpl extends RpcTarget implements IHmrService {
   }
 
   /**
+   * Request a screenshot from the sandbox bootstrap (local method, not RPC).
+   * Sends a special HMR update and waits for the bootstrap to call reportScreenshot.
+   */
+  requestScreenshot(timeoutMs = 10000): Promise<string> {
+    const requestId = Date.now()
+
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.screenshotResolvers.delete(requestId)
+        reject(new Error('Screenshot request timed out'))
+      }, timeoutMs)
+
+      this.screenshotResolvers.set(requestId, (dataUrl: string) => {
+        clearTimeout(timer)
+        resolve(dataUrl)
+      })
+
+      // Send the screenshot request via HMR channel
+      this.notifyUpdate({
+        type: 'update',
+        timestamp: requestId,
+        path: '__screenshot__',
+      })
+    })
+  }
+
+  /**
+   * Report a screenshot captured by the sandbox bootstrap (RPC method)
+   */
+  async reportScreenshot(requestId: number, dataUrl: string): Promise<void> {
+    const resolver = this.screenshotResolvers.get(requestId)
+    if (resolver) {
+      this.screenshotResolvers.delete(requestId)
+      resolver(dataUrl)
+    } else {
+      console.warn(`[HmrServiceImpl] No pending screenshot request for ID ${requestId}`)
+    }
+  }
+
+  /**
    * Cleanup resources
    */
   dispose(): void {
+    this.screenshotResolvers.clear()
     this.callback = null
     this.subscriptionId = null
     this.logs = []

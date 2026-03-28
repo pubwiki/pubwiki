@@ -504,6 +504,9 @@ importers:
       esbuild-wasm:
         specifier: ^0.27.2
         version: 0.27.2
+      html-to-image:
+        specifier: ^1.11.13
+        version: 1.11.13
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -5404,6 +5407,9 @@ packages:
   hono@4.11.4:
     resolution: {integrity: sha512-U7tt8JsyrxSRKspfhtLET79pU8K+tInj5QZXs1jSugO1Vq5dFj3kmZsRldo29mTBfcjDRVRXrEZ6LS63Cog9ZA==}
     engines: {node: '>=16.9.0'}
+
+  html-to-image@1.11.13:
+    resolution: {integrity: sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==}
 
   html-void-elements@3.0.0:
     resolution: {integrity: sha512-bEqo66MRXsUGxWHV5IP0PUiAWwoEjba4VCzg0LjFJBpchPaTfyfCKTG6bc5F8ucKec3q5y6qOdGyYTSBEvhCrg==}
@@ -11760,6 +11766,8 @@ snapshots:
   highlight.js@11.11.1: {}
 
   hono@4.11.4: {}
+
+  html-to-image@1.11.13: {}
 
   html-void-elements@3.0.0: {}
 

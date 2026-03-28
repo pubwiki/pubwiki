@@ -74,5 +74,12 @@ export interface IHmrService {
    * @param path - The new path (pathname + search + hash)
    */
   notifyUrlChange(path: string): Promise<void>
+
+  /**
+   * Report a screenshot captured by the sandbox bootstrap
+   * @param requestId - The ID from the screenshot request (matches HmrUpdate.timestamp)
+   * @param dataUrl - The screenshot as a data URL (data:image/png;base64,...)
+   */
+  reportScreenshot(requestId: number, dataUrl: string): Promise<void>
 }
 

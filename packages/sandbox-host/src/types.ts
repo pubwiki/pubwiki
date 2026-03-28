@@ -164,6 +164,12 @@ export interface SandboxConnection {
   setOnLogCallback(callback: OnLogCallback | null): void
 
   /**
+   * Capture a screenshot of the sandbox user iframe
+   * @returns data URL of the screenshot (data:image/png;base64,...)
+   */
+  takeScreenshot(): Promise<string>
+
+  /**
    * Disconnect and cleanup all resources
    */
   disconnect(): void

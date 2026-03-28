@@ -268,6 +268,14 @@ export function createSandboxConnection(
       hmrService?.setOnLogCallback(callback)
     },
 
+    async takeScreenshot(): Promise<string> {
+      const hmrService = mainRpcHost?.getHmrService()
+      if (!hmrService) {
+        throw new Error('Cannot take screenshot: HMR service not available')
+      }
+      return hmrService.requestScreenshot()
+    },
+
     disconnect(): void {
       // Remove SANDBOX_READY listener if still attached
       window.removeEventListener('message', handleSandboxReady)

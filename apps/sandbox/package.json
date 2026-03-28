@@ -24,6 +24,7 @@
   "dependencies": {
     "@pubwiki/sandbox-client": "workspace:*",
     "@pubwiki/sandbox-service": "workspace:*",
-    "esbuild-wasm": "^0.27.2"
+    "esbuild-wasm": "^0.27.2",
+    "html-to-image": "^1.11.13"
   }
 }
