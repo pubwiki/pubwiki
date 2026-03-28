@@ -77,6 +77,7 @@ catalog:
   vitest-browser-svelte: ^2.0.1
   turbo: ^2.8.19
   wrangler: ^4.59.2
+  zod: ^4.3.6
 
 catalogs:
   vitest3:

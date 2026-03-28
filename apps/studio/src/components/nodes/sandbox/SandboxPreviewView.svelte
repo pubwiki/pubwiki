@@ -22,6 +22,7 @@
 	import VirtualConsoleList from './VirtualConsoleList.svelte';
 	import * as Sentry from '@sentry/sveltekit';
 	import * as m from '$lib/paraglide/messages';
+	import { persist } from '@pubwiki/ui/utils';
 
 	// ============================================================================
 	// Props
@@ -120,12 +121,38 @@
 	// BuildAwareVfs instance (manages build cache + compilation)
 	let buildAwareVfs: (Vfs & { warmup(): Promise<void> }) | null = null;
 	
-	// Window state
+	// Window state (persisted geometry)
+	const persistedGeometry = persist<{ x: number; y: number; w: number; h: number; minimized: boolean } | null>('we-sandbox-preview-geometry', null);
+	
 	let isMinimized = $state(false);
 	let windowWidth = $state(initialSize.w);
 	let windowHeight = $state(initialSize.h);
 	let windowX = $state((typeof window !== 'undefined' ? window.innerWidth : 1920) / 2 - initialSize.w / 2);
 	let windowY = $state((typeof window !== 'undefined' ? window.innerHeight : 1080) / 2 - initialSize.h / 2);
+	
+	// Geometry persistence: restore on mount, save on change.
+	// Uses a flag to prevent the save effect from running before restore completes.
+	let geometryRestored = false;
+	onMount(() => {
+		const saved = persistedGeometry.value;
+		if (saved) {
+			const vw = window.innerWidth;
+			const vh = window.innerHeight;
+			windowWidth = Math.max(MIN_WIDTH, Math.min(saved.w, vw - 20));
+			windowHeight = Math.max(MIN_HEIGHT, Math.min(saved.h, vh - 20));
+			windowX = Math.max(0, Math.min(saved.x, vw - windowWidth));
+			windowY = Math.max(0, Math.min(saved.y, vh - windowHeight));
+			isMinimized = saved.minimized;
+		}
+		geometryRestored = true;
+	});
+	$effect(() => {
+		// Read all geometry state so effect tracks them
+		const geo = { x: windowX, y: windowY, w: windowWidth, h: windowHeight, minimized: isMinimized };
+		if (geometryRestored) {
+			persistedGeometry.value = geo;
+		}
+	});
 	
 	// Drag state
 	let isDragging = $state(false);

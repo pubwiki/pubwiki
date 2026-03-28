@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
 	import type { TypeSchema } from '@pubwiki/world-editor';
+	import Self from './TypeSchemaEditor.svelte';
 
 	interface Props {
 		schema: TypeSchema | undefined;
@@ -186,7 +187,7 @@
 							</button>
 						</div>
 						<!-- Nested schema editor -->
-						<svelte:self
+						<Self
 							schema={propSchema}
 							onChange={(s: TypeSchema | undefined) => updatePropertySchema(key, s)}
 							depth={depth + 1}
@@ -204,7 +205,7 @@
 		{#if schema?.type === 'array'}
 			<div class="flex flex-col gap-2 mt-1">
 				<span class="text-xs font-medium uppercase tracking-wider" style="color: var(--we-text-tertiary);">Array Items</span>
-				<svelte:self
+				<Self
 					schema={schema.items}
 					onChange={updateItemsSchema}
 					depth={depth + 1}

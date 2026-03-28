@@ -35,7 +35,7 @@
     "@pubwiki/chat": "workspace:*",
     "@pubwiki/rdfstore": "workspace:*",
     "@pubwiki/vfs": "workspace:*",
-    "zod": "^4.1.13"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@pubwiki/flow-core": "workspace:*",
