@@ -27,6 +27,8 @@
 	// Props
 	// ============================================================================
 
+	import type { SandboxConnectionLike } from '@pubwiki/world-editor';
+	
 	/**
 	 * Connected Loader node info (id + data)
 	 * Note: registeredServices is now in LoaderNode local state, not persisted.
@@ -48,6 +50,8 @@
 		projectId?: string;
 		/** Connected VFS node ID for build cache key computation */
 		vfsNodeId?: string;
+		/** Callback when sandbox connection wrapper is established/disconnected */
+		onSandboxConnection?: (connection: SandboxConnectionLike | null) => void;
 	}
 
 	let {
@@ -59,6 +63,7 @@
 		onClose,
 		projectId,
 		vfsNodeId,
+		onSandboxConnection,
 	}: Props = $props();
 
 	// ============================================================================
@@ -194,6 +199,13 @@
 	// Console Log Handling
 	// ============================================================================
 	
+	// Subscribers for live log events (used by verify_frontend tool)
+	let logSubscribers = new Set<(entry: ConsoleLogEntry) => void>();
+	// Subscribers for build error events
+	let buildErrorSubscribers = new Set<(errors: string[]) => void>();
+	// Last build errors for replay to late subscribers (set during warmup failure or onRebuild)
+	let lastBuildErrors: string[] | null = null;
+	
 	function handleLog(entry: ConsoleLogEntry) {
 		if (logStore) {
 			logStore.push(entry);
@@ -204,6 +216,52 @@
 		if (entry.level === 'error' && !showConsole) {
 			hasNewErrors = true;
 		}
+		// Notify subscribers
+		for (const cb of logSubscribers) {
+			try { cb(entry); } catch { /* ignore */ }
+		}
+	}
+	
+	function notifyBuildErrors(errors: string[]) {
+		console.log(`[SandboxPreviewView] notifyBuildErrors called, ${errors.length} error(s), ${buildErrorSubscribers.size} subscriber(s)`);
+		lastBuildErrors = errors;
+		for (const cb of buildErrorSubscribers) {
+			try { cb(errors); } catch { /* ignore */ }
+		}
+	}
+	
+	function clearBuildErrors() {
+		console.log(`[SandboxPreviewView] clearBuildErrors called (had errors: ${!!lastBuildErrors})`);
+		lastBuildErrors = null;
+	}
+	
+	/** Create a SandboxConnectionLike wrapper that includes log/build subscriptions */
+	function createConnectionWrapper(conn: SandboxConnection): SandboxConnectionLike {
+		return {
+			getLogs: () => conn.getLogs(),
+			clearLogs: () => {
+				conn.clearLogs();
+				if (logStore) {
+					logStore.clear();
+					consoleLogs = [];
+				}
+			},
+			reload: () => {
+				console.log(`[SandboxPreviewView] ConnectionWrapper.reload() called`);
+				clearBuildErrors();
+				conn.reload();
+			},
+			onLog: (callback) => {
+				logSubscribers.add(callback);
+				return () => { logSubscribers.delete(callback); };
+			},
+			onBuildError: (callback) => {
+				console.log(`[SandboxPreviewView] onBuildError subscribed, total subscribers=${buildErrorSubscribers.size + 1}`);
+				buildErrorSubscribers.add(callback);
+				return () => { buildErrorSubscribers.delete(callback); };
+			},
+			takeScreenshot: () => conn.takeScreenshot(),
+		};
 	}
 	
 	function toggleConsole() {
@@ -338,18 +396,16 @@
 				buildCacheStorage,
 				buildCacheKey: buildCacheKeyValue,
 				filesHash: contentHashValue,
+				// Development mode: dev CDN builds + NODE_ENV='development'
+				bundleOptions: { development: true },
 				// HMR: on file change, trigger sandbox reload
 				onFileChange: (changedPath: string) => {
 					console.log(`[SandboxPreviewView] File changed: ${changedPath}`);
 					sandboxConnection?.reload();
 				},
-				// HMR: on rebuild failure, log errors
+				// HMR: on rebuild, trigger sandbox reload so it picks up new files
 				onRebuild: (result) => {
 					if (!result.success) {
-						const allErrors = Array.from(result.outputs.values())
-							.flatMap(output => output.errors);
-						console.error(`[SandboxPreviewView] Build failed with ${allErrors.length} error(s)`, allErrors);
-						// Trigger sandbox reload so it can display error page
 						sandboxConnection?.reload();
 					}
 				},
@@ -361,6 +417,20 @@
 						compilingMessage = event.message || compilingMessage;
 					} else if (event.type === 'complete') {
 						compilingMessage = null;
+						// On-demand builds (triggered by reload) don't go through onRebuild.
+						// Catch their failures here via the progress event.
+						if (event.result && !event.result.success) {
+							const allErrors = Array.from(event.result.outputs.values())
+								.flatMap(output => output.errors);
+							const errorMessages = allErrors.map(e => {
+								const loc = e.file ? `${e.file}:${e.line}:${e.column}` : '';
+								return loc ? `${loc}: ${e.message}` : e.message;
+							});
+							console.error(`[SandboxPreviewView] Build failed (via progress event) with ${allErrors.length} error(s)`);
+							notifyBuildErrors(errorMessages);
+						} else if (event.result?.success) {
+							clearBuildErrors();
+						}
 					} else if (event.type === 'error') {
 						compilingMessage = null;
 					}
@@ -391,7 +461,17 @@
 			// compiled files instantly. Without this, the first module fetch would
 			// block for the full esbuild compile duration (~25s), which causes
 			// Chrome 130 to silently abort the module script request.
-			await buildAwareVfs.warmup();
+			// If warmup fails (build error), continue anyway — the sandbox connection
+			// can still establish and the build error will be surfaced on reload
+			// via onRebuild → notifyBuildErrors.
+			try {
+				await buildAwareVfs.warmup();
+			} catch (warmupErr) {
+				console.warn('[SandboxPreviewView] Build warmup failed (will retry on reload):', warmupErr);
+				// Store the error so verify_frontend can see it immediately on subscription
+				const errMsg = warmupErr instanceof Error ? warmupErr.message : String(warmupErr);
+				notifyBuildErrors([errMsg]);
+			}
 
 			// Set iframe src AFTER createSandboxConnection to avoid missing SANDBOX_READY message
 			iframeSrc = `${resolvedSandboxOrigin}/__sandbox.html`;
@@ -408,6 +488,7 @@
 			consoleLogs = logStore ? (logStore.logs as ConsoleLogEntry[]) : [];
 
 			console.log('[SandboxPreviewView] Sandbox started successfully');
+			onSandboxConnection?.(createConnectionWrapper(sandboxConnection));
 
 		} catch (err) {
 			console.error('[SandboxPreviewView] Failed to start sandbox:', err);
@@ -437,6 +518,7 @@
 		if (sandboxConnection) {
 			sandboxConnection.disconnect();
 			sandboxConnection = null;
+			onSandboxConnection?.(null);
 		}
 		iframeSrc = undefined;
 		console.log('[SandboxPreviewView] Sandbox stopped');

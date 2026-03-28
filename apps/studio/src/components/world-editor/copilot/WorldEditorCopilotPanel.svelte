@@ -140,6 +140,9 @@
   let designerProjectConfig = $state<ProjectConfig | null>(null);
   let designerEntryFile = $state('index.html');
   let designerLoaderNodes = $state<Array<{ id: string; data: LoaderNodeData }>>([]);
+  let designerSandboxConnection = $state<import('@pubwiki/world-editor').SandboxConnectionLike | null>(null);
+  /** Resolvers waiting for the sandbox connection to be established after auto-open */
+  let connectionWaiters: Array<(conn: import('@pubwiki/world-editor').SandboxConnectionLike | null) => void> = [];
   let builderRevisionLog = $state<Array<{ toolName: string; summary: string }>>([]);
   let builderError = $state<string | null>(null);
   let builderEventLog = $state<LogEntry[]>([]);
@@ -347,6 +350,30 @@
       },
       aiContext: createAIContext(),
       getFrontendVfs: () => designerPreviewVfs,
+      getSandboxConnection: async () => {
+        // Already connected
+        if (designerSandboxConnection) return designerSandboxConnection;
+
+        // Can't open without VFS and project config
+        if (!designerPreviewVfs || !designerProjectConfig) return null;
+
+        // Auto-open the preview
+        designerShowPreview = true;
+
+        // Wait for connection to be established (timeout 30s)
+        return new Promise<import('@pubwiki/world-editor').SandboxConnectionLike | null>((resolve) => {
+          const timer = setTimeout(() => {
+            // Remove this waiter on timeout
+            connectionWaiters = connectionWaiters.filter(r => r !== resolve);
+            resolve(null);
+          }, 30_000);
+
+          connectionWaiters.push((conn) => {
+            clearTimeout(timer);
+            resolve(conn);
+          });
+        });
+      },
     };
 
     designerOrchestrator = new DesignerOrchestrator(designerConfig);
@@ -1741,5 +1768,12 @@
     onClose={() => { designerShowPreview = false; }}
     projectId={weCtx.projectId}
     vfsNodeId={nodeStore.findByMetadata('simple-mode-role', 'frontend-vfs')?.id}
+    onSandboxConnection={(conn) => {
+      designerSandboxConnection = conn;
+      if (conn && connectionWaiters.length > 0) {
+        for (const resolve of connectionWaiters) resolve(conn);
+        connectionWaiters = [];
+      }
+    }}
   />
 {/if}

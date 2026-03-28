@@ -596,11 +596,51 @@ async function handleFileRequest(vfsStub: RpcStub<IVfsService>, pathname: string
 }
 
 /**
+ * Console interceptor script injected into HTML pages served to the user iframe.
+ * Patches console methods to forward logs to the parent (bootstrap) frame via postMessage.
+ * This runs BEFORE any user module/deferred scripts because it's an inline classic script.
+ */
+const CONSOLE_INTERCEPTOR_SCRIPT = `<script>(function(){var O={};['log','info','warn','error','debug'].forEach(function(l){O[l]=console[l];console[l]=function(){O[l].apply(console,arguments);try{var a=[];for(var i=0;i<arguments.length;i++){try{a.push(typeof arguments[i]==='object'?JSON.stringify(arguments[i]):String(arguments[i]))}catch(e){a.push('[unserializable]')}}var s=l==='error'?new Error().stack:void 0;window.parent.postMessage({type:'__CONSOLE_LOG__',level:l,message:a.join(' '),timestamp:Date.now(),stack:s},'*')}catch(e){}}});window.addEventListener('error',function(e){window.parent.postMessage({type:'__CONSOLE_LOG__',level:'error',message:e.message||String(e),timestamp:Date.now(),stack:e.error&&e.error.stack},'*')});window.addEventListener('unhandledrejection',function(e){var r=e.reason;window.parent.postMessage({type:'__CONSOLE_LOG__',level:'error',message:'Unhandled Promise Rejection: '+(r instanceof Error?r.message:String(r)),timestamp:Date.now(),stack:r instanceof Error?r.stack:void 0},'*')})})()<\/script>`
+
+/**
+ * Inject console interceptor script into HTML content.
+ * Inserts immediately after <head> so it runs before any user scripts.
+ */
+function injectConsoleScript(html: string): string {
+  const headMatch = html.match(/<head[^>]*>/i)
+  if (headMatch && headMatch.index !== undefined) {
+    const insertPos = headMatch.index + headMatch[0].length
+    return html.slice(0, insertPos) + CONSOLE_INTERCEPTOR_SCRIPT + html.slice(insertPos)
+  }
+  // No <head> tag — inject at the start
+  return CONSOLE_INTERCEPTOR_SCRIPT + html
+}
+
+/**
  * Read file from VFS and create Response
  */
 async function readAndRespond(vfsStub: RpcStub<IVfsService>, pathname: string): Promise<Response> {
   const fileInfo = await vfsStub.readFile(pathname)
   const mimeType = fileInfo.mimeType
+  
+  // For HTML files, inject console interceptor script before user scripts
+  if (mimeType === 'text/html') {
+    let html: string
+    if (typeof fileInfo.content === 'string') {
+      html = fileInfo.content
+    } else if (fileInfo.content instanceof Uint8Array || fileInfo.content instanceof ArrayBuffer) {
+      html = new TextDecoder().decode(fileInfo.content)
+    } else {
+      html = String(fileInfo.content)
+    }
+    const injected = injectConsoleScript(html)
+    return new Response(injected, {
+      status: 200,
+      headers: {
+        'Content-Type': mimeType,
+      }
+    })
+  }
   
   // FileContent can be string or Uint8Array - Response accepts both
   return new Response(fileInfo.content as BodyInit, {

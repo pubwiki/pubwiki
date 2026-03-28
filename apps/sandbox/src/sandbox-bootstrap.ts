@@ -239,108 +239,54 @@ function requestVfsPortFromMainSite(): void {
 }
 
 // ============================================================================
-// Console Interceptor
+// Console Log Forwarding
 // ============================================================================
 
 /**
- * Serialize console arguments to a string
+ * Handle console log messages forwarded from the user iframe.
+ * The SW injects a console interceptor script into HTML pages that
+ * patches console methods and forwards logs via postMessage to this bootstrap frame.
+ * This ensures logs are captured BEFORE any user module scripts execute.
  */
-function serializeArgs(args: unknown[]): string {
-  return args.map(arg => {
-    if (arg === null) return 'null'
-    if (arg === undefined) return 'undefined'
-    if (typeof arg === 'string') return arg
-    if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg)
-    if (arg instanceof Error) return `${arg.name}: ${arg.message}`
-    try {
-      return JSON.stringify(arg, null, 2)
-    } catch {
-      return String(arg)
-    }
-  }).join(' ')
-}
+function handleConsoleLogMessage(event: MessageEvent): void {
+  const data = event.data
+  if (data?.type !== '__CONSOLE_LOG__') return
 
-/**
- * Report a console log entry to the host
- */
-function reportLog(level: ConsoleLogLevel, args: unknown[], stack?: string): void {
-  if (!mainRpcClient) return
-  
-  const entry = {
-    level,
-    timestamp: Date.now(),
-    message: serializeArgs(args),
-    stack
-  }
-  
-  // Fire and forget - don't await
-  mainRpcClient.hmr.reportLog(entry).catch(err => {
-    // Silently ignore errors to avoid infinite loops
-    console.warn('[SandboxBootstrap] Failed to report log:', err)
-  })
-}
+  // Only accept messages from the user iframe (not from external sources)
+  // Check both contentWindow and that it came from a child frame
+  if (userIframe && event.source !== userIframe.contentWindow) return
 
-/**
- * Inject console interceptor into user iframe
- * This patches console methods to capture logs from user code
- */
-function injectConsoleInterceptor(): void {
-  if (!userIframe?.contentWindow) {
-    console.warn('[SandboxBootstrap] Cannot inject console interceptor: no contentWindow')
+  if (!mainRpcClient) {
+    console.warn('[SandboxBootstrap] mainRpcClient is null, cannot forward log')
     return
   }
-  
-  const iframeWindow = userIframe.contentWindow as Window & typeof globalThis
-  const iframeConsole = iframeWindow.console
-  
-  // Store original methods
-  const originalLog = iframeConsole.log.bind(iframeConsole)
-  const originalInfo = iframeConsole.info.bind(iframeConsole)
-  const originalWarn = iframeConsole.warn.bind(iframeConsole)
-  const originalError = iframeConsole.error.bind(iframeConsole)
-  const originalDebug = iframeConsole.debug.bind(iframeConsole)
-  
-  // Patch console methods
-  iframeConsole.log = (...args: unknown[]) => {
-    originalLog(...args)
-    reportLog('log', args)
+
+  const entry = {
+    level: data.level as ConsoleLogLevel,
+    timestamp: data.timestamp ?? Date.now(),
+    message: data.message ?? '',
+    stack: data.stack
   }
-  
-  iframeConsole.info = (...args: unknown[]) => {
-    originalInfo(...args)
-    reportLog('info', args)
-  }
-  
-  iframeConsole.warn = (...args: unknown[]) => {
-    originalWarn(...args)
-    reportLog('warn', args)
-  }
-  
-  iframeConsole.error = (...args: unknown[]) => {
-    originalError(...args)
-    // Capture stack trace for errors
-    const stack = new Error().stack
-    reportLog('error', args, stack)
-  }
-  
-  iframeConsole.debug = (...args: unknown[]) => {
-    originalDebug(...args)
-    reportLog('debug', args)
-  }
-  
-  // Also capture unhandled errors
-  iframeWindow.addEventListener('error', (event) => {
-    reportLog('error', [event.message], event.error?.stack)
+
+  // Fire and forget - don't await
+  mainRpcClient.hmr.reportLog(entry).catch((err) => {
+    console.warn('[SandboxBootstrap] Failed to forward log via RPC:', err)
   })
-  
-  // Capture unhandled promise rejections
-  iframeWindow.addEventListener('unhandledrejection', (event) => {
-    const reason = event.reason
-    const message = reason instanceof Error ? reason.message : String(reason)
-    const stack = reason instanceof Error ? reason.stack : undefined
-    reportLog('error', [`Unhandled Promise Rejection: ${message}`], stack)
-  })
-  
+}
+
+/**
+ * Start listening for console log messages from user iframe.
+ * Called once during bootstrap initialization.
+ */
+function startConsoleLogForwarding(): void {
+  window.addEventListener('message', handleConsoleLogMessage)
+}
+
+/**
+ * Stop listening for console log messages.
+ */
+function stopConsoleLogForwarding(): void {
+  window.removeEventListener('message', handleConsoleLogMessage)
 }
 
 /**
@@ -436,6 +382,10 @@ async function loadUserIframe(entryFile: string, initialPath?: string): Promise<
     showError('Failed to load user content')
   }
   
+  // Start forwarding console logs BEFORE navigating the iframe.
+  // The SW injects a console interceptor into HTML that postMessages to us.
+  // We must listen before the iframe starts loading, otherwise early logs are lost.
+  startConsoleLogForwarding()
   
   // Try to pre-register the user iframe with SW before navigation.
   // This may fail on about:srcdoc in older Chrome versions that don't
@@ -465,16 +415,11 @@ async function loadUserIframe(entryFile: string, initialPath?: string): Promise<
   
   hideLoading()
   
-  
-  // Inject console interceptor into user iframe
-  injectConsoleInterceptor()
-  
   // Setup URL tracking to notify host of navigation changes
   setupUrlTracking()
   
   // Re-setup URL tracking on user iframe reload (contentWindow changes)
   userIframe.addEventListener('load', () => {
-    injectConsoleInterceptor()
     setupUrlTracking()
   })
   
@@ -526,6 +471,30 @@ function setupUrlTracking(): void {
 
   win.addEventListener('popstate', notify)
   win.addEventListener('hashchange', notify)
+}
+
+/**
+ * Capture a screenshot of the user iframe and report it back via RPC
+ */
+async function captureScreenshot(requestId: number): Promise<void> {
+  if (!userIframe?.contentDocument?.body || !mainRpcClient) {
+    console.error('[SandboxBootstrap] Cannot capture screenshot: iframe or RPC not available')
+    return
+  }
+
+  try {
+    const { toPng } = await import('html-to-image')
+    const dataUrl = await toPng(userIframe.contentDocument.body, {
+      width: userIframe.contentDocument.body.scrollWidth,
+      height: userIframe.contentDocument.body.scrollHeight,
+      pixelRatio: 1,
+    })
+    await mainRpcClient.hmr.reportScreenshot(requestId, dataUrl)
+  } catch (error) {
+    console.error('[SandboxBootstrap] Screenshot capture failed:', error)
+    // Report failure as empty string so the host doesn't hang
+    await mainRpcClient.hmr.reportScreenshot(requestId, '')
+  }
 }
 
 /**
@@ -607,12 +576,12 @@ async function initializeSandbox(context: SandboxContext): Promise<void> {
         // Normal update: hide error overlay and reload
         hideBuildError()
         
-        if (update.path === '__manual_reload__') {
-          // No special handling needed for manual reload
+        if (update.path === '__screenshot__') {
+          // Screenshot request: capture user iframe and report back
+          captureScreenshot(update.timestamp)
         } else {
-          // No special handling needed for path-based update
+          reloadUserIframe()
         }
-        reloadUserIframe()
       }
     })
     

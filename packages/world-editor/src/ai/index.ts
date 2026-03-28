@@ -97,3 +97,7 @@ export {
   DesignerOrchestrator,
   type DesignerConfig,
 } from './designer/orchestrator'
+export type {
+  SandboxConnectionLike,
+  SandboxConnectionGetter,
+} from './designer/tools/sandbox-tools'

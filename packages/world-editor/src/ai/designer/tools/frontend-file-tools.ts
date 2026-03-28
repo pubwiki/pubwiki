@@ -174,15 +174,18 @@ export function createWriteFrontendFileTool(getVfs: FrontendVfsGetter) {
     description:
       '写入或覆盖前端项目中的文件。支持两种模式：\n' +
       '1. 全量写入：只提供 path 和 content，覆盖整个文件。\n' +
-      '2. 行范围替换：提供 startLine 和 endLine（1-based，闭区间），用 content 替换指定行。\n' +
+      '2. 行范围替换：提供 startLine 和 endLine（1-based，闭区间），用 content 替换指定行。' +
+      '行范围替换时必须提供 contextBefore 和 contextAfter 来验证你编辑的位置是否正确。\n' +
       '父目录会自动创建。写入后 sandbox 会自动热更新。',
     schema: z.object({
       path: z.string().describe('文件路径，如 "/src/components/MyComponent.tsx"'),
       content: z.string().describe('文件内容（全量写入时为完整源码，行范围替换时为替换内容）'),
       startLine: z.number().optional().describe('替换起始行号（1-based）。省略则全量写入。'),
       endLine: z.number().optional().describe('替换结束行号（1-based，包含）。省略则全量写入。'),
+      contextBefore: z.string().optional().describe('startLine 前一行的内容（用于验证编辑位置正确）。行范围替换时必须提供。'),
+      contextAfter: z.string().optional().describe('endLine 后一行的内容（用于验证编辑位置正确）。行范围替换时必须提供。'),
     }),
-    handler: async ({ path, content, startLine, endLine }) => {
+    handler: async ({ path, content, startLine, endLine, contextBefore, contextAfter }) => {
       const vfs = getVfs()
       if (!vfs) return '⚠️ Frontend VFS not available.'
 
@@ -194,6 +197,10 @@ export function createWriteFrontendFileTool(getVfs: FrontendVfsGetter) {
       try {
         // Line-range replacement mode
         if (startLine !== undefined && endLine !== undefined) {
+          if (contextBefore == null || contextAfter == null) {
+            return '❌ 行范围替换模式必须提供 contextBefore 和 contextAfter 参数来验证编辑位置。'
+          }
+
           const existing = await readFileText(vfs, filePath)
           if (existing === null) return `❌ File not found: ${filePath} (line-range mode requires existing file)`
 
@@ -202,9 +209,30 @@ export function createWriteFrontendFileTool(getVfs: FrontendVfsGetter) {
             return `❌ Invalid range: startLine=${startLine}, endLine=${endLine} (file has ${lines.length} lines)`
           }
 
+          // Verify context to ensure LLM is editing the right location
+          const actualBefore = startLine > 1 ? lines[startLine - 2] : ''
+          const clampedEnd = Math.min(endLine, lines.length)
+          const actualAfter = clampedEnd < lines.length ? lines[clampedEnd] : ''
+
+          const stripWs = (s: string) => s.replace(/\s/g, '')
+          const beforeMatch = stripWs(contextBefore) === stripWs(actualBefore)
+          const afterMatch = stripWs(contextAfter) === stripWs(actualAfter)
+
+          if (!beforeMatch || !afterMatch) {
+            let msg = `❌ Context mismatch — you may be editing the wrong location in ${filePath}.\n`
+            if (!beforeMatch) {
+              msg += `\nExpected contextBefore (line ${startLine - 1}):\n\`\`\`\n${actualBefore}\n\`\`\`\n`
+            }
+            if (!afterMatch) {
+              msg += `\nExpected contextAfter (line ${clampedEnd + 1}):\n\`\`\`\n${actualAfter}\n\`\`\`\n`
+            }
+            msg += `\nActual lines ${startLine}-${clampedEnd} that would be replaced:\n\`\`\`\n${lines.slice(startLine - 1, clampedEnd).join('\n')}\n\`\`\`\n`
+            msg += `\nFile has ${lines.length} lines. Re-read the file to find the correct location.`
+            return msg
+          }
+
           const newLines = content.split('\n')
           // Replace lines [startLine-1 .. endLine-1] (inclusive) with newLines
-          const clampedEnd = Math.min(endLine, lines.length)
           lines.splice(startLine - 1, clampedEnd - startLine + 1, ...newLines)
 
           const finalContent = lines.join('\n')

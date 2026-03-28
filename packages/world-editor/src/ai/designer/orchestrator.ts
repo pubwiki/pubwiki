@@ -35,6 +35,12 @@ import {
   createListBackendServicesTool,
   createGetServiceDefinitionTool,
 } from './tools/service-tools'
+import {
+  createGetConsoleLogsTool,
+  createVerifyFrontendTool,
+  createScreenshotTool,
+  type SandboxConnectionGetter,
+} from './tools/sandbox-tools'
 
 // ============================================================================
 // Configuration
@@ -47,6 +53,8 @@ export interface DesignerConfig {
   aiContext: WorldEditorAIContext
   /** Lazy getter for the Frontend VFS */
   getFrontendVfs: FrontendVfsGetter
+  /** Lazy getter for the sandbox connection (may be null if preview not open) */
+  getSandboxConnection?: SandboxConnectionGetter
   /** Optional: max tool iterations per turn (default 20) */
   maxIterations?: number
 }
@@ -83,7 +91,7 @@ export class DesignerOrchestrator {
   // --------------------------------------------------------------------------
 
   private registerTools(): void {
-    const { aiContext, getFrontendVfs } = this.config
+    const { aiContext, getFrontendVfs, getSandboxConnection } = this.config
 
     // Frontend VFS file tools
     const fileTools = [
@@ -106,13 +114,21 @@ export class DesignerOrchestrator {
       createGetServiceDefinitionTool(getFrontendVfs),
     ]
 
+    // Sandbox tools (preview interaction)
+    const sandboxTools = getSandboxConnection ? [
+      createGetConsoleLogsTool(getSandboxConnection),
+      createVerifyFrontendTool(getSandboxConnection),
+      createScreenshotTool(getSandboxConnection),
+    ] : []
+
     // Register all tools
-    for (const tool of [...fileTools, ...stateTools, ...serviceTools]) {
+    for (const tool of [...fileTools, ...stateTools, ...serviceTools, ...sandboxTools]) {
       this.pubchat.registerTool({
         name: tool.name,
         description: tool.description,
         schema: tool.schema,
         handler: tool.handler as (args: unknown) => Promise<unknown>,
+        afterExecution: tool.afterExecution,
       })
     }
   }
