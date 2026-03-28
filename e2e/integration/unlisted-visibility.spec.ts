@@ -100,7 +100,9 @@ test.describe('Unlisted artifact visibility', () => {
       const rpcResult = await sandboxApp.locator('body').evaluate(async () => {
         const timeout = new Promise<never>((_, rej) =>
           setTimeout(() => rej(new Error('SAVE_RPC_TIMEOUT_10s')), 10_000));
-        const result = await Promise.race([(window as Record<string, unknown>).LoadStateToGame({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const loadFn = (window as any).LoadStateToGame as (arg: unknown) => Promise<unknown>;
+        const result = await Promise.race([loadFn({
           worldEntity: { name: 'Unlisted Test World', description: '' },
           creatures: [],
           regions: [],
