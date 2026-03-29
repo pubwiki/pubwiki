@@ -74,13 +74,32 @@ test.describe('Integration — Publish flow (Studio → Hub)', () => {
       await studio.publish();
     });
 
-    // ── Step 7: Verify the artifact on Hub ──
-    await test.step('Verify artifact is visible on Hub', async () => {
+    // ── Step 7: Verify the artifact on Hub (includes entrypoint validation) ──
+    await test.step('Verify artifact is visible on Hub with entrypoint and buildCacheKey', async () => {
       const hub = new HubPage(page);
       await hub.openArtifact(projectId!);
 
       // Verify the artifact name is displayed
       await expect(page.getByRole('heading', { name: artifactName })).toBeVisible({ timeout: 15_000 });
+
+      // Verify via API that the studio-published artifact has entrypoint and buildCacheKey
+      const graphResp = await page.request.get(
+        `${getApiBaseUrl()}/artifacts/${projectId!}/graph?version=latest`
+      );
+      expect(graphResp.ok()).toBeTruthy();
+      const graphData = await graphResp.json();
+      expect(graphData.version?.buildCacheKey,
+        'Studio-published artifact must have buildCacheKey'
+      ).toBeTruthy();
+      expect(graphData.version?.entrypoint,
+        'Studio-published artifact must have entrypoint (inline save created during publish)'
+      ).toBeTruthy();
+      expect(graphData.version?.entrypoint?.sandboxNodeId,
+        'Entrypoint must reference a sandbox node'
+      ).toBeTruthy();
+      expect(graphData.version?.entrypoint?.saveCommit,
+        'Entrypoint must reference a save commit'
+      ).toBeTruthy();
     });
 
     // ── Step 8: Play in Player ──
@@ -374,14 +393,14 @@ test.describe('Integration — Publish flow (Studio → Hub)', () => {
     });
 
     // ── Step 20: Verify the published artifact on Hub ──
-    await test.step('Verify published artifact exists on Hub and has inherited build cache key', async () => {
+    await test.step('Verify published artifact exists on Hub and has inherited build cache key and entrypoint', async () => {
       const hub = new HubPage(page);
       await hub.openArtifact(publishedArtifactId);
 
       await expect(page.getByRole('heading', { name: publishedArtifactName })).toBeVisible({ timeout: 15_000 });
 
-      // Verify via API that the player-published artifact inherited the parent's buildCacheKey.
-      // Without this, the player would fall back to slow L3 local compilation.
+      // Verify via API that the player-published artifact inherited the parent's buildCacheKey
+      // and has a valid entrypoint with save data.
       const graphResp = await page.request.get(
         `${getApiBaseUrl()}/artifacts/${publishedArtifactId}/graph?version=latest`
       );
@@ -389,6 +408,15 @@ test.describe('Integration — Publish flow (Studio → Hub)', () => {
       const graphData = await graphResp.json();
       expect(graphData.version?.buildCacheKey,
         'Player-published artifact must have buildCacheKey inherited from parent'
+      ).toBeTruthy();
+      expect(graphData.version?.entrypoint,
+        'Player-published artifact must have entrypoint with save data'
+      ).toBeTruthy();
+      expect(graphData.version?.entrypoint?.sandboxNodeId,
+        'Player entrypoint must reference a sandbox node'
+      ).toBeTruthy();
+      expect(graphData.version?.entrypoint?.saveCommit,
+        'Player entrypoint must reference a save commit'
       ).toBeTruthy();
     });
 

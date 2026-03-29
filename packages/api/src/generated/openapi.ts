@@ -144,7 +144,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * 获取单个 Artifact 详情
+         * @description 获取指定 Artifact 的详细信息。
+         *     - public artifact: 任何人可访问
+         *     - unlisted artifact: 任何人可通过直接链接访问（不出现在列表中）
+         *     - private artifact: 仅拥有者或有权限的用户可访问
+         */
+        get: operations["getArtifact"];
         put?: never;
         post?: never;
         /**
@@ -2584,6 +2591,49 @@ export interface operations {
             };
             /** @description Commit hash 冲突（该版本已存在） */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
+    };
+    getArtifact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact ID */
+                artifactId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功获取 Artifact 详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        artifact: components["schemas"]["ArtifactListItem"];
+                    };
+                };
+            };
+            /** @description 无权限（private artifact 且未认证/无权限） */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Artifact 不存在 */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

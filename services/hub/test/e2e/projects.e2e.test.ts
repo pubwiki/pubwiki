@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { unstable_dev, type Unstable_DevWorker } from 'wrangler';
 import { createApiClient } from '@pubwiki/api/client';
 import type { CreateProjectMetadata, CreateProjectPage } from '@pubwiki/api';
-import { registerUser } from './helpers';
+import { registerUser, createTestArtifactHelper } from './helpers';
 
 describe('E2E: Projects API', () => {
   let worker: Unstable_DevWorker;
@@ -43,29 +43,7 @@ describe('E2E: Projects API', () => {
 
   // Helper to create artifact via fetch (for tests that need artifacts)
   async function createTestArtifact(): Promise<string> {
-    const slug = `test-artifact-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const formData = new FormData();
-    formData.append('metadata', JSON.stringify({
-      artifactId: crypto.randomUUID(),
-      type: 'RECIPE',
-      name: 'Test Artifact',
-      slug,
-      version: '1.0.0',
-    }));
-    formData.append('descriptor', JSON.stringify({
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      nodes: [],
-      edges: [],
-    }));
-    
-    const response = await fetch(`${baseUrl}/artifacts`, {
-      method: 'POST',
-      headers: { Cookie: sessionCookie },
-      body: formData,
-    });
-    const data = await response.json() as { artifact: { id: string } };
-    return data.artifact.id;
+    return createTestArtifactHelper(baseUrl, sessionCookie);
   }
 
   describe('POST /projects', () => {
@@ -566,7 +544,8 @@ describe('E2E: Projects API', () => {
 
       expect(response.status).toBe(400);
       expect(error).toBeDefined();
-      expect(error!.error).toContain('Invalid sortBy');
+      expect(error!.error).toContain('Validation error');
+      expect(error!.error).toContain('sortBy');
     });
 
     it('should return 400 for invalid sortOrder value', async () => {
@@ -581,7 +560,8 @@ describe('E2E: Projects API', () => {
 
       expect(response.status).toBe(400);
       expect(error).toBeDefined();
-      expect(error!.error).toContain('Invalid sortOrder');
+      expect(error!.error).toContain('Validation error');
+      expect(error!.error).toContain('sortOrder');
     });
   });
 

@@ -32,7 +32,7 @@
 		type ConfirmationHandler,
 		type PubWikiModuleConfig,
 	} from '@pubwiki/flow-core';
-	import { computeArtifactCommit, computeContentHash, type GetArtifactGraphResponse } from '@pubwiki/api';
+	import { computeArtifactCommit, computeContentHash, computeNodeCommit, computeSha256Hex, type GetArtifactGraphResponse } from '@pubwiki/api';
 	import { getNodeVfs, disposeAllVfs } from '$lib/vfs/store';
 	import { detectStorageBackend } from '$lib/vfs/detect';
 	import { getNodeRDFStore, closeAllRDFStores, type TripleStore } from '$lib/rdf/store';
@@ -167,45 +167,62 @@
 				position: n.position,
 			}));
 
-		// Always create a fresh save from the current state node
+		// Always create a fresh save from the current state node.
+		// The save data is prepared inline and included in the artifact form data
+		// via save[{quadsHash}], eliminating the dependency on a separate POST /saves call.
 		let newSaveCommit: string | null = null;
+		let saveQuadsData: Uint8Array | null = null;
+		let saveQuadsHash: string | null = null;
 		if (resolvedStateNodeId && rdfStore) {
-			const artifactCommit = graphData.version?.commitHash;
-			const saveResult = await createSaveCheckpoint(
+			const artifactCommit = graphData.version?.commitHash ?? '';
+			const triples = rdfStore.getAll();
+
+			// Serialize and hash — must use SHA-256 of the actual binary data (not JCS canonical form)
+			// because the backend validates save[{quadsHash}] by hashing uploaded bytes.
+			const triplesJson = JSON.stringify(triples);
+			const quadsData = new TextEncoder().encode(triplesJson);
+			const quadsHash = await computeSha256Hex(quadsData.buffer as ArrayBuffer);
+
+			const saveId = crypto.randomUUID();
+			const saveContent = {
+				type: 'SAVE' as const,
+				stateNodeId: resolvedStateNodeId,
+				artifactId: data.artifactId,
+				artifactCommit,
+				quadsHash,
+				saveEncoding: 'keyframe' as const,
+				parentCommit: null,
+				title: null,
+				description: null,
+			};
+			const contentHash = await computeContentHash(saveContent);
+			const commit = await computeNodeCommit(saveId, null, contentHash, 'SAVE');
+
+			newSaveCommit = commit;
+			saveQuadsData = quadsData;
+			saveQuadsHash = quadsHash;
+			nodes.push({
+				nodeId: saveId,
+				commit,
+				parent: null,
+				type: 'SAVE' as const,
+				name: undefined,
+				contentHash,
+				content: saveContent,
+				position: undefined,
+			});
+
+			// Best-effort: also upload to POST /saves for backward compatibility
+			createSaveCheckpoint(
 				rdfStore,
 				{
 					stateNodeId: resolvedStateNodeId,
 					artifactId: data.artifactId,
-					artifactCommit: artifactCommit ?? '',
+					artifactCommit,
+					saveId,
 				},
 				API_BASE_URL,
-			);
-			if (saveResult.success && saveResult.save) {
-				const sd = saveResult.save;
-				newSaveCommit = sd.commit;
-				const saveContent = {
-					type: 'SAVE' as const,
-					stateNodeId: sd.stateNodeId,
-					artifactId: sd.artifactId,
-					artifactCommit: sd.artifactCommit,
-					quadsHash: sd.quadsHash,
-					saveEncoding: sd.saveEncoding,
-					parentCommit: sd.parentCommit ?? null,
-					title: sd.title ?? null,
-					description: sd.description ?? null,
-				};
-				const contentHash = await computeContentHash(saveContent);
-				nodes.push({
-					nodeId: sd.saveId,
-					commit: sd.commit,
-					parent: sd.parent ?? null,
-					type: 'SAVE' as const,
-					name: undefined,
-					contentHash,
-					content: saveContent,
-					position: undefined,
-				});
-			}
+			).catch(() => { /* Non-critical: save is included inline in artifact */ });
 		}
 
 		const edges = graphData.edges.map((e) => ({
@@ -231,18 +248,44 @@
 			? { saveCommit, sandboxNodeId: resolvedSandboxNodeId }
 			: graphData.version?.entrypoint ?? undefined;
 
+		const buildCacheKey = resolvedBuildCacheKey ?? graphData.version?.buildCacheKey ?? undefined;
+
+		if (!entrypoint) {
+			return { success: false, error: 'Cannot publish: missing entrypoint (no save commit or sandbox node)' };
+		}
+		if (!buildCacheKey) {
+			return { success: false, error: 'Cannot publish: missing buildCacheKey' };
+		}
+
+		// Convert visibility string (from publish form dropdown) to isListed / isPrivate booleans.
+		// The form outputs { visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' } which gets spread
+		// over the metadata object by the pubwiki module's publish() function.
+		const visibility = (metadata as Record<string, unknown>).visibility as string | undefined;
+		let isListed = metadata.isListed ?? true;
+		let isPrivate = metadata.isPrivate ?? false;
+		if (visibility === 'UNLISTED') {
+			isListed = false;
+			isPrivate = false;
+		} else if (visibility === 'PRIVATE') {
+			isListed = false;
+			isPrivate = true;
+		} else if (visibility === 'PUBLIC') {
+			isListed = true;
+			isPrivate = false;
+		}
+
 		const apiMetadata = {
 			artifactId: newArtifactId,
 			commit,
 			parentCommit: null,
 			name: metadata.name,
 			description: metadata.description || undefined,
-			isListed: metadata.isListed ?? true,
-			isPrivate: metadata.isPrivate ?? false,
+			isListed,
+			isPrivate,
 			version: metadata.version || '1.0.0',
 			tags: metadata.tags && metadata.tags.length > 0 ? metadata.tags : undefined,
 			entrypoint,
-			buildCacheKey: resolvedBuildCacheKey ?? graphData.version?.buildCacheKey ?? undefined,
+			buildCacheKey,
 		};
 
 		try {
@@ -252,6 +295,8 @@
 					nodes,
 					edges,
 					_homepage: metadata.homepage,
+					_saveQuadsData: saveQuadsData,
+					_saveQuadsHash: saveQuadsHash,
 				},
 				bodySerializer: (body) => {
 					const formData = new FormData();
@@ -262,6 +307,13 @@
 					const homepage = body._homepage as string | undefined;
 					if (homepage && homepage.trim().length > 0) {
 						formData.append('homepage', new Blob([homepage], { type: 'text/markdown' }), 'homepage.md');
+					}
+
+					// Include save quads archive inline
+					const quadsData = body._saveQuadsData as Uint8Array | null;
+					const quadsHash = body._saveQuadsHash as string | null;
+					if (quadsData && quadsHash) {
+						formData.append(`save[${quadsHash}]`, new Blob([quadsData.buffer as ArrayBuffer], { type: 'application/octet-stream' }), `${quadsHash}.bin`);
 					}
 
 					return formData;
@@ -489,7 +541,6 @@
 
 					// Build JS modules
 					const jsModules = await buildJsModules({
-						rdfStore: loaderRdfStore ?? undefined,
 						stateNodeId: loaderStateNodeId ?? undefined,
 						getNodeRDFStore,
 						pubwikiModule,

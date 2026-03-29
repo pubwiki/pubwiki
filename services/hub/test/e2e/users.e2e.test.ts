@@ -150,7 +150,8 @@ describe('E2E: Users API', () => {
 
       expect(response.status).toBe(400);
       expect(error).toBeDefined();
-      expect(error!.error).toContain('Invalid sortBy');
+      expect(error!.error).toContain('Validation error');
+      expect(error!.error).toContain('sortBy');
     });
   });
 
@@ -274,7 +275,8 @@ describe('E2E: Users API', () => {
 
       expect(response.status).toBe(400);
       expect(error).toBeDefined();
-      expect(error!.error).toContain('Invalid role');
+      expect(error!.error).toContain('Validation error');
+      expect(error!.error).toContain('role');
     });
 
     it('should return 400 for invalid sortBy value', async () => {
@@ -295,7 +297,8 @@ describe('E2E: Users API', () => {
 
       expect(response.status).toBe(400);
       expect(error).toBeDefined();
-      expect(error!.error).toContain('Invalid sortBy');
+      expect(error!.error).toContain('Validation error');
+      expect(error!.error).toContain('sortBy');
     });
   });
 });

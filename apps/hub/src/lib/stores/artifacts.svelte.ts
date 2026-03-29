@@ -326,31 +326,20 @@ export class ArtifactStore {
 		let artifact = this.getArtifactById(artifactId) ?? cached?.artifact;
 
 		// If artifact info is not cached (e.g. direct URL navigation),
-		// use the graph endpoint as an existence check instead of loading
-		// the entire artifact list (which causes reactive state loops).
+		// fetch it directly from the single-artifact endpoint.
 		if (!artifact) {
-			const graphResult = await this.fetchGraph(artifactId);
-			if (!graphResult) {
-				// Graph returned 404 — artifact does not exist
+			const { data, error } = await apiClient.GET('/artifacts/{artifactId}', {
+				params: { path: { artifactId } }
+			});
+			if (error || !data) {
 				return null;
 			}
+			artifact = data.artifact;
 
-			// Artifact exists; try to get basic list info from page cache
-			if (!this.pageCache.has(1)) {
-				await this.loadPage(1);
-			}
-			artifact = this.getArtifactById(artifactId);
-
-			if (!artifact) {
-				// Artifact exists but not in page 1 of the list.
-				// Without a dedicated single-artifact endpoint we cannot
-				// obtain the full ArtifactListItem metadata.
-				return null;
-			}
-
-			// Fetch remaining sub-resources (graph already fetched)
-			const [homepageResult, lineageResult] = await Promise.all([
+			// Fetch all sub-resources in parallel
+			const [homepageResult, graphResult, lineageResult] = await Promise.all([
 				this.fetchHomepage(artifactId),
+				this.fetchGraph(artifactId),
 				apiClient.GET('/artifacts/{artifactId}/lineage', {
 					params: { path: { artifactId } }
 				})
@@ -359,7 +348,7 @@ export class ArtifactStore {
 			const details: ArtifactDetails = {
 				artifact,
 				homepage: homepageResult ?? undefined,
-				graph: graphResult,
+				graph: graphResult ?? undefined,
 				parents: lineageResult.data?.parents,
 				children: lineageResult.data?.children
 			};

@@ -590,9 +590,15 @@ export async function patchArtifact(
 	// Carry forward existing SAVE nodes from base graph — they are server-managed
 	// graph nodes not present in the studio workspace. Without this, computeGraphDiff
 	// would treat them as removed since they're never in currentNodes.
+	// Only keep SAVE nodes whose referenced STATE node still exists in the current graph.
+	const currentNodeIds = new Set(currentNodes.map(n => n.nodeId));
 	const newSaveNodeId = metadata.saveData?.node.nodeId;
 	for (const baseNode of baseGraph.nodes) {
 		if (baseNode.type === 'SAVE' && baseNode.id !== newSaveNodeId) {
+			const saveContent = baseNode.content as { stateNodeId?: string };
+			if (saveContent.stateNodeId && !currentNodeIds.has(saveContent.stateNodeId)) {
+				continue; // STATE node was deleted — drop this orphaned SAVE
+			}
 			currentNodes.push({
 				nodeId: baseNode.id,
 				commit: baseNode.commit,

@@ -34,7 +34,6 @@ export { createHashModule } from './hash';
  * partial-json, and optionally a pubwiki module.
  */
 export async function buildJsModules(options: {
-	rdfStore?: TripleStore;
 	stateNodeId?: string;
 	getNodeRDFStore: (nodeId: string) => Promise<TripleStore>;
 	pubwikiModule?: JsModuleDefinition;
@@ -45,7 +44,7 @@ export async function buildJsModules(options: {
 	modules.set('json', { module: createJsonModule(), mode: 'global' });
 
 	// State module (global, if RDF store is available)
-	if (options.rdfStore && options.stateNodeId) {
+	if (options.stateNodeId) {
 		const sid = options.stateNodeId;
 		const stateModule = createStateModule(() => options.getNodeRDFStore(sid));
 		modules.set('State', {

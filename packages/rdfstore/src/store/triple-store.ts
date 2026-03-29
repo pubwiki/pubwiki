@@ -174,6 +174,12 @@ export class TripleStoreImpl implements TripleStoreInterface {
     const info = this.versionManager.checkpoint(this.index, options, delta)
     this.pendingDelta = { inserts: [], deletes: [] }
     this.emitter.emit('checkpointCreated', info)
+    // Persist the checkpoint immediately to survive unexpected browser crashes
+    if (this.backend) {
+      this.persist(info.id).catch(err =>
+        console.error(`[TripleStore] checkpoint persist failed for ${info.id}:`, err)
+      )
+    }
     return info
   }
 

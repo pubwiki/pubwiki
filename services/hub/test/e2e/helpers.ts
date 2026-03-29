@@ -2,6 +2,8 @@
  * E2E 测试辅助函数
  */
 
+import { computeArtifactCommit, computeNodeCommit, computeContentHash, computeSha256Hex } from '@pubwiki/api';
+
 // 存储 cookies 的简单实现
 let storedCookies: Map<string, string> = new Map();
 
@@ -229,4 +231,111 @@ export async function createVfsTarGz(
   
   const compressedBlob = await new Response(compressedStream).blob();
   return compressedBlob.arrayBuffer();
+}
+
+/**
+ * Create FormData for artifact creation with proper commit hash computation.
+ * Uses the new API format: separate `metadata`, `nodes`, `edges` fields.
+ *
+ * @param metadata - Artifact metadata (name, description, etc.)
+ * @param options.nodes - Node descriptors: { id, type, name?, content }
+ * @param options.files - VFS files to include (will create tar.gz archives)
+ * @returns FormData ready to POST to /api/artifacts
+ */
+export async function createArtifactFormData(
+  metadata: Record<string, unknown>,
+  options: {
+    nodes?: Array<{ id: string; type: string; name?: string; content?: unknown }>;
+    files?: Map<string, Array<{ name: string; content: string | Uint8Array }>>;
+  } = {}
+): Promise<FormData> {
+  const formData = new FormData();
+  const artifactId = (metadata.artifactId as string) ?? crypto.randomUUID();
+  const parentCommit = (metadata.parentCommit as string | undefined) ?? null;
+
+  // Prepare VFS archives and compute filesHash
+  const vfsArchiveData = new Map<string, { tarGz: ArrayBuffer; filesHash: string }>();
+  if (options.files) {
+    for (const [nodeId, nodeFiles] of options.files) {
+      const tarGz = await createVfsTarGz(nodeFiles.map(f => ({ name: f.name, content: f.content })));
+      const filesHash = await computeSha256Hex(tarGz);
+      vfsArchiveData.set(nodeId, { tarGz, filesHash });
+    }
+  }
+
+  // Convert node descriptors to CreateArtifactNode format
+  const inputNodes = options.nodes ?? [];
+  const apiNodes = await Promise.all(inputNodes.map(async n => {
+    let content = n.content || {};
+    // Inject `type` into content if missing
+    if (typeof content === 'object' && content !== null && !('type' in content)) {
+      content = { type: n.type, ...content };
+    }
+    // For VFS nodes with archive, inject filesHash
+    if (n.type === 'VFS' && vfsArchiveData.has(n.id)) {
+      const { filesHash } = vfsArchiveData.get(n.id)!;
+      content = { ...content as object, filesHash };
+    }
+    const contentHash = await computeContentHash(content as Parameters<typeof computeContentHash>[0]);
+    const nodeCommit = await computeNodeCommit(n.id, null, contentHash, n.type);
+    return {
+      nodeId: n.id,
+      commit: nodeCommit,
+      type: n.type,
+      ...(n.name ? { name: n.name } : {}),
+      contentHash,
+      content,
+    };
+  }));
+  const edges: Array<{ source: string; target: string }> = [];
+
+  const commit = await computeArtifactCommit(
+    artifactId,
+    parentCommit,
+    apiNodes.map(n => ({ nodeId: n.nodeId, commit: n.commit })),
+    edges.map(e => ({ source: e.source, target: e.target, sourceHandle: null, targetHandle: null }))
+  );
+
+  formData.append('metadata', JSON.stringify({
+    ...metadata,
+    artifactId,
+    parentCommit,
+    commit,
+  }));
+  formData.append('nodes', JSON.stringify(apiNodes));
+  formData.append('edges', JSON.stringify(edges));
+
+  // Attach VFS archives using filesHash as key
+  for (const [, { tarGz, filesHash }] of vfsArchiveData) {
+    const blob = new Blob([tarGz], { type: 'application/gzip' });
+    formData.append(`vfs[${filesHash}]`, blob, 'archive.tar.gz');
+  }
+
+  return formData;
+}
+
+/**
+ * Create a test artifact and return its ID.
+ * Convenience wrapper around createArtifactFormData + POST.
+ */
+export async function createTestArtifactHelper(
+  baseUrl: string,
+  sessionCookie: string,
+  metadata: Record<string, unknown> = {}
+): Promise<string> {
+  const formData = await createArtifactFormData({
+    name: 'Test Artifact',
+    ...metadata,
+  });
+  const response = await fetch(`${baseUrl}/artifacts`, {
+    method: 'POST',
+    headers: { Cookie: sessionCookie },
+    body: formData,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to create test artifact: ${response.status} - ${text}`);
+  }
+  const data = await response.json() as { artifact: { id: string } };
+  return data.artifact.id;
 }

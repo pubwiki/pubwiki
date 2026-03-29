@@ -1035,6 +1035,90 @@ export class ArtifactService {
     }
   }
 
+  /**
+   * Get full artifact detail (ArtifactListItem) by ID.
+   * Does NOT filter by isListed — returns any artifact that the caller has read access to.
+   * Access control (private vs unlisted vs public) is handled by the route layer.
+   */
+  async getArtifactDetail(artifactId: string): Promise<ServiceResult<{ artifact: ArtifactListItem }>> {
+    try {
+      const result = await this.ctx
+        .select({
+          artifact: artifacts,
+          discoveryControl: resourceDiscoveryControl,
+          author: {
+            id: user.id,
+            username: user.username,
+            displayName: user.displayName,
+            avatarUrl: user.avatarUrl,
+          },
+          stats: artifactStats,
+        })
+        .from(artifacts)
+        .innerJoin(user, eq(artifacts.authorId, user.id))
+        .innerJoin(
+          resourceDiscoveryControl,
+          and(
+            eq(resourceDiscoveryControl.resourceType, 'artifact'),
+            eq(resourceDiscoveryControl.resourceId, artifacts.id)
+          )
+        )
+        .leftJoin(artifactStats, eq(artifacts.id, artifactStats.artifactId))
+        .where(eq(artifacts.id, artifactId))
+        .limit(1);
+
+      if (result.length === 0) {
+        return {
+          success: false,
+          error: { code: 'NOT_FOUND', message: 'Artifact not found' },
+        };
+      }
+
+      const r = result[0];
+
+      // Fetch tags
+      const tagResults = await this.ctx
+        .select({
+          tag: {
+            slug: tags.slug,
+            name: tags.name,
+            description: tags.description,
+            color: tags.color,
+          },
+        })
+        .from(artifactTags)
+        .innerJoin(tags, eq(artifactTags.tagSlug, tags.slug))
+        .where(eq(artifactTags.artifactId, artifactId));
+
+      const artifact: ArtifactListItem = {
+        id: r.artifact.id,
+        name: r.artifact.name,
+        description: r.artifact.description,
+        isListed: r.discoveryControl.isListed,
+        thumbnailUrl: r.artifact.thumbnailUrl,
+        license: r.artifact.license,
+        createdAt: r.artifact.createdAt,
+        updatedAt: r.artifact.updatedAt,
+        author: r.author,
+        tags: tagResults.map(t => t.tag),
+        stats: r.stats ? {
+          viewCount: r.stats.viewCount,
+          favCount: r.stats.favCount,
+          refCount: r.stats.refCount,
+          downloadCount: r.stats.downloadCount,
+        } : undefined,
+      };
+
+      return { success: true, data: { artifact } };
+    } catch (error) {
+      console.error('Get artifact detail error:', error);
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: 'Internal server error' },
+      };
+    }
+  }
+
   // 获取 artifact 的谱系信息（基于 derivativeOf 跳表遍历）
   async getArtifactLineage(
     artifactId: string,
