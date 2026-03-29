@@ -62,6 +62,8 @@ export interface PublishMetadata {
 	tags: string[];
 	/** Optional homepage content in Markdown format */
 	homepage?: string;
+	/** Optional thumbnail URL (from image upload) */
+	thumbnailUrl?: string;
 	/** Optional commit tags (e.g., ["draft-latest"]) */
 	commitTags?: string[];
 	/** Parent commit hash for updates (null for initial publish) */
@@ -294,6 +296,7 @@ export async function publishArtifact(
 			isPrivate: metadata.isPrivate,
 			version: metadata.version,
 			tags: metadata.tags.length > 0 ? metadata.tags : undefined,
+			thumbnailUrl: metadata.thumbnailUrl || undefined,
 			commitTags: metadata.commitTags && metadata.commitTags.length > 0 ? metadata.commitTags : undefined,
 			entrypoint: metadata.entrypoint || undefined,
 			// buildCacheKey is now a top-level field (not inside entrypoint)

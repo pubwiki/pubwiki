@@ -399,8 +399,7 @@
 						isListed: metadata.isListed ?? true,
 						isPrivate: metadata.isPrivate ?? false,
 						tags: metadata.tags || [],
-						homepage: metadata.homepage || undefined,
-					};
+						homepage: metadata.homepage || undefined,							thumbnailUrl: metadata.thumbnailUrl || undefined,					};
 					const result = await studioPublishArtifact(finalMetadata, ctx.nodes, ctx.edges);
 					return {
 						success: result.success,

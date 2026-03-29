@@ -148,7 +148,7 @@
 	 * Re-uses existing node data and VFS archives (content-addressable in R2).
 	 */
 	async function playerPublishArtifact(
-		metadata: { name: string; slug: string; description?: string; version?: string; isListed?: boolean; isPrivate?: boolean; tags?: string[]; homepage?: string },
+		metadata: { name: string; slug: string; description?: string; version?: string; isListed?: boolean; isPrivate?: boolean; tags?: string[]; homepage?: string; thumbnailUrl?: string },
 		graphData: GetArtifactGraphResponse,
 	): Promise<{ success: boolean; artifactId?: string; error?: string }> {
 		const newArtifactId = crypto.randomUUID();
@@ -284,6 +284,7 @@
 			isPrivate,
 			version: metadata.version || '1.0.0',
 			tags: metadata.tags && metadata.tags.length > 0 ? metadata.tags : undefined,
+			thumbnailUrl: metadata.thumbnailUrl || undefined,
 			entrypoint,
 			buildCacheKey,
 		};
