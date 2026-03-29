@@ -5,8 +5,10 @@
 	import {
 		createDefaultCreatureSnapshot,
 		type CreatureSnapshot, type InventoryItem, type InteractionOption,
-		type StatusEffect, type SettingDocument, type LogEntry
+		type StatusEffect, type SettingDocument, type LogEntry,
+		type CustomComponentInstance
 	} from '@pubwiki/world-editor';
+	import { SchemaValueEditor } from '../shared';
 
 	const ctx = getWorldEditorContext();
 
@@ -403,6 +405,50 @@
 				</div>
 				{/if}
 
+				<!-- Custom Components -->
+				{#if true}
+				{@const registry = ctx.stateData.World?.custom_component_registry ?? []}
+				{#if registry.length > 0}
+				<div class="bento-card" style="grid-area: custom;">
+					<h4 class="bento-title">Custom Components</h4>
+					{#each registry as def (def.component_key)}
+						{@const instances = selected.custom_components ?? []}
+						{@const instance = instances.find((c: CustomComponentInstance) => c.component_key === def.component_key)}
+						<div class="custom-comp-section">
+							<div class="flex items-center justify-between mb-1">
+								<span class="text-xs font-semibold" style="color: var(--we-text-secondary);">{def.component_name || def.component_key}</span>
+								{#if !instance}
+									<button class="add-btn" onclick={() => {
+										const newInst: CustomComponentInstance = { component_key: def.component_key, data: def.is_array ? [] : (def.type_schema?.type === 'object' ? {} : undefined) };
+										updateCreature(selected!.creature_id, { custom_components: [...instances, newInst] });
+									}}>+ Add</button>
+								{:else}
+									<button class="shrink-0 p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600" style="border: none; background: none; cursor: pointer;" title="Remove"
+										onclick={() => {
+											updateCreature(selected!.creature_id, { custom_components: instances.filter((c: CustomComponentInstance) => c.component_key !== def.component_key) });
+										}}>
+										<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+									</button>
+								{/if}
+							</div>
+							{#if instance}
+								<SchemaValueEditor
+									schema={def.type_schema}
+									value={instance.data}
+									onChange={(newVal) => {
+										const updated = instances.map((c: CustomComponentInstance) =>
+											c.component_key === def.component_key ? { ...c, data: newVal } : c
+										);
+										updateCreature(selected!.creature_id, { custom_components: updated });
+									}}
+								/>
+							{/if}
+						</div>
+					{/each}
+				</div>
+				{/if}
+				{/if}
+
 				<!-- Log -->
 				{#if true}
 				{@const entries = selected.log ?? []}
@@ -529,6 +575,42 @@
 						updateCreature(selected!.creature_id, { status_effects: updated });
 					}}></textarea>
 			</FormGroup>
+			<FormGroup label="Data">
+				<textarea class="{INPUT_CLS} min-h-[60px] resize-y font-mono text-xs" style="border-color: var(--we-border); color: var(--we-text-primary);"
+					value={eff.data != null ? JSON.stringify(eff.data, null, 2) : ''}
+					placeholder="Free-form JSON data"
+					onblur={(e) => {
+						const raw = e.currentTarget.value.trim();
+						const updated = [...effects];
+						if (!raw) {
+							updated[editModal!.index] = { ...eff, data: undefined };
+						} else {
+							try { updated[editModal!.index] = { ...eff, data: JSON.parse(raw) }; }
+							catch { updated[editModal!.index] = { ...eff, data: raw }; }
+						}
+						updateCreature(selected!.creature_id, { status_effects: updated });
+					}}></textarea>
+			</FormGroup>
+			<FormGrid>
+				<FormGroup label="Added At">
+					<input type="text" class="{INPUT_CLS} text-xs" style="border-color: var(--we-border); color: var(--we-text-primary);"
+						value={eff.add_at ?? ''}
+						placeholder="e.g. 2024-01-01"
+						oninput={(e) => {
+							const updated = [...effects]; updated[editModal!.index] = { ...eff, add_at: e.currentTarget.value || undefined };
+							updateCreature(selected!.creature_id, { status_effects: updated });
+						}} />
+				</FormGroup>
+				<FormGroup label="Last Updated At">
+					<input type="text" class="{INPUT_CLS} text-xs" style="border-color: var(--we-border); color: var(--we-text-primary);"
+						value={eff.last_update_at ?? ''}
+						placeholder="e.g. 2024-01-15"
+						oninput={(e) => {
+							const updated = [...effects]; updated[editModal!.index] = { ...eff, last_update_at: e.currentTarget.value || undefined };
+							updateCreature(selected!.creature_id, { status_effects: updated });
+						}} />
+				</FormGroup>
+			</FormGrid>
 			{#snippet footer()}
 				<button class="px-3 py-1.5 text-sm font-medium rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
 					onclick={deleteFromModal}>
@@ -658,6 +740,7 @@
 			"basic      appearance  profile"
 			"location   statuses    docs"
 			"inventory  interactions interactions"
+			"custom     custom      custom"
 			"log        log         log";
 		gap: 12px;
 	}
@@ -813,5 +896,16 @@
 	.log-delete:hover {
 		opacity: 1;
 		color: #ef4444;
+	}
+
+	.custom-comp-section {
+		padding: 10px;
+		border: 1px solid var(--we-border);
+		border-radius: 8px;
+		background: var(--we-bg-secondary);
+	}
+
+	.custom-comp-section + .custom-comp-section {
+		margin-top: 8px;
 	}
 </style>

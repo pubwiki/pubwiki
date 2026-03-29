@@ -46,6 +46,7 @@ export async function buildJsModules(options: {
 	// State module (global, if RDF store is available)
 	if (options.stateNodeId) {
 		const sid = options.stateNodeId;
+
 		const stateModule = createStateModule(() => options.getNodeRDFStore(sid));
 		modules.set('State', {
 			module: stateModule,

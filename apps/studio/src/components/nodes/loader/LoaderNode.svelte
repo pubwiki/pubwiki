@@ -327,6 +327,7 @@
 			// Find State node and get RDF store (if connected)
 			const stateNodeId = findStateNode(id, ctx.nodes, ctx.edges);
 			const rdfStore = stateNodeId ? await getNodeRDFStore(stateNodeId) : undefined;
+
 			
 			// Get LLM config from settings (narrative role as base config)
 			const narrativeConfig = settings.getLLMConfigForRole('narrative');
