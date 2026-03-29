@@ -47,10 +47,6 @@ If these are in Chinese → output ALL content in Chinese.
 
 local LLM = require("LLM")
 
-API_CONFIG = {
-
-}
-
 local LLM_Config_Type = Type.Object({
     model = Type.Optional(Type.String),
     temperature = Type.Optional(Type.Float),
@@ -64,56 +60,18 @@ local LLM_Config_Type = Type.Object({
     }))
 })
 
-Service:define():namespace("chat"):name("SetAPIConfig")
-    :desc("设置游戏阶段中各个API的调用配置")
-    :inputs(
-        Type.Object({
-            --召回模型配置
-            retrievalModel = Type.Optional(LLM_Config_Type):desc("召回模型配置，影响游戏中需要检索知识的场景，如查询世界状态、查询设定文档等，建议使用 google/gemini-2.5-flash-lite"),
-            --生成模型配置
-            generationModel = Type.Optional(LLM_Config_Type):desc("生成模型配置，影响游戏中需要生成内容的场景，如对话、叙述等 建议使用 google/gemini-3.1-pro-preview"),
-            --更新世界状态的模型配置
-            updateModel = Type.Optional(LLM_Config_Type):desc("更新世界状态的模型配置，影响游戏中需要更新世界状态的场景，如根据玩家行动更新设定文档、根据对话内容更新NPC状态等，建议使用 google/gemini-3.1-flash-lite-preview"),
-        })
-    )
-    :outputs(Type.Object({
-        success = Type.Bool,
-    }))
-    :impl(function(inputs)
-        if inputs.retrievalModel then
-            API_CONFIG["retrievalModel"] = inputs.retrievalModel
-        end
-        if inputs.generationModel then
-            API_CONFIG["generationModel"] = inputs.generationModel
-        end
-        if inputs.updateModel then
-            API_CONFIG["updateModel"] = inputs.updateModel
-        end
-        return {
-            success = true
-        }
-    end)
-
-local function buildConfigAndHistory(use_model_type, config, premessages, wrap_system_prompt)
+local function buildConfigAndHistory(model_role, config, premessages, wrap_system_prompt)
     local final_config = {}
-    if use_model_type and API_CONFIG[use_model_type] then
-        for k,v in pairs(API_CONFIG[use_model_type]) do
-            final_config[k] = v
-        end
-    end
     if config then
         for k,v in pairs(config) do
             final_config[k] = v
         end
     end
+    if model_role then
+        final_config["modelRole"] = model_role
+    end
     final_config["apiMode"] = "chat-completions"
     final_config["maxTokens"] = 20480
-    --"safety_settings": [
-    --    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    --    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    --    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    --    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    --]
     local extraBody = {
         safety_setting = {
             {category = "HARM_CATEGORY_HARASSMENT", threshold = "BLOCK_NONE"},
@@ -123,9 +81,6 @@ local function buildConfigAndHistory(use_model_type, config, premessages, wrap_s
             {category = "HARM_CATEGORY_CIVIC_INTEGRITY", threshold = "BLOCK_NONE"},
         }
     }
-    -- OpenRouter + Claude/Gemini 模型：锁定 provider 为 google-vertex2，提升 KV cache 命中率
-    local baseUrl = final_config.baseUrl or ""
-    local model = final_config.model or ""
     final_config["extraBody"] = extraBody
     local history = LLM.addMessage(SystemPrompt .. (wrap_system_prompt or ""), "system")
     if premessages and type(premessages) == "table" then
@@ -138,15 +93,15 @@ local function buildConfigAndHistory(use_model_type, config, premessages, wrap_s
     return final_config, history
 end
 
-local function Chat(use_model_type,prompt,config,premessages,wrap_system_prompt)
-    local final_config, history = buildConfigAndHistory(use_model_type, config, premessages, wrap_system_prompt)
+local function Chat(model_role,prompt,config,premessages,wrap_system_prompt)
+    local final_config, history = buildConfigAndHistory(model_role, config, premessages, wrap_system_prompt)
     local response = LLM.chat(prompt,history,final_config)
     LLM.deleteChat(history)
     return response
 end
 
-local function ChatStream(use_model_type,prompt,config,premessages,wrap_system_prompt)
-    local final_config, history = buildConfigAndHistory(use_model_type, config, premessages, wrap_system_prompt)
+local function ChatStream(model_role,prompt,config,premessages,wrap_system_prompt)
+    local final_config, history = buildConfigAndHistory(model_role, config, premessages, wrap_system_prompt)
     return {root_history = history, stream = LLM.stream(prompt,history,final_config)}
 end
 

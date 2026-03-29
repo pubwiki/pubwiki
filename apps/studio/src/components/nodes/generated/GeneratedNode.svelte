@@ -100,11 +100,7 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		const config = {
-			apiKey: settings.api.apiKey,
-			model: settings.api.selectedModel,
-			baseUrl: settings.effectiveBaseUrl
-		};
+		const config = settings.getLLMConfigForRole('narrative');
 		await regenerate(config, id, ctx.nodes, ctx.edges, callbacks);
 	}
 

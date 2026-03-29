@@ -38,6 +38,7 @@
 		"@pubwiki/sandbox-host": "workspace:*",
 		"@pubwiki/reader": "workspace:*",
 		"@pubwiki/ui": "workspace:*",
-		"@pubwiki/vfs": "workspace:*"
+		"@pubwiki/vfs": "workspace:*",
+		"@sentry/sveltekit": "^10.41.0"
 	}
 }

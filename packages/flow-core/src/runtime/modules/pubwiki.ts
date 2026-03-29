@@ -77,6 +77,8 @@ export interface PubWikiModuleConfig {
 	) => Promise<CreateSaveBatchResult>;
 	/** Publish the current project (app-specific logic) */
 	publishArtifact?: (metadata: PublishInput) => Promise<PubWikiResult>;
+	/** Open the settings dialog. Resolves to true if user made changes, false if dismissed unchanged. */
+	openSettings?: () => Promise<boolean>;
 }
 
 // ============================================================================
@@ -454,6 +456,16 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 			} catch (err) {
 				return { success: false, error: err instanceof Error ? err.message : String(err) };
 			}
+		},
+
+		// ──────────────────────────────────────────────────────────
+		// openSettings
+		// ──────────────────────────────────────────────────────────
+		async openSettings(): Promise<boolean> {
+			if (!config.openSettings) {
+				return false;
+			}
+			return config.openSettings();
 		},
 	};
 }

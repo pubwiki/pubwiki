@@ -8,3 +8,4 @@ export * from './VirtualizedDropdown';
 export * from './Toast';
 export * from './Toggle';
 export * from './PubWikiConfirm';
+export * from './Settings';

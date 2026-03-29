@@ -65,15 +65,25 @@ export function createPubChat(config: LLMModuleConfig): {
  */
 export function createLLMModule(
   pubchat: PubChat, 
-  store: MessageStoreProvider
+  store: MessageStoreProvider,
+  roleConfigs?: Record<string, { model: string; apiKey: string; baseUrl: string }>,
 ): JsModuleDefinition {
+
+  function resolveOverrideConfig(overrideConfig?: Partial<LLMConfig> & { modelRole?: string }): Partial<LLMConfig> | undefined {
+    if (!overrideConfig?.modelRole) return overrideConfig
+    const { modelRole, ...rest } = overrideConfig
+    const roleConfig = roleConfigs?.[modelRole]
+    if (!roleConfig) return rest
+    return { ...roleConfig, ...rest }
+  }
+
   return {
     /**
      * Non-streaming chat
      */
-    async chat(...args: unknown[]) {
-      const [prompt, historyId, overrideConfig] = args as [string, string?, Partial<LLMConfig>?]
-      const result = await pubchat.chat(prompt, historyId, overrideConfig)
+    async chat(prompt: string, historyId?: string, overrideConfig?: Partial<LLMConfig> & { modelRole?: string }) {
+      const resolved = resolveOverrideConfig(overrideConfig)
+      const result = await pubchat.chat(prompt, historyId, resolved)
       const content = result.message.blocks
         .filter(b => b.type === 'markdown' || b.type === 'text')
         .map(b => b.content)
@@ -87,9 +97,9 @@ export function createLLMModule(
     /**
      * Streaming chat
      */
-    stream(...args: unknown[]) {
-      const [prompt, historyId, overrideConfig] = args as [string, string?, Partial<LLMConfig>?]
-      return pubchat.streamChat(prompt, historyId, overrideConfig)
+    stream(prompt: string, historyId?: string, overrideConfig?: Partial<LLMConfig> & { modelRole?: string }) {
+      const resolved = resolveOverrideConfig(overrideConfig)
+      return pubchat.streamChat(prompt, historyId, resolved)
     },
     
     /**

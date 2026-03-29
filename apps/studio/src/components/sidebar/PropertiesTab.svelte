@@ -88,7 +88,11 @@
 			updateEdges: ctx.updateEdges,
 		};
 		
-		await generate(selectedNode.id, ctx.nodes, ctx.edges, settings, callbacks);
+		const narrativeConfig = settings.getLLMConfigForRole('narrative');
+		await generate(selectedNode.id, ctx.nodes, ctx.edges, {
+			api: { apiKey: narrativeConfig.apiKey, model: narrativeConfig.model },
+			effectiveBaseUrl: narrativeConfig.baseUrl,
+		}, callbacks);
 	}
 
 	async function handleRegenerate() {
@@ -100,10 +104,11 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
+		const narrativeConfig = settings.getLLMConfigForRole('narrative');
 		const config = {
-			apiKey: settings.api.apiKey,
-			model: settings.api.selectedModel,
-			baseUrl: settings.effectiveBaseUrl
+			apiKey: narrativeConfig.apiKey,
+			model: narrativeConfig.model,
+			baseUrl: narrativeConfig.baseUrl
 		};
 		await regenerate(config, selectedNode.id, ctx.nodes, ctx.edges, callbacks);
 	}

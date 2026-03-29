@@ -153,7 +153,8 @@ export async function initializeLoader(
 	rdfStore: TripleStore | undefined,
 	llmConfig: LLMConfig | undefined,
 	pubwikiConfig?: PubWikiModuleConfig,
-	stateNodeId?: string
+	stateNodeId?: string,
+	roleConfigs?: Record<string, { model: string; apiKey: string; baseUrl: string }>,
 ): Promise<LoaderInitResult> {
 	try {
 		// Clean up existing runtime if any
@@ -187,7 +188,7 @@ export async function initializeLoader(
 			getStore: stateNodeId ? () => getNodeRDFStore(stateNodeId) : undefined,
 			rdfStore: stateNodeId ? undefined : rdfStore as BackendConfig['rdfStore'],
 		});
-		jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore) });
+		jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore, roleConfigs) });
 		
 		// Build backend config
 		const config: BackendConfig = {

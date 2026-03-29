@@ -196,11 +196,10 @@
 
   const settingsStore = getSettingsStore();
 
-  let isLLMConfigured = $derived(
-    !!settingsStore.api.apiKey &&
-    !!settingsStore.api.selectedModel &&
-    !!settingsStore.effectiveBaseUrl
-  );
+  let isLLMConfigured = $derived.by(() => {
+    const cfg = settingsStore.getLLMConfigForRole('narrative');
+    return !!cfg.apiKey && !!cfg.model && !!cfg.baseUrl;
+  });
 
   // ============================================================================
   // World Editor Context → AI Context
@@ -519,9 +518,7 @@
 
     const config: WorldEditorCopilotConfig = {
       llm: {
-        apiKey: settingsStore.api.apiKey,
-        model: settingsStore.api.selectedModel,
-        baseUrl: settingsStore.effectiveBaseUrl,
+        ...settingsStore.getLLMConfigForRole('narrative'),
         temperature: 0.7,
         maxTokens: 4096,
       },
@@ -544,9 +541,7 @@
 
     const designerConfig: DesignerConfig = {
       llm: {
-        apiKey: settingsStore.api.apiKey,
-        model: settingsStore.api.selectedModel,
-        baseUrl: settingsStore.effectiveBaseUrl,
+        ...settingsStore.getLLMConfigForRole('designer'),
         temperature: 0.7,
         maxTokens: 4096,
       },
@@ -613,11 +608,13 @@
           const stateNode = nodeStore.findByMetadata('simple-mode-role', 'state');
           const rdfStore = stateNode ? await getNodeRDFStore(stateNode.id) : undefined;
 
-          const llmConfig = settingsStore.api.apiKey && settingsStore.api.selectedModel ? {
-            apiKey: settingsStore.api.apiKey,
-            model: settingsStore.api.selectedModel,
-            baseUrl: settingsStore.effectiveBaseUrl,
-          } : undefined;
+          const narrativeConfig = settingsStore.getLLMConfigForRole('narrative');
+          const llmConfig = narrativeConfig.apiKey && narrativeConfig.model ? narrativeConfig : undefined;
+          const roleConfigs = Object.fromEntries(
+            (['narrative', 'recall', 'updater', 'designer'] as const).map(
+              role => [role, settingsStore.getLLMConfigForRole(role)]
+            )
+          );
 
           const result = await initializeLoader(
             loaderNode.id,
@@ -627,6 +624,7 @@
             llmConfig,
             undefined, // pubwikiConfig — not needed for preview
             stateNode?.id,
+            roleConfigs,
           );
           if (!result.success) {
             console.warn('[Designer] Loader init failed:', result.error);
@@ -1024,9 +1022,7 @@
   function getBuilderConfig(): WorldBuilderConfig {
     return {
       llm: {
-        apiKey: settingsStore.api.apiKey,
-        model: settingsStore.api.selectedModel,
-        baseUrl: settingsStore.effectiveBaseUrl,
+        ...settingsStore.getLLMConfigForRole('designer'),
         temperature: 0.7,
         maxTokens: 20480,
       },

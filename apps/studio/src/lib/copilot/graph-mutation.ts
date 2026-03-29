@@ -85,7 +85,7 @@ export interface FlowCallbacks {
 export interface GenerationSettings {
   api: {
     apiKey: string;
-    selectedModel: string;
+    model: string;
   };
   effectiveBaseUrl: string;
 }

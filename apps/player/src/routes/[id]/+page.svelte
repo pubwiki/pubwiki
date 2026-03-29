@@ -51,7 +51,7 @@
 	import type { Vfs } from '@pubwiki/vfs';
 	import { useAuth, getSettingsStore } from '@pubwiki/ui/stores';
 	import { SandboxContent } from '@pubwiki/flow-core';
-	import { getPendingConfirmation, requestConfirmation, respondConfirmation } from '@pubwiki/ui/components';
+	import { getPendingConfirmation, requestConfirmation, respondConfirmation, SettingsModal } from '@pubwiki/ui/components';
 	import PubWikiConfirmDialog from '$components/pubwiki/PubWikiConfirmDialog.svelte';
 	import PublishForm from '$components/pubwiki/PublishForm.svelte';
 	import UploadArticleForm from '$components/pubwiki/UploadArticleForm.svelte';
@@ -109,6 +109,23 @@
 	// Runtime-resolved publish metadata (set during initialization)
 	let resolvedSandboxNodeId: string | null = null;
 	let resolvedBuildCacheKey: string | null = null;
+
+	// Settings modal state
+	let showSettingsModal = $state(false);
+	let settingsResolve: ((changed: boolean) => void) | null = null;
+
+	function openSettings(): Promise<boolean> {
+		return new Promise((resolve) => {
+			settingsResolve = resolve;
+			showSettingsModal = true;
+		});
+	}
+
+	function handleSettingsClose(changed: boolean) {
+		showSettingsModal = false;
+		settingsResolve?.(changed);
+		settingsResolve = null;
+	}
 
 	// User info passed to sandbox via iframe.name
 	let userInfo = $state({
@@ -432,6 +449,7 @@
 						apiClient,
 						getCurrentUserId: () => auth.user?.id ?? null,
 						confirmation: confirmationHandler,
+						openSettings,
 						getArtifactContext: async () => ({
 							isPublished: true,
 							artifactId: data.artifactId,
@@ -478,16 +496,18 @@
 					});
 
 					// Register LLM module (always register so Lua require('LLM') doesn't fail)
-					const llmConfig = settings.api.apiKey && settings.api.selectedModel ? {
-						apiKey: settings.api.apiKey,
-						model: settings.api.selectedModel,
-						baseUrl: settings.effectiveBaseUrl,
-					} : {};
+					const narrativeConfig = settings.getLLMConfigForRole('narrative');
+					const llmConfig = narrativeConfig.apiKey && narrativeConfig.model ? narrativeConfig : {};
+					const roleConfigs = Object.fromEntries(
+						(['narrative', 'recall', 'updater', 'designer'] as const).map(
+							role => [role, settings.getLLMConfigForRole(role)]
+						)
+					);
 					const { pubchat, messageStore } = createPubChat({
 						llmConfig,
 						rdfStore: loaderRdfStore ?? undefined,
 					});
-					jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore) });
+					jsModules.set('LLM', { module: createLLMModule(pubchat, messageStore, roleConfigs) });
 
 					// Initialize backend
 					const { backend, result } = await initializePlayerLoader(
@@ -654,6 +674,10 @@
 			onConfirm={(editedValues) => respondConfirmation(editedValues)}
 			onCancel={() => respondConfirmation(null)}
 		/>
+	{/if}
+
+	{#if showSettingsModal}
+		<SettingsModal onclose={handleSettingsClose} />
 	{/if}
 </div>
 

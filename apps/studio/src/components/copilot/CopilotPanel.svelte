@@ -92,11 +92,10 @@
   const settingsStore = getSettingsStore();
   
   // Check if LLM is configured using the api settings
-  let isLLMConfigured = $derived(
-    !!settingsStore.api.apiKey && 
-    !!settingsStore.api.selectedModel && 
-    !!settingsStore.effectiveBaseUrl
-  );
+  let isLLMConfigured = $derived.by(() => {
+    const cfg = settingsStore.getLLMConfigForRole('narrative');
+    return !!cfg.apiKey && !!cfg.model && !!cfg.baseUrl;
+  });
 
   // ============================================================================
   // Context Setup
@@ -144,11 +143,11 @@
       updateEdges: studioContext.updateEdges,
     };
     
+    const narrativeConfig = settingsStore.getLLMConfigForRole('narrative');
+    
     const config: OrchestratorConfig = {
       llm: {
-        apiKey: settingsStore.api.apiKey,
-        model: settingsStore.api.selectedModel,
-        baseUrl: settingsStore.effectiveBaseUrl,
+        ...narrativeConfig,
         temperature: 0.7,
         maxTokens: 4096,
       },
@@ -157,10 +156,10 @@
       flowCallbacks,
       generationSettings: {
         api: {
-          apiKey: settingsStore.api.apiKey,
-          selectedModel: settingsStore.api.selectedModel,
+          apiKey: narrativeConfig.apiKey,
+          model: narrativeConfig.model,
         },
-        effectiveBaseUrl: settingsStore.effectiveBaseUrl,
+        effectiveBaseUrl: narrativeConfig.baseUrl,
       },
       onNodeCreated: (nodeId, nodeType, nodeName) => {
         addActivity('node_created', `Created ${nodeType} node "${nodeName || nodeId}"`);

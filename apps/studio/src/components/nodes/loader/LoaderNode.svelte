@@ -328,12 +328,14 @@
 			const stateNodeId = findStateNode(id, ctx.nodes, ctx.edges);
 			const rdfStore = stateNodeId ? await getNodeRDFStore(stateNodeId) : undefined;
 			
-			// Get LLM config from settings
-			const llmConfig = settings.api.apiKey && settings.api.selectedModel ? {
-				apiKey: settings.api.apiKey,
-				model: settings.api.selectedModel,
-				baseUrl: settings.effectiveBaseUrl
-			} : undefined;
+			// Get LLM config from settings (narrative role as base config)
+			const narrativeConfig = settings.getLLMConfigForRole('narrative');
+			const llmConfig = narrativeConfig.apiKey && narrativeConfig.model ? narrativeConfig : undefined;
+			const roleConfigs = Object.fromEntries(
+				(['narrative', 'recall', 'updater', 'designer'] as const).map(
+					role => [role, settings.getLLMConfigForRole(role)]
+				)
+			);
 			
 			// Create PubWiki module config (flow-core's unified module)
 			const formComponents: Record<string, typeof PublishForm> = {
@@ -416,7 +418,8 @@
 				rdfStore,
 				llmConfig,
 				pubwikiConfig,
-				stateNodeId ?? undefined
+				stateNodeId ?? undefined,
+				roleConfigs,
 			);
 			
 			// Update local state with result

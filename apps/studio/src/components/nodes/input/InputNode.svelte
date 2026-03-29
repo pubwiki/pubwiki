@@ -290,7 +290,11 @@
 			updateNodes: ctx.updateNodes,
 			updateEdges: ctx.updateEdges,
 		};
-		await generate(id, ctx.nodes, ctx.edges, settings, callbacks);
+		const narrativeConfig = settings.getLLMConfigForRole('narrative');
+		await generate(id, ctx.nodes, ctx.edges, {
+			api: { apiKey: narrativeConfig.apiKey, model: narrativeConfig.model },
+			effectiveBaseUrl: narrativeConfig.baseUrl,
+		}, callbacks);
 	}
 
 	// Node name validation callback for BaseNode

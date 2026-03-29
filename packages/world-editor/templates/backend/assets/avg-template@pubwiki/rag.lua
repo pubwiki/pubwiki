@@ -1286,7 +1286,7 @@ Service:define()
         -- === 直接调用 Chat.Chat（绕过 GenerateContent，自行控制 premessages） ===
         print("[UpdateGameStateAndDocs] 直接调用 Chat.Chat (Analyzer 模式)...")
         local llm_success, llm_ret = pcall(function()
-            return Chat.Chat("updateModel", final_prompt, {
+            return Chat.Chat("updater", final_prompt, {
                 responseFormat = { type = "json_object" },
             }, analyzer_premessages, analyzer_system_prompt)
         end)
@@ -1490,7 +1490,7 @@ Service:define()
                 .. "Please regenerate the COMPLETE JSON with all issues fixed. Do NOT omit the successful calls — include everything.\n"
 
             local retry_success, retry_ret = pcall(function()
-                return Chat.Chat("updateModel", retry_prompt, {
+                return Chat.Chat("updater", retry_prompt, {
                     responseFormat = { type = "json_object" },
                 }, analyzer_premessages, analyzer_system_prompt)
             end)

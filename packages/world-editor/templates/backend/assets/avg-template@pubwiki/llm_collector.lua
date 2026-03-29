@@ -556,7 +556,7 @@ ServiceRegistry:define()
         end
 
         -- Call LLM
-        local llmResult = Chat.Chat("retrievalModel",finalPrompt, {
+        local llmResult = Chat.Chat("recall",finalPrompt, {
             responseFormat = {
                 type = "json_object",
                 json_schema = {

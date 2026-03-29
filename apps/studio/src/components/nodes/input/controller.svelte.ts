@@ -228,7 +228,7 @@ export interface GenerationCallbacks {
 export interface GenerationSettings {
 	api: {
 		apiKey: string;
-		selectedModel: string;
+		model: string;
 	};
 	effectiveBaseUrl: string;
 }
@@ -269,7 +269,7 @@ export async function generate(
 	const nodeConfig = inputData.content.generationConfig;
 	const config: GenerationConfig = {
 		apiKey: settings.api.apiKey,
-		model: nodeConfig?.model || settings.api.selectedModel,
+		model: nodeConfig?.model || settings.api.model,
 		baseUrl: settings.effectiveBaseUrl,
 		temperature: nodeConfig?.temperature,
 		schema: nodeConfig?.schema

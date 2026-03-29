@@ -17,7 +17,7 @@ Service:define()
         skip_overview = Type.Optional(Type.Bool):desc("跳过 GetGameOverviewNEXT 调用，不自动注入 ECS 数据。调用者需自行在 prompt 或 additional_system_prompt 中包含所需上下文"),
         prompt = Type.String:desc("完整的提示词文本，一般包含最近两到三段的剧情内容，以保证上下文连贯"),
         model = Type.Optional(Type.String):desc("使用的LLM模型，不填则为默认模型"),
-        model_preset = Type.Optional(Type.String):desc("使用的模型预设配置名称,召回模型'retrievalModel',生成模型'generationModel',更新模型'updateModel'，这个会作为基底的配置，被model参数覆盖"),
+        model_preset = Type.Optional(Type.String):desc("使用的模型角色名称,召回模型'recall',叙事/生成模型'narrative',更新模型'updater'，这个角色名称会用于从用户设置中查找对应的模型配置，被model参数覆盖"),
         additional_system_prompt = Type.Optional(Type.String):desc("额外的系统提示词，会追加到基础提示词的末尾，提供给LLM更多指引信息"),
         premessages = Type.Optional(Type.Array(Type.Object({
             role = Type.String,
@@ -112,7 +112,7 @@ Service:define()
 
         -- 调用LLM生成内容
         local llm_success, ret = pcall(function()
-            local model_to_use = inputs.model_preset or "generationModel"
+            local model_to_use = inputs.model_preset or "narrative"
             local llm_result = Chat.Chat(model_to_use, full_prompt, cfg, premessages, inputs.additional_system_prompt or "")
             return llm_result 
         end)
@@ -621,7 +621,7 @@ callback 按以下顺序接收事件：
         end
         -- 设定文档作为 premessages（稳定排序，每3条一组，利于 KV cache）
         local premessages = overview_result.built_messages or {}
-        local ret = Chat.ChatStream("generationModel", prompt, cfg, premessages, fixed_instructions)
+        local ret = Chat.ChatStream("narrative", prompt, cfg, premessages, fixed_instructions)
 
         local raw_text = ""
         local reasoning = ""
