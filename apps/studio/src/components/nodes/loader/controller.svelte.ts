@@ -78,6 +78,9 @@ export interface LoaderInitResult {
 /** Runtime state storage (nodeId -> runtime) */
 const loaderRuntimes = new Map<string, LoaderRuntime>();
 
+/** In-flight init promises (nodeId -> Promise<LoaderInitResult>). Resolves when initializeLoader finishes. */
+const initPromises = new Map<string, Promise<LoaderInitResult>>();
+
 /** Reload callback registry (nodeId -> callbacks) */
 const reloadCallbacks = new Map<string, Set<(result: LoaderInitResult) => void>>();
 
@@ -155,6 +158,9 @@ export async function initializeLoader(
 	pubwikiConfig?: PubWikiModuleConfig,
 	stateNodeId?: string
 ): Promise<LoaderInitResult> {
+	let resolveInit!: (result: LoaderInitResult) => void;
+	initPromises.set(nodeId, new Promise(r => { resolveInit = r; }));
+
 	try {
 		// Clean up existing runtime if any
 		await destroyLoader(nodeId);
@@ -235,13 +241,16 @@ export async function initializeLoader(
 		// Store runtime state with unsubscribe function
 		loaderRuntimes.set(nodeId, { backend, pubchat, unsubscribeVfs });
 		
+		resolveInit(result);
 		return result;
 	} catch (error) {
-		return {
+		const result: LoaderInitResult = {
 			success: false,
 			services: [],
 			error: error instanceof Error ? error.message : String(error)
 		};
+		resolveInit(result);
+		return result;
 	}
 }
 
@@ -258,6 +267,7 @@ export async function destroyLoader(nodeId: string): Promise<void> {
 		await runtime.backend.destroy();
 		loaderRuntimes.delete(nodeId);
 	}
+	initPromises.delete(nodeId);
 }
 
 /**
@@ -266,6 +276,23 @@ export async function destroyLoader(nodeId: string): Promise<void> {
 export function isLoaderReady(nodeId: string): boolean {
 	const runtime = loaderRuntimes.get(nodeId);
 	return runtime?.backend.isReady() ?? false;
+}
+
+/**
+ * Wait for a Loader Node's in-flight initialization to settle.
+ * Returns the init result directly if a promise exists, or resolves
+ * immediately when the loader is already ready.
+ *
+ * @param nodeId - The node ID to wait for
+ * @returns The initialization result, or a synthetic success/failure
+ */
+export async function waitForLoaderReady(nodeId: string): Promise<LoaderInitResult> {
+	if (isLoaderReady(nodeId)) {
+		return { success: true, services: [], error: null };
+	}
+	const pending = initPromises.get(nodeId);
+	if (pending) return pending;
+	return { success: false, services: [], error: 'Loader not initializing' };
 }
 
 /**

@@ -16,6 +16,7 @@
 	import type { LoaderNodeData } from '$lib/types';
 	import { computeVfsContentHash } from '$lib/io';
 	import { createLoaderServices } from '$lib/sandbox';
+	import { waitForLoaderReady } from '$components/nodes/loader/controller.svelte';
 	import { ConsoleLogStore, createLogSession, formatLogFile, downloadLogFile } from '$lib/sandbox/console-log-db';
 	import { page } from '$app/state';
 	import { PUBLIC_SANDBOX_SITE_URL } from '$env/static/public';
@@ -312,6 +313,10 @@
 
 			// Collect custom services from connected Loader nodes
 			const loaderNodeIds = loaderNodes.map(l => l.id);
+			if (loaderNodeIds.length > 0) {
+				// Wait for connected Loader backends to finish initializing
+				await Promise.all(loaderNodeIds.map(id => waitForLoaderReady(id)));
+			}
 			const customServices = loaderNodeIds.length > 0 ? await createLoaderServices(loaderNodeIds) : undefined;
 
 			// Compute buildCacheKey + contentHash so L1 (OPFS) cache is consulted
