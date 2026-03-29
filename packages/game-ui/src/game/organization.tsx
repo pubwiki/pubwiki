@@ -12,10 +12,6 @@ import React, { createContext, useContext } from 'react'
 import { useGameData, type GameResolvers } from '../provider.tsx'
 import type { OrganizationEntity, Territory } from '../types.ts'
 
-function asArray<T>(val: T[] | Record<string, unknown> | null | undefined): T[] {
-  if (Array.isArray(val)) return val
-  return []
-}
 
 interface OrgCtxValue { entity: OrganizationEntity; resolve: GameResolvers }
 const OrgCtx = createContext<OrgCtxValue | null>(null)
@@ -60,7 +56,7 @@ function Description({ as: Tag = 'p', className }: SlotProps) {
 /** Territories — auto-resolves region/location names */
 function Territories({ className, children }: { className?: string; children?: (t: Territory, i: number) => React.ReactNode }) {
   const { entity: e, resolve } = useCtx()
-  const territories = asArray(e.Organization?.territories)
+  const territories = e.Organization?.territories ?? []
   if (!territories.length) return null
   if (children) return <ul data-slot="org-territories" className={className}>{territories.map((t, i) => children(t, i))}</ul>
   return (
@@ -104,7 +100,7 @@ function Members({ className }: { className?: string }) {
 
 function StatusEffects({ className }: { className?: string }) {
   const { entity: e } = useCtx()
-  const effects = asArray(e.StatusEffects?.status_effects)
+  const effects = e.StatusEffects?.status_effects ?? []
   if (!effects.length) return null
   return (
     <ul data-slot="org-status-effects" className={className}>

@@ -81,5 +81,13 @@ export {
 } from './story/engine.ts'
 export { StreamText, type StreamTextProps } from './story/stream-text.tsx'
 
+// ── Normalize ──
+export {
+  normalizeCreature,
+  normalizeRegion,
+  normalizeOrganization,
+  normalizeWorld,
+} from './normalize.ts'
+
 // ── Primitives (future) ──
 export {} from './primitives/index.ts'

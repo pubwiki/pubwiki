@@ -51,6 +51,19 @@ local function getWorldEntityId()
     return nil
 end
 
+--- Get world entity ID, auto-creating a minimal world if it doesn't exist.
+--- Use this in services that need a world entity to operate (spawn, modify, etc.)
+local function ensureWorldEntityId()
+    if RDF.worldExists() then return RDF.worldSubject() end
+    -- Auto-create minimal world entity
+    RDF.createWorld({
+        GameTime = { year = 1, month = 1, day = 1, hour = 8, minute = 0 },
+        DirectorNotes = { notes = {}, flags = {} },
+        Events = { events = {} },
+    })
+    return RDF.worldSubject()
+end
+
 -- Find entity by creature_id (returns subject string "creature:{id}" or nil)
 local function getEntityIdByCreatureId(creatureId)
     if RDF.creatureExists(creatureId) then return RDF.creatureSubject(creatureId) end
@@ -203,10 +216,7 @@ registerSystem({
     outputs = ComponentTypes.BasicOutput,
     tags = {"create", "character"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity does not exist, please create world first"}
-        end
+        local worldEntityId = ensureWorldEntityId()
         
         local creatureAttrs = params.Creature
         local creatureId = creatureAttrs.creature_id
@@ -273,10 +283,7 @@ registerSystem({
     outputs = ComponentTypes.BasicOutput,
     tags = {"create", "region"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity does not exist, please create world first"}
-        end
+        local worldEntityId = ensureWorldEntityId()
         
         local locData = params.Region
         local regionId = locData.region_id
@@ -694,6 +701,117 @@ registerSystem({
     end
 })
 
+-- ============ Single-Entity Query Services ============
+
+registerSystem({
+    category = "Query",
+    name = "getCreatureById",
+    description = "Get a single creature entity by creature_id",
+    usage = "Pass creature_id. Returns full component snapshot of that creature.",
+    inputs = Type.Object({ creature_id = Type.String:desc("Creature ID") }),
+    outputs = Type.Object({
+        success = Type.Bool,
+        found = Type.Bool,
+        entity = Type.Optional(ComponentTypes.CreatureSnapshot),
+        error = Type.Optional(Type.String),
+    }),
+    tags = {"query", "creature"},
+    execute = function(params)
+        local entityId = "creature:" .. params.creature_id
+        local snapshot = Service.call("ecs:GetEntitySnapshot", { entity_id = entityId })
+        if not snapshot.found then
+            return { success = true, found = false }
+        end
+        local c = snapshot.components
+        return {
+            success = true,
+            found = true,
+            entity = {
+                entity_id = entityId,
+                Creature = c.Creature,
+                IsPlayer = c.IsPlayer,
+                LocationRef = c.LocationRef,
+                Inventory = c.Inventory,
+                StatusEffects = c.StatusEffects,
+                Log = c.Log,
+                CustomComponents = c.CustomComponents,
+                BindSetting = c.BindSetting,
+                Interaction = c.Interaction,
+            },
+        }
+    end
+})
+
+registerSystem({
+    category = "Query",
+    name = "getRegionById",
+    description = "Get a single region entity by region_id",
+    usage = "Pass region_id. Returns full component snapshot of that region.",
+    inputs = Type.Object({ region_id = Type.String:desc("Region ID") }),
+    outputs = Type.Object({
+        success = Type.Bool,
+        found = Type.Bool,
+        entity = Type.Optional(ComponentTypes.RegionSnapshot),
+        error = Type.Optional(Type.String),
+    }),
+    tags = {"query", "region"},
+    execute = function(params)
+        local entityId = "region:" .. params.region_id
+        local snapshot = Service.call("ecs:GetEntitySnapshot", { entity_id = entityId })
+        if not snapshot.found then
+            return { success = true, found = false }
+        end
+        local c = snapshot.components
+        return {
+            success = true,
+            found = true,
+            entity = {
+                entity_id = entityId,
+                Metadata = c.Metadata,
+                Region = c.Region,
+                Log = c.Log,
+                BindSetting = c.BindSetting,
+                Interaction = c.Interaction,
+            },
+        }
+    end
+})
+
+registerSystem({
+    category = "Query",
+    name = "getOrganizationById",
+    description = "Get a single organization entity by organization_id",
+    usage = "Pass organization_id. Returns full component snapshot of that organization.",
+    inputs = Type.Object({ organization_id = Type.String:desc("Organization ID") }),
+    outputs = Type.Object({
+        success = Type.Bool,
+        found = Type.Bool,
+        entity = Type.Optional(ComponentTypes.OrganizationSnapshot),
+        error = Type.Optional(Type.String),
+    }),
+    tags = {"query", "organization"},
+    execute = function(params)
+        local entityId = "org:" .. params.organization_id
+        local snapshot = Service.call("ecs:GetEntitySnapshot", { entity_id = entityId })
+        if not snapshot.found then
+            return { success = true, found = false }
+        end
+        local c = snapshot.components
+        return {
+            success = true,
+            found = true,
+            entity = {
+                entity_id = entityId,
+                Organization = c.Organization,
+                Inventory = c.Inventory,
+                Log = c.Log,
+                BindSetting = c.BindSetting,
+                Interaction = c.Interaction,
+            },
+        }
+    end
+})
+
 -- ============ Interaction Services ============
 
 -- Helper: resolve entity_id from flexible target params
@@ -707,7 +825,7 @@ local function resolveInteractionEntityId(params)
     elseif params.organization_id then
         return getEntityIdByOrganizationId(params.organization_id)
     elseif params.is_world then
-        return getWorldEntityId()
+        return ensureWorldEntityId()
     end
     return nil
 end
@@ -1424,10 +1542,7 @@ registerSystem({
         local entityId = nil
         
         if params.is_world then
-            entityId = getWorldEntityId()
-            if not entityId then
-                return {success = false, error = "World entity not found"}
-            end
+            entityId = ensureWorldEntityId()
         elseif params.creature_id then
             entityId = getEntityIdByCreatureId(params.creature_id)
             if not entityId then
@@ -1511,8 +1626,7 @@ registerSystem({
         local entityId = nil
 
         if params.is_world then
-            entityId = getWorldEntityId()
-            if not entityId then return {success = false, error = "World entity not found"} end
+            entityId = ensureWorldEntityId()
         elseif params.creature_id then
             entityId = getEntityIdByCreatureId(params.creature_id)
             if not entityId then return {success = false, error = "Creature not found: " .. params.creature_id} end
@@ -2464,10 +2578,7 @@ registerSystem({
     }),
     tags = {"modify", "time"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found", time_text = ""}
-        end
+        local worldEntityId = ensureWorldEntityId()
         
         local timeResult = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2534,10 +2645,7 @@ registerSystem({
     }),
     tags = {"query", "time"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
         
         local timeResult = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2577,10 +2685,7 @@ registerSystem({
     }),
     tags = {"modify", "director"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local result = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2628,10 +2733,7 @@ registerSystem({
     }),
     tags = {"modify", "director"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local result = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2676,10 +2778,7 @@ registerSystem({
     }),
     tags = {"modify", "director"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local result = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2742,10 +2841,7 @@ registerSystem({
     }),
     tags = {"query", "director"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found", exists = false}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local result = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2781,10 +2877,7 @@ registerSystem({
     }),
     tags = {"modify", "director"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local result = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -2975,10 +3068,7 @@ registerSystem({
     outputs = ComponentTypes.SuccessOutput,
     tags = {"create", "events"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local eventsResult = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -3043,10 +3133,7 @@ registerSystem({
     outputs = ComponentTypes.SuccessOutput,
     tags = {"modify", "events"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local eventsResult = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -3108,10 +3195,7 @@ registerSystem({
     outputs = ComponentTypes.SuccessOutput,
     tags = {"modify", "events"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local eventsResult = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,
@@ -3167,10 +3251,7 @@ registerSystem({
     }),
     tags = {"query", "events"},
     execute = function(params)
-        local worldEntityId = getWorldEntityId()
-        if not worldEntityId then
-            return {success = false, events = {}, error = "World entity not found"}
-        end
+        local worldEntityId = ensureWorldEntityId()
 
         local eventsResult = Service.call("ecs:GetComponentData", {
             entity_id = worldEntityId,

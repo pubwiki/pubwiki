@@ -21,12 +21,6 @@ import type {
   CustomComponentDef,
 } from '../types.ts'
 
-/** Lua's empty `{}` may arrive as object instead of array. */
-function asArray<T>(val: T[] | Record<string, unknown> | null | undefined): T[] {
-  if (Array.isArray(val)) return val
-  return []
-}
-
 // ── Context ──
 
 interface CreatureCtxValue {
@@ -116,7 +110,7 @@ function Goal({ as: Tag = 'p', className }: SlotProps) {
 
 function Titles({ as: Tag = 'ul', className }: SlotProps) {
   const { entity: e } = useCtx()
-  const titles = asArray(e.Creature?.titles)
+  const titles = e.Creature?.titles ?? []
   if (!titles.length) return null
   return (
     <Tag data-slot="creature-titles" className={className}>
@@ -206,7 +200,7 @@ function OrganizationSlot({ as: Tag = 'span', className }: SlotProps) {
 
 function KnownInfos({ as: Tag = 'ul', className }: SlotProps) {
   const { entity: e } = useCtx()
-  const infos = asArray(e.Creature?.known_infos)
+  const infos = e.Creature?.known_infos ?? []
   if (!infos.length) return null
   return (
     <Tag data-slot="creature-known-infos" className={className}>
@@ -217,7 +211,7 @@ function KnownInfos({ as: Tag = 'ul', className }: SlotProps) {
 
 function Inventory({ className, children }: { className?: string; children?: (item: InventoryItem, i: number) => React.ReactNode }) {
   const { entity: e } = useCtx()
-  const items = asArray(e.Inventory?.items)
+  const items = e.Inventory?.items ?? []
   if (!items.length) return null
   if (children) return <ul data-slot="creature-inventory" className={className}>{items.map((item, i) => children(item, i))}</ul>
   return (
@@ -228,7 +222,7 @@ function Inventory({ className, children }: { className?: string; children?: (it
           {item.count > 1 && <span data-slot="item-count"> ×{item.count}</span>}
           {item.equipped && <span data-slot="item-equipped">装备中</span>}
           {item.description && <span data-slot="item-description">{item.description}</span>}
-          {asArray(item.details).map((d, j) => <span key={j} data-slot="item-detail">{String(d)}</span>)}
+          {(item.details ?? []).map((d, j) => <span key={j} data-slot="item-detail">{String(d)}</span>)}
         </li>
       ))}
     </ul>
@@ -237,7 +231,7 @@ function Inventory({ className, children }: { className?: string; children?: (it
 
 function StatusEffects({ className, children }: { className?: string; children?: (eff: StatusEffect, i: number) => React.ReactNode }) {
   const { entity: e } = useCtx()
-  const effects = asArray(e.StatusEffects?.status_effects)
+  const effects = e.StatusEffects?.status_effects ?? []
   if (!effects.length) return null
   if (children) return <ul data-slot="creature-status-effects" className={className}>{effects.map((eff, i) => children(eff, i))}</ul>
   return (
@@ -304,7 +298,7 @@ function renderSchemaValue(value: unknown, schema?: Record<string, unknown>): Re
 /** CustomComponents — auto-resolves component_name + schema-driven rendering from Registry */
 function CustomComponents({ className, children }: { className?: string; children?: (comp: CustomComponentInstance, def: CustomComponentDef | null, i: number) => React.ReactNode }) {
   const { entity: e, resolve } = useCtx()
-  const comps = asArray(e.CustomComponents?.custom_components)
+  const comps = e.CustomComponents?.custom_components ?? []
   if (!comps.length) return null
 
   if (children) {

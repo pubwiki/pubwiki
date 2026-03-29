@@ -232,46 +232,60 @@ export interface WorldSnapshot {
 // Watch Service Callback Types
 // ============================================================================
 
-/** Callback data from watch:Creatures */
-export interface WatchCreaturesEvent {
-  type: 'snapshot' | 'changes'
-  added?: string[]
-  deleted?: string[]
-  modified?: string[]
-  data: {
-    player: CreatureEntity | null
-    npcs: CreatureEntity[]
-  }
+/** Snapshot event: full data */
+export interface WatchSnapshotEvent<TData> {
+  type: 'snapshot'
+  data: TData
 }
 
-/** Callback data from watch:Player */
+/** Incremental change event: only affected entities */
+export interface WatchChangesEvent<TEntity> {
+  type: 'changes'
+  /** Added entities — full entity data */
+  added: TEntity[]
+  /** Deleted entity IDs */
+  deleted: string[]
+  /** Modified entities — full entity data */
+  modified: TEntity[]
+}
+
+/** watch:Creatures snapshot data */
+export interface CreaturesSnapshotData {
+  player: CreatureEntity | null
+  npcs: CreatureEntity[]
+}
+
+/** watch:Creatures events */
+export type WatchCreaturesEvent =
+  | WatchSnapshotEvent<CreaturesSnapshotData>
+  | WatchChangesEvent<CreatureEntity>
+
+/** watch:Player events */
 export interface WatchPlayerEvent {
   type: 'snapshot' | 'changes'
   change?: 'added' | 'deleted' | 'modified'
   data: CreatureEntity | null
 }
 
-/** Callback data from watch:Regions */
-export interface WatchRegionsEvent {
-  type: 'snapshot' | 'changes'
-  added?: string[]
-  deleted?: string[]
-  modified?: string[]
-  data: {
-    regions: RegionEntity[]
-  }
+/** watch:Regions snapshot data */
+export interface RegionsSnapshotData {
+  regions: RegionEntity[]
 }
 
-/** Callback data from watch:Organizations */
-export interface WatchOrganizationsEvent {
-  type: 'snapshot' | 'changes'
-  added?: string[]
-  deleted?: string[]
-  modified?: string[]
-  data: {
-    organizations: OrganizationEntity[]
-  }
+/** watch:Regions events */
+export type WatchRegionsEvent =
+  | WatchSnapshotEvent<RegionsSnapshotData>
+  | WatchChangesEvent<RegionEntity>
+
+/** watch:Organizations snapshot data */
+export interface OrganizationsSnapshotData {
+  organizations: OrganizationEntity[]
 }
+
+/** watch:Organizations events */
+export type WatchOrganizationsEvent =
+  | WatchSnapshotEvent<OrganizationsSnapshotData>
+  | WatchChangesEvent<OrganizationEntity>
 
 /** Callback data from watch:World */
 export interface WatchWorldEvent {

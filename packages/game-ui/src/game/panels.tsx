@@ -11,6 +11,7 @@
 
 import React from 'react'
 import { useGameData } from '../provider.tsx'
+
 import { Creature } from './creature.tsx'
 import { Player } from './player.tsx'
 import { Region } from './region.tsx'
@@ -147,9 +148,9 @@ export function WorldPanel({ className }: { className?: string }) {
         </div>
       )}
 
-      {world.Events?.events && world.Events.events.length > 0 && (
+      {(world.Events?.events ?? []).length > 0 && (
         <ul data-slot="world-events">
-          {world.Events.events.map((ev) => (
+          {(world.Events?.events ?? []).map((ev) => (
             <li key={ev.event_id} data-slot="world-event">
               <span data-slot="event-title">{ev.title}</span>
               <span data-slot="event-summary">{ev.summary}</span>

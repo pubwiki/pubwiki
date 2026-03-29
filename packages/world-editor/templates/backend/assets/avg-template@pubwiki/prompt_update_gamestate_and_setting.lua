@@ -293,12 +293,15 @@ API_REFERENCE = [===[
 - **Service**: `ecs.system:Modify.addLog`
 - **Args**: `{ creature_id/region_id/organization_id/is_world, entry = "..." }`
   - Target supports 4 types (pick one): `creature_id`, `region_id`, `organization_id`, or `is_world = true` (log to world entity)
+  - Example: `{ "service": "ecs.system:Modify.addLog", "args": { "creature_id": "li_mei", "entry": "Talked with Old Wang at the square, learned about disturbances in the forest" } }`
+  - Example (world): `{ "service": "ecs.system:Modify.addLog", "args": { "is_world": true, "entry": "Miasma from the Dark Forest begins spreading toward the village" } }`
 - **⚠️ Log target priority (critical)**:
   - **Logs are primarily for tracking characters (creatures)** — always prefer `creature_id` as the log target
   - For each story event, write a log for **every creature involved** (the actor AND affected characters)
   - **Region/Organization logs**: Only use `region_id` or `organization_id` when the event is about the location/organization **itself** changing (e.g., a region is destroyed, an organization's leadership changes) — NOT simply because the event happened at that location
   - **`is_world = true`**: Reserve for truly global events (era changes, cataclysms, system-wide announcements)
 - **Soft-delete log**: `ecs.system:Modify.deleteLog` → `{ creature_id/region_id/organization_id/is_world, index }` — marks log entry at `[IDX=index]` as `[deleted]` (rarely needed)
+  - Example: `{ "service": "ecs.system:Modify.deleteLog", "args": { "creature_id": "li_mei", "index": 3 } }`
 
 ### A2. Known Info (Cognitive Boundary Tracking)
 `addKnownInfo` tracks **critical knowledge that will matter later** — NOT a second log. Only use for:
@@ -309,8 +312,10 @@ API_REFERENCE = [===[
 - **Service**: `ecs.system:Modify.addKnownInfo` → `{ creature_id, info }`
   - `info` format: `"[<current_time>] <fact>"` — time prefix + one concise sentence. Duplicates auto-ignored
   - **Use absolute time** for deadlines/schedules within the fact (e.g., "[2055/11/15] 边境守卫在午夜换班" not "今晚换班")
+  - Example: `{ "service": "ecs.system:Modify.addKnownInfo", "args": { "creature_id": "li_mei", "info": "[2055/11/15] Deep in the forest lies an ancient ruin entrance that requires a Moonstone Key to open" } }`
 - **Do NOT use** for: combat outcomes, routine status changes, common knowledge, or events the character experienced firsthand with no hidden dimension — these belong in logs only.
 - **Soft-delete known info**: `ecs.system:Modify.deleteKnownInfo` → `{ creature_id, index }` — marks known_infos entry at `[IDX=index]` as `[deleted]` (rarely needed, use when info becomes outdated or incorrect)
+  - Example: `{ "service": "ecs.system:Modify.deleteKnownInfo", "args": { "creature_id": "li_mei", "index": 2 } }`
 
 ### B. Items
 - **Acquire item**: `ecs.system:Modify.addItemToCreature` → `{ creature_id, item_id, item_name, item_description, count?, item_details?, equipped? }`
@@ -318,53 +323,125 @@ API_REFERENCE = [===[
   - `item_name` (required): item display name (in game content language)
   - `item_description` (required): item description
   - If item_id already exists in inventory, count is added and name/description are updated
+  - Example: `{ "service": "ecs.system:Modify.addItemToCreature", "args": { "creature_id": "li_mei", "item_id": "moon_stone_key", "item_name": "Moonstone Key", "item_description": "An ancient key that glows faintly", "count": 1, "item_details": ["Said to open the ruin gates"], "equipped": false } }`
 - **Remove item**: `ecs.system:Modify.removeItemFromCreature` → `{ creature_id, item_id, count? }`
   - `count` defaults to 1. Auto-removed when count reaches 0. **⚠️ item_id must exactly match the ID in [Inventory]**
+  - Example: `{ "service": "ecs.system:Modify.removeItemFromCreature", "args": { "creature_id": "li_mei", "item_id": "healing_herb", "count": 2 } }`
 - **Update item details**: `ecs.system:Modify.updateItemForCreature` → `{ creature_id, item_id, item_name?, item_description?, item_details?, equipped? }`
+  - Example: `{ "service": "ecs.system:Modify.updateItemForCreature", "args": { "creature_id": "li_mei", "item_id": "moon_stone_key", "item_details": ["Said to open the ruin gates", "Cracks have appeared on its surface"], "equipped": true } }`
 
 ### C. Character Status & Attributes
 - **Add new status**: `ecs.system:Modify.addStatusEffect` → `{ creature_id/region_id/organization_id, instance_id?, display_name?, remark?, data = {...} }`
   - `instance_id` optional (auto-generated if omitted). Errors if instance_id already exists
   - `display_name` **must be in the game content language**
   - `remark`: use **absolute time** for any temporal info (e.g., "11月15日战斗中受伤" not "刚才受伤")
+  - Example: `{ "service": "ecs.system:Modify.addStatusEffect", "args": { "creature_id": "li_mei", "instance_id": "poisoned_01", "display_name": "Poisoned", "remark": "Bitten by venomous snake on 2055/11/15", "data": { "poison_type": "snake_venom", "severity": 3 } } }`
 - **Update status** (upsert + shallow merge): `ecs.system:Modify.updateStatusEffect` → `{ creature_id/region_id/organization_id, instance_id, data? = {...}, display_name?, remark? }`
   - `data` is **shallow-merged** into existing effect.data. Compute final values directly
   - **Upsert**: if instance_id doesn't exist, auto-creates (no error)
+  - Example: `{ "service": "ecs.system:Modify.updateStatusEffect", "args": { "creature_id": "li_mei", "instance_id": "poisoned_01", "data": { "severity": 1 }, "remark": "Improved after taking antidote herb on 2055/11/16" } }`
 - **Remove status**: `ecs.system:Modify.removeStatusEffect` → `{ creature_id/region_id/organization_id, instance_id }` — errors if not found
+  - Example: `{ "service": "ecs.system:Modify.removeStatusEffect", "args": { "creature_id": "li_mei", "instance_id": "poisoned_01" } }`
 - **Remove all**: `ecs.system:Modify.removeStatusEffect` → `{ creature_id/region_id/organization_id, remove_all = true }`
+  - Example: `{ "service": "ecs.system:Modify.removeStatusEffect", "args": { "creature_id": "li_mei", "remove_all": true } }`
 - **Set attribute**: `ecs.system:Modify.setCreatureAttribute` → `{ creature_id, attribute, value }` — `attribute` must match creature_attr_fields
+  - Example: `{ "service": "ecs.system:Modify.setCreatureAttribute", "args": { "creature_id": "li_mei", "attribute": "strength", "value": 5 } }`
 - **Set appearance**: `ecs.system:Modify.setCreatureAppearance` → `{ creature_id, body }`
+  - Example: `{ "service": "ecs.system:Modify.setCreatureAppearance", "args": { "creature_id": "li_mei", "body": "A young woman with a bandaged left arm and determined eyes" } }`
 - **Set clothing**: `ecs.system:Modify.setCreatureClothing` → `{ creature_id, clothing }`
+  - Example: `{ "service": "ecs.system:Modify.setCreatureClothing", "args": { "creature_id": "li_mei", "clothing": "Mud-stained leather armor with a short sword at her waist" } }`
 - **Set profile**: `ecs.system:Modify.setCreatureProfile` → `{ creature_id, gender?, race?, emotion? }` — all optional
+  - Example: `{ "service": "ecs.system:Modify.setCreatureProfile", "args": { "creature_id": "li_mei", "emotion": "anxious and uneasy" } }`
 - **Add/Remove title**: `ecs.system:Modify.addTitleToCreature` / `removeTitleFromCreature` → `{ creature_id, title }`
+  - Example: `{ "service": "ecs.system:Modify.addTitleToCreature", "args": { "creature_id": "li_mei", "title": "Ruin Explorer" } }`
 - **Add known info**: `ecs.system:Modify.addKnownInfo` → `{ creature_id, info }` — auto-deduplicates
 - **Set goal**: `ecs.system:Modify.setCreatureGoal` → `{ creature_id, goal? }` — empty clears
+  - Example: `{ "service": "ecs.system:Modify.setCreatureGoal", "args": { "creature_id": "li_mei", "goal": "Find the Moonstone Key and enter the ancient ruins" } }`
 
 ### D. Social & Locations
 - **Move**: `ecs.system:Modify.moveCreature` → `{ creature_id, region_id, location_id }` — **target location must exist** in region
+  - Example: `{ "service": "ecs.system:Modify.moveCreature", "args": { "creature_id": "li_mei", "region_id": "dark_forest", "location_id": "entrance" } }`
 - **Organization**: `ecs.system:Modify.setCreatureOrganization` → `{ creature_id, organization_id? }` — nil = leave org
+  - Example: `{ "service": "ecs.system:Modify.setCreatureOrganization", "args": { "creature_id": "li_mei", "organization_id": "merchant_guild" } }`
 - **Time**: `ecs.system:Time.advanceTime` → `{ minutes }`
+  - Example: `{ "service": "ecs.system:Time.advanceTime", "args": { "minutes": 30 } }`
 
 ### E. Spawning
 - **New character**: `ecs.system:Spawn.spawnCharacter` → `{ Creature, is_player?, LocationRef?, StatusEffects?, Inventory?, CustomComponents? }`
   - `Creature`: `{ creature_id, name, gender?, race?, emotion?, appearance?: {body,clothing}, attrs?: {}, titles?: [], known_infos?: [], goal?, organization_id? }`
   - `LocationRef`: `{ region_id, location_id }`
-- **New region**: `ecs.system:Spawn.spawnRegion` → `{ Region }`
+  - Example:
+    ```json
+    {
+      "service": "ecs.system:Spawn.spawnCharacter",
+      "args": {
+        "is_player": false,
+        "Creature": {
+          "creature_id": "old_wang", "name": "Old Wang",
+          "gender": "male", "race": "human",
+          "appearance": { "body": "An elderly man with a deeply wrinkled face", "clothing": "Plain gray cloth robes" },
+          "attrs": { "strength": 3, "intelligence": 7 },
+          "titles": ["Village Elder"], "known_infos": [], "goal": "Protect the village"
+        },
+        "LocationRef": { "region_id": "village", "location_id": "square" }
+      }
+    }
+    ```
+- **New region**: `ecs.system:Spawn.spawnRegion` → `{ Region, StatusEffects?, Interaction? }`
   - `Region`: `{ region_id, region_name, description?, locations?: [{id,name,description}], paths?: [{to_region,to_location,discovered?,description?}] }`
-- **New organization**: `ecs.system:Spawn.spawnOrganization` → `{ Organization }`
+  - Example:
+    ```json
+    {
+      "service": "ecs.system:Spawn.spawnRegion",
+      "args": {
+        "Region": {
+          "region_id": "dark_forest", "region_name": "Dark Forest",
+          "description": "An ancient forest shrouded in thick fog",
+          "locations": [
+            { "id": "entrance", "name": "Forest Entrance", "description": "A narrow trail leading into the forest" },
+            { "id": "clearing", "name": "Clearing", "description": "An open clearing at the heart of the forest" }
+          ],
+          "paths": [
+            { "to_region": "village", "to_location": "gate", "discovered": true, "description": "A dirt road leading back to the village" }
+          ]
+        }
+      }
+    }
+    ```
+- **New organization**: `ecs.system:Spawn.spawnOrganization` → `{ Organization, StatusEffects?, Interaction? }`
   - `Organization`: `{ organization_id, name, description?, territories?: [{region_id,location_id}] }`
+  - Example:
+    ```json
+    {
+      "service": "ecs.system:Spawn.spawnOrganization",
+      "args": {
+        "Organization": {
+          "organization_id": "merchant_guild", "name": "Merchant Guild",
+          "description": "A merchant alliance that controls town trade",
+          "territories": [{ "region_id": "town", "location_id": "market" }]
+        }
+      }
+    }
+    ```
 
 ### E2. Region Management
 - **Add location**: `ecs.system:Region.addLocationToRegion` → `{ region_id, location_id, location_name, location_description }`
+  - Example: `{ "service": "ecs.system:Region.addLocationToRegion", "args": { "region_id": "dark_forest", "location_id": "cave", "location_name": "Hidden Cave", "location_description": "A cave entrance concealed by vines" } }`
 - **Discover path**: `ecs.system:Region.discoverPath` → `{ region_id, to_region, to_location, description? }`
+  - Example: `{ "service": "ecs.system:Region.discoverPath", "args": { "region_id": "dark_forest", "to_region": "mountain", "to_location": "pass", "description": "A mountain trail discovered beyond the dense woods" } }`
 
 ### G. Custom Components
 - **Set** (overwrite/append): `ecs.system:Modify.setCustomComponent` → `{ creature_id, component_key, data={...}, registry_item_id? }`
+  - Example: `{ "service": "ecs.system:Modify.setCustomComponent", "args": { "creature_id": "li_mei", "component_key": "Skills", "data": { "skill_id": "shadow_step", "level": 1 }, "registry_item_id": "shadow_step" } }`
 - **Update** (merge/auto-create): `ecs.system:Modify.updateCustomComponent`
   - Object: `{ creature_id, component_key, data={...} }` — shallow merge (auto-creates)
+    - Example: `{ "service": "ecs.system:Modify.updateCustomComponent", "args": { "creature_id": "li_mei", "component_key": "Skills", "data": { "level": 2 } } }`
   - Array append: `{ creature_id, component_key, data={...} }` — append new element. **⚠️ Use `data` NOT `array_index` for new elements**
+    - Example: `{ "service": "ecs.system:Modify.updateCustomComponent", "args": { "creature_id": "li_mei", "component_key": "Quests", "data": { "quest_id": "find_relic", "status": "active" } } }`
   - Array update: `{ creature_id, component_key, array_index=N, array_data={...} }` — 1-based, merge into existing
+    - Example: `{ "service": "ecs.system:Modify.updateCustomComponent", "args": { "creature_id": "li_mei", "component_key": "Quests", "array_index": 1, "array_data": { "status": "completed" } } }`
   - Array remove: `{ creature_id, component_key, array_remove_index=N }` — 1-based
+    - Example: `{ "service": "ecs.system:Modify.updateCustomComponent", "args": { "creature_id": "li_mei", "component_key": "Quests", "array_remove_index": 2 } }`
 
 ### I. Interaction Options (Mechanical Systems)
 Interaction options represent structured game mechanics (shops, management panels, cheat consoles). They are NOT narrative actions.
@@ -372,17 +449,21 @@ Interaction options represent structured game mechanics (shops, management panel
   - If an option with the same `id` already exists, it will be **updated** (upsert behavior)
   - `instruction`: describes what the option does and contains dynamic state (e.g., shop inventory, prices). **Update this when story events change the state**
   - Target supports 4 types (pick one): `creature_id`, `region_id`, `organization_id`, or `is_world = true`
+  - Example: `{ "service": "ecs.system:Modify.addInteractionOption", "args": { "creature_id": "old_wang", "option": { "id": "shop_herbs", "title": "Herb Shop", "instruction": "Old Wang's herb shop. Available: Antidote Herb (3g), Healing Potion (5g), Fortify Pill (10g)" } } }`
 - **Remove option**: `ecs.system:Modify.removeInteractionOption` → `{ creature_id/region_id/organization_id/is_world, option_id }`
+  - Example: `{ "service": "ecs.system:Modify.removeInteractionOption", "args": { "creature_id": "old_wang", "option_id": "shop_herbs" } }`
 - **Update interaction memo**: `ecs.system:Modify.addInteractionOption` → update the `memo` field of an interaction option (e.g., shop stock changes). The `instruction` field is static and must NOT be changed.
   - This is an **interaction-level** log (tracking interaction usage/triggers), NOT the entity's main Log component
-  - Example: `"[Year22 Jul6] Player purchased 3x Healing Herb, stock reduced to 7"`
+  - Example: `{ "service": "ecs.system:Modify.addInteractionOption", "args": { "creature_id": "old_wang", "option": { "id": "shop_herbs", "title": "Herb Shop", "instruction": "Old Wang's herb shop. Available: Antidote Herb (3g), Healing Potion (5g), Fortify Pill (10g)", "memo": "[Year22 Jul6] Player purchased 3x Antidote Herb, stock reduced to 7" } } }`
 
 ### F. Setting Document Changes (Settings/Mechanisms ONLY — NOT for plot events)
 - **Append/Create**: `state:AppendSettingDoc` → `{ creature_id?/organization_id?/region_id?, name, content, condition? }`
   - Omit all IDs → world entity. `condition` required for new setting/mechanism docs
   - **Content language must match the story content language**
+  - Example: `{ "service": "state:AppendSettingDoc", "args": { "creature_id": "li_mei", "name": "ShadowStepTechnique", "condition": "When depicting li_mei's stealth or combat", "content": "## Shadow Step\nA movement technique that blends the body into shadows.\n### Limitations\n- Requires shadows or darkness for cover\n- Cannot be maintained during high-speed movement" } }`
 - **Update existing**: `state:UpdateSettingDoc` → `{ creature_id?/organization_id?/region_id?, name, start_line, end_line, replacement }`
   - Line numbers reference the ORIGINAL document in context. Multiple edits on same doc are safe. No overlapping ranges
+  - Example: `{ "service": "state:UpdateSettingDoc", "args": { "creature_id": "li_mei", "name": "ShadowStepTechnique", "start_line": 3, "end_line": 5, "replacement": "### Limitations (Breakthrough)\n- Can be briefly maintained even under bright light\n- Duration shortened during high-speed movement but no longer fully breaks" } }`
 - **⚠️ Plot events belong in section H (Events), not here**
 
 ### H. Events (World-Level Plot Events)
@@ -390,10 +471,25 @@ Interaction options represent structured game mechanics (shops, management panel
   - Creates a new world-level plot event. `event_id` follows `YYYY_MM_DD_ShortDesc` naming.
   - `content` is the full event narrative text. `summary` is a 1-2 sentence overview.
   - `related_entities`: array of entity IDs (creature_id, region_id, organization_id) involved.
+  - Example:
+    ```json
+    {
+      "service": "ecs.system:Events.createEvent",
+      "args": {
+        "event_id": "2055_11_15_ForestIncident",
+        "title": "Forest Anomaly",
+        "summary": "Unidentified miasma appeared in the Dark Forest. Old Wang dispatched Li Mei to investigate.",
+        "content": "## Plot Summary\nOn 2055/11/15, the Dark Forest suddenly emitted large amounts of miasma, causing livestock in the nearby village to fall ill. Village Elder Old Wang convened the villagers and dispatched Li Mei to investigate.\n\n## Highlight Moments\n- Old Wang: \"This miasma is suspicious — we must find the cause immediately.\"\n- Li Mei accepted the mission and stepped alone into the fog-covered forest entrance",
+        "related_entities": ["li_mei", "old_wang", "dark_forest"]
+      }
+    }
+    ```
 - **Append to event**: `ecs.system:Events.appendEvent` → `{ event_id, content, summary? }`
   - Appends content to existing event (newline-separated). Optionally replaces summary.
+  - Example: `{ "service": "ecs.system:Events.appendEvent", "args": { "event_id": "2055_11_15_ForestIncident", "content": "## Further Developments\nLi Mei discovered the entrance to ancient ruins deep in the forest. The miasma was leaking from within the ruins.", "summary": "Dark Forest miasma traced to ancient ruin leakage. Li Mei discovered the ruin entrance." } }`
 - **Update event**: `ecs.system:Events.updateEvent` → `{ event_id, title?, summary?, content?, related_entities? }`
   - Updates specific fields of an existing event. Only provided fields are changed.
+  - Example: `{ "service": "ecs.system:Events.updateEvent", "args": { "event_id": "2055_11_15_ForestIncident", "related_entities": ["li_mei", "old_wang", "dark_forest", "merchant_guild"] } }`
 ]===],
 
 GENERATION_PROMPT =
@@ -459,10 +555,10 @@ Now output the JSON object. **Read the story content thoroughly, extract ALL sta
 This is a **changelog for the player**, NOT a story recap. Write in the **same language as the story content**. List the specific data fields that changed, like a patch note. Format: one change per line, using "→" to show transitions.
 
 **Good example** (specific, data-oriented):
-"林恩目标更新→'在伪装中冷静评估局势'。新增已知情报：英妮缇雅意图利用林恩作探路炮灰。时间推进15分钟(18:30→18:45)。"
+"Lynn goal updated→'Calmly assess the situation while maintaining disguise'. New known info: Initia intends to use Lynn as expendable scout. Time advanced 15min (18:30→18:45)."
 
 **Bad example** (story recap — DO NOT write like this):
-"林恩与英妮缇雅展开了激烈的心理博弈，英妮缇雅试图通过诱惑控制林恩..."
+"Lynn and Initia engaged in an intense psychological battle, with Initia attempting to control Lynn through seduction..."
 
 Exclude: log entries, event/document updates. Include: movement, stat changes, items gained/lost, status effects added/removed, goals updated, known info gained, time advanced, new entities created, custom component changes.
 ]===]

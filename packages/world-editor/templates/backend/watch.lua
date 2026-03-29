@@ -1,14 +1,17 @@
--- watch.lua — Structured game state watch services
+-- watch.lua — Incremental game state watch services
 --
--- Subscribes to TripleStore changes and pushes fully materialized entity
--- snapshots via callbacks. Each watch service filters by graph, detects
--- which entities were added/modified/deleted, and pushes granular change info
--- along with the current snapshot.
+-- Architecture:
+--   1. First event  → full query, build local cache, push snapshot (full data)
+--   2. Subsequent   → analyzeChanges to get affected IDs,
+--                     re-fetch ONLY those entities by ID,
+--                     push ONLY the changed entities (not full list)
 --
 -- Callback data format:
---   First call:  { type = "snapshot", data = ... }
---   After that:  { type = "changes", added = {id,...}, deleted = {id,...},
---                   modified = {id,...}, data = ... }
+--   snapshot:  { type = "snapshot", data = { ... full data ... } }
+--   changes:   { type = "changes",
+--                added    = { entity1, entity2, ... },   -- full entity data
+--                deleted  = { "id1", "id2", ... },       -- just IDs
+--                modified = { entity1, entity2, ... } }  -- full entity data
 
 
 -- ============================================================================
@@ -41,31 +44,46 @@ local TYPE_PRED = "pw:type"
 -- Helpers
 -- ============================================================================
 
---- Safely call a service, returning nil on error.
 local function safeCall(name, inputs)
     local ok, result = pcall(Service.call, name, inputs or {})
     if ok then return result end
     return nil
 end
 
---- Check whether a change batch touches any of the given graphs.
+--- Infer graph from subject prefix (for triples written without graph by ECS services).
+--- Returns nil for auxiliary subjects (inv/se/doc/rel) since their owner is ambiguous.
+local function inferGraph(subject)
+    if not subject then return nil end
+    if subject:sub(1, 9) == "creature:" then return GRAPH.creature end
+    if subject:sub(1, 7) == "region:" then return GRAPH.region end
+    if subject:sub(1, 4) == "org:" then return GRAPH.org end
+    if subject:sub(1, 6) == "world:" then return GRAPH.world end
+    if subject:sub(1, 6) == "story:" then return GRAPH.story end
+    -- inv:/se:/doc:/rel: are ambiguous — owner could be creature, region, or org.
+    -- Return nil to let touchesGraphs treat them as "potentially relevant to any watch".
+    return nil
+end
+
 local function touchesGraphs(events, graphs)
     for _, e in ipairs(events) do
-        local g = e.triple and e.triple.graph
-        if g then
-            if graphs[g] then return true end
-            -- Setting docs use "graph:setting:entityType:entityId"
-            for prefix in pairs(graphs) do
-                if g:sub(1, #prefix) == prefix then return true end
+        local triple = e.triple
+        if triple then
+            local g = triple.graph or inferGraph(triple.subject)
+            if g then
+                if graphs[g] then return true end
+                for prefix in pairs(graphs) do
+                    if g:sub(1, #prefix) == prefix then return true end
+                end
+            else
+                -- No graph and can't infer → auxiliary or unknown subject.
+                -- Conservatively treat as relevant so analyzeChanges can route via findAuxOwner.
+                return true
             end
         end
     end
     return false
 end
 
---- Extract the entity prefix type from a subject string.
---- Returns prefix key ("creature", "region", "org", "world", "inv", "se", ...)
---- and the ID portion after the prefix, or nil if unknown.
 local function parseSubject(subject)
     for key, prefix in pairs(SUBJECT_PREFIX) do
         if subject:sub(1, #prefix) == prefix then
@@ -75,26 +93,33 @@ local function parseSubject(subject)
     return nil, nil
 end
 
---- Analyze a change batch and return which primary entity IDs were affected,
---- plus which were explicitly added or deleted (via pw:type triple).
----
---- @param events table[] Array of change events
---- @param primaryPrefix string The primary subject prefix to track (e.g. "creature")
---- @param relevantGraphs table Set of graphs that are relevant
---- @return table affected  Set of entity IDs that were touched { [id] = true }
---- @return table added     Set of entity IDs where pw:type was inserted
---- @return table deleted   Set of entity IDs where pw:type was deleted
-local function analyzeChanges(events, primaryPrefix, relevantGraphs)
-    local affected = {}  -- all touched entity IDs
+--- Try to find which cached entity owns an auxiliary subject.
+local function findAuxOwner(auxSuffix, cachedIds)
+    for id in pairs(cachedIds) do
+        if auxSuffix:sub(1, #id + 1) == id .. "_" then
+            return id
+        end
+    end
+    return nil
+end
+
+--- Analyze changes, resolving auxiliary entity owners via cachedIds.
+--- Returns: affected set, added set, deleted set, auxUnresolved flag
+local function analyzeChanges(events, primaryPrefix, relevantGraphs, cachedIds)
+    local affected = {}
     local typeInserted = {}
     local typeDeleted = {}
+    local auxUnresolved = false
 
     for _, e in ipairs(events) do
         local triple = e.triple
         if not triple then goto continue end
 
-        local g = triple.graph
-        -- Only process events in relevant graphs
+        local g = triple.graph or inferGraph(triple.subject)
+        local subjType, subjId = parseSubject(triple.subject)
+
+        -- Check graph relevance. Auxiliary subjects (inv/se/doc/rel) have nil graph
+        -- and are always considered relevant — findAuxOwner handles routing.
         local relevant = false
         if g then
             if relevantGraphs[g] then
@@ -104,13 +129,12 @@ local function analyzeChanges(events, primaryPrefix, relevantGraphs)
                     if g:sub(1, #prefix) == prefix then relevant = true; break end
                 end
             end
+        elseif subjType == "inv" or subjType == "se" or subjType == "doc" or subjType == "rel" then
+            relevant = true  -- auxiliary: let findAuxOwner decide
         end
         if not relevant then goto continue end
 
-        local subjType, subjId = parseSubject(triple.subject)
-
         if subjType == primaryPrefix then
-            -- Direct entity change
             affected[subjId] = true
             if triple.predicate == TYPE_PRED then
                 if e.type == "insert" then
@@ -120,74 +144,43 @@ local function analyzeChanges(events, primaryPrefix, relevantGraphs)
                 end
             end
         elseif subjType == "inv" or subjType == "se" or subjType == "doc" or subjType == "rel" then
-            -- Auxiliary subject changed — affects the owner entity.
-            -- Compound IDs follow the pattern: prefix:ownerId_auxId
-            -- We extract ownerId by taking everything before the last underscore segment.
-            -- This is a heuristic; since ownerId may also contain underscores,
-            -- we rely on the graph to confirm relevance rather than the exact owner.
-            -- Mark all as "some entity in this graph changed" — the diff will
-            -- figure out exactly which entity's snapshot changed.
-            affected["__aux_changed__"] = true
+            local owner = findAuxOwner(subjId, cachedIds)
+            if owner then
+                affected[owner] = true
+            else
+                auxUnresolved = true
+            end
         end
 
         ::continue::
     end
 
-    return affected, typeInserted, typeDeleted
+    return affected, typeInserted, typeDeleted, auxUnresolved
 end
 
---- Build the ID set from an array of entity snapshots.
---- @param entities table[] Array of entity objects
---- @param idField string The field name containing the ID (e.g. "creature_id")
---- @return table idSet  { [id] = true }
-local function buildIdSet(entities, idField)
+local function cacheIdSet(cache)
     local set = {}
-    for _, ent in ipairs(entities or {}) do
-        local id = ent[idField]
-        if id then set[id] = true end
-    end
+    for id in pairs(cache) do set[id] = true end
     return set
 end
 
---- Compute diff between previous and current ID sets,
---- incorporating change analysis for more precise classification.
---- @return table added     Array of added IDs
---- @return table deleted   Array of deleted IDs
---- @return table modified  Array of modified IDs
-local function computeDiff(prevIds, currentIds, affected, typeInserted, typeDeleted)
-    local added = {}
-    local deleted = {}
-    local modified = {}
-
-    -- Detect added: in current but not in prev, or pw:type was inserted
-    for id in pairs(currentIds) do
-        if not prevIds[id] or typeInserted[id] then
-            added[#added + 1] = id
-        elseif affected[id] or affected["__aux_changed__"] then
-            modified[#modified + 1] = id
-        end
-    end
-
-    -- Detect deleted: in prev but not in current, or pw:type was deleted
-    for id in pairs(prevIds) do
-        if not currentIds[id] or typeDeleted[id] then
-            deleted[#deleted + 1] = id
-        end
-    end
-
-    return added, deleted, modified
+local function cacheToArray(cache)
+    local list = {}
+    for _, v in pairs(cache) do list[#list + 1] = v end
+    return list
 end
 
+
 -- ============================================================================
--- watch:Creatures
+-- watch:Creatures — incremental
 -- ============================================================================
 
 Service:define()
     :namespace("watch")
     :name("Creatures")
-    :desc("Watch creature changes. Pushes { player, npcs } with granular change info.")
+    :desc("Watch creature changes. Snapshot pushes full { player, npcs }. Changes push only affected entities.")
     :inputs(Type.Object({
-        callback = Type.Any:desc("function(data) — snapshot or change event with added/deleted/modified IDs"),
+        callback = Type.Any:desc("function(event)"),
     }))
     :outputs(Type.Nil)
     :impl(function(inputs)
@@ -196,72 +189,130 @@ Service:define()
             [GRAPH.setting] = true,
         }
 
-        local prevCreatureIds = {}
-        local prevPlayerId = nil
+        local cache = {}       -- { [creature_id] = entity }
+        local playerId = nil
 
-        local function queryCreatures()
-            local player = safeCall("ecs.system:Query.getPlayerEntity", {})
-            local npcsResult = safeCall("ecs.system:Query.getNPCEntities", {})
-            local playerData = player and player.success and player.found and player or nil
-            local npcs = npcsResult and npcsResult.success and npcsResult.entities or {}
-            return playerData, npcs
+        local function fullQuery()
+            cache = {}
+            playerId = nil
+            local result = safeCall("ecs.system:Query.getPlayerEntity", {})
+            if result and result.success and result.found and result.Creature then
+                local pid = result.Creature.creature_id
+                playerId = pid
+                cache[pid] = result
+            end
+            local npcResult = safeCall("ecs.system:Query.getNPCEntities", {})
+            if npcResult and npcResult.success then
+                for _, npc in ipairs(npcResult.entities or {}) do
+                    local nid = npc.Creature and npc.Creature.creature_id
+                    if nid then cache[nid] = npc end
+                end
+            end
         end
 
-        local function buildCreatureIdSet(playerData, npcs)
-            local ids = {}
-            if playerData then
-                local pid = playerData.Creature and playerData.Creature.creature_id
-                if pid then ids[pid] = true end
+        local function fetchById(id)
+            local r = safeCall("ecs.system:Query.getCreatureById", { creature_id = id })
+            return r and r.success and r.found and r.entity or nil
+        end
+
+        local function buildSnapshot()
+            local player = playerId and cache[playerId] or nil
+            local npcs = {}
+            for id, ent in pairs(cache) do
+                if id ~= playerId then npcs[#npcs + 1] = ent end
             end
-            for _, npc in ipairs(npcs) do
-                local nid = npc.Creature and npc.Creature.creature_id
-                if nid then ids[nid] = true end
-            end
-            return ids
+            return { player = player, npcs = npcs }
         end
 
         local firstEvent = true
         for event in State:subscribeChanges() do
             if firstEvent then
                 firstEvent = false
-                local playerData, npcs = queryCreatures()
-                prevCreatureIds = buildCreatureIdSet(playerData, npcs)
+                fullQuery()
                 inputs.callback({
                     type = "snapshot",
-                    data = { player = playerData, npcs = npcs },
+                    data = buildSnapshot(),
                 })
             elseif event.type == "changes" and touchesGraphs(event.events, relevantGraphs) then
-                local affected, typeIns, typeDel = analyzeChanges(
-                    event.events, "creature", relevantGraphs
+                local prevIds = cacheIdSet(cache)
+                local affected, typeIns, typeDel, auxUnresolved = analyzeChanges(
+                    event.events, "creature", relevantGraphs, prevIds
                 )
-                local playerData, npcs = queryCreatures()
-                local currentIds = buildCreatureIdSet(playerData, npcs)
-                local added, deleted, modified = computeDiff(
-                    prevCreatureIds, currentIds, affected, typeIns, typeDel
-                )
-                prevCreatureIds = currentIds
+
+                local addedEntities = {}
+                local deletedIds = {}
+                local modifiedEntities = {}
+
+                if auxUnresolved then
+                    -- Can't determine owner — full refresh, report all as modified
+                    local oldIds = cacheIdSet(cache)
+                    fullQuery()
+                    for id, ent in pairs(cache) do
+                        if not oldIds[id] then
+                            addedEntities[#addedEntities + 1] = ent
+                        else
+                            modifiedEntities[#modifiedEntities + 1] = ent
+                        end
+                    end
+                    for id in pairs(oldIds) do
+                        if not cache[id] then deletedIds[#deletedIds + 1] = id end
+                    end
+                else
+                    -- Incremental
+                    for id in pairs(typeDel) do
+                        if id == playerId then playerId = nil end
+                        cache[id] = nil
+                        deletedIds[#deletedIds + 1] = id
+                    end
+                    for id in pairs(affected) do
+                        if not typeDel[id] then
+                            local ent = fetchById(id)
+                            if ent then
+                                local isNew = not cache[id] or typeIns[id]
+                                cache[id] = ent
+                                if ent.IsPlayer then playerId = id end
+                                if isNew then
+                                    addedEntities[#addedEntities + 1] = ent
+                                else
+                                    modifiedEntities[#modifiedEntities + 1] = ent
+                                end
+                            end
+                        end
+                    end
+                    -- Check for new entities we didn't know about (typeIns but not in affected)
+                    for id in pairs(typeIns) do
+                        if not affected[id] and not typeDel[id] then
+                            local ent = fetchById(id)
+                            if ent then
+                                cache[id] = ent
+                                if ent.IsPlayer then playerId = id end
+                                addedEntities[#addedEntities + 1] = ent
+                            end
+                        end
+                    end
+                end
 
                 inputs.callback({
                     type = "changes",
-                    added = added,
-                    deleted = deleted,
-                    modified = modified,
-                    data = { player = playerData, npcs = npcs },
+                    added = addedEntities,
+                    deleted = deletedIds,
+                    modified = modifiedEntities,
                 })
             end
         end
     end)
 
+
 -- ============================================================================
--- watch:Player
+-- watch:Player — single entity
 -- ============================================================================
 
 Service:define()
     :namespace("watch")
     :name("Player")
-    :desc("Watch player creature changes. Pushes player snapshot with change detail.")
+    :desc("Watch player creature changes.")
     :inputs(Type.Object({
-        callback = Type.Any:desc("function(data) — snapshot or change event"),
+        callback = Type.Any:desc("function(event)"),
     }))
     :outputs(Type.Nil)
     :impl(function(inputs)
@@ -272,45 +323,44 @@ Service:define()
 
         local function queryPlayer()
             local result = safeCall("ecs.system:Query.getPlayerEntity", {})
-            if result and result.success and result.found then
-                return result
-            end
+            if result and result.success and result.found then return result end
             return nil
         end
 
         local prevExists = false
+        local prevPid = nil
         local firstEvent = true
         for event in State:subscribeChanges() do
             if firstEvent then
                 firstEvent = false
                 local playerData = queryPlayer()
                 prevExists = playerData ~= nil
+                prevPid = playerData and playerData.Creature and playerData.Creature.creature_id
                 inputs.callback({
                     type = "snapshot",
                     data = playerData,
                 })
             elseif event.type == "changes" and touchesGraphs(event.events, relevantGraphs) then
+                local cachedIds = {}
+                if prevPid then cachedIds[prevPid] = true end
                 local affected, typeIns, typeDel = analyzeChanges(
-                    event.events, "creature", relevantGraphs
+                    event.events, "creature", relevantGraphs, cachedIds
                 )
-                local playerData = queryPlayer()
-                local currentExists = playerData ~= nil
-                local pid = playerData and playerData.Creature and playerData.Creature.creature_id
 
-                local change = "modified"
-                if currentExists and not prevExists then
-                    change = "added"
-                elseif not currentExists and prevExists then
-                    change = "deleted"
-                elseif pid and typeIns[pid] then
-                    change = "added"
-                elseif pid and typeDel[pid] then
-                    change = "deleted"
-                end
-                prevExists = currentExists
+                if prevPid and (affected[prevPid] or typeDel[prevPid]) or next(typeIns) then
+                    local playerData = queryPlayer()
+                    local currentExists = playerData ~= nil
+                    local pid = playerData and playerData.Creature and playerData.Creature.creature_id
 
-                -- Only push if the player or related data actually changed
-                if pid and (affected[pid] or affected["__aux_changed__"]) or change ~= "modified" then
+                    local change = "modified"
+                    if currentExists and not prevExists then change = "added"
+                    elseif not currentExists and prevExists then change = "deleted"
+                    elseif pid and typeIns[pid] then change = "added"
+                    elseif prevPid and typeDel[prevPid] then change = "deleted"
+                    end
+                    prevExists = currentExists
+                    prevPid = pid
+
                     inputs.callback({
                         type = "changes",
                         change = change,
@@ -321,16 +371,17 @@ Service:define()
         end
     end)
 
+
 -- ============================================================================
--- watch:Regions
+-- watch:Regions — incremental
 -- ============================================================================
 
 Service:define()
     :namespace("watch")
     :name("Regions")
-    :desc("Watch region changes. Pushes region list with granular add/delete/modify info.")
+    :desc("Watch region changes. Snapshot pushes full list. Changes push only affected entities.")
     :inputs(Type.Object({
-        callback = Type.Any:desc("function(data) — snapshot or change event"),
+        callback = Type.Any:desc("function(event)"),
     }))
     :outputs(Type.Nil)
     :impl(function(inputs)
@@ -339,55 +390,105 @@ Service:define()
             [GRAPH.setting] = true,
         }
 
-        local prevIds = {}
+        local cache = {}
 
-        local function queryRegions()
-            local state = safeCall("state:GetStateFromGame", {})
-            return state and state.success and state.data and state.data.Regions or {}
+        local function fullQuery()
+            cache = {}
+            local result = safeCall("ecs.system:Query.getRegionEntities", {})
+            for _, r in ipairs(result and result.success and result.regions or {}) do
+                local rid = r.Region and r.Region.region_id
+                if rid then cache[rid] = r end
+            end
+        end
+
+        local function fetchById(id)
+            local r = safeCall("ecs.system:Query.getRegionById", { region_id = id })
+            return r and r.success and r.found and r.entity or nil
         end
 
         local firstEvent = true
         for event in State:subscribeChanges() do
             if firstEvent then
                 firstEvent = false
-                local regions = queryRegions()
-                prevIds = buildIdSet(regions, "region_id")
+                fullQuery()
                 inputs.callback({
                     type = "snapshot",
-                    data = { regions = regions },
+                    data = { regions = cacheToArray(cache) },
                 })
             elseif event.type == "changes" and touchesGraphs(event.events, relevantGraphs) then
-                local affected, typeIns, typeDel = analyzeChanges(
-                    event.events, "region", relevantGraphs
+                local prevIds = cacheIdSet(cache)
+                local affected, typeIns, typeDel, auxUnresolved = analyzeChanges(
+                    event.events, "region", relevantGraphs, prevIds
                 )
-                local regions = queryRegions()
-                local currentIds = buildIdSet(regions, "region_id")
-                local added, deleted, modified = computeDiff(
-                    prevIds, currentIds, affected, typeIns, typeDel
-                )
-                prevIds = currentIds
+
+                local addedEntities = {}
+                local deletedIds = {}
+                local modifiedEntities = {}
+
+                if auxUnresolved then
+                    local oldIds = cacheIdSet(cache)
+                    fullQuery()
+                    for id, ent in pairs(cache) do
+                        if not oldIds[id] then
+                            addedEntities[#addedEntities + 1] = ent
+                        else
+                            modifiedEntities[#modifiedEntities + 1] = ent
+                        end
+                    end
+                    for id in pairs(oldIds) do
+                        if not cache[id] then deletedIds[#deletedIds + 1] = id end
+                    end
+                else
+                    for id in pairs(typeDel) do
+                        cache[id] = nil
+                        deletedIds[#deletedIds + 1] = id
+                    end
+                    for id in pairs(affected) do
+                        if not typeDel[id] then
+                            local ent = fetchById(id)
+                            if ent then
+                                local isNew = not cache[id] or typeIns[id]
+                                cache[id] = ent
+                                if isNew then
+                                    addedEntities[#addedEntities + 1] = ent
+                                else
+                                    modifiedEntities[#modifiedEntities + 1] = ent
+                                end
+                            end
+                        end
+                    end
+                    for id in pairs(typeIns) do
+                        if not affected[id] and not typeDel[id] then
+                            local ent = fetchById(id)
+                            if ent then
+                                cache[id] = ent
+                                addedEntities[#addedEntities + 1] = ent
+                            end
+                        end
+                    end
+                end
 
                 inputs.callback({
                     type = "changes",
-                    added = added,
-                    deleted = deleted,
-                    modified = modified,
-                    data = { regions = regions },
+                    added = addedEntities,
+                    deleted = deletedIds,
+                    modified = modifiedEntities,
                 })
             end
         end
     end)
 
+
 -- ============================================================================
--- watch:Organizations
+-- watch:Organizations — incremental
 -- ============================================================================
 
 Service:define()
     :namespace("watch")
     :name("Organizations")
-    :desc("Watch organization changes. Pushes org list with granular change info.")
+    :desc("Watch organization changes. Snapshot pushes full list. Changes push only affected entities.")
     :inputs(Type.Object({
-        callback = Type.Any:desc("function(data) — snapshot or change event"),
+        callback = Type.Any:desc("function(event)"),
     }))
     :outputs(Type.Nil)
     :impl(function(inputs)
@@ -396,47 +497,97 @@ Service:define()
             [GRAPH.setting] = true,
         }
 
-        local prevIds = {}
+        local cache = {}
 
-        local function queryOrgs()
-            local state = safeCall("state:GetStateFromGame", {})
-            return state and state.success and state.data and state.data.Organizations or {}
+        local function fullQuery()
+            cache = {}
+            local result = safeCall("ecs.system:Query.getOrganizationEntities", {})
+            for _, o in ipairs(result and result.success and result.organizations or {}) do
+                local oid = o.Organization and o.Organization.organization_id
+                if oid then cache[oid] = o end
+            end
+        end
+
+        local function fetchById(id)
+            local r = safeCall("ecs.system:Query.getOrganizationById", { organization_id = id })
+            return r and r.success and r.found and r.entity or nil
         end
 
         local firstEvent = true
         for event in State:subscribeChanges() do
             if firstEvent then
                 firstEvent = false
-                local orgs = queryOrgs()
-                prevIds = buildIdSet(orgs, "organization_id")
+                fullQuery()
                 inputs.callback({
                     type = "snapshot",
-                    data = { organizations = orgs },
+                    data = { organizations = cacheToArray(cache) },
                 })
             elseif event.type == "changes" and touchesGraphs(event.events, relevantGraphs) then
-                local affected, typeIns, typeDel = analyzeChanges(
-                    event.events, "org", relevantGraphs
+                local prevIds = cacheIdSet(cache)
+                local affected, typeIns, typeDel, auxUnresolved = analyzeChanges(
+                    event.events, "org", relevantGraphs, prevIds
                 )
-                local orgs = queryOrgs()
-                local currentIds = buildIdSet(orgs, "organization_id")
-                local added, deleted, modified = computeDiff(
-                    prevIds, currentIds, affected, typeIns, typeDel
-                )
-                prevIds = currentIds
+
+                local addedEntities = {}
+                local deletedIds = {}
+                local modifiedEntities = {}
+
+                if auxUnresolved then
+                    local oldIds = cacheIdSet(cache)
+                    fullQuery()
+                    for id, ent in pairs(cache) do
+                        if not oldIds[id] then
+                            addedEntities[#addedEntities + 1] = ent
+                        else
+                            modifiedEntities[#modifiedEntities + 1] = ent
+                        end
+                    end
+                    for id in pairs(oldIds) do
+                        if not cache[id] then deletedIds[#deletedIds + 1] = id end
+                    end
+                else
+                    for id in pairs(typeDel) do
+                        cache[id] = nil
+                        deletedIds[#deletedIds + 1] = id
+                    end
+                    for id in pairs(affected) do
+                        if not typeDel[id] then
+                            local ent = fetchById(id)
+                            if ent then
+                                local isNew = not cache[id] or typeIns[id]
+                                cache[id] = ent
+                                if isNew then
+                                    addedEntities[#addedEntities + 1] = ent
+                                else
+                                    modifiedEntities[#modifiedEntities + 1] = ent
+                                end
+                            end
+                        end
+                    end
+                    for id in pairs(typeIns) do
+                        if not affected[id] and not typeDel[id] then
+                            local ent = fetchById(id)
+                            if ent then
+                                cache[id] = ent
+                                addedEntities[#addedEntities + 1] = ent
+                            end
+                        end
+                    end
+                end
 
                 inputs.callback({
                     type = "changes",
-                    added = added,
-                    deleted = deleted,
-                    modified = modified,
-                    data = { organizations = orgs },
+                    added = addedEntities,
+                    deleted = deletedIds,
+                    modified = modifiedEntities,
                 })
             end
         end
     end)
 
+
 -- ============================================================================
--- watch:World
+-- watch:World — uses getWorldEntity + direct RDF reads
 -- ============================================================================
 
 Service:define()
@@ -444,7 +595,7 @@ Service:define()
     :name("World")
     :desc("Watch world-level changes (game time, events, registry, etc.).")
     :inputs(Type.Object({
-        callback = Type.Any:desc("function(data) — snapshot or change event"),
+        callback = Type.Any:desc("function(event)"),
     }))
     :outputs(Type.Nil)
     :impl(function(inputs)
@@ -455,15 +606,39 @@ Service:define()
         }
 
         local function queryWorld()
-            local state = safeCall("state:GetStateFromGame", {})
-            if not (state and state.success and state.data) then return nil end
+            local worldResult = safeCall("ecs.system:Query.getWorldEntity", {})
+            local world = {}
+            if worldResult and worldResult.success and worldResult.found then
+                world = {
+                    entity_id = worldResult.entity_id,
+                    GameTime = worldResult.GameTime,
+                    Registry = worldResult.Registry,
+                    DirectorNotes = worldResult.DirectorNotes,
+                    Log = worldResult.Log,
+                    BindSetting = worldResult.BindSetting,
+                    CustomComponentRegistry = worldResult.CustomComponentRegistry,
+                    Events = worldResult.Events,
+                    Interaction = worldResult.Interaction,
+                    BaseInteraction = worldResult.BaseInteraction,
+                }
+            end
+
+            local storyResult = safeCall("state:GetGameInitialStory", {})
+            local initialStory = nil
+            if storyResult and storyResult.found then
+                initialStory = { background = storyResult.background, start_story = storyResult.start_story }
+            end
+
+            local appInfo = State:get("game://state", "game://state/app_info")
+            local wikiEntry = State:get("game://state", "game://state/game_wiki_entry")
+            local gameInitChoice = State:get("game://state", "game://state/game_init_choice")
+
             return {
-                World = state.data.World or {},
-                StoryHistory = state.data.StoryHistory or {},
-                GameInitialStory = state.data.GameInitialStory,
-                GameWikiEntry = state.data.GameWikiEntry,
-                AppInfo = state.data.AppInfo,
-                GameInitChoice = state.data.GameInitChoice,
+                World = world,
+                GameInitialStory = initialStory,
+                GameWikiEntry = wikiEntry,
+                AppInfo = appInfo,
+                GameInitChoice = gameInitChoice,
             }
         end
 
@@ -476,24 +651,18 @@ Service:define()
                     data = queryWorld(),
                 })
             elseif event.type == "changes" and touchesGraphs(event.events, relevantGraphs) then
-                -- Determine what changed within the world
                 local changedAspects = {}
                 for _, e in ipairs(event.events) do
-                    local g = e.triple and e.triple.graph
-                    if g == GRAPH.world then
-                        changedAspects["world"] = true
-                    elseif g == GRAPH.story then
-                        changedAspects["story"] = true
+                    local g = e.triple and (e.triple.graph or inferGraph(e.triple.subject))
+                    if g == GRAPH.world then changedAspects["world"] = true
+                    elseif g == GRAPH.story then changedAspects["story"] = true
                     elseif g and g:sub(1, #GRAPH.setting) == GRAPH.setting then
                         changedAspects["settings"] = true
                     end
                 end
 
-                -- Convert to array
                 local aspects = {}
-                for k in pairs(changedAspects) do
-                    aspects[#aspects + 1] = k
-                end
+                for k in pairs(changedAspects) do aspects[#aspects + 1] = k end
 
                 inputs.callback({
                     type = "changes",
@@ -504,16 +673,17 @@ Service:define()
         end
     end)
 
+
 -- ============================================================================
--- watch:State (full state, any change)
+-- watch:State (full state, any change) — for debugging
 -- ============================================================================
 
 Service:define()
     :namespace("watch")
     :name("State")
-    :desc("Watch all game state. Pushes full StateData with a summary of which entity types changed.")
+    :desc("Watch all game state. Pushes full StateData with change summary.")
     :inputs(Type.Object({
-        callback = Type.Any:desc("function(data) — snapshot or change event with full StateData"),
+        callback = Type.Any:desc("function(event)"),
     }))
     :outputs(Type.Nil)
     :impl(function(inputs)
@@ -531,10 +701,9 @@ Service:define()
                     data = queryState(),
                 })
             elseif event.type == "changes" then
-                -- Summarize which categories changed
                 local changedGraphs = {}
                 for _, e in ipairs(event.events) do
-                    local g = e.triple and e.triple.graph
+                    local g = e.triple and (e.triple.graph or inferGraph(e.triple.subject))
                     if g == GRAPH.creature then changedGraphs["creatures"] = true
                     elseif g == GRAPH.region then changedGraphs["regions"] = true
                     elseif g == GRAPH.org then changedGraphs["organizations"] = true
@@ -546,9 +715,7 @@ Service:define()
                 end
 
                 local categories = {}
-                for k in pairs(changedGraphs) do
-                    categories[#categories + 1] = k
-                end
+                for k in pairs(changedGraphs) do categories[#categories + 1] = k end
 
                 inputs.callback({
                     type = "changes",

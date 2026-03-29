@@ -11,10 +11,6 @@ import React, { createContext, useContext } from 'react'
 import { useGameData, type GameResolvers } from '../provider.tsx'
 import type { RegionEntity, RegionLocation, RegionPath } from '../types.ts'
 
-function asArray<T>(val: T[] | Record<string, unknown> | null | undefined): T[] {
-  if (Array.isArray(val)) return val
-  return []
-}
 
 interface RegionCtxValue { entity: RegionEntity; resolve: GameResolvers }
 const RegionCtx = createContext<RegionCtxValue | null>(null)
@@ -69,7 +65,7 @@ function Metadata({ className }: { className?: string }) {
 
 function Locations({ className, children }: { className?: string; children?: (loc: RegionLocation, i: number) => React.ReactNode }) {
   const { entity: e } = useCtx()
-  const locs = asArray(e.Region?.locations)
+  const locs = e.Region?.locations ?? []
   if (!locs.length) return null
   if (children) return <ul data-slot="region-locations" className={className}>{locs.map((l, i) => children(l, i))}</ul>
   return (
@@ -87,7 +83,7 @@ function Locations({ className, children }: { className?: string; children?: (lo
 /** Paths — auto-resolves to_region and to_location to display names */
 function Paths({ className, children }: { className?: string; children?: (path: RegionPath, i: number) => React.ReactNode }) {
   const { entity: e, resolve } = useCtx()
-  const paths = asArray(e.Region?.paths)
+  const paths = e.Region?.paths ?? []
   if (!paths.length) return null
   if (children) return <ul data-slot="region-paths" className={className}>{paths.map((p, i) => children(p, i))}</ul>
   return (
@@ -110,7 +106,7 @@ function Paths({ className, children }: { className?: string; children?: (path: 
 
 function StatusEffects({ className }: { className?: string }) {
   const { entity: e } = useCtx()
-  const effects = asArray(e.StatusEffects?.status_effects)
+  const effects = e.StatusEffects?.status_effects ?? []
   if (!effects.length) return null
   return (
     <ul data-slot="region-status-effects" className={className}>

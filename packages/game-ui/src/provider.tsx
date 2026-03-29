@@ -12,11 +12,6 @@
 
 import React, { createContext, useContext, useMemo } from 'react'
 
-/** Lua's empty `{}` may arrive as `{}` (object) instead of `[]` (array). Coerce safely. */
-function asArray<T>(val: T[] | Record<string, unknown> | null | undefined): T[] {
-  if (Array.isArray(val)) return val
-  return []
-}
 import {
   useCreatures,
   usePlayer,
@@ -106,12 +101,10 @@ export function GameDataProvider({ children, fallback }: Props) {
     orgsIsArray: Array.isArray(organizations),
   })
 
-  // Build lookup maps
-  // NOTE: Lua's empty `{}` may arrive as an empty object instead of an array.
-  // Always coerce to array before iterating.
-  const safeNpcs = asArray(npcs)
-  const safeRegions = asArray(regions)
-  const safeOrgs = asArray(organizations)
+  // Build lookup maps (data is normalized at hook boundary — arrays are safe)
+  const safeNpcs = npcs
+  const safeRegions = regions
+  const safeOrgs = organizations
 
   const creatureMap = useMemo(() => {
     const map = new Map<string, CreatureEntity>()
@@ -147,7 +140,8 @@ export function GameDataProvider({ children, fallback }: Props) {
     locationName(regionId: string, locationId: string): string {
       const region = regionMap.get(regionId)
       if (!region?.Region?.locations) return locationId
-      const loc = region.Region.locations.find(l => l.id === locationId)
+      const locs = region.Region.locations ?? []
+      const loc = locs.find(l => l.id === locationId)
       return loc?.name ?? locationId
     },
 
@@ -160,16 +154,14 @@ export function GameDataProvider({ children, fallback }: Props) {
     },
 
     attrDisplay(fieldName: string): { label: string; hint: string } | null {
-      const fields = world?.Registry?.creature_attr_fields
-      if (!fields) return null
+      const fields = world?.Registry?.creature_attr_fields ?? []
       const field = fields.find(f => f.field_name === fieldName)
       if (!field) return null
-      return { label: field.field_display_name ?? field.field_name, hint: field.hint }
+      return { label: field.field_display_name ?? field.field_name, hint: field.hint ?? '' }
     },
 
     componentDef(componentKey: string): CustomComponentDef | null {
-      const defs = world?.CustomComponentRegistry?.custom_components
-      if (!defs) return null
+      const defs = world?.CustomComponentRegistry?.custom_components ?? []
       return defs.find(d => d.component_key === componentKey) ?? null
     },
 
