@@ -174,7 +174,6 @@ export async function initializeLoader(
 			? createPubWikiModule(pubwikiConfig)
 			: undefined;
 		const jsModules = await buildJsModules({
-			rdfStore,
 			stateNodeId,
 			getNodeRDFStore,
 			pubwikiModule,

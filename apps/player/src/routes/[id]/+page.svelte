@@ -523,7 +523,6 @@
 
 					// Build JS modules
 					const jsModules = await buildJsModules({
-						rdfStore: loaderRdfStore ?? undefined,
 						stateNodeId: loaderStateNodeId ?? undefined,
 						getNodeRDFStore,
 						pubwikiModule,
