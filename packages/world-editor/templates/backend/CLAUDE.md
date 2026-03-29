@@ -15,29 +15,24 @@ lua/
 ├── regex.lua         # UTF-8-aware regex wrapper
 ├── save.lua          # Save / checkpoint system
 └── assets/
-    ├── avg-template@pubwiki/   # Turn-based game app (type: "app")
-    │   ├── init.lua            # App entry, registers systems and services
-    │   ├── components.lua      # ECS component definitions
-    │   ├── systems.lua         # Game systems (combat, movement, items, …)
-    │   ├── state.lua           # State read/write helpers + save/load
-    │   ├── generate.lua        # LLM-driven content generation
-    │   ├── chat.lua            # Chat prompt setup & API config
-    │   ├── rag.lua             # RAG context assembly
-    │   ├── llm_collector.lua   # RAG document collector
-    │   ├── overview.lua        # Game overview generation
-    │   ├── publish.lua         # Publishing helpers
-    │   ├── test.lua            # Unit tests
-    │   ├── prompt_generate_content_with_change_recomands.lua         # LLM prompt: creative content generation (full)
-    │   ├── prompt_generate_content_with_change_recomands_simple.lua  # LLM prompt: creative content generation (simple mode)
-    │   ├── prompt_update_gamestate_and_setting.lua                  # LLM prompt: state change → service calls (full)
-    │   ├── prompt_update_gamestate_and_setting_simple.lua           # LLM prompt: state change → service calls (simple mode)
-    │   └── pkg.json            # Package manifest
-    └── ecs@pubwiki/            # ECS framework (type: "module")
-        ├── ecs.lua             # World, Entity, Component, System primitives
-        ├── ecs_services.lua    # Built-in ECS service definitions
-        ├── ecs_rag.lua         # RAG integration for ECS
-        ├── init.lua            # Module exports
-        └── pkg.json
+    └── avg-template@pubwiki/   # Turn-based game app (type: "app")
+        ├── init.lua            # App entry, registers systems and services
+        ├── components.lua      # ECS component definitions
+        ├── systems.lua         # Game systems (combat, movement, items, …)
+        ├── state.lua           # State read/write helpers + save/load
+        ├── ecs_compat.lua      # ECS compatibility layer (RDF backend, replaces ecs@pubwiki)
+        ├── generate.lua        # LLM-driven content generation
+        ├── chat.lua            # Chat prompt setup & API config
+        ├── rag.lua             # RAG context assembly
+        ├── llm_collector.lua   # RAG document collector
+        ├── overview.lua        # Game overview generation
+        ├── publish.lua         # Publishing helpers
+        ├── test.lua            # Unit tests
+        ├── prompt_generate_content_with_change_recomands.lua         # LLM prompt: creative content generation (full)
+        ├── prompt_generate_content_with_change_recomands_simple.lua  # LLM prompt: creative content generation (simple mode)
+        ├── prompt_update_gamestate_and_setting.lua                  # LLM prompt: state change → service calls (full)
+        ├── prompt_update_gamestate_and_setting_simple.lua           # LLM prompt: state change → service calls (simple mode)
+        └── pkg.json            # Package manifest
 ```
 
 ## Package System
@@ -50,14 +45,20 @@ Each asset is declared by a `pkg.json`:
   "publisher": "pubwiki",
   "version": "1.0.0",
   "type": "app",          // "app" (runs on load) | "module" (library)
-  "entry": "init.lua",
-  "dependencies": {
-    "ecs@pubwiki": "^1.0.0"
-  }
+  "entry": "init.lua"
 }
 ```
 
 Package IDs follow the `name@publisher` convention. Apps are executed automatically by the loader; modules are loaded on demand.
+
+## ECS Compatibility Layer (`ecs_compat.lua`)
+
+The original `ecs@pubwiki` module has been removed. All ECS functionality (entity CRUD, component read/write, system registration, RAG services) is now provided by `ecs_compat.lua`, which uses the RDF backend (`pw:/pwc:/pwr:/pwo:` triples) directly instead of in-memory ECS primitives.
+
+- Entity IDs are RDF subject strings (e.g. `creature:npc_01`, `region:forest`, `world:default`)
+- All `ecs:*` services (`ecs:SpawnEntity`, `ecs:GetSnapshot`, `ecs:SetComponentData`, etc.) remain available with the same API
+- System registration via `ecs:RegisterSystem` still exposes systems as `ecs.system:*` services
+- Component data is read/written through RDF predicates rather than in-memory component stores
 
 ## Core Patterns
 
@@ -113,23 +114,32 @@ Type.Array(Type.Int)
 Type.Object({ key = Type.String:desc("a field") })
 ```
 
-### ECS Usage
+### ECS Usage (via Services)
+
+All ECS operations go through `Service.call`:
 
 ```lua
--- Define a component
-local Health = Component:define("Health", {
-  current = Type.Int,
-  max     = Type.Int,
+-- Spawn an entity
+Service.call("ecs:SpawnEntity", {
+    components = {
+        { key = "Creature", data = { creature_id = "npc_01", name = "Alice" } },
+        { key = "LocationRef", data = { region_id = "forest", location_id = "clearing" } },
+    }
 })
 
--- Add to an entity
-local entity = World:createEntity()
-entity:addComponent(Health, { current = 100, max = 100 })
+-- Read component data
+local result = Service.call("ecs:GetComponentData", {
+    entity_id = "creature:npc_01", component_key = "Creature"
+})
 
--- Query
-for entity, hp in World:query(Health) do
-  print(entity.id, hp.current)
-end
+-- Update component data (merge by default)
+Service.call("ecs:SetComponentData", {
+    entity_id = "creature:npc_01", component_key = "Creature",
+    data = { emotion = "happy" }
+})
+
+-- Full world snapshot
+local snapshot = Service.call("ecs:GetSnapshot", {})
 ```
 
 Systems contain logic; components contain data. Keep them separate.

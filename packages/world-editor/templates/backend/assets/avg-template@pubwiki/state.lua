@@ -128,9 +128,11 @@ Service:definePure():namespace("state"):name("GetStateFromGame")
         end
 
 
-        local gameInitialStoryResults = State:get(STATE_SUBJECT,"game://state/game_initial_story")
-        
-        result.GameInitialStory = gameInitialStoryResults or nil
+        local bg = State:get("story:initial", "pw:initialBackground")
+        local ss = State:get("story:initial", "pw:initialStartStory")
+        if bg or ss then
+            result.GameInitialStory = { background = bg, start_story = ss }
+        end
 
         local wikiEntryResults = State:get(STATE_SUBJECT,"game://state/game_wiki_entry")
         
@@ -239,10 +241,16 @@ Service:define():namespace("state"):name("LoadStateToGame")
             State:set(STATE_SUBJECT, "game://state/app_info", stateData.AppInfo)
         end
 
-        State:delete(STATE_SUBJECT, "game://state/game_initial_story")
-
+        -- Write GameInitialStory as RDF triples on story:initial
+        State:delete("story:initial", "pw:initialBackground")
+        State:delete("story:initial", "pw:initialStartStory")
         if stateData.GameInitialStory then
-            State:set(STATE_SUBJECT, "game://state/game_initial_story", stateData.GameInitialStory)
+            if stateData.GameInitialStory.background then
+                State:set("story:initial", "pw:initialBackground", stateData.GameInitialStory.background)
+            end
+            if stateData.GameInitialStory.start_story then
+                State:set("story:initial", "pw:initialStartStory", stateData.GameInitialStory.start_story)
+            end
         end
 
         State:delete(STATE_SUBJECT, "game://state/game_wiki_entry")
@@ -704,61 +712,60 @@ Service:define():namespace("state"):name("AppendSettingDoc")
 
 Service:define():namespace("state"):name("SetNewStoryHistory")
     :desc("设置新的剧情历史数据")
-    :usage("记录一个新的剧情回合历史。每个回合通过唯一 turn_id 标识，data 包含任意格式的 content 和关联的 checkpoint_id。历史按 turn_id 排序。")
+    :usage("记录一个新的剧情回合历史。每个回合通过唯一 turn_id 标识，data 包含任意格式的 content 和关联的 checkpoint_id。使用 RDF 风格存储：subject=story:{turn_id}。")
     :inputs(Type.Object({
         turn_id = Type.String:desc("当前回合ID"),
-        data = Type.Object({ content = Type.Any:desc("新的剧情历史数据"), checkpoint_id = Type.String:desc("存档ID") }):desc("剧情历史数据"),
+        data = Type.Object({ content = Type.Any:desc("新的剧情历史数据"), checkpoint_id = Type.Optional(Type.String):desc("存档ID") }):desc("剧情历史数据"),
     }))
     :outputs(Type.Object({
         success = Type.Bool,
         error = Type.Optional(Type.String),
     }))
     :impl(function(inputs)
-        local turn_id = inputs.turn_id
-        local data = inputs.data
-
-        -- 直接存储，不再需要维护单独的 turn_ids 列表
-        State:set(STATE_SUBJECT, "game://state/story_history/" .. turn_id, data)
-
+        local subject = "story:" .. inputs.turn_id
+        State:set(subject, "pw:type", "StoryEntry")
+        State:set(subject, "pw:storyContent", inputs.data.content)
+        if inputs.data.checkpoint_id then
+            State:set(subject, "pw:storyCheckpointId", inputs.data.checkpoint_id)
+        end
         return { success = true }
     end)
 
-Service:define():namespace("state"):name("GetStoryHistory")
+Service:definePure():namespace("state"):name("GetStoryHistory")
     :desc("获取所有剧情历史数据")
-    :usage("获取所有已记录的剧情历史，返回按 turn_id 排序的 turn_ids 列表和对应的 story 字典。")
+    :usage("获取所有已记录的剧情历史，返回按 turn_id 排序的 turn_ids 列表和对应的 story 字典。RDF 查询：pw:type=StoryEntry。")
     :inputs(Type.Object({}))
     :outputs(Type.Object({
         data = Type.Object({
             turn_ids = Type.Array(Type.String):desc("所有回合ID列表"),
-            story = Type.Record(Type.Object({ content = Type.Any:desc("新的剧情历史数据"), checkpoint_id = Type.String:desc("存档ID") })):desc("所有回合ID对应的剧情历史数据"),
+            story = Type.Record(Type.Object({ content = Type.Any:desc("剧情历史数据"), checkpoint_id = Type.Optional(Type.String):desc("存档ID") })):desc("所有回合对应的剧情历史数据"),
         }),
         success = Type.Bool,
         error = Type.Optional(Type.String),
     }))
     :impl(function(inputs)
-        -- 使用 State:match 查询所有 story_history: 开头的三元组
-        local triples = State:match({ subject = STATE_SUBJECT })
-        
+        local triples = State:match({ predicate = "pw:type", object = "StoryEntry" })
+
         local all_turn_ids = {}
         local result_data = {}
-        
+
         if triples then
             for _, triple in ipairs(triples) do
-                local turn_id = Regex.match(triple.predicate, "^game://state/story_history/(.+)$")
-                if turn_id then
+                -- subject is "story:{turn_id}", strip "story:" prefix (6 chars)
+                local turn_id = string.sub(triple.subject, 7)
+                if turn_id and turn_id ~= "" then
                     table.insert(all_turn_ids, turn_id)
-                    result_data[turn_id] = triple.object
+                    local content = State:get(triple.subject, "pw:storyContent")
+                    local checkpoint_id = State:get(triple.subject, "pw:storyCheckpointId")
+                    result_data[turn_id] = { content = content, checkpoint_id = checkpoint_id }
                 end
             end
         end
-        
-        -- 按 turn_id 排序（假设 turn_id 是可排序的字符串或数字格式）
-        table.sort(all_turn_ids)
 
+        table.sort(all_turn_ids)
         return { success = true, data = { turn_ids = all_turn_ids, story = result_data } }
     end)
 
--- ClearStoryHistory
 Service:define():namespace("state"):name("ClearStoryHistory")
     :desc("清除所有剧情历史数据")
     :usage("删除所有剧情历史记录（破坏性操作，不可恢复）。通常用于开始新游戏或清空测试数据。LoadStateToGame 会自动调用此服务。")
@@ -768,17 +775,14 @@ Service:define():namespace("state"):name("ClearStoryHistory")
         error = Type.Optional(Type.String),
     }))
     :impl(function(inputs)
-        -- 使用 State:match 查询所有 story_history: 开头的三元组并删除
-        local triples = State:match({ subject = STATE_SUBJECT })
-        
+        local triples = State:match({ predicate = "pw:type", object = "StoryEntry" })
         if triples then
             for _, triple in ipairs(triples) do
-                if Regex.match(triple.predicate, "^game://state/story_history/") then
-                    State:delete(STATE_SUBJECT, triple.predicate)
-                end
+                State:delete(triple.subject, "pw:type")
+                State:delete(triple.subject, "pw:storyContent")
+                State:delete(triple.subject, "pw:storyCheckpointId")
             end
         end
-
         return { success = true }
     end)
 
@@ -883,15 +887,11 @@ Service:define():namespace("state"):name("InitialGameFromChoice")
         end
 
         -- 7. 覆盖 GameInitialStory（如选项指定了）
-        if selectedChoice.background_story or selectedChoice.start_story then
-            local currentStory = State:get(STATE_SUBJECT, "game://state/game_initial_story") or {}
-            if selectedChoice.background_story then
-                currentStory.background = selectedChoice.background_story
-            end
-            if selectedChoice.start_story then
-                currentStory.start_story = selectedChoice.start_story
-            end
-            State:set(STATE_SUBJECT, "game://state/game_initial_story", currentStory)
+        if selectedChoice.background_story then
+            State:set("story:initial", "pw:initialBackground", selectedChoice.background_story)
+        end
+        if selectedChoice.start_story then
+            State:set("story:initial", "pw:initialStartStory", selectedChoice.start_story)
         end
 
         -- 8. 将 enable 置为 false
@@ -918,15 +918,16 @@ Service:definePure():namespace("state"):name("GetGameInitialStory")
         error = Type.Optional(Type.String),
     }))
     :impl(function(inputs)
-        local story = State:get(STATE_SUBJECT, "game://state/game_initial_story")
-        if not story then
+        local background = State:get("story:initial", "pw:initialBackground")
+        local start_story = State:get("story:initial", "pw:initialStartStory")
+        if not background and not start_story then
             return { success = true, found = false }
         end
         return {
             success = true,
             found = true,
-            background = story.background,
-            start_story = story.start_story,
+            background = background,
+            start_story = start_story,
         }
     end)
 

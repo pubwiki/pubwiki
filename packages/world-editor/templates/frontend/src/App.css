@@ -1,17 +1,1116 @@
+/* ============================================================================
+   Game Playground — Vintage Codex Theme
+   ============================================================================ */
+
 .app {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-
   width: 100vw;
-  height: 100vh;
-
+  min-height: 100vh;
   background: #f4f1ea;
   color: #2c2825;
-
   font-family: 'Noto Serif SC', 'Georgia', serif;
-  overflow: auto;
-  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
+/* ── Header ── */
+
+.app-header {
+  text-align: center;
+  padding: 2.5rem 1rem 1rem;
+  border-bottom: 1px solid #d4cfc6;
+  background: linear-gradient(180deg, #faf8f4 0%, #f4f1ea 100%);
+}
+
+.app-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  margin: 0;
+  color: #1a1714;
+}
+
+.app-subtitle {
+  font-size: 0.8rem;
+  color: #8a847a;
+  margin: 0.25rem 0 0;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* ── Tab Bar ── */
+
+.tab-bar {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  border-bottom: 2px solid #d4cfc6;
+  background: #f9f7f3;
+  padding: 0 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.tab-btn {
+  font-family: inherit;
+  font-size: 0.85rem;
+  letter-spacing: 0.1em;
+  padding: 0.75rem 1.5rem;
+  border: none;
+  background: none;
+  color: #8a847a;
+  cursor: pointer;
+  position: relative;
+  transition: color 0.2s;
+}
+
+.tab-btn:hover {
+  color: #2c2825;
+}
+
+.tab-btn.active {
+  color: #1a1714;
+  font-weight: 600;
+}
+
+.tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0.5rem;
+  right: 0.5rem;
+  height: 2px;
+  background: #6b4c3b;
+}
+
+/* ── Content ── */
+
+.app-content {
+  flex: 1;
+  padding: 1.5rem;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* ── Loading & Empty ── */
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem;
+  color: #8a847a;
+  font-size: 0.9rem;
+}
+
+.loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #b8a99a;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: #b8a99a;
+  font-style: italic;
+}
+
+/* ── Entity Grid ── */
+
+.entity-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Entity Card ── */
+
+.entity-card {
+  background: #fffefa;
+  border: 1px solid #e0dbd2;
+  border-radius: 4px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 1px 3px rgba(44, 40, 37, 0.04);
+  transition: box-shadow 0.2s;
+}
+
+.entity-card:hover {
+  box-shadow: 0 2px 8px rgba(44, 40, 37, 0.08);
+}
+
+.player-card {
+  border-left: 3px solid #6b4c3b;
+}
+
+.highlight-player {
+  border-left: 3px solid #6b4c3b;
+}
+
+.highlight-added {
+  border-left: 3px solid #4a7c59;
+  animation: card-enter 0.4s ease-out;
+}
+
+@keyframes card-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Card Header ── */
+
+.card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.card-header [data-slot="creature-identity"],
+.card-header [data-slot="region-name"],
+.card-header [data-slot="org-name"] {
+  flex: 1;
+}
+
+.expand-toggle {
+  font-size: 0.75rem;
+  color: #b8a99a;
+  transition: color 0.15s;
+}
+
+.card-header:hover .expand-toggle {
+  color: #6b4c3b;
+}
+
+/* ── Section Heading ── */
+
+.section-heading {
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #b8a99a;
+  margin: 1.25rem 0 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #ece8e0;
+}
+
+/* ── Change Note ── */
+
+.change-note {
+  font-size: 0.8rem;
+  color: #a05a3c;
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+/* ============================================================================
+   data-slot Styles — Creature
+   ============================================================================ */
+
+[data-slot="creature-name"] {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #1a1714;
+}
+
+[data-slot="creature-identity-meta"] {
+  font-size: 0.8rem;
+  color: #8a847a;
+}
+
+[data-slot="creature-emotion"] {
+  font-size: 0.8rem;
+  color: #a05a3c;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+[data-slot="creature-titles"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+[data-slot="creature-title"] {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  background: #ece8e0;
+  border-radius: 2px;
+  color: #6b5e52;
+  letter-spacing: 0.05em;
+}
+
+[data-slot="creature-personality"],
+[data-slot="creature-description"],
+[data-slot="creature-goal"] {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: #4a453e;
+  margin: 0.5rem 0 0;
+}
+
+[data-slot="creature-appearance"] {
+  margin: 0.5rem 0 0;
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+[data-slot="creature-appearance-label"] {
+  color: #8a847a;
+  font-weight: 500;
+}
+
+[data-slot="creature-stats"] {
+  margin: 0.5rem 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.15rem 1rem;
+}
+
+[data-slot="creature-stat-key"] {
+  font-size: 0.75rem;
+  color: #8a847a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+[data-slot="creature-stat-value"] {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1a1714;
+  margin: 0 0 0.5rem;
+}
+
+[data-slot="creature-location"] {
+  display: inline-block;
+  font-size: 0.82rem;
+  color: #6b5e52;
+  margin: 0.25rem 0;
+}
+
+[data-slot="creature-organization"] {
+  display: inline-block;
+  font-size: 0.82rem;
+  color: #6b5e52;
+  margin: 0.25rem 0 0.25rem 1rem;
+}
+
+[data-slot="creature-known-infos"] {
+  list-style: disc;
+  padding-left: 1.25rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.82rem;
+  color: #4a453e;
+}
+
+/* ── Inventory ── */
+
+[data-slot="creature-inventory"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.inv-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  background: #f9f7f3;
+  border-radius: 2px;
+}
+
+.inv-name { font-weight: 500; color: #2c2825; }
+.inv-count { color: #8a847a; font-size: 0.75rem; }
+.inv-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  background: #6b4c3b;
+  color: #faf8f4;
+  border-radius: 2px;
+  letter-spacing: 0.05em;
+}
+.inv-desc { color: #8a847a; font-size: 0.78rem; margin-left: auto; }
+
+/* ── Status Effects ── */
+
+[data-slot="creature-status-effects"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.effect-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  background: #f0ebe3;
+  border-radius: 2px;
+  border-left: 2px solid #c4a882;
+}
+
+.effect-name { font-weight: 500; color: #6b5e52; }
+.effect-remark { color: #8a847a; }
+
+/* ── Custom Components ── */
+
+.custom-comp {
+  margin: 0.5rem 0;
+  padding: 0.5rem;
+  background: #f9f7f3;
+  border-radius: 2px;
+}
+
+.custom-comp-key {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  color: #8a847a;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.custom-comp-data {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  color: #4a453e;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ============================================================================
+   data-slot Styles — Region
+   ============================================================================ */
+
+[data-slot="region-name"] {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1a1714;
+  margin: 0;
+}
+
+[data-slot="region-description"] {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: #4a453e;
+  margin: 0.5rem 0 0;
+}
+
+[data-slot="region-metadata"] {
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  display: grid;
+  grid-template-columns: 3rem 1fr;
+  gap: 0.15rem 0.75rem;
+}
+
+[data-slot="region-locations"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.location-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  background: #f9f7f3;
+  border-radius: 2px;
+}
+
+.location-name { font-weight: 500; color: #2c2825; }
+.location-desc { color: #8a847a; font-size: 0.78rem; }
+
+[data-slot="region-paths"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.path-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.5rem;
+  background: #f9f7f3;
+  border-radius: 2px;
+}
+
+.path-item.undiscovered { opacity: 0.55; }
+.path-route { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; color: #6b5e52; }
+.path-desc { color: #8a847a; font-size: 0.78rem; }
+.path-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  background: #b8a99a;
+  color: #faf8f4;
+  border-radius: 2px;
+}
+
+/* ============================================================================
+   data-slot Styles — Organization
+   ============================================================================ */
+
+[data-slot="org-name"] {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1a1714;
+  margin: 0;
+}
+
+[data-slot="org-description"] {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: #4a453e;
+  margin: 0.5rem 0 0;
+}
+
+[data-slot="org-territories"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.territory-item {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  background: #ece8e0;
+  border-radius: 2px;
+  color: #6b5e52;
+}
+
+/* ============================================================================
+   World Tab
+   ============================================================================ */
+
+.world-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.world-section {
+  background: #fffefa;
+  border: 1px solid #e0dbd2;
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+}
+
+.world-section .section-heading {
+  margin-top: 0;
+}
+
+.game-time {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1a1714;
+  margin: 0;
+  letter-spacing: 0.05em;
+}
+
+.registry-fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.registry-field {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.registry-field dt {
+  font-weight: 600;
+  font-size: 0.85rem;
+  min-width: 5rem;
+  color: #2c2825;
+}
+
+.registry-field dd {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #8a847a;
+}
+
+.event-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.event-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem;
+  background: #f9f7f3;
+  border-radius: 2px;
+  border-left: 2px solid #c4a882;
+}
+
+.event-title { font-weight: 600; font-size: 0.85rem; color: #2c2825; }
+.event-summary { font-size: 0.8rem; color: #6b5e52; }
+
+.director-goal {
+  font-size: 0.9rem;
+  font-style: italic;
+  color: #6b5e52;
+  margin: 0;
+  padding: 0.5rem;
+  border-left: 2px solid #a05a3c;
+  background: #f9f7f3;
+}
+
+.comp-registry {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.comp-registry li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.comp-registry strong { color: #2c2825; }
+.comp-registry code {
+  font-size: 0.75rem;
+  color: #8a847a;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.array-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.3rem;
+  background: #ece8e0;
+  border-radius: 2px;
+  color: #6b5e52;
+}
+
+/* ── Status effects in region/org ── */
+
+[data-slot="region-status-effects"],
+[data-slot="org-status-effects"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+[data-slot="region-status-effect"],
+[data-slot="org-status-effect"] {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  background: #f0ebe3;
+  border-radius: 2px;
+  border-left: 2px solid #c4a882;
+}
+
+/* ============================================================================
+   Console Tab
+   ============================================================================ */
+
+.app-content-wide {
+  max-width: 1100px;
+}
+
+.console-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ── Editor ── */
+
+.console-editor {
+  background: #fffefa;
+  border: 1px solid #e0dbd2;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.console-input {
+  width: 100%;
+  min-height: 120px;
+  padding: 1rem;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #2c2825;
+  background: #faf8f4;
+  tab-size: 4;
+}
+
+.console-input::placeholder { color: #c4beb4; }
+.console-input:focus { background: #fffefa; }
+
+.console-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid #ece8e0;
+  background: #f9f7f3;
+}
+
+.console-hint {
+  font-size: 0.72rem;
+  color: #b8a99a;
+  letter-spacing: 0.02em;
+}
+
+.console-run-btn {
+  font-family: inherit;
+  font-size: 0.78rem;
+  padding: 0.35rem 1rem;
+  border: 1px solid #6b4c3b;
+  border-radius: 3px;
+  background: #6b4c3b;
+  color: #faf8f4;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+  letter-spacing: 0.03em;
+}
+
+.console-run-btn:hover:not(:disabled) { background: #5a3f30; }
+.console-run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── History ── */
+
+.console-history {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.console-entry {
+  background: #fffefa;
+  border: 1px solid #e0dbd2;
+  border-radius: 4px;
+  overflow: hidden;
+  animation: card-enter 0.25s ease-out;
+}
+
+.console-entry.error { border-left: 3px solid #a05a3c; }
+.console-entry.success { border-left: 3px solid #4a7c59; }
+
+.console-entry-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: #f9f7f3;
+  border-bottom: 1px solid #ece8e0;
+}
+
+.console-status {
+  font-size: 0.75rem;
+  font-weight: 700;
+  width: 1.2rem;
+  text-align: center;
+}
+
+.console-status.ok { color: #4a7c59; }
+.console-status.err { color: #a05a3c; }
+
+.console-entry-code {
+  flex: 1;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.72rem;
+  color: #6b5e52;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.console-entry-time {
+  font-size: 0.65rem;
+  color: #b8a99a;
+  white-space: nowrap;
+}
+
+.console-output,
+.console-result,
+.console-error {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.console-output {
+  color: #6b5e52;
+  background: #faf8f4;
+  border-bottom: 1px solid #ece8e0;
+}
+
+.console-result {
+  color: #4a7c59;
+  background: #f6faf7;
+}
+
+.console-error {
+  color: #a05a3c;
+  background: #fdf7f4;
+}
+
+/* ============================================================================
+   Story Tab
+   ============================================================================ */
+
+.story-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.story-section-title {
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #8a847a;
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #ece8e0;
+}
+
+.story-phase {
+  font-weight: 400;
+  color: #a05a3c;
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ── History ── */
+
+.story-history {
+  background: #fffefa;
+  border: 1px solid #e0dbd2;
+  border-radius: 4px;
+  padding: 1.25rem 1.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.story-turn {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #ece8e0;
+}
+
+.story-turn:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+
+.story-turn-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #b8a99a;
+  margin-bottom: 0.35rem;
+}
+
+.story-background { border-left: 3px solid #8a847a; padding-left: 1rem; }
+.story-start { border-left: 3px solid #6b4c3b; padding-left: 1rem; }
+
+.story-player-action {
+  font-size: 0.85rem;
+  color: #6b4c3b;
+  font-weight: 500;
+  margin-bottom: 0.35rem;
+}
+
+.story-turn-content {
+  font-size: 0.9rem;
+  line-height: 1.8;
+  color: #2c2825;
+  white-space: pre-wrap;
+}
+
+.story-update-summary {
+  font-size: 0.78rem;
+  color: #8a847a;
+  font-style: italic;
+  margin-top: 0.35rem;
+}
+
+/* ── Generation ── */
+
+.story-generation {
+  background: #fffefa;
+  border: 1px solid #e0dbd2;
+  border-left: 3px solid #a05a3c;
+  border-radius: 4px;
+  padding: 1.25rem 1.5rem;
+}
+
+.story-stream-text {
+  font-size: 0.9rem;
+  line-height: 1.8;
+  color: #2c2825;
+  white-space: pre-wrap;
+}
+
+[data-slot="stream-cursor"] {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: #a05a3c;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 0.8s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.story-debug {
+  margin: 0.5rem 0;
+  font-size: 0.78rem;
+}
+
+.story-debug summary {
+  cursor: pointer;
+  color: #8a847a;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+}
+
+.story-debug pre {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem;
+  background: #f9f7f3;
+  border-radius: 2px;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  color: #6b5e52;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ── Update result ── */
+
+.story-update {
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  font-size: 0.82rem;
+}
+
+.story-update.success { background: #f6faf7; border: 1px solid #b8d4be; }
+.story-update.error { background: #fdf7f4; border: 1px solid #d4b8a8; }
+.story-update p { margin: 0.25rem 0 0; }
+.story-update-outline { color: #6b5e52; }
+.story-update-error { color: #a05a3c; }
+
+.story-error {
+  padding: 0.75rem 1rem;
+  background: #fdf7f4;
+  border: 1px solid #d4b8a8;
+  border-radius: 4px;
+  color: #a05a3c;
+  font-size: 0.82rem;
+}
+
+/* ── Input ── */
+
+.story-input {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.story-input-field {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e0dbd2;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #2c2825;
+  background: #fffefa;
+  resize: vertical;
+  outline: none;
+}
+
+.story-input-field:focus { border-color: #6b4c3b; }
+.story-input-field:disabled { background: #f4f1ea; color: #b8a99a; }
+
+.story-submit-btn {
+  font-family: inherit;
+  font-size: 0.82rem;
+  padding: 0.6rem 1.25rem;
+  border: 1px solid #6b4c3b;
+  border-radius: 4px;
+  background: #6b4c3b;
+  color: #faf8f4;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.story-submit-btn:hover:not(:disabled) { background: #5a3f30; }
+.story-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Debug log ── */
+
+.story-log {
+  font-size: 0.75rem;
+}
+
+.story-log summary {
+  cursor: pointer;
+  color: #8a847a;
+  font-size: 0.72rem;
+}
+
+.story-log pre {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem;
+  background: #f9f7f3;
+  border: 1px solid #ece8e0;
+  border-radius: 2px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  color: #6b5e52;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ============================================================================
+   Data Tab
+   ============================================================================ */
+
+.data-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.data-section {
+  background: #fffefa;
+  border: 1px solid #e0dbd2;
+  border-radius: 4px;
+  padding: 1rem 1.25rem;
+}
+
+.data-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.data-section-header .story-section-title { margin-bottom: 0; }
+
+.data-reload-btn {
+  font-family: inherit;
+  font-size: 0.72rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #d4cfc6;
+  border-radius: 3px;
+  background: #f9f7f3;
+  color: #6b5e52;
+  cursor: pointer;
+}
+
+.data-reload-btn:hover:not(:disabled) { background: #ece8e0; }
+.data-reload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.data-entry {
+  margin-top: 0.75rem;
+  border-left: 3px solid #c4a882;
+  padding-left: 0.75rem;
+}
+
+.data-entry-id {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8a847a;
+  margin-bottom: 0.25rem;
+}
+
+.data-json {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  background: #faf8f4;
+  border-radius: 2px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #4a453e;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 600px) {
+  .app-content { padding: 1rem 0.75rem; }
+  .tab-btn { padding: 0.6rem 0.8rem; font-size: 0.78rem; }
+  [data-slot="creature-stats"] { grid-template-columns: 1fr 1fr; }
+  .console-input { min-height: 100px; font-size: 0.75rem; }
+}

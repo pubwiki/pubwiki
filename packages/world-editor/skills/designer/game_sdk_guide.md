@@ -1,150 +1,87 @@
 ---
-title: Game SDK API Guide
-description: How to use @pubwiki/game-sdk hooks and APIs for game state access and backend service calls
+title: Game SDK & UI Guide
+description: Architecture overview of @pubwiki/game-sdk (connection) and @pubwiki/game-ui (hooks + components)
 ---
 
-# Game SDK API Guide
+# Game SDK & UI Guide
 
-## Overview
+## Architecture
 
-`@pubwiki/game-sdk` provides reactive state management and data hooks for the game world.
+Two packages, two responsibilities:
 
-## Key Exports
-
-- `GameProvider` — React context provider, wraps the entire app in `/src/main.tsx`
-- `useCreatures()` — returns all creatures in the world
-- `usePlayer()` — returns the player creature
-- `useRegions()` — returns all regions
-- `useOrganizations()` — returns all organizations
-- `useField(subject, predicate)` — returns a specific triple value
-- `usePub()` — returns a type-safe proxy for calling backend services as `pub.namespace.ServiceName(inputs)`
-- `useGameStore()` — returns the raw game state manager
-- `useTripleQuery(pattern)` — low-level triple query hook
-
-## RDF Vocabulary Constants
-
-The SDK exports predicate constants so you never need to hardcode predicate strings:
+| Package | Role | Key Exports |
+|---------|------|-------------|
+| `@pubwiki/game-sdk` | Connection & RPC layer | `GameProvider`, `usePub()` |
+| `@pubwiki/game-ui` | Game data hooks + UI components | `usePlayer()`, `useCreatures()`, `PlayerPanel`, `Creature.*` |
 
 ```tsx
-import { PW_PRED, PWC_PRED, PWR_PRED, GRAPH, extractId } from '@pubwiki/game-sdk'
+// main.tsx — wrap with GameProvider for connection
+import { GameProvider } from '@pubwiki/game-sdk'
+<GameProvider><App /></GameProvider>
 
-// PW_PRED.name      → "pw:name"
-// PWC_PRED.is_player → "pwc:isPlayer"
-// PWC_PRED.gender    → "pwc:gender"
-// GRAPH.creature     → "graph:creature"
-```
-
-### Available constant groups
-
-| Export | Namespace | Used By |
-|--------|-----------|---------|
-| `PW_PRED` | `pw:` | All entities (name, description, type, order) |
-| `PW_WORLD` | `pw:` | World entity (gameTime, directorNotes, events, interaction) |
-| `PWC_PRED` | `pwc:` | Creatures (gender, race, personality, attrs, isPlayer, ...) |
-| `PWR_PRED` | `pwr:` | Regions (locations, paths, metadataName, metadataDesc) |
-| `PWO_PRED` | `pwo:` | Organizations (territories) |
-| `PWS_PRED` | `pws:` | Setting documents (content, priority, condition, disable) |
-| `PWI_PRED` | `pwi:` | Inventory items (id, count, equipped, details) |
-| `PW_STATUS` | `pw:` | Status effects (displayName, remark, data) |
-| `PW_STORY` | `pw:` | Story entries (content, timestamp, checkpointId) |
-| `SUBJECT` | — | Subject prefixes ("creature:", "region:", "org:", ...) |
-| `GRAPH` | — | Named graphs ("graph:creature", "graph:region", ...) |
-
-### Helper functions
-
-- `extractId(subject)` — Extract pure ID from a subject URI: `"creature:npc_01"` → `"npc_01"`
-- `subjectPrefix(subject)` — Extract prefix: `"creature:npc_01"` → `"creature:"`
-
-## Hook Return Formats
-
-### useCreatures() / useRegions() / useOrganizations()
-
-Returns an array of entity objects. Each object has:
-- `id` — pure entity ID (e.g. `"npc_01"`, not `"creature:npc_01"`)
-- Predicate keys with their values (e.g. `"pw:name"`, `"pwc:gender"`)
-- JSON-serialized fields are **auto-parsed** (attrs, titles, locations, etc.)
-
-```tsx
-const creatures = useCreatures()
-// [
-//   {
-//     id: "npc_01",
-//     "pw:name": "Hero",
-//     "pwc:gender": "Male",
-//     "pwc:isPlayer": true,
-//     "pwc:attrs": { hp: 100, mp: 50 },     // auto-parsed from JSON
-//     "pwc:titles": ["Warrior", "Knight"],    // auto-parsed from JSON
-//   }
-// ]
-```
-
-### usePlayer()
-
-Returns the player entity object (same format as above) or `undefined`.
-
-```tsx
-const player = usePlayer()
-if (player) {
-  console.log(player.id)                      // "hero_01"
-  console.log(player[PW_PRED.name])           // "Hero"
-  console.log(player[PWC_PRED.attrs])         // { hp: 100 } (auto-parsed)
-}
-```
-
-### useField(subject, predicate)
-
-Returns a single field value. JSON fields are auto-parsed.
-
-```tsx
-// Use the full subject URI for useField
-const name = useField("creature:hero_01", PW_PRED.name)    // "Hero"
-const attrs = useField("creature:hero_01", PWC_PRED.attrs) // { hp: 100 }
+// App.tsx — use hooks and components from game-ui
+import { usePlayer, PlayerPanel, Creature } from '@pubwiki/game-ui'
 ```
 
 ## Service Calls via usePub()
 
-Service type definitions are auto-generated at `/lib/game-sdk/generated/services.d.ts`. Read this file to discover available services and their input/output types.
-
-**CRITICAL: Before writing any code that calls a backend service via `usePub()`, you MUST first use `get_service_definition` to check the service's exact input parameter types.** Do not guess parameter names or types.
-
-### Usage Example
+`usePub()` returns a type-safe proxy for calling backend Lua services:
 
 ```tsx
-import { useCreatures, usePlayer, usePub, PW_PRED, PWC_PRED } from '@pubwiki/game-sdk'
+import { usePub } from '@pubwiki/game-sdk'
 
-function CreatureList() {
-  const creatures = useCreatures()
-  const pub = usePub()
-
-  async function handleAttack(targetId: string) {
-    await pub.combat.Attack({ target_id: targetId })
-  }
-
-  return (
-    <ul>
-      {creatures.map(c => (
-        <li key={c.id} onClick={() => handleAttack(c.id)}>
-          {String(c[PW_PRED.name])}
-        </li>
-      ))}
-    </ul>
-  )
-}
+const pub = usePub()
+const result = await pub.combat.Attack({ target_id: 'orc_1' })
 ```
 
-## Game UI Components
+Service type definitions are auto-generated at `/lib/game-sdk/generated/services.d.ts`.
 
-`@pubwiki/game-ui` provides pre-built UI components for game interfaces.
+**CRITICAL: Before writing any code that calls a backend service via `usePub()`, you MUST first use `get_service_definition` to check the service's exact input parameter types.**
+
+## Reactive Hooks (from @pubwiki/game-ui)
+
+Hooks subscribe to backend `watch:*` services and push structured entity snapshots in real-time:
 
 ```tsx
-import { DialogBox } from '@pubwiki/game-ui'
+import { usePlayer, useCreatures, useRegions, useOrganizations, useWorld } from '@pubwiki/game-ui'
+
+const { player, ready } = usePlayer()           // CreatureEntity | null
+const { npcs, added, deleted } = useCreatures()  // CreatureEntity[]
+const { regions } = useRegions()                  // RegionEntity[]
+const { organizations } = useOrganizations()      // OrganizationEntity[]
+const { world } = useWorld()                      // WorldSnapshot
 ```
 
-Read files under `/lib/game-ui/` to discover available components and their props.
+All hooks return:
+- **Fully resolved data** — inventory items, status effects, custom components included
+- **Ready state** — `ready: boolean` for loading UI
+- **Change metadata** — `added`, `deleted`, `modified` arrays of entity IDs
+
+## Data Types
+
+Hooks return ECS entity snapshots matching the backend's component structure:
+
+```typescript
+// CreatureEntity has:
+entity.Creature         // { creature_id, name, gender, race, emotion, attrs, ... }
+entity.IsPlayer         // present if this is the player
+entity.LocationRef      // { region_id, location_id }
+entity.Inventory        // { items: InventoryItem[] }
+entity.StatusEffects    // { status_effects: StatusEffect[] }
+entity.CustomComponents // { custom_components: CustomComponentInstance[] }
+entity.Interaction      // { options: InteractionOption[] }
+entity.Log              // { entries: LogEntry[] }
+entity.BindSetting      // { documents: SettingDocument[] }
+```
+
+## UI Components
+
+**For detailed component usage, render props, and data-slot references, read the `game_ui_components` skill:**
+Use `get_skill_content("game_ui_components")` to see the full component guide.
 
 ## Important Notes
 
-- **The backend is already complete and stable.** All backend services are fully implemented. Do NOT suggest creating or modifying backend services — just call them via `usePub()`.
-- Always use `list_backend_services` and `get_service_definition` before calling any service to ensure correct parameter types.
-- Use `get_state_overview` / `get_state_content` to understand the game's data model when generating UI code.
-- Always use vocabulary constants (`PW_PRED`, `PWC_PRED`, etc.) instead of hardcoding predicate strings.
+- **The backend is already complete and stable.** Do NOT suggest creating or modifying backend services — just call them via `usePub()`.
+- Always use `list_backend_services` and `get_service_definition` before calling any service.
+- Use `get_state_overview` / `get_state_content` to understand the game's data model.
+- Access data via hooks from `@pubwiki/game-ui`, not raw triples from `@pubwiki/game-sdk`.

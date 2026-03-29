@@ -94,6 +94,8 @@ local function readComponent(subject, component_key)
         return { name = tostring(name), desc = State:get(subject, RDF.PW.description) or "" }
 
     elseif component_key == "Creature" then
+        local typeVal = State:get(subject, RDF.PW.type)
+        if typeVal ~= "Creature" then return nil end
         local name = State:get(subject, RDF.PW.name)
         if not name then return nil end
         return {
@@ -167,8 +169,9 @@ local function readComponent(subject, component_key)
         return RDF.getCustomComponents(subject)
 
     elseif component_key == "Region" then
+        local typeVal = State:get(subject, RDF.PW.type)
+        if typeVal ~= "Region" then return nil end
         local name = State:get(subject, RDF.PW.name)
-        if not name then return nil end
         return {
             region_id = oid,
             region_name = tostring(name),
@@ -178,8 +181,9 @@ local function readComponent(subject, component_key)
         }
 
     elseif component_key == "Organization" then
+        local typeVal = State:get(subject, RDF.PW.type)
+        if typeVal ~= "Organization" then return nil end
         local name = State:get(subject, RDF.PW.name)
-        if not name then return nil end
         return {
             organization_id = oid,
             name = tostring(name),

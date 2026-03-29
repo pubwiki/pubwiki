@@ -19,6 +19,7 @@ import * as git from 'isomorphic-git';
 import { WORKDIR } from 'isomorphic-git';
 import { computeSha256Hex } from '@pubwiki/api';
 import { getNodeVfs } from '$lib/vfs';
+import { TEMPLATE_HASHES } from '$lib/simple-mode/template-hashes.generated';
 
 /**
  * Compute per-file hashes for all files in a VFS node's working directory.
@@ -168,6 +169,8 @@ export async function computeVfsContentHash(
 	}
 
 	dirtyEntries.sort(([a], [b]) => a.localeCompare(b));
-	const payload = JSON.stringify({ head: headCommit, dirty: dirtyEntries });
+	// Include template hashes so that mounted library changes (game-sdk, game-ui)
+	// invalidate the build cache even though mount content isn't in the git tree.
+	const payload = JSON.stringify({ head: headCommit, dirty: dirtyEntries, templates: TEMPLATE_HASHES });
 	return computeSha256Hex(new TextEncoder().encode(payload).buffer as ArrayBuffer);
 }

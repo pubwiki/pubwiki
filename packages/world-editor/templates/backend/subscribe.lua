@@ -4,8 +4,6 @@
 -- Uses the same pattern as CreativeWritingStream: the callback is passed
 -- as an input parameter and called for each event.
 
-local State = require("State")
-
 Service:define()
   :namespace("core")
   :name("SubscribeTriples")
