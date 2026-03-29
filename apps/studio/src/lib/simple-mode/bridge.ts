@@ -12,6 +12,7 @@
  */
 
 import { extractTar, extractTarGz, type TarEntry, createVfsMountHandleId, HandleId } from '@pubwiki/flow-core';
+import { TEMPLATE_HASHES } from './template-hashes.generated';
 import { Position, type Node, type Edge } from '@xyflow/svelte';
 import { nodeStore } from '$lib/persistence/node-store.svelte';
 import { layoutStore } from '$lib/persistence/layout-store';
@@ -413,7 +414,8 @@ export class SimpleModeBridge {
 		// Fetch the tar.gz template
 		// The templates are served as static assets from the studio app.
 		// They need to be placed in apps/studio/static/templates/ or imported via Vite.
-		const tarGzUrl = `/templates/${template}.tar.gz`;
+		const hash = TEMPLATE_HASHES[template] ?? Date.now();
+		const tarGzUrl = `/templates/${template}.tar.gz?v=${hash}`;
 		const response = await fetch(tarGzUrl);
 		if (!response.ok) {
 			console.error(`[SimpleModeBridge] Failed to fetch template ${tarGzUrl}: ${response.status}`);
