@@ -92,6 +92,7 @@ interface PublishInput {
 	isPrivate?: boolean;
 	tags?: string[];
 	homepage?: string;
+	thumbnailUrl?: string;
 }
 
 interface UploadCheckpointInput {
@@ -146,7 +147,7 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 				return { success: false, error: 'Publish is not available in this context.' };
 			}
 
-			const initialValues = {
+			const initialValues: Record<string, unknown> = {
 				name: metadata.name || '',
 				slug: metadata.slug || '',
 				description: metadata.description || '',
@@ -155,6 +156,9 @@ export function createPubWikiModule(config: PubWikiModuleConfig): JsModuleDefini
 				isPrivate: metadata.isPrivate ?? false,
 				homepage: metadata.homepage || '',
 			};
+			if (metadata.thumbnailUrl) {
+				initialValues.thumbnailUrl = metadata.thumbnailUrl;
+			}
 
 			const edited = await config.confirmation.confirm('publish', initialValues);
 			if (edited === null) {
