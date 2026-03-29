@@ -5,6 +5,7 @@ Loader = require("./loader")
 Regex = require("./regex")
 require("./save")
 require("./subscribe")
+require("./watch")
 local ok, errors = Loader.load("/user/backend/assets")
 
 if not ok then
