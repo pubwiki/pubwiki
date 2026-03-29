@@ -130,24 +130,27 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 
 			try {
 				// Push current snapshot first
-				// Yield a plain object with type discriminator; only wrap the data
-				// arrays in LuaTable so Lua gets native tables for iteration.
-				yield {
+				// Wrap the entire yielded object in LuaTable so it gets deeply
+				// converted to native Lua tables. This is critical because the
+				// event may be passed back through an RPC callback (e.g. in
+				// subscribe.lua), and capnweb cannot serialize class instances
+				// like LuaTable — only plain JS objects/arrays.
+				yield new LuaTable({
 					type: 'snapshot',
-					triples: new LuaTable(store.getAll().map(t => ({
+					triples: store.getAll().map(t => ({
 						subject: t.subject,
 						predicate: t.predicate,
 						object: t.object,
 						...(t.graph ? { graph: t.graph } : {}),
-					}))),
-				};
+					})),
+				});
 
 				while (true) {
 					if (queue.length > 0) {
 						const events = queue.shift()!;
-						yield {
+						yield new LuaTable({
 							type: 'changes',
-							events: new LuaTable(events.map(e => ({
+							events: events.map(e => ({
 								type: e.type,
 								triple: {
 									subject: e.triple.subject,
@@ -155,8 +158,8 @@ export function createStateModule(getStore: () => Promise<TripleStore>) {
 									object: e.triple.object,
 									...(e.triple.graph ? { graph: e.triple.graph } : {}),
 								},
-							}))),
-						};
+							})),
+						});
 					} else {
 						await new Promise<void>(r => { resolve = r; });
 					}
